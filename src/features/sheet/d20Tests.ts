@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { canReroll, rerollD20 } from '@/dice/reroll';
 import { roll } from '@/dice/roll';
 import type { RollOffer, RollResult } from '@/dice/types';
 import {
@@ -406,7 +407,10 @@ export function d20Ask(
         ...bonusesFor(choice).map((b) => (b.bonus < 0 ? `${b.bonus}` : `+${b.bonus}`)),
       ].reduce((e, term) => `${e}${term}`, expr);
       const full = resolution.penalty !== 0 ? `${withDice}${resolution.penalty}` : withDice;
-      const result = roll(full, { label, advantage, kind: 'd20' });
+      // What rerolls as the d20 lands (Halfling Luck's 1, Elven Accuracy): never worse.
+      const result = (riders?.rerolls ?? [])
+        .filter((r) => r.auto === true)
+        .reduce((r, how) => rerollD20(r, how) ?? r, roll(full, { label, advantage, kind: 'd20' }));
       // A d20 test's expression is the d20 and flat modifiers, so every die after
       // the first is an effect's, in order.
       const from: Array<{ term: number; source: string }> = [];
@@ -431,6 +435,11 @@ export function d20Ask(
               // Bardic); a feature's own (Precision Attack) waits as written.
               !(choice?.dropUnnamed === true && namedFirst(o) && o.pay === undefined),
           );
+      // A reroll still helps a natural 1 that missed, never a crit or an automatic failure.
+      const rerolls =
+        resolution.autoFail || (settlesOnNatural && (natural === 20 || crit))
+          ? []
+          : (riders?.rerollOffers ?? []).filter((o) => canReroll(result, o));
       const cue = cueFor(mode, choice);
       // The kind of roll, for a natural 20 or 1's moments (`useRollOfferSpending`).
       const test = riders?.test;
@@ -438,21 +447,33 @@ export function d20Ask(
         cue === '' &&
         from.length === 0 &&
         after.length === 0 &&
+        rerolls.length === 0 &&
         attack === undefined &&
         test === undefined
       ) {
         return result;
       }
+      const critFrom = attack?.critFrom ?? 20;
       return {
         ...result,
         meta: {
           ...result.meta,
           ...(test === undefined ? {} : { test }),
-          ...(attack === undefined ? {} : { attack: { by: attack.by, of: attack.of, crit } }),
+          ...(attack === undefined
+            ? {}
+            : {
+                attack: {
+                  by: attack.by,
+                  of: attack.of,
+                  crit,
+                  ...(critFrom < 20 ? { critFrom } : {}),
+                },
+              }),
           ...(cue === '' ? {} : { cue }),
           ...(resolution.autoFail ? { autoFail: true } : {}),
           ...(from.length > 0 ? { from } : {}),
           ...(after.length > 0 ? { offers: after } : {}),
+          ...(rerolls.length > 0 ? { rerolls } : {}),
         },
       };
     },

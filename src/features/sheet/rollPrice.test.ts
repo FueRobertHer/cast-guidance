@@ -264,6 +264,99 @@ describe('pricedRollEffects', () => {
     expect(priced.declare?.map((d) => d.source)).toEqual(['Lucky']);
     expect(priced.paid).toBeUndefined();
   });
+
+  describe('rerolls', () => {
+    const INDOMITABLE = resource('indomitable', 'Indomitable', 1, {
+      origin: 'Indomitable',
+      resetOn: 'long',
+    });
+    // Living Legend's own action spends its use: a reroll in it takes the reaction alone.
+    const LEGEND = action({
+      label: 'Living Legend',
+      origin: 'Living Legend',
+      economy: 'bonus',
+      cost: { resource: 'living-legend', amount: 1 },
+    });
+    const withRerolls = {
+      actions: [LEGEND],
+      resources: [INDOMITABLE, resource('living-legend', 'Living Legend', 1)],
+    };
+    const luck = { source: 'Luck', die: 'one' as const, atMost: 1, auto: true, free: true };
+    const indomitable = { source: 'Indomitable', ifFailed: true, bonus: 13 };
+    const legend = { source: 'Living Legend', free: true, reaction: true, ifFailed: true };
+    const focus = { source: 'Fanatical Focus', free: true, ifFailed: true, when: 'Once a Rage' };
+    const riders = (rerolls: RollEffects['rerolls']) => ({ ...base, rerolls });
+
+    it('keeps a reroll made as the d20 lands, with no play state too', () => {
+      expect(pricedRollEffects(riders([luck]), withRerolls, undefined)).toEqual({
+        ...base,
+        rerolls: [luck],
+      });
+      const priced = pricedRollEffects(riders([luck]), withRerolls, play());
+      expect(priced.rerolls).toEqual([luck]);
+      expect(priced.rerollOffers).toBeUndefined();
+    });
+
+    it('rolls in only what rerolls as the d20 lands, and offers the rest after', () => {
+      const both = riders([luck, indomitable]);
+      expect(pricedRollEffects(both, withRerolls, undefined).rerolls).toEqual([luck]);
+      const priced = pricedRollEffects(both, withRerolls, play());
+      expect(priced.rerolls).toEqual([luck]);
+      expect(priced.rerollOffers?.map((o) => o.source)).toEqual(['Indomitable']);
+      expect(pricedRollEffects(riders([indomitable]), withRerolls, play()).rerolls).toBeUndefined();
+    });
+
+    it('offers a paid reroll priced as its Use, with its bonus and flags', () => {
+      expect(pricedRollEffects(riders([indomitable]), withRerolls, play()).rerollOffers).toEqual([
+        {
+          source: 'Indomitable',
+          die: 'all',
+          ifFailed: true,
+          bonus: 13,
+          pay: {
+            spends: [{ key: 'indomitable', max: 1, amount: 1 }],
+            reaction: false,
+            words: 'spends an Indomitable use',
+          },
+        },
+      ]);
+    });
+
+    it('offers no paid reroll the character cannot pay, or with no play state', () => {
+      expect(
+        pricedRollEffects(riders([indomitable]), withRerolls, play({ indomitable: 1 }))
+          .rerollOffers,
+      ).toBeUndefined();
+      expect(pricedRollEffects(riders([indomitable]), withRerolls, undefined)).toEqual(base);
+    });
+
+    it('offers a free reroll at no price, saying when it holds', () => {
+      expect(pricedRollEffects(riders([focus]), withRerolls, play()).rerollOffers).toEqual([
+        { source: 'Fanatical Focus', die: 'all', ifFailed: true, when: 'Once a Rage' },
+      ]);
+    });
+
+    it("prices one that takes the reaction alone without the feature's own use", () => {
+      expect(
+        pricedRollEffects(riders([legend]), withRerolls, play()).rerollOffers?.[0]?.pay,
+      ).toEqual({ spends: [], reaction: true, words: 'marks your reaction' });
+      expect(
+        pricedRollEffects(riders([legend]), withRerolls, play({}, true)).rerollOffers,
+      ).toBeUndefined();
+    });
+
+    it('offers no reroll of the lower die after the roll: that one rolls on its own', () => {
+      const low = { source: 'Elven Accuracy', die: 'low' as const, free: true };
+      expect(pricedRollEffects(riders([low]), withRerolls, play()).rerollOffers).toBeUndefined();
+    });
+
+    it('carries which die a reroll takes and the most it may show', () => {
+      const twins = { source: 'Khenra Twins', die: 'one' as const, atMost: 1, free: true };
+      expect(pricedRollEffects(riders([twins]), withRerolls, play()).rerollOffers).toEqual([
+        { source: 'Khenra Twins', die: 'one', atMost: 1, ifFailed: false },
+      ]);
+    });
+  });
 });
 
 describe('paying for an extra, and giving it back', () => {

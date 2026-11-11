@@ -11,7 +11,7 @@ import {
   type Edition,
   testAbility,
 } from './conditions';
-import type { DerivedSheet, PaidRoll, RollFilter } from './types';
+import type { DerivedSheet, PaidRoll, Reroll, RollFilter } from './types';
 
 /**
  * What paying for a feature's extra takes, as its Use does: pool uses (each
@@ -71,6 +71,22 @@ export interface RollEffects {
    * into offers and claims (`pricedRollEffects`).
    */
   paid?: Array<{ source: string } & Omit<PaidRoll, 'bonus'> & { bonus?: number }>;
+  /**
+   * Rerolls the character's own features give (`Reroll`), once a source. An
+   * `auto` one rolls as the d20 lands; the rest wait for the sheet to price
+   * them into `rerollOffers`, and with no price they offer nothing.
+   */
+  rerolls?: Array<{ source: string } & Reroll>;
+  /** Rerolls the result offers, priced as each feature's Use is (`pricedRollEffects`). */
+  rerollOffers?: Array<{
+    source: string;
+    die: 'all' | 'one' | 'extra';
+    atMost?: number;
+    ifFailed: boolean;
+    bonus?: number;
+    pay?: OfferPay;
+    when?: string;
+  }>;
   /** The kind of roll the test is (initiative is a check), which its roll carries. */
   test?: RollFilter['rolls'][number];
 }
@@ -163,6 +179,14 @@ export function rollEffects(
       const { kind: _kind, on: _on, origin, effectId: _effectId, ...rest } = r;
       paid.push({ source: origin, ...rest });
       out.paid = paid;
+    } else if (r.kind === 'reroll') {
+      if (test.kind === 'initiative' && r.ifFailed === true) continue;
+      // Once a source and die: a 2014 halfling's Lucky trait and the Lucky feat share a name.
+      const rerolls = out.rerolls ?? [];
+      if (rerolls.some((p) => same(p.source, r.origin) && p.die === r.die)) continue;
+      const { kind: _kind, on: _on, origin, effectId: _effectId, ...rest } = r;
+      rerolls.push({ source: origin, ...rest });
+      out.rerolls = rerolls;
     } else if (r.when !== undefined) {
       // Only advantage is declared; no table or reader gives a disadvantage a `when`.
       if (r.mode !== 'adv') continue;

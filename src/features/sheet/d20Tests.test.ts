@@ -2,6 +2,7 @@
 import { act, renderHook } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { rollDetail } from '@/dice/format';
+import type { RollResult } from '@/dice/types';
 import {
   type ActiveCondition,
   conditionSpeed,
@@ -394,7 +395,7 @@ describe('rollD20Test with effects in play', () => {
       riders: riders({ offers: [bardic] }),
       settlesOnNatural: true,
     });
-    expect(r.meta?.attack).toEqual({ by: 'c1', of: 'Longsword', crit: true });
+    expect(r.meta?.attack).toEqual({ by: 'c1', of: 'Longsword', crit: true, critFrom: 19 });
     expect(r.meta?.offers).toBeUndefined();
     expect(rollTone(r)).toBe('crit');
     // The die kept is the one that counts: disadvantage's low 3, not the 20.
@@ -404,7 +405,7 @@ describe('rollD20Test with effects in play', () => {
       attack: { by: 'c1', of: 'Longsword', critFrom: 19 },
       settlesOnNatural: true,
     }).roll({ mode: 'dis' });
-    expect(dis.meta?.attack).toEqual({ by: 'c1', of: 'Longsword', crit: false });
+    expect(dis.meta?.attack).toEqual({ by: 'c1', of: 'Longsword', crit: false, critFrom: 19 });
   });
 
   it('puts the dice on offer on the result, and no die for them yet', () => {
@@ -697,6 +698,118 @@ describe('rollD20Test with effects in play', () => {
       });
       expect(flank.thisTurn[0]?.cost).toBe('Only when afraid');
       expect(flank.thisTurn[0]?.paid).toBeUndefined();
+    });
+  });
+
+  describe('rerolls (Halfling Luck, Indomitable)', () => {
+    const luck = { source: 'Luck', die: 'one' as const, atMost: 1, auto: true, free: true };
+    const elven = { source: 'Elven Accuracy', die: 'low' as const, auto: true, free: true };
+    const indomitable = { source: 'Indomitable', die: 'all' as const, ifFailed: true };
+    const words = (r: RollResult) =>
+      rollDetail(r)
+        .map((p) => (p.dropped ? `~${p.text}~` : p.text))
+        .join('');
+
+    it('rerolls a natural 1 as the d20 lands, and the new roll stands', () => {
+      nextFaces(1, 13);
+      const r = rollD20Test('1d20+4', { label: 'DEX save', riders: riders({ rerolls: [luck] }) });
+      expect(r.total).toBe(17);
+      expect(r.meta?.d20).toEqual({ natural: 13 });
+      expect(words(r)).toBe('d20 [~1~, 13] Luck reroll + 4');
+    });
+
+    it('leaves a roll with no 1 as it is', () => {
+      nextFaces(2);
+      const r = rollD20Test('1d20+4', { label: 'DEX save', riders: riders({ rerolls: [luck] }) });
+      expect(r.total).toBe(6);
+      expect(r.meta?.rerolled).toBeUndefined();
+    });
+
+    it('rolls only what rerolls on its own, never one offered after', () => {
+      nextFaces(1);
+      const r = rollD20Test('1d20', {
+        label: 'DEX save',
+        riders: riders({ rerolls: [{ ...luck, auto: false }] }),
+      });
+      expect(r.total).toBe(1);
+    });
+
+    it('turns a natural 1 that would miss into a roll that may hit', () => {
+      nextFaces(1, 20);
+      const r = rollD20Test('1d20+5', {
+        label: 'Longsword attack',
+        attack: { by: 'c1', of: 'Longsword' },
+        riders: riders({ rerolls: [luck], offers: [bardic] }),
+        settlesOnNatural: true,
+      });
+      expect(r.meta?.attack?.crit).toBe(true);
+      expect(rollTone(r)).toBe('crit');
+    });
+
+    it("rerolls advantage's lower die on an attack (Elven Accuracy), and nothing without it", () => {
+      const attack = (mode: 'adv' | 'normal') => {
+        const ask = d20Ask('1d20+5', {
+          label: 'Shortbow attack',
+          riders: riders({ rerolls: [elven] }),
+        });
+        return ask.roll({ mode });
+      };
+      nextFaces(6, 3, 15);
+      expect(attack('adv').total).toBe(20);
+      nextFaces(6);
+      expect(attack('normal').total).toBe(11);
+    });
+
+    it('offers a reroll on the result, and one only when it has a die to reroll', () => {
+      const one = { source: 'Khenra Twins', die: 'one' as const, atMost: 1, ifFailed: false };
+      nextFaces(9);
+      const r = rollD20Test('1d20+2', {
+        label: 'WIS save',
+        riders: riders({ rerollOffers: [indomitable, one] }),
+      });
+      expect(r.meta?.rerolls).toEqual([indomitable]);
+      nextFaces(1);
+      const ones = rollD20Test('1d20+2', {
+        label: 'WIS save',
+        riders: riders({ rerollOffers: [indomitable, one] }),
+      });
+      expect(ones.meta?.rerolls).toEqual([indomitable, one]);
+    });
+
+    it('offers no reroll on a save that fails automatically, or an attack that crit', () => {
+      const stunned = d20Effects([{ id: 'Stunned' }], '2014', { kind: 'save', ability: 'dex' });
+      nextFaces(9);
+      const fails = rollD20Test('1d20+2', {
+        label: 'DEX save',
+        effects: stunned,
+        riders: riders({ rerollOffers: [indomitable] }),
+      });
+      expect(fails.meta?.rerolls).toBeUndefined();
+      const seeking = { source: 'Seeking Spell', die: 'all' as const, ifFailed: true };
+      const spell = () =>
+        rollD20Test('1d20+5', {
+          label: 'Fire Bolt spell attack',
+          attack: { by: 'c1', of: 'Fire Bolt', critFrom: 19 },
+          riders: riders({ rerollOffers: [seeking] }),
+          settlesOnNatural: true,
+        });
+      nextFaces(19);
+      expect(spell().meta?.rerolls).toBeUndefined();
+      nextFaces(20);
+      expect(spell().meta?.rerolls).toBeUndefined();
+      // A natural 1 misses: a reroll may still hit.
+      nextFaces(1);
+      expect(spell().meta?.rerolls).toEqual([seeking]);
+    });
+
+    it("keeps the attack's crit range on the result, for a reroll to settle it", () => {
+      nextFaces(4);
+      const r = rollD20Test('1d20+5', {
+        label: 'Longsword attack',
+        attack: { by: 'c1', of: 'Longsword', critFrom: 18 },
+        settlesOnNatural: true,
+      });
+      expect(r.meta?.attack).toEqual({ by: 'c1', of: 'Longsword', crit: false, critFrom: 18 });
     });
   });
 });

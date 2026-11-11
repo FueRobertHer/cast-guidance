@@ -508,7 +508,8 @@ function rollRiders(
       e.kind !== 'rollDie' &&
       e.kind !== 'rollOffer' &&
       e.kind !== 'rollAdvantage' &&
-      e.kind !== 'rollPaid'
+      e.kind !== 'rollPaid' &&
+      e.kind !== 'rollReroll'
     )
       continue;
     const from = {
@@ -542,6 +543,13 @@ function rollRiders(
           when,
         }),
         ...(bonus !== undefined ? { bonus: amount(bonus) } : {}),
+      });
+    } else if (e.kind === 'rollReroll') {
+      const { die, atMost, auto, free, reaction, ifFailed, bonus, when } = e;
+      out.push({
+        ...from,
+        kind: 'reroll',
+        ...definedOnly({ die, atMost, auto, free, reaction, ifFailed, bonus, when }),
       });
     } else
       out.push({

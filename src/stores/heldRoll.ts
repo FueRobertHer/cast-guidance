@@ -539,9 +539,15 @@ export function rollHeld(): void {
     });
   }
   const missed = result.meta?.autoFail === true || result.meta?.d20?.natural === 1;
+  // A reroll on the toast can turn the attack into a crit: the damage reads it as the log has it.
+  const critNow = () =>
+    rollLogStore.getState().rolls.find((r) => r.id === id)?.meta?.attack?.crit === true;
   const after: FollowUp | undefined =
     castDamage !== undefined
-      ? { expr: castDamage.expr, go: () => rollFrom(null, () => rollCastDice(castDamage, crit)) }
+      ? {
+          expr: castDamage.expr,
+          go: () => rollFrom(null, () => rollCastDice(castDamage, critNow())),
+        }
       : held.afterHit;
   if (after !== undefined && held.damage.length === 0 && !missed) {
     followUpStore.setState({

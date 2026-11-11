@@ -360,7 +360,7 @@ function collectFeatureWithNested(
         labels.flatMap((label) => sources.map((source) => `${n}|${label}|${source}`)),
       );
       emitRollAdvantages(col, rollKeys, featureOrigin, level);
-      emitRollExtras(col, rollKeys, featureOrigin, level);
+      emitRollExtras(col, rollKeys, featureOrigin, level, walk.classLevel);
       names.some((n) =>
         labels.some((label) =>
           sources.some((source) => linkSpend(col, `${n}|${label}|${source}`, name, featureOrigin)),

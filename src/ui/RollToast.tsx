@@ -3,6 +3,7 @@ import {
   ChevronsUp,
   HeartCrack,
   HeartPlus,
+  RefreshCw,
   SlidersHorizontal,
   Sparkles,
   X,
@@ -19,8 +20,16 @@ import {
   useState,
 } from 'react';
 import { useStore } from 'zustand';
+import { canReroll, rerollD20 } from '@/dice/reroll';
 import { roll } from '@/dice/roll';
-import type { CritDamage, DiceRollDetail, ModDetail, RollOffer, RollResult } from '@/dice/types';
+import type {
+  CritDamage,
+  DiceRollDetail,
+  ModDetail,
+  RerollOffer,
+  RollOffer,
+  RollResult,
+} from '@/dice/types';
 import type { CharacterDoc } from '@/engine/types';
 import { RULE_WORDS } from '@/lib/docDiff';
 import { signed } from '@/lib/signed';
@@ -29,6 +38,7 @@ import { characterSessionStore, useCharacterSession } from '@/stores/characterSe
 import { diceTrayStore, useDiceTray } from '@/stores/diceTray';
 import {
   cancelHeld,
+  critDice,
   declareHeld,
   followUpStore,
   type HeldRoll,
@@ -115,7 +125,13 @@ export function rollAnnouncement(result: RollResult): string {
             : result.meta?.critical === true
               ? ', critical'
               : '';
-  const dice = result.terms.map((t, i) => termSpeech(t, i === 0)).join(', ');
+  const rerolled = result.meta?.rerolled ?? [];
+  const dice = result.terms
+    .map((t, i) => {
+      const said = termSpeech(t, i === 0);
+      return i === 0 && rerolled.length > 0 ? `${said}, rerolled by ${andWords(rerolled)}` : said;
+    })
+    .join(', ');
   const rolled = dice === '' ? '' : `. Rolled ${dice}`;
   const cue = result.meta?.cue === undefined ? '' : `. ${result.meta.cue}`;
   return `${result.label ?? result.expr}${flag}: ${result.total}${rolled}${cue}`;
@@ -211,6 +227,28 @@ export function offerPrices(offers: readonly RollOffer[]): string {
       return [`${parts.join('. ')}.`];
     })
     .join(' ');
+}
+
+/**
+ * What each reroll on offer pays and when it holds, said once under the
+ * offers: "Indomitable spends an Indomitable use." One that is free says only
+ * when it holds ("Fanatical Focus: Once a Rage."), and one with neither, nothing.
+ */
+export function rerollPrices(rerolls: readonly RerollOffer[]): string {
+  return rerolls
+    .flatMap((o) => {
+      if (o.pay !== undefined)
+        return [`${[`${o.source} ${o.pay.words}`, o.when].filter(Boolean).join('. ')}.`];
+      return o.when !== undefined ? [`${o.source}: ${o.when}.`] : [];
+    })
+    .join(' ');
+}
+
+/** What a reroll's chip is named, for a screen reader. */
+function rerollName(o: RerollOffer): string {
+  const price = o.pay !== undefined ? `. It ${o.pay.words}` : '';
+  const when = o.when !== undefined ? `. ${o.when}` : '';
+  return `Reroll with ${o.source}${o.ifFailed ? ', if the roll failed' : ''}${price}${when}`;
 }
 
 /** Was this focused from the keyboard? A browser that cannot say counts it as not. */
@@ -316,6 +354,8 @@ function RollResultToast({
   // The offered dice: rolled once each, and which are added.
   const [rolled, setRolled] = useState<ReadonlyArray<Rolled | undefined>>([]);
   const [added, setAdded] = useState<readonly boolean[]>([]);
+  // Which offered rerolls were made: each once a roll, and the new roll stands.
+  const [rerolledWith, setRerolledWith] = useState<readonly boolean[]>([]);
   // Kept as it is (the x), or no longer waiting (hit points changed).
   const [settled, setSettled] = useState(false);
   const expired = useStore(rollOffersStore, (s) => s.expired);
@@ -354,6 +394,7 @@ function RollResultToast({
     setJoined(damage);
     setRolled([]);
     setAdded([]);
+    setRerolledWith([]);
     setSettled(false);
     expiredAt.current = rollOffersStore.getState().expired;
     // The last toast is gone, and with it whatever pointer or focus it had.
@@ -364,6 +405,7 @@ function RollResultToast({
     const active = document.activeElement;
     const offering =
       (shownRoll.meta?.offers?.length ?? 0) > 0 ||
+      (shownRoll.meta?.rerolls?.length ?? 0) > 0 ||
       followUpStore.getState().offer?.id === shownRoll.id;
     const fromKeys = offering && active instanceof HTMLElement && keyboardFocus(active);
     focusOffer.current = fromKeys;
@@ -412,15 +454,33 @@ function RollResultToast({
   });
 
   const offers = settled ? [] : (visible?.meta?.offers ?? []);
+  // A reroll can land an attack on a natural 1, 20 or crit, which settles it as the
+  // roll itself does (`d20Ask`): no die left to add, no damage on the 1, and no
+  // reroll after a crit. A die already added stays, to be taken off.
+  const struck = visible?.meta?.attack;
+  const crits = struck !== undefined && (visible?.meta?.d20?.natural === 20 || struck.crit);
+  const misses = struck !== undefined && visible?.meta?.d20?.natural === 1;
+  const open = offers.map((_, i) => !(crits || misses) || added[i] === true);
   // A hit's damage, offered until it is rolled or the toast is kept as it is.
   const damageOffer =
-    !settled && followUp !== null && visible?.id !== undefined && followUp.id === visible.id
+    !settled &&
+    !misses &&
+    followUp !== null &&
+    visible?.id !== undefined &&
+    followUp.id === visible.id
       ? followUp
       : null;
+  // A reroll not made yet that could still change the roll.
+  const rerolls = settled || visible === null ? [] : (visible.meta?.rerolls ?? []);
+  const rerollable = rerolls.map(
+    (o, i) => !crits && visible !== null && rerolledWith[i] !== true && canReroll(visible, o),
+  );
   // Still to decide: a die not added yet, or one whose use comes back if the
-  // roll still fails (Tactical Mind), until the player knows.
+  // roll still fails (Tactical Mind), until the player knows; or a reroll.
   const deciding =
-    offers.some((o, i) => added[i] !== true || o.spentOnSuccess === true) || damageOffer !== null;
+    offers.some((o, i) => open[i] && (added[i] !== true || o.spentOnSuccess === true)) ||
+    rerollable.includes(true) ||
+    damageOffer !== null;
   const held = hovered || focused;
   useEffect(() => {
     if (visible === null || held) return;
@@ -542,19 +602,53 @@ function RollResultToast({
     });
   };
 
+  /**
+   * Reroll with a feature, paid first as its Use is: with nothing left to pay
+   * with, the roll stands, and the notice says why. The new roll stands too,
+   * so there is no taking it back; the dice added stay on it.
+   */
+  const rerollWith = (i: number) => {
+    const o = rerolls[i];
+    // A reroll made, or one that can change nothing, rolls no die.
+    if (o === undefined || rerollable[i] !== true) return;
+    const base = rerollD20(visible, o);
+    if (base === undefined) return;
+    if (o.pay !== undefined && rollOffersStore.getState().pay?.(o, true) !== true) return;
+    const nextRerolled = [...rerolledWith];
+    nextRerolled[i] = true;
+    setRerolledWith(nextRerolled);
+    setVisible(base);
+    // Rerolled into a crit, the damage offered says it rolls its dice twice, as it will.
+    if (damageOffer !== null && base.meta?.attack?.crit === true && struck?.crit !== true)
+      followUpStore.setState({ offer: { ...damageOffer, expr: critDice(damageOffer.expr) } });
+    const next = withAdded(base, rolled, added);
+    rollLogStore.getState().replace(next);
+    announce(`${o.source}: rerolled. ${rollAnnouncement(next)}`, { key: 'roll', repeat: true });
+  };
+
   // The dice an effect offers, after the roll: tap to add, tap again to take
-  // off. Then a hit's damage, rolled as its chip rolls it.
-  const prices = offerPrices(offers);
-  const offerRow = (offers.length > 0 || damageOffer !== null) && (
+  // off. Then a hit's damage, rolled as its chip rolls it, and the rerolls.
+  const prices = [
+    offerPrices(offers.filter((_, i) => open[i])),
+    rerollPrices(rerolls.filter((_, i) => rerollable[i])),
+  ]
+    .filter((p) => p !== '')
+    .join(' ');
+  // A reroll made stays as a chip that says so, so the focus on it stays in the toast.
+  const shownReroll = rerolls.map((_, i) => rerollable[i] === true || rerolledWith[i] === true);
+  const firstReroll = shownReroll.indexOf(true);
+  const firstOpen = open.indexOf(true);
+  const offerRow = (firstOpen >= 0 || damageOffer !== null || firstReroll >= 0) && (
     <div className="mt-2 flex flex-wrap items-center gap-1.5 border-line border-t pt-2">
       {offers.map((o, i) => {
+        if (open[i] !== true) return null;
         const on = added[i] === true;
         const r = rolled[i];
         return (
           <button
             // biome-ignore lint/suspicious/noArrayIndexKey: an offer's place is its identity in this roll
             key={i}
-            ref={i === 0 ? firstOffer : undefined}
+            ref={i === firstOpen ? firstOffer : undefined}
             type="button"
             aria-pressed={on}
             aria-label={offerName(o, r, on)}
@@ -581,7 +675,7 @@ function RollResultToast({
       })}
       {damageOffer !== null && (
         <button
-          ref={offers.length === 0 ? firstOffer : undefined}
+          ref={firstOpen < 0 ? firstOffer : undefined}
           type="button"
           onClick={() => {
             // The button goes with the toast it was in: focus goes back where
@@ -597,6 +691,43 @@ function RollResultToast({
           <HeartCrack size={16} aria-hidden="true" className="shrink-0" />
           Roll {damageOffer.expr}
         </button>
+      )}
+      {rerolls.map(
+        (o, i) =>
+          shownReroll[i] && (
+            <button
+              // biome-ignore lint/suspicious/noArrayIndexKey: a reroll's place is its identity in this roll
+              key={i}
+              ref={
+                i === firstReroll && firstOpen < 0 && damageOffer === null ? firstOffer : undefined
+              }
+              type="button"
+              aria-label={rerolledWith[i] === true ? `Rerolled with ${o.source}` : rerollName(o)}
+              aria-disabled={rerolledWith[i] === true}
+              onClick={() => rerollWith(i)}
+              className={`inline-flex min-h-tap items-center gap-1 rounded-full px-3 font-semibold text-ink text-label ${
+                rerolledWith[i] === true
+                  ? 'bg-heal-soft ring-[1.5px] ring-heal ring-inset'
+                  : 'bg-surface-raised hover:bg-surface-hover'
+              }`}
+            >
+              {rerolledWith[i] === true ? (
+                <>
+                  <Check size={14} aria-hidden="true" className="shrink-0 text-heal" />
+                  Rerolled, {o.source}
+                </>
+              ) : (
+                <>
+                  <RefreshCw size={14} aria-hidden="true" className="shrink-0 text-heal" />
+                  Reroll, {o.source}
+                  {o.ifFailed ? ', if it failed' : ''}
+                  {o.pay !== undefined && (
+                    <span className="font-normal text-ink-muted">· paid</span>
+                  )}
+                </>
+              )}
+            </button>
+          ),
       )}
       {prices !== '' && <p className="basis-full text-caption text-ink-muted">{prices}</p>}
       {deciding && (

@@ -622,6 +622,8 @@ export type EffectInput = {
    * Flash of Genius, 2024 Lucky's advantage. Never stored in play.
    */
   | ({ kind: 'rollPaid'; on: RollFilter } & PaidRoll)
+  /** A reroll a feature of the character's own gives (`Reroll`): Indomitable. Never stored in play. */
+  | ({ kind: 'rollReroll'; on: RollFilter } & Reroll)
   /** Temporary hit points at the start of each of the character's turns (Heroism). */
   | { kind: 'tempHpEachTurn'; amount: number }
   /** One more thing to do each turn, with what it may be spent on (Haste). */
@@ -927,6 +929,31 @@ export interface PaidRoll {
   when?: string;
 }
 
+/**
+ * A reroll a feature of the character's own gives their d20 tests, whose new
+ * roll stands.
+ * - `die`: what rerolls. Unset or `all`: the roll's d20s again, in its mode
+ *   (Indomitable rerolls the save); `one`: a die showing `atMost` or less
+ *   (Halfling Luck's 1); `low`: the lower die of advantage (Elven Accuracy);
+ *   `extra`: one d20 more, the best of them kept (2014 Lucky).
+ * - `auto`: made as the d20 lands, since it can never make the roll worse.
+ * - `free`: it costs nothing the sheet counts (Fanatical Focus, once a Rage,
+ *   which the player counts); with `reaction`, the reaction alone (Living
+ *   Legend, whose use went as it began).
+ * - `bonus`: added to the new roll (2024 Indomitable: the Fighter level).
+ * - `reaction`, `ifFailed` and `when` as `PaidRoll` has them.
+ */
+export interface Reroll {
+  die?: 'all' | 'one' | 'low' | 'extra';
+  atMost?: number;
+  auto?: boolean;
+  free?: boolean;
+  reaction?: boolean;
+  ifFailed?: boolean;
+  bonus?: number;
+  when?: string;
+}
+
 /** A die or advantage an effect brings to rolls, as `DerivedSheet.rollRiders` lists it. */
 export type RollRider = {
   on: RollFilter;
@@ -939,6 +966,7 @@ export type RollRider = {
   | { kind: 'advantage'; mode: 'adv' | 'dis'; when?: string }
   /** A feature's paid extra, its bonus worked out (`PaidRoll`). */
   | ({ kind: 'paid' } & Omit<PaidRoll, 'bonus'> & { bonus?: number })
+  | ({ kind: 'reroll' } & Reroll)
 );
 
 /** Part of an effect in play that counts for nothing, and the effect that counts instead. */

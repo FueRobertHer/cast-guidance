@@ -5,8 +5,9 @@
 // caster blessed themself too.
 import 'fake-indexeddb/auto';
 import { fireEvent, screen } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { innateSorceryEffect, rageEffect } from '@/engine/curated/namedEffects';
+import { ROLL_EXTRAS } from '@/engine/curated/rollExtras';
 import type { CharacterDoc, DataEntity } from '@/engine/types';
 import { rollLogStore } from '@/stores/rollLog';
 import {
@@ -418,6 +419,83 @@ describe('Innate Sorcery from its own Use', () => {
       fireEvent.click(chip);
       expect(lastRoll()?.label).toBe('Spark Dart spell attack');
       expect(lastRoll()?.meta?.advantage).toBeUndefined();
+    });
+
+    describe('and a reroll on Charisma spell attacks', () => {
+      // A row that reaches a spell attack only when the roll names the ability
+      // it is made with (Elven Accuracy's kind of limit).
+      beforeAll(() => {
+        Object.assign(ROLL_EXTRAS, {
+          'dart charm|tst': [
+            {
+              on: { rolls: ['attack'], attack: 'spell', abilities: ['cha'] },
+              reroll: { free: true },
+            },
+          ],
+        });
+      });
+      afterAll(() => {
+        Reflect.deleteProperty(ROLL_EXTRAS, 'dart charm|tst');
+      });
+      const offered = () => (lastRoll()?.meta?.rerolls ?? []).map((o) => o.source);
+      /** A middling d20, which neither crits nor settles the attack. */
+      const middling = () => {
+        const real = crypto.getRandomValues.bind(crypto);
+        vi.spyOn(crypto, 'getRandomValues').mockImplementation(
+          <T extends ArrayBufferView | null>(buf: T): T => {
+            if (buf instanceof Uint32Array && buf.length === 1) {
+              buf[0] = 9;
+              return buf;
+            }
+            return real(buf as never) as T;
+          },
+        );
+      };
+      /** Rolls the first spell attack chip of this name; what the roll was and was offered. */
+      const rollFirst = (name: string) => {
+        fireEvent.click(screen.getAllByRole('button', { name })[0] as HTMLElement);
+        fireEvent.click(screen.getAllByRole('button', { name })[0] as HTMLElement);
+        return [lastRoll()?.label, offered()];
+      };
+
+      it("offers it on a granted spell's attack on Play", async () => {
+        rollLogStore.getState().clear();
+        await renderSheet(charmed(), { extra });
+        middling();
+        expect(rollFirst('Atk +5')).toEqual(['spark dart spell attack', ['Dart Charm']]);
+      });
+
+      it("offers it on the class's own spell attack on Play", async () => {
+        rollLogStore.getState().clear();
+        const doc = charmed();
+        const ref = { name: 'Spark Dart', source: 'TST' };
+        doc.spellcasting = { 'sorcerer|xphb': { known: [ref], prepared: [ref] } };
+        await renderSheet(doc, { extra });
+        middling();
+        expect(rollFirst('Atk +5')).toEqual(['Spark Dart spell attack', ['Dart Charm']]);
+      });
+
+      it('offers it on the Spells tab', async () => {
+        rollLogStore.getState().clear();
+        await renderSheet(charmed(), { path: 'spells', extra });
+        await screen.findByRole('button', { name: '+5' });
+        middling();
+        expect(rollFirst('+5')).toEqual(['Spark Dart spell attack', ['Dart Charm']]);
+      });
+
+      it("offers it on an innate spell's attack on the Spells tab", async () => {
+        rollLogStore.getState().clear();
+        const innate: DataEntity = {
+          ...charm,
+          additionalSpells: [
+            { ability: 'cha', innate: { _: { daily: { '1': ['spark dart|tst'] } } } },
+          ],
+        };
+        await renderSheet(charmed(), { path: 'spells', extra: { ...extra, feat: [innate] } });
+        await screen.findByRole('button', { name: '+5' });
+        middling();
+        expect(rollFirst('+5')).toEqual(['Spark Dart spell attack', ['Dart Charm']]);
+      });
     });
   });
 });

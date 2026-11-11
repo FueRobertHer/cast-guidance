@@ -27,7 +27,8 @@ export interface DiceRollDetail {
   kind: 'dice';
   sign: 1 | -1;
   sides: number;
-  rolls: Array<{ v: number; kept: boolean }>;
+  /** `out`: a d20 a reroll set aside, which no later reroll picks again. */
+  rolls: Array<{ v: number; kept: boolean; out?: boolean }>;
   /**
    * How many of the first `rolls` were set to the die's maximum, not rolled:
    * a critical hit under the max-then-roll rule. Absent when none were.
@@ -89,6 +90,23 @@ export interface RollOffer {
   spentOnSuccess?: boolean;
 }
 
+/**
+ * A reroll the result offers (Indomitable, on a failed save), paid as the
+ * feature's Use is (`pay`, as `RollOffer` has it). `die` says what rerolls, as
+ * the engine's `Reroll` does: the roll's d20s, one showing `atMost` or less,
+ * or one d20 more with the best kept. The new roll stands.
+ */
+export interface RerollOffer {
+  source: string;
+  die: 'all' | 'one' | 'extra';
+  atMost?: number;
+  ifFailed: boolean;
+  /** Added to the new roll (2024 Indomitable). */
+  bonus?: number;
+  pay?: RollOffer['pay'];
+  when?: string;
+}
+
 export interface RollResult {
   expr: string;
   label?: string;
@@ -127,15 +145,20 @@ export interface RollResult {
     from?: Array<{ term: number; source: string }>;
     /** Dice effects offer after the roll; absent when nothing could change it (a natural 20 attack). */
     offers?: RollOffer[];
+    /** Rerolls the character's features offer after the roll; absent when none could help. */
+    rerolls?: RerollOffer[];
+    /** What rerolled its d20, in order ("Luck"): the dice it set aside show dropped. */
+    rerolled?: string[];
     /** The roll this one went with: damage tapped while its attack waited. */
     withRoll?: string;
     /**
      * An attack roll: whose (the character's id), which attack (a weapon's or
      * a spell's name), and whether its d20 landed in the character's crit
      * range. Damage that goes with it reads this (`stores/heldRoll`
-     * `attackInPlay`) to roll its dice twice.
+     * `attackInPlay`) to roll its dice twice. `critFrom`, when below 20, is
+     * the lowest natural that crits, for a reroll to settle it again.
      */
-    attack?: { by: string; of: string; crit: boolean };
+    attack?: { by: string; of: string; crit: boolean; critFrom?: number };
   };
 }
 

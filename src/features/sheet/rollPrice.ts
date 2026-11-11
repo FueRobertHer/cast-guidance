@@ -86,18 +86,44 @@ export function offerPrice(
  * The roll's riders with the features' paid extras priced: each one the
  * character can pay becomes an offer (its die, the paying pool's die, or its
  * bonus) or, for advantage, a claim, carrying what paying takes. The rest go,
- * and all of them with no play state to pay from.
+ * and all of them with no play state to pay from. A reroll the result offers
+ * is priced the same way, unless it is free, or takes the reaction alone
+ * (`free` with `reaction`: Living Legend); one made as the d20 lands stays.
  */
 export function pricedRollEffects(
   riders: RollEffects,
   sheet: Pick<DerivedSheet, 'actions' | 'resources'>,
   play: Pick<PlayState, 'resources' | 'turn'> | undefined,
 ): RollEffects {
-  const { paid, ...out } = riders;
-  if (paid === undefined) return riders;
+  const { paid = [], rerolls = [], ...rest } = riders;
+  if (riders.paid === undefined && riders.rerolls === undefined) return riders;
+  const auto = rerolls.filter((r) => r.auto === true);
+  // What costs nothing and never hurts rolls with no play state too.
+  const out = auto.length > 0 ? { ...rest, rerolls: auto } : rest;
   if (play === undefined) return out;
   const offers = [...out.offers];
   const declare = [...(out.declare ?? [])];
+  const rerollOffers: NonNullable<RollEffects['rerollOffers']> = [];
+  for (const r of rerolls) {
+    if (r.auto === true || r.die === 'low') continue;
+    // The reaction alone is a price with no action or pool behind it.
+    const price =
+      r.free !== true
+        ? offerPrice(sheet, play, r.source, r.reaction)
+        : r.reaction === true
+          ? offerPrice({ actions: [], resources: [] }, play, r.source, true)
+          : { pay: undefined };
+    if (price === undefined) continue;
+    rerollOffers.push({
+      source: r.source,
+      die: r.die ?? 'all',
+      ifFailed: r.ifFailed === true,
+      ...(r.atMost !== undefined ? { atMost: r.atMost } : {}),
+      ...(r.bonus !== undefined ? { bonus: r.bonus } : {}),
+      ...(price.pay !== undefined ? { pay: price.pay } : {}),
+      ...(r.when !== undefined ? { when: r.when } : {}),
+    });
+  }
   for (const p of paid) {
     const price = offerPrice(sheet, play, p.source, p.reaction);
     if (price === undefined) continue;
@@ -119,7 +145,12 @@ export function pricedRollEffects(
       ...(p.spentOnSuccess === true ? { spentOnSuccess: true } : {}),
     });
   }
-  return { ...out, offers, ...(declare.length > 0 ? { declare } : {}) };
+  return {
+    ...out,
+    offers,
+    ...(declare.length > 0 ? { declare } : {}),
+    ...(rerollOffers.length > 0 ? { rerollOffers } : {}),
+  };
 }
 
 /** What an extra adds: its die, the paying pool's die, or its bonus, as a roll reads it. */

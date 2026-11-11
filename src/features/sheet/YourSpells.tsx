@@ -5,6 +5,7 @@ import { d20Effects } from '@/engine/conditions';
 import { type HpLimits, setConcentration } from '@/engine/effectLife';
 import { rollEffects } from '@/engine/playRules';
 import {
+  type Ability,
   type CharacterDoc,
   type DerivedSheet,
   type PlayState,
@@ -94,7 +95,8 @@ interface RowContext {
   update: DocUpdater;
   /**
    * A spell attack chip's roll, marked as the attack `of` (the spell's name);
-   * `className` is whose spell it is (Innate Sorcery).
+   * `className` is whose spell it is (Innate Sorcery), `ability` what it is
+   * cast with (Elven Accuracy).
    */
   rollAttack: (
     modifier: number,
@@ -102,6 +104,7 @@ interface RowContext {
     of: string,
     className?: string,
     range?: 'melee' | 'ranged',
+    ability?: Ability,
   ) => () => D20Ask;
   /** The conditions on the attack chips. */
   wear: ChipWear;
@@ -265,6 +268,7 @@ function SlotSpellRow({
                       name,
                       spell.className,
                       spellAttackRange(entity),
+                      block.ability,
                     ),
                   }
             }
@@ -387,6 +391,7 @@ function InnateSpellRow({
                       name,
                       spell.className,
                       spellAttackRange(entity),
+                      grant.ability,
                     ),
                   }
             }
@@ -649,7 +654,14 @@ export function YourSpells({
     { immune: sheet.conditionImmunities },
   );
   const rollAttack =
-    (modifier: number, label: string, of: string, className?: string, range?: 'melee' | 'ranged') =>
+    (
+      modifier: number,
+      label: string,
+      of: string,
+      className?: string,
+      range?: 'melee' | 'ranged',
+      ability?: Ability,
+    ) =>
     () =>
       d20Ask(`1d20${fmt(modifier)}`, {
         label,
@@ -662,6 +674,7 @@ export function YourSpells({
             ...(className === undefined ? {} : { className }),
             // A melee spell attack is a melee attack (flanking, a melee rider).
             ...(range === undefined ? {} : { range }),
+            ...(ability === undefined ? {} : { ability }),
           }),
           sheet,
           doc.play,

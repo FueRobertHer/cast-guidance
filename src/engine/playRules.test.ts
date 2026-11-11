@@ -228,6 +228,57 @@ describe('rollEffects', () => {
     });
   });
 
+  describe('what rerolls (`rerolls`)', () => {
+    const luck: RollRider = {
+      kind: 'reroll',
+      on: { rolls: ['attack', 'check', 'save'] },
+      die: 'one',
+      atMost: 1,
+      auto: true,
+      free: true,
+      origin: 'Luck',
+    };
+    const indomitable: RollRider = {
+      kind: 'reroll',
+      on: { rolls: ['save'] },
+      ifFailed: true,
+      bonus: 9,
+      origin: 'Indomitable',
+    };
+
+    it('passes each on with its flags, once a source, for the sheet to price', () => {
+      const save = rollEffects(
+        { rollRiders: [luck, indomitable, { ...indomitable }] },
+        { kind: 'save', ability: 'wis' },
+      );
+      expect(save.rerolls).toEqual([
+        { source: 'Luck', die: 'one', atMost: 1, auto: true, free: true },
+        { source: 'Indomitable', ifFailed: true, bonus: 9 },
+      ]);
+      expect(save.offers).toEqual([]);
+      expect(rollEffects({ rollRiders: [indomitable] }, { kind: 'check' }).rerolls).toBeUndefined();
+    });
+
+    it("keeps two of one name that reroll differently (a halfling's Lucky and the feat)", () => {
+      const feat: RollRider = { ...luck, die: 'extra', auto: false, free: false, origin: 'Lucky' };
+      const trait: RollRider = { ...luck, origin: 'Lucky' };
+      const save = rollEffects({ rollRiders: [trait, feat] }, { kind: 'save', ability: 'wis' });
+      expect(save.rerolls?.map((r) => r.die)).toEqual(['one', 'extra']);
+    });
+
+    it('gives a death save the rerolls of saves, and initiative none that turns a failure', () => {
+      expect(
+        rollEffects({ rollRiders: [luck, indomitable] }, { kind: 'save', purpose: 'death' })
+          .rerolls,
+      ).toHaveLength(2);
+      const initiative = rollEffects(
+        { rollRiders: [luck, { ...indomitable, on: { rolls: ['check'] } }] },
+        { kind: 'initiative' },
+      );
+      expect(initiative.rerolls?.map((r) => r.source)).toEqual(['Luck']);
+    });
+  });
+
   describe('flanking, under the table’s rule', () => {
     const melee: D20Test = { kind: 'attack', attack: 'weapon', range: 'melee', ability: 'str' };
     const when = 'Only with an ally next to the target, on its opposite side';

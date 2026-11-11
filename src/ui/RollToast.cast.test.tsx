@@ -269,6 +269,39 @@ describe('the roll prompt casting a spell', () => {
     expect(followUpStore.getState().offer?.expr).toBe('4d10');
   });
 
+  it('rolls the damage twice once a reroll turns the spell attack into a crit', () => {
+    render(<RollToast />);
+    const { plan } = cureWounds({
+      spell: 'Ray Lance',
+      dice: () => ({ expr: '2d10', label: 'Ray Lance fire damage', kind: 'damage' }),
+      line: () => '2nd level, then 2d10',
+    });
+    const ask = () =>
+      d20Ask('1d20+5', {
+        label: 'Ray Lance spell attack',
+        riders: {
+          dice: [],
+          offers: [],
+          advantage: [],
+          disadvantage: [],
+          rerollOffers: [{ source: 'Seeking Spell', die: 'all', ifFailed: true }],
+        },
+        settlesOnNatural: true,
+        attack: { by: 'c1', of: 'Ray Lance' },
+      });
+    act(() => rollFrom(control('+5'), ask, undefined, { cast: plan }));
+    nextFaces(9);
+    fireEvent.click(screen.getByRole('button', { name: 'Roll' }));
+    expect(followUpStore.getState().offer?.expr).toBe('2d10');
+    nextFaces(20);
+    fireEvent.click(screen.getByRole('button', { name: /^Reroll with Seeking Spell/ }));
+    nextFaces(1, 2, 3, 4);
+    fireEvent.click(screen.getByRole('button', { name: 'Roll 4d10' }));
+    const damage = rolls()[0];
+    expect(damage?.label).toBe('Ray Lance fire damage');
+    expect(damage?.total).toBe(10);
+  });
+
   it("makes each damage of the spell tapped while its attack waits at the level picked, by that damage's own dice", () => {
     const { plan } = cureWounds({
       spell: 'Ice Knife',
