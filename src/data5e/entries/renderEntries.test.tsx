@@ -270,4 +270,36 @@ describe('upcast chips', () => {
       ),
     ).toBe('scaling: 2d4 at a higher slot');
   });
+
+  it('reads the slots its sentence names before an earlier tag in it', () => {
+    const { container, unmount } = render(
+      <InlineText text="When you use a spell slot of 7th level or higher, the damage increases to {@scaledamage 3d8|3-9|5d8} and the healing increases to {@scaledice 2d8|3-9|4d8}." />,
+    );
+    const titles = [...container.querySelectorAll('button')].map((b) => b.getAttribute('title'));
+    unmount();
+    expect(titles).toEqual([
+      'scaling: 5d8 at slot levels 7 to 9',
+      'scaling: 4d8 at slot levels 7 to 9',
+    ]);
+  });
+
+  it('reads slots a clause names right after the tag', () => {
+    expect(
+      titleOf(
+        'The damage increases to {@scaledamage 2d8|2-9|3d8} with a 3rd- or 4th-level spell slot.',
+      ),
+    ).toBe('scaling: 3d8 at slot levels 3 and 4');
+  });
+
+  it('labels a tag after "increases to" that says for each slot level as a step', () => {
+    expect(
+      titleOf('The damage increases to {@scaledamage 2d8|2-9|1d8} for each slot level above 2nd.'),
+    ).toBe('scaling: +1d8 per slot level');
+  });
+
+  it('says level for a list that grows at one slot level', () => {
+    expect(titleOf('It increases by {@scaledamage 1d8|3,5|1d8} at 5th level.')).toBe(
+      'scaling: +1d8 at slot level 5',
+    );
+  });
 });

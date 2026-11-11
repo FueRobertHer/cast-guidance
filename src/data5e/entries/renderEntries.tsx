@@ -9,10 +9,10 @@ import { Link } from 'react-router';
 import { signed } from '@/lib/signed';
 import { safeExternalHref } from '@/lib/url';
 import { RollChip } from '@/ui/RollChip';
-import { parseEntityRef, tokenizeEntryText } from '../tags';
+import { type EntryToken, parseEntityRef, tokenizeEntryText } from '../tags';
 import { DISPLAY_ARG, PLAIN_REF_TAGS } from './inlineTags';
 import { libraryPath } from './libraryPath';
-import { setsDice, slotLevelsLabel, slotLevelsOf, tagLevels } from './upcast';
+import { setDiceLevels, setsDice, slotLevelsLabel, tagLevels } from './upcast';
 
 // ---------------------------------------------------------------------------
 // Inline tags
@@ -41,6 +41,7 @@ function TagView({
   inline,
   heals = false,
   lead = '',
+  trail = '',
 }: {
   tag: string;
   args: string[];
@@ -48,6 +49,8 @@ function TagView({
   heals?: boolean;
   /** The words of its sentence before it. */
   lead?: string;
+  /** The words after it, to the next tag. */
+  trail?: string;
 }): ReactNode {
   const body = args[0] ?? '';
   switch (tag) {
@@ -71,7 +74,7 @@ function TagView({
           inline={inline}
           expr={add}
           variant={tag === 'scaledice' && heals ? 'heal' : 'damage'}
-          label={scaleLabel(add, args[1] ?? '', lead)}
+          label={scaleLabel(add, args[1] ?? '', lead, trail)}
         />
       );
     }
@@ -207,19 +210,40 @@ function healsBetween(before: string, after: string): boolean {
  * Blade's every two), or the dice outright at the slots its sentence names
  * (Elemental Weapon's "increases to 2d4" at 5th and 6th).
  */
-function scaleLabel(add: string, list: string, lead: string): string {
-  if (setsDice(lead)) {
-    const levels = slotLevelsOf(lead);
+function scaleLabel(add: string, list: string, lead: string, trail: string): string {
+  if (setsDice(lead, trail)) {
+    const levels = setDiceLevels(lead, trail);
     return levels === undefined
       ? `scaling: ${add} at a higher slot`
-      : `scaling: ${add} at slot level${levels.length > 1 ? 's' : ''} ${slotLevelsLabel(levels)}`;
+      : `scaling: ${add} at ${atSlots(levels)}`;
   }
   const levels = tagLevels(list);
   const each =
     levels === undefined || levels.every((l, i) => i === 0 || l === (levels[i - 1] ?? 0) + 1);
   return each || levels === undefined
     ? `scaling: +${add} per slot level`
-    : `scaling: +${add} at slot levels ${slotLevelsLabel(levels.slice(1))}`;
+    : `scaling: +${add} at ${atSlots(levels.slice(1))}`;
+}
+
+/** "slot level 5", or "slot levels 4, 6 and 8". */
+function atSlots(levels: readonly number[]): string {
+  return `slot level${levels.length > 1 ? 's' : ''} ${slotLevelsLabel(levels)}`;
+}
+
+/** The words of the sentence before token `i`, back past any tags in it. */
+function sentenceBefore(tokens: readonly EntryToken[], i: number): string {
+  let words = '';
+  for (let j = i - 1; j >= 0; j--) {
+    const t = tokens[j];
+    if (t?.kind !== 'text') {
+      words = ` ${words}`;
+      continue;
+    }
+    const stop = t.text.lastIndexOf('.');
+    if (stop !== -1) return t.text.slice(stop + 1) + words;
+    words = t.text + words;
+  }
+  return words;
 }
 
 export function InlineText({ text }: { text: string }): ReactNode {
@@ -234,9 +258,18 @@ export function InlineText({ text }: { text: string }): ReactNode {
         const heals =
           before?.kind === 'text' &&
           healsBetween(before.text, after?.kind === 'text' ? after.text : '');
-        const lead = before?.kind === 'text' ? (before.text.match(/[^.]*$/)?.[0] ?? '') : '';
+        const lead = sentenceBefore(tokens, i);
+        const trail = after?.kind === 'text' ? after.text : '';
         return (
-          <TagView key={i} tag={t.tag} args={t.args} inline={prose} heals={heals} lead={lead} />
+          <TagView
+            key={i}
+            tag={t.tag}
+            args={t.args}
+            inline={prose}
+            heals={heals}
+            lead={lead}
+            trail={trail}
+          />
         );
       })}
     </>

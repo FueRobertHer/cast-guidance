@@ -35,6 +35,19 @@ describe('slotLevelsOf', () => {
     expect(slotLevelsOf(sentence)).toEqual(levels);
   });
 
+  it('reads the slot phrase nearest the end', () => {
+    expect(
+      slotLevelsOf(
+        'Using a 3rd- or 4th-level spell slot, it is 3d8, and using a 5th- or 6th-level spell slot, it is ',
+      ),
+    ).toEqual([5, 6]);
+    expect(
+      slotLevelsOf(
+        'With a spell slot of 7th level or higher, it is 5d8, and with a spell slot of 5th or 6th level, ',
+      ),
+    ).toEqual([5, 6]);
+  });
+
   it('reads nothing from a sentence that names no slots', () => {
     expect(
       slotLevelsOf('The damage increases by 1d6 for each slot level above 1st'),
@@ -60,6 +73,12 @@ describe('setsDice', () => {
     expect(setsDice('the damage each increase to')).toBe(true);
     expect(setsDice('the damage increases by ')).toBe(false);
     expect(setsDice('increases to +2, and the damage ')).toBe(false);
+  });
+
+  it('reads a tag followed by "for each" or "for every" as a step', () => {
+    expect(setsDice('the damage increases to ', ' for each slot level above 2nd.')).toBe(false);
+    expect(setsDice('the damage increases to ', ' for every two slot levels.')).toBe(false);
+    expect(setsDice('the damage increases to ', '.')).toBe(true);
   });
 });
 

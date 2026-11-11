@@ -230,7 +230,8 @@ function upcastSteps(entity: Entity, baseLevel: number): UpcastStep[] {
   if (/\{@scale(?:damage|dice) /i.test(higher)) {
     const steps: UpcastStep[] = [];
     for (const match of higher.matchAll(SCALE_TAG)) {
-      if (setsDice(higher.slice(0, match.index))) continue;
+      const end = (match.index ?? 0) + match[0].length;
+      if (setsDice(higher.slice(0, match.index), higher.slice(end))) continue;
       const step = stepOf(match, false);
       if (step !== undefined) steps.push(step);
     }
@@ -238,7 +239,8 @@ function upcastSteps(entity: Entity, baseLevel: number): UpcastStep[] {
   }
   const tag = textUpcastTag(entity.entries, entity.entriesHigherLevel, baseLevel);
   const match = tag === undefined ? undefined : [...tag.matchAll(SCALE_TAG)][0];
-  const step = match === undefined ? undefined : stepOf(match, /\binitial damage\b/i.test(higher));
+  const step =
+    match === undefined ? undefined : stepOf(match, /\binitial damage increases\b/i.test(higher));
   return step === undefined ? [] : [step];
 }
 

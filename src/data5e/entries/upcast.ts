@@ -49,32 +49,49 @@ const range = (from: number, to: number): number[] =>
 const ORDINAL = '(\\d)(?:st|nd|rd|th)';
 
 /** The ways a sentence names the slots it is about, each with the levels it means. */
-const SLOT_PHRASES: ReadonlyArray<[RegExp, (m: RegExpExecArray) => number[]]> = [
+const SLOT_PHRASES: ReadonlyArray<[RegExp, (m: RegExpMatchArray) => number[]]> = [
   // "a spell slot of 7th level or higher"
-  [new RegExp(`spell slot of ${ORDINAL} level or higher`, 'i'), (m) => range(Number(m[1]), 9)],
+  [new RegExp(`spell slot of ${ORDINAL} level or higher`, 'gi'), (m) => range(Number(m[1]), 9)],
   // "a spell slot of 5th or 6th level"
   [
-    new RegExp(`spell slot of ${ORDINAL} or ${ORDINAL} level`, 'i'),
+    new RegExp(`spell slot of ${ORDINAL} or ${ORDINAL} level`, 'gi'),
     (m) => [Number(m[1]), Number(m[2])],
   ],
   // "a 3rd- or 4th-level spell slot"
   [
-    new RegExp(`${ORDINAL}- or ${ORDINAL}-level spell slot`, 'i'),
+    new RegExp(`${ORDINAL}- or ${ORDINAL}-level spell slot`, 'gi'),
     (m) => [Number(m[1]), Number(m[2])],
   ],
   // "a level 5-6 spell slot"
-  [/level (\d)-(\d) spell slot/i, (m) => range(Number(m[1]), Number(m[2]))],
+  [/level (\d)-(\d) spell slot/gi, (m) => range(Number(m[1]), Number(m[2]))],
   // "a level 7+ spell slot"
-  [/level (\d)\+ spell slot/i, (m) => range(Number(m[1]), 9)],
+  [/level (\d)\+ spell slot/gi, (m) => range(Number(m[1]), 9)],
 ];
 
-/** The slot levels a sentence names ("using a 3rd- or 4th-level spell slot"), if it names them in a way this reads. */
-export function slotLevelsOf(sentence: string): number[] | undefined {
+/**
+ * The slot levels a text names ("using a 3rd- or 4th-level spell slot"), if it
+ * names them in a way this reads; of several, the one nearest its end, since
+ * that is the one nearest the tag that follows.
+ */
+export function slotLevelsOf(text: string): number[] | undefined {
+  let nearest: { at: number; levels: number[] } | undefined;
   for (const [pattern, levels] of SLOT_PHRASES) {
-    const m = pattern.exec(sentence);
-    if (m !== null) return levels(m);
+    for (const m of text.matchAll(pattern)) {
+      const at = m.index ?? 0;
+      if (nearest === undefined || at > nearest.at) nearest = { at, levels: levels(m) };
+    }
   }
-  return undefined;
+  return nearest?.levels;
+}
+
+/**
+ * The slots dice set outright apply at: those the clause right after the tag
+ * names ("increases to 3d8 with a 3rd- or 4th-level spell slot"), else those
+ * nearest before it in its sentence. `before` runs from the sentence's start to
+ * the tag, `after` from the tag on.
+ */
+export function setDiceLevels(before: string, after: string): number[] | undefined {
+  return slotLevelsOf(after.split(/[,;.]|\band\b/i)[0] ?? '') ?? slotLevelsOf(before);
 }
 
 /** "4, 6 and 8", "5 and 6", or "7 to 9" for a run of three or more. */
@@ -88,9 +105,13 @@ export function slotLevelsLabel(levels: readonly number[]): string {
   return `${sorted.slice(0, -1).join(', ')} and ${last}`;
 }
 
-/** Whether the words before a tag say it sets the dice outright: "the damage increases to". */
-export function setsDice(before: string): boolean {
-  return /\bincreases? to\s*$/i.test(before);
+/**
+ * Whether the words around a tag say it sets the dice outright: "the damage
+ * increases to" before it, and no "for each slot level" after it, which makes
+ * it a step after all.
+ */
+export function setsDice(before: string, after = ''): boolean {
+  return /\bincreases? to\s*$/i.test(before) && !/^\s*for (?:each|every)\b/i.test(after);
 }
 
 /** A roll tag's dice, by kind, from text: `{@damage 3d6}`, `{@dice 1d8+3}`. */
@@ -144,32 +165,34 @@ export interface SetDice {
   expr: string;
 }
 
-/** "increases to {@damage 3d8}", or a scale tag in that place ("increases to {@scaledamage 1d4|3-9|2d4}"). */
-const SETS_TO =
-  /\bincreases? to \{@(?:damage|dice|scaledamage|scaledice) ([^}|]{1,40})(?:\|([^}|]{1,40})\|([^}|]{1,40}))?(?:\|[^}]{0,40})?\}/gi;
+/** A roll or scale tag: `{@damage 3d8}`, `{@scaledamage 1d4|3-9|2d4}`. */
+const ROLL_OR_SCALE =
+  /\{@(damage|dice|scaledamage|scaledice) ([^}|]{1,40})(?:\|([^}|]{1,40})\|([^}|]{1,40}))?(?:\|[^}]{0,40})?\}/gi;
 
 /**
- * Every sentence of the higher-level text that sets a roll's dice outright for
- * the slots it names. A plain roll replaces the spell's one roll of its die; a
- * scale tag names the roll it replaces, and its last part is the new dice. A
- * sentence whose slots this cannot read sets nothing.
+ * Every tag of the higher-level text that sets a roll's dice outright ("the
+ * damage increases to {@damage 3d8}") for the slots its sentence names. A plain
+ * roll replaces the spell's one roll of its kind and die; a scale tag names the
+ * roll it replaces, and its last part is the new dice. A tag whose slots this
+ * cannot read sets nothing.
  */
 export function setDiceOf(entries: unknown, higher: unknown): SetDice[] {
   const main = entriesText(entries);
   const out: SetDice[] = [];
   for (const sentence of entriesText(higher).split(/(?<=\.)\s+/)) {
-    for (const m of sentence.matchAll(SETS_TO)) {
-      const levels = slotLevelsOf(sentence.slice(0, m.index));
+    for (const m of sentence.matchAll(ROLL_OR_SCALE)) {
+      const start = m.index ?? 0;
+      const before = sentence.slice(0, start);
+      const after = sentence.slice(start + m[0].length);
+      if (!setsDice(before, after)) continue;
+      const levels = setDiceLevels(before, after);
       if (levels === undefined) continue;
-      const first = (m[1] ?? '').replaceAll(' ', '');
-      const scaled = m[3] !== undefined;
-      const expr = scaled ? (m[3] ?? '').replaceAll(' ', '') : first;
+      const first = (m[2] ?? '').replaceAll(' ', '');
+      const scaled = m[4] !== undefined;
+      const expr = scaled ? (m[4] ?? '').replaceAll(' ', '') : first;
       const sides = /d(\d{1,3})$/i.exec(expr)?.[1];
-      const base = scaled
-        ? first
-        : sides === undefined
-          ? undefined
-          : onlyRoll(main, 'damage', sides);
+      const kind = /dice$/i.test(m[1] ?? '') ? 'dice' : 'damage';
+      const base = scaled ? first : sides === undefined ? undefined : onlyRoll(main, kind, sides);
       if (base !== undefined && base !== expr) out.push({ base, levels, expr });
     }
   }
