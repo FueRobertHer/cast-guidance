@@ -95,7 +95,7 @@ afterEach(() => {
   vi.restoreAllMocks();
   cancelHeld();
   rollLogStore.setState({ rolls: [], seq: 0 });
-  rollOffersStore.setState({ spend: null, expired: 0, before: false });
+  rollOffersStore.setState({ spend: null, pay: null, expired: 0, before: false });
   followUpStore.setState({ offer: null });
   document.body.replaceChildren();
   resetAnnouncer();
@@ -106,6 +106,128 @@ describe('namedFirst', () => {
     expect(namedFirst(guidance)).toBe(true);
     expect(namedFirst(failedBardic)).toBe(false);
     expect(namedFirst({ ...guidance, once: false })).toBe(false);
+  });
+
+  it('leaves a flat bonus for once the d20 shows', () => {
+    expect(namedFirst({ ...guidance, dice: '10', after: true })).toBe(false);
+  });
+});
+
+describe('a feature’s own die, paid for', () => {
+  const pay = {
+    spends: [{ key: 'superiority-dice', max: 4, amount: 1 }],
+    reaction: false,
+    words: 'spends 1 Superiority Dice',
+  };
+  const ambush: RollOffer = {
+    dice: '1d8',
+    source: 'Maneuvers: Ambush',
+    once: true,
+    ifFailed: false,
+    pay,
+  };
+  const guided: RollOffer = {
+    dice: '10',
+    source: 'Guided Strike',
+    once: true,
+    ifFailed: false,
+    after: true,
+    pay,
+  };
+
+  it('is paid as it rolls in, with nothing spent from the effects in play', () => {
+    const paying = vi.fn(() => true);
+    const spend = vi.fn();
+    rollOffersStore.setState({ pay: paying, spend });
+    rollFrom(button(), check([ambush, guidance]));
+    nameHeldDie(0);
+    nextFaces(9, 2, 5);
+    rollHeld();
+    const r = logged()[0];
+    expect(r?.total).toBe(9 + 3 + 2 + 5);
+    expect(r?.meta?.from).toEqual([
+      { term: 2, source: 'Bless' },
+      { term: 3, source: 'Maneuvers: Ambush' },
+    ]);
+    expect(r?.meta?.offers).toEqual([guidance]);
+    expect(paying).toHaveBeenCalledTimes(1);
+    expect(paying).toHaveBeenCalledWith(ambush, true);
+    expect(spend).not.toHaveBeenCalled();
+  });
+
+  it('stays out of the roll when it cannot be paid now, or with no sheet to pay from', () => {
+    const paying = vi.fn(() => false);
+    rollOffersStore.setState({ pay: paying });
+    rollFrom(button(), check([ambush]));
+    nameHeldDie(0);
+    nextFaces(9, 2);
+    rollHeld();
+    expect(logged()[0]?.total).toBe(9 + 3 + 2);
+    expect(logged()[0]?.meta?.from).toEqual([{ term: 2, source: 'Bless' }]);
+    expect(paying).toHaveBeenCalledWith(ambush, true);
+
+    rollOffersStore.setState({ pay: null });
+    rollFrom(button(), check([ambush]));
+    nameHeldDie(0);
+    nextFaces(9, 2);
+    rollHeld();
+    expect(logged()[0]?.total).toBe(9 + 3 + 2);
+  });
+
+  it('comes back after the roll under the house rule, which is for an effect’s die', () => {
+    rollOffersStore.setState({ before: true });
+    rollFrom(button(), check([ambush, guidance]));
+    nextFaces(9, 2);
+    rollHeld();
+    expect(logged()[0]?.meta?.offers).toEqual([ambush]);
+  });
+
+  it('claims advantage only once it is paid for', () => {
+    const lucky = () =>
+      d20Ask('1d20+3', {
+        label: 'Athletics check',
+        riders: {
+          dice: [],
+          offers: [],
+          advantage: [],
+          disadvantage: [],
+          declare: [{ source: 'Lucky', mode: 'adv', when: '', pay }],
+        },
+      });
+    const paying = vi.fn(() => false);
+    rollOffersStore.setState({ pay: paying });
+    rollFrom(button(), lucky);
+    declareHeld(0);
+    nextFaces(4);
+    rollHeld();
+    expect(logged()[0]?.total).toBe(4 + 3);
+    expect(paying).toHaveBeenCalledWith({ source: 'Lucky', pay }, true);
+
+    paying.mockReturnValue(true);
+    rollFrom(button(), lucky);
+    declareHeld(0);
+    nextFaces(4, 16);
+    rollHeld();
+    expect(logged()[0]?.total).toBe(16 + 3);
+    expect(logged()[0]?.meta?.cue).toBe('Advantage: Lucky');
+  });
+
+  it('pays nothing when it is not added', () => {
+    const paying = vi.fn();
+    rollOffersStore.setState({ pay: paying });
+    rollFrom(button(), check([ambush]));
+    nextFaces(9, 2);
+    rollHeld();
+    expect(logged()[0]?.meta?.offers).toEqual([ambush]);
+    expect(paying).not.toHaveBeenCalled();
+  });
+
+  it('offers a flat bonus only after the roll, never in the prompt', () => {
+    rollFrom(button(), check([guided, guidance]));
+    expect(held()?.named).toEqual([false]);
+    nextFaces(9, 2);
+    rollHeld();
+    expect(logged()[0]?.meta?.offers).toEqual([guided, guidance]);
   });
 });
 

@@ -20,7 +20,7 @@ import {
 } from 'react';
 import { useStore } from 'zustand';
 import { roll } from '@/dice/roll';
-import type { CritDamage, DiceRollDetail, RollOffer, RollResult } from '@/dice/types';
+import type { CritDamage, DiceRollDetail, ModDetail, RollOffer, RollResult } from '@/dice/types';
 import type { CharacterDoc } from '@/engine/types';
 import { RULE_WORDS } from '@/lib/docDiff';
 import { signed } from '@/lib/signed';
@@ -159,7 +159,8 @@ export const OFFER_WAIT_MS = 60_000;
 /** A die rolled for an offer: once per toast, so taking it off and on keeps it. */
 interface Rolled {
   value: number;
-  term: DiceRollDetail;
+  /** A die rolled, or a flat bonus a feature adds (Guided Strike's +10). */
+  term: DiceRollDetail | ModDetail;
 }
 
 /** The roll with the offered dice that are added: their terms, named, and the total. */
@@ -189,7 +190,27 @@ const dieWord = (dice: string) => dice.replace(/^1d/, 'd');
 /** What an offered die's chip is named, for a screen reader. */
 function offerName(o: RollOffer, rolled: Rolled | undefined, on: boolean): string {
   if (on && rolled !== undefined) return `${o.source}, ${rolled.value} added. Tap to take it off`;
-  return `Add ${o.source}, +${dieWord(o.dice)}${o.ifFailed ? ', if the roll failed' : ''}`;
+  const price = o.pay !== undefined ? `. It ${o.pay.words}` : '';
+  const when = o.when !== undefined ? `. ${o.when}` : '';
+  return `Add ${o.source}, +${dieWord(o.dice)}${o.ifFailed ? ', if the roll failed' : ''}${price}${when}`;
+}
+
+/**
+ * What adding a feature's own extra pays and when it holds, said once under
+ * the offers: "Precision Attack spends 1 Superiority Dice." One spent only if
+ * the roll then succeeds says that taking it off gives the use back.
+ */
+export function offerPrices(offers: readonly RollOffer[]): string {
+  return offers
+    .flatMap((o) => {
+      if (o.pay === undefined) return [];
+      const parts = [`${o.source} ${o.pay.words}`];
+      if (o.when !== undefined) parts.push(o.when);
+      if (o.spentOnSuccess === true)
+        parts.push('If the roll still fails, take it off for the use back');
+      return [`${parts.join('. ')}.`];
+    })
+    .join(' ');
 }
 
 /** Was this focused from the keyboard? A browser that cannot say counts it as not. */
@@ -396,7 +417,10 @@ function RollResultToast({
     !settled && followUp !== null && visible?.id !== undefined && followUp.id === visible.id
       ? followUp
       : null;
-  const deciding = offers.some((_, i) => added[i] !== true) || damageOffer !== null;
+  // Still to decide: a die not added yet, or one whose use comes back if the
+  // roll still fails (Tactical Mind), until the player knows.
+  const deciding =
+    offers.some((o, i) => added[i] !== true || o.spentOnSuccess === true) || damageOffer !== null;
   const held = hovered || focused;
   useEffect(() => {
     if (visible === null || held) return;
@@ -491,12 +515,18 @@ function RollResultToast({
     if (r === undefined) {
       const res = roll(o.dice);
       const term = res.terms[0];
-      if (term === undefined || term.kind !== 'dice') return;
+      if (term === undefined || term.kind === 'multiplier') return;
       r = { value: res.total, term };
     }
     const on = added[i] !== true;
     const nextRolled = [...rolled];
     nextRolled[i] = r;
+    // A feature's own die goes on only once paid for, as its Use is; with
+    // nothing left to pay with it stays off, and the notice says why.
+    if (on && o.pay !== undefined && rollOffersStore.getState().pay?.(o, true) !== true) {
+      setRolled(nextRolled);
+      return;
+    }
     const nextAdded = [...added];
     nextAdded[i] = on;
     setRolled(nextRolled);
@@ -504,6 +534,8 @@ function RollResultToast({
     const next = withAdded(visible, nextRolled, nextAdded);
     rollLogStore.getState().replace(next);
     if (o.once && o.effectId !== undefined) rollOffersStore.getState().spend?.(o.effectId, on);
+    // Taken off, a feature's own die gives back what it paid.
+    if (!on && o.pay !== undefined) rollOffersStore.getState().pay?.(o, false);
     announce(`${o.source} ${on ? `added, ${r.value}` : 'taken off'}. ${rollAnnouncement(next)}`, {
       key: 'roll',
       repeat: true,
@@ -512,6 +544,7 @@ function RollResultToast({
 
   // The dice an effect offers, after the roll: tap to add, tap again to take
   // off. Then a hit's damage, rolled as its chip rolls it.
+  const prices = offerPrices(offers);
   const offerRow = (offers.length > 0 || damageOffer !== null) && (
     <div className="mt-2 flex flex-wrap items-center gap-1.5 border-line border-t pt-2">
       {offers.map((o, i) => {
@@ -540,6 +573,7 @@ function RollResultToast({
                 <ChevronsUp size={14} aria-hidden="true" className="shrink-0 text-heal" />+
                 {dieWord(o.dice)} {o.source}
                 {o.ifFailed ? ', if it failed' : ''}
+                {o.pay !== undefined && <span className="font-normal text-ink-muted">· paid</span>}
               </>
             )}
           </button>
@@ -564,6 +598,7 @@ function RollResultToast({
           Roll {damageOffer.expr}
         </button>
       )}
+      {prices !== '' && <p className="basis-full text-caption text-ink-muted">{prices}</p>}
       {deciding && (
         <button
           type="button"
@@ -750,7 +785,10 @@ function Extra({
   bonus?: number | undefined;
   source: string;
   when: string;
-  /** When it holds, for one the app cannot see (flanking), said to a screen reader. */
+  /**
+   * Said to a screen reader after `when`: when it holds, for one the app cannot
+   * see (flanking), or what a feature's own die pays.
+   */
   holds?: string | undefined;
   onClick: () => void;
 }) {
@@ -926,10 +964,13 @@ function RollPrompt({
   const setAside = ask !== null && held.mode !== ask.presetFor(choice) && ask.conditions;
   const once = ask?.once ?? [];
   const named = once.filter((_, i) => held.named[i] === true);
-  const left = once.length - named.length;
+  const left = once.filter((_, i) => held.named[i] !== true);
+  // Under the house rule an effect's die left is gone; a feature's own comes back.
+  const gone = dropUnnamed ? left.filter((o) => o.pay === undefined) : [];
   // What declaring costs comes first: it lasts past this roll.
-  // One that holds for this roll alone says when it holds, by its name, since
-  // it costs nothing ("Flanking: only with an ally next to the target ...").
+  // One that holds for this roll alone says, by its name, what it pays and
+  // when it holds ("Flanking: only with an ally next to the target ...",
+  // "Lucky: spends 1 Luck Points.").
   const costs = (ask?.thisTurn ?? [])
     .filter((_, i) => held.declared[i] === true)
     .map((t) =>
@@ -937,13 +978,22 @@ function RollPrompt({
         ? `${t.source}: ${t.cost.charAt(0).toLowerCase()}${t.cost.slice(1)}.`
         : `${t.cost}.`,
     );
-  const spends = named.length > 0 ? `Spends ${andWords(named.map((o) => o.source))}.` : '';
+  // An effect's die spends the effect; a feature's own die says what it pays.
+  const unpaid = named.filter((o) => o.pay === undefined);
+  const spends = [
+    unpaid.length > 0 ? `Spends ${andWords(unpaid.map((o) => o.source))}.` : '',
+    offerPrices(named),
+  ]
+    .filter((n) => n !== '')
+    .join(' ');
   const leftNote =
-    left === 0
+    left.length === 0
       ? ''
-      : dropUnnamed
+      : gone.length === left.length
         ? 'Dice you leave are gone once the d20 shows.'
-        : 'Dice you leave come back after the roll.';
+        : gone.length === 0
+          ? 'Dice you leave come back after the roll.'
+          : `Left, ${andWords(gone.map((o) => o.source))} ${gone.length === 1 ? 'is' : 'are'} gone once the d20 shows; the rest come back after the roll.`;
   // One note: what declaring costs and what the roll spends (the cast's
   // tile, then the dice added), else what happens to the dice left, else
   // that the control rolls too.
@@ -1085,7 +1135,9 @@ function RollPrompt({
                 on={held.named[i] === true}
                 dice={o.dice}
                 source={o.source}
-                when="once"
+                // A feature's own die is paid for: what it pays is said to a screen reader.
+                when={o.pay !== undefined ? 'paid' : 'once'}
+                holds={o.pay !== undefined ? offerPrices([o]) : undefined}
                 onClick={() => nameHeldDie(i)}
               />
             ))}

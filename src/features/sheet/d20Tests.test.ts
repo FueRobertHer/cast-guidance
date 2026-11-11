@@ -11,6 +11,7 @@ import {
 } from '@/engine/conditions';
 import type { RollEffects } from '@/engine/playRules';
 import { ABILITIES, type Ability } from '@/engine/types';
+import { rollOffersStore } from '@/stores/rollOffers';
 import { rollTone } from '@/ui/rollTone';
 import { conditionLimits } from './conditionEffects';
 import {
@@ -650,6 +651,52 @@ describe('rollD20Test with effects in play', () => {
       expect(r.total).toBe(12 + 5 + 2);
       expect(r.meta?.cue).toBe('Advantage: Reckless Attack · +2: Flanking');
       expect(() => ask.thisTurn[1]?.declare()).not.toThrow();
+    });
+  });
+
+  describe('advantage paid for (2024 Lucky)', () => {
+    const pay = {
+      spends: [{ key: 'luck-points', max: 3, amount: 1 }],
+      reaction: false,
+      words: 'spends a Luck Points use',
+    };
+    const check = (when: string) =>
+      d20Ask('1d20+3', {
+        label: 'Stealth',
+        riders: riders({ declare: [{ source: 'Lucky', mode: 'adv', when, pay }] }),
+      });
+    afterEach(() => rollOffersStore.getState().setPay(null));
+
+    it('says its price, then when it holds', () => {
+      expect(check('').thisTurn[0]?.cost).toBe('Spends a Luck Points use');
+      expect(check('Only with a skill').thisTurn[0]?.cost).toBe(
+        'Spends a Luck Points use. Only with a skill',
+      );
+    });
+
+    it('pays when the prompt makes the roll, saying whether it could', () => {
+      const paying = vi.fn(() => true);
+      rollOffersStore.getState().setPay(paying);
+      const ask = check('');
+      nextFaces(4, 16);
+      expect(ask.roll({ declared: [true] }).total).toBe(19);
+      ask.thisTurn[0]?.declare();
+      expect(paying).not.toHaveBeenCalled();
+      expect(ask.thisTurn[0]?.paid?.()).toBe(true);
+      expect(paying).toHaveBeenCalledWith({ source: 'Lucky', pay }, true);
+      paying.mockReturnValue(false);
+      expect(ask.thisTurn[0]?.paid?.()).toBe(false);
+      rollOffersStore.getState().setPay(null);
+      expect(ask.thisTurn[0]?.paid?.()).toBe(false);
+    });
+
+    it('says only when it holds for a claim nothing pays for', () => {
+      const flank = d20Ask('1d20+3', {
+        label: 'Stealth',
+        riders: riders({ declare: [{ source: 'Brave', mode: 'adv', when: 'Only when afraid' }] }),
+      });
+      expect(flank.thisTurn[0]?.cost).toBe('Only when afraid');
+      expect(flank.thisTurn[0]?.paid).toBeUndefined();
     });
   });
 });

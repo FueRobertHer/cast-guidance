@@ -28,9 +28,12 @@ export type Landed = (result: RollResult) => void;
 /** Which attack a roll was, and whether it crit (`d20Ask`'s `attack`). */
 export type AttackMark = NonNullable<NonNullable<RollResult['meta']>['attack']>;
 
-/** One-use dice that do not wait for a failure: the ones the prompt offers before the roll. */
+/**
+ * One-use dice that do not wait for a failure, or for the d20 to show (a flat
+ * bonus): the ones the prompt offers before the roll.
+ */
 export function namedFirst(offer: RollOffer): boolean {
-  return offer.once && !offer.ifFailed;
+  return offer.once && !offer.ifFailed && offer.after !== true;
 }
 
 /** Is what a control made a d20 test to ask about, not a roll already made? */
@@ -479,20 +482,38 @@ export function rollHeld(): void {
     cast?.cast(picked);
     return;
   }
+  // A feature's own die or claim is paid for as its Use is, before the d20:
+  // one that cannot be paid now (its last use or the reaction went while the
+  // prompt waited) stays out of the roll.
+  const { pay } = rollOffersStore.getState();
+  const named = held.named.map((on, i) => {
+    const o = ask.once[i];
+    return on && (o?.pay === undefined || pay?.(o, true) === true);
+  });
+  const isDeclared = held.declared.map((on, i) => {
+    const paid = ask.thisTurn[i]?.paid;
+    return on && (paid === undefined || paid());
+  });
+  // A claim left out takes its advantage with it, unless the mode was picked by hand.
+  const dropped = isDeclared.some((on, i) => on !== held.declared[i]);
+  const mode =
+    dropped && held.mode === ask.presetFor({ declared: held.declared })
+      ? ask.presetFor({ declared: isDeclared })
+      : held.mode;
   const result: RollResult = {
     ...ask.roll({
-      mode: held.mode,
+      mode,
       rollsIn: held.rollsIn,
-      named: held.named,
-      declared: held.declared,
+      named,
+      declared: isDeclared,
       dropUnnamed: rollOffersStore.getState().before,
     }),
     id,
   };
   const spent = ask.once.flatMap((o, i) =>
-    held.named[i] === true && o.effectId !== undefined ? [o.effectId] : [],
+    named[i] === true && o.effectId !== undefined ? [o.effectId] : [],
   );
-  const declared = ask.thisTurn.filter((_, i) => held.declared[i] === true);
+  const declared = ask.thisTurn.filter((_, i) => isDeclared[i] === true);
   land({
     result,
     onLanded: held.onLanded,

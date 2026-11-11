@@ -116,6 +116,33 @@ describe('emitCuratedEffects', () => {
     expect(pool).toBeDefined();
     expect(pool?.stack).toBe(true);
     expect(typeof pool?.max === 'number' && pool.max > 0).toBe(true);
+    // The die a maneuver adds to a roll: d8, d10 at 10, d12 at 18.
+    expect(pool?.die).toBe('1d8');
+  });
+
+  it('gives Superior Technique and Martial Adept a d6 superiority die', () => {
+    for (const key of ['superior technique|tce', 'martial adept|phb']) {
+      const c = col('Fighter', 5);
+      emitCuratedEffects(c, key, origin);
+      const pool = c.effects.find((e) => e.kind === 'resource' && e.key === 'superiority-dice');
+      expect(pool, key).toMatchObject({ die: '1d6', stack: true });
+    }
+  });
+
+  it('gives Tides of Chaos one use a long rest, in both printings', () => {
+    for (const key of ['tides of chaos|wild magic', 'tides of chaos|wild magic sorcery']) {
+      const c = col('Sorcerer', 3);
+      expect(emitCuratedEffects(c, key, origin), key).toBe(true);
+      expect(c.effects, key).toContainEqual(
+        expect.objectContaining({
+          kind: 'resource',
+          key: 'tides-of-chaos',
+          label: 'Tides of Chaos',
+          max: 1,
+          resetOn: 'long',
+        }),
+      );
+    }
   });
 });
 
@@ -242,6 +269,12 @@ describe('pools a cost spends', () => {
       'Psionic Energy Dice (d8)',
       'Psionic Energy Dice (d10)',
       'Psionic Energy Dice (d12)',
+    ]);
+    expect([3, 5, 11, 17].map((level) => dice(level, 'tce')?.die)).toEqual([
+      '1d6',
+      '1d8',
+      '1d10',
+      '1d12',
     ]);
   });
 
@@ -664,6 +697,20 @@ describe('pools, dice and DCs only class prose states', () => {
         `gives one ${d} · another creature within 60 feet`,
       ]),
     );
+  });
+
+  it('puts the same die on its pool, for Peerless Skill to add, back on a short rest from 5', () => {
+    const pool = (levels: number) =>
+      run('bardic inspiration|bard', col('Bard', levels)).effects.flatMap((e) =>
+        e.kind === 'resource' ? [`${e.die} ${e.resetOn}`] : [],
+      );
+    expect([1, 4, 5, 10, 15].map(pool)).toEqual([
+      ['1d6 long'],
+      ['1d6 long'],
+      ['1d8 short'],
+      ['1d10 short'],
+      ['1d12 short'],
+    ]);
   });
 
   it('gives the maneuvers that force a save the maneuver DC, Strength or Dexterity', () => {

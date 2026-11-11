@@ -249,7 +249,8 @@ function spendingOf(
   const ownLeft = own !== undefined ? leftOf(own) : undefined;
   const ownSpend: ActionSpend[] =
     own !== undefined ? [{ key: own.key, max: own.max, amount: 1 }] : [];
-  const ownWords = own !== undefined ? [`a ${own.label} use`] : [];
+  const ownWords =
+    own !== undefined ? [`${/^[aeiou]/i.test(own.label) ? 'an' : 'a'} ${own.label} use`] : [];
   const outOfUses = ownLeft === 0;
   const uses = own !== undefined ? [`${ownLeft} of ${own.max} left`] : [];
 

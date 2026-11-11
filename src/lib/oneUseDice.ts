@@ -6,7 +6,8 @@ import { appTableRules, setAppTableRule } from '@/stores/tableRules';
  * it before the d20 either way (the rolls canvas, one-use dice B): as both are
  * written and the default, one you leave comes back in the result; under a
  * table's house rule ("before"), you add it first or not at all. A die that
- * waits for a failed roll (2024 Bardic) is offered after the roll either way.
+ * waits for a failed roll (2024 Bardic) is offered after the roll either way,
+ * and so is a feature's own die (Precision Attack), which is not one of these.
  *
  * One of the app's table rules (`stores/tableRules`, the `oneUseDice` rule),
  * kept here under the names its readers use. A character at a table with

@@ -616,6 +616,12 @@ export type EffectInput = {
    * "Only against being Frightened"), so the roll prompt offers it to claim.
    */
   | { kind: 'rollAdvantage'; mode: 'adv' | 'dis'; on: RollFilter; when?: string }
+  /**
+   * What a feature of the character's own adds to a roll the filter reaches,
+   * paid for as its Use is (`PaidRoll`): Precision Attack's superiority die,
+   * Flash of Genius, 2024 Lucky's advantage. Never stored in play.
+   */
+  | ({ kind: 'rollPaid'; on: RollFilter } & PaidRoll)
   /** Temporary hit points at the start of each of the character's turns (Heroism). */
   | { kind: 'tempHpEachTurn'; amount: number }
   /** One more thing to do each turn, with what it may be spent on (Haste). */
@@ -661,6 +667,11 @@ export type EffectInput = {
        * sheet counts at a long rest; absent, a long rest brings them all back.
        */
       regainRoll?: string;
+      /**
+       * The die one use rolls ("1d8", a superiority die), for a feature that
+       * adds it to a roll (`PaidRoll.poolDie`). A stacked pool keeps the largest.
+       */
+      die?: string;
     }
   | {
       /** A feature that gives another feature's pool `regainOnShort` (Advanced Artifice). */
@@ -890,6 +901,32 @@ export interface DamageRider {
   label?: string;
 }
 
+/**
+ * What a feature of the character's own adds to a roll when paid for, as its
+ * Use is paid (a pool's use, the turn's reaction; `offerPay`): `dice`, the
+ * paying pool's own die (`poolDie`: a superiority die), a flat `bonus`, or
+ * `advantage`, asked before the d20 as a claim is.
+ * - `after`: offered once the d20 shows, not before ("immediately after seeing
+ *   the number on the d20"). A flat bonus is always after.
+ * - `ifFailed`: only on a roll that failed or missed, which the player says.
+ * - `spentOnSuccess`: the use is spent only if the roll then succeeds (Tactical
+ *   Mind), so taking the die off a roll that still failed gives it back.
+ * - `reaction`: true takes the turn's reaction whatever its Use takes; false
+ *   never does (2024 Guided Strike takes one only for an ally's roll).
+ * - `when`: when it holds, which the app cannot see ("Only against a spell").
+ */
+export interface PaidRoll {
+  dice?: string;
+  poolDie?: boolean;
+  bonus?: BonusAmount;
+  advantage?: boolean;
+  after?: boolean;
+  ifFailed?: boolean;
+  spentOnSuccess?: boolean;
+  reaction?: boolean;
+  when?: string;
+}
+
 /** A die or advantage an effect brings to rolls, as `DerivedSheet.rollRiders` lists it. */
 export type RollRider = {
   on: RollFilter;
@@ -900,6 +937,8 @@ export type RollRider = {
   | { kind: 'die'; dice: string }
   | { kind: 'offer'; dice: string; once?: boolean; ifFailed?: boolean }
   | { kind: 'advantage'; mode: 'adv' | 'dis'; when?: string }
+  /** A feature's paid extra, its bonus worked out (`PaidRoll`). */
+  | ({ kind: 'paid' } & Omit<PaidRoll, 'bonus'> & { bonus?: number })
 );
 
 /** Part of an effect in play that counts for nothing, and the effect that counts instead. */
@@ -1024,6 +1063,8 @@ export interface DerivedResource {
   regainOnShort?: number;
   /** Dice of them that come back on a long rest (at dawn), in place of all of them. */
   regainRoll?: string;
+  /** The die one use rolls ("1d8"), the largest where pools stack. */
+  die?: string;
 }
 
 export interface DerivedSheet {

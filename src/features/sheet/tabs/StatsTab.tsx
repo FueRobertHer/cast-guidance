@@ -23,6 +23,7 @@ import {
 } from '../d20Tests';
 import { conditionsInForce, defenseView, loweredBy, raised, raisedBy } from '../effectsInPlay';
 import { RollEffectCue } from '../RollEffectCue';
+import { pricedRollEffects } from '../rollPrice';
 import type { CharacterSheetState } from '../useCharacterSheet';
 
 /** A modifier for a dice expression, whose parser reads a hyphen; on screen, see `signed`. */
@@ -306,7 +307,7 @@ export function Component() {
             label,
             effects,
             ignored: ignore.take(group, effects),
-            riders: rollEffects(sheet, test),
+            riders: pricedRollEffects(rollEffects(sheet, test), sheet, doc?.play),
           }),
         landed,
         { face: { text: signed(modifier) } },
