@@ -106,6 +106,20 @@ describe('a foretold number in place of the d20', () => {
     const r = ask.roll({ mode: 'dis', foretold: 0 });
     expect(r.total).toBe(11);
     expect(r.terms[0]).toMatchObject({ kind: 'dice', sides: 20, rolls: [{ v: 9, kept: true }] });
+    // The result says so too, as the prompt did.
+    expect(r.meta?.cue).toBe('Disadvantage does not count: Portent foretold the d20');
+  });
+
+  it('is set as it lands by a feature that sets the d20, and the working says both in order', () => {
+    const talent = { source: 'Reliable Talent', to: 10, atMost: 9, auto: true, free: true };
+    const ask = d20Ask('1d20+3', {
+      label: 'Stealth check',
+      riders: riders({ foretold: [told(4)], rerolls: [talent] }),
+    });
+    nextFaces();
+    const r = ask.roll({ foretold: 0 });
+    expect(r.total).toBe(13);
+    expect(words(r)).toBe('d20 [~4~, 10] foretold by Portent, set by Reliable Talent + 3');
   });
 
   it('crits an attack on a foretold 20 and misses it on a foretold 1, as a rolled one would', () => {

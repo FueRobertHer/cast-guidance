@@ -1,7 +1,7 @@
 import { createStore } from 'zustand/vanilla';
 import { roll } from '@/dice/roll';
 import type { RollOffer, RollResult } from '@/dice/types';
-import type { D20Ask, RollMode } from '@/features/sheet/d20Tests';
+import type { D20Ask, RollMode, TurnExtra } from '@/features/sheet/d20Tests';
 import type { ChipWear } from '@/ui/ChipFace';
 import { announce } from './announcer';
 import { rollLogStore } from './rollLog';
@@ -455,6 +455,14 @@ export function declareHeld(index: number): void {
   heldRollStore.setState({ held: { ...held, declared, mode: ask.presetFor({ declared }) } });
 }
 
+/**
+ * A claim for this roll that gives its mode and nothing else (2014 Inspiration,
+ * Tides of Chaos): a foretold number in place of the d20 leaves it nothing to give.
+ */
+export function modeAlone(t: TurnExtra): boolean {
+  return t.thisRoll === true && t.mode !== undefined && t.bonus === undefined;
+}
+
 /** Puts a foretold number in place of the waiting roll's d20 (Portent), or takes it back. */
 export function foretellHeld(index: number): void {
   const { held } = heldRollStore.getState();
@@ -501,16 +509,19 @@ export function rollHeld(): void {
     const o = ask.once[i];
     return on && (o?.pay === undefined || pay?.(o, true) === true);
   });
-  const isDeclared = held.declared.map((on, i) => {
-    const paid = ask.thisTurn[i]?.paid;
-    return on && (paid === undefined || paid());
-  });
   // A foretold number is paid for (its use, and the number) or the d20 is rolled.
   const told = held.foretold === null ? undefined : ask.foretold[held.foretold];
   const foretold =
     told !== undefined && pay?.({ source: told.source, pay: told.pay }, true) === true
       ? held.foretold
       : null;
+  // With no d20 rolled, a claim of the mode alone gives nothing, so it is not paid.
+  const isDeclared = held.declared.map((on, i) => {
+    const extra = ask.thisTurn[i];
+    if (foretold !== null && extra !== undefined && modeAlone(extra)) return false;
+    const paid = extra?.paid;
+    return on && (paid === undefined || paid());
+  });
   // A claim left out takes its advantage with it, unless the mode was picked by hand.
   const dropped = isDeclared.some((on, i) => on !== held.declared[i]);
   const mode =

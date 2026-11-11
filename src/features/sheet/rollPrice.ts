@@ -183,7 +183,8 @@ function foretoldNumbers(
     if (pool.foretell !== true) continue;
     const used = play.resources.find((r) => r.key === pool.key)?.used ?? 0;
     if (used >= pool.max) continue;
-    for (const v of new Set(play.foretold?.[pool.key] ?? [])) {
+    // No more than the uses left, as the Play tab's row shows them.
+    for (const v of new Set((play.foretold?.[pool.key] ?? []).slice(0, pool.max - used))) {
       out.push({
         source: pool.label,
         v,

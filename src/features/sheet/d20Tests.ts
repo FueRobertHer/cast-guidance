@@ -498,7 +498,8 @@ export function d20Ask(
         resolution.autoFail || (settlesOnNatural && (natural === 20 || crit))
           ? []
           : (riders?.rerollOffers ?? []).filter((o) => canReroll(result, o));
-      const cue = cueFor(mode, choice);
+      // A foretold d20 says the mode it set aside, as the prompt did.
+      const cue = cueFor(told !== undefined ? (choice?.mode ?? presetFor(choice)) : mode, choice);
       // The kind of roll, for a natural 20 or 1's moments (`useRollOfferSpending`).
       const test = riders?.test;
       if (

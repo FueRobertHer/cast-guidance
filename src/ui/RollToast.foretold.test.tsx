@@ -116,6 +116,69 @@ describe('foretold numbers in the roll prompt', () => {
     );
   });
 
+  it('puts away a claim of advantage alone while a number is picked, and never charges it', () => {
+    const spent = { spends: [], reaction: false, words: 'is spent', inspiration: true };
+    const paying = vi.fn(() => true);
+    rollOffersStore.setState({ pay: paying });
+    render(<RollToast />);
+    act(() =>
+      rollFrom(control('WIS'), () =>
+        d20Ask('1d20+4', {
+          label: 'WIS save',
+          riders: riders({
+            declare: [
+              { source: 'Inspiration', mode: 'adv', when: '', pay: spent },
+              { source: 'Battle Cry', mode: 'adv', bonus: 1, when: 'Once a battle' },
+            ],
+            foretold: [told(17)],
+          }),
+        }),
+      ),
+    );
+    const battleCry = () =>
+      screen.queryByRole('button', { name: '+1 Battle Cry, this roll: Once a battle' });
+    const claim = () => screen.queryByRole('button', { name: 'Inspiration, this roll: Is spent' });
+    fireEvent.click(claim() as HTMLElement);
+    expect(prompt().textContent).toContain('Inspiration: is spent.');
+    fireEvent.click(chip(17));
+    expect(claim()).toBeNull();
+    // A claim that adds to the roll still has something to give.
+    expect(battleCry()).not.toBeNull();
+    expect(prompt().textContent).not.toContain('Inspiration: is spent.');
+    expect(prompt().textContent).toContain('Advantage does not count: Portent foretold the d20');
+    nextFaces();
+    fireEvent.click(screen.getByRole('button', { name: 'Roll' }));
+    expect(paying).toHaveBeenCalledTimes(1);
+    expect(paying).toHaveBeenCalledWith({ source: 'Portent', pay: told(17).pay }, true);
+    expect(rollLogStore.getState().rolls[0]?.total).toBe(21);
+  });
+
+  it('charges the claim as ever when the number cannot be paid, and it counts', () => {
+    const spent = { spends: [], reaction: false, words: 'is spent', inspiration: true };
+    const paying = vi.fn((o: { source: string }) => o.source !== 'Portent');
+    rollOffersStore.setState({ pay: paying });
+    render(<RollToast />);
+    act(() =>
+      rollFrom(control('WIS'), () =>
+        d20Ask('1d20+4', {
+          label: 'WIS save',
+          riders: riders({
+            declare: [{ source: 'Inspiration', mode: 'adv', when: '', pay: spent }],
+            foretold: [told(17)],
+          }),
+        }),
+      ),
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Inspiration, this roll: Is spent' }));
+    fireEvent.click(chip(17));
+    nextFaces(5, 13);
+    fireEvent.click(screen.getByRole('button', { name: 'Roll' }));
+    expect(paying).toHaveBeenCalledWith({ source: 'Inspiration', pay: spent }, true);
+    const landed = rollLogStore.getState().rolls[0];
+    expect(landed?.total).toBe(17);
+    expect(landed?.meta?.advantage).toBe('adv');
+  });
+
   it('rolls the d20 as the sheet sets it when the number cannot be paid', () => {
     rollOffersStore.setState({ pay: () => false });
     render(<RollToast />);

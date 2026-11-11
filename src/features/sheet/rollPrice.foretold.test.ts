@@ -98,6 +98,11 @@ describe('foretold numbers, priced', () => {
     expect(pricedRollEffects(none, sheet, undefined)).toBe(none);
   });
 
+  it('offers no more numbers than the uses left, as the Play tab shows them', () => {
+    const p = play({ foretold: { portent: [15, 6] }, resources: [{ key: 'portent', used: 1 }] });
+    expect(pricedRollEffects(none, sheet, p).foretold).toEqual([told(15)]);
+  });
+
   it('offers only a foretelling pool’s numbers', () => {
     const counted = { ...sheet, resources: [{ ...PORTENT, foretell: false }] };
     expect(pricedRollEffects(none, counted, play({ foretold: { portent: [11] } }))).toBe(none);

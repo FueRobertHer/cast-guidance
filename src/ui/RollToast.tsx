@@ -44,6 +44,7 @@ import {
   foretellHeld,
   type HeldRoll,
   heldRollStore,
+  modeAlone,
   nameHeldDie,
   pickHeldTile,
   type RollFace,
@@ -1128,8 +1129,9 @@ function RollPrompt({
   // One that holds for this roll alone says, by its name, what it pays and
   // when it holds ("Flanking: only with an ally next to the target ...",
   // "Lucky: spends 1 Luck Points.").
+  // A claim of the mode alone gives nothing with a foretold d20, so it is not paid.
   const costs = (ask?.thisTurn ?? [])
-    .filter((_, i) => held.declared[i] === true)
+    .filter((t, i) => held.declared[i] === true && (told === undefined || !modeAlone(t)))
     .map((t) =>
       t.thisRoll === true
         ? `${t.source}: ${t.cost.charAt(0).toLowerCase()}${t.cost.slice(1)}.`
@@ -1314,19 +1316,22 @@ function RollPrompt({
                 onClick={() => nameHeldDie(i)}
               />
             ))}
-            {ask.thisTurn.map((t, i) => (
-              <Extra
-                // biome-ignore lint/suspicious/noArrayIndexKey: an extra's place is its identity in this roll
-                key={`turn${i}`}
-                on={held.declared[i] === true}
-                bonus={t.bonus}
-                source={t.source}
-                // Flanking holds for this roll alone, when an ally stands across.
-                when={t.thisRoll === true ? 'this roll' : 'this turn'}
-                holds={t.thisRoll === true ? t.cost : undefined}
-                onClick={() => declareHeld(i)}
-              />
-            ))}
+            {ask.thisTurn.map((t, i) =>
+              // With a foretold d20 there is no mode for a claim of it alone to give.
+              told !== undefined && modeAlone(t) ? null : (
+                <Extra
+                  // biome-ignore lint/suspicious/noArrayIndexKey: an extra's place is its identity in this roll
+                  key={`turn${i}`}
+                  on={held.declared[i] === true}
+                  bonus={t.bonus}
+                  source={t.source}
+                  // Flanking holds for this roll alone, when an ally stands across.
+                  when={t.thisRoll === true ? 'this roll' : 'this turn'}
+                  holds={t.thisRoll === true ? t.cost : undefined}
+                  onClick={() => declareHeld(i)}
+                />
+              ),
+            )}
           </div>
         )}
       {held.damage.length > 0 && (
