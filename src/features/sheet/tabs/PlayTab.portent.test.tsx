@@ -98,6 +98,16 @@ describe('a foretelling pool on the Play tab', () => {
     expect((await sheet.saved()).play.foretold).toEqual({ portent: [20, 1] });
   });
 
+  it('rolls one for each use left, not for a use marked spent', async () => {
+    const doc = seer();
+    doc.play.resources = [{ key: 'portent', used: 1 }];
+    const sheet = await renderSheet(doc);
+    nextFaces(12);
+    press('Roll Portent: 1 d20 to foretell');
+    expect(numbers()).toEqual(['12']);
+    expect((await sheet.saved()).play.foretold).toEqual({ portent: [12] });
+  });
+
   it('shows none past the uses left, though more are kept', async () => {
     const doc = seer();
     doc.play.foretold = { portent: [9, 14] };

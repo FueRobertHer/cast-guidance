@@ -70,6 +70,32 @@ describe('a foretold number in place of the d20', () => {
     expect(r.meta?.cue).toBe('Advantage does not count: Portent foretold the d20');
   });
 
+  it('is the test’s own d20 alone, not a d20 an effect adds', () => {
+    const ask = d20Ask('1d20+1', {
+      label: 'INT check',
+      riders: riders({ dice: [{ dice: '1d20', source: 'Wild Hunch' }], foretold: [told(15)] }),
+    });
+    nextFaces(2);
+    const r = ask.roll({ foretold: 0 });
+    expect(r.total).toBe(18);
+    expect(words(r)).toBe('d20 [15] foretold by Portent + 1 + d20 [2] Wild Hunch');
+  });
+
+  it('still takes off a penalty the roll wears, and says it', () => {
+    const tired = d20Effects([{ id: 'Exhaustion', level: 1 }], '2024', {
+      kind: 'save',
+      ability: 'wis',
+    });
+    const ask = d20Ask('1d20+3', {
+      label: 'WIS save',
+      effects: tired,
+      riders: riders({ foretold: [told(12)] }),
+    });
+    expect(ask.cueFor('normal', { foretold: 0 })).toBe('−2: Exhaustion 1');
+    nextFaces();
+    expect(ask.roll({ foretold: 0 }).total).toBe(13);
+  });
+
   it('counts for nothing a mode picked by hand, and says so', () => {
     const ask = d20Ask('1d20+2', { label: 'DEX check', riders: riders({ foretold: [told(9)] }) });
     expect(ask.cueFor('dis', { foretold: 0 })).toBe(
