@@ -38,6 +38,7 @@ import { characterSessionStore, useCharacterSession } from '@/stores/characterSe
 import { diceTrayStore, useDiceTray } from '@/stores/diceTray';
 import {
   cancelHeld,
+  critDice,
   declareHeld,
   followUpStore,
   type HeldRoll,
@@ -453,20 +454,31 @@ function RollResultToast({
   });
 
   const offers = settled ? [] : (visible?.meta?.offers ?? []);
+  // A reroll can land an attack on a natural 1, 20 or crit, which settles it as the
+  // roll itself does (`d20Ask`): no die left to add, no damage on the 1, and no
+  // reroll after a crit. A die already added stays, to be taken off.
+  const struck = visible?.meta?.attack;
+  const crits = struck !== undefined && (visible?.meta?.d20?.natural === 20 || struck.crit);
+  const misses = struck !== undefined && visible?.meta?.d20?.natural === 1;
+  const open = offers.map((_, i) => !(crits || misses) || added[i] === true);
   // A hit's damage, offered until it is rolled or the toast is kept as it is.
   const damageOffer =
-    !settled && followUp !== null && visible?.id !== undefined && followUp.id === visible.id
+    !settled &&
+    !misses &&
+    followUp !== null &&
+    visible?.id !== undefined &&
+    followUp.id === visible.id
       ? followUp
       : null;
   // A reroll not made yet that could still change the roll.
   const rerolls = settled || visible === null ? [] : (visible.meta?.rerolls ?? []);
   const rerollable = rerolls.map(
-    (o, i) => visible !== null && rerolledWith[i] !== true && canReroll(visible, o),
+    (o, i) => !crits && visible !== null && rerolledWith[i] !== true && canReroll(visible, o),
   );
   // Still to decide: a die not added yet, or one whose use comes back if the
   // roll still fails (Tactical Mind), until the player knows; or a reroll.
   const deciding =
-    offers.some((o, i) => added[i] !== true || o.spentOnSuccess === true) ||
+    offers.some((o, i) => open[i] && (added[i] !== true || o.spentOnSuccess === true)) ||
     rerollable.includes(true) ||
     damageOffer !== null;
   const held = hovered || focused;
@@ -606,6 +618,9 @@ function RollResultToast({
     nextRerolled[i] = true;
     setRerolledWith(nextRerolled);
     setVisible(base);
+    // Rerolled into a crit, the damage offered says it rolls its dice twice, as it will.
+    if (damageOffer !== null && base.meta?.attack?.crit === true && struck?.crit !== true)
+      followUpStore.setState({ offer: { ...damageOffer, expr: critDice(damageOffer.expr) } });
     const next = withAdded(base, rolled, added);
     rollLogStore.getState().replace(next);
     announce(`${o.source}: rerolled. ${rollAnnouncement(next)}`, { key: 'roll', repeat: true });
@@ -613,22 +628,27 @@ function RollResultToast({
 
   // The dice an effect offers, after the roll: tap to add, tap again to take
   // off. Then a hit's damage, rolled as its chip rolls it, and the rerolls.
-  const prices = [offerPrices(offers), rerollPrices(rerolls.filter((_, i) => rerollable[i]))]
+  const prices = [
+    offerPrices(offers.filter((_, i) => open[i])),
+    rerollPrices(rerolls.filter((_, i) => rerollable[i])),
+  ]
     .filter((p) => p !== '')
     .join(' ');
   // A reroll made stays as a chip that says so, so the focus on it stays in the toast.
   const shownReroll = rerolls.map((_, i) => rerollable[i] === true || rerolledWith[i] === true);
   const firstReroll = shownReroll.indexOf(true);
-  const offerRow = (offers.length > 0 || damageOffer !== null || firstReroll >= 0) && (
+  const firstOpen = open.indexOf(true);
+  const offerRow = (firstOpen >= 0 || damageOffer !== null || firstReroll >= 0) && (
     <div className="mt-2 flex flex-wrap items-center gap-1.5 border-line border-t pt-2">
       {offers.map((o, i) => {
+        if (open[i] !== true) return null;
         const on = added[i] === true;
         const r = rolled[i];
         return (
           <button
             // biome-ignore lint/suspicious/noArrayIndexKey: an offer's place is its identity in this roll
             key={i}
-            ref={i === 0 ? firstOffer : undefined}
+            ref={i === firstOpen ? firstOffer : undefined}
             type="button"
             aria-pressed={on}
             aria-label={offerName(o, r, on)}
@@ -655,7 +675,7 @@ function RollResultToast({
       })}
       {damageOffer !== null && (
         <button
-          ref={offers.length === 0 ? firstOffer : undefined}
+          ref={firstOpen < 0 ? firstOffer : undefined}
           type="button"
           onClick={() => {
             // The button goes with the toast it was in: focus goes back where
@@ -679,9 +699,7 @@ function RollResultToast({
               // biome-ignore lint/suspicious/noArrayIndexKey: a reroll's place is its identity in this roll
               key={i}
               ref={
-                i === firstReroll && offers.length === 0 && damageOffer === null
-                  ? firstOffer
-                  : undefined
+                i === firstReroll && firstOpen < 0 && damageOffer === null ? firstOffer : undefined
               }
               type="button"
               aria-label={rerolledWith[i] === true ? `Rerolled with ${o.source}` : rerollName(o)}

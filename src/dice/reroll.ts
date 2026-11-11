@@ -11,8 +11,8 @@ export interface RerollHow {
 
 /**
  * The roll with its d20 rerolled, as `how` says: every d20 again in the
- * roll's mode (`all`, as unset); one die showing `atMost` or less, the kept
- * one first (`one`); the lower die of advantage (`low`); or one d20 more,
+ * roll's mode (`all`, as unset); the lowest die showing `atMost` or less
+ * (`one`); the lower die of advantage (`low`); or one d20 more,
  * keeping the best (`extra`). A die set aside stays in the working, dropped
  * and out of later rerolls, and the new one follows. The mode keeps a die
  * again, and the total, the natural and an attack's crit follow it; a bonus
@@ -35,7 +35,13 @@ export function rerollD20(
   let aside = live;
   if (die === 'one') {
     const atMost = how.atMost ?? 1;
-    const low = was.v <= atMost ? was : live.find((r) => r.v <= atMost);
+    // The lowest that shows low enough, the kept one on a tie: under advantage a
+    // reroll of it never lowers the die kept; under disadvantage it is the one kept.
+    const low = live.reduce<(typeof live)[number] | undefined>(
+      (a, r) =>
+        r.v > atMost ? a : a === undefined || r.v < a.v || (r.v === a.v && r === was) ? r : a,
+      undefined,
+    );
     if (low === undefined) return undefined;
     aside = [low];
   } else if (die === 'low') {

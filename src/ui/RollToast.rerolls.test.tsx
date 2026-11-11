@@ -5,6 +5,7 @@ import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { RerollOffer, RollOffer, RollResult } from '@/dice/types';
 import { getAnnouncerState, resetAnnouncer, THROTTLE_MS } from '@/stores/announcer';
+import { followUpStore } from '@/stores/heldRoll';
 import { rollLogStore } from '@/stores/rollLog';
 import { rollOffersStore } from '@/stores/rollOffers';
 import { OFFER_WAIT_MS, ROLL_TOAST_MS, RollToast, rerollPrices } from './RollToast';
@@ -61,6 +62,7 @@ afterEach(() => {
   resetAnnouncer();
   rollLogStore.setState({ rolls: [], seq: 0 });
   rollOffersStore.setState({ spend: null, pay: null, expired: 0 });
+  followUpStore.setState({ offer: null });
 });
 
 describe('rerollPrices', () => {
@@ -190,6 +192,75 @@ describe('a roll with a reroll on offer', () => {
     expect(screen.queryByRole('button', { name: /^Reroll with/ })).toBeNull();
     act(() => vi.advanceTimersByTime(ROLL_TOAST_MS + 100));
     expect(screen.queryByText('WIS save')).toBeNull();
+  });
+
+  describe('on an attack a reroll lands', () => {
+    const seeking: RerollOffer = { source: 'Seeking Spell', die: 'all', ifFailed: true };
+    const lucky: RerollOffer = { source: 'Lucky', die: 'extra', ifFailed: false, pay };
+    const bardic: RollOffer = { dice: '1d6', source: 'Bardic', once: false, ifFailed: false };
+    const precision: RollOffer = {
+      dice: '1d8',
+      source: 'Precision Attack',
+      once: false,
+      ifFailed: false,
+      pay: { spends: [], reaction: false, words: 'spends 1 Superiority Die' },
+    };
+    const attack = (): RollResult => {
+      const base = save([seeking, lucky], [bardic, precision]);
+      return {
+        ...base,
+        id: 'atk-1',
+        label: 'Fire Bolt spell attack',
+        meta: { ...base.meta, attack: { by: 'c1', of: 'Fire Bolt', crit: false } },
+      };
+    };
+    const rolled = (damage = true) => {
+      render(<RollToast />);
+      act(() => {
+        rollLogStore.getState().append(attack());
+        if (damage)
+          followUpStore.setState({
+            offer: { id: 'atk-1', expr: '1d10', go: () => {}, from: null },
+          });
+      });
+    };
+
+    it('on a crit: no die left to add, no other reroll, and the damage says it rolls twice', () => {
+      rolled();
+      expect(screen.getByRole('button', { name: 'Roll 1d10' })).toBeTruthy();
+      expect(screen.getByText(/Superiority Die/)).toBeTruthy();
+      nextFaces(20);
+      fireEvent.click(screen.getByRole('button', { name: /^Reroll with Seeking Spell/ }));
+      expect(rollLogStore.getState().rolls[0]?.meta?.attack?.crit).toBe(true);
+      expect(screen.queryByRole('button', { name: /^Add (Bardic|Precision)/ })).toBeNull();
+      expect(screen.queryByRole('button', { name: /^Reroll with Lucky/ })).toBeNull();
+      // Nor a price for what is no longer offered.
+      expect(screen.queryByText(/Lucky|Superiority Die/)).toBeNull();
+      expect(screen.getByRole('button', { name: 'Roll 2d10' })).toBeTruthy();
+      expect(followUpStore.getState().offer?.expr).toBe('2d10');
+    });
+
+    it('on a crit with no damage to offer: nothing left to decide, so it goes on time', () => {
+      rolled(false);
+      nextFaces(20);
+      fireEvent.click(screen.getByRole('button', { name: /^Reroll with Seeking Spell/ }));
+      act(() => vi.advanceTimersByTime(ROLL_TOAST_MS + 100));
+      expect(group()).toBeNull();
+    });
+
+    it('on a natural 1: no die to add but the one added, no damage, and a reroll still', () => {
+      rollOffersStore.setState({ pay: () => true });
+      rolled();
+      nextFaces(4);
+      fireEvent.click(screen.getByRole('button', { name: 'Add Bardic, +d6' }));
+      nextFaces(1);
+      fireEvent.click(screen.getByRole('button', { name: /^Reroll with Seeking Spell/ }));
+      expect(screen.queryByRole('button', { name: /^Add Precision/ })).toBeNull();
+      const kept = screen.getAllByRole('button').filter((b) => b.ariaPressed === 'true');
+      expect(kept.map((b) => b.textContent)).toEqual(['+4 Bardic']);
+      expect(screen.queryByRole('button', { name: /^Roll 1d10/ })).toBeNull();
+      expect(screen.getByRole('button', { name: /^Reroll with Lucky/ })).toBeTruthy();
+    });
   });
 
   it('takes the focus to the reroll when the roll came from the keyboard', () => {

@@ -112,12 +112,25 @@ describe('rerollD20', () => {
     expect(d20(r)[1]).toEqual({ v: 1, kept: false, out: true });
   });
 
-  it('rerolls the kept die when it shows the most a reroll takes (Survivor, 9 or lower)', () => {
+  it('rerolls the lowest die that shows low enough (Survivor, 9 or lower), so advantage never loses its kept die', () => {
     const low = { source: 'Survivor', die: 'one' as const, atMost: 9 };
-    const r = rerollD20(rolled('1d20', [3, 8], 'adv'), low, faces(16)) as RollResult;
-    expect(d20(r).map((x) => x.out === true)).toEqual([false, true, false]);
+    const r = rerollD20(rolled('1d20', [8, 3], 'adv'), low, faces(16)) as RollResult;
+    expect(d20(r).map((x) => [x.v, x.kept, x.out === true])).toEqual([
+      [8, false, false],
+      [3, false, true],
+      [16, true, false],
+    ]);
     expect(r.total).toBe(16);
+    // A worse new die leaves the 8 kept.
+    expect(rerollD20(rolled('1d20', [8, 3], 'adv'), low, faces(1))?.total).toBe(8);
     expect(canReroll(rolled('1d20', [10]), low)).toBe(false);
+  });
+
+  it("rerolls disadvantage's kept die when both show low enough", () => {
+    const low = { source: 'Survivor', die: 'one' as const, atMost: 9 };
+    const r = rerollD20(rolled('1d20', [8, 3], 'dis'), low, faces(12)) as RollResult;
+    expect(d20(r).map((x) => x.out === true)).toEqual([false, true, false]);
+    expect(r.total).toBe(8);
   });
 
   it('rerolls the lower die of advantage (Elven Accuracy), and nothing without advantage', () => {
