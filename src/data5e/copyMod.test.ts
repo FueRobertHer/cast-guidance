@@ -536,6 +536,69 @@ describe('normalizeDataset subclass copies', () => {
   });
 });
 
+describe('normalizeDataset subrace versions', () => {
+  const raceFile = {
+    race: [
+      {
+        name: 'Scaled',
+        source: 'TST',
+        entries: [
+          { type: 'entries', name: 'Breath Weapon', entries: ['Exhale energy.'] },
+          { type: 'entries', name: 'Languages', entries: ['Common.'] },
+        ],
+      },
+    ],
+    subrace: [
+      {
+        source: 'TST',
+        raceName: 'Scaled',
+        raceSource: 'TST',
+        _versions: [
+          {
+            name: 'Scaled (Red)',
+            source: 'TST',
+            _mod: {
+              entries: {
+                mode: 'replaceArr',
+                replace: 'Breath Weapon',
+                items: { type: 'entries', name: 'Breath Weapon', entries: ['Exhale fire.'] },
+              },
+            },
+          },
+        ],
+      },
+    ],
+  };
+
+  it("builds an official subrace's versions against its race's traits", () => {
+    const reg = normalizeDataset(new Map([['races.json', raceFile]]));
+    const red = reg.get('subrace', 'Scaled (Red)', 'TST');
+    expect(red?.entries).toEqual([
+      { type: 'entries', name: 'Breath Weapon', entries: ['Exhale fire.'] },
+    ]);
+    expect(red?._raceTraitsRemoved).toEqual(['Breath Weapon']);
+    expect(reg.warnings).toEqual([]);
+  });
+
+  it("builds a homebrew subrace's versions against its race's traits", () => {
+    const reg = normalizeDataset(new Map());
+    mergeHomebrew(reg, new Map([['scaled', raceFile]]));
+    expect(reg.get('subrace', 'Scaled (Red)', 'TST')?._raceTraitsRemoved).toEqual([
+      'Breath Weapon',
+    ]);
+    expect(reg.warnings).toEqual([]);
+  });
+
+  it('builds the versions of a homebrew subrace of an official race', () => {
+    const reg = normalizeDataset(new Map([['races.json', { race: raceFile.race }]]));
+    mergeHomebrew(reg, new Map([['kin', { subrace: raceFile.subrace }]]));
+    expect(reg.get('subrace', 'Scaled (Red)', 'TST')?._raceTraitsRemoved).toEqual([
+      'Breath Weapon',
+    ]);
+    expect(reg.warnings).toEqual([]);
+  });
+});
+
 describe('mergeHomebrew', () => {
   it('takes a target found in several other files from the earliest one', () => {
     const reg = normalizeDataset(new Map());
@@ -908,6 +971,215 @@ describe('expandVersions', () => {
     expect(versions).toHaveLength(MAX_VERSIONS_PER_ENTITY);
     expect(warnings).toHaveLength(1);
     expect(warnings[0]?.message).toMatch(/more than 64 versions/);
+  });
+});
+
+describe('expandVersions of a subrace', () => {
+  // Shaped like the PHB Dragonborn and its EGW subraces: each version's `_mod`
+  // names race traits, since 5etools applies it to the race and subrace merged.
+  const trait = (name: string, text: string, overwrite?: string): Entity => ({
+    type: 'entries',
+    name,
+    entries: [text],
+    ...(overwrite !== undefined ? { data: { overwrite } } : {}),
+  });
+  const raceTraits = (): unknown[] => [
+    'Scaled folk are born of dragons.',
+    trait('Age', 'Grows fast.'),
+    trait('Draconic Ancestry', 'Choose a dragon.'),
+    trait('Breath Weapon', 'Exhale energy of your ancestry.'),
+    trait('Damage Resistance', 'Resist your ancestry.'),
+    trait('Languages', 'Common and Draconic.'),
+  ];
+  const colours = (mod: Record<string, unknown>): Entity[] => [
+    {
+      _abstract: { name: 'Scaled ({{color}})', source: 'TST', _mod: mod },
+      _implementations: [{ _variables: { color: 'Black', damageType: 'acid' }, resist: ['acid'] }],
+    },
+  ];
+  const breath = trait('Breath Weapon', 'Exhale {{damageType}}.');
+
+  it('applies a mod that names race traits to the race and subrace merged', () => {
+    const race = raceTraits();
+    const before = JSON.stringify(race);
+    const base: Entity = {
+      source: 'TST',
+      raceName: 'Scaled',
+      raceSource: 'TST',
+      _versions: colours({
+        entries: [
+          { mode: 'removeArr', names: 'Draconic Ancestry' },
+          { mode: 'replaceArr', replace: 'Breath Weapon', items: breath },
+          {
+            mode: 'replaceArr',
+            replace: 'Damage Resistance',
+            items: trait('Damage Resistance', 'Resist {{damageType}}.'),
+          },
+        ],
+        traitTags: { mode: 'appendArr', items: 'Breath' },
+      }),
+    };
+    const warnings: CopyModWarning[] = [];
+    const [v] = expandVersions(base, warnings, race);
+    expect(warnings).toEqual([]);
+    expect(v?.name).toBe('Scaled (Black)');
+    expect(v?.resist).toEqual(['acid']);
+    expect(v?.traitTags).toEqual(['Breath']);
+    expect(v?.entries).toEqual([
+      trait('Breath Weapon', 'Exhale acid.'),
+      trait('Damage Resistance', 'Resist acid.'),
+    ]);
+    expect(v?._raceTraitsRemoved).toEqual([
+      'Draconic Ancestry',
+      'Breath Weapon',
+      'Damage Resistance',
+    ]);
+    expect(JSON.stringify(race)).toBe(before);
+  });
+
+  it('merges a trait that overwrites a race trait in its place, then applies the mod', () => {
+    const base: Entity = {
+      name: 'Bloodline',
+      source: 'TST',
+      raceName: 'Scaled',
+      raceSource: 'TST',
+      entries: [
+        trait('Darkvision', 'See in the dark.'),
+        trait('Forceful Presence', 'Advantage once.', 'damage resistance'),
+        trait('Draconic Ancestry', 'Choose a dragon for the breath alone.', 'Draconic Ancestry'),
+      ],
+      _versions: colours({
+        entries: [
+          { mode: 'removeArr', names: 'Draconic Ancestry' },
+          { mode: 'replaceArr', replace: 'Breath Weapon', items: breath },
+        ],
+      }),
+    };
+    const warnings: CopyModWarning[] = [];
+    const [v] = expandVersions(base, warnings, raceTraits());
+    expect(warnings).toEqual([]);
+    expect((v?.entries as Entity[]).map((e) => e.name)).toEqual([
+      'Breath Weapon',
+      'Forceful Presence',
+      'Darkvision',
+    ]);
+    expect(v?._raceTraitsRemoved).toEqual([
+      'Draconic Ancestry',
+      'Breath Weapon',
+      'Damage Resistance',
+    ]);
+  });
+
+  it("keeps a mod on the subrace's own traits as it was, removing no race trait", () => {
+    const base: Entity = {
+      name: 'Seaborn',
+      source: 'TST',
+      raceName: 'Scaled',
+      raceSource: 'TST',
+      entries: [
+        trait('Swim', 'Swim 30.'),
+        trait('Gills', 'Breathe water.'),
+        trait('Languages', 'Common and Draconic.'),
+      ],
+      _versions: [
+        {
+          name: 'Seaborn; Reef',
+          source: 'TST',
+          _mod: {
+            entries: { mode: 'replaceArr', replace: 'Swim', items: trait('Swim', 'Swim 40.') },
+          },
+        },
+      ],
+    };
+    const warnings: CopyModWarning[] = [];
+    const [v] = expandVersions(base, warnings, raceTraits());
+    expect(warnings).toEqual([]);
+    expect(v?.entries).toEqual([
+      trait('Swim', 'Swim 40.'),
+      trait('Gills', 'Breathe water.'),
+      trait('Languages', 'Common and Draconic.'),
+    ]);
+    expect(v?._raceTraitsRemoved).toBeUndefined();
+  });
+
+  it("drops a subrace's own trait its mod removed", () => {
+    const base: Entity = {
+      name: 'Seaborn',
+      source: 'TST',
+      raceName: 'Scaled',
+      raceSource: 'TST',
+      entries: [trait('Swim', 'Swim 30.')],
+      _versions: [
+        {
+          name: 'Seaborn; Landbound',
+          source: 'TST',
+          _mod: { entries: { mode: 'removeArr', names: 'Swim' } },
+        },
+      ],
+    };
+    const warnings: CopyModWarning[] = [];
+    const [v] = expandVersions(base, warnings, raceTraits());
+    expect(warnings).toEqual([]);
+    expect(v?.entries).toEqual([]);
+    expect(v?._raceTraitsRemoved).toBeUndefined();
+  });
+
+  it('keeps the race traits a replaceTxt only copied, and takes the one it changed', () => {
+    const base: Entity = {
+      source: 'TST',
+      raceName: 'Scaled',
+      raceSource: 'TST',
+      _versions: colours({
+        entries: { mode: 'replaceTxt', replace: 'energy of your ancestry', with: '{{damageType}}' },
+      }),
+    };
+    const warnings: CopyModWarning[] = [];
+    const [v] = expandVersions(base, warnings, raceTraits());
+    expect(warnings).toEqual([]);
+    expect(v?.entries).toEqual([trait('Breath Weapon', 'Exhale acid.')]);
+    expect(v?._raceTraitsRemoved).toEqual(['Breath Weapon']);
+  });
+
+  it('reads a mod with no entries op against the subrace alone', () => {
+    const base: Entity = {
+      name: 'Seaborn',
+      source: 'TST',
+      raceName: 'Scaled',
+      raceSource: 'TST',
+      entries: [trait('Swim', 'Swim 30.')],
+      _versions: [
+        {
+          name: 'Seaborn; Reef',
+          source: 'TST',
+          _mod: { traitTags: { mode: 'appendArr', items: 'Amphibious' } },
+        },
+      ],
+    };
+    const warnings: CopyModWarning[] = [];
+    const [v] = expandVersions(base, warnings, raceTraits());
+    expect(warnings).toEqual([]);
+    expect(v?.entries).toEqual([trait('Swim', 'Swim 30.')]);
+    expect(v?.traitTags).toEqual(['Amphibious']);
+    expect(v?._raceTraitsRemoved).toBeUndefined();
+  });
+
+  it('still warns about a target neither the race nor the subrace has', () => {
+    const base: Entity = {
+      name: 'Bloodline',
+      source: 'TST',
+      _versions: [
+        {
+          name: 'Bloodline; Odd',
+          source: 'TST',
+          _mod: { entries: { mode: 'replaceArr', replace: 'Tail', items: breath } },
+        },
+      ],
+    };
+    const warnings: CopyModWarning[] = [];
+    expandVersions(base, warnings, raceTraits());
+    expect(warnings.map((w) => w.message)).toEqual([
+      'versions: replaceArr target not found on "entries": "Tail"',
+    ]);
   });
 });
 

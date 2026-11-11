@@ -148,7 +148,9 @@ function lessSubraceKeys(
  * them apart, so each keeps its own origin and prompt ids, and takes off the
  * race what that merge would replace:
  * - a subrace trait with `data.overwrite` replaces the race trait of that name
- *   (Mammon's Legacy of Minauros for the Tiefling's Infernal Legacy);
+ *   (Mammon's Legacy of Minauros for the Tiefling's Infernal Legacy), and a
+ *   subrace version drops the race traits its `_mod` removed or rewrote
+ *   (`_raceTraitsRemoved`: a Dragonborn colour's Breath Weapon);
  * - ability scores and the first skill entry take the subrace's value for any
  *   key both set, languages add to the race's, and the subrace's `overwrite`
  *   flag on one of these replaces the race's outright;
@@ -181,6 +183,13 @@ export function raceUnderSubrace(race: DataEntity, subrace: DataEntity): DataEnt
   for (const entry of asEntityArray(subrace.entries)) {
     const name = isEntity(entry.data) ? str(entry.data.overwrite) : undefined;
     if (name !== undefined) replaced.add(traitKey(name));
+  }
+  // A subrace version's `_mod` removed or rewrote these race traits (see
+  // `applySubraceMod` in copyMod.ts); what it rewrote is on the subrace's card.
+  if (Array.isArray(subrace._raceTraitsRemoved)) {
+    for (const name of subrace._raceTraitsRemoved) {
+      if (typeof name === 'string') replaced.add(traitKey(name));
+    }
   }
   if (replaced.size > 0 && Array.isArray(view.entries)) {
     view.entries = view.entries.filter((entry: unknown) => {
@@ -367,11 +376,13 @@ function resistOfAncestry(
 
 /**
  * The breath weapon a Dragonborn's dragon shapes. A *fallback* for printings
- * whose prose can't be scanned (base PHB Dragonborn names its type via a table;
- * the 2024 XPHB race states a save but no single area to breathe in). Printings
- * that DO state everything inline (every Fizban's (FTD) Chromatic/Metallic/Gem
- * variant, whose `_versions` substitute the real damage type) are left to the
- * prose scanner, so this must never clobber a value it already produced.
+ * whose prose can't be scanned (the PHB Dragonborn with no colour subrace names
+ * its type via a table; the 2024 XPHB race states a save but no single area to
+ * breathe in). Printings that DO state everything inline (every Fizban's (FTD)
+ * Chromatic/Metallic/Gem variant and every PHB or EGW colour subrace, whose
+ * `_versions` substitute the real damage type) are left to the prose scanner,
+ * so this must never clobber a value it already produced, on a character under
+ * either rules version.
  */
 const NAMES_A_TYPE = new RegExp(`\\b(?:${DAMAGE_TYPES})\\b`, 'i');
 

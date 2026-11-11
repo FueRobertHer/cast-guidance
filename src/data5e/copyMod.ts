@@ -617,7 +617,12 @@ function substituteVariables(template: Entity, vars: Record<string, unknown>): E
   return JSON.parse(json) as Entity;
 }
 
-function buildVersion(base: Entity, v: Entity, warn: (message: string) => void): Entity {
+function buildVersion(
+  base: Entity,
+  v: Entity,
+  warn: (message: string) => void,
+  raceTraits?: readonly unknown[],
+): Entity {
   const clone = structuredClone(base);
   delete clone._versions;
   const overlay: Entity = { ...v };
@@ -627,18 +632,102 @@ function buildVersion(base: Entity, v: Entity, warn: (message: string) => void):
   const merged: Entity = { ...clone, ...overlay, _versionOf: uidOf(base) };
   const mod = v._mod;
   if (mod !== null && typeof mod === 'object') {
-    applyMod(merged, mod as Record<string, unknown>, warn);
+    const ops = mod as Record<string, unknown>;
+    if (raceTraits !== undefined && ops.entries !== undefined) {
+      applySubraceMod(merged, ops, raceTraits, warn);
+    } else {
+      applyMod(merged, ops, warn);
+    }
   }
   return merged;
+}
+
+/** How 5etools matches a trait to the name in `data.overwrite`. */
+const traitKey = (name: string) => name.toLowerCase().trim();
+
+function overwriteOf(entry: unknown): string | undefined {
+  if (typeof entry !== 'object' || entry === null) return undefined;
+  const data = (entry as { data?: unknown }).data;
+  if (typeof data !== 'object' || data === null) return undefined;
+  const name = (data as { overwrite?: unknown }).overwrite;
+  return typeof name === 'string' ? name : undefined;
+}
+
+/**
+ * A subrace version's `_mod`, applied as 5etools applies it: to the race and
+ * subrace merged into one (`Renderer.race._getMergedSubrace`), where a subrace
+ * trait with `data.overwrite` takes the place of the race trait it names and
+ * the subrace's other traits follow the race's. So the Dragonborn colours'
+ * "remove Draconic Ancestry" and "replace Breath Weapon" reach the race's own
+ * traits. The sheet shows the race and the subrace apart, so the version keeps
+ * its own traits and those the mod brings or rewrites, and `_raceTraitsRemoved`
+ * names the race traits the merged result no longer holds as printed, for the
+ * race's card to leave out.
+ */
+function applySubraceMod(
+  version: Entity,
+  mod: Record<string, unknown>,
+  raceTraits: readonly unknown[],
+  warn: (message: string) => void,
+): void {
+  const race = structuredClone([...raceTraits]);
+  const entries: unknown[] = [...race];
+  for (const entry of Array.isArray(version.entries) ? version.entries : []) {
+    const over = overwriteOf(entry);
+    const at =
+      over === undefined
+        ? -1
+        : entries.findIndex((e) => {
+            const name = entryName(e);
+            return name !== undefined && traitKey(name) === traitKey(over);
+          });
+    if (at === -1) entries.push(entry);
+    else entries[at] = entry;
+  }
+  const { entries: entryOps, ...rest } = mod;
+  const target: Entity = { entries };
+  applyMod(target, { entries: entryOps }, warn);
+  applyMod(version, rest, warn);
+  // A race trait the result still holds as printed stays the race's. Traits
+  // are compared as JSON, since `replaceTxt` copies every trait it reads, and
+  // equal ones are matched by count.
+  const unmatched = new Map<string, number>();
+  for (const e of race) {
+    const key = JSON.stringify(e);
+    unmatched.set(key, (unmatched.get(key) ?? 0) + 1);
+  }
+  const mine: unknown[] = [];
+  for (const e of Array.isArray(target.entries) ? target.entries : []) {
+    const key = JSON.stringify(e);
+    const left = unmatched.get(key) ?? 0;
+    if (left > 0) unmatched.set(key, left - 1);
+    else mine.push(e);
+  }
+  version.entries = mine;
+  const removed = race.flatMap((e) => {
+    const key = JSON.stringify(e);
+    const left = unmatched.get(key) ?? 0;
+    if (left === 0) return [];
+    unmatched.set(key, left - 1);
+    const name = entryName(e);
+    return name === undefined ? [] : [name];
+  });
+  if (removed.length > 0) version._raceTraitsRemoved = removed;
 }
 
 /**
  * Expand `_versions` into standalone selectable entities (e.g. Aasimar's three
  * Celestial Revelations, Dragonborn's `_abstract`/`_implementations` colors).
  * The base entity keeps `_versions` untouched; returned entities carry
- * `_versionOf` pointing at the base uid.
+ * `_versionOf` pointing at the base uid. A subrace's versions take the traits
+ * of its race (`raceTraits`), since their `_mod` is written against the two
+ * merged (see {@link applySubraceMod}).
  */
-export function expandVersions(base: Entity, warnings: CopyModWarning[]): Entity[] {
+export function expandVersions(
+  base: Entity,
+  warnings: CopyModWarning[],
+  raceTraits?: readonly unknown[],
+): Entity[] {
   const versions = base._versions;
   if (!Array.isArray(versions)) return [];
   const warn = (message: string) =>
@@ -675,11 +764,11 @@ export function expandVersions(base: Entity, warnings: CopyModWarning[]): Entity
           const materialized = substituteVariables(abstract, vars);
           const overlay: Entity = { ...impl };
           delete overlay._variables;
-          out.push(buildVersion(base, { ...materialized, ...overlay }, warn));
+          out.push(buildVersion(base, { ...materialized, ...overlay }, warn, raceTraits));
         });
       }
     } else {
-      tryVersion(() => out.push(buildVersion(base, v, warn)));
+      tryVersion(() => out.push(buildVersion(base, v, warn, raceTraits)));
     }
   }
   return out;

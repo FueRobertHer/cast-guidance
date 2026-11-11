@@ -464,6 +464,15 @@ describe('raceUnderSubrace', () => {
     expect(view.additionalSpells).toBe(FIENDKIN.additionalSpells);
   });
 
+  it('drops the race traits a subrace version names as removed', () => {
+    const view = raceUnderSubrace(FIENDKIN, {
+      name: 'Fiendkin (Ember)',
+      entries: [trait('Fiend Gift', undefined, 'An ember gift.')],
+      _raceTraitsRemoved: ['fiend gift', 'Relentless Endurance'],
+    });
+    expect((view.entries as DataEntity[]).map((e) => e.name)).toEqual(['Darkvision', 'Languages']);
+  });
+
   it('leaves the race entity it was given unchanged', () => {
     const before = JSON.stringify(FIENDKIN);
     raceUnderSubrace(FIENDKIN, SUBRACES[0] as DataEntity);
