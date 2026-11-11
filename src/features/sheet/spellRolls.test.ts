@@ -434,3 +434,242 @@ describe('spellRollActions with what the character adds to the damage', () => {
     ).toBe('1d8');
   });
 });
+
+describe('upcasting from the text', () => {
+  const at = (spell: Entity, slotLevel: number) =>
+    spellRollActions(spell, { characterLevel: 5, slotLevel }).map((r) => r.expr);
+
+  // Frost Fingers (IDRotF): the step is in the text, with no tag.
+  const frostFingers: Entity = {
+    name: 'Frost Fingers',
+    level: 1,
+    entries: ['Each creature in the cone takes {@damage 2d8} cold damage on a failed save.'],
+    entriesHigherLevel: [
+      {
+        type: 'entries',
+        name: 'At Higher Levels',
+        entries: [
+          'When you cast this spell using a spell slot of 2nd level or higher, the damage increases by {@damage 1d8} for each slot level above 1st.',
+        ],
+      },
+    ],
+  };
+
+  it.each([
+    [1, '2d8'],
+    [2, '3d8'],
+    [5, '6d8'],
+  ])('grows a step the text states with no tag, at slot %i', (slotLevel, expr) => {
+    expect(at(frostFingers, slotLevel)).toEqual([expr]);
+  });
+
+  // Shadow Word: Pain (WoW): only the initial damage grows; the curse's is the same die.
+  const shadowWordPain: Entity = {
+    name: 'Shadow Word: Pain',
+    level: 1,
+    entries: [
+      'On a failed save, the target takes Psychic damage equal to {@damage 1d10} plus your spellcasting ability modifier.',
+      'Until the curse ends, the target takes {@damage 1d10} Psychic damage at the start of each of its turns.',
+    ],
+    entriesHigherLevel: [
+      "The spell's initial damage increases by {@damage 1d10} for each spell slot level above 1.",
+    ],
+  };
+
+  it('grows only the first roll when the text says the initial damage grows', () => {
+    expect(at(shadowWordPain, 3)).toEqual(['3d10', '1d10']);
+    expect(at(shadowWordPain, 1)).toEqual(['1d10', '1d10']);
+  });
+
+  it('grows every roll of the die when the text does not say initial', () => {
+    const both: Entity = {
+      ...shadowWordPain,
+      entriesHigherLevel: [
+        'The damage increases by {@damage 1d10} for each spell slot level above 1.',
+      ],
+    };
+    expect(at(both, 3)).toEqual(['3d10', '3d10']);
+  });
+
+  it('leaves a capped step as printed', () => {
+    const capped: Entity = {
+      ...frostFingers,
+      entriesHigherLevel: [
+        'The damage increases by {@damage 1d8} for each slot level above 1st, to a maximum of 5d8.',
+      ],
+    };
+    expect(at(capped, 5)).toEqual(['2d8']);
+  });
+
+  // Shadow Blade (XGE): the damage increases to new dice at the slots each sentence names.
+  const shadowBlade: Entity = {
+    name: 'Shadow Blade',
+    level: 2,
+    entries: ['It deals {@damage 2d8} psychic damage on a hit.'],
+    entriesHigherLevel: [
+      {
+        type: 'entries',
+        name: 'At Higher Levels',
+        entries: [
+          'When you cast this spell using a 3rd- or 4th-level spell slot, the damage increases to {@damage 3d8}. When you cast it using a 5th- or 6th-level spell slot, the damage increases to {@damage 4d8}. When you cast it using a spell slot of 7th level or higher, the damage increases to {@damage 5d8}.',
+        ],
+      },
+    ],
+  };
+
+  it.each([
+    [2, '2d8'],
+    [3, '3d8'],
+    [4, '3d8'],
+    [5, '4d8'],
+    [6, '4d8'],
+    [7, '5d8'],
+    [9, '5d8'],
+  ])('sets the dice a sentence names for slot %i', (slotLevel, expr) => {
+    expect(at(shadowBlade, slotLevel)).toEqual([expr]);
+  });
+
+  // Elemental Weapon (PHB): a scale tag after "increases to" is the dice outright, not a step.
+  const elementalWeapon: Entity = {
+    name: 'Elemental Weapon',
+    level: 3,
+    entries: ['The weapon deals an extra {@damage 1d4} damage of the chosen type when it hits.'],
+    entriesHigherLevel: [
+      'When you cast this spell using a spell slot of 5th or 6th level, the bonus to attack rolls increases to +2 and the extra damage increases to {@scaledamage 1d4|3-9|2d4}. When you use a spell slot of 7th level or higher, the bonus increases to +3 and the extra damage increases to {@scaledamage 1d4|3-9|3d4}.',
+    ],
+  };
+  // Elemental Weapon (XPHB): the 2024 wording, with no tag.
+  const elementalWeapon2024: Entity = {
+    ...elementalWeapon,
+    entriesHigherLevel: [
+      'If you use a level 5-6 spell slot, the bonus to attack rolls increases to +2, and the extra damage increases to {@damage 2d4}. If you use a level 7+ spell slot, the bonus increases to +3, and the extra damage increases to {@damage 3d4}.',
+    ],
+  };
+
+  it.each([
+    [3, '1d4'],
+    [4, '1d4'],
+    [5, '2d4'],
+    [6, '2d4'],
+    [7, '3d4'],
+    [9, '3d4'],
+  ])("sets Elemental Weapon's dice, in either printing, for slot %i", (slotLevel, expr) => {
+    expect(at(elementalWeapon, slotLevel)).toEqual([expr]);
+    expect(at(elementalWeapon2024, slotLevel)).toEqual([expr]);
+  });
+
+  it('does not add a tag after "increases to" as a step when the slots it means cannot be read', () => {
+    const unread: Entity = {
+      ...elementalWeapon,
+      entriesHigherLevel: [
+        'At higher levels, the extra damage increases to {@scaledamage 1d4|3-9|2d4}.',
+      ],
+    };
+    expect(at(unread, 5)).toEqual(['1d4']);
+  });
+
+  it('sets the dice of the roll the sentence replaces alone', () => {
+    const twoRolls: Entity = {
+      ...shadowBlade,
+      entries: ['It deals {@damage 2d8} psychic damage on a hit, and {@damage 1d6} cold damage.'],
+    };
+    expect(at(twoRolls, 3)).toEqual(['3d8', '1d6']);
+  });
+
+  it('grows by the step at the slots no sentence sets dice for', () => {
+    const both: Entity = {
+      name: 'Both',
+      level: 2,
+      entries: ['It deals {@damage 2d8} force damage.'],
+      entriesHigherLevel: [
+        'The damage increases by {@scaledamage 2d8|2-9|1d8} for each slot level above 2nd. When you cast it using a spell slot of 7th level or higher, the damage increases to {@damage 10d8} instead.',
+      ],
+    };
+    expect(at(both, 3)).toEqual(['3d8']);
+    expect(at(both, 6)).toEqual(['6d8']);
+    expect(at(both, 7)).toEqual(['10d8']);
+  });
+
+  const blade = (higher: string): Entity => ({
+    name: 'Blade',
+    level: 2,
+    entries: ['It deals {@damage 2d8} psychic damage on a hit.'],
+    entriesHigherLevel: [higher],
+  });
+
+  it('reads the slots nearest each tag when one sentence sets dice twice', () => {
+    const twice = blade(
+      'Using a 3rd- or 4th-level spell slot, the damage increases to {@damage 3d8}, and using a 5th- or 6th-level spell slot, it increases to {@damage 4d8}.',
+    );
+    expect([3, 5, 7].map((slot) => at(twice, slot))).toEqual([['3d8'], ['4d8'], ['2d8']]);
+    const higherFirst = blade(
+      'With a spell slot of 7th level or higher, the damage increases to {@damage 5d8}, and with a spell slot of 5th or 6th level, it increases to {@damage 4d8}.',
+    );
+    expect([4, 5, 7].map((slot) => at(higherFirst, slot))).toEqual([['2d8'], ['4d8'], ['5d8']]);
+  });
+
+  it('reads the slots a clause names right after the tag', () => {
+    const after = blade(
+      'The damage increases to {@damage 3d8} with a 3rd- or 4th-level spell slot, and increases to {@damage 4d8} with a 5th- or 6th-level spell slot.',
+    );
+    expect([3, 4, 5, 7].map((slot) => at(after, slot))).toEqual([
+      ['3d8'],
+      ['3d8'],
+      ['4d8'],
+      ['2d8'],
+    ]);
+  });
+
+  it('sets the healing roll when the healing increases to new dice', () => {
+    const drain: Entity = {
+      name: 'Drain',
+      level: 3,
+      entries: [
+        'The target takes {@damage 3d8} necrotic damage, and you regain {@dice 2d8} hit points.',
+      ],
+      entriesHigherLevel: [
+        'When you cast this spell using a spell slot of 5th or 6th level, the healing increases to {@dice 4d8}.',
+      ],
+    };
+    expect(at(drain, 5)).toEqual(['3d8', '4d8']);
+  });
+
+  it('grows by a tag after "increases to" that says for each slot level', () => {
+    const step = blade(
+      'When you cast this spell using a spell slot of 3rd level or higher, the damage increases to {@scaledamage 2d8|2-9|1d8} for each slot level above 2nd.',
+    );
+    expect(at(step, 4)).toEqual(['4d8']);
+  });
+
+  it('grows every roll when the initial and later damage increase together', () => {
+    const both: Entity = {
+      ...shadowWordPain,
+      entriesHigherLevel: [
+        'The initial damage and the later damage increase by {@damage 1d10} for each spell slot level above 1.',
+      ],
+    };
+    expect(at(both, 3)).toEqual(['3d10', '3d10']);
+  });
+
+  it('sets every roll a sentence sets at the slots it names once', () => {
+    const drain: Entity = {
+      name: 'Drain',
+      level: 3,
+      entries: [
+        'The target takes {@damage 3d8} necrotic damage, and you regain {@dice 2d8} hit points.',
+      ],
+      entriesHigherLevel: [
+        'When you cast this spell using a spell slot of 7th level or higher, the damage increases to {@damage 5d8} and the healing increases to {@dice 4d8}.',
+      ],
+    };
+    expect(at(drain, 5)).toEqual(['3d8', '2d8']);
+    expect(at(drain, 7)).toEqual(['5d8', '4d8']);
+  });
+
+  it('reads no slots from an earlier sentence', () => {
+    const earlier = blade(
+      'With a spell slot of 5th or 6th level, the bonus increases to +2. At higher slots the damage increases to {@damage 3d8}.',
+    );
+    expect(at(earlier, 5)).toEqual(['2d8']);
+  });
+});

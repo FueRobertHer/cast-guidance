@@ -1,4 +1,11 @@
 import type { Entity } from '@/data5e/copyMod';
+import {
+  type SetDice,
+  setDiceOf,
+  setsDice,
+  tagLevels,
+  textUpcastTag,
+} from '../../data5e/entries/upcast';
 
 export interface SpellRollAction {
   expr: string;
@@ -195,50 +202,79 @@ function addRepeated(base: string, increment: string, times: number): string {
   return [base, ...Array.from({ length: times }, () => increment)].join('+');
 }
 
-/**
- * The slot levels an upcast tag lists: single levels and ranges, comma
- * separated ("2-9", or "2,4,6,8" for a spell that grows every two levels).
- * Undefined for any other shape.
- */
-function tagLevels(list: string): number[] | undefined {
-  const levels = new Set<number>();
-  for (const part of list.split(',')) {
-    const range = part.trim().match(/^(\d{1,2})(?:-(\d{1,2}))?$/);
-    if (range === null) return undefined;
-    const from = Number(range[1]);
-    const to = Number(range[2] ?? range[1]);
-    for (let level = from; level <= to; level++) levels.add(level);
-  }
-  return levels.size > 0 ? [...levels] : undefined;
+/** One upcast step: the rolls it grows, the slot levels it lists, and what it adds at each. */
+interface UpcastStep {
+  bases: string[];
+  levels: number[] | undefined;
+  step: string;
+  /** Grows the first roll of its base alone: "the spell's initial damage increases by". */
+  firstOnly: boolean;
+}
+
+function stepOf(match: RegExpMatchArray, firstOnly: boolean): UpcastStep | undefined {
+  const step = match[3]?.replaceAll(' ', '');
+  if (step === undefined) return undefined;
+  const bases = (match[1] ?? '').split(';').map((base) => base.replaceAll(' ', ''));
+  return { bases, levels: tagLevels(match[2] ?? ''), step, firstOnly };
 }
 
 /**
- * The roll as cast with a higher slot. An upcast tag grows each of its base
- * rolls, which a semicolon separates ("4d4;2d4": Acid Arrow's initial and
- * later damage), by its step once for each level it lists above its lowest
- * (and above the spell's own), up to the slot used: so "2,4,6,8" adds nothing
- * at 3rd level and one step at 4th. A list of another shape counts every
- * level above the spell's.
+ * The spell's upcast steps: its tags that add dice, and none that set them
+ * ("increases to", which `setDiceOf` reads). A spell with no tag at all takes
+ * its step from the text ("the damage increases by 1d6 for each slot level
+ * above 1st"), as the converter does; that step grows only the first roll of
+ * its die when the text says it is the initial damage that grows.
+ */
+function upcastSteps(entity: Entity, baseLevel: number): UpcastStep[] {
+  const higher = stringsIn(entity.entriesHigherLevel).join(' ');
+  if (/\{@scale(?:damage|dice) /i.test(higher)) {
+    const steps: UpcastStep[] = [];
+    for (const match of higher.matchAll(SCALE_TAG)) {
+      const end = (match.index ?? 0) + match[0].length;
+      if (setsDice(higher.slice(0, match.index), higher.slice(end))) continue;
+      const step = stepOf(match, false);
+      if (step !== undefined) steps.push(step);
+    }
+    return steps;
+  }
+  const tag = textUpcastTag(entity.entries, entity.entriesHigherLevel, baseLevel);
+  const match = tag === undefined ? undefined : [...tag.matchAll(SCALE_TAG)][0];
+  const step =
+    match === undefined ? undefined : stepOf(match, /\binitial damage increases\b/i.test(higher));
+  return step === undefined ? [] : [step];
+}
+
+/**
+ * The roll as cast with a higher slot. Dice a sentence sets for this slot
+ * replace the roll (Shadow Blade's 3d8 at 3rd and 4th). Otherwise an upcast step grows
+ * each of its base rolls, which a semicolon separates ("4d4;2d4": Acid Arrow's
+ * initial and later damage), by its step once for each level it lists above
+ * its lowest (and above the spell's own), up to the slot used: so "2,4,6,8"
+ * adds nothing at 3rd level and one step at 4th. A list of another shape counts
+ * every level above the spell's. `grown` holds the first-only steps already used.
  */
 function applySlotScaling(
   roll: TaggedRoll,
-  entity: Entity,
+  steps: readonly UpcastStep[],
+  set: readonly SetDice[],
+  grown: Set<UpcastStep>,
   baseLevel: number,
   slotLevel: number,
 ): TaggedRoll {
-  const higher = stringsIn(entity.entriesHigherLevel).join(' ');
-  for (const match of higher.matchAll(SCALE_TAG)) {
-    const bases = (match[1] ?? '').split(';').map((base) => base.replaceAll(' ', ''));
-    const increment = match[3]?.replaceAll(' ', '');
-    if (!bases.includes(roll.expr) || increment === undefined) continue;
-    const levels = tagLevels(match[2] ?? '');
+  const at = set.find((s) => s.base === roll.expr && s.levels.includes(slotLevel));
+  if (at !== undefined) return { ...roll, expr: at.expr };
+  for (const upcast of steps) {
+    if (!upcast.bases.includes(roll.expr)) continue;
+    if (upcast.firstOnly && grown.has(upcast)) return roll;
+    grown.add(upcast);
+    const { levels } = upcast;
     // The printed roll is the spell's own level's, whatever lower level a tag lists.
     const lowest = levels === undefined ? baseLevel : Math.max(baseLevel, Math.min(...levels));
-    const steps =
+    const times =
       levels === undefined
         ? slotLevel - baseLevel
         : levels.filter((level) => level > lowest && level <= slotLevel).length;
-    return { ...roll, expr: addRepeated(roll.expr, increment, steps) };
+    return { ...roll, expr: addRepeated(roll.expr, upcast.step, times) };
   }
   return roll;
 }
@@ -306,6 +342,9 @@ export function spellRollActions(
     blocks.length === 0
       ? primary
       : [...scaled, ...primary.filter((roll) => roll.kind !== 'damage' && !describesScaling(roll))];
+  const steps = upcastSteps(entity, baseLevel);
+  const set = setDiceOf(entity.entries, entity.entriesHigherLevel);
+  const grown = new Set<UpcastStep>();
   const bonuses = options.damageBonuses ?? [];
   const each = bonuses.reduce((sum, b) => sum + (b.oneRoll === true ? 0 : b.amount), 0);
   const once = bonuses.reduce((sum, b) => sum + (b.oneRoll === true ? b.amount : 0), 0);
@@ -314,7 +353,7 @@ export function spellRollActions(
   const out: SpellRollAction[] = [];
   for (const raw of rolls) {
     const plain = withAbilityModifier(
-      applySlotScaling(raw, entity, baseLevel, slotLevel),
+      applySlotScaling(raw, steps, set, grown, baseLevel, slotLevel),
       options.abilityModifier,
     );
     const label = rollLabel(name, plain, plain.scalingLabel);

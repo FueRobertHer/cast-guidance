@@ -13,8 +13,9 @@
  *   tags they accepted stay on the words they were on.
  * - `tagFirst`, `swapTag` and `untag` are the edits the cards make to the text.
  */
-import { ATTACK, SAVE, textCantripScaling, textUpcastTag } from '@/convert/fc5/spell';
+import { ATTACK, SAVE, textCantripScaling } from '@/convert/fc5/spell';
 import { DAMAGE_TYPES, type Entry, inlineText, plainText } from '@/convert/fc5/text';
+import { textUpcastTag } from '@/data5e/entries/upcast';
 import { isRecord } from '@/engine/castGuidance';
 
 type Json = Record<string, unknown>;

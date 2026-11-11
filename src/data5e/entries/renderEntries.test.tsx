@@ -218,3 +218,88 @@ describe('InlineText heal rolls (DS-001)', () => {
     expect(kindRolled('The damage increases by {@scaledamage 8d6|3-9|1d6}.')).toBe('damage');
   });
 });
+
+describe('upcast chips', () => {
+  const titleOf = (text: string) => {
+    const { container, unmount } = render(<InlineText text={text} />);
+    const title = container.querySelector('button')?.getAttribute('title');
+    unmount();
+    return title;
+  };
+
+  it('says a step comes each slot level', () => {
+    expect(titleOf('The damage increases by {@scaledamage 8d6|3-9|1d6} for each slot level.')).toBe(
+      'scaling: +1d6 per slot level',
+    );
+  });
+
+  it('names the slot levels of a step that comes every two', () => {
+    expect(
+      titleOf('The damage increases by {@scaledamage 3d6|2,4,6,8|1d6} for every two slot levels.'),
+    ).toBe('scaling: +1d6 at slot levels 4, 6 and 8');
+    expect(titleOf('It increases by {@scaledamage 1d8|3,5,7,9|1d8} for every two.')).toBe(
+      'scaling: +1d8 at slot levels 5, 7 and 9',
+    );
+  });
+
+  it('says dice set outright are the dice at the slots the sentence names', () => {
+    expect(
+      titleOf(
+        'When you cast this spell using a spell slot of 5th or 6th level, the bonus to attack rolls increases to +2 and the extra damage increases to {@scaledamage 1d4|3-9|2d4}.',
+      ),
+    ).toBe('scaling: 2d4 at slot levels 5 and 6');
+    expect(
+      titleOf(
+        'When you use a spell slot of 7th level or higher, the extra damage increases to {@scaledamage 1d4|3-9|3d4}.',
+      ),
+    ).toBe('scaling: 3d4 at slot levels 7 to 9');
+    expect(titleOf('At higher slots the damage increases to {@scaledamage 1d4|3-9|2d4}.')).toBe(
+      'scaling: 2d4 at a higher slot',
+    );
+    expect(
+      titleOf(
+        'When you use a spell slot of 9th level or higher, the damage increases to {@scaledamage 1d4|3-9|4d4}.',
+      ),
+    ).toBe('scaling: 4d4 at slot level 9');
+  });
+
+  it('reads the slots from the sentence the chip is in, not an earlier one', () => {
+    expect(
+      titleOf(
+        'With a spell slot of 5th or 6th level, the bonus increases to +2. At higher slots the damage increases to {@scaledamage 1d4|3-9|2d4}.',
+      ),
+    ).toBe('scaling: 2d4 at a higher slot');
+  });
+
+  it('reads the slots its sentence names before an earlier tag in it', () => {
+    const { container, unmount } = render(
+      <InlineText text="When you use a spell slot of 7th level or higher, the damage increases to {@scaledamage 3d8|3-9|5d8} and the healing increases to {@scaledice 2d8|3-9|4d8}." />,
+    );
+    const titles = [...container.querySelectorAll('button')].map((b) => b.getAttribute('title'));
+    unmount();
+    expect(titles).toEqual([
+      'scaling: 5d8 at slot levels 7 to 9',
+      'scaling: 4d8 at slot levels 7 to 9',
+    ]);
+  });
+
+  it('reads slots a clause names right after the tag', () => {
+    expect(
+      titleOf(
+        'The damage increases to {@scaledamage 2d8|2-9|3d8} with a 3rd- or 4th-level spell slot.',
+      ),
+    ).toBe('scaling: 3d8 at slot levels 3 and 4');
+  });
+
+  it('labels a tag after "increases to" that says for each slot level as a step', () => {
+    expect(
+      titleOf('The damage increases to {@scaledamage 2d8|2-9|1d8} for each slot level above 2nd.'),
+    ).toBe('scaling: +1d8 per slot level');
+  });
+
+  it('says level for a list that grows at one slot level', () => {
+    expect(titleOf('It increases by {@scaledamage 1d8|3,5|1d8} at 5th level.')).toBe(
+      'scaling: +1d8 at slot level 5',
+    );
+  });
+});

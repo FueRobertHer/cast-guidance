@@ -9,9 +9,10 @@ import { Link } from 'react-router';
 import { signed } from '@/lib/signed';
 import { safeExternalHref } from '@/lib/url';
 import { RollChip } from '@/ui/RollChip';
-import { parseEntityRef, tokenizeEntryText } from '../tags';
+import { type EntryToken, parseEntityRef, tokenizeEntryText } from '../tags';
 import { DISPLAY_ARG, PLAIN_REF_TAGS } from './inlineTags';
 import { libraryPath } from './libraryPath';
+import { setDiceLevels, setsDice, slotLevelsLabel, tagLevels } from './upcast';
 
 // ---------------------------------------------------------------------------
 // Inline tags
@@ -39,11 +40,17 @@ function TagView({
   args,
   inline,
   heals = false,
+  lead = '',
+  trail = '',
 }: {
   tag: string;
   args: string[];
   inline: boolean;
   heals?: boolean;
+  /** The words of its sentence before it. */
+  lead?: string;
+  /** The words after it, to the next tag. */
+  trail?: string;
 }): ReactNode {
   const body = args[0] ?? '';
   switch (tag) {
@@ -59,14 +66,15 @@ function TagView({
       );
     case 'scaledamage':
     case 'scaledice': {
-      // {@scaledamage 8d6|3-9|1d6} — the last arg is the per-step add.
+      // {@scaledamage 8d6|3-9|1d6}: the last arg is the per-step add, or the
+      // dice outright where the sentence says "increases to".
       const add = args[2] ?? body;
       return (
         <RollChip
           inline={inline}
           expr={add}
           variant={tag === 'scaledice' && heals ? 'heal' : 'damage'}
-          label={`scaling: +${add} per level`}
+          label={scaleLabel(add, args[1] ?? '', lead, trail)}
         />
       );
     }
@@ -196,6 +204,48 @@ function healsBetween(before: string, after: string): boolean {
   return /\bregains?\b/i.test(lead) && /\bhit points?\b/i.test(sentence);
 }
 
+/**
+ * What an upcast chip adds: a step each slot level ("+1d6 per slot level"), a
+ * step at the levels a list names ("+1d6 at slot levels 4, 6 and 8", Flame
+ * Blade's every two), or the dice outright at the slots its sentence names
+ * (Elemental Weapon's "increases to 2d4" at 5th and 6th).
+ */
+function scaleLabel(add: string, list: string, lead: string, trail: string): string {
+  if (setsDice(lead, trail)) {
+    const levels = setDiceLevels(lead, trail);
+    return levels === undefined
+      ? `scaling: ${add} at a higher slot`
+      : `scaling: ${add} at ${atSlots(levels)}`;
+  }
+  const levels = tagLevels(list);
+  const each =
+    levels === undefined || levels.every((l, i) => i === 0 || l === (levels[i - 1] ?? 0) + 1);
+  return each || levels === undefined
+    ? `scaling: +${add} per slot level`
+    : `scaling: +${add} at ${atSlots(levels.slice(1))}`;
+}
+
+/** "slot level 5", or "slot levels 4, 6 and 8". */
+function atSlots(levels: readonly number[]): string {
+  return `slot level${levels.length > 1 ? 's' : ''} ${slotLevelsLabel(levels)}`;
+}
+
+/** The words of the sentence before token `i`, back past any tags in it. */
+function sentenceBefore(tokens: readonly EntryToken[], i: number): string {
+  let words = '';
+  for (let j = i - 1; j >= 0; j--) {
+    const t = tokens[j];
+    if (t?.kind !== 'text') {
+      words = ` ${words}`;
+      continue;
+    }
+    const stop = t.text.lastIndexOf('.');
+    if (stop !== -1) return t.text.slice(stop + 1) + words;
+    words = t.text + words;
+  }
+  return words;
+}
+
 export function InlineText({ text }: { text: string }): ReactNode {
   const tokens = tokenizeEntryText(text);
   const prose = tokens.some((t) => t.kind === 'text' && t.text.trim() !== '');
@@ -208,7 +258,19 @@ export function InlineText({ text }: { text: string }): ReactNode {
         const heals =
           before?.kind === 'text' &&
           healsBetween(before.text, after?.kind === 'text' ? after.text : '');
-        return <TagView key={i} tag={t.tag} args={t.args} inline={prose} heals={heals} />;
+        const lead = sentenceBefore(tokens, i);
+        const trail = after?.kind === 'text' ? after.text : '';
+        return (
+          <TagView
+            key={i}
+            tag={t.tag}
+            args={t.args}
+            inline={prose}
+            heals={heals}
+            lead={lead}
+            trail={trail}
+          />
+        );
       })}
     </>
   );

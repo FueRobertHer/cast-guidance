@@ -4,6 +4,7 @@
  * minute"), so nearly everything maps; what does not parse stays readable as
  * a line of text and is reported.
  */
+import { onlyRoll, textUpcastTag } from '../../data5e/entries/upcast';
 import type { RulesVersion } from '../../data5e/rulesVersion';
 import { childElements, childText, childTexts, textContent, type XmlElement } from '../xml';
 import {
@@ -304,50 +305,6 @@ function upcastTag(el: XmlElement, spellLevel: number, capped: boolean): string 
   const last = capped ? (rolls[rolls.length - 1]?.level ?? 9) : 9;
   const base = `${first.count}d${first.sides}${first.bonus}`;
   return `{@scaledamage ${base}|${spellLevel}-${last}|${step}d${first.sides}}`;
-}
-
-/** A roll tag's dice, by kind, from text: `{@damage 3d6}`, `{@dice 1d8+3}`. */
-const ROLL_TAG = /\{@(damage|dice) (\d{1,3})d(\d{1,3})([+-]\d{1,3})?\}/g;
-
-/**
- * The one roll of a kind and die in the text, or undefined when there is none
- * or more than one: the upcast step needs to know which roll it grows.
- */
-function onlyRoll(text: string, kind: string, sides: string): string | undefined {
-  const found = new Set<string>();
-  for (const m of text.matchAll(ROLL_TAG)) {
-    if (m[1] === kind && m[3] === sides) found.add(`${m[2]}d${m[3]}${m[4] ?? ''}`);
-  }
-  return found.size === 1 ? [...found][0] : undefined;
-}
-
-/** "the damage increases by {@dice 1d6} for each slot level above 1st". */
-const UPCAST_STEP =
-  /\b(damage|healing)\b[^.]{0,80}? increases? by \{@(?:dice|damage) (\d{1,3}d(\d{1,3}))\} for each (?:spell )?slot level above/i;
-
-/**
- * The upcast tag from the text alone, for a file without a roll per level
- * ({@link upcastTag}): "the damage increases by 1d6 for each slot level above
- * 1st" over the spell's one damage roll of that die (`{@scaledamage
- * 3d6|1-9|1d6}`), or the healing over its one roll (`{@scaledice
- * 1d8|1-9|1d8}`). A text that caps the increase says nothing reliable about
- * the top slot, so it stays as it is.
- */
-export function textUpcastTag(
-  entries: Entry[],
-  higher: Entry[],
-  spellLevel: number,
-): string | undefined {
-  const higherText = plainText(higher);
-  if (/\bmaximum\b/i.test(higherText)) return undefined;
-  // Two steps ("the initial damage increases by 1d8 and the later damage by 1d6") are more than one tag holds.
-  if ((higherText.match(/ by \{@(?:dice|damage) /g) ?? []).length > 1) return undefined;
-  const step = UPCAST_STEP.exec(higherText);
-  if (step === null) return undefined;
-  const healing = (step[1] ?? '').toLowerCase() === 'healing';
-  const base = onlyRoll(plainText(entries), healing ? 'dice' : 'damage', step[3] ?? '');
-  if (base === undefined) return undefined;
-  return `{@scale${healing ? 'dice' : 'damage'} ${base}|${spellLevel}-9|${step[2]}}`;
 }
 
 const ROLL = '\\{@(?:dice|damage) (\\d{1,3})d(\\d{1,3})\\}';
