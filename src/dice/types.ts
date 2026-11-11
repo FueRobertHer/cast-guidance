@@ -95,7 +95,7 @@ export interface RollOffer {
  * feature's Use is (`pay`, as `RollOffer` has it). `die` says what rerolls, as
  * the engine's `Reroll` does: the roll's d20s, one showing `atMost` or less,
  * or one d20 more with the best kept. The new roll stands. With `to` it is a
- * set, not a reroll: the kept d20, at `atMost` or less, counts as `to`.
+ * set, not a reroll: the kept d20, when it shows less, counts as `to`.
  */
 export interface RerollOffer {
   source: string;

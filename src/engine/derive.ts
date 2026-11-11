@@ -556,7 +556,7 @@ function rollRiders(
         ...from,
         kind: 'reroll',
         ...definedOnly({ die, atMost, to, auto, free, reaction, ifFailed, bonus, when }),
-        ...(floorScore !== undefined ? { floor: score(floorScore), auto: true } : {}),
+        ...(floorScore !== undefined ? { floor: score(floorScore) } : {}),
       });
     } else
       out.push({

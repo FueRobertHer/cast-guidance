@@ -91,9 +91,9 @@ const reroll = (on: RollFilter, row: RerollRow = {}): Extract<ExtraRow, { reroll
 /** "Reroll a 1 ... you must use the new roll": made as the d20 lands. */
 const LUCK: RerollRow = { die: 'one', atMost: 1, auto: true, free: true };
 /** "Treat a d20 roll of 9 or lower as a 10": it never hurts, so made as the d20 lands. */
-const AS_TEN: RerollRow = { to: 10, atMost: 9, auto: true, free: true };
+const AS_TEN: RerollRow = { to: 10, auto: true, free: true };
 /** The same, only sometimes, which the player says: offered on the result. */
-const asTenWhen = (when: string): RerollRow => ({ to: 10, atMost: 9, free: true, when });
+const asTenWhen = (when: string): RerollRow => ({ to: 10, free: true, when });
 /** "Use that score in place of the total". */
 const STRENGTH_FLOOR: RerollRow = { floorScore: 'str', auto: true, free: true };
 const RAGING: readonly WhileState[] = [{ state: 'effect', name: 'Rage' }];
@@ -202,7 +202,6 @@ export const ROLL_EXTRAS: Record<string, readonly ExtraRow[]> = {
   'ear for deceit|inquisitive|xge': [
     reroll(skills('Insight'), {
       to: 8,
-      atMost: 7,
       free: true,
       when: 'Only to tell whether a creature is lying',
     }),
@@ -247,7 +246,7 @@ export const ROLL_EXTRAS: Record<string, readonly ExtraRow[]> = {
   // --- Feats ---------------------------------------------------------------------
   'lucky|xphb': [paidAdvantage(D20_TESTS)],
   // Magical Balance, a use of its proficiency-bonus pool.
-  'adept of the red robes|dsotdq': [reroll({ rolls: ['attack', 'check'] }, { to: 10, atMost: 9 })],
+  'adept of the red robes|dsotdq': [reroll({ rolls: ['attack', 'check'] }, { to: 10 })],
   // "Roll an additional d20 ... You choose which of the d20s is used."
   'lucky|phb': [reroll(D20_TESTS, { die: 'extra' })],
   'elven accuracy|xge': [

@@ -351,7 +351,8 @@ describe('pricedRollEffects', () => {
     });
 
     it('keeps a floor as the d20 lands whether or not it is marked so, and never offers it', () => {
-      const might = { source: 'Indomitable Might', floor: 18 };
+      // Free, so a reroll of its name would be offered at no price.
+      const might = { source: 'Indomitable Might', floor: 18, free: true };
       expect(pricedRollEffects(riders([might]), withRerolls, undefined).rerolls).toEqual([might]);
       const priced = pricedRollEffects(riders([might]), withRerolls, play());
       expect(priced.rerolls).toEqual([might]);
@@ -362,7 +363,6 @@ describe('pricedRollEffects', () => {
       const trance = {
         source: 'Trance of Order',
         to: 10,
-        atMost: 9,
         free: true,
         when: 'Only while it lasts',
       };
@@ -377,7 +377,6 @@ describe('pricedRollEffects', () => {
           source: 'Trance of Order',
           die: 'all',
           ifFailed: false,
-          atMost: 9,
           to: 10,
           when: 'Only while it lasts',
         },

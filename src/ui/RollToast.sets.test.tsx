@@ -25,7 +25,6 @@ const trance: RerollOffer = {
   source: 'Trance of Order',
   die: 'all',
   to: 10,
-  atMost: 9,
   ifFailed: false,
   when: 'Only while Trance of Order lasts',
 };

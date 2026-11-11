@@ -943,9 +943,9 @@ export interface PaidRoll {
  *   which the player counts); with `reaction`, the reaction alone (Living
  *   Legend, whose use went as it began).
  * - `bonus`: added to the new roll (2024 Indomitable: the Fighter level).
- * - `to`: no reroll; the d20 kept, showing `atMost` or less (less than `to`
- *   when unset), counts as `to` (Reliable Talent's 9 or lower as a 10, Stroke
- *   of Luck's 20).
+ * - `to`: no reroll; the d20 kept, when it shows less, counts as `to`
+ *   (Reliable Talent's 9 or lower as a 10, Stroke of Luck's 20). `atMost` and
+ *   `die` say nothing to a set.
  * - `floorScore`: no reroll; a total under this ability's score counts as the
  *   score (Indomitable Might). Always `auto`.
  * - `reaction`, `ifFailed` and `when` as `PaidRoll` has them.

@@ -205,7 +205,7 @@ describe('rerollD20', () => {
 });
 
 describe('rerollD20 setting a number', () => {
-  const talent = { source: 'Reliable Talent', to: 10, atMost: 9 };
+  const talent = { source: 'Reliable Talent', to: 10 };
   const noDie = () => {
     throw new Error('a set rolls no die');
   };
@@ -245,7 +245,7 @@ describe('rerollD20 setting a number', () => {
     expect(dis.meta?.d20).toEqual({ natural: 10 });
   });
 
-  it('sets any roll under the number when no most is named (Stroke of Luck), never a 20', () => {
+  it('sets any roll under the number (Stroke of Luck), never a 20', () => {
     const luck = { source: 'Stroke of Luck', to: 20 };
     expect(rerollD20(rolled('1d20+3', [19]), luck, noDie)?.total).toBe(23);
     expect(rerollD20(rolled('1d20+3', [1]), luck, noDie)?.meta?.d20).toEqual({ natural: 20 });
@@ -285,7 +285,7 @@ describe('rerollD20 setting a number', () => {
     const again = rerollD20(
       rerollD20(
         rolled('1d20', [2]),
-        { ...talent, source: 'Ear for Deceit', to: 8, atMost: 7 },
+        { ...talent, source: 'Ear for Deceit', to: 8 },
         noDie,
       ) as RollResult,
       talent,
@@ -331,7 +331,7 @@ describe('rerollD20 holding a total up', () => {
     const high = rerollD20(held, { source: 'Indomitable' }, faces(19)) as RollResult;
     expect(high.total).toBe(23);
     expect(words(high)).toBe('d20 [~5~, 19] Indomitable reroll + 4');
-    const set = rerollD20(held, { source: 'Reliable Talent', to: 10, atMost: 9 }) as RollResult;
+    const set = rerollD20(held, { source: 'Reliable Talent', to: 10 }) as RollResult;
     expect(set.total).toBe(18);
     expect(set.meta?.floor?.raw).toBe(14);
   });

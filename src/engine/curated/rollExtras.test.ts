@@ -139,13 +139,13 @@ describe('the rerolls in the roll extras table', () => {
           expect(
             r.die === 'low' ||
               (r.die === 'one' && r.atMost === 1) ||
-              (sets && r.atMost !== undefined && r.atMost < (r.to ?? 0)) ||
+              sets ||
               r.floorScore !== undefined,
             key,
           ).toBe(true);
         }
         if (r.die === 'low') expect(r.auto, key).toBe(true);
-        if (r.atMost !== undefined) expect(sets || r.die === 'one', key).toBe(true);
+        if (r.atMost !== undefined) expect(r.die, key).toBe('one');
         // A set or a floor rerolls nothing, so it names no die, and a floor is never asked.
         if (sets || r.floorScore !== undefined) expect(r.die, key).toBeUndefined();
         if (sets) expect(r.to, key).toBeLessThanOrEqual(20);
@@ -180,7 +180,7 @@ describe('the rerolls in the roll extras table', () => {
       const { kind: _kind, origin: _origin, ...row } = r as EffectInput & { kind: 'rollReroll' };
       return row;
     };
-    const asTen = { to: 10, atMost: 9, auto: true, free: true };
+    const asTen = { to: 10, auto: true, free: true };
     expect(one('reliable talent|rogue|phb')).toEqual({
       on: { rolls: ['check'], proficient: true },
       ...asTen,
@@ -194,14 +194,12 @@ describe('the rerolls in the roll extras table', () => {
     expect(one('ear for deceit|inquisitive|xge')).toEqual({
       on: { rolls: ['check'], skills: ['Insight'] },
       to: 8,
-      atMost: 7,
       free: true,
       when: 'Only to tell whether a creature is lying',
     });
     const trance = {
       on: { rolls: ['attack', 'check', 'save'] },
       to: 10,
-      atMost: 9,
       free: true,
       when: 'Only while Trance of Order lasts',
     };
@@ -210,7 +208,6 @@ describe('the rerolls in the roll extras table', () => {
     const dragon = {
       on: { rolls: ['check'], abilities: ['int', 'wis'] },
       to: 10,
-      atMost: 9,
       free: true,
       when: 'Only in your Dragon form',
     };
@@ -220,7 +217,6 @@ describe('the rerolls in the roll extras table', () => {
     expect(one('adept of the red robes|dsotdq')).toEqual({
       on: { rolls: ['attack', 'check'] },
       to: 10,
-      atMost: 9,
     });
     expect(one('stroke of luck|rogue|phb')).toEqual({
       on: { rolls: ['check'] },
@@ -309,6 +305,10 @@ describe('roll extras on a derived sheet', () => {
         on: { rolls: ['check' as const], abilities: ['str' as const] },
         reroll: { floorScore: 'str' as const, auto: true, free: true },
       },
+      {
+        on: { rolls: ['check' as const], skills: ['Athletics'] },
+        reroll: { to: 10, auto: true, free: true },
+      },
     ],
     'alert|phb': [{ on: { rolls: ['check' as const], initiative: true }, dice: '1d8' }],
     'archery|phb': [{ on: { rolls: ['attack' as const] }, advantage: true }],
@@ -357,6 +357,13 @@ describe('roll extras on a derived sheet', () => {
     expect(sheet17.abilities.str.value).toBe(17);
     expect(rollEffects(sheet17, { kind: 'check', ability: 'str' }).rerolls).toEqual([
       { source: 'Grit', floor: 17, auto: true, free: true },
+    ]);
+    // A set reaches the skill it names, its number carried through.
+    expect(
+      rollEffects(sheet17, { kind: 'check', ability: 'str', skill: 'Athletics' }).rerolls,
+    ).toEqual([
+      { source: 'Grit', floor: 17, auto: true, free: true },
+      { source: 'Grit', to: 10, auto: true, free: true },
     ]);
     // No floor score on the effect itself: it is worked out, and never reaches a save.
     expect(rollEffects(sheet17, { kind: 'save', ability: 'str' }).rerolls).toEqual([

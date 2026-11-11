@@ -70,7 +70,6 @@ const talent: EffectInput = {
   kind: 'rollReroll',
   on: { rolls: ['check'], proficient: true },
   to: 10,
-  atMost: 9,
   auto: true,
   free: true,
 };

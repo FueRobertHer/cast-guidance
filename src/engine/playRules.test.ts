@@ -296,7 +296,16 @@ describe('rollEffects', () => {
     });
 
     it('passes a set and a floor on with their numbers, apart from a reroll of the same name', () => {
-      const talent: RollRider = { ...luck, die: undefined, to: 10, atMost: 9, origin: 'Lucky' };
+      const talent: RollRider = {
+        kind: 'reroll',
+        on: luck.on,
+        to: 10,
+        auto: true,
+        free: true,
+        origin: 'Lucky',
+      };
+      // A reroll of the whole roll names no die, as a set and a floor do not.
+      const again: RollRider = { ...indomitable, on: { rolls: ['check'] }, origin: 'Lucky' };
       const might: RollRider = {
         kind: 'reroll',
         on: { rolls: ['check'], abilities: ['str'] },
@@ -306,12 +315,13 @@ describe('rollEffects', () => {
         origin: 'Lucky',
       };
       const check = rollEffects(
-        { rollRiders: [{ ...luck, origin: 'Lucky' }, talent, might, { ...might }] },
+        { rollRiders: [{ ...luck, origin: 'Lucky' }, again, talent, might, { ...might }] },
         { kind: 'check', ability: 'str', skill: 'Athletics' },
       );
       expect(check.rerolls).toEqual([
         { source: 'Lucky', die: 'one', atMost: 1, auto: true, free: true },
-        { source: 'Lucky', to: 10, atMost: 9, auto: true, free: true },
+        { source: 'Lucky', ifFailed: true, bonus: 9 },
+        { source: 'Lucky', to: 10, auto: true, free: true },
         { source: 'Lucky', floor: 18, auto: true, free: true },
       ]);
     });

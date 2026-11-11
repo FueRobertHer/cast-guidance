@@ -814,7 +814,7 @@ describe('rollD20Test with effects in play', () => {
   });
 
   describe('sets and floors (Reliable Talent, Stroke of Luck, Indomitable Might)', () => {
-    const talent = { source: 'Reliable Talent', to: 10, atMost: 9, auto: true, free: true };
+    const talent = { source: 'Reliable Talent', to: 10, auto: true, free: true };
     const luck = { source: 'Luck', die: 'one' as const, atMost: 1, auto: true, free: true };
     const might = { source: 'Indomitable Might', floor: 18, auto: true, free: true };
     const stroke = { source: 'Stroke of Luck', die: 'all' as const, to: 20, ifFailed: true };

@@ -7,7 +7,7 @@ export interface RerollHow {
   die?: 'all' | 'one' | 'low' | 'extra';
   atMost?: number;
   bonus?: number;
-  /** A set, not a reroll: the kept d20, at `atMost` or less, counts as this. */
+  /** A set, not a reroll: the kept d20, when it shows less, counts as this. */
   to?: number;
   /** A floor, not a reroll: the total counts as at least this (Indomitable Might). */
   floor?: number;
@@ -32,8 +32,7 @@ export function withRaw(result: RollResult, raw: number): RollResult {
 /**
  * The roll with its kept d20 set to `to`, as `how` says: the die it replaces
  * is set aside, and the natural and an attack's crit follow the new number.
- * Undefined when it can change nothing: the die shows more than `atMost`, or
- * `to` already.
+ * Undefined when it can change nothing: the die shows `to` or more.
  */
 function setD20(
   result: RollResult,
@@ -42,7 +41,7 @@ function setD20(
 ): RollResult | undefined {
   const rolls = first.rolls.map((r) => ({ ...r }));
   const was = rolls.find((r) => r.kept);
-  if (was === undefined || was.v >= how.to || was.v > (how.atMost ?? how.to)) return undefined;
+  if (was === undefined || was.v >= how.to) return undefined;
   was.kept = false;
   was.out = true;
   rolls.push({ v: how.to, kept: true });
