@@ -725,9 +725,7 @@ export const CURATED: Record<string, CuratedFn> = {
   'speedy|xphb': (col, origin) => {
     col.add({ kind: 'speedBonus', amount: 10, origin });
   },
-  'lucky|phb': (col, origin) => {
-    col.add({ kind: 'resource', key: 'luck', label: 'Luck', max: 3, resetOn: 'long', origin });
-  },
+  // Lucky (PHB): a row in `src/rules/cast-guidance/curated.json`.
   'lucky|xphb': (col, origin) => {
     // 2024: luck points equal to your proficiency bonus.
     col.add({
@@ -807,7 +805,7 @@ export const CURATED: Record<string, CuratedFn> = {
       origin,
     });
   },
-  'disarming attack|phb': maneuverSave('Disarming Attack', 'str'),
+  // Disarming Attack (PHB): a row in `src/rules/cast-guidance/curated.json`.
   'disarming attack|xphb': maneuverSave('Disarming Attack', 'str'),
   'goading attack|phb': maneuverSave('Goading Attack', 'wis'),
   'goading attack|xphb': maneuverSave('Goading Attack', 'wis'),
@@ -1052,6 +1050,9 @@ export const CURATED: Record<string, CuratedFn> = {
       origin,
     });
   },
+  // Not a built-in row yet: a level table reads the walked class's level, and this
+  // reads the Fighter's, which differ when a Fighter shares a build with a
+  // reskin or a copy of one.
   'action surge|fighter': (col, origin) => {
     col.add({
       kind: 'resource',
@@ -1083,19 +1084,10 @@ export const CURATED: Record<string, CuratedFn> = {
     });
   },
   // Stunning Strike states its effect but leaves the DC to the "ki save DC"
-  // defined in the Ki/Monk's Focus feature — the prose scanner can't resolve a
-  // cross-feature DC, so pin it here: Con save vs 8 + prof + Wis mod. It rides on
-  // a hit, so it takes no slot of its own. Its cost is in `SPEND_LINKS`.
-  'stunning strike|monk': (col, origin) => {
-    col.add({
-      kind: 'action',
-      economy: 'none',
-      label: 'Stunning Strike',
-      note: 'stunned until your next turn on a failed save',
-      save: { targetAbility: 'con', dcAbility: 'wis' },
-      origin,
-    });
-  },
+  // defined in the Ki/Monk's Focus feature. The prose scanner can't resolve a
+  // cross-feature DC, so its row pins it: Con save vs 8 + prof + Wis mod. It rides
+  // on a hit, so it takes no slot of its own. Its cost is in `SPEND_LINKS`. The row
+  // is in `src/rules/cast-guidance/curated.json`.
   // 2024 says "you can use Wild Shape twice" in a table the scanner cannot see, so
   // it gave that printing no pool and nothing could spend one.
   'wild shape|druid': (col, origin, from) => {
@@ -1862,10 +1854,8 @@ export const CURATED: Record<string, CuratedFn> = {
       origin,
     });
   },
-  // Warforged, both printings.
-  'trait:integrated protection': (col, origin) => {
-    col.add({ kind: 'acBonus', amount: 1, origin });
-  },
+  // Warforged's Integrated Protection, both printings: a row in
+  // `src/rules/cast-guidance/curated.json`.
   'trait:hare-trigger': (col, origin) => {
     col.add({ kind: 'initiativeBonus', amount: 'profBonus', origin });
   },

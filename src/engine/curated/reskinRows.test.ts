@@ -5,6 +5,8 @@
  * pinned release (v2.41.0, after its copies resolve), and placeholder prose.
  */
 import { describe, expect, it } from 'vitest';
+import { BUILT_IN_RULE_SETS } from '../../../tests-fixtures/testWorld';
+import { RULE_SET_TYPE } from '../castGuidance';
 import { deriveSheet } from '../derive';
 import {
   type CharacterDoc,
@@ -273,7 +275,8 @@ const ctx: EngineContext = {
         String(e.name).toLowerCase() === name.toLowerCase() &&
         (source === undefined || String(e.source).toLowerCase() === source.toLowerCase()),
     ),
-  byType: (type) => WORLD[type] ?? [],
+  // As every registry holds them: the rows moved out of `CURATED`.
+  byType: (type) => (type === RULE_SET_TYPE ? BUILT_IN_RULE_SETS : (WORLD[type] ?? [])),
 };
 
 const FIGHTER = { name: 'Fighter', source: 'XPHB' };
@@ -343,6 +346,13 @@ describe('a class that reskins another', () => {
     expect(action(warrior, 'Second Wind')?.roll).toBe('1d10+17');
     // A Fighter's spend row reaches the same feature walked under the Warrior.
     expect(action(warrior, 'Tactical Mind')?.cost).toMatchObject({ resource: 'second-wind' });
+  });
+
+  it("keeps a Fighter 17's two Action Surges beside a Warrior taken first", () => {
+    // The row reads the Fighter's level, not the level of the class walked first:
+    // a level table in a built-in row would read the Warrior's 2 here.
+    const both = derive(build(FIGHTER, 17, { after: { cls: WARRIOR, levels: 2 } }));
+    expect(pool(both, 'action-surge')?.max).toBe(2);
   });
 
   it('reads the Shaman as the Barbarian it is', () => {

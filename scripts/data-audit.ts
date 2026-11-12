@@ -30,6 +30,7 @@ import {
   unsettledDisagreements,
 } from '../src/data5e/audit/budget';
 import { describeReprints } from '../src/data5e/audit/reprints';
+import { requireBuiltInRules } from '../src/data5e/builtInRules';
 import { DATA_TAG, isCompatibleTag, MAX_DATA_FILE_BYTES } from '../src/data5e/config';
 import { readJudgments } from './data-judgments-file';
 import { fetchRelease, resolveLatestTag } from './data-release';
@@ -205,6 +206,13 @@ try {
   die(error instanceof Error ? error.message : String(error));
 }
 
+let ruleSets: Awaited<ReturnType<typeof requireBuiltInRules>>;
+try {
+  ruleSets = await requireBuiltInRules();
+} catch (error) {
+  die(error instanceof Error ? error.message : String(error));
+}
+
 let judgments: ReturnType<typeof readJudgments>;
 try {
   judgments = readJudgments();
@@ -220,6 +228,7 @@ const report = analyzeDataset({
   // that crosses it is still served, but the next few might not be.
   maxFileBytes: MAX_DATA_FILE_BYTES / 2,
   judgments,
+  ruleSets,
 });
 printReport(report, budget);
 

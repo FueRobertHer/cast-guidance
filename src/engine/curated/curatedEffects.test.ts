@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
+import { BUILT_IN_RULE_SETS } from '../../../tests-fixtures/testWorld';
+import { RULE_SET_TYPE } from '../castGuidance';
 import { Collector } from '../effects/base';
+import { mechanicsOf } from '../effects/mechanics';
 import {
   type DataEntity,
   type EffectInput,
@@ -7,11 +10,37 @@ import {
   type EngineContext,
   newCharacterDoc,
 } from '../types';
-import { emitCuratedEffects, emitCuratedTrait } from './curatedEffects';
+import { emitCuratedEffects } from './curatedEffects';
 import { linkSpend } from './spendLinks';
 
-const ctx: EngineContext = { get: () => undefined, byType: () => [] };
+// No data but the rule sets every registry holds: the rows moved out of `CURATED`.
+const ctx: EngineContext = {
+  get: () => undefined,
+  byType: (type) => (type === RULE_SET_TYPE ? BUILT_IN_RULE_SETS : []),
+};
 const origin: EffectOrigin = { label: 'Feature', uid: 'x', type: 'class' };
+
+/**
+ * A curated row, wherever it lives while rows move out of code: `CURATED`, else
+ * the shipped rule set's row, emitted as the seam emits it. False when neither
+ * has a row under the key. A moved row's formulas are filled only at fold time,
+ * so a test of one reads it through `deriveSheet`, not here.
+ */
+function emitRow(c: Collector, key: string, o: EffectOrigin, from?: string): boolean {
+  if (emitCuratedEffects(c, key, o, from)) return true;
+  let builtIn = false;
+  mechanicsOf(c, {
+    entry: {},
+    label: o.label,
+    origin: o,
+    target: key,
+    ruleKeys: [key],
+    inherited: (hit) => {
+      builtIn = hit !== undefined;
+    },
+  });
+  return builtIn;
+}
 
 function col(className?: string, levels = 5) {
   const doc = newCharacterDoc('c', 'H', 't');
@@ -224,7 +253,7 @@ describe('pools a cost spends', () => {
   });
   const emit = (key: string, cls: string, levels: number, from: EffectOrigin) => {
     const c = col(cls, levels);
-    expect(emitCuratedEffects(c, key, from)).toBe(true);
+    expect(emitRow(c, key, from)).toBe(true);
     return c.effects;
   };
   const resource = (effects: EffectInput[], key: string) =>
@@ -524,7 +553,7 @@ describe('pools, dice and DCs only class prose states', () => {
       e.kind === 'resource' ? [`${e.key} ${e.label} ${String(e.max)} ${e.resetOn}`] : [],
     );
   const run = (key: string, c: Collector, o: EffectOrigin = origin, from?: string) => {
-    expect(emitCuratedEffects(c, key, o, from)).toBe(true);
+    expect(emitRow(c, key, o, from)).toBe(true);
     return c;
   };
 
@@ -817,7 +846,7 @@ describe('standing numbers of core class features', () => {
 
   it('gives a Warforged’s Integrated Protection +1 AC', () => {
     const c = col();
-    expect(emitCuratedTrait(c, 'Integrated Protection', origin)).toBe(true);
+    expect(emitRow(c, 'trait:integrated protection', origin)).toBe(true);
     expect(c.effects).toEqual([{ kind: 'acBonus', amount: 1, origin }]);
   });
 

@@ -50,6 +50,16 @@ export function attachBuiltInRules(registry: EntityRegistry, rules: BuiltInRules
   registry.setRuleSets(rules.sets, rules.failed);
 }
 
+/**
+ * The built-in rule sets, for a script whose numbers mean nothing without them
+ * (the audit, the judge): it throws when they did not load.
+ */
+export async function requireBuiltInRules(): Promise<readonly Entity[]> {
+  const rules = await loadBuiltInRules();
+  if (rules.failed) throw new Error('The built-in rules did not load (see the warning above).');
+  return rules.sets;
+}
+
 /** Load the built-in rule sets and give them to a registry: for scripts and tests. */
 export async function withBuiltInRules(registry: EntityRegistry): Promise<EntityRegistry> {
   attachBuiltInRules(registry, await loadBuiltInRules());

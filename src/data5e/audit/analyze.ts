@@ -9,6 +9,7 @@
  */
 import { parseDice } from '../../dice/parse';
 import { spellRollActions } from '../../features/sheet/spellRolls';
+import type { Entity } from '../copyMod';
 import { isRenderedTag } from '../entries/inlineTags';
 import { normalizeDataset } from '../normalize';
 import { BRANCH_SET, type BranchBlock, branchSubjects, findBranchBlocks } from './branches';
@@ -70,6 +71,11 @@ export interface AnalyzeInput {
   maxFileBytes: number;
   /** Saved judgments (`scripts/data-judgments.json`), when the file exists. */
   judgments?: JudgmentFile;
+  /**
+   * The app's built-in rule sets (`loadBuiltInRules`), which hold the rows moved
+   * out of `CURATED`: without them the audit counts those entries as prose.
+   */
+  ruleSets: readonly Entity[];
 }
 
 /**
@@ -113,7 +119,7 @@ export function sortedCounts(map: Record<string, number>): Array<[string, number
 }
 
 export function analyzeDataset(input: AnalyzeInput): AuditReport {
-  const { tag, files, fileBytes, maxFileBytes, judgments } = input;
+  const { tag, files, fileBytes, maxFileBytes, judgments, ruleSets } = input;
   const largest = [...fileBytes.entries()]
     .map(([path, bytes]) => ({ path, bytes }))
     .sort((a, b) => b.bytes - a.bytes || a.path.localeCompare(b.path));
@@ -137,6 +143,7 @@ export function analyzeDataset(input: AnalyzeInput): AuditReport {
   }
 
   const reg = normalizeDataset(files);
+  reg.setRuleSets(ruleSets);
 
   const warningGroups: Record<string, number> = {};
   const warningExamples: Record<string, string[]> = {};

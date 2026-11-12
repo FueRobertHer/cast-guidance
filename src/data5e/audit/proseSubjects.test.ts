@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest';
+import { BUILT_IN_RULE_SETS } from '../../../tests-fixtures/testWorld';
+import type { Entity } from '../copyMod';
 import { normalizeDataset } from '../normalize';
 import { answersFor, type JudgmentFile, judgmentKey, runJudgments, setTag } from './judgments';
 import { auditProse, PROSE_SET } from './proseChecks';
@@ -154,6 +156,41 @@ describe('readableEntries', () => {
     expect(readableEntries(['{@i level 2 {@variantrule test features|hb|test feature}}'])).toBe(
       'level 2 test feature',
     );
+  });
+});
+
+describe('a row moved to the built-in rule set', () => {
+  const trait = (ruleSets: unknown[]) => {
+    const reg = normalizeDataset(
+      new Map<string, unknown>([
+        [
+          'races.json',
+          {
+            race: [
+              {
+                name: 'Plated',
+                source: 'HB',
+                entries: [{ name: 'Integrated Protection', entries: ['Your plating guards you.'] }],
+              },
+            ],
+          },
+        ],
+      ]),
+    );
+    reg.setRuleSets(ruleSets as Entity[]);
+    return proseSubjects(reg).find((s) => s.name === 'Integrated Protection');
+  };
+
+  it('is curated when it replaces the scan, as its code row was', () => {
+    expect(trait(BUILT_IN_RULE_SETS)?.curated).toBe(true);
+    expect(trait([])?.curated).toBe(false);
+    const keep = {
+      type: 'ruleSet',
+      v: 1,
+      name: 'Beside the scan',
+      rows: [{ part: 'curated', keys: ['trait:integrated protection'], scan: 'keep', effects: [] }],
+    };
+    expect(trait([keep])?.curated).toBe(false);
   });
 });
 

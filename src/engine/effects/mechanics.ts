@@ -268,7 +268,11 @@ const action: Build = (o, r) => ({
     o,
     r,
     'save',
-    record({ targetAbility: [ability, true], dcAbility: [oneOf(...ABILITY_LIST, 'spell')] }),
+    // `strOrDex`: the higher of Strength and Dexterity, a maneuver's DC.
+    record({
+      targetAbility: [ability, true],
+      dcAbility: [oneOf(...ABILITY_LIST, 'strOrDex', 'spell')],
+    }),
   ),
   ...opt(
     o,
@@ -919,10 +923,14 @@ const LOGGED = new WeakSet<object>();
 function ruleIndexFor(col: Collector): RuleIndex {
   const known = RULE_INDEX_OF.get(col);
   if (known !== undefined) return known;
-  const sets = col.ctx.byType(RULE_SET_TYPE);
+  const index = ruleIndexOf(col.ctx.byType(RULE_SET_TYPE));
+  RULE_INDEX_OF.set(col, index);
+  return index;
+}
+
+function ruleIndexOf(sets: readonly DataEntity[]): RuleIndex {
   const index = RULE_INDEX.get(sets) ?? buildRuleIndex(sets);
   RULE_INDEX.set(sets, index);
-  RULE_INDEX_OF.set(col, index);
   return index;
 }
 
@@ -961,7 +969,28 @@ export function builtInRuleFor(
   keys: readonly string[],
   inCode?: (key: string) => boolean,
 ): RuleRow | undefined {
-  const byKey = ruleIndexFor(col).get(part);
+  return firstRule(ruleIndexFor(col), part, keys, inCode);
+}
+
+/**
+ * `builtInRuleFor` over a list of rule sets rather than a derive's context: for
+ * the audit, which asks whether a row stands in for an entry's prose scan.
+ */
+export function builtInRuleIn(
+  sets: readonly DataEntity[],
+  part: RulePart,
+  keys: readonly string[],
+): RuleRow | undefined {
+  return firstRule(ruleIndexOf(sets), part, keys);
+}
+
+function firstRule(
+  index: RuleIndex,
+  part: RulePart,
+  keys: readonly string[],
+  inCode?: (key: string) => boolean,
+): RuleRow | undefined {
+  const byKey = index.get(part);
   if (byKey === undefined) return undefined;
   for (const k of keys) {
     const key = k.toLowerCase();

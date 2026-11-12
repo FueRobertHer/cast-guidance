@@ -3,9 +3,13 @@
 A built-in rule set is data the app ships in place of code: rows of effects
 that stand in for the engine's hard-coded mechanics tables. Today it holds one
 part, `curated`, which stands in for `CURATED` (`src/engine/curated/curatedEffects.ts`).
-The files live in `src/rules/`, and no rows have moved yet: this is the format,
-the loader and the seam they plug into. (Source of truth: `readRuleSet` and
+The files live in `src/rules/`. (Source of truth: `readRuleSet` and
 `mechanicsOf` in `src/engine/effects/mechanics.ts`, `src/data5e/builtInRules.ts`.)
+
+Four rows have moved so far, one for each kind of call site, to prove the
+routes: Stunning Strike (a class feature), Lucky (PHB, a feat), Disarming Attack
+(PHB, an optional feature) and Warforged's Integrated Protection (a species
+trait). Their 2024 printings, where they differ, are still in code.
 
 ## A file
 
@@ -85,12 +89,36 @@ failed chunk until the page reloads.
 A built-in formula never spends the player's per-derive formula budget, so the
 rows the app ships cannot crowd out a player's pack.
 
+Anything that builds a registry outside the app needs the sets too, or it reads
+the moved entries as prose: `scripts/data-audit.ts` and `scripts/data-judge.ts`
+call `requireBuiltInRules()`, which throws when they did not load, and the audit
+counts an entry curated when a built-in row replaces its scan. Tests get them
+from `BUILT_IN_RULE_SETS` in `tests-fixtures/testWorld.ts`, which a test keeps
+equal to what the loader loads.
+
 ## Adding a file
 
-Add it under `src/rules/` and list it in `FILES` in `builtInRules.ts`; the tests
-fail on a file not listed. They also fail on a row the reader leaves anything
+Add it under `src/rules/`, list it in `FILES` in `builtInRules.ts` and in
+`BUILT_IN_RULE_SETS`; the tests fail on a file not listed. They also fail on a row the reader leaves anything
 out of, and on a `curated` key that `CURATED` still has (the row would never be
 the one read, or the code row would be dead).
+
+## Moving a row out of code
+
+Write the row with the effects the code row adds, delete the code row (leaving a
+comment where it was), and prove the move on real data below. The stored effect
+format is the one rule packs use, so a row that needs a field the format lacks
+widens the format for players too: `dcAbility: "strOrDex"` (a maneuver's DC) came
+in with Disarming Attack.
+
+A code row that reads a named class's level (`classLevel(col, 'Fighter')`) does
+not move to a level table as it is. A table reads the level its call site
+passes: the class being walked for a class feature, the host class for an
+optional feature, and the character's level for a feat or a trait. A Fighter 17
+who took a Warrior (a reskin) first walks the Warrior at 2, and the resource
+keeps the first pool, so Action Surge would drop to one use. Those rows wait for
+a formula term that names a class's level (Action Surge, Indomitable, Portent,
+Ki, Channel Divinity and others).
 
 ## Checking a change on real data
 

@@ -59,6 +59,7 @@ import {
 } from '../src/data5e/audit/reprints';
 import type { Scope } from '../src/data5e/audit/scoping';
 import { spendReport, spendRuns } from '../src/data5e/audit/spendScope';
+import { requireBuiltInRules } from '../src/data5e/builtInRules';
 import { DATA_TAG, isCompatibleTag } from '../src/data5e/config';
 import { normalizeDataset } from '../src/data5e/normalize';
 import { readJudgments, writeJudgments } from './data-judgments-file';
@@ -158,6 +159,13 @@ try {
   die(error instanceof Error ? error.message : String(error));
 }
 const registry = normalizeDataset(release.files);
+// The rows moved out of `CURATED`: without them a curated entry looks like prose
+// to judge, and Jev is asked (and paid) again.
+try {
+  registry.setRuleSets(await requireBuiltInRules());
+} catch (error) {
+  die(error instanceof Error ? error.message : String(error));
+}
 
 const runs: Array<{ set: JudgeSet; subjects: JudgeSubject[] }> = [];
 if (reportScope !== undefined) {

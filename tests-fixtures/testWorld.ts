@@ -3,7 +3,15 @@
  * No real game data lives in this repo (curated-table keys reuse real feature
  * NAMES like "Alert", which are rule facts, not book text).
  */
+import { RULE_SET_TYPE } from '@/engine/castGuidance';
 import type { DataEntity, EngineContext } from '@/engine/types';
+import curatedRules from '@/rules/cast-guidance/curated.json';
+
+/**
+ * The rule sets the app ships (`src/data5e/builtInRules.ts`), as every registry
+ * holds them: rows moved out of `CURATED` reach tests as they reach the app.
+ */
+export const BUILT_IN_RULE_SETS: DataEntity[] = [curatedRules as DataEntity];
 
 const race: DataEntity[] = [
   {
@@ -759,6 +767,7 @@ const WORLD: Record<string, DataEntity[]> = {
   spell,
   // Rules text the Play tab offers for an active condition.
   condition: [{ name: 'Stunned', source: 'TST', entries: ['You are stunned.'] }],
+  [RULE_SET_TYPE]: BUILT_IN_RULE_SETS,
 };
 
 export function makeTestContext(): EngineContext {
