@@ -353,7 +353,8 @@ describe('the call sites read built-in rows', () => {
   const stunning = (sheet: ReturnType<typeof deriveSheet>) =>
     sheet.actions.filter((a) => a.label === 'Stunning Strike');
 
-  it("a class feature's row stands in for its CURATED row", () => {
+  it("a class feature's row is read under name|class, a later set's over the shipped one", () => {
+    // The shipped set's Stunning Strike row (`src/rules/cast-guidance/curated.json`).
     const plain = deriveSheet(character(monk), world({}));
     expect(stunning(plain)).toHaveLength(1);
     const sheet = deriveSheet(

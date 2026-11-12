@@ -53,7 +53,7 @@ const fileBytes = new Map([
   ['races.json', 400],
   ['feats.json', 100],
 ]);
-const report = analyzeDataset({ tag: 'v9.9.9', files, fileBytes, maxFileBytes: 500 });
+const report = analyzeDataset({ tag: 'v9.9.9', files, fileBytes, maxFileBytes: 500, ruleSets: [] });
 
 describe('analyzeDataset', () => {
   it('counts files and entities per normalized type', () => {
@@ -191,6 +191,7 @@ describe('analyzeDataset with saved judgments', () => {
     fileBytes: new Map(),
     maxFileBytes: 500,
     judgments,
+    ruleSets: [],
   });
 
   it('compares the scanner with the saved answers', () => {
@@ -241,6 +242,7 @@ describe('analyzeDataset on reprints', () => {
       files: reprintFiles,
       fileBytes: new Map(),
       maxFileBytes: 500,
+      ruleSets: [],
       ...(judgments === undefined ? {} : { judgments }),
     });
 

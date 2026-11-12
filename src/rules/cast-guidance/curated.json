@@ -3,5 +3,41 @@
   "v": 1,
   "name": "Built-in rules",
   "edition": "both",
-  "rows": []
+  "rows": [
+    {
+      "part": "curated",
+      "keys": ["lucky|phb"],
+      "effects": [{ "kind": "resource", "key": "luck", "label": "Luck", "max": 3, "reset": "long" }]
+    },
+    {
+      "part": "curated",
+      "keys": ["disarming attack|phb"],
+      "effects": [
+        {
+          "kind": "action",
+          "economy": "none",
+          "label": "Disarming Attack",
+          "save": { "targetAbility": "str", "dcAbility": "strOrDex" }
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["stunning strike|monk"],
+      "effects": [
+        {
+          "kind": "action",
+          "economy": "none",
+          "label": "Stunning Strike",
+          "note": "stunned until your next turn on a failed save",
+          "save": { "targetAbility": "con", "dcAbility": "wis" }
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["trait:integrated protection"],
+      "effects": [{ "kind": "acBonus", "amount": 1 }]
+    }
+  ]
 }

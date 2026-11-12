@@ -11,11 +11,13 @@
  *
  * Relative imports only: `scripts/data-judge.ts` loads this under plain Bun.
  */
+import { RULE_SET_TYPE } from '../../engine/castGuidance';
 import { CURATED } from '../../engine/curated/curatedEffects';
 import { parseSpellRef } from '../../engine/effects/additionalSpells';
 import { Collector } from '../../engine/effects/base';
 import { collectClasses } from '../../engine/effects/class';
 import { collectFeats } from '../../engine/effects/feat';
+import { builtInRuleIn } from '../../engine/effects/mechanics';
 import { readOptionalFeatures } from '../../engine/effects/optionalFeatures';
 import { proseScanFeature } from '../../engine/effects/proseScan';
 import { collectRace } from '../../engine/effects/race';
@@ -74,9 +76,12 @@ export interface ProseSubject {
   structuredShortRest: boolean;
 }
 
-/** Anything a registry can list by type, and look an entity up in. */
+/**
+ * Anything a registry can list by type, and look an entity up in. Its built-in
+ * rule sets (`RULE_SET_TYPE`) hold the rows moved out of `CURATED`.
+ */
 export interface ByType {
-  byType(type: EntityType): readonly Entity[];
+  byType(type: EntityType | typeof RULE_SET_TYPE): readonly Entity[];
   get(type: EntityType, name: string, source?: string): Entity | undefined;
 }
 
@@ -416,13 +421,17 @@ function structuredLimitOf(
  */
 export function proseSubjects(registry: ByType): ProseSubject[] {
   const byKey = new Map<string, ProseSubject>();
+  const ruleSets = registry.byType(RULE_SET_TYPE);
   for (const owner of owners(registry)) {
     if (owner.name === '') continue;
     const prose = readableEntries(owner.entries);
     if (prose.trim() === '') continue;
     const state = `${owner.name}\n${prose}`;
     const key = textHash(state);
-    const curated = Object.hasOwn(CURATED, owner.curatedKey);
+    // A curated row turns the scan off: in code, or a built-in row that replaces it.
+    const curated =
+      Object.hasOwn(CURATED, owner.curatedKey) ||
+      builtInRuleIn(ruleSets, 'curated', [owner.curatedKey])?.scan === 'replace';
     const limit = structuredLimitOf(registry, owner);
     const seen = byKey.get(key);
     if (seen !== undefined) {

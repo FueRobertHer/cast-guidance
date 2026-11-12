@@ -7,6 +7,8 @@
  * ships without the official data.
  */
 import { describe, expect, it } from 'vitest';
+import { BUILT_IN_RULE_SETS } from '../../../tests-fixtures/testWorld';
+import { RULE_SET_TYPE } from '../castGuidance';
 import { deriveSheet, pendingChoices } from '../derive';
 import {
   type CharacterDoc,
@@ -143,7 +145,8 @@ const ctx: EngineContext = {
         String(e.name).toLowerCase() === name.toLowerCase() &&
         (source === undefined || String(e.source).toLowerCase() === source.toLowerCase()),
     ),
-  byType: (type) => WORLD[type] ?? [],
+  // As every registry holds them: the rows moved out of `CURATED`.
+  byType: (type) => (type === RULE_SET_TYPE ? BUILT_IN_RULE_SETS : (WORLD[type] ?? [])),
 };
 
 /** DEX 14 (+2), the rest 10. */

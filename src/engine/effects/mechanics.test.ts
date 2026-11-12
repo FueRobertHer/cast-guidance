@@ -173,6 +173,16 @@ describe('readMechanics', () => {
     expect(byKind('action')).toMatchObject({ cost: { resource: 'lantern', amount: 1 } });
   });
 
+  it("takes a maneuver's save DC, the higher of Strength and Dexterity", () => {
+    const save = { targetAbility: 'str', dcAbility: 'strOrDex' };
+    const read = readMechanics({
+      v: 1,
+      effects: [{ kind: 'action', economy: 'none', label: 'Trip', save }],
+    });
+    expect(read.problems).toEqual([]);
+    expect(read.effects[0]?.effect).toMatchObject({ save });
+  });
+
   it('keeps each formula for fold time, with a 0 in its field until then', () => {
     const t = readMechanics({ v: 1, effects: every }).effects.find(
       (x) => x.effect.kind === 'resource',

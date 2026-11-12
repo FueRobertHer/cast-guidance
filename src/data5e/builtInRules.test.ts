@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { RULE_SET_TYPE } from '@/engine/castGuidance';
 import { CURATED } from '@/engine/curated/curatedEffects';
 import { readRuleSet } from '@/engine/effects/mechanics';
+import { BUILT_IN_RULE_SETS } from '../../tests-fixtures/testWorld';
 import { attachBuiltInRules, loadBuiltInRules, withBuiltInRules } from './builtInRules';
 import { engineContextFor } from './engineAdapter';
 import { EntityRegistry } from './normalize';
@@ -29,6 +30,8 @@ describe('the built-in rule sets', () => {
     expect(rules.sets).toHaveLength(files.length);
     for (const file of files) expect(rules.sets).toContainEqual(file);
     expect(await loadBuiltInRules()).toBe(rules);
+    // The test world holds the same sets, so tests read the rows the app reads.
+    expect(BUILT_IN_RULE_SETS).toEqual(rules.sets);
   });
 
   it('reads each one with nothing left out', async () => {
