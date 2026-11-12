@@ -1,5 +1,5 @@
 import { plainEntryText } from '../../data5e/entries/plainText';
-import { emitCuratedEffects as emitCurated } from '../curated/curatedEffects';
+import { emitCuratedEffects as emitCurated, hasCuratedRow } from '../curated/curatedEffects';
 import { emitRollAdvantages } from '../curated/rollAdvantages';
 import { emitRollExtras } from '../curated/rollExtras';
 import { linkSpend } from '../curated/spendLinks';
@@ -338,18 +338,20 @@ function collectFeatureWithNested(
   const names = printed !== undefined && printed.name !== name ? [name, printed.name] : [name];
   const sources =
     printed !== undefined ? [String(feature.source), printed.source] : [String(feature.source)];
+  const curatedKeys = names.flatMap((n) => labels.map((label) => `${n}|${label}`.toLowerCase()));
   mechanicsOf(col, {
     entry: feature,
     label: name,
     origin: featureOrigin,
     target: `${name}|${curatedLabel}`,
     classLevel: walk.classLevel,
-    inherited: () => {
-      const curated = names.some((n) =>
-        labels.some((label) =>
-          emitCurated(col, `${n}|${label}`.toLowerCase(), featureOrigin, printing),
-        ),
-      );
+    ruleKeys: curatedKeys,
+    inCode: hasCuratedRow,
+    inherited: (builtIn) => {
+      const curated =
+        builtIn !== undefined
+          ? builtIn.scan === 'replace'
+          : curatedKeys.some((k) => emitCurated(col, k, featureOrigin, printing));
       if (!curated) proseScanFeature(col, name, feature.entries, featureOrigin, cardOrigin.label);
       names.some((n) =>
         labels.some((label) =>
@@ -924,15 +926,19 @@ export function collectClasses(col: Collector): void {
       );
     }
     // The class's own row, or the row of the class a homebrew copy is `basedOn`.
-    const rowKeys = classBasedOn !== undefined ? [classUid, refUid(classBasedOn)] : [classUid];
+    const rowKeys = (
+      classBasedOn !== undefined ? [classUid, refUid(classBasedOn)] : [classUid]
+    ).map((k) => `class:${k}`);
     mechanicsOf(col, {
       entry: cls,
       label: origin.label,
       origin,
       target: classUid,
       classLevel,
-      inherited: () => {
-        rowKeys.some((k) => emitCurated(col, `class:${k}`, origin));
+      ruleKeys: rowKeys,
+      inCode: hasCuratedRow,
+      inherited: (builtIn) => {
+        if (builtIn === undefined) rowKeys.some((k) => emitCurated(col, k, origin));
       },
     });
   });

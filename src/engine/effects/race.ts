@@ -1,5 +1,5 @@
 import { subraceBelongsTo } from '../../data5e/subraceOptions';
-import { emitCuratedTrait } from '../curated/curatedEffects';
+import { emitCuratedTrait, hasCuratedRow } from '../curated/curatedEffects';
 import {
   ancestryDragons,
   DRACONIC_ANCESTRY,
@@ -292,10 +292,14 @@ function collectFrom(col: Collector, e: DataEntity, origin: EffectOrigin, idBase
       label: traitName,
       origin,
       target: `${traitName}|${origin.label}`,
-      inherited: () => {
-        if (!names.some((n) => emitCuratedTrait(col, n, origin))) {
-          proseScanFeature(col, traitName, entry.entries, origin);
-        }
+      ruleKeys: names.map((n) => `trait:${n}`),
+      inCode: hasCuratedRow,
+      inherited: (builtIn) => {
+        const curated =
+          builtIn !== undefined
+            ? builtIn.scan === 'replace'
+            : names.some((n) => emitCuratedTrait(col, n, origin));
+        if (!curated) proseScanFeature(col, traitName, entry.entries, origin);
         // What the trait adds to rolls, named for the trait (Brave), not the race.
         const rollKeys = [
           `${traitName}|${str(e.name)}|${str(e.source)}`,

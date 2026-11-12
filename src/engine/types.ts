@@ -33,6 +33,11 @@ export interface EngineContext {
    * a pack applied to it come first (`rulesFor`, Phase 4).
    */
   rules?: Partial<TableRuleChoices>;
+  /**
+   * The app's built-in rule sets (`RULE_SET_TYPE`) could not be loaded, so every
+   * row of them is missing: the sheet says so rather than quietly showing less.
+   */
+  ruleSetsFailed?: boolean;
 }
 
 export const CHARACTER_SCHEMA_VERSION = 1;
@@ -361,6 +366,12 @@ export interface FormulaSlot {
   formula: FormulaLike;
   /** `classLevel` as the entry was collected. */
   classLevel: number;
+  /**
+   * From a rule set the app ships, which stands in for its own code: it never
+   * spends the player's formula budget (`formulaStepsPerDerive`), so built-in
+   * rules cannot crowd out a player's pack.
+   */
+  builtIn?: boolean;
 }
 
 /**

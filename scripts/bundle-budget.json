@@ -7,5 +7,7 @@
   "totalJsBytes": 2244000,
   "largestChunkBytes": 493000,
   "cssBytes": 94000,
+  "rulesBytes": 4000,
+  "rulesGzipBytes": 1500,
   "precacheBytes": 2491000
 }

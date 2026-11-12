@@ -37,6 +37,7 @@ import { spellClassesFromLookup } from '../src/convert/compareOfficial';
 import { convertXmlChunks } from '../src/convert/index';
 import { OFFICIAL_TYPES, officialFeatLookup, officialNames } from '../src/convert/official';
 import type { ConvertedKind, OfficialFeat } from '../src/convert/types';
+import { withBuiltInRules } from '../src/data5e/builtInRules';
 import { DATA_TAG } from '../src/data5e/config';
 import type { Entity } from '../src/data5e/copyMod';
 import { engineContextFor } from '../src/data5e/engineAdapter';
@@ -1032,7 +1033,7 @@ if (sets.length === 0 || sets.some((s) => s.files.length === 0)) {
 }
 const files = await officialFiles();
 const classesOf = await officialSpellClasses();
-const regA = normalizeDataset(files);
+const regA = await withBuiltInRules(normalizeDataset(files));
 const officialFeat = officialFeatLookup(regA);
 const books = officialBooks(files);
 const results: Array<{
@@ -1046,7 +1047,7 @@ for (const s of sets) {
   const started = performance.now();
   const set = await convertSet(s.name, s.files, officialFeat);
   for (const why of set.skipped) console.warn(`   skipped ${why}`);
-  const regB = normalizeDataset(files);
+  const regB = await withBuiltInRules(normalizeDataset(files));
   mergeHomebrew(regB, new Map([[s.name, set.json]]));
   const { pairs: all, unmatched } = pairs(regA, set, books);
   const converted = Object.fromEntries(

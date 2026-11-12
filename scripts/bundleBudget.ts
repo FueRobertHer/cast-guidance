@@ -28,12 +28,23 @@ export interface Measurement {
   entry: DistFile;
   /** Entry plus every `<link rel="modulepreload">` chunk: what a cold boot downloads. */
   initialJs: DistFile[];
-  /** Every `.js` file under `assets/`, including lazy routes and the search worker. */
+  /**
+   * Every `.js` file under `assets/`, including lazy routes and the search
+   * worker, but not the built-in rule sets (`rules`).
+   */
   allJs: DistFile[];
+  /**
+   * The built-in rule set chunks (`assets/rule-set-*.js`, named in
+   * `vite.config.ts`): data that stands in for code, on lines of their own.
+   */
+  rules: DistFile[];
   css: DistFile[];
   /** Unique precache entries from the service worker manifest. */
   precache: DistFile[];
 }
+
+/** A built-in rule set's chunk, as `vite.config.ts` names it. */
+export const RULE_SET_CHUNK = /^assets\/rule-set-[^/]+\.js$/;
 
 /** Budget keys, in the order the report lists them. */
 export const BUDGET_KEYS = [
@@ -44,6 +55,8 @@ export const BUDGET_KEYS = [
   'totalJsBytes',
   'largestChunkBytes',
   'cssBytes',
+  'rulesBytes',
+  'rulesGzipBytes',
   'precacheBytes',
 ] as const;
 
@@ -58,6 +71,8 @@ const LABELS: Record<BudgetKey, string> = {
   totalJsBytes: 'Total JS (raw)',
   largestChunkBytes: 'Largest JS chunk (raw)',
   cssBytes: 'CSS (raw)',
+  rulesBytes: 'Built-in rule sets (raw)',
+  rulesGzipBytes: 'Built-in rule sets (gzip)',
   precacheBytes: 'Service worker precache (raw)',
 };
 
@@ -184,21 +199,28 @@ export function measure(input: MeasureInput): Measurement {
   ];
 
   const assets = input.files.filter((file) => file.path.startsWith('assets/'));
-  const allJs = assets.filter((file) => file.path.endsWith('.js'));
+  const js = assets.filter((file) => file.path.endsWith('.js'));
+  const rules = js.filter((file) => RULE_SET_CHUNK.test(file.path));
+  const allJs = js.filter((file) => !RULE_SET_CHUNK.test(file.path));
   const css = assets.filter((file) => file.path.endsWith('.css'));
+  if (rules.length === 0) {
+    throw new Error(
+      'Found no built-in rule set chunks (assets/rule-set-*.js): see chunkFileNames in vite.config.ts.',
+    );
+  }
 
   // Workbox silently leaves out any file over maximumFileSizeToCacheInBytes,
   // which breaks offline use without failing the build. Every hashed asset
   // must be in the manifest.
   const precached = new Set(precache.map((file) => file.path));
-  const missing = [...allJs, ...css].filter((file) => !precached.has(file.path));
+  const missing = [...allJs, ...rules, ...css].filter((file) => !precached.has(file.path));
   if (missing.length > 0) {
     throw new Error(
       `Not in the sw.js precache, so unavailable offline: ${missing.map((f) => f.path).join(', ')}.`,
     );
   }
 
-  return { entry, initialJs, allJs, css, precache };
+  return { entry, initialJs, allJs, rules, css, precache };
 }
 
 const sum = (files: DistFile[], pick: (file: DistFile) => number): number =>
@@ -250,6 +272,14 @@ export function evaluate(measurement: Measurement, budget: Budget): Evaluation {
     cssBytes: {
       actual: sum(measurement.css, (f) => f.bytes),
       detail: count(measurement.css.length, 'file', 'files'),
+    },
+    rulesBytes: {
+      actual: sum(measurement.rules, (f) => f.bytes),
+      detail: count(measurement.rules.length, 'file', 'files'),
+    },
+    rulesGzipBytes: {
+      actual: sum(measurement.rules, (f) => f.gzipBytes),
+      detail: `${count(measurement.rules.length, 'file', 'files')}, gzipped separately`,
     },
     precacheBytes: {
       actual: sum(measurement.precache, (f) => f.bytes),

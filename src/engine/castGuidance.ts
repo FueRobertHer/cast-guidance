@@ -408,6 +408,56 @@ export interface RulePackEntry {
 }
 
 // ---------------------------------------------------------------------------
+// Built-in rule sets
+// ---------------------------------------------------------------------------
+
+/**
+ * The registry type the app's own rule sets reach the engine as (`src/rules/`,
+ * loaded by `data5e/builtInRules.ts`). Their rows stand in for the code tables
+ * in `engine/curated/` at layer 3 of the seam, what an entry inherits, so a
+ * player's pack and an entry's own mechanics still come first. See
+ * `docs/rule-sets.md`.
+ */
+export const RULE_SET_TYPE = 'ruleSet';
+
+/**
+ * The code table each row stands in for. `curated` is `CURATED`: a row there is
+ * the entry's curated row, found under the keys that table uses.
+ */
+export const RULE_SET_PARTS = ['curated'] as const;
+
+/** Whether a built-in row turns the prose scan off for its entry, or runs beside it. */
+export const RULE_SET_SCANS = ['replace', 'keep'] as const;
+
+/** The editions a rule set says it is written for. A label, not a filter: rows match by printing. */
+export const RULE_SET_EDITIONS = ['2014', '2024', 'both'] as const;
+
+/** What the rule set reader accepts. Its own limits: these files ship with the app. */
+export const RULE_SET_LIMITS = {
+  rowsPerSet: 5_000,
+  keysPerRow: 16,
+} as const;
+
+/** One row of a built-in rule set. */
+export interface StoredRuleRow {
+  part: (typeof RULE_SET_PARTS)[number];
+  /** Lowercased keys, as the part's code table keys its rows: `stunning strike|monk`. */
+  keys: string[];
+  /** Absent: `replace`, as a curated row does. */
+  scan?: (typeof RULE_SET_SCANS)[number];
+  effects: StoredEffect[];
+}
+
+/** A built-in rule set file. */
+export interface StoredRuleSet {
+  type: typeof RULE_SET_TYPE;
+  v: number;
+  name: string;
+  edition?: (typeof RULE_SET_EDITIONS)[number];
+  rows: StoredRuleRow[];
+}
+
+// ---------------------------------------------------------------------------
 // Shared reading helpers
 // ---------------------------------------------------------------------------
 

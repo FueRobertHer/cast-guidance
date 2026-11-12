@@ -5,7 +5,7 @@
  */
 
 // Relative, not `@/`: the data-audit script runs this file under plain Bun.
-import { RULE_PACK_TYPE } from '../engine/castGuidance';
+import { RULE_PACK_TYPE, RULE_SET_TYPE } from '../engine/castGuidance';
 import {
   type CopyModWarning,
   type CopyRef,
@@ -100,6 +100,13 @@ export class EntityRegistry {
    * the audits never list a pack as content.
    */
   private packs: readonly Entity[] = [];
+  /**
+   * The app's built-in rule sets (`setRuleSets`). Not content either: no list
+   * shows them, and they reach the engine only through `byType(RULE_SET_TYPE)`.
+   */
+  private ruleSets: readonly Entity[] = [];
+  /** The built-in rule sets could not be loaded (`setRuleSets`). */
+  ruleSetsFailed = false;
   readonly warnings: CopyModWarning[] = [];
   /**
    * The official books a row marks as 2024 rules (see `booksMarkedOne`). Merging
@@ -138,14 +145,25 @@ export class EntityRegistry {
     this.index.set(type, idx);
   }
 
-  byType(type: EntityType | typeof RULE_PACK_TYPE): readonly Entity[] {
+  byType(type: EntityType | typeof RULE_PACK_TYPE | typeof RULE_SET_TYPE): readonly Entity[] {
     if (type === RULE_PACK_TYPE) return this.packs;
+    if (type === RULE_SET_TYPE) return this.ruleSets;
     return this.types.get(type) ?? [];
   }
 
   /** Replaces the rule packs `byType(RULE_PACK_TYPE)` lists; see `rulePackEntries`. */
   setRulePacks(packs: readonly Entity[]): void {
     this.packs = packs;
+  }
+
+  /**
+   * The app's built-in rule sets `byType(RULE_SET_TYPE)` lists, as
+   * `data5e/builtInRules.ts` loaded them. `failed`: they could not be loaded,
+   * which every sheet then says (`EngineContext.ruleSetsFailed`).
+   */
+  setRuleSets(sets: readonly Entity[], failed = false): void {
+    this.ruleSets = sets;
+    this.ruleSetsFailed = failed;
   }
 
   get(type: EntityType, name: string, source?: string): Entity | undefined {
