@@ -5,7 +5,9 @@
  * so a test can tell the list came from the class data.
  */
 import { describe, expect, it } from 'vitest';
+import { BUILT_IN_RULE_SETS } from '../../../tests-fixtures/testWorld';
 import { pruneChoicesFor, pruneClass } from '../../lib/pruneChoices';
+import { RULE_SET_TYPE } from '../castGuidance';
 import { deriveSheet } from '../derive';
 import {
   type CharacterDoc,
@@ -134,7 +136,7 @@ const ctx: EngineContext = {
         String(e.name).toLowerCase() === name.toLowerCase() &&
         (source === undefined || String(e.source).toLowerCase() === source.toLowerCase()),
     ),
-  byType: (type) => WORLD[type] ?? [],
+  byType: (type) => (type === RULE_SET_TYPE ? BUILT_IN_RULE_SETS : (WORLD[type] ?? [])),
 };
 
 /** STR 10, DEX 14, CON 10, INT 16, WIS 12, CHA 8. */

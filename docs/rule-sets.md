@@ -6,10 +6,19 @@ part, `curated`, which stands in for `CURATED` (`src/engine/curated/curatedEffec
 The files live in `src/rules/`. (Source of truth: `readRuleSet` and
 `mechanicsOf` in `src/engine/effects/mechanics.ts`, `src/data5e/builtInRules.ts`.)
 
-Four rows have moved so far, one for each kind of call site, to prove the
-routes: Stunning Strike (a class feature), Lucky (PHB, a feat), Disarming Attack
-(PHB, an optional feature) and Warforged's Integrated Protection (a species
-trait). Their 2024 printings, where they differ, are still in code.
+106 rows have moved so far (`src/rules/cast-guidance/curated.json`). Four came
+first, one for each kind of call site, to prove the routes: Stunning Strike (a
+class feature), Lucky (PHB, a feat), Disarming Attack (PHB, an optional
+feature) and Warforged's Integrated Protection (a species trait). The other 102
+are every `CURATED` row the stored format holds as it is: fighting styles,
+feats, standing numbers (speeds, saves, scores, immunities), riders on every
+hit or cast, pools and actions, and subclass features. The rows left in
+`CURATED` need something the format lacks: a pick, a test of the printing, a
+named class's level, an engine call, a field (a pool's `die`, Metamagic
+Adept's `noSlotConversion`, the initiative bonus `profBonus`, which counts once
+however many features add it), or a label read from the entry (Unarmored
+Defense for the College of Dance, Draconic Resilience and Immortal Durability,
+which a renamed copy would show under the official name).
 
 ## A file
 
@@ -112,11 +121,22 @@ the one read, or the code row would be dead).
 
 ## Moving a row out of code
 
-Write the row with the effects the code row adds, delete the code row (leaving a
-comment where it was), and prove the move on real data below. The stored effect
-format is the one rule packs use, so a row that needs a field the format lacks
-widens the format for players too: `dcAbility: "strOrDex"` (a maneuver's DC) came
-in with Disarming Attack.
+1. Write the row with the effects the code row adds, in the code's order: spend
+   links find the first action of an origin.
+2. With the code row still in place, run `scripts/rules-probe.ts` (below). It
+   must find no difference and no row that no build reads. (Until step 3 the
+   tests fail on the key both tables hold.)
+3. Delete the code row. A section whose rows moved keeps one comment pointing
+   at the JSON, not one per row.
+4. Compare the whole tree with `scripts/rules-diff.ts` against the base commit:
+   zero change.
+5. A test that read the row through `CURATED` reads it through the seam
+   instead (`emitRow` in `curatedEffects.test.ts`); a test context or registry
+   holds `BUILT_IN_RULE_SETS`, as every registry does.
+
+The stored effect format is the one rule packs use, so a row that needs a field
+the format lacks widens the format for players too: `dcAbility: "strOrDex"` (a
+maneuver's DC) came in with Disarming Attack.
 
 A code row that reads a named class's level (`classLevel(col, 'Fighter')`) does
 not move to a level table as it is. A table reads the level its call site
@@ -159,8 +179,35 @@ changed, field by field, and with `--expect-zero` exits 1 when any did.
 build read. A row read is not a row that added something (a row for one
 feature level is read at every level and adds at one), but a row never read is
 one zero change says nothing about, so a move of one is
-proved another way: compare the effects the code row and the data row emit
-across levels, ability scores, multiclass builds and copies, before the code
-row goes. That check also catches what the reader rewrites as it reads (a
-`false` flag read as absent, a list's repeats dropped, a skill's case), and
-level table thresholds at levels the harness does not build.
+proved another way, before the code row goes.
+
+`scripts/rules-probe.ts` is that proof. It runs while a row is in both places
+(a built-in `curated` row whose key `CURATED` still has) and derives each build
+that reads the row twice in one process, once with the code row and once with
+the data row, comparing every sheet field. Its builds go wider than
+`rules-diff`'s. Each class and subclass that reads a moved row is built at
+every level from 1 to 20 in four states: plain and raging at 1 hit point, each
+with five ability arrays (every score 14, 8, 3 or 20, and a mixed one), and in
+heavy gear (plate, a shield, a longsword and a longbow) or light gear (leather
+and the longsword alone), each with two. It is built again as a multiclass
+where the class's level is not the character's (levels 1 to 17 and three of
+another class, raging, three arrays). Every feat, optional feature and race
+that reads one is built across levels in the four states. So it also catches
+what the reader rewrites as it reads (a `false` flag read as absent, a list's
+repeats dropped, a skill's case), level table thresholds at levels
+`rules-diff` does not build, and a gear condition (`unless`, a ranged or melee
+scope, `weaponsOnly`) that differs.
+
+It sees one entity at a time: a class alone, a feat or a race on a bare
+Fighter. A row that differs only beside another entity's row is beyond it, so
+such a row needs a test of its own (the initiative `profBonus` above counts
+once across features, and a formula's number would not).
+
+```bash
+bun --tsconfig-override=tsconfig.app.json scripts/rules-probe.ts --release <cache.json>
+```
+
+A full run takes about 35 minutes; `--only <text>` probes only the moved keys
+that hold the text, in a minute or two. It exits 1 when a sheet differs or a
+moved row is read by no build. A build that throws the same way both times
+compared no sheet, so it counts for no row, and the summary says how many did.

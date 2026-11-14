@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { makeTestContext } from '../../../tests-fixtures/testWorld';
+import { BUILT_IN_RULE_SETS, makeTestContext } from '../../../tests-fixtures/testWorld';
+import { RULE_SET_TYPE } from '../castGuidance';
 import { emitCuratedEffects } from '../curated/curatedEffects';
 import { deriveSheet } from '../derive';
-import { type EffectInput, type EffectOrigin, newCharacterDoc } from '../types';
+import { type EffectInput, type EffectOrigin, type EngineContext, newCharacterDoc } from '../types';
 import { Collector } from './base';
+import { mechanicsOf } from './mechanics';
 import { castsWithASlot, flattenEntries, proseScanFeature } from './proseScan';
 import { collectRace } from './race';
 
@@ -2926,10 +2928,28 @@ describe('proseScanFeature: standing bonuses to checks and initiative', () => {
   });
 
   describe('a homebrew feature worded like a curated one', () => {
-    const noData = { get: () => undefined, byType: () => [] };
+    // No data but the rule sets every registry holds: the rows moved out of `CURATED`.
+    const noData: EngineContext = {
+      get: () => undefined,
+      byType: (type) => (type === RULE_SET_TYPE ? BUILT_IN_RULE_SETS : []),
+    };
+    /** The curated row's effects: `CURATED`'s, else the shipped rule set's, as the seam emits it. */
     const curatedEffects = (key: string, uid: string) => {
       const col = new Collector(newCharacterDoc('c', 'H', 't'), noData);
-      expect(emitCuratedEffects(col, key, { ...origin, uid })).toBe(true);
+      const at = { ...origin, uid };
+      if (emitCuratedEffects(col, key, at)) return col.effects;
+      let builtIn = false;
+      mechanicsOf(col, {
+        entry: {},
+        label: at.label,
+        origin: at,
+        target: key,
+        ruleKeys: [key],
+        inherited: (hit) => {
+          builtIn = hit !== undefined;
+        },
+      });
+      expect(builtIn).toBe(true);
       return col.effects;
     };
 
@@ -3012,12 +3032,27 @@ describe('proseScanFeature: standing bonuses to checks and initiative', () => {
     it.each(WORDED_LIKE)('emits what %s (%s) emits', (key, uid, entries) => {
       const curated = bonusesIn(curatedEffects(key, uid));
       expect(curated.length).toBeGreaterThan(0);
-      expect(bonuses(entries)).toEqual(curated);
+      // A moved row's formula is a number only once the sheet folds it, so the
+      // sheet tests below compare its amount, at scores where a minimum shows.
+      const folded = new Set(curated.flatMap((e, i) => ('formulas' in e ? [i] : [])));
+      const unfolded = (effects: readonly object[]) =>
+        effects.map((e, i) => {
+          const { amount, formulas: _, ...rest } = e as Record<string, unknown>;
+          return folded.has(i) ? rest : { ...rest, amount };
+        });
+      expect(unfolded(bonuses(entries))).toEqual(unfolded(curated));
     });
 
     // The sheet, end to end: a homebrew race's trait against the same race with
-    // the curated entry's effects on it. DEX +1, INT +1, WIS +2, CHA -1, proficiency +2.
-    const sheetOf = (entries: string[] | undefined, customEffects: EffectInput[] = []) => {
+    // the curated entry's effects on it. DEX +1, INT +1, WIS +2, CHA -1, proficiency +2;
+    // `LOW` puts INT and WIS at -1, where a minimum of +0 or +1 shows.
+    const HIGH = { str: 10, dex: 12, con: 10, int: 13, wis: 14, cha: 8 };
+    const LOW = { ...HIGH, int: 8, wis: 8 };
+    const sheetOf = (
+      entries: string[] | undefined,
+      customEffects: EffectInput[] = [],
+      base = HIGH,
+    ) => {
       const race = {
         name: 'Hearthkin',
         source: 'HB',
@@ -3025,7 +3060,7 @@ describe('proseScanFeature: standing bonuses to checks and initiative', () => {
       };
       const doc = newCharacterDoc('c', 'H', 't');
       doc.abilities.method = 'manual';
-      doc.abilities.base = { str: 10, dex: 12, con: 10, int: 13, wis: 14, cha: 8 };
+      doc.abilities.base = base;
       doc.race = { name: race.name, source: race.source };
       doc.customEffects = customEffects;
       return deriveSheet(doc, {
@@ -3048,6 +3083,9 @@ describe('proseScanFeature: standing bonuses to checks and initiative', () => {
       const homebrew = numbers(sheetOf(entries));
       expect(homebrew).toEqual(numbers(sheetOf(undefined, curatedEffects(key, uid))));
       expect(homebrew).not.toEqual(numbers(sheetOf(undefined)));
+      expect(numbers(sheetOf(entries, [], LOW))).toEqual(
+        numbers(sheetOf(undefined, curatedEffects(key, uid), LOW)),
+      );
     });
 
     it('puts the numbers where the prose says', () => {

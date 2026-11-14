@@ -8,6 +8,7 @@ import {
   type EffectInput,
   type EffectOrigin,
   type EngineContext,
+  type FormulaSlot,
   newCharacterDoc,
 } from '../types';
 import { emitCuratedEffects } from './curatedEffects';
@@ -42,6 +43,18 @@ function emitRow(c: Collector, key: string, o: EffectOrigin, from?: string): boo
   return builtIn;
 }
 
+/**
+ * The effects a collector holds, without their origin, and with each formula a
+ * moved row fills at fold time written in the field it fills.
+ */
+function shown(c: Collector) {
+  return c.effects.map(({ origin: _, ...e }) => {
+    const { formulas, ...rest } = e as typeof e & { formulas?: readonly FormulaSlot[] };
+    if (formulas === undefined) return rest;
+    return { ...rest, ...Object.fromEntries(formulas.map((s) => [s.field, s.formula.text])) };
+  });
+}
+
 function col(className?: string, levels = 5) {
   const doc = newCharacterDoc('c', 'H', 't');
   if (className) doc.classes = [{ ref: { name: className, source: 'PHB' }, levels, hp: [] }];
@@ -57,7 +70,7 @@ describe('emitCuratedEffects', () => {
 
   it('emits Alert’s +5 initiative', () => {
     const c = col();
-    expect(emitCuratedEffects(c, 'alert|phb', origin)).toBe(true);
+    expect(emitRow(c, 'alert|phb', origin)).toBe(true);
     expect(c.effects).toContainEqual(
       expect.objectContaining({ kind: 'initiativeBonus', amount: 5 }),
     );
@@ -66,7 +79,7 @@ describe('emitCuratedEffects', () => {
   it('marks the rolls that give hit points back as heals, and no others', () => {
     const rolls = (key: string, className?: string) => {
       const c = col(className);
-      emitCuratedEffects(c, key, origin);
+      emitRow(c, key, origin);
       return c.effects.flatMap((e) => (e.kind === 'action' && e.roll ? [e.heals === true] : []));
     };
     expect(rolls('healer|phb')).toEqual([true]);
@@ -124,7 +137,7 @@ describe('emitCuratedEffects', () => {
 
   it('emits Arcane Recovery once per long rest', () => {
     const c = col('Wizard', 2);
-    expect(emitCuratedEffects(c, 'arcane recovery|wizard', origin)).toBe(true);
+    expect(emitRow(c, 'arcane recovery|wizard', origin)).toBe(true);
     expect(c.effects).toContainEqual(
       expect.objectContaining({
         kind: 'resource',
@@ -161,7 +174,7 @@ describe('emitCuratedEffects', () => {
   it('gives Tides of Chaos one use a long rest, in both printings', () => {
     for (const key of ['tides of chaos|wild magic', 'tides of chaos|wild magic sorcery']) {
       const c = col('Sorcerer', 3);
-      expect(emitCuratedEffects(c, key, origin), key).toBe(true);
+      expect(emitRow(c, key, origin), key).toBe(true);
       expect(c.effects, key).toContainEqual(
         expect.objectContaining({
           kind: 'resource',
@@ -179,8 +192,8 @@ describe('features that add to checks and initiative', () => {
   const printing = (uid: string): EffectOrigin => ({ label: 'Feature', uid, type: 'class' });
   const emit = (key: string, uid = 'x') => {
     const c = col();
-    expect(emitCuratedEffects(c, key, printing(uid))).toBe(true);
-    return c.effects.map(({ origin: _, ...e }) => e);
+    expect(emitRow(c, key, printing(uid))).toBe(true);
+    return shown(c);
   };
 
   it('reads Jack of All Trades by printing: every check in 2014, skills only in 2024', () => {
@@ -217,26 +230,26 @@ describe('features that add to checks and initiative', () => {
   it.each([
     ['alert|xphb', 'profBonus'],
     ['trait:hare-trigger', 'profBonus'],
-    ['aura of the sentinel|oath of the watchers', 'equalToProfBonus'],
-    ['rakish audacity|swashbuckler', 'abilityModMin0:cha'],
-    ['tactical wit|war magic', 'abilityModMin0:int'],
-    ['temporal awareness|chronurgy magic', 'abilityModMin0:int'],
+    ['aura of the sentinel|oath of the watchers', 'prof'],
+    ['rakish audacity|swashbuckler', 'max(0, mod.cha)'],
+    ['tactical wit|war magic', 'max(0, mod.int)'],
+    ['temporal awareness|chronurgy magic', 'max(0, mod.int)'],
   ])('%s adds %s to initiative', (key, amount) => {
     expect(emit(key)).toEqual([{ kind: 'initiativeBonus', amount }]);
   });
 
   it('adds to the checks each feature names', () => {
     expect(emit('thaumaturge|cleric')).toEqual([
-      { kind: 'checkBonus', skills: ['Arcana', 'Religion'], amount: 'abilityModMin1:wis' },
+      { kind: 'checkBonus', skills: ['Arcana', 'Religion'], amount: 'max(1, mod.wis)' },
     ]);
     expect(emit('magician|druid')).toEqual([
-      { kind: 'checkBonus', skills: ['Arcana', 'Nature'], amount: 'abilityModMin1:wis' },
+      { kind: 'checkBonus', skills: ['Arcana', 'Nature'], amount: 'max(1, mod.wis)' },
     ]);
     expect(emit('otherworldly glamour|fey wanderer')).toEqual([
       { kind: 'checkBonus', ability: 'cha', amount: 'abilityModMin1:wis' },
     ]);
     expect(emit('elegant courtier|samurai')).toEqual([
-      { kind: 'checkBonus', skills: ['Persuasion'], amount: 'abilityMod:wis' },
+      { kind: 'checkBonus', skills: ['Persuasion'], amount: 'mod.wis' },
     ]);
     expect(emit("trait:kefnet's blessing")).toEqual([
       { kind: 'halfProf', round: 'down', abilities: ['int'] },
@@ -773,8 +786,8 @@ describe('standing numbers of core class features', () => {
   const printed = (uid: string): EffectOrigin => ({ label: 'Feature', uid, type: 'class' });
   const emit = (key: string, uid: string, className?: string, levels?: number) => {
     const c = col(className, levels);
-    expect(emitCuratedEffects(c, key, printed(uid))).toBe(true);
-    return c.effects.map(({ origin: _, ...rest }) => rest);
+    expect(emitRow(c, key, printed(uid))).toBe(true);
+    return shown(c);
   };
 
   it('gives Unarmored Movement by Monk level, out of armor and shield', () => {
@@ -826,7 +839,7 @@ describe('standing numbers of core class features', () => {
 
   it('gives the paladin’s own aura and the immunities', () => {
     expect(emit('aura of protection|paladin', 'paladin|xphb')).toEqual([
-      { kind: 'saveBonus', amount: 'abilityModMin1:cha' },
+      { kind: 'saveBonus', amount: 'max(1, mod.cha)' },
     ]);
     expect(emit('aura of courage|paladin', 'paladin|phb')).toEqual([
       { kind: 'conditionImmune', condition: 'frightened', note: 'while conscious' },
@@ -861,8 +874,8 @@ describe('standing numbers of core class features', () => {
 describe('always-on riders', () => {
   const printed = (uid: string): EffectOrigin => ({ label: 'Feature', uid, type: 'class' });
   const emit = (key: string, uid: string, c = col()) => {
-    expect(emitCuratedEffects(c, key, printed(uid))).toBe(true);
-    return c.effects.map(({ origin: _, ...rest }) => rest);
+    expect(emitRow(c, key, printed(uid))).toBe(true);
+    return shown(c);
   };
 
   it('adds 1d8 radiant to melee hits: carried weapons in 2014, unarmed strikes too in 2024', () => {
@@ -875,7 +888,7 @@ describe('always-on riders', () => {
 
   it('adds Charisma to the 2014 Agonizing Blast’s Eldritch Blast', () => {
     expect(emit('agonizing blast|phb', 'agonizing blast|phb')).toEqual([
-      { kind: 'spellDamageBonus', amount: 'abilityMod:cha', spells: ['eldritch blast'] },
+      { kind: 'spellDamageBonus', amount: 'mod.cha', spells: ['eldritch blast'] },
     ]);
   });
 

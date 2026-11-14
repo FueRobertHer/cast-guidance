@@ -395,18 +395,6 @@ const skillOrLanguage =
       markKnownLanguages(col, LANGUAGE_OPTIONS),
     );
 
-/** Tides of Chaos (both printings): one use, back on a long rest. */
-const tidesOfChaos: CuratedFn = (col, origin) => {
-  col.add({
-    kind: 'resource',
-    key: 'tides-of-chaos',
-    label: 'Tides of Chaos',
-    max: 1,
-    resetOn: 'long',
-    origin,
-  });
-};
-
 /** Superior Technique fighting style: one d6 superiority die (stacks) + a maneuver. */
 const superiorTechnique: CuratedFn = (col, origin) => {
   col.add({
@@ -487,13 +475,6 @@ function unarmoredMovement(level: number): number {
   return 10;
 }
 
-/** Proficiency in these saving throws (Diamond Soul). */
-const saveProfs =
-  (...abilities: Ability[]): CuratedFn =>
-  (col, origin) => {
-    for (const ability of abilities) col.add({ kind: 'saveProf', ability, origin });
-  };
-
 /** Two scores up by 4, to a new maximum (Primal Champion, Body and Mind). */
 const capstone =
   (abilities: readonly Ability[], max: (printed2024: boolean) => number): CuratedFn =>
@@ -530,20 +511,6 @@ const potentClericCantrips = spellDamage('Cleric', 'wis', { cantrips: true });
 
 /** One damage roll of a wizard's evocation spell adds Intelligence: both printings. */
 const empoweredEvocation = spellDamage('Wizard', 'int', { school: 'V', oneRoll: true });
-
-/** The 2014 Improved Divine Smite and 2024 Radiant Strikes: 1d8 radiant on a melee hit. */
-const radiantMelee =
-  (weaponsOnly: boolean): CuratedFn =>
-  (col, origin) => {
-    col.add({
-      kind: 'damageDie',
-      scope: 'melee',
-      dice: '1d8',
-      damageType: 'radiant',
-      ...(weaponsOnly ? { weaponsOnly } : {}),
-      origin,
-    });
-  };
 
 /**
  * The 2024 Agonizing Blast: Charisma on the damage of a Warlock cantrip the
@@ -618,19 +585,6 @@ const harnessDivinePower =
     col.add({ kind: 'action', economy: 'bonus', label, origin });
   };
 
-/** A maneuver ridden on a hit that forces a save, at the maneuver DC. */
-const maneuverSave =
-  (label: string, targetAbility: Ability): CuratedFn =>
-  (col, origin) => {
-    col.add({
-      kind: 'action',
-      economy: 'none',
-      label,
-      save: { targetAbility, dcAbility: 'strOrDex' },
-      origin,
-    });
-  };
-
 /**
  * Portent's foretelling rolls, rolled after a long rest: 2, or 3 from Wizard 14.
  * The numbers are kept (`foretell`), and one replaces a d20 test's d20.
@@ -698,62 +652,9 @@ const signatureSpells: CuratedFn = (col, origin) => {
 
 export const CURATED: Record<string, CuratedFn> = {
   // --- Feats ---------------------------------------------------------------
-  // The 2024 printing counts its one use in no words the prose scan reads
-  // ("must cast a Sorcerer spell with a spell slot or finish a Long Rest"), so
-  // both printings set it here; the spell's refill is a pip tap.
-  'tides of chaos|wild magic': tidesOfChaos,
-  'tides of chaos|wild magic sorcery': tidesOfChaos,
-  'alert|phb': (col, origin) => {
-    col.add({ kind: 'initiativeBonus', amount: 5, origin });
-  },
+  // More of this section's rows are data, in `src/rules/cast-guidance/curated.json`.
   'alert|xphb': (col, origin) => {
     col.add({ kind: 'initiativeBonus', amount: 'profBonus', origin });
-  },
-  // The +5 reaches passive Investigation too, which the sheet does not show.
-  'observant|phb': (col, origin) => {
-    col.add({ kind: 'passivePerceptionBonus', amount: 5, origin });
-  },
-  'tough|phb': (col, origin) => {
-    col.add({ kind: 'hpPerLevel', amount: 2, origin });
-  },
-  'tough|xphb': (col, origin) => {
-    col.add({ kind: 'hpPerLevel', amount: 2, origin });
-  },
-  'mobile|phb': (col, origin) => {
-    col.add({ kind: 'speedBonus', amount: 10, origin });
-  },
-  'speedy|xphb': (col, origin) => {
-    col.add({ kind: 'speedBonus', amount: 10, origin });
-  },
-  // Lucky (PHB): a row in `src/rules/cast-guidance/curated.json`.
-  'lucky|xphb': (col, origin) => {
-    // 2024: luck points equal to your proficiency bonus.
-    col.add({
-      kind: 'resource',
-      key: 'luck',
-      label: 'Luck Points',
-      max: 'profBonus',
-      resetOn: 'long',
-      origin,
-    });
-  },
-  'polearm master|phb': (col, origin) => {
-    col.add({
-      kind: 'action',
-      economy: 'bonus',
-      label: 'Polearm strike (butt end)',
-      roll: '1d4',
-      origin,
-    });
-  },
-  'polearm master|xphb': (col, origin) => {
-    col.add({
-      kind: 'action',
-      economy: 'bonus',
-      label: 'Polearm strike (butt end)',
-      roll: '1d4',
-      origin,
-    });
   },
   'martial adept|phb': (col, origin) => {
     // Shares the 'superiority-dice' pool so it stacks with Battle Master and
@@ -792,155 +693,14 @@ export const CURATED: Record<string, CuratedFn> = {
   },
   // Superior Technique fighting style (TCE): one d6 superiority die + a maneuver.
   'superior technique|tce': superiorTechnique,
-  // Maneuvers that force a save the scanner did not read, at the maneuver DC: 8 +
-  // proficiency + Strength or Dexterity, the same from Combat Superiority, Martial
-  // Adept and Superior Technique. Their die is in `SPEND_LINKS`.
-  'heroic leap|wow': (col, origin) => {
-    col.add({
-      kind: 'action',
-      economy: 'bonus',
-      label: 'Heroic Leap',
-      note: 'bludgeoning, the die rolled · creatures within 5 feet of where you land',
-      save: { targetAbility: 'str', dcAbility: 'strOrDex' },
-      origin,
-    });
-  },
-  // Disarming Attack (PHB): a row in `src/rules/cast-guidance/curated.json`.
-  'disarming attack|xphb': maneuverSave('Disarming Attack', 'str'),
-  'goading attack|phb': maneuverSave('Goading Attack', 'wis'),
-  'goading attack|xphb': maneuverSave('Goading Attack', 'wis'),
-  'menacing attack|phb': maneuverSave('Menacing Attack', 'wis'),
-  'menacing attack|xphb': maneuverSave('Menacing Attack', 'wis'),
-  'pushing attack|phb': maneuverSave('Pushing Attack', 'str'),
-  'pushing attack|xphb': maneuverSave('Pushing Attack', 'str'),
-  'trip attack|phb': maneuverSave('Trip Attack', 'str'),
-  'trip attack|xphb': maneuverSave('Trip Attack', 'str'),
-  'healer|phb': (col, origin) => {
-    col.add({
-      kind: 'action',
-      economy: 'action',
-      label: 'Healer (kit)',
-      roll: '1d6+4',
-      heals: true,
-      origin,
-    });
-  },
-  'healer|xphb': (col, origin) => {
-    col.add({
-      kind: 'action',
-      economy: 'bonus',
-      label: 'Healer (kit)',
-      roll: '1d6+4',
-      heals: true,
-      origin,
-    });
-  },
-  'crossbow expert|phb': (col, origin) => {
-    col.add({ kind: 'action', economy: 'bonus', label: 'Crossbow Expert bonus attack', origin });
-  },
-  'crossbow expert|xphb': (col, origin) => {
-    col.add({ kind: 'action', economy: 'bonus', label: 'Crossbow Expert bonus attack', origin });
-  },
-  'shield master|phb': (col, origin) => {
-    col.add({ kind: 'action', economy: 'bonus', label: 'Shield Master shove', origin });
-  },
-  'shield master|xphb': (col, origin) => {
-    col.add({ kind: 'action', economy: 'bonus', label: 'Shield Master shove', origin });
-  },
-  'telekinetic|tce': (col, origin) => {
-    col.add({ kind: 'action', economy: 'bonus', label: 'Telekinetic shove (5 ft)', origin });
-  },
-  'telekinetic|xphb': (col, origin) => {
-    col.add({ kind: 'action', economy: 'bonus', label: 'Telekinetic shove (5 ft)', origin });
-  },
-  'inspiring leader|phb': (col, origin) => {
-    col.add({ kind: 'action', economy: 'action', label: 'Inspiring Leader (temp HP)', origin });
-  },
-  'inspiring leader|xphb': (col, origin) => {
-    col.add({ kind: 'action', economy: 'action', label: 'Inspiring Leader (temp HP)', origin });
-  },
-  'chef|tce': (col, origin) => {
-    col.add({
-      kind: 'resource',
-      key: 'chef-treats',
-      label: 'Chef Treats',
-      max: 'profBonus',
-      resetOn: 'long',
-      origin,
-    });
-  },
-  'chef|xphb': (col, origin) => {
-    col.add({
-      kind: 'resource',
-      key: 'chef-treats',
-      label: 'Chef Treats',
-      max: 'profBonus',
-      resetOn: 'long',
-      origin,
-    });
-  },
-  'great weapon master|phb': (col, origin) => {
-    col.add({
-      kind: 'action',
-      economy: 'bonus',
-      label: 'GWM bonus attack (on crit or kill)',
-      origin,
-    });
-  },
-  'charger|phb': (col, origin) => {
-    col.add({ kind: 'action', economy: 'bonus', label: 'Charge attack (+5 dmg)', origin });
-  },
 
   // --- Fighting styles (2014 optional features; 2024 feats share names) ----
-  'defense|phb': (col, origin) => {
-    col.add({ kind: 'acBonus', amount: 1, origin });
-    col.add({ kind: 'note', text: '+1 AC applies only while wearing armor.', origin });
-  },
-  'defense|xphb': (col, origin) => {
-    col.add({ kind: 'acBonus', amount: 1, origin });
-    col.add({ kind: 'note', text: '+1 AC applies only while wearing armor.', origin });
-  },
-  'archery|phb': (col, origin) => {
-    col.add({ kind: 'attackBonus', scope: 'ranged', amount: 2, origin });
-  },
-  'archery|xphb': (col, origin) => {
-    col.add({ kind: 'attackBonus', scope: 'ranged', amount: 2, origin });
-  },
-  'dueling|phb': (col, origin) => {
-    col.add({ kind: 'damageBonus', scope: 'melee', amount: 2, origin });
-    col.add({
-      kind: 'note',
-      text: '+2 damage applies while wielding a single one-handed weapon.',
-      origin,
-    });
-  },
-  'dueling|xphb': (col, origin) => {
-    col.add({ kind: 'damageBonus', scope: 'melee', amount: 2, origin });
-  },
+  // Every row of this section is data, in `src/rules/cast-guidance/curated.json`.
 
   // --- Class features ------------------------------------------------------
-  'unarmored defense|barbarian': (col, origin) => {
-    col.add({
-      kind: 'acFormula',
-      label: 'Unarmored Defense',
-      base: 10,
-      addAbilities: ['dex', 'con'],
-      origin,
-    });
-  },
-  'unarmored defense|monk': (col, origin) => {
-    col.add({
-      kind: 'acFormula',
-      label: 'Unarmored Defense',
-      base: 10,
-      addAbilities: ['dex', 'wis'],
-      origin,
-    });
-  },
+  // More of this section's rows are data, in `src/rules/cast-guidance/curated.json`.
   // --- Standing numbers: speeds, saves, scores and defenses ----------------
-  'fast movement|barbarian': (col, origin) => {
-    col.add({ kind: 'speedBonus', amount: 10, unless: 'heavyArmor', origin });
-  },
+  // More of this section's rows are data, in `src/rules/cast-guidance/curated.json`.
   'unarmored movement|monk': (col, origin) => {
     const amount = unarmoredMovement(classLevel(col, 'Monk'));
     col.add({ kind: 'speedBonus', amount, unless: 'armorOrShield', origin });
@@ -953,29 +713,15 @@ export const CURATED: Record<string, CuratedFn> = {
     col.add({ kind: 'moveSpeed', mode: 'swim', speed: 'walk', origin });
   },
   // An ally's aura is an effect in play; this is the paladin's own.
-  'aura of protection|paladin': (col, origin) => {
-    col.add({ kind: 'saveBonus', amount: 'abilityModMin1:cha', origin });
-  },
   'aura of courage|paladin': (col, origin, from) => {
     const note = printedIn(origin, 'xphb', from) ? 'not while incapacitated' : 'while conscious';
     col.add({ kind: 'conditionImmune', condition: 'frightened', note, origin });
-  },
-  'divine health|paladin': (col, origin) => {
-    col.add({ kind: 'conditionImmune', condition: 'disease', origin });
-  },
-  'purity of body|monk': (col, origin) => {
-    col.add({ kind: 'immune', damageType: 'poison', origin });
-    col.add({ kind: 'conditionImmune', condition: 'poisoned', origin });
-    col.add({ kind: 'conditionImmune', condition: 'disease', origin });
   },
   'slippery mind|rogue': (col, origin, from) => {
     col.add({ kind: 'saveProf', ability: 'wis', origin });
     if (printedIn(origin, 'xphb', from)) col.add({ kind: 'saveProf', ability: 'cha', origin });
   },
-  'diamond soul|monk': saveProfs(...ABILITIES),
-  'disciplined survivor|monk': saveProfs(...ABILITIES),
   'primal champion|barbarian': capstone(['str', 'con'], (printed2024) => (printed2024 ? 25 : 24)),
-  'body and mind|monk': capstone(['dex', 'wis'], () => 25),
   // 2014's Feral Senses is about attacking what you can't see: no number to show.
   'feral senses|ranger': (col, origin, from) => {
     if (printedIn(origin, 'xphb', from)) {
@@ -989,18 +735,7 @@ export const CURATED: Record<string, CuratedFn> = {
   'weapon mastery|ranger': weaponMastery({ proficient: true }),
   'weapon mastery|rogue': weaponMastery({ proficient: true }),
   // --- Always-on riders: damage every hit or every cast adds -----------------
-  // 2014 says "with a melee weapon", so an unarmed strike goes without; 2024
-  // names the Unarmed Strike too.
-  'improved divine smite|paladin': radiantMelee(true),
-  'radiant strikes|paladin': radiantMelee(false),
-  'agonizing blast|phb': (col, origin) => {
-    col.add({
-      kind: 'spellDamageBonus',
-      amount: 'abilityMod:cha',
-      spells: ['eldritch blast'],
-      origin,
-    });
-  },
+  // More of this section's rows are data, in `src/rules/cast-guidance/curated.json`.
   'agonizing blast|xphb': agonizingPick,
   // 2024: one branch of Blessed Strikes (Cleric) or Elemental Fury (Druid).
   'potent spellcasting|cleric': potentClericCantrips,
@@ -1143,12 +878,6 @@ export const CURATED: Record<string, CuratedFn> = {
       col.add({ kind: 'resourceRegain', key: 'sorcery-points', amount: 4, origin });
     }
   },
-  'advanced artifice|artificer': (col, origin) => {
-    col.add({ kind: 'resourceRegain', key: 'flash-of-genius', amount: 1, origin });
-  },
-  'dread incarnate|scion of the three': (col, origin) => {
-    col.add({ kind: 'resourceRegain', key: 'bloodthirst', amount: 1, origin });
-  },
   'font of magic|sorcerer': (col, origin) => {
     col.add({
       kind: 'resource',
@@ -1270,8 +999,6 @@ export const CURATED: Record<string, CuratedFn> = {
   // 2014 printing states the later uses in cards of their own, and the 2024 one
   // repeats the whole card at 13 and 17: each is this one pool.
   'indomitable|fighter': indomitable,
-  'indomitable (two uses)|fighter': () => {},
-  'indomitable (three uses)|fighter': () => {},
   // The Warrior sidekick's: once a long rest, twice from 18, where the scan read
   // twice from 11 and a second pool for Indomitable Improvement.
   'indomitable|warrior sidekick': (col, origin) => {
@@ -1284,7 +1011,6 @@ export const CURATED: Record<string, CuratedFn> = {
       origin,
     });
   },
-  'indomitable improvement|warrior sidekick': () => {},
   // Wisdom modifier uses (at least one) a long rest. The 2024 Improved Warding
   // Flare (Cleric 6) brings them back on a short rest too, and its temporary hit
   // points go on the reaction's chip. The 2014 printing's Improved Flare, which
@@ -1309,7 +1035,6 @@ export const CURATED: Record<string, CuratedFn> = {
       origin,
     });
   },
-  'improved warding flare|light domain': () => {},
   // Tasha's Harness Divine Power spends Channel Divinity, and has uses of its own
   // by class level: the cleric's at 2, 6 and 18, the paladin's at 3, 7 and 15.
   'channel divinity: harness divine power|cleric': harnessDivinePower('Cleric', [2, 6, 18]),
@@ -1319,21 +1044,6 @@ export const CURATED: Record<string, CuratedFn> = {
   // Two foretelling rolls a long rest, three from Wizard 14 (Greater Portent).
   'portent|school of divination': portent,
   'portent|diviner': portent,
-  'greater portent|school of divination': () => {},
-  'greater portent|diviner': () => {},
-  'arcane recovery|wizard': (col, origin) => {
-    // Recovered ON a short rest but usable once per DAY. The prose scanner
-    // reads the 2024 limit, but 2014's "once per day" is no wording it counts,
-    // so pin the daily limit here for both.
-    col.add({
-      kind: 'resource',
-      key: 'arcane-recovery',
-      label: 'Arcane Recovery',
-      max: 1,
-      resetOn: 'long',
-      origin,
-    });
-  },
   'sneak attack|rogue': (col, origin) => {
     const dice = Math.ceil(classLevel(col, 'Rogue') / 2);
     col.add({
@@ -1387,64 +1097,9 @@ export const CURATED: Record<string, CuratedFn> = {
       'Survival',
     ]),
   ),
-  // The 2024 Divine Order and Primal Order branches that train for battle.
-  'protector|cleric': kit({ armor: ['heavy'], weapons: ['martial'] }),
-  'warden|druid': kit({ armor: ['medium'], weapons: ['martial'] }),
-  // The 2024 Divine Order and Primal Order branches: WIS on two INT skills.
-  'thaumaturge|cleric': (col, origin) => {
-    col.add({
-      kind: 'checkBonus',
-      skills: ['Arcana', 'Religion'],
-      amount: 'abilityModMin1:wis',
-      origin,
-    });
-  },
-  'magician|druid': (col, origin) => {
-    col.add({
-      kind: 'checkBonus',
-      skills: ['Arcana', 'Nature'],
-      amount: 'abilityModMin1:wis',
-      origin,
-    });
-  },
-  // The Death Knight's d8s in place of Lay on Hands: one plus the Charisma modifier,
-  // at least one, back on a long rest. A use spends as many as the player picks.
-  'death coil|death knight': (col, origin) => {
-    col.add({
-      kind: 'resource',
-      key: 'death-coil',
-      label: 'Death Coil (d8 pool)',
-      max: 'abilityModPlus1:cha',
-      min: 1,
-      resetOn: 'long',
-      origin,
-    });
-    col.add({
-      kind: 'action',
-      economy: 'bonus',
-      label: 'Death Coil',
-      note: 'necrotic, or hit points to an Undead · 60 feet',
-      save: { targetAbility: 'con' },
-      origin,
-    });
-  },
-  // A totem a bonus action, as often as the Shaman likes. Only the Primal Knowledge
-  // Totem waits for a long rest, and a use of Rage buys it back. The scanner read
-  // that one limit as every totem's.
-  'totems|shaman': (col, origin) => {
-    col.add({ kind: 'action', economy: 'bonus', label: 'Totems', origin });
-    col.add({
-      kind: 'resource',
-      key: 'primal-knowledge-totem',
-      label: 'Primal Knowledge Totem',
-      max: 1,
-      resetOn: 'long',
-      origin,
-    });
-    col.add({ kind: 'action', economy: 'bonus', label: 'Primal Knowledge Totem', origin });
-  },
 
   // --- Subclass features (keyed by the subclass's full name) ---------------
+  // More of this section's rows are data, in `src/rules/cast-guidance/curated.json`.
   // 2014 only: half proficiency rounded up on STR, DEX and CON checks. The
   // 2024 feature of the same name grants advantage, which is no sheet number.
   'remarkable athlete|champion': (col, origin, from) => {
@@ -1467,34 +1122,10 @@ export const CURATED: Record<string, CuratedFn> = {
       });
     }
   },
-  'rakish audacity|swashbuckler': (col, origin) => {
-    col.add({ kind: 'initiativeBonus', amount: 'abilityModMin0:cha', origin });
-  },
-  'tactical wit|war magic': (col, origin) => {
-    col.add({ kind: 'initiativeBonus', amount: 'abilityModMin0:int', origin });
-  },
-  'temporal awareness|chronurgy magic': (col, origin) => {
-    col.add({ kind: 'initiativeBonus', amount: 'abilityModMin0:int', origin });
-  },
-  // "A bonus equal to your proficiency bonus", not the bonus itself, so it sits
-  // beside Alert or Hare-Trigger, as it does for an ally who has either. Allies
-  // within 10 feet get it too; the sheet holds only the paladin's own.
-  'aura of the sentinel|oath of the watchers': (col, origin) => {
-    col.add({ kind: 'initiativeBonus', amount: 'equalToProfBonus', origin });
-  },
   // Both printings: the bonus, and one skill of three.
   'otherworldly glamour|fey wanderer': (col, origin) => {
     col.add({ kind: 'checkBonus', ability: 'cha', amount: 'abilityModMin1:wis', origin });
     featureSkillPick(col, origin, 1, ['Deception', 'Performance', 'Persuasion']);
-  },
-  'elegant courtier|samurai': (col, origin) => {
-    col.add({ kind: 'checkBonus', skills: ['Persuasion'], amount: 'abilityMod:wis', origin });
-  },
-  // One printing, under either the 2014 or the 2024 rogue. Having a skill already
-  // asks nothing: it is doubled all the same.
-  'survivalist|scout': (col, origin) => {
-    skillAtExpertise(col, 'Nature', origin);
-    skillAtExpertise(col, 'Survival', origin);
   },
   // Persuasion is doubled however the fighter came by it, and having it already
   // swaps the proficiency for a plain one in another skill. Only what is collected
@@ -1557,34 +1188,12 @@ export const CURATED: Record<string, CuratedFn> = {
       featureSkillPick(col, origin, 1, classSkillList(col, 'Fighter'));
     }
   },
-  'bonus proficiencies|rune knight': kit({ tools: ["Smith's Tools"] }),
-  'bonus proficiencies|assassin': kit({ tools: ['Disguise Kit', "Poisoner's Kit"] }),
-  "assassin's tools|assassin": kit({ tools: ['Disguise Kit', "Poisoner's Kit"] }),
   'master of intrigue|mastermind': kit(
     { tools: ['Disguise Kit', 'Forgery Kit'] },
     toolPick(1, ['gaming set']),
   ),
-  'hex warrior|the hexblade': kit({ armor: ['medium', 'shield'], weapons: ['martial'] }),
-  'bonus proficiencies|college of valor': kit({
-    armor: ['medium', 'shield'],
-    weapons: ['martial'],
-  }),
-  'martial training|college of valor': kit({ armor: ['medium', 'shield'], weapons: ['martial'] }),
-  'bonus proficiencies|college of swords': kit({ armor: ['medium'], weapons: ['scimitar'] }),
-  'channeler|college of spirits': kit({ tools: ['Playing Card Set'] }),
   'unarmored defense|college of dance': unarmored(10, 'dex', 'cha'),
-  'bonus proficiency|life domain': kit({ armor: ['heavy'] }),
-  'bonus proficiency|nature domain': kit({ armor: ['heavy'] }),
-  'bonus proficiency|strength domain (psa)': kit({ armor: ['heavy'] }),
-  'bonus proficiency|solidarity domain (psa)': kit({ armor: ['heavy'] }),
-  'bonus proficiency|forge domain': kit({ armor: ['heavy'], tools: ["Smith's Tools"] }),
-  'bonus proficiencies|tempest domain': kit({ armor: ['heavy'], weapons: ['martial'] }),
-  'bonus proficiencies|war domain': kit({ armor: ['heavy'], weapons: ['martial'] }),
-  'bonus proficiencies|zeal domain (psa)': kit({ armor: ['heavy'], weapons: ['martial'] }),
-  'bonus proficiencies|twilight domain': kit({ armor: ['heavy'], weapons: ['martial'] }),
-  'bonus proficiency|death domain': kit({ weapons: ['martial'] }),
   // The artificer subclasses (TCE and EFA share each subclass name).
-  'battle ready|battle smith': kit({ weapons: ['martial'] }),
   'tool proficiency|battle smith': toolsOrAnother("Smith's Tools"),
   'tool proficiency|alchemist': toolsOrAnother("Alchemist's Supplies"),
   'tool proficiency|artillerist': toolsOrAnother("Woodcarver's Tools"),
@@ -1674,8 +1283,6 @@ export const CURATED: Record<string, CuratedFn> = {
     );
   },
   // The UA Mystic's orders.
-  'armor training|order of the avatar': kit({ armor: ['medium', 'shield'] }),
-  'martial training|order of the soul knife': kit({ armor: ['medium'], weapons: ['martial'] }),
   'immortal durability|order of the immortal': unarmored(10, 'dex', 'con'),
   'acolyte of nature|nature domain': skillPick(1, ['Animal Handling', 'Nature', 'Survival']),
   'acolyte of strength|strength domain (psa)': skillPick(1, [
@@ -1684,7 +1291,6 @@ export const CURATED: Record<string, CuratedFn> = {
     'Nature',
     'Survival',
   ]),
-  'arcane initiate|arcana domain': skills('Arcana'),
   'bonus proficiencies|order domain': kit(
     { armor: ['heavy'] },
     skillPick(1, ['Intimidation', 'Persuasion']),
@@ -1722,18 +1328,6 @@ export const CURATED: Record<string, CuratedFn> = {
     'Religion',
     'Survival',
   ]),
-  'implements of mercy|way of mercy': kit(
-    { tools: ['Herbalism Kit'] },
-    skills('Insight', 'Medicine'),
-  ),
-  'implements of mercy|warrior of mercy': kit(
-    { tools: ['Herbalism Kit'] },
-    skills('Insight', 'Medicine'),
-  ),
-  'bonus proficiencies|way of the drunken master': kit(
-    { tools: ["Brewer's Supplies"] },
-    skills('Performance'),
-  ),
   // Performance, or a Monk skill in its place when it is held already. Like Royal
   // Envoy, only what is collected so far can say so.
   'bonus proficiencies|warrior of mystic brews': kit(
@@ -1774,46 +1368,6 @@ export const CURATED: Record<string, CuratedFn> = {
       origin,
     });
   },
-  // One use a long rest, of the rune on the weapon: Blood's reaction, Frost's breath
-  // in place of an attack (a Dexterity save against the spell save DC, which the
-  // scanner missed) or Unholy's Summon Undead. Each chip spends that one use.
-  'runic mastery|oath of the ebon blade': (col, origin) => {
-    col.add({
-      kind: 'resource',
-      key: 'runic-mastery',
-      label: 'Runic Mastery',
-      max: 1,
-      resetOn: 'long',
-      origin,
-    });
-    const cost = { resource: 'runic-mastery', amount: 1 } as const;
-    col.add({
-      kind: 'action',
-      economy: 'reaction',
-      label: 'Runic Mastery: Blood',
-      note: 'an ally hit within 10 feet takes less damage, and you lose as much',
-      cost,
-      origin,
-    });
-    col.add({
-      kind: 'action',
-      economy: 'none',
-      label: 'Runic Mastery: Frost',
-      roll: '8d6',
-      note: 'cold · 30-foot cone, in place of one attack',
-      save: { targetAbility: 'dex', dcAbility: 'spell' },
-      cost,
-      origin,
-    });
-    col.add({
-      kind: 'action',
-      economy: 'none',
-      label: 'Runic Mastery: Unholy',
-      note: 'Summon Undead with no concentration',
-      cost,
-      origin,
-    });
-  },
   "genie's splendor|oath of the noble genies": all(
     unarmored(10, 'dex', 'cha'),
     skillPick(1, ['Acrobatics', 'Intimidation', 'Performance', 'Persuasion']),
@@ -1845,23 +1399,10 @@ export const CURATED: Record<string, CuratedFn> = {
   // Stone's Endurance, …) are handled per-source by the prose scanner, which
   // reads each printing's actual wording. Curate here only what prose can't
   // see (passive numbers with no usage phrasing).
-  'trait:surprise attack': (col, origin) => {
-    col.add({
-      kind: 'action',
-      economy: 'action',
-      label: 'Surprise Attack (+2d6, first round)',
-      roll: '2d6',
-      origin,
-    });
-  },
-  // Warforged's Integrated Protection, both printings: a row in
-  // `src/rules/cast-guidance/curated.json`.
+  // Surprise Attack, Kefnet's Blessing and Warforged's Integrated Protection
+  // (both printings) are rows in `src/rules/cast-guidance/curated.json`.
   'trait:hare-trigger': (col, origin) => {
     col.add({ kind: 'initiativeBonus', amount: 'profBonus', origin });
-  },
-  // Ibis-headed Aven (Plane Shift: Amonkhet).
-  "trait:kefnet's blessing": (col, origin) => {
-    col.add({ kind: 'halfProf', round: 'down', abilities: ['int'], origin });
   },
 };
 
