@@ -1,8 +1,9 @@
 /**
- * Proves each row moved out of `CURATED` into a built-in rule set adds what the
- * code row added, before the code row is deleted (rule pack port;
- * `docs/rule-sets.md`). Run it while both are in the tree: for every built-in
- * `curated` row whose key `CURATED` still has, each build that reads the row is
+ * Proves each row moved out of a code table (`CURATED`, `STANDING`) into a
+ * built-in rule set adds what the code row added, before the code row is
+ * deleted (rule pack port; `docs/rule-sets.md`). Run it while both are in the
+ * tree: for every built-in row whose key its part's code table still has
+ * (`TABLES`), each build that reads the row is
  * derived twice in one process, once with the code row (the built-in row
  * hidden) and once with the built-in row (the code row hidden), and every
  * sheet field must match.
@@ -42,8 +43,9 @@ import { normalizeDataset } from '../src/data5e/normalize';
 import { editionOf } from '../src/data5e/rulesVersion';
 import { RULE_SET_TYPE } from '../src/engine/castGuidance';
 import { CURATED } from '../src/engine/curated/curatedEffects';
+import { STANDING } from '../src/engine/curated/standingEffects';
 import { deriveSheet } from '../src/engine/derive';
-import { readRuleSet } from '../src/engine/effects/mechanics';
+import { type RulePart, readRuleSet } from '../src/engine/effects/mechanics';
 import {
   type CharacterDoc,
   type DerivedSheet,
@@ -85,15 +87,25 @@ const ctx: EngineContext = engineContextFor(reg, {});
 
 // ------------------------------------------------------------ the two configs
 
-/** Every built-in curated row's key that `CURATED` still has a row under. */
+/** The code table each part's rows stand in for; each table's rows take their own arguments. */
+const TABLES: Record<RulePart, Record<string, unknown>> = {
+  curated: CURATED,
+  standing: STANDING,
+};
+type Row = (...args: unknown[]) => unknown;
+/** A moved row by part and key, as `part key`: one key may have a row in two parts. */
+const idOf = (part: string, key: string) => `${part} ${key}`;
+
+/** Every built-in row's part and key whose code table still has a row under it. */
 const shipped = reg.byType(RULE_SET_TYPE);
-const moved = new Set<string>();
+const moved = new Map<string, { part: RulePart; key: string }>();
 for (const set of shipped) {
   for (const row of readRuleSet(set).rows) {
-    if (row.part !== 'curated') continue;
     for (const key of row.keys) {
-      if (!Object.hasOwn(CURATED, key)) continue;
-      if (values.only === undefined || key.includes(values.only.toLowerCase())) moved.add(key);
+      if (!Object.hasOwn(TABLES[row.part], key)) continue;
+      if (values.only === undefined || key.includes(values.only.toLowerCase())) {
+        moved.set(idOf(row.part, key), { part: row.part, key });
+      }
     }
   }
 }
@@ -104,37 +116,42 @@ if (moved.size === 0) {
 
 /** The shipped sets without the moved rows: what the tree read before the move. */
 const before: Entity[] = shipped.map((set) => {
-  const rows = Array.isArray(set.rows) ? (set.rows as Array<{ keys?: unknown }>) : [];
+  const rows = Array.isArray(set.rows)
+    ? (set.rows as Array<{ part?: unknown; keys?: unknown }>)
+    : [];
   return {
     ...set,
     rows: rows.filter(
       (r) =>
-        !(Array.isArray(r.keys) && r.keys.some((k) => moved.has(String(k).trim().toLowerCase()))),
+        !(
+          Array.isArray(r.keys) &&
+          r.keys.some((k) => moved.has(idOf(String(r.part), String(k).trim().toLowerCase())))
+        ),
     ),
   };
 });
 
-const codeRows = new Map([...moved].map((k) => [k, CURATED[k]] as const));
-/** Moved keys a build under the code rows read. */
+/** Moved rows (`idOf`) a build under the code rows read. */
 let reads = new Set<string>();
 const counted = new Map(
-  [...codeRows].map(([k, fn]) => [
-    k,
-    ((...args: Parameters<NonNullable<typeof fn>>) => {
-      reads.add(k);
-      return fn?.(...args);
-    }) as NonNullable<typeof fn>,
-  ]),
+  [...moved].map(([id, { part, key }]) => {
+    const fn = TABLES[part][key] as Row;
+    const wrapped: Row = (...args) => {
+      reads.add(id);
+      return fn(...args);
+    };
+    return [id, { part, key, fn: wrapped }] as const;
+  }),
 );
 
 function codeRowsOn(): void {
   reg.setRuleSets(before);
-  for (const [k, fn] of counted) CURATED[k] = fn;
+  for (const { part, key, fn } of counted.values()) TABLES[part][key] = fn;
 }
 
 function dataRowsOn(): void {
   reg.setRuleSets(shipped);
-  for (const k of moved) delete CURATED[k];
+  for (const { part, key } of moved.values()) delete TABLES[part][key];
 }
 
 // ------------------------------------------------------------------ builds
@@ -472,7 +489,7 @@ for (const sr of reg.byType('subrace')) {
 }
 
 codeRowsOn();
-const unproved = [...moved].filter((k) => !proved.has(k)).sort();
+const unproved = [...moved.keys()].filter((k) => !proved.has(k)).sort();
 console.log(
   `moved rows: ${moved.size}; builds compared: ${compared}; differences: ${differences.length}`,
 );

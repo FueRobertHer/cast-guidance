@@ -169,14 +169,19 @@ async function instrument(
   }
   const mechanics = (await import(
     pathToFileURL(path.resolve(import.meta.dirname, '../src/engine/effects/mechanics.ts')).href
-  )) as { readRuleSet?: (raw: unknown) => { rows: Array<{ part: string; keys: string[] }> } };
+  )) as {
+    readRuleSet?: (raw: unknown) => {
+      rows: Array<{ part: string; keys: string[]; level?: number }>;
+    };
+  };
   if (mechanics.readRuleSet !== undefined) {
     const read = new Set<string>();
     const all: string[] = [];
     out.set('built-in rows', { all, read });
     for (const set of reg.byType('ruleSet' as never)) {
       for (const row of mechanics.readRuleSet(set).rows) {
-        const key = `${row.part}:${row.keys[0]}`;
+        // A row at one level is read only when a feature of that level emits it.
+        const key = `${row.part}:${row.keys[0]}${row.level === undefined ? '' : ` @${row.level}`}`;
         all.push(key);
         const effects = (row as unknown as { effects: object }).effects;
         (row as unknown as { effects: object }).effects = new Proxy(effects, {

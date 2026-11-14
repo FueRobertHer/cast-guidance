@@ -422,9 +422,11 @@ export const RULE_SET_TYPE = 'ruleSet';
 
 /**
  * The code table each row stands in for. `curated` is `CURATED`: a row there is
- * the entry's curated row, found under the keys that table uses.
+ * the entry's curated row, found under the keys that table uses. `standing` is
+ * `STANDING`: defenses, senses and speeds a feature adds beside what its
+ * prose scan or curated row reads.
  */
-export const RULE_SET_PARTS = ['curated'] as const;
+export const RULE_SET_PARTS = ['curated', 'standing'] as const;
 
 /** Whether a built-in row turns the prose scan off for its entry, or runs beside it. */
 export const RULE_SET_SCANS = ['replace', 'keep'] as const;
@@ -436,6 +438,8 @@ export const RULE_SET_EDITIONS = ['2014', '2024', 'both'] as const;
 export const RULE_SET_LIMITS = {
   rowsPerSet: 5_000,
   keysPerRow: 16,
+  /** The highest feature level a row may name. */
+  level: 20,
 } as const;
 
 /** One row of a built-in rule set. */
@@ -443,8 +447,14 @@ export interface StoredRuleRow {
   part: (typeof RULE_SET_PARTS)[number];
   /** Lowercased keys, as the part's code table keys its rows: `stunning strike|monk`. */
   keys: string[];
-  /** Absent: `replace`, as a curated row does. */
+  /** `curated` rows only. Absent: `replace`, as a curated row does. */
   scan?: (typeof RULE_SET_SCANS)[number];
+  /**
+   * `standing` rows only: the row counts only for the feature gained at this
+   * level, which tells apart features of one name (Storm Herald's Desert at 3,
+   * 6 and 14). Absent: at every level.
+   */
+  level?: number;
   effects: StoredEffect[];
 }
 

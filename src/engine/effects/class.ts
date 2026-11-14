@@ -3,7 +3,7 @@ import { emitCuratedEffects as emitCurated, hasCuratedRow } from '../curated/cur
 import { emitRollAdvantages } from '../curated/rollAdvantages';
 import { emitRollExtras } from '../curated/rollExtras';
 import { linkSpend } from '../curated/spendLinks';
-import { emitStandingEffects as emitStanding } from '../curated/standingEffects';
+import { emitStandingEffects as emitStanding, hasStandingRow } from '../curated/standingEffects';
 import { summarizeEntries } from '../summarize';
 import {
   ABILITIES,
@@ -19,7 +19,7 @@ import { asEntityArray, type Collector, str } from './base';
 import { VariantGate } from './classVariants';
 import { collectFeatEntity } from './feat';
 import { isRepeatableFeat } from './featPicks';
-import { basedOn, mechanicsOf, officialOf } from './mechanics';
+import { basedOn, builtInRowsFor, emitRuleRows, mechanicsOf, officialOf } from './mechanics';
 import { readOptionalFeatures } from './optionalFeatures';
 import { buildPrereqContext, featChoiceOption } from './prerequisites';
 import { proseScanFeature } from './proseScan';
@@ -353,11 +353,17 @@ function collectFeatureWithNested(
           ? builtIn.scan === 'replace'
           : curatedKeys.some((k) => emitCurated(col, k, featureOrigin, printing));
       if (!curated) proseScanFeature(col, name, feature.entries, featureOrigin, cardOrigin.label);
-      names.some((n) =>
-        labels.some((label) =>
-          emitStanding(col, `${n}|${label}`.toLowerCase(), featureOrigin, printing, level),
-        ),
-      );
+      // Standing rows are found under the curated keys, in the same order.
+      const standing = builtInRowsFor(col, 'standing', curatedKeys, hasStandingRow);
+      if (standing !== undefined) {
+        emitRuleRows(col, standing, featureOrigin, level, walk.classLevel);
+      } else {
+        names.some((n) =>
+          labels.some((label) =>
+            emitStanding(col, `${n}|${label}`.toLowerCase(), featureOrigin, printing, level),
+          ),
+        );
+      }
       const rollKeys = names.flatMap((n) =>
         labels.flatMap((label) => sources.map((source) => `${n}|${label}|${source}`)),
       );

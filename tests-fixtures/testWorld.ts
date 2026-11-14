@@ -6,12 +6,16 @@
 import { RULE_SET_TYPE } from '@/engine/castGuidance';
 import type { DataEntity, EngineContext } from '@/engine/types';
 import curatedRules from '@/rules/cast-guidance/curated.json';
+import standingRules from '@/rules/cast-guidance/standing.json';
 
 /**
  * The rule sets the app ships (`src/data5e/builtInRules.ts`), as every registry
  * holds them: rows moved out of `CURATED` reach tests as they reach the app.
  */
-export const BUILT_IN_RULE_SETS: DataEntity[] = [curatedRules as DataEntity];
+export const BUILT_IN_RULE_SETS: DataEntity[] = [
+  curatedRules as DataEntity,
+  standingRules as DataEntity,
+];
 
 const race: DataEntity[] = [
   {

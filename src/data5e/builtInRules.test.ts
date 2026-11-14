@@ -3,6 +3,7 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { RULE_SET_TYPE } from '@/engine/castGuidance';
 import { CURATED } from '@/engine/curated/curatedEffects';
+import { STANDING } from '@/engine/curated/standingEffects';
 import { readRuleSet } from '@/engine/effects/mechanics';
 import { BUILT_IN_RULE_SETS } from '../../tests-fixtures/testWorld';
 import { attachBuiltInRules, loadBuiltInRules, withBuiltInRules } from './builtInRules';
@@ -49,6 +50,14 @@ describe('the built-in rule sets', () => {
       readRuleSet(set).rows.flatMap((r) => (r.part === 'curated' ? r.keys : [])),
     );
     expect(keys.filter((k) => Object.hasOwn(CURATED, k))).toEqual([]);
+  });
+
+  it('keeps no standing row also in STANDING, which it stands in for', async () => {
+    const keys = (await loadBuiltInRules()).sets.flatMap((set) =>
+      readRuleSet(set).rows.flatMap((r) => (r.part === 'standing' ? r.keys : [])),
+    );
+    expect(keys.length).toBeGreaterThan(0);
+    expect(keys.filter((k) => Object.hasOwn(STANDING, k))).toEqual([]);
   });
 
   it('reach the engine through the registry', async () => {

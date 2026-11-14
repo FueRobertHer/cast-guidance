@@ -15,6 +15,7 @@ import type { EntityRegistry } from './normalize';
 /** Every built-in rule set file, in the order their rows apply: a later file's row wins. */
 const FILES: ReadonlyArray<() => Promise<{ default: unknown }>> = [
   () => import('../rules/cast-guidance/curated.json'),
+  () => import('../rules/cast-guidance/standing.json'),
 ];
 
 export interface BuiltInRules {

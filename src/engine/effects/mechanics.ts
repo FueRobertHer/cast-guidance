@@ -845,7 +845,10 @@ export interface RuleRow {
   part: RulePart;
   /** Lowercased, as the part's code table keys its rows. */
   keys: readonly string[];
+  /** A `standing` row always runs beside the scan: `keep`. */
   scan: RuleScan;
+  /** `standing` rows: the feature level it counts at alone. */
+  level?: number;
   effects: readonly EffectTemplate[];
 }
 
@@ -880,7 +883,11 @@ const isOneOf = <T extends string>(values: readonly T[], v: unknown): v is T =>
 const SET_FIELDS: ReadonlySet<string> = new Set(['type', 'v', 'name', 'edition', 'rows']);
 const ROW_FIELDS: Record<RulePart, ReadonlySet<string>> = {
   curated: new Set(['part', 'keys', 'scan', 'effects']),
+  standing: new Set(['part', 'keys', 'level', 'effects']),
 };
+
+const isFeatureLevel = (v: unknown): v is number =>
+  typeof v === 'number' && Number.isInteger(v) && v >= 1 && v <= RULE_SET_LIMITS.level;
 
 function readRuleSetOnce(raw: Record<string, unknown>): ReadRuleSet {
   const named = own(raw, 'name');
@@ -929,11 +936,19 @@ function readRuleSetOnce(raw: Record<string, unknown>): ReadRuleSet {
       read.problems.push(`${where}: "${clip(extra)}" is not a field a ${part} row has`);
       return;
     }
-    const scan = own(row, 'scan') ?? 'replace';
+    // A standing row has no `scan` field: it always runs beside the scan.
+    const scan = part === 'standing' ? 'keep' : (own(row, 'scan') ?? 'replace');
     if (!isOneOf(RULE_SET_SCANS, scan)) {
       read.problems.push(`${where}: "scan" is "replace" or "keep"`);
       return;
     }
+    const level = own(row, 'level');
+    if (level !== undefined && !isFeatureLevel(level)) {
+      read.problems.push(`${where}: "level" is a feature level, 1 to ${RULE_SET_LIMITS.level}`);
+      return;
+    }
+    // A key is taken once per level: rows of one key at other levels are features of one name.
+    const slot = (key: string) => (level === undefined ? key : `${key} @${level}`);
     const rawKeys = own(row, 'keys');
     if (!Array.isArray(rawKeys) || rawKeys.length === 0) {
       read.problems.push(`${where}: "keys" lists the keys it is found under`);
@@ -951,8 +966,8 @@ function readRuleSetOnce(raw: Record<string, unknown>): ReadRuleSet {
         continue;
       }
       const key = k.trim().toLowerCase();
-      if (inPart.has(key) || keys.includes(key)) {
-        read.problems.push(`${where}: "${clip(key)}" is already a row`);
+      if (inPart.has(slot(key)) || keys.includes(key)) {
+        read.problems.push(`${where}: "${clip(slot(key))}" is already a row`);
         continue;
       }
       keys.push(key);
@@ -964,16 +979,22 @@ function readRuleSetOnce(raw: Record<string, unknown>): ReadRuleSet {
       return;
     }
     // Only a row that counts takes its keys, so a later one may still have them.
-    for (const key of keys) inPart.add(key);
+    for (const key of keys) inPart.add(slot(key));
     const { effects, problems } = readStoredEffects(own(row, 'effects'), 'effects', true);
     for (const problem of problems) read.problems.push(`${at}: ${problem}`);
-    read.rows.push({ part, keys, scan, effects });
+    read.rows.push({
+      part,
+      keys,
+      scan,
+      ...(level === undefined ? {} : { level }),
+      effects,
+    });
   });
   return read;
 }
 
-/** Rows by part, then by key. */
-type RuleIndex = Map<RulePart, Map<string, RuleRow>>;
+/** Rows by part, then by key: one row, or a `standing` key's rows at each level. */
+type RuleIndex = Map<RulePart, Map<string, readonly RuleRow[]>>;
 
 /** Per rule set list: the registry hands out the same list until it rebuilds. */
 const RULE_INDEX = new WeakMap<object, RuleIndex>();
@@ -1009,10 +1030,12 @@ function buildRuleIndex(sets: readonly DataEntity[]): RuleIndex {
       console.warn(`${set.name}: ${set.problems.join('; ')}`);
     }
     for (const row of set.rows) {
-      const byKey = index.get(row.part) ?? new Map<string, RuleRow>();
+      const byKey = index.get(row.part) ?? new Map<string, readonly RuleRow[]>();
       index.set(row.part, byKey);
-      // A later set's row wins over an earlier one's for the same part and key.
-      for (const key of row.keys) byKey.set(key, row);
+      // A later set's row wins over an earlier one's for the same part, key and level.
+      for (const key of row.keys) {
+        byKey.set(key, [...(byKey.get(key) ?? []).filter((r) => r.level !== row.level), row]);
+      }
     }
   }
   return index;
@@ -1024,6 +1047,7 @@ function buildRuleIndex(sets: readonly DataEntity[]): RuleIndex {
  * rows are moving out of code, `inCode` says which keys the code table still
  * has a row under, and the walk stops at the first of those, so a built-in row
  * under a later key never takes the place of a code row under an earlier one.
+ * For a part whose rows name no level (`curated`).
  */
 export function builtInRuleFor(
   col: Collector,
@@ -1031,7 +1055,7 @@ export function builtInRuleFor(
   keys: readonly string[],
   inCode?: (key: string) => boolean,
 ): RuleRow | undefined {
-  return firstRule(ruleIndexFor(col), part, keys, inCode);
+  return firstRows(ruleIndexFor(col), part, keys, inCode)?.[0];
 }
 
 /**
@@ -1043,21 +1067,55 @@ export function builtInRuleIn(
   part: RulePart,
   keys: readonly string[],
 ): RuleRow | undefined {
-  return firstRule(ruleIndexOf(sets), part, keys);
+  return firstRows(ruleIndexOf(sets), part, keys)?.[0];
 }
 
-function firstRule(
+/**
+ * Every built-in row of `part` under the first of `keys` that has any, at any
+ * level, found as `builtInRuleFor` finds one. A key whose rows are all at other
+ * levels is still found, as `STANDING` answers for a feature its row skips, so
+ * the call site never goes on to a later key.
+ */
+export function builtInRowsFor(
+  col: Collector,
+  part: RulePart,
+  keys: readonly string[],
+  inCode?: (key: string) => boolean,
+): readonly RuleRow[] | undefined {
+  return firstRows(ruleIndexFor(col), part, keys, inCode);
+}
+
+/**
+ * Emit built-in rows where the code table they stand in for runs (`STANDING`):
+ * each row with no level, or at `featureLevel`, with `origin` itself.
+ * `classLevel` is what their formulas read as the class's level.
+ */
+export function emitRuleRows(
+  col: Collector,
+  rows: readonly RuleRow[],
+  origin: EffectOrigin,
+  featureLevel: number,
+  classLevel: number,
+): void {
+  for (const row of rows) {
+    if (row.level === undefined || row.level === featureLevel) {
+      emit(col, row.effects, origin, classLevel, true);
+    }
+  }
+}
+
+function firstRows(
   index: RuleIndex,
   part: RulePart,
   keys: readonly string[],
   inCode?: (key: string) => boolean,
-): RuleRow | undefined {
+): readonly RuleRow[] | undefined {
   const byKey = index.get(part);
   if (byKey === undefined) return undefined;
   for (const k of keys) {
     const key = k.toLowerCase();
-    const row = byKey.get(key);
-    if (row !== undefined) return row;
+    const rows = byKey.get(key);
+    if (rows !== undefined) return rows;
     if (inCode?.(key) === true) return undefined;
   }
   return undefined;

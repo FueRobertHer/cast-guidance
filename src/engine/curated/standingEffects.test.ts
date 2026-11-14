@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { makeTestContext } from '../../../tests-fixtures/testWorld';
+import { BUILT_IN_RULE_SETS, makeTestContext } from '../../../tests-fixtures/testWorld';
+import { RULE_SET_TYPE } from '../castGuidance';
 import { deriveSheet } from '../derive';
 import { Collector } from '../effects/base';
+import { builtInRowsFor, emitRuleRows } from '../effects/mechanics';
 import {
   type CharacterDoc,
   type DataEntity,
@@ -10,14 +12,25 @@ import {
   type EngineContext,
   newCharacterDoc,
 } from '../types';
-import { emitStandingEffects } from './standingEffects';
+import { emitStandingEffects, hasStandingRow } from './standingEffects';
 
-const empty: EngineContext = { get: () => undefined, byType: () => [] };
+const empty: EngineContext = {
+  get: () => undefined,
+  byType: (type) => (type === RULE_SET_TYPE ? BUILT_IN_RULE_SETS : []),
+};
 const sub = (uid: string, label = 'Feature'): EffectOrigin => ({ label, uid, type: 'subclass' });
 
+/**
+ * A feature's standing row, as the call sites emit it: the code row, or the
+ * built-in rule set's (`src/rules/cast-guidance/standing.json`) once it moved.
+ */
 function emit(key: string, origin: EffectOrigin, opts: { from?: string; level?: number } = {}) {
   const col = new Collector(newCharacterDoc('c', 'H', 't'), empty);
-  emitStandingEffects(col, key, origin, opts.from, opts.level ?? 20);
+  const level = opts.level ?? 20;
+  if (emitStandingEffects(col, key, origin, opts.from, level)) return col;
+  const rows = builtInRowsFor(col, 'standing', [key], hasStandingRow);
+  if (rows === undefined) throw new Error(`No standing row under ${key}`);
+  emitRuleRows(col, rows, origin, level, level);
   return col;
 }
 const of = <K extends EffectInput['kind']>(col: Collector, kind: K) =>
@@ -27,7 +40,15 @@ describe('standing rows', () => {
   it('has no row for an unknown key, and adds nothing', () => {
     const col = new Collector(newCharacterDoc('c', 'H', 't'), empty);
     expect(emitStandingEffects(col, 'nothing|here', sub('x'), undefined, 1)).toBe(false);
+    expect(builtInRowsFor(col, 'standing', ['nothing|here'], hasStandingRow)).toBeUndefined();
     expect(col.effects).toEqual([]);
+  });
+
+  it('adds a built-in row with the origin itself, which spend links find actions by', () => {
+    const origin = sub('storm sorcery|xge');
+    const col = emit('heart of the storm|storm sorcery', origin);
+    expect(col.effects.length).toBeGreaterThan(0);
+    for (const e of col.effects) expect(e.origin).toBe(origin);
   });
 
   it('resists what the feature names', () => {
@@ -376,33 +397,80 @@ const courtly: DataEntity[] = [
     ],
   },
 ];
+// The Storm Herald copied: in the Workshop under new names (`basedOn`), and
+// converted from another file under its own (`printingOf`).
+const squall: DataEntity = {
+  name: 'Path of the Squall',
+  shortName: 'Squall',
+  source: 'HB',
+  className: 'Warrior',
+  classSource: 'TST',
+  subclassFeatures: ['Dune|Warrior|TST|Squall|HB|3', 'Dune|Warrior|TST|Squall|HB|6'],
+  castGuidance: { v: 1, basedOn: 'Path of the Storm Herald|TSX' },
+};
+const dunes: DataEntity[] = [3, 6].map((level) => ({
+  name: 'Dune',
+  source: 'HB',
+  className: 'Warrior',
+  classSource: 'TST',
+  subclassShortName: 'Squall',
+  subclassSource: 'HB',
+  level,
+  entries: [`The dunes, at ${level}.`],
+  castGuidance: { v: 1, basedOn: 'Desert|TSX' },
+}));
+// Named otherwise, so only `printingOf` leads to the official feature's row.
+const convertedHerald: DataEntity = {
+  ...herald,
+  source: 'CNV',
+  subclassFeatures: ['Sandstorm|Warrior|TST|Storm|CNV|3', 'Sandstorm|Warrior|TST|Storm|CNV|6'],
+};
+const convertedDeserts: DataEntity[] = deserts.map((d) => ({
+  ...d,
+  name: 'Sandstorm',
+  source: 'CNV',
+  subclassSource: 'CNV',
+  printingOf: ['Desert|TSX'],
+}));
 const sight: DataEntity = {
   name: "Devil's Sight",
   source: 'PHB',
   featureType: ['GF'],
   entries: ['You see in darkness.'],
 };
+const sights: DataEntity[] = [
+  sight,
+  {
+    ...sight,
+    name: 'Night Eyes',
+    source: 'HB',
+    castGuidance: { v: 1, basedOn: "Devil's Sight|PHB" },
+  },
+  { ...sight, source: 'CNV', printingOf: ["Devil's Sight|PHB"] },
+];
+const SUBCLASSES = [subclass, herald, samurai, psi, squall, convertedHerald];
+const FEATURES = [...subclassFeatures, ...deserts, ...courtly, ...dunes, ...convertedDeserts];
+const named = (list: DataEntity[], name: string, source?: string) =>
+  list.find(
+    (e) =>
+      String(e.name).toLowerCase() === name.toLowerCase() &&
+      (source === undefined || String(e.source).toLowerCase() === source.toLowerCase()),
+  );
 const world = makeTestContext();
 const ctx: EngineContext = {
-  get: (type, name, source) => {
-    if (type === 'subclass' && name === subclass.name) return subclass;
-    if (type === 'subclass' && name === herald.name) return herald;
-    if (type === 'subclass' && name === samurai.name) return samurai;
-    if (type === 'subclass' && name === psi.name) return psi;
-    if (type === 'subclassFeature') {
-      const f = [...subclassFeatures, ...deserts, ...courtly].find(
-        (e) => String(e.name).toLowerCase() === name.toLowerCase(),
-      );
-      if (f !== undefined) return f;
-    }
-    if (type === 'optionalfeature' && name.toLowerCase() === "devil's sight") return sight;
-    return world.get(type, name, source);
-  },
+  get: (type, name, source) =>
+    (type === 'subclass'
+      ? named(SUBCLASSES, name, source)
+      : type === 'subclassFeature'
+        ? named(FEATURES, name, source)
+        : type === 'optionalfeature'
+          ? named(sights, name, source)
+          : undefined) ?? world.get(type, name, source),
   byType: (type) =>
     type === 'optionalfeature'
-      ? [...world.byType(type), sight]
+      ? [...world.byType(type), ...sights]
       : type === 'subclassFeature'
-        ? [...world.byType(type), ...subclassFeatures, ...deserts, ...courtly]
+        ? [...world.byType(type), ...FEATURES]
         : world.byType(type),
 };
 
@@ -442,12 +510,25 @@ describe('standing rows on a derived sheet', () => {
     expect(fire(6)).toEqual(['fire']);
   });
 
-  const asSubclass = (name: string, levels: number) => {
+  const asSubclass = (name: string, levels: number, source = 'TSX') => {
     const doc = stalker(levels);
     const [cls] = doc.classes;
-    if (cls !== undefined) cls.subclass = { name, source: 'TSX' };
+    if (cls !== undefined) cls.subclass = { name, source };
     return deriveSheet(doc, ctx);
   };
+
+  it("reads the copied feature's row at the level the copy comes at", () => {
+    for (const [name, source] of [
+      ['Path of the Squall', 'HB'],
+      ['Path of the Storm Herald', 'CNV'],
+    ] as const) {
+      const fire = (levels: number) =>
+        asSubclass(name, levels, source).resists.map((r) => r.damageType);
+      expect(fire(5), source).toEqual([]);
+      expect(fire(6), source).toEqual(['fire']);
+      expect(fire(14), source).toEqual(['fire']);
+    }
+  });
 
   it('adds to a curated row on the same feature', () => {
     const sheet = asSubclass('Samurai', 7);
@@ -461,14 +542,16 @@ describe('standing rows on a derived sheet', () => {
     expect(sheet.resources.map((r) => r.label)).toContain('Guarded Mind');
   });
 
-  it("reads a picked optional feature's row", () => {
-    const doc = stalker(3);
-    const id = deriveSheet(doc, ctx).pending.find((p) => p.label === 'Gifts')?.id;
-    expect(id).toBeDefined();
-    doc.choices[id ?? ''] = ["devil's sight|phb"];
-    expect(deriveSheet(doc, ctx).senses.map((s) => [s.sense, s.range])).toContainEqual([
-      "devil's sight",
-      120,
-    ]);
+  it("reads a picked optional feature's row, official or copied", () => {
+    for (const uid of ["devil's sight|phb", 'night eyes|hb', "devil's sight|cnv"]) {
+      const doc = stalker(3);
+      const id = deriveSheet(doc, ctx).pending.find((p) => p.label === 'Gifts')?.id;
+      expect(id).toBeDefined();
+      doc.choices[id ?? ''] = [uid];
+      expect(
+        deriveSheet(doc, ctx).senses.map((s) => [s.sense, s.range]),
+        uid,
+      ).toContainEqual(["devil's sight", 120]);
+    }
   });
 });

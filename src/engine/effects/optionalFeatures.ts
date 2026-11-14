@@ -7,12 +7,12 @@ import { emitCuratedEffects as emitCurated, hasCuratedRow } from '../curated/cur
 import { emitRollAdvantages } from '../curated/rollAdvantages';
 import { emitRollExtras } from '../curated/rollExtras';
 import { linkSpend } from '../curated/spendLinks';
-import { emitStandingEffects as emitStanding } from '../curated/standingEffects';
+import { emitStandingEffects as emitStanding, hasStandingRow } from '../curated/standingEffects';
 import { summarizeEntries } from '../summarize';
 import type { Ability, DataEntity, EffectOrigin } from '../types';
 import { asSlotCasts, collectAdditionalSpells, withoutPoolCosts } from './additionalSpells';
 import { asEntityArray, type Collector, str } from './base';
-import { entryKeys, mechanicsOf, officialOf } from './mechanics';
+import { builtInRowsFor, emitRuleRows, entryKeys, mechanicsOf, officialOf } from './mechanics';
 import {
   buildPrereqContext,
   meetsPrerequisite,
@@ -160,9 +160,14 @@ export function readOptionalFeatures(
                       emitCurated(col, key, ofOrigin, i === 0 ? undefined : printed),
                     );
               if (!curated) proseScanFeature(col, str(of.name) ?? uid, of.entries, ofOrigin);
-              uids.some((key, i) =>
-                emitStanding(col, key, ofOrigin, i === 0 ? undefined : printed, level),
-              );
+              const standing = builtInRowsFor(col, 'standing', uids, hasStandingRow);
+              if (standing !== undefined) {
+                emitRuleRows(col, standing, ofOrigin, level, level);
+              } else {
+                uids.some((key, i) =>
+                  emitStanding(col, key, ofOrigin, i === 0 ? undefined : printed, level),
+                );
+              }
               emitRollAdvantages(col, uids, ofOrigin, level);
               emitRollExtras(col, uids, ofOrigin, level);
               uids.some((key) => linkSpend(col, key, str(of.name) ?? uid, ofOrigin));
