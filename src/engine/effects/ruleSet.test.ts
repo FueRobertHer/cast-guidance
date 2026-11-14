@@ -10,7 +10,14 @@ import {
   newCharacterDoc,
 } from '../types';
 import { Collector } from './base';
-import { builtInRuleFor, mechanicsOf, readRuleSet, readStoredEffects } from './mechanics';
+import {
+  builtInRowsFor,
+  builtInRuleFor,
+  emitRuleRows,
+  mechanicsOf,
+  readRuleSet,
+  readStoredEffects,
+} from './mechanics';
 
 // Invented rows: what the reader and the seam do with them is the point. Keys
 // reuse real feature names (Stunning Strike), which are rule facts.
@@ -124,7 +131,7 @@ describe('readRuleSet', () => {
     const read = readRuleSet(
       ruleSet([
         'a row',
-        { part: 'standing', keys: ['a'], effects: [] },
+        { part: 'nowhere', keys: ['a'], effects: [] },
         { part: 'curated', keys: ['a'], scan: 'maybe', effects: [] },
         { part: 'curated', keys: [], effects: [] },
         { part: 'curated', effects: [] },
@@ -135,7 +142,7 @@ describe('readRuleSet', () => {
     );
     expect(read.problems).toEqual([
       'row 1: is not a row',
-      'row 2: has no part "standing"',
+      'row 2: has no part "nowhere"',
       'row 3: "scan" is "replace" or "keep"',
       'row 4: "keys" lists the keys it is found under',
       'row 5: "keys" lists the keys it is found under',
@@ -230,6 +237,121 @@ describe('readRuleSet', () => {
     const long = readRuleSet(ruleSet(rows));
     expect(long.problems).toEqual([`only the first ${RULE_SET_LIMITS.rowsPerSet} rows count`]);
     expect(long.rows).toHaveLength(RULE_SET_LIMITS.rowsPerSet);
+  });
+});
+
+// ---------------------------------------------------------------------------
+
+describe('standing rows', () => {
+  const standing = (keys: unknown[], effects: unknown[], level?: unknown) => ({
+    part: 'standing',
+    keys,
+    ...(level !== undefined ? { level } : {}),
+    effects,
+  });
+  const resist = (damageType: string) => ({ kind: 'resist', damageType });
+
+  it('read beside the scan, at one feature level or at every one', () => {
+    const read = readRuleSet(
+      ruleSet([
+        standing(['Desert|Storm'], [resist('fire')], 6),
+        standing(['desert|storm'], [resist('cold')], 14),
+        standing(['desert|storm'], [cue('Hot')]),
+      ]),
+    );
+    expect(read.problems).toEqual([]);
+    expect(read.rows.map((r) => [r.part, r.keys, r.scan, r.level])).toEqual([
+      ['standing', ['desert|storm'], 'keep', 6],
+      ['standing', ['desert|storm'], 'keep', 14],
+      ['standing', ['desert|storm'], 'keep', undefined],
+    ]);
+  });
+
+  it('leave out a scan, a level that is not a feature level, and a key taken at that level', () => {
+    const read = readRuleSet(
+      ruleSet([
+        { ...standing(['a'], []), scan: 'keep' },
+        ...[0, 21, 2.5, '6'].map((level) => standing(['b'], [], level)),
+        standing(['c'], [], 6),
+        standing(['C'], [], 6),
+        standing(['c'], []),
+      ]),
+    );
+    expect(read.problems).toEqual([
+      'row 1: "scan" is not a field a standing row has',
+      ...[2, 3, 4, 5].map(
+        (n) => `row ${n}: "level" is a feature level, 1 to ${RULE_SET_LIMITS.level}`,
+      ),
+      'row 7: "c @6" is already a row',
+    ]);
+    expect(read.rows.map((r) => [r.keys, r.level])).toEqual([
+      [['c'], 6],
+      [['c'], undefined],
+    ]);
+  });
+
+  const at = (
+    ctx: EngineContext,
+    keys: string[],
+    level: number,
+    inCode?: (k: string) => boolean,
+  ) => {
+    const col = new Collector(character(), ctx);
+    const rows = builtInRowsFor(col, 'standing', keys, inCode);
+    if (rows !== undefined) emitRuleRows(col, rows, origin, level, level);
+    return { found: rows !== undefined, effects: col.effects };
+  };
+  const types = (effects: readonly { kind: string }[]) =>
+    effects.map((e) => ('damageType' in e ? e.damageType : e.kind));
+
+  it('emit the rows at the feature level and those at every level, with the origin itself', () => {
+    const ctx = withRules(
+      ruleSet([
+        standing(['desert|storm'], [resist('fire')], 6),
+        standing(['desert|storm'], [resist('cold')]),
+      ]),
+    );
+    expect(types(at(ctx, ['desert|storm'], 6).effects)).toEqual(['fire', 'cold']);
+    expect(types(at(ctx, ['desert|storm'], 3).effects)).toEqual(['cold']);
+    expect(at(ctx, ['desert|storm'], 6).effects.every((e) => e.origin === origin)).toBe(true);
+  });
+
+  it('find a key whose rows are all at other levels, so no later key is read', () => {
+    const ctx = withRules(
+      ruleSet([
+        standing(['desert|storm'], [resist('fire')], 6),
+        standing(['desert|copy'], [resist('acid')]),
+      ]),
+    );
+    expect(at(ctx, ['desert|storm', 'desert|copy'], 3)).toEqual({ found: true, effects: [] });
+    expect(types(at(ctx, ['none', 'desert|copy'], 3).effects)).toEqual(['acid']);
+  });
+
+  it('stop at an earlier key the code table still has a row under', () => {
+    const ctx = withRules(ruleSet([standing(['b'], [resist('fire')])]));
+    expect(at(ctx, ['a', 'b'], 1, (k) => k === 'a')).toEqual({ found: false, effects: [] });
+    expect(types(at(ctx, ['b'], 1, (k) => k === 'b').effects)).toEqual(['fire']);
+  });
+
+  it('take a later set’s row at the same level, and keep the earlier set’s at others', () => {
+    const ctx = withRules(
+      ruleSet([
+        standing(['desert|storm'], [resist('fire')], 6),
+        standing(['desert|storm'], [resist('cold')], 14),
+      ]),
+      ruleSet([standing(['desert|storm'], [resist('acid')], 6)], { name: 'Later' }),
+    );
+    expect(types(at(ctx, ['desert|storm'], 6).effects)).toEqual(['acid']);
+    expect(types(at(ctx, ['desert|storm'], 14).effects)).toEqual(['cold']);
+  });
+
+  it('are not curated rows, nor the other way round', () => {
+    const ctx = withRules(
+      ruleSet([standing(['lantern|hb'], [resist('fire')]), row(['lamp|hb'], [cue('Lit')])]),
+    );
+    const col = new Collector(character(), ctx);
+    expect(builtInRuleFor(col, 'curated', ['lantern|hb'])).toBeUndefined();
+    expect(builtInRowsFor(col, 'standing', ['lamp|hb'])).toBeUndefined();
   });
 });
 

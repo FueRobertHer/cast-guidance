@@ -1,0 +1,784 @@
+{
+  "type": "ruleSet",
+  "v": 1,
+  "name": "Built-in standing rows",
+  "edition": "both",
+  "rows": [
+    {
+      "part": "standing",
+      "keys": ["mindless rage|path of the berserker"],
+      "effects": [
+        {
+          "kind": "conditionImmune",
+          "condition": "charmed",
+          "while": {
+            "effect": "Rage"
+          }
+        },
+        {
+          "kind": "conditionImmune",
+          "condition": "frightened",
+          "while": {
+            "effect": "Rage"
+          }
+        }
+      ]
+    },
+    {
+      "part": "standing",
+      "keys": ["bear|path of the totem warrior"],
+      "level": 3,
+      "effects": [
+        {
+          "kind": "resist",
+          "damageType": "acid",
+          "while": {
+            "effect": "Rage"
+          }
+        },
+        {
+          "kind": "resist",
+          "damageType": "bludgeoning",
+          "while": {
+            "effect": "Rage"
+          }
+        },
+        {
+          "kind": "resist",
+          "damageType": "cold",
+          "while": {
+            "effect": "Rage"
+          }
+        },
+        {
+          "kind": "resist",
+          "damageType": "fire",
+          "while": {
+            "effect": "Rage"
+          }
+        },
+        {
+          "kind": "resist",
+          "damageType": "force",
+          "while": {
+            "effect": "Rage"
+          }
+        },
+        {
+          "kind": "resist",
+          "damageType": "lightning",
+          "while": {
+            "effect": "Rage"
+          }
+        },
+        {
+          "kind": "resist",
+          "damageType": "necrotic",
+          "while": {
+            "effect": "Rage"
+          }
+        },
+        {
+          "kind": "resist",
+          "damageType": "piercing",
+          "while": {
+            "effect": "Rage"
+          }
+        },
+        {
+          "kind": "resist",
+          "damageType": "poison",
+          "while": {
+            "effect": "Rage"
+          }
+        },
+        {
+          "kind": "resist",
+          "damageType": "radiant",
+          "while": {
+            "effect": "Rage"
+          }
+        },
+        {
+          "kind": "resist",
+          "damageType": "slashing",
+          "while": {
+            "effect": "Rage"
+          }
+        },
+        {
+          "kind": "resist",
+          "damageType": "thunder",
+          "while": {
+            "effect": "Rage"
+          }
+        }
+      ]
+    },
+    {
+      "part": "standing",
+      "keys": ["elk|path of the totem warrior"],
+      "level": 3,
+      "effects": [
+        {
+          "kind": "speedBonus",
+          "amount": 15,
+          "unless": "heavyArmor",
+          "while": {
+            "effect": "Rage"
+          }
+        }
+      ]
+    },
+    {
+      "part": "standing",
+      "keys": ["eagle|path of the totem warrior"],
+      "level": 14,
+      "effects": [
+        {
+          "kind": "moveSpeed",
+          "mode": "fly",
+          "speed": "walk",
+          "while": {
+            "effect": "Rage"
+          }
+        }
+      ]
+    },
+    {
+      "part": "standing",
+      "keys": ["desert|path of the storm herald"],
+      "level": 6,
+      "effects": [
+        {
+          "kind": "resist",
+          "damageType": "fire"
+        }
+      ]
+    },
+    {
+      "part": "standing",
+      "keys": ["sea|path of the storm herald"],
+      "level": 6,
+      "effects": [
+        {
+          "kind": "resist",
+          "damageType": "lightning"
+        },
+        {
+          "kind": "moveSpeed",
+          "mode": "swim",
+          "speed": 30
+        }
+      ]
+    },
+    {
+      "part": "standing",
+      "keys": ["tundra|path of the storm herald"],
+      "level": 6,
+      "effects": [
+        {
+          "kind": "resist",
+          "damageType": "cold"
+        }
+      ]
+    },
+    {
+      "part": "standing",
+      "keys": ["primordial bond|path of the elements"],
+      "effects": [
+        {
+          "kind": "resist",
+          "damageType": "cold",
+          "while": {
+            "effect": "Rage"
+          }
+        },
+        {
+          "kind": "resist",
+          "damageType": "fire",
+          "while": {
+            "effect": "Rage"
+          }
+        },
+        {
+          "kind": "resist",
+          "damageType": "lightning",
+          "while": {
+            "effect": "Rage"
+          }
+        }
+      ]
+    },
+    {
+      "part": "standing",
+      "keys": ["avatar of battle|strength domain (psa)"],
+      "effects": [
+        {
+          "kind": "resist",
+          "damageType": "bludgeoning",
+          "note": "nonmagical"
+        },
+        {
+          "kind": "resist",
+          "damageType": "piercing",
+          "note": "nonmagical"
+        },
+        {
+          "kind": "resist",
+          "damageType": "slashing",
+          "note": "nonmagical"
+        }
+      ]
+    },
+    {
+      "part": "standing",
+      "keys": ["eyes of night|twilight domain"],
+      "effects": [
+        {
+          "kind": "sense",
+          "sense": "darkvision",
+          "range": 300
+        }
+      ]
+    },
+    {
+      "part": "standing",
+      "keys": ["soul of the forge|forge domain"],
+      "effects": [
+        {
+          "kind": "resist",
+          "damageType": "fire"
+        }
+      ]
+    },
+    {
+      "part": "standing",
+      "keys": ["saint of forge and fire|forge domain"],
+      "effects": [
+        {
+          "kind": "immune",
+          "damageType": "fire"
+        },
+        {
+          "kind": "resist",
+          "damageType": "bludgeoning",
+          "note": "nonmagical, in heavy armor"
+        },
+        {
+          "kind": "resist",
+          "damageType": "piercing",
+          "note": "nonmagical, in heavy armor"
+        },
+        {
+          "kind": "resist",
+          "damageType": "slashing",
+          "note": "nonmagical, in heavy armor"
+        }
+      ]
+    },
+    {
+      "part": "standing",
+      "keys": ["chemical mastery|alchemist"],
+      "effects": [
+        {
+          "kind": "resist",
+          "damageType": "acid"
+        },
+        {
+          "kind": "resist",
+          "damageType": "poison"
+        },
+        {
+          "kind": "conditionImmune",
+          "condition": "poisoned"
+        }
+      ]
+    },
+    {
+      "part": "standing",
+      "keys": ["aquatic affinity|circle of the sea"],
+      "effects": [
+        {
+          "kind": "moveSpeed",
+          "mode": "swim",
+          "speed": "walk"
+        }
+      ]
+    },
+    {
+      "part": "standing",
+      "keys": ["guarded mind|psi warrior"],
+      "effects": [
+        {
+          "kind": "resist",
+          "damageType": "psychic"
+        }
+      ]
+    },
+    {
+      "part": "standing",
+      "keys": ["inspiring commander|banneret"],
+      "effects": [
+        {
+          "kind": "conditionImmune",
+          "condition": "charmed"
+        },
+        {
+          "kind": "conditionImmune",
+          "condition": "frightened"
+        }
+      ]
+    },
+    {
+      "part": "standing",
+      "keys": ["ascendant aspect|way of the ascendant dragon"],
+      "effects": [
+        {
+          "kind": "sense",
+          "sense": "blindsight",
+          "range": 10
+        }
+      ]
+    },
+    {
+      "part": "standing",
+      "keys": ["supernatural resistance|oathbreaker"],
+      "effects": [
+        {
+          "kind": "resist",
+          "damageType": "bludgeoning",
+          "note": "nonmagical weapons"
+        },
+        {
+          "kind": "resist",
+          "damageType": "piercing",
+          "note": "nonmagical weapons"
+        },
+        {
+          "kind": "resist",
+          "damageType": "slashing",
+          "note": "nonmagical weapons"
+        }
+      ]
+    },
+    {
+      "part": "standing",
+      "keys": ["aura of alacrity|oath of glory"],
+      "effects": [
+        {
+          "kind": "speedBonus",
+          "amount": 10
+        }
+      ]
+    },
+    {
+      "part": "standing",
+      "keys": ["aura of deathly endurance|oath of the ebon blade"],
+      "effects": [
+        {
+          "kind": "resist",
+          "damageType": "cold",
+          "note": "not while incapacitated"
+        },
+        {
+          "kind": "resist",
+          "damageType": "necrotic",
+          "note": "not while incapacitated"
+        },
+        {
+          "kind": "resist",
+          "damageType": "psychic",
+          "note": "not while incapacitated"
+        }
+      ]
+    },
+    {
+      "part": "standing",
+      "keys": ["frigid explorer|winter walker"],
+      "effects": [
+        {
+          "kind": "resist",
+          "damageType": "cold"
+        }
+      ]
+    },
+    {
+      "part": "standing",
+      "keys": ["ancient might|hollow warden"],
+      "effects": [
+        {
+          "kind": "conditionImmune",
+          "condition": "exhaustion"
+        }
+      ]
+    },
+    {
+      "part": "standing",
+      "keys": ["superior mobility|scout"],
+      "effects": [
+        {
+          "kind": "speedBonus",
+          "amount": 10
+        }
+      ]
+    },
+    {
+      "part": "standing",
+      "keys": ["fire in the veins|pyromancer (psk)"],
+      "effects": [
+        {
+          "kind": "resist",
+          "damageType": "fire"
+        }
+      ]
+    },
+    {
+      "part": "standing",
+      "keys": ["fiery soul|pyromancer (psk)"],
+      "effects": [
+        {
+          "kind": "immune",
+          "damageType": "fire"
+        }
+      ]
+    },
+    {
+      "part": "standing",
+      "keys": ["eyes of the dark|shadow magic"],
+      "effects": [
+        {
+          "kind": "sense",
+          "sense": "darkvision",
+          "range": 120
+        }
+      ]
+    },
+    {
+      "part": "standing",
+      "keys": ["heart of the storm|storm sorcery"],
+      "effects": [
+        {
+          "kind": "resist",
+          "damageType": "lightning"
+        },
+        {
+          "kind": "resist",
+          "damageType": "thunder"
+        }
+      ]
+    },
+    {
+      "part": "standing",
+      "keys": ["wind soul|storm sorcery"],
+      "effects": [
+        {
+          "kind": "immune",
+          "damageType": "lightning"
+        },
+        {
+          "kind": "immune",
+          "damageType": "thunder"
+        },
+        {
+          "kind": "moveSpeed",
+          "mode": "fly",
+          "speed": 60
+        }
+      ]
+    },
+    {
+      "part": "standing",
+      "keys": ["psychic defenses|aberrant mind"],
+      "effects": [
+        {
+          "kind": "resist",
+          "damageType": "psychic"
+        }
+      ]
+    },
+    {
+      "part": "standing",
+      "keys": ["psychic defenses|aberrant sorcery"],
+      "effects": [
+        {
+          "kind": "resist",
+          "damageType": "psychic"
+        }
+      ]
+    },
+    {
+      "part": "standing",
+      "keys": ["power of shadow|shadow sorcery"],
+      "effects": [
+        {
+          "kind": "sense",
+          "sense": "darkvision",
+          "range": 120
+        },
+        {
+          "kind": "sense",
+          "sense": "blindsight",
+          "range": 10
+        }
+      ]
+    },
+    {
+      "part": "standing",
+      "keys": ["beguiling defenses|the archfey"],
+      "effects": [
+        {
+          "kind": "conditionImmune",
+          "condition": "charmed"
+        }
+      ]
+    },
+    {
+      "part": "standing",
+      "keys": ["beguiling defenses|archfey patron"],
+      "effects": [
+        {
+          "kind": "conditionImmune",
+          "condition": "charmed"
+        }
+      ]
+    },
+    {
+      "part": "standing",
+      "keys": ["thought shield|the great old one"],
+      "effects": [
+        {
+          "kind": "resist",
+          "damageType": "psychic"
+        }
+      ]
+    },
+    {
+      "part": "standing",
+      "keys": ["thought shield|great old one patron"],
+      "effects": [
+        {
+          "kind": "resist",
+          "damageType": "psychic"
+        }
+      ]
+    },
+    {
+      "part": "standing",
+      "keys": ["radiant soul|the celestial"],
+      "effects": [
+        {
+          "kind": "resist",
+          "damageType": "radiant"
+        }
+      ]
+    },
+    {
+      "part": "standing",
+      "keys": ["radiant soul|celestial patron"],
+      "effects": [
+        {
+          "kind": "resist",
+          "damageType": "radiant"
+        }
+      ]
+    },
+    {
+      "part": "standing",
+      "keys": ["gift of the sea|the fathomless"],
+      "effects": [
+        {
+          "kind": "moveSpeed",
+          "mode": "swim",
+          "speed": 40
+        }
+      ]
+    },
+    {
+      "part": "standing",
+      "keys": ["oceanic soul|the fathomless"],
+      "effects": [
+        {
+          "kind": "resist",
+          "damageType": "cold"
+        }
+      ]
+    },
+    {
+      "part": "standing",
+      "keys": ["necrotic husk|the undead"],
+      "effects": [
+        {
+          "kind": "resist",
+          "damageType": "necrotic"
+        }
+      ]
+    },
+    {
+      "part": "standing",
+      "keys": ["necrotic husk|undead patron"],
+      "effects": [
+        {
+          "kind": "resist",
+          "damageType": "necrotic"
+        }
+      ]
+    },
+    {
+      "part": "standing",
+      "keys": ["inured to undeath|school of necromancy"],
+      "effects": [
+        {
+          "kind": "resist",
+          "damageType": "necrotic"
+        }
+      ]
+    },
+    {
+      "part": "standing",
+      "keys": ["necromancy spellbook|necromancer"],
+      "effects": [
+        {
+          "kind": "resist",
+          "damageType": "necrotic"
+        }
+      ]
+    },
+    {
+      "part": "standing",
+      "keys": ["spell resistance|school of abjuration"],
+      "effects": [
+        {
+          "kind": "resist",
+          "damageType": "all",
+          "note": "from spells"
+        }
+      ]
+    },
+    {
+      "part": "standing",
+      "keys": ["spell resistance|abjurer"],
+      "effects": [
+        {
+          "kind": "resist",
+          "damageType": "all",
+          "note": "from spells"
+        }
+      ]
+    },
+    {
+      "part": "standing",
+      "keys": ["spectral sight|demon hunter"],
+      "effects": [
+        {
+          "kind": "sense",
+          "sense": "blindsight",
+          "range": 10
+        }
+      ]
+    },
+    {
+      "part": "standing",
+      "keys": ["beguiling influence|phb"],
+      "effects": [
+        {
+          "kind": "skillProf",
+          "skill": "Deception",
+          "level": 1
+        },
+        {
+          "kind": "skillProf",
+          "skill": "Persuasion",
+          "level": 1
+        }
+      ]
+    },
+    {
+      "part": "standing",
+      "keys": ["blind fighting|tce"],
+      "effects": [
+        {
+          "kind": "sense",
+          "sense": "blindsight",
+          "range": 10
+        }
+      ]
+    },
+    {
+      "part": "standing",
+      "keys": ["devil's sight|phb"],
+      "effects": [
+        {
+          "kind": "sense",
+          "sense": "devil's sight",
+          "range": 120
+        }
+      ]
+    },
+    {
+      "part": "standing",
+      "keys": ["devil's sight|xphb"],
+      "effects": [
+        {
+          "kind": "sense",
+          "sense": "devil's sight",
+          "range": 120
+        }
+      ]
+    },
+    {
+      "part": "standing",
+      "keys": ["gift of the depths|xge"],
+      "effects": [
+        {
+          "kind": "moveSpeed",
+          "mode": "swim",
+          "speed": "walk"
+        }
+      ]
+    },
+    {
+      "part": "standing",
+      "keys": ["gift of the depths|xphb"],
+      "effects": [
+        {
+          "kind": "moveSpeed",
+          "mode": "swim",
+          "speed": "walk"
+        }
+      ]
+    },
+    {
+      "part": "standing",
+      "keys": ["stone rune|tce"],
+      "effects": [
+        {
+          "kind": "sense",
+          "sense": "darkvision",
+          "range": 120
+        }
+      ]
+    },
+    {
+      "part": "standing",
+      "keys": ["hill rune|tce"],
+      "effects": [
+        {
+          "kind": "resist",
+          "damageType": "poison"
+        }
+      ]
+    },
+    {
+      "part": "standing",
+      "keys": ["witch sight|xphb"],
+      "effects": [
+        {
+          "kind": "sense",
+          "sense": "truesight",
+          "range": 30
+        }
+      ]
+    }
+  ]
+}

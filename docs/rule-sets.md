@@ -1,9 +1,11 @@
 # Built-in rule sets
 
 A built-in rule set is data the app ships in place of code: rows of effects
-that stand in for the engine's hard-coded mechanics tables. Today it holds one
-part, `curated`, which stands in for `CURATED` (`src/engine/curated/curatedEffects.ts`).
-The files live in `src/rules/`. (Source of truth: `readRuleSet` and
+that stand in for the engine's hard-coded mechanics tables. It holds two
+parts: `curated`, which stands in for `CURATED`
+(`src/engine/curated/curatedEffects.ts`), and `standing`, which stands in for
+`STANDING` (`src/engine/curated/standingEffects.ts`). The files live in
+`src/rules/`, one a part. (Source of truth: `readRuleSet` and
 `mechanicsOf` in `src/engine/effects/mechanics.ts`, `src/data5e/builtInRules.ts`.)
 
 106 rows have moved so far (`src/rules/cast-guidance/curated.json`). Four came
@@ -20,6 +22,13 @@ however many features add it), or a label read from the entry (Unarmored
 Defense for the College of Dance, Draconic Resilience and Immortal Durability,
 which a renamed copy would show under the official name).
 
+55 `standing` rows have moved (`src/rules/cast-guidance/standing.json`): every
+`STANDING` row the format holds, the defenses, senses and speeds a subclass or
+optional feature adds beside what its prose scan reads. The 18 left in
+`STANDING` need a pick (Bestial Soul, Fiendish Resilience), a test of the
+printing (Avatar of Battle, Nature's Ward), or what the character has already
+(darkvision that grows, a save it may have, the branch or cantrip it picked).
+
 ## A file
 
 ```jsonc
@@ -34,6 +43,12 @@ which a renamed copy would show under the official name).
       "keys": ["stunning strike|monk"], // the keys it is found under
       "scan": "replace",                // or "keep"; "replace" when absent
       "effects": [ /* the stored effects a rule pack's patch holds */ ]
+    },
+    {
+      "part": "standing",
+      "keys": ["desert|path of the storm herald"],
+      "level": 6,                       // only the feature gained at 6
+      "effects": [{ "kind": "resist", "damageType": "fire" }]
     }
   ]
 }
@@ -42,8 +57,16 @@ which a renamed copy would show under the official name).
 - **`keys`** are the keys the code table uses, matched without case. A key
   already taken by an earlier row of the same part in the same file is left
   out, and the reader says so.
-- **`scan`**: `replace` turns the prose scan off for the entry, as a `CURATED`
-  row does; `keep` runs the scan beside the row.
+- **`scan`** (`curated` rows): `replace` turns the prose scan off for the
+  entry, as a `CURATED` row does; `keep` runs the scan beside the row. A
+  `standing` row has no `scan`: it always runs beside the scan.
+- **`level`** (`standing` rows, optional): the row counts only for the feature
+  gained at that level, 1 to 20, which tells apart features of one name (Storm
+  Herald's Desert at 3, 6 and 14). A key is taken once per level, so a key may
+  have a row at each of several levels and one for every level. The first key
+  with a row at any level wins: a feature whose key has rows only at other
+  levels gets none, and the walk does not go on to a later key, as `STANDING`
+  answers today.
 - **`effects`** read as a rule pack's (`readStoredEffects`), formulas and
   `while` included, but strictly: a field the reader does not read is a problem
   and that effect is left out, where a player's file reads past it. So a row
@@ -57,6 +80,8 @@ which a renamed copy would show under the official name).
   left out goes to the console once, not the sheet: the files are the app's, so
   a problem in one is a bug its tests catch, not something a player can fix.
 - At most 5,000 rows a file and 16 keys a row (`RULE_SET_LIMITS`).
+- A later file's row wins over an earlier one's under the same part, key and
+  level; its rows at other levels keep theirs.
 
 ## Keys by call site
 
@@ -73,6 +98,13 @@ across both tables: while rows are moving, a `CURATED` row under an earlier key
 is still the one read (`inCode`). Items have no keys yet, and a subclass has no
 row of its own.
 
+A `standing` row is found under the same keys, in the same order, for a class
+or subclass feature and for an optional feature; feats, traits and class rows
+have none. Its level is the feature's own level for a class or subclass
+feature, and the host class's level for an optional feature, so a `level` row
+under an optional feature's key would count at that one character level alone
+(no such row exists).
+
 ## Where a row sits
 
 A row is the curated row of the entry it is found for (layer 3 of the seam,
@@ -86,7 +118,11 @@ ADR-001), so it keeps every rule a `CURATED` row has:
    object, which spend links find actions by. The rest of layer 3 (standing
    rows, roll tables, spend links) runs as before.
 
-A later file's row wins over an earlier one's under the same part and key.
+A `standing` row runs where `STANDING` runs, after the curated row or the prose
+scan: beside them, with the entry's origin object, and after the curated row's
+`from`, so the entry's `drop` reaches it and an entry or pack that replaces
+what it inherits leaves it out, as before. Its formulas read the class's level
+the curated row's read.
 
 ## Loading
 
@@ -116,8 +152,8 @@ equal to what the loader loads.
 
 Add it under `src/rules/`, list it in `FILES` in `builtInRules.ts` and in
 `BUILT_IN_RULE_SETS`; the tests fail on a file not listed. They also fail on a row the reader leaves anything
-out of, and on a `curated` key that `CURATED` still has (the row would never be
-the one read, or the code row would be dead).
+out of, and on a key its part's code table (`CURATED`, `STANDING`) still has
+(the row would never be the one read, or the code row would be dead).
 
 ## Moving a row out of code
 
@@ -130,9 +166,10 @@ the one read, or the code row would be dead).
    at the JSON, not one per row.
 4. Compare the whole tree with `scripts/rules-diff.ts` against the base commit:
    zero change.
-5. A test that read the row through `CURATED` reads it through the seam
-   instead (`emitRow` in `curatedEffects.test.ts`); a test context or registry
-   holds `BUILT_IN_RULE_SETS`, as every registry does.
+5. A test that read the row through `CURATED` or `STANDING` reads it through
+   the seam instead (`emitRow` in `curatedEffects.test.ts`, `emit` in
+   `standingEffects.test.ts`); a test context or registry holds
+   `BUILT_IN_RULE_SETS`, as every registry does.
 
 The stored effect format is the one rule packs use, so a row that needs a field
 the format lacks widens the format for players too: `dcAbility: "strOrDex"` (a
@@ -176,13 +213,15 @@ changed, field by field, and with `--expect-zero` exits 1 when any did.
 
 `snapshot --coverage <file>` also writes, for each code table (`CURATED`,
 `STANDING`, `ROLL_ADVANTAGES`, `ROLL_EXTRAS`) and the built-in rows, the keys no
-build read. A row read is not a row that added something (a row for one
-feature level is read at every level and adds at one), but a row never read is
+build read. A row read is not a row that added something (a code row for one
+feature level is read at every level and adds at one; a built-in row at one
+level, named with `@` and the level, is read only where it adds), but a row never read is
 one zero change says nothing about, so a move of one is
 proved another way, before the code row goes.
 
 `scripts/rules-probe.ts` is that proof. It runs while a row is in both places
-(a built-in `curated` row whose key `CURATED` still has) and derives each build
+(a built-in row whose key its part's code table, `CURATED` or `STANDING`, still
+has) and derives each build
 that reads the row twice in one process, once with the code row and once with
 the data row, comparing every sheet field. Its builds go wider than
 `rules-diff`'s. Each class and subclass that reads a moved row is built at

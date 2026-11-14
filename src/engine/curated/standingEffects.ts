@@ -37,8 +37,6 @@ const DAMAGE_TYPES = [
 ] as const;
 const PHYSICAL = ['bludgeoning', 'piercing', 'slashing'];
 
-const RAGING: readonly WhileState[] = [{ state: 'effect', name: 'Rage' }];
-
 /** The 2024 printing of a feature whose subclass shares its name with the 2014 one. */
 const printed2024 = (origin: EffectOrigin, from?: string) =>
   origin.uid.endsWith('|xphb') || from === 'xphb';
@@ -77,11 +75,6 @@ const conditionImmunities =
       });
     }
   };
-
-const sense =
-  (name: string, range: number): StandingFn =>
-  (col, origin) =>
-    col.add({ kind: 'sense', sense: name, range, origin });
 
 const swim =
   (speed: number | 'walk'): StandingFn =>
@@ -168,13 +161,6 @@ function branchOf(col: Collector, origin: EffectOrigin): string | undefined {
   return Array.isArray(picked) ? picked[0]?.toLowerCase() : undefined;
 }
 
-/** Several rows on one feature. */
-const all =
-  (...fns: StandingFn[]): StandingFn =>
-  (col, origin, from, level) => {
-    for (const fn of fns) fn(col, origin, from, level);
-  };
-
 /** A row for the option feature gained at `at` alone (Storm Soul's Desert, not Storm Aura's). */
 const atLevel =
   (at: number, fn: StandingFn): StandingFn =>
@@ -195,6 +181,11 @@ const auraNote = (origin: EffectOrigin, from?: string) =>
   printed2024(origin, from) ? 'not while incapacitated' : 'while conscious';
 
 export const STANDING: Record<string, StandingFn> = {
+  // Every row the stored format holds is data, in
+  // `src/rules/cast-guidance/standing.json`: more of each section below, and all
+  // of the Artificer's, Sorcerer's, Wizard's, WoW's and optional features'. These
+  // need a pick, a test of the printing, or what the character has already.
+
   // --- Barbarian -------------------------------------------------------------
   // Chosen at each rest; the jump is a check, not a speed.
   'bestial soul|path of the beast': (col, origin) =>
@@ -217,36 +208,12 @@ export const STANDING: Record<string, StandingFn> = {
         }
       },
     ),
-  'mindless rage|path of the berserker': conditionImmunities(
-    ['charmed', 'frightened'],
-    undefined,
-    RAGING,
-  ),
-  // Totem Spirit at 3 and Totemic Attunement at 14 share option names with Aspect of the Beast.
-  'bear|path of the totem warrior': atLevel(
-    3,
-    resists(
-      DAMAGE_TYPES.filter((t) => t !== 'psychic'),
-      undefined,
-      RAGING,
-    ),
-  ),
-  'elk|path of the totem warrior': atLevel(3, (col, origin) =>
-    col.add({ kind: 'speedBonus', amount: 15, unless: 'heavyArmor', while: RAGING, origin }),
-  ),
-  'eagle|path of the totem warrior': atLevel(14, (col, origin) =>
-    col.add({ kind: 'moveSpeed', mode: 'fly', speed: 'walk', while: RAGING, origin }),
-  ),
   // Aspect of the Beast's Tiger (SCAG); its Totem Spirit and Totemic Attunement
   // keep what the scan reads (the level 14 bonus action attack).
   'tiger|path of the totem warrior': atLevel(
     6,
     skillPick(2, ['Athletics', 'Acrobatics', 'Stealth', 'Survival']),
   ),
-  // Storm Soul's options, by the environment picked for Storm Aura.
-  'desert|path of the storm herald': atLevel(6, resists(['fire'])),
-  'sea|path of the storm herald': atLevel(6, all(resists(['lightning']), swim(30))),
-  'tundra|path of the storm herald': atLevel(6, resists(['cold'])),
   'aspect of the wilds|path of the wild heart': (col, origin) =>
     col.choice(
       {
@@ -269,21 +236,10 @@ export const STANDING: Record<string, StandingFn> = {
         if (selected.includes('salmon')) swim('walk')(col, origin, undefined, 0);
       },
     ),
-  'primordial bond|path of the elements': resists(['cold', 'fire', 'lightning'], undefined, RAGING),
 
   // --- Cleric ----------------------------------------------------------------
   'avatar of battle|war domain': physicalResists('nonmagical'),
-  'avatar of battle|strength domain (psa)': resists(PHYSICAL, 'nonmagical'),
-  'eyes of night|twilight domain': sense('darkvision', 300),
-  'soul of the forge|forge domain': resists(['fire']),
-  'saint of forge and fire|forge domain': all(
-    immunities(['fire']),
-    resists(PHYSICAL, 'nonmagical, in heavy armor'),
-  ),
   'unfettered mind|knowledge domain': saveOrPick('int'),
-
-  // --- Artificer -------------------------------------------------------------
-  'chemical mastery|alchemist': all(resists(['acid', 'poison']), conditionImmunities(['poisoned'])),
 
   // --- Druid -----------------------------------------------------------------
   "nature's ward|circle of the land": (col, origin, from, level) => {
@@ -307,20 +263,15 @@ export const STANDING: Record<string, StandingFn> = {
       origin,
     });
   },
-  'aquatic affinity|circle of the sea': swim('walk'),
 
   // --- Fighter ---------------------------------------------------------------
-  'guarded mind|psi warrior': resists(['psychic']),
   // Its Persuasion bonus is a curated row.
   'elegant courtier|samurai': saveOrPick('wis', ['int', 'cha']),
-  'inspiring commander|banneret': conditionImmunities(['charmed', 'frightened']),
 
   // --- Monk ------------------------------------------------------------------
   'darkvision|warrior of shadow': darkvisionOrMore(60, 60),
-  'ascendant aspect|way of the ascendant dragon': sense('blindsight', 10),
 
   // --- Paladin ---------------------------------------------------------------
-  'supernatural resistance|oathbreaker': resists(PHYSICAL, 'nonmagical weapons'),
   // The paladin is always inside its own aura, while it holds.
   'aura of warding|oath of the ancients': (col, origin, from, level) =>
     printed2024(origin, from)
@@ -333,8 +284,6 @@ export const STANDING: Record<string, StandingFn> = {
       : resists(['all'], 'from spells')(col, origin, from, level),
   'aura of devotion|oath of devotion': (col, origin, from, level) =>
     conditionImmunities(['charmed'], auraNote(origin, from))(col, origin, from, level),
-  'aura of alacrity|oath of glory': (col, origin) =>
-    col.add({ kind: 'speedBonus', amount: 10, origin }),
   'aura of elemental shielding|oath of the noble genies': (col, origin, from, level) =>
     resistPick(
       'elemental-shielding',
@@ -342,10 +291,6 @@ export const STANDING: Record<string, StandingFn> = {
       ['acid', 'cold', 'fire', 'lightning', 'thunder'],
       auraNote(origin, 'xphb'),
     )(col, origin, from, level),
-  'aura of deathly endurance|oath of the ebon blade': resists(
-    ['cold', 'necrotic', 'psychic'],
-    'not while incapacitated',
-  ),
 
   // --- Ranger ----------------------------------------------------------------
   'umbral sight|gloom stalker': (col, origin, from, level) =>
@@ -353,8 +298,6 @@ export const STANDING: Record<string, StandingFn> = {
       ? darkvisionOrMore(60, 60)(col, origin, from, level)
       : darkvisionOrMore(60, 30, true)(col, origin, from, level),
   'iron mind|gloom stalker': saveOrPick('wis', ['int', 'cha']),
-  'frigid explorer|winter walker': resists(['cold']),
-  'ancient might|hollow warden': conditionImmunities(['exhaustion']),
 
   // --- Rogue -----------------------------------------------------------------
   // The god chosen is the cantrip picked from its row of the table.
@@ -374,7 +317,6 @@ export const STANDING: Record<string, StandingFn> = {
       cantrip?.kind === 'grantSpell' ? byCantrip[cantrip.spell.name.toLowerCase()] : undefined;
     if (type !== undefined) resists([type])(col, origin, from, level);
   },
-  'superior mobility|scout': (col, origin) => col.add({ kind: 'speedBonus', amount: 10, origin }),
   // 2014's climbing at no extra cost is not a climb speed of its own.
   'second-story work|thief': (col, origin, from) => {
     if (printed2024(origin, from)) {
@@ -382,21 +324,7 @@ export const STANDING: Record<string, StandingFn> = {
     }
   },
 
-  // --- Sorcerer --------------------------------------------------------------
-  'fire in the veins|pyromancer (psk)': resists(['fire']),
-  'fiery soul|pyromancer (psk)': immunities(['fire']),
-  'eyes of the dark|shadow magic': sense('darkvision', 120),
-  'heart of the storm|storm sorcery': resists(['lightning', 'thunder']),
-  'wind soul|storm sorcery': all(immunities(['lightning', 'thunder']), (col, origin) =>
-    col.add({ kind: 'moveSpeed', mode: 'fly', speed: 60, origin }),
-  ),
-  'psychic defenses|aberrant mind': resists(['psychic']),
-  'psychic defenses|aberrant sorcery': resists(['psychic']),
-  'power of shadow|shadow sorcery': all(sense('darkvision', 120), sense('blindsight', 10)),
-
   // --- Warlock ---------------------------------------------------------------
-  'beguiling defenses|the archfey': conditionImmunities(['charmed']),
-  'beguiling defenses|archfey patron': conditionImmunities(['charmed']),
   'fiendish resilience|the fiend': resistPick(
     'fiendish-resilience',
     'Fiendish Resilience',
@@ -408,12 +336,6 @@ export const STANDING: Record<string, StandingFn> = {
     'Fiendish Resilience',
     DAMAGE_TYPES.filter((t) => t !== 'force'),
   ),
-  'thought shield|the great old one': resists(['psychic']),
-  'thought shield|great old one patron': resists(['psychic']),
-  'radiant soul|the celestial': resists(['radiant']),
-  'radiant soul|celestial patron': resists(['radiant']),
-  'gift of the sea|the fathomless': swim(40),
-  'oceanic soul|the fathomless': resists(['cold']),
   'elemental gift|the genie': (col, origin, from, level) => {
     const kind = branchOf(col, origin);
     const type = { dao: 'bludgeoning', djinni: 'thunder', efreeti: 'fire', marid: 'cold' }[
@@ -421,33 +343,12 @@ export const STANDING: Record<string, StandingFn> = {
     ];
     if (type !== undefined) resists([type])(col, origin, from, level);
   },
-  'necrotic husk|the undead': resists(['necrotic']),
-  'necrotic husk|undead patron': resists(['necrotic']),
-
-  // --- Wizard ----------------------------------------------------------------
-  'inured to undeath|school of necromancy': resists(['necrotic']),
-  'necromancy spellbook|necromancer': resists(['necrotic']),
-  'spell resistance|school of abjuration': resists(['all'], 'from spells'),
-  'spell resistance|abjurer': resists(['all'], 'from spells'),
-
-  // --- WoW -------------------------------------------------------------------
-  'spectral sight|demon hunter': sense('blindsight', 10),
-
-  // --- Optional features -----------------------------------------------------
-  'beguiling influence|phb': (col, origin) => {
-    for (const skill of ['Deception', 'Persuasion']) {
-      col.add({ kind: 'skillProf', skill, level: 1, origin });
-    }
-  },
-  'blind fighting|tce': sense('blindsight', 10),
-  "devil's sight|phb": sense("devil's sight", 120),
-  "devil's sight|xphb": sense("devil's sight", 120),
-  'gift of the depths|xge': swim('walk'),
-  'gift of the depths|xphb': swim('walk'),
-  'stone rune|tce': sense('darkvision', 120),
-  'hill rune|tce': resists(['poison']),
-  'witch sight|xphb': sense('truesight', 30),
 };
+
+/** Whether `STANDING` has a row under a key, as `emitStandingEffects` looks it up. */
+export function hasStandingRow(key: string): boolean {
+  return STANDING[key] !== undefined;
+}
 
 /**
  * Adds a feature's standing row, if it has one, beside the prose scan. Returns
