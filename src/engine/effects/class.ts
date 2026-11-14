@@ -1,7 +1,6 @@
 import { plainEntryText } from '../../data5e/entries/plainText';
 import { emitCuratedEffects as emitCurated, hasCuratedRow } from '../curated/curatedEffects';
-import { emitRollAdvantages } from '../curated/rollAdvantages';
-import { emitRollExtras } from '../curated/rollExtras';
+import { emitRollExtras, hasRollExtraRow } from '../curated/rollExtras';
 import { linkSpend } from '../curated/spendLinks';
 import { emitStandingEffects as emitStanding, hasStandingRow } from '../curated/standingEffects';
 import { summarizeEntries } from '../summarize';
@@ -19,7 +18,7 @@ import { asEntityArray, type Collector, str } from './base';
 import { VariantGate } from './classVariants';
 import { collectFeatEntity } from './feat';
 import { isRepeatableFeat } from './featPicks';
-import { basedOn, builtInRowsFor, emitRuleRows, mechanicsOf, officialOf } from './mechanics';
+import { basedOn, emitBuiltInRows, mechanicsOf, officialOf } from './mechanics';
 import { readOptionalFeatures } from './optionalFeatures';
 import { buildPrereqContext, featChoiceOption } from './prerequisites';
 import { proseScanFeature } from './proseScan';
@@ -353,11 +352,14 @@ function collectFeatureWithNested(
           ? builtIn.scan === 'replace'
           : curatedKeys.some((k) => emitCurated(col, k, featureOrigin, printing));
       if (!curated) proseScanFeature(col, name, feature.entries, featureOrigin, cardOrigin.label);
+      const at = { featureLevel: level, classLevel: walk.classLevel };
       // Standing rows are found under the curated keys, in the same order.
-      const standing = builtInRowsFor(col, 'standing', curatedKeys, hasStandingRow);
-      if (standing !== undefined) {
-        emitRuleRows(col, standing, featureOrigin, level, walk.classLevel);
-      } else {
+      if (
+        !emitBuiltInRows(col, 'standing', curatedKeys, featureOrigin, {
+          ...at,
+          inCode: hasStandingRow,
+        })
+      ) {
         names.some((n) =>
           labels.some((label) =>
             emitStanding(col, `${n}|${label}`.toLowerCase(), featureOrigin, printing, level),
@@ -367,8 +369,15 @@ function collectFeatureWithNested(
       const rollKeys = names.flatMap((n) =>
         labels.flatMap((label) => sources.map((source) => `${n}|${label}|${source}`)),
       );
-      emitRollAdvantages(col, rollKeys, featureOrigin, level);
-      emitRollExtras(col, rollKeys, featureOrigin, level, walk.classLevel);
+      emitBuiltInRows(col, 'rollAdvantage', rollKeys, featureOrigin, at);
+      if (
+        !emitBuiltInRows(col, 'rollExtra', rollKeys, featureOrigin, {
+          ...at,
+          inCode: hasRollExtraRow,
+        })
+      ) {
+        emitRollExtras(col, rollKeys, featureOrigin, level, walk.classLevel);
+      }
       names.some((n) =>
         labels.some((label) =>
           sources.some((source) => linkSpend(col, `${n}|${label}|${source}`, name, featureOrigin)),

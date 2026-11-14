@@ -1,0 +1,372 @@
+{
+  "type": "ruleSet",
+  "v": 1,
+  "name": "Built-in roll extras",
+  "edition": "both",
+  "rows": [
+    {
+      "part": "rollExtra",
+      "keys": ["arcane eloquence|au"],
+      "effects": [
+        {
+          "kind": "rollDie",
+          "dice": "1d4",
+          "on": {
+            "rolls": ["check"],
+            "skills": ["Deception", "Intimidation", "Persuasion"]
+          }
+        }
+      ]
+    },
+    {
+      "part": "rollExtra",
+      "keys": ["arcane undertaker|au"],
+      "effects": [
+        {
+          "kind": "rollDie",
+          "dice": "1d4",
+          "on": {
+            "rolls": ["check"],
+            "skills": ["History", "Medicine"]
+          }
+        }
+      ]
+    },
+    {
+      "part": "rollExtra",
+      "keys": ["mark of detection|efa"],
+      "effects": [
+        {
+          "kind": "rollDie",
+          "dice": "1d4",
+          "on": {
+            "rolls": ["check"],
+            "skills": ["Investigation", "Insight"]
+          }
+        }
+      ]
+    },
+    {
+      "part": "rollExtra",
+      "keys": ["mark of finding|efa"],
+      "effects": [
+        {
+          "kind": "rollDie",
+          "dice": "1d4",
+          "on": {
+            "rolls": ["check"],
+            "skills": ["Perception", "Survival"]
+          }
+        }
+      ]
+    },
+    {
+      "part": "rollExtra",
+      "keys": ["mark of handling|efa"],
+      "effects": [
+        {
+          "kind": "rollDie",
+          "dice": "1d4",
+          "on": {
+            "rolls": ["check"],
+            "skills": ["Nature", "Animal Handling"]
+          }
+        }
+      ]
+    },
+    {
+      "part": "rollExtra",
+      "keys": ["mark of healing|efa"],
+      "effects": [
+        {
+          "kind": "rollDie",
+          "dice": "1d4",
+          "on": {
+            "rolls": ["check"],
+            "skills": ["Medicine"]
+          }
+        }
+      ]
+    },
+    {
+      "part": "rollExtra",
+      "keys": ["mark of hospitality|efa"],
+      "effects": [
+        {
+          "kind": "rollDie",
+          "dice": "1d4",
+          "on": {
+            "rolls": ["check"],
+            "skills": ["Persuasion"]
+          }
+        }
+      ]
+    },
+    {
+      "part": "rollExtra",
+      "keys": ["mark of making|efa"],
+      "effects": [
+        {
+          "kind": "rollDie",
+          "dice": "1d4",
+          "on": {
+            "rolls": ["check"],
+            "skills": ["Arcana"]
+          }
+        }
+      ]
+    },
+    {
+      "part": "rollExtra",
+      "keys": ["mark of passage|efa"],
+      "effects": [
+        {
+          "kind": "rollDie",
+          "dice": "1d4",
+          "on": {
+            "rolls": ["check"],
+            "skills": ["Athletics", "Acrobatics"]
+          }
+        }
+      ]
+    },
+    {
+      "part": "rollExtra",
+      "keys": ["mark of scribing|efa"],
+      "effects": [
+        {
+          "kind": "rollDie",
+          "dice": "1d4",
+          "on": {
+            "rolls": ["check"],
+            "skills": ["History"]
+          }
+        }
+      ]
+    },
+    {
+      "part": "rollExtra",
+      "keys": ["mark of sentinel|efa"],
+      "effects": [
+        {
+          "kind": "rollDie",
+          "dice": "1d4",
+          "on": {
+            "rolls": ["check"],
+            "skills": ["Insight", "Perception"]
+          }
+        }
+      ]
+    },
+    {
+      "part": "rollExtra",
+      "keys": ["mark of shadow|efa"],
+      "effects": [
+        {
+          "kind": "rollDie",
+          "dice": "1d4",
+          "on": {
+            "rolls": ["check"],
+            "skills": ["Stealth", "Performance"]
+          }
+        }
+      ]
+    },
+    {
+      "part": "rollExtra",
+      "keys": ["mark of storm|efa"],
+      "effects": [
+        {
+          "kind": "rollDie",
+          "dice": "1d4",
+          "on": {
+            "rolls": ["check"],
+            "skills": ["Acrobatics"]
+          }
+        }
+      ]
+    },
+    {
+      "part": "rollExtra",
+      "keys": ["mark of warding|efa"],
+      "effects": [
+        {
+          "kind": "rollDie",
+          "dice": "1d4",
+          "on": {
+            "rolls": ["check"],
+            "skills": ["Investigation"]
+          }
+        }
+      ]
+    },
+    {
+      "part": "rollExtra",
+      "keys": ["warder's intuition|erlw"],
+      "effects": [
+        {
+          "kind": "rollDie",
+          "dice": "1d4",
+          "on": {
+            "rolls": ["check"],
+            "skills": ["Investigation"]
+          }
+        }
+      ]
+    },
+    {
+      "part": "rollExtra",
+      "keys": ["cunning intuition|erlw"],
+      "effects": [
+        {
+          "kind": "rollDie",
+          "dice": "1d4",
+          "on": {
+            "rolls": ["check"],
+            "skills": ["Performance", "Stealth"]
+          }
+        }
+      ]
+    },
+    {
+      "part": "rollExtra",
+      "keys": ["gifted scribe|erlw"],
+      "effects": [
+        {
+          "kind": "rollDie",
+          "dice": "1d4",
+          "on": {
+            "rolls": ["check"],
+            "skills": ["History"]
+          }
+        }
+      ]
+    },
+    {
+      "part": "rollExtra",
+      "keys": ["deductive intuition|erlw"],
+      "effects": [
+        {
+          "kind": "rollDie",
+          "dice": "1d4",
+          "on": {
+            "rolls": ["check"],
+            "skills": ["Investigation", "Insight"]
+          }
+        }
+      ]
+    },
+    {
+      "part": "rollExtra",
+      "keys": ["windwright's intuition|erlw"],
+      "effects": [
+        {
+          "kind": "rollDie",
+          "dice": "1d4",
+          "on": {
+            "rolls": ["check"],
+            "skills": ["Acrobatics"]
+          }
+        }
+      ]
+    },
+    {
+      "part": "rollExtra",
+      "keys": ["hunter's intuition|erlw"],
+      "effects": [
+        {
+          "kind": "rollDie",
+          "dice": "1d4",
+          "on": {
+            "rolls": ["check"],
+            "skills": ["Perception", "Survival"]
+          }
+        }
+      ]
+    },
+    {
+      "part": "rollExtra",
+      "keys": ["medical intuition|erlw"],
+      "effects": [
+        {
+          "kind": "rollDie",
+          "dice": "1d4",
+          "on": {
+            "rolls": ["check"],
+            "skills": ["Medicine"]
+          }
+        }
+      ]
+    },
+    {
+      "part": "rollExtra",
+      "keys": ["ever hospitable|erlw"],
+      "effects": [
+        {
+          "kind": "rollDie",
+          "dice": "1d4",
+          "on": {
+            "rolls": ["check"],
+            "skills": ["Persuasion"]
+          }
+        }
+      ]
+    },
+    {
+      "part": "rollExtra",
+      "keys": ["wild intuition|erlw"],
+      "effects": [
+        {
+          "kind": "rollDie",
+          "dice": "1d4",
+          "on": {
+            "rolls": ["check"],
+            "skills": ["Animal Handling", "Nature"]
+          }
+        }
+      ]
+    },
+    {
+      "part": "rollExtra",
+      "keys": ["artisan's intuition|erlw"],
+      "effects": [
+        {
+          "kind": "rollDie",
+          "dice": "1d4",
+          "on": {
+            "rolls": ["check"],
+            "skills": ["Arcana"]
+          }
+        }
+      ]
+    },
+    {
+      "part": "rollExtra",
+      "keys": ["intuitive motion|erlw"],
+      "effects": [
+        {
+          "kind": "rollDie",
+          "dice": "1d4",
+          "on": {
+            "rolls": ["check"],
+            "skills": ["Acrobatics"]
+          }
+        }
+      ]
+    },
+    {
+      "part": "rollExtra",
+      "keys": ["sentinel's intuition|erlw"],
+      "effects": [
+        {
+          "kind": "rollDie",
+          "dice": "1d4",
+          "on": {
+            "rolls": ["check"],
+            "skills": ["Insight", "Perception"]
+          }
+        }
+      ]
+    }
+  ]
+}

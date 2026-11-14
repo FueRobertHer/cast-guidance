@@ -1,11 +1,13 @@
 # Built-in rule sets
 
 A built-in rule set is data the app ships in place of code: rows of effects
-that stand in for the engine's hard-coded mechanics tables. It holds two
+that stand in for the engine's hard-coded mechanics tables. It holds four
 parts: `curated`, which stands in for `CURATED`
-(`src/engine/curated/curatedEffects.ts`), and `standing`, which stands in for
-`STANDING` (`src/engine/curated/standingEffects.ts`). The files live in
-`src/rules/`, one a part. (Source of truth: `readRuleSet` and
+(`src/engine/curated/curatedEffects.ts`); `standing`, which stands in for
+`STANDING` (`src/engine/curated/standingEffects.ts`); `rollAdvantage`, which
+holds what was the advantage table, `ROLL_ADVANTAGES`; and `rollExtra`, which
+stands in for `ROLL_EXTRAS` (`src/engine/curated/rollExtras.ts`). The files
+live in `src/rules/`, one a part. (Source of truth: `readRuleSet` and
 `mechanicsOf` in `src/engine/effects/mechanics.ts`, `src/data5e/builtInRules.ts`.)
 
 106 rows have moved so far (`src/rules/cast-guidance/curated.json`). Four came
@@ -29,6 +31,17 @@ optional feature adds beside what its prose scan reads. The 18 left in
 printing (Avatar of Battle, Nature's Ward), or what the character has already
 (darkvision that grows, a save it may have, the branch or cantrip it picked).
 
+Every advantage row has moved, under 181 keys (`src/rules/cast-guidance/roll-advantages.json`):
+advantage on the character's own d20 tests that a feature, feat, optional
+feature or species trait states only in prose, which always holds (Feral
+Instinct on initiative), holds while a state the app sees (Bloodied), or holds
+only when the player says (`when`, Brave against being Frightened). So has every
+free die of `ROLL_EXTRAS`, 26 rows (`src/rules/cast-guidance/roll-extras.json`):
+the dragonmarks' d4 that rolls in with a skill's checks. The 75 keys left in
+`ROLL_EXTRAS` are paid extras and rerolls: a price the sheet works out from the
+feature's Use, and fields (a reroll's die, a number set, a floor, a bonus by
+class level) the format does not have.
+
 ## A file
 
 ```jsonc
@@ -49,6 +62,18 @@ printing (Avatar of Battle, Nature's Ward), or what the character has already
       "keys": ["desert|path of the storm herald"],
       "level": 6,                       // only the feature gained at 6
       "effects": [{ "kind": "resist", "damageType": "fire" }]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["brave|phb"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": { "rolls": ["save"] },
+          "when": "Only against being Frightened"
+        }
+      ]
     }
   ]
 }
@@ -58,20 +83,20 @@ printing (Avatar of Battle, Nature's Ward), or what the character has already
   already taken by an earlier row of the same part in the same file is left
   out, and the reader says so.
 - **`scan`** (`curated` rows): `replace` turns the prose scan off for the
-  entry, as a `CURATED` row does; `keep` runs the scan beside the row. A
-  `standing` row has no `scan`: it always runs beside the scan.
-- **`level`** (`standing` rows, optional): the row counts only for the feature
+  entry, as a `CURATED` row does; `keep` runs the scan beside the row. A row
+  of any other part has no `scan`: it always runs beside the scan.
+- **`level`** (every part but `curated`, optional): the row counts only for the feature
   gained at that level, 1 to 20, which tells apart features of one name (Storm
   Herald's Desert at 3, 6 and 14). A key is taken once per level, so a key may
   have a row at each of several levels and one for every level. The first key
   with a row at any level wins: a feature whose key has rows only at other
   levels gets none, and the walk does not go on to a later key, as `STANDING`
-  answers today.
+  and `ROLL_EXTRAS` answer today, and the advantage table did.
 - **`effects`** read as a rule pack's (`readStoredEffects`), formulas and
   `while` included, but strictly: a field the reader does not read is a problem
   and that effect is left out, where a player's file reads past it. So a row
-  written with a field the format does not have yet (`when` on
-  `rollAdvantage`) fails the tests instead of losing half of itself unseen. The
+  written with a field the format does not have yet (`proficient` on a roll
+  filter) fails the tests instead of losing half of itself unseen. The
   same goes for a nested field (`save.dc`), a `while` state's and an amount's
   (an amount is `{ "f": ... }` or `{ "byLevel": ... }`, never both). An unknown
   field on a row leaves the row out; one on the file is a problem, and its rows
@@ -105,6 +130,23 @@ feature, and the host class's level for an optional feature, so a `level` row
 under an optional feature's key would count at that one character level alone
 (no such row exists).
 
+The roll parts (`rollAdvantage`, `rollExtra`) have keys of their own, which
+name the book, each part walked on its own:
+
+| Call site | Roll key | Example |
+| --- | --- | --- |
+| Class or subclass feature | `name\|class\|source` for each name, class or subclass label, and book (the feature's, then the official one's a copy is of) | `feral instinct\|barbarian\|phb` |
+| Feat | its uid, then the uid of the feat it copies | `war caster\|phb` |
+| Optional feature | its uid, then the uid of the one it copies | `eldritch mind\|tce` |
+| Race trait | `trait\|race or subrace\|source`, then `trait\|source` (the race's or subrace's book), then the trait it copies as `name\|source` | `lucky\|halfling\|phb`, `brave\|phb` |
+
+A trait's name with its race's tells apart traits of one name in one book
+(Deathless Nature: the Reborn's gives advantage, the Dhampir's does not), and
+a 2014 halfling's `lucky|halfling|phb` from the Lucky feat's `lucky|phb`.
+A roll row's level is a class or subclass feature's own and an optional
+feature's host class's; feats and traits pass none, so only rows without a
+level count for them.
+
 ## Where a row sits
 
 A row is the curated row of the entry it is found for (layer 3 of the seam,
@@ -116,13 +158,41 @@ ADR-001), so it keeps every rule a `CURATED` row has:
    effects, and its `replace: true` leaves the row out.
 3. The row is emitted in place of `CURATED`, with the entry's own origin
    object, which spend links find actions by. The rest of layer 3 (standing
-   rows, roll tables, spend links) runs as before.
+   rows, roll rows and `ROLL_EXTRAS`, spend links) runs as before.
 
 A `standing` row runs where `STANDING` runs, after the curated row or the prose
 scan: beside them, with the entry's origin object, and after the curated row's
 `from`, so the entry's `drop` reaches it and an entry or pack that replaces
 what it inherits leaves it out, as before. Its formulas read the class's level
 the curated row's read.
+
+A roll row runs where the roll tables ran, after the standing rows, with the
+origin they had: the feature's, feat's or option's own object, and for a trait
+the race's labelled with the trait's name (Brave, not Halfling), so the roll
+prompt names the trait.
+
+## Roll fields
+
+Three stored fields came in with the roll parts, for rule packs too:
+
+- **`when`** on `rollAdvantage`: the advantage holds only then, which the app
+  cannot see, so the roll prompt offers it to claim ("Only against being
+  Frightened"). With `"mode": "adv"` alone: the prompt offers no disadvantage.
+  The app's rows word it from "Only", as the prompt and the Defenses sheet read
+  it.
+- **`initiative: true`** on a roll filter: initiative rolls alone, not other
+  Dexterity checks (Feral Instinct). Its `rolls` lists `check`, it takes no
+  `skills` or `skilled`, and any `abilities` list `dex`.
+- **`save: "death"`** or **`"concentration"`** on a roll filter: one kind of
+  save alone (2024 Durable, War Caster). Its `rolls` lists `save`. A death save
+  has no ability, so a row for some abilities' saves never reaches one, and an
+  advantage to claim (`when`) or a paid extra reaches one only when it names it.
+  So `"death"` takes no `abilities`, and with `"concentration"` any `abilities`
+  list `con`.
+
+The reader refuses a filter that could reach no roll, and `when` with
+disadvantage. A pack written before these fields, when the reader passed over
+them, now loses such an effect, with the problem shown.
 
 ## Loading
 
@@ -152,8 +222,9 @@ equal to what the loader loads.
 
 Add it under `src/rules/`, list it in `FILES` in `builtInRules.ts` and in
 `BUILT_IN_RULE_SETS`; the tests fail on a file not listed. They also fail on a row the reader leaves anything
-out of, and on a key its part's code table (`CURATED`, `STANDING`) still has
-(the row would never be the one read, or the code row would be dead).
+out of, and on a key its part's code table (`CURATED`, `STANDING`,
+`ROLL_EXTRAS`) still has (the row would never be the one read, or the code row
+would be dead).
 
 ## Moving a row out of code
 
@@ -166,10 +237,10 @@ out of, and on a key its part's code table (`CURATED`, `STANDING`) still has
    at the JSON, not one per row.
 4. Compare the whole tree with `scripts/rules-diff.ts` against the base commit:
    zero change.
-5. A test that read the row through `CURATED` or `STANDING` reads it through
-   the seam instead (`emitRow` in `curatedEffects.test.ts`, `emit` in
-   `standingEffects.test.ts`); a test context or registry holds
-   `BUILT_IN_RULE_SETS`, as every registry does.
+5. A test that read the row through a code table reads it through the seam
+   instead (`emitRow` in `curatedEffects.test.ts`, `emit` in
+   `standingEffects.test.ts`, `emitRolls` in `rollRows.test.ts`); a test
+   context or registry holds `BUILT_IN_RULE_SETS`, as every registry does.
 
 The stored effect format is the one rule packs use, so a row that needs a field
 the format lacks widens the format for players too: `dcAbility: "strOrDex"` (a
@@ -212,7 +283,7 @@ this script copied in when the base has none). `compare` names the builds that
 changed, field by field, and with `--expect-zero` exits 1 when any did.
 
 `snapshot --coverage <file>` also writes, for each code table (`CURATED`,
-`STANDING`, `ROLL_ADVANTAGES`, `ROLL_EXTRAS`) and the built-in rows, the keys no
+`STANDING`, `ROLL_EXTRAS`) and the built-in rows, the keys no
 build read. A row read is not a row that added something (a code row for one
 feature level is read at every level and adds at one; a built-in row at one
 level, named with `@` and the level, is read only where it adds), but a row never read is
@@ -220,8 +291,8 @@ one zero change says nothing about, so a move of one is
 proved another way, before the code row goes.
 
 `scripts/rules-probe.ts` is that proof. It runs while a row is in both places
-(a built-in row whose key its part's code table, `CURATED` or `STANDING`, still
-has) and derives each build
+(a built-in row whose key its part's code table, `CURATED`, `STANDING` or
+`ROLL_EXTRAS`, still has) and derives each build
 that reads the row twice in one process, once with the code row and once with
 the data row, comparing every sheet field. Its builds go wider than
 `rules-diff`'s. Each class and subclass that reads a moved row is built at
@@ -247,6 +318,7 @@ bun --tsconfig-override=tsconfig.app.json scripts/rules-probe.ts --release <cach
 ```
 
 A full run takes about 35 minutes; `--only <text>` probes only the moved keys
-that hold the text, in a minute or two. It exits 1 when a sheet differs or a
+that hold the text, in a minute or two, and may be given more than once (a
+mutant of several rows in one run). It exits 1 when a sheet differs or a
 moved row is read by no build. A build that throws the same way both times
 compared no sheet, so it counts for no row, and the summary says how many did.

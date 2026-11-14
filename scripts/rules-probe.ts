@@ -1,9 +1,9 @@
 /**
- * Proves each row moved out of a code table (`CURATED`, `STANDING`) into a
- * built-in rule set adds what the code row added, before the code row is
- * deleted (rule pack port; `docs/rule-sets.md`). Run it while both are in the
- * tree: for every built-in row whose key its part's code table still has
- * (`TABLES`), each build that reads the row is
+ * Proves each row moved out of a code table (`TABLES`: `CURATED`, `STANDING`,
+ * `ROLL_EXTRAS`) into a built-in rule set adds what the code row added, before
+ * the code row is deleted (rule pack port; `docs/rule-sets.md`). Run it while
+ * both are in the tree: for every built-in row whose key its part's code table
+ * still has, each build that reads the row is
  * derived twice in one process, once with the code row (the built-in row
  * hidden) and once with the built-in row (the code row hidden), and every
  * sheet field must match.
@@ -11,7 +11,9 @@
  * Its builds go wider than `rules-diff.ts`'s, since a level table, a minimum or
  * a gear condition can differ where that harness does not look. Every class
  * and subclass that reads a moved row (found at level 20, raging, with each
- * later option of its feature picks) is built at every level from 1 to 20 in
+ * later option of its feature picks, and with the table's optional class
+ * features on where those read a row the class as printed does not: Tasha's
+ * Steady Aim) is built at every level from 1 to 20 in
  * four states: plain and raging at 1 hit point, each with five ability arrays,
  * and in heavy or light gear, each with two (`State`). It is built again as a
  * multiclass where the class's level is not the character's: levels 1 to 17
@@ -22,10 +24,11 @@
  * Fighter), so a row that only differs beside another entity's row (two
  * proficiency bonuses on initiative that count once) needs its own test.
  *
- *   bun --tsconfig-override=tsconfig.app.json scripts/rules-probe.ts --release <release.json> [--only <text>]
+ *   bun --tsconfig-override=tsconfig.app.json scripts/rules-probe.ts --release <release.json> [--only <text>]...
  *
  * A full run takes about 35 minutes. `--only <text>` probes only the moved keys
- * that hold `<text>`, to check one row (or a mutant of it) in a minute or two.
+ * that hold `<text>`, to check one row (or a mutant of it) in a minute or two;
+ * it may be given more than once.
  *
  * It exits 1 when a sheet differs or a moved row is read by no build, which
  * then needs a proof of its own. A build that throws the same way both times
@@ -43,6 +46,7 @@ import { normalizeDataset } from '../src/data5e/normalize';
 import { editionOf } from '../src/data5e/rulesVersion';
 import { RULE_SET_TYPE } from '../src/engine/castGuidance';
 import { CURATED } from '../src/engine/curated/curatedEffects';
+import { ROLL_EXTRAS } from '../src/engine/curated/rollExtras';
 import { STANDING } from '../src/engine/curated/standingEffects';
 import { deriveSheet } from '../src/engine/derive';
 import { type RulePart, readRuleSet } from '../src/engine/effects/mechanics';
@@ -56,10 +60,10 @@ import {
 import { fetchRelease } from './data-release';
 
 const { values } = parseArgs({
-  options: { release: { type: 'string' }, only: { type: 'string' } },
+  options: { release: { type: 'string' }, only: { type: 'string', multiple: true } },
 });
 if (values.release === undefined) {
-  console.error('Usage: rules-probe.ts --release <release.json> [--only <text>]');
+  console.error('Usage: rules-probe.ts --release <release.json> [--only <text>]...');
   process.exit(1);
 }
 
@@ -87,10 +91,16 @@ const ctx: EngineContext = engineContextFor(reg, {});
 
 // ------------------------------------------------------------ the two configs
 
-/** The code table each part's rows stand in for; each table's rows take their own arguments. */
-const TABLES: Record<RulePart, Record<string, unknown>> = {
+/**
+ * The code table each part's rows stand in for, while it has rows. Each table's
+ * rows take their own arguments: a function (`CURATED`, `STANDING`) or a list of
+ * rows (`ROLL_EXTRAS`). A part whose rows have all moved (`rollAdvantage`) has
+ * none: to probe again, put its table and its call sites' fallback back.
+ */
+const TABLES: Partial<Record<RulePart, Record<string, unknown>>> = {
   curated: CURATED,
   standing: STANDING,
+  rollExtra: ROLL_EXTRAS,
 };
 type Row = (...args: unknown[]) => unknown;
 /** A moved row by part and key, as `part key`: one key may have a row in two parts. */
@@ -98,13 +108,14 @@ const idOf = (part: string, key: string) => `${part} ${key}`;
 
 /** Every built-in row's part and key whose code table still has a row under it. */
 const shipped = reg.byType(RULE_SET_TYPE);
-const moved = new Map<string, { part: RulePart; key: string }>();
+const moved = new Map<string, { part: RulePart; key: string; table: Record<string, unknown> }>();
 for (const set of shipped) {
   for (const row of readRuleSet(set).rows) {
+    const table = TABLES[row.part];
     for (const key of row.keys) {
-      if (!Object.hasOwn(TABLES[row.part], key)) continue;
-      if (values.only === undefined || key.includes(values.only.toLowerCase())) {
-        moved.set(idOf(row.part, key), { part: row.part, key });
+      if (table === undefined || !Object.hasOwn(table, key)) continue;
+      if (values.only === undefined || values.only.some((t) => key.includes(t.toLowerCase()))) {
+        moved.set(idOf(row.part, key), { part: row.part, key, table });
       }
     }
   }
@@ -133,25 +144,37 @@ const before: Entity[] = shipped.map((set) => {
 
 /** Moved rows (`idOf`) a build under the code rows read. */
 let reads = new Set<string>();
-const counted = new Map(
-  [...moved].map(([id, { part, key }]) => {
-    const fn = TABLES[part][key] as Row;
-    const wrapped: Row = (...args) => {
+
+/** A code row that notes each build reading it: a function row when called, a list when read. */
+function noting(id: string, row: unknown): unknown {
+  if (typeof row === 'function') {
+    return (...args: unknown[]) => {
       reads.add(id);
-      return fn(...args);
+      return (row as Row)(...args);
     };
-    return [id, { part, key, fn: wrapped }] as const;
-  }),
+  }
+  return new Proxy(row as object, {
+    get(target, prop, receiver) {
+      reads.add(id);
+      return Reflect.get(target, prop, receiver);
+    },
+  });
+}
+
+const counted = new Map(
+  [...moved].map(
+    ([id, { key, table }]) => [id, { key, table, row: noting(id, table[key]) }] as const,
+  ),
 );
 
 function codeRowsOn(): void {
   reg.setRuleSets(before);
-  for (const { part, key, fn } of counted.values()) TABLES[part][key] = fn;
+  for (const { key, table, row } of counted.values()) table[key] = row;
 }
 
 function dataRowsOn(): void {
   reg.setRuleSets(shipped);
-  for (const { part, key } of moved.values()) delete TABLES[part][key];
+  for (const { key, table } of moved.values()) delete table[key];
 }
 
 // ------------------------------------------------------------------ builds
@@ -201,6 +224,8 @@ interface Shape {
   race?: EntityRef;
   subrace?: EntityRef;
   choices?: Record<string, string[]>;
+  /** The table's optional class features on (`CharacterDoc.optionalClassFeatures`). */
+  optional?: boolean;
 }
 
 function docOf(shape: Shape, array: string, state: State): CharacterDoc {
@@ -212,6 +237,7 @@ function docOf(shape: Shape, array: string, state: State): CharacterDoc {
   if (shape.race !== undefined) doc.race = shape.race;
   if (shape.subrace !== undefined) doc.subrace = shape.subrace;
   doc.choices = structuredClone(shape.choices ?? {});
+  if (shape.optional === true) doc.optionalClassFeatures = true;
   if (state === 'on') {
     doc.play.activeEffects = [{ id: 'rules-probe-rage', name: 'Rage', parts: [] }];
     doc.play.hpInitialized = true;
@@ -304,6 +330,11 @@ function branches(shape: Shape, picks: readonly FeaturePick[]): Shape[] {
 
 const proved = new Map<string, number>();
 const differences: string[] = [];
+/**
+ * Builds that differed, by the moved rows (`idOf`) they read. A build that reads
+ * several counts for each, so a row's count can include another row's change.
+ */
+const differing = new Map<string, number>();
 /** Builds that threw the same way both times: they compared no sheet, so prove nothing. */
 const threw: string[] = [];
 let compared = 0;
@@ -322,6 +353,7 @@ function compare(id: string, shape: Shape, array: string, state: State): void {
   const changed = [...new Set([...Object.keys(a), ...Object.keys(b)])].filter((f) => a[f] !== b[f]);
   if (changed.length > 0) {
     differences.push(`${at}: ${changed.join(', ')} (reads ${[...read].join('; ')})`);
+    for (const k of read) differing.set(k, (differing.get(k) ?? 0) + 1);
   } else if (a.throws !== undefined) {
     threw.push(`${at} (reads ${[...read].join('; ')})`);
     return;
@@ -373,27 +405,43 @@ for (const cls of classes) {
       classes: [{ ref, ...(subRef ? { subclass: subRef } : {}), levels: 20 }],
     };
     const found = discover(base);
-    const shapes = [base, ...branches(base, found.picks)].filter((s) =>
-      s === base ? found.read.size > 0 : discover(s).read.size > 0,
-    );
-    const id = `class ${uidOf(ref)} / ${subRef ? uidOf(subRef) : '-'}`;
-    for (const [i, shape] of shapes.entries()) {
-      const label = i === 0 && shape === base ? id : `${id} | ${JSON.stringify(shape.choices)}`;
-      sweep(label, ALL_LEVELS, at(shape));
+    const printed = new Set(found.read);
+    const shapes = [base, ...branches(base, found.picks)].filter((s) => {
+      const read = s === base ? found.read : discover(s).read;
+      for (const k of read) printed.add(k);
+      return read.size > 0;
+    });
+    // With the optional class features on, each a pick: kept only where one reads
+    // a row the class as printed never does, so the sweep does not run twice.
+    const optional: Shape = { ...base, optional: true };
+    const withOptional = discover(optional);
+    for (const s of [optional, ...branches(optional, withOptional.picks)]) {
+      const read = s === optional ? withOptional.read : discover(s).read;
+      if ([...read].some((k) => !printed.has(k))) shapes.push(s);
     }
-    if (found.read.size === 0) continue;
-    // The class's level is not the character's: three levels of another class after it.
+    const id = `class ${uidOf(ref)} / ${subRef ? uidOf(subRef) : '-'}`;
+    const labelOf = (shape: Shape) =>
+      `${id}${shape.optional === true ? ' [optional]' : ''}${
+        shape.choices !== undefined ? ` | ${JSON.stringify(shape.choices)}` : ''
+      }`;
+    for (const shape of shapes) sweep(labelOf(shape), ALL_LEVELS, at(shape));
+    // The class's level is not the character's: three levels of another class after
+    // it, in the first shape that reads a row (the class as printed, else a pick)
+    // and in each kept for the optional class features, whose rows no other reads.
+    const multiclassed = shapes.filter((s, i) => i === 0 || s.optional === true);
     const other = ref.name === 'Fighter' ? wizardOf(edition) : fighterOf(edition);
-    for (let n = 1; n <= 17; n++) {
-      const shape: Shape = {
-        edition,
-        classes: [
-          { ref, ...(subRef ? { subclass: subRef } : {}), levels: n },
-          { ref: other, levels: 3 },
-        ],
-      };
-      for (const array of ['14s', '8s', 'mixed'])
-        compare(`${id} @${n} + ${other.name} 3`, shape, array, 'on');
+    for (const from of multiclassed) {
+      for (let n = 1; n <= 17; n++) {
+        const shape: Shape = {
+          ...from,
+          classes: [
+            { ref, ...(subRef ? { subclass: subRef } : {}), levels: n },
+            { ref: other, levels: 3 },
+          ],
+        };
+        for (const array of ['14s', '8s', 'mixed'])
+          compare(`${labelOf(from)} @${n} + ${other.name} 3`, shape, array, 'on');
+      }
     }
   }
 }
@@ -494,6 +542,9 @@ console.log(
   `moved rows: ${moved.size}; builds compared: ${compared}; differences: ${differences.length}`,
 );
 for (const d of differences.slice(0, 40)) console.log(`  differs: ${d}`);
+for (const [k, n] of [...differing].sort()) {
+  console.log(`  differed, of the builds that read it: ${k} ${n} of ${proved.get(k) ?? n}`);
+}
 console.log(`threw both times, so counted for nothing: ${threw.length}`);
 for (const t of threw.slice(0, 10)) console.log(`  threw: ${t}`);
 const fewest = [...proved].sort((x, y) => x[1] - y[1]).slice(0, 10);

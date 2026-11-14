@@ -1,20 +1,23 @@
 /**
  * What features, feats, optional features and species traits add to the
  * character's own d20 tests at the roll, beyond advantage that simply holds
- * (`ROLL_ADVANTAGES`). Like that table, a row here adds to what the prose scan
- * or a curated row reads from the same feature.
+ * (the built-in rule sets' `rollAdvantage` rows). Like those, a row here adds
+ * to what the prose scan or a curated row reads from the same feature.
  *
- * Two kinds of row:
- *   - free: a die that rolls in with every roll it fits, since adding it costs
- *     nothing and never hurts (the dragonmark intuitions' d4);
- *   - paid (`PaidRoll`): a die, a flat bonus or advantage the roll prompt
- *     offers, paid for as the feature's Use is (a pool's use, the turn's
- *     reaction). Where that price comes from is the sheet's business
- *     (`pricedRollEffects`): the feature's own action, as the spend links set
- *     it, else the pool named for the feature. A row the sheet finds no price
- *     for is not offered.
+ * A free die, which rolls in with every roll it fits since adding it costs
+ * nothing and never hurts (the dragonmark intuitions' d4), is data: the
+ * `rollExtra` rows of `src/rules/cast-guidance/roll-extras.json`, which the
+ * call sites read first (`docs/rule-sets.md`). The rows here are the kinds the
+ * stored format does not hold yet.
  *
- * A third kind, a reroll (`Reroll`): one made as the d20 lands, since it never
+ * A paid row (`PaidRoll`): a die, a flat bonus or advantage the roll prompt
+ * offers, paid for as the feature's Use is (a pool's use, the turn's
+ * reaction). Where that price comes from is the sheet's business
+ * (`pricedRollEffects`): the feature's own action, as the spend links set it,
+ * else the pool named for the feature. A row the sheet finds no price for is
+ * not offered.
+ *
+ * A reroll (`Reroll`): one made as the d20 lands, since it never
  * makes the roll worse (Halfling Luck's natural 1), or one the result offers,
  * paid as the feature's Use is (Indomitable) or free (`free`), its limit said
  * in its `when` for the player to keep (Fanatical Focus, once a Rage).
@@ -38,27 +41,31 @@
  *   - other creatures' rolls (Bardic Inspiration, War God's Blessing) and tool
  *     checks, which no roll on the sheet names.
  *
- * Keys are those of `ROLL_ADVANTAGES`.
+ * Keys are the roll keys, which name the book (`docs/rule-sets.md`).
  */
 import type { Collector } from '../effects/base';
-import type { BonusAmount, EffectOrigin, PaidRoll, Reroll, RollFilter, WhileState } from '../types';
+import type {
+  Ability,
+  BonusAmount,
+  EffectOrigin,
+  PaidRoll,
+  Reroll,
+  RollFilter,
+  WhileState,
+} from '../types';
 import { rageDamage } from './namedEffects';
-import { ATTACKS, CHECKS, D20_TESTS, INITIATIVE, SAVES, saves, skills } from './rollAdvantages';
 
 /** A reroll's bonus by the feature's class level: the level itself, or Rage's damage at it. */
 type RerollRow = Omit<Reroll, 'bonus'> & { bonus?: 'classLevel' | 'rageDamage' };
 
 type ExtraRow = (
-  | { free: true; on: RollFilter; dice: string; reroll?: undefined }
-  | ({ free?: undefined; on: RollFilter; reroll?: undefined } & PaidRoll)
-  | { free?: undefined; on: RollFilter; reroll: RerollRow; while?: readonly WhileState[] }
+  | ({ on: RollFilter; reroll?: undefined } & PaidRoll)
+  | { on: RollFilter; reroll: RerollRow; while?: readonly WhileState[] }
 ) & {
   /** The level the feature is gained at, where one feature prints two cards. */
   level?: number;
 };
 
-/** A die that rolls in, free, with every roll it fits. */
-const free = (on: RollFilter, dice = '1d4'): ExtraRow => ({ free: true, on, dice });
 /** The paying pool's own die (a superiority die, a Bardic Inspiration die). */
 const poolDie = (on: RollFilter, rest: Omit<PaidRoll, 'poolDie'> = {}): ExtraRow => ({
   on,
@@ -97,6 +104,14 @@ const asTenWhen = (when: string): RerollRow => ({ to: 10, free: true, when });
 /** "Use that score in place of the total". */
 const STRENGTH_FLOOR: RerollRow = { floorScore: 'str', auto: true, free: true };
 const RAGING: readonly WhileState[] = [{ state: 'effect', name: 'Rage' }];
+
+const INITIATIVE: RollFilter = { rolls: ['check'], initiative: true };
+const ATTACKS: RollFilter = { rolls: ['attack'] };
+const SAVES: RollFilter = { rolls: ['save'] };
+const CHECKS: RollFilter = { rolls: ['check'] };
+const D20_TESTS: RollFilter = { rolls: ['attack', 'check', 'save'] };
+const saves = (...abilities: Ability[]): RollFilter => ({ rolls: ['save'], abilities });
+const skills = (...names: string[]): RollFilter => ({ rolls: ['check'], skills: names });
 
 const FAILED = { ifFailed: true } as const;
 /** "Isn't expended" on a failure: the player takes it off a roll that still failed. */
@@ -272,20 +287,7 @@ export const ROLL_EXTRAS: Record<string, readonly ExtraRow[]> = {
     }),
     reroll(INITIATIVE, { die: 'one', atMost: 9, free: true }),
   ],
-  'arcane eloquence|au': [free(skills('Deception', 'Intimidation', 'Persuasion'))],
-  'arcane undertaker|au': [free(skills('History', 'Medicine'))],
-  'mark of detection|efa': [free(skills('Investigation', 'Insight'))],
-  'mark of finding|efa': [free(skills('Perception', 'Survival'))],
-  'mark of handling|efa': [free(skills('Nature', 'Animal Handling'))],
-  'mark of healing|efa': [free(skills('Medicine'))],
-  'mark of hospitality|efa': [free(skills('Persuasion'))],
-  'mark of making|efa': [free(skills('Arcana'))],
-  'mark of passage|efa': [free(skills('Athletics', 'Acrobatics'))],
-  'mark of scribing|efa': [free(skills('History'))],
-  'mark of sentinel|efa': [free(skills('Insight', 'Perception'))],
-  'mark of shadow|efa': [free(skills('Stealth', 'Performance'))],
-  'mark of storm|efa': [free(skills('Acrobatics'))],
-  'mark of warding|efa': [free(skills('Investigation'))],
+  // Free dice (the EFA Mark feats, Arcane Eloquence and Undertaker) are data: roll-extras.json.
 
   // --- Species traits ---------------------------------------------------------------
   // Named for the species: a halfling's `lucky|phb` would be the 2014 feat.
@@ -323,26 +325,18 @@ export const ROLL_EXTRAS: Record<string, readonly ExtraRow[]> = {
   'knowledge from a past life|reborn|rhw': [paidDice(CHECKS, '1d6', FAILED)],
   'built for success|autognome|aag': [paidDice(D20_TESTS, '1d4')],
   'built for success|mechagnome|wow': [paidDice(D20_TESTS, '1d4')],
-  // The 2014 dragonmarks' intuitions.
-  "warder's intuition|erlw": [free(skills('Investigation'))],
-  'cunning intuition|erlw': [free(skills('Performance', 'Stealth'))],
-  'gifted scribe|erlw': [free(skills('History'))],
-  'deductive intuition|erlw': [free(skills('Investigation', 'Insight'))],
-  "windwright's intuition|erlw": [free(skills('Acrobatics'))],
-  "hunter's intuition|erlw": [free(skills('Perception', 'Survival'))],
-  'medical intuition|erlw': [free(skills('Medicine'))],
-  'ever hospitable|erlw': [free(skills('Persuasion'))],
-  'wild intuition|erlw': [free(skills('Animal Handling', 'Nature'))],
-  "artisan's intuition|erlw": [free(skills('Arcana'))],
-  'intuitive motion|erlw': [free(skills('Acrobatics'))],
-  "sentinel's intuition|erlw": [free(skills('Insight', 'Perception'))],
+  // Free dice (the 2014 dragonmarks' intuitions) are data: roll-extras.json.
 };
 
+/** Whether `ROLL_EXTRAS` has a row under a lowercased key. */
+export function hasRollExtraRow(key: string): boolean {
+  return ROLL_EXTRAS[key] !== undefined;
+}
+
 /**
- * Add the rows of the first key that has any, as `ROLL_ADVANTAGES` is read:
- * a free die as `rollDie`, a paid extra as `rollPaid`, a reroll as
- * `rollReroll`, its bonus worked out at the feature's `classLevel`. Says
- * whether a key had rows.
+ * Add the rows of the first key that has any, as the built-in roll rows are
+ * found: a paid extra as `rollPaid`, a reroll as `rollReroll`, its bonus worked
+ * out at the feature's `classLevel`. Says whether a key had rows.
  */
 export function emitRollExtras(
   col: Collector,
@@ -374,11 +368,7 @@ export function emitRollExtras(
         });
         continue;
       }
-      if (row.free === true) {
-        col.add({ kind: 'rollDie', dice: row.dice, on: row.on, origin });
-        continue;
-      }
-      const { free: _free, level: _level, reroll: _reroll, on, ...paid } = row;
+      const { level: _level, reroll: _reroll, on, ...paid } = row;
       col.add({ kind: 'rollPaid', on, ...paid, origin });
     }
     return true;

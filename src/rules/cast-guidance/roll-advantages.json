@@ -1,0 +1,2679 @@
+{
+  "type": "ruleSet",
+  "v": 1,
+  "name": "Built-in roll advantages",
+  "edition": "both",
+  "rows": [
+    {
+      "part": "rollAdvantage",
+      "keys": ["feral instinct|barbarian|phb"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["check"],
+            "initiative": true
+          }
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["feral instinct|barbarian|xphb"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["check"],
+            "initiative": true
+          }
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["danger sense|barbarian|phb"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["save"],
+            "abilities": ["dex"]
+          },
+          "when": "Only against effects you can see"
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["danger sense|barbarian|xphb"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["save"],
+            "abilities": ["dex"]
+          }
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["countercharm|bard|phb"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["save"]
+          },
+          "when": "Only while your Countercharm performance lasts, against being Charmed or Frightened"
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["studied attacks|fighter|xphb"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["attack"]
+          },
+          "when": "Only on your next attack against a creature you missed since your last turn"
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["favored enemy|ranger|phb"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["check"],
+            "skills": ["Survival"]
+          },
+          "when": "Only to track your favored enemies"
+        },
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["check"],
+            "abilities": ["int"]
+          },
+          "when": "Only to recall information about your favored enemies"
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["land's stride|ranger|phb"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["save"]
+          },
+          "when": "Only against magical plants that impede movement"
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["precise hunter|ranger|xphb"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["attack"]
+          },
+          "when": "Only against the creature marked by your Hunter's Mark"
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["steady aim|rogue|tce"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["attack"]
+          },
+          "when": "Only on your next attack this turn after Steady Aim"
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["steady aim|rogue|xphb"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["attack"]
+          },
+          "when": "Only on your next attack this turn after Steady Aim"
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["battle readiness|warrior sidekick|tce"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["check"],
+            "initiative": true
+          }
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["dampening field|armorer|tce"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["check"],
+            "skills": ["Stealth"]
+          },
+          "when": "Only in your Infiltrator armor"
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["infiltrator|armorer|efa"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["check"],
+            "skills": ["Stealth"]
+          },
+          "when": "Only in your Infiltrator armor"
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["perfected armor|armorer|efa"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["check", "save"],
+            "abilities": ["str"]
+          },
+          "when": "Only while your Giant Stature lasts"
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["bear|path of the totem warrior|phb"],
+      "level": 6,
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["check"],
+            "abilities": ["str"]
+          },
+          "when": "Only to push, pull, lift or break objects"
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["dance virtuoso|college of dance|xphb"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["check"],
+            "skills": ["Performance"]
+          },
+          "when": "Only when you dance"
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["channel divinity: invoke duplicity|trickery domain|phb"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["attack"]
+          },
+          "when": "Only when you and your illusion are both within 5 feet of the target"
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["channel divinity: invoke duplicity|ambition domain (psa)|psa"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["attack"]
+          },
+          "when": "Only when you and your illusion are both within 5 feet of the target"
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["invoke duplicity|trickery domain|xphb"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["attack"]
+          },
+          "when": "Only when you and your illusion are both within 5 feet of the target"
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["blessing of the trickster|trickery domain|xphb"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["check"],
+            "skills": ["Stealth"]
+          },
+          "when": "Only while your Blessing of the Trickster is on you"
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["divine foreknowledge|knowledge domain|frhof"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["attack", "check", "save"]
+          },
+          "when": "Only while Divine Foreknowledge lasts"
+        },
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["save"],
+            "save": "death"
+          },
+          "when": "Only while Divine Foreknowledge lasts"
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["vigilant blessing|twilight domain|tce"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["check"],
+            "initiative": true
+          },
+          "when": "Only on your next initiative roll after you bless yourself"
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["spirit totem|circle of the shepherd|xge"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["check", "save"],
+            "abilities": ["str"]
+          },
+          "when": "Only in your Bear Spirit's aura"
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["land's stride|circle of the land|phb"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["save"]
+          },
+          "when": "Only against magical plants that impede movement"
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["born to the saddle|cavalier|xge"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["save"]
+          },
+          "when": "Only to avoid falling off your mount"
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["unwavering mark|cavalier|xge"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["attack"]
+          },
+          "when": "Only on the bonus action attack Unwavering Mark gives"
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["remarkable athlete|champion|xphb"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["check"],
+            "initiative": true
+          }
+        },
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["check"],
+            "skills": ["Athletics"]
+          }
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["survivor|champion|xphb"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["save"],
+            "save": "death"
+          }
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["giant's might|rune knight|tce"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["check", "save"],
+            "abilities": ["str"]
+          },
+          "when": "Only while Giant's Might lasts"
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["visage of the astral self|way of the astral self|tce"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["check"],
+            "skills": ["Insight", "Intimidation"]
+          },
+          "when": "Only while your astral visage is summoned"
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["shadow step|way of shadow|phb"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["attack"],
+            "range": "melee"
+          },
+          "when": "Only on your first melee attack after Shadow Step this turn"
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["shadow step|warrior of shadow|xphb"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["attack"],
+            "range": "melee"
+          },
+          "when": "Only on your first melee attack after Shadow Step this turn"
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["exalted champion|oath of the crown|scag"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["save"],
+            "abilities": ["wis"]
+          },
+          "when": "Only while Exalted Champion lasts"
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["unyielding spirit|oath of the crown|scag"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["save"]
+          },
+          "when": "Only against being Paralyzed or Stunned"
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["holy nimbus|oath of devotion|phb"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["save"]
+          },
+          "when": "Only while Holy Nimbus lasts, against spells cast by fiends or undead"
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["holy nimbus|oath of devotion|xphb"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["save"]
+          },
+          "when": "Only while Holy Nimbus lasts, against a Fiend or an Undead"
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["living legend|oath of glory|tce"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["check"],
+            "abilities": ["cha"]
+          },
+          "when": "Only while Living Legend lasts"
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["living legend|oath of glory|xphb"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["check"],
+            "abilities": ["cha"]
+          },
+          "when": "Only while Living Legend lasts"
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["peerless athlete|oath of glory|tce"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["check"],
+            "skills": ["Athletics", "Acrobatics"]
+          },
+          "when": "Only while Peerless Athlete lasts"
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["peerless athlete|oath of glory|xphb"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["check"],
+            "skills": ["Athletics", "Acrobatics"]
+          },
+          "when": "Only while Peerless Athlete lasts"
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["vow of enmity|oath of vengeance|phb"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["attack"]
+          },
+          "when": "Only against the target of your Vow of Enmity"
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["vow of enmity|oath of vengeance|xphb"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["attack"]
+          },
+          "when": "Only against the target of your Vow of Enmity"
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["mortal bulwark|oath of the watchers|tce"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["attack"]
+          },
+          "when": "Only while Mortal Bulwark lasts, against aberrations, celestials, elementals, fey and fiends"
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["watcher's will|oath of the watchers|tce"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["save"],
+            "abilities": ["int", "wis", "cha"]
+          },
+          "when": "Only while Watcher's Will lasts"
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["beguiling twist|fey wanderer|tce"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["save"]
+          },
+          "when": "Only against being Charmed or Frightened"
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["beguiling twist|fey wanderer|xphb"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["save"]
+          },
+          "when": "Only against being Charmed or Frightened"
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["steel will|hunter|phb"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["save"]
+          },
+          "when": "Only against being Frightened"
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["assassinate|assassin|phb"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["attack"]
+          },
+          "when": "Only against a creature that has not taken a turn in this combat"
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["assassinate|assassin|xphb"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["check"],
+            "initiative": true
+          }
+        },
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["attack"]
+          },
+          "when": "Only in the first round, against a creature that has not taken a turn"
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["impostor|assassin|phb"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["check"],
+            "skills": ["Deception"]
+          },
+          "when": "Only to avoid detection while you pass as someone else"
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["versatile trickster|arcane trickster|phb"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["attack"]
+          },
+          "when": "Only against a creature your Mage Hand distracts this turn"
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["steady eye|inquisitive|xge"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["check"],
+            "skills": ["Perception", "Investigation"]
+          },
+          "when": "Only if you move no more than half your speed this turn"
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["tokens of the departed|phantom|tce"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["save"],
+            "save": "death"
+          },
+          "when": "Only while a soul trinket is on your person"
+        },
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["save"],
+            "abilities": ["con"]
+          },
+          "when": "Only while a soul trinket is on your person"
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["tokens of the departed|phantom|rhw"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["save"],
+            "save": "death"
+          },
+          "when": "Only while you have a soul trinket"
+        },
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["save"],
+            "abilities": ["con"]
+          },
+          "when": "Only while you have a soul trinket"
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["strike fear|scion of the three|frhof"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["attack"]
+          },
+          "when": "Only against a creature Frightened by your Strike Fear"
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["ambush master|scout|xge"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["check"],
+            "initiative": true
+          }
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["elegant maneuver|swashbuckler|xge"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["check"],
+            "skills": ["Acrobatics", "Athletics"]
+          },
+          "when": "Only after Elegant Maneuver this turn"
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["supreme sneak|thief|phb"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["check"],
+            "skills": ["Stealth"]
+          },
+          "when": "Only if you move no more than half your speed this turn"
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["psychic defenses|aberrant mind|tce"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["save"]
+          },
+          "when": "Only against being Charmed or Frightened"
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["psychic defenses|aberrant sorcery|xphb"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["save"]
+          },
+          "when": "Only against being Charmed or Frightened"
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["lunar empowerment|lunar sorcery|dsotdq"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["check"],
+            "skills": ["Investigation", "Perception"]
+          },
+          "when": "Only within the bright light you shed"
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["clairvoyant combatant|great old one patron|xphb"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["attack"]
+          },
+          "when": "Only against the creature bonded by Clairvoyant Combatant"
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["among the dead|the undying|scag"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["save"]
+          },
+          "when": "Only against disease"
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["spell resistance|school of abjuration|phb"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["save"]
+          },
+          "when": "Only against spells"
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["spell resistance|abjurer|xphb"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["save"]
+          },
+          "when": "Only against spells"
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["bladesong|bladesinging|tce"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["check"],
+            "skills": ["Acrobatics"]
+          },
+          "when": "Only while Bladesong lasts"
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["bladesong|bladesinger|frhof"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["check"],
+            "skills": ["Acrobatics"]
+          },
+          "when": "Only while Bladesong lasts"
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["one with the word|order of scribes|tce"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["check"],
+            "skills": ["Arcana"]
+          },
+          "when": "Only with your spellbook on your person"
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["durable|xphb"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["save"],
+            "save": "death"
+          }
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["war caster|phb"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["save"],
+            "abilities": ["con"],
+            "save": "concentration"
+          }
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["war caster|xphb"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["save"],
+            "abilities": ["con"],
+            "save": "concentration"
+          }
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["actor|phb"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["check"],
+            "skills": ["Deception", "Performance"]
+          },
+          "when": "Only to pass yourself off as someone else"
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["actor|xphb"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["check"],
+            "skills": ["Deception", "Performance"]
+          },
+          "when": "Only to convince others you are who you disguise as"
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["arathi heritage|wow"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["save"]
+          },
+          "when": "Only against being Charmed"
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["boon of bloodshed|frhof"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["attack"]
+          },
+          "when": "Only on your next attack after an enemy you can see drops to 0 Hit Points"
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["child of the sun|lfl"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["save"]
+          },
+          "when": "Only against being Blinded"
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["dungeon delver|phb"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["check"],
+            "skills": ["Perception", "Investigation"]
+          },
+          "when": "Only to find secret doors"
+        },
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["save"]
+          },
+          "when": "Only against traps"
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["enclave magic|frhof"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["check"]
+          },
+          "when": "Only to Influence Beasts"
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["grappler|phb"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["attack"]
+          },
+          "when": "Only against a creature you are grappling"
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["grappler|xphb"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["attack"]
+          },
+          "when": "Only against a creature you are grappling"
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["infernal constitution|xge"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["save"]
+          },
+          "when": "Only against being Poisoned"
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["lords' alliance agent|frhof"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["attack"]
+          },
+          "when": "Only against an enemy that just hurt an ally within 5 feet of you"
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["mage slayer|phb"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["save"]
+          },
+          "when": "Only against spells cast within 5 feet of you"
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["mounted combatant|phb"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["attack"],
+            "range": "melee"
+          },
+          "when": "Only while mounted, against an unmounted creature smaller than your mount"
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["mounted combatant|xphb"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["attack"]
+          },
+          "when": "Only while mounted, against an unmounted creature near your mount and smaller than it"
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["order's resilience|frhof"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["save"],
+            "abilities": ["str"]
+          },
+          "when": "Only within 5 feet of an ally who is not Incapacitated"
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["purple dragon commandant|frhof"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["attack"]
+          },
+          "while": "bloodied"
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["skulker|xphb"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["check"],
+            "skills": ["Stealth"]
+          },
+          "when": "Only to Hide during combat"
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["squat nimbleness|xge"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["check"],
+            "skills": ["Athletics", "Acrobatics"]
+          },
+          "when": "Only to escape a grapple"
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["treacherous allure|abh"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["attack"]
+          },
+          "when": "Only against a Charmed creature"
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["vampire hunter|abh"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["check"]
+          },
+          "when": "Only to escape a grapple or nonmagical restraints"
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["eldritch mind|tce"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["save"],
+            "abilities": ["con"],
+            "save": "concentration"
+          }
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["eldritch mind|xphb"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["save"],
+            "abilities": ["con"],
+            "save": "concentration"
+          }
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["extended spell|xphb"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["save"],
+            "abilities": ["con"],
+            "save": "concentration"
+          },
+          "when": "Only for a spell you extended"
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["cloud rune|tce"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["check"],
+            "skills": ["Sleight of Hand", "Deception"]
+          }
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["frost rune|tce"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["check"],
+            "skills": ["Animal Handling", "Intimidation"]
+          }
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["stone rune|tce"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["check"],
+            "skills": ["Insight"]
+          }
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["storm rune|tce"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["check"],
+            "skills": ["Arcana"]
+          }
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["hill rune|tce"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["save"]
+          },
+          "when": "Only against being Poisoned"
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["amorphous|aag"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["check"]
+          },
+          "when": "Only to start or escape a grapple"
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["ambusher|dmg"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["attack"]
+          },
+          "when": "Only in the first round, against a surprised creature"
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["bloodied frenzy|wow"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["attack"]
+          },
+          "while": "bloodied"
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["brave|lfl"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["save"]
+          },
+          "when": "Only against being Frightened"
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["brave|phb"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["save"]
+          },
+          "when": "Only against being Frightened"
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["brave|psz"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["save"]
+          },
+          "when": "Only against being Frightened"
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["brave|xphb"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["save"]
+          },
+          "when": "Only against being Frightened"
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["chameleon carapace|aag"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["check"],
+            "skills": ["Stealth"]
+          },
+          "when": "Only to hide where your carapace matches the surroundings"
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["chameleon skin|dmg"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["check"],
+            "skills": ["Stealth"]
+          },
+          "when": "Only to hide"
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["construct resilience|efa"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["save"]
+          },
+          "when": "Only against being Poisoned"
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["constructed resilience|erlw"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["save"]
+          },
+          "when": "Only against being Poisoned"
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["deathless nature|reborn|vrgr"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["save"]
+          },
+          "when": "Only against disease or being Poisoned"
+        },
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["save"],
+            "save": "death"
+          }
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["dual mind|efa"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["save"],
+            "abilities": ["wis", "cha"]
+          }
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["dual mind|erlw"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["save"],
+            "abilities": ["wis"]
+          }
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["duergar resilience|mtf"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["save"]
+          },
+          "when": "Only against poison, illusions, or being Charmed or Paralyzed"
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["dwarven resilience|mpmm"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["save"]
+          },
+          "when": "Only against being Poisoned"
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["dwarven resilience|phb"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["save"]
+          },
+          "when": "Only against poison"
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["dwarven resilience|psk"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["save"]
+          },
+          "when": "Only against poison"
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["dwarven resilience|wow"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["save"]
+          },
+          "when": "Only against being Poisoned"
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["dwarven resilience|xphb"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["save"]
+          },
+          "when": "Only against being Poisoned"
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["earthen resilience|wow"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["save"]
+          },
+          "when": "Only against being Poisoned"
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["escaped death|rhw"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["save"],
+            "save": "death"
+          }
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["expert duplication|mpmm"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["check"]
+          },
+          "when": "Only to make an exact copy of writing or craftwork"
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["expert forgery|vgm"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["check"]
+          },
+          "when": "Only to forge or copy an object"
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["fearless|dsotdq"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["save"]
+          },
+          "when": "Only against being Frightened"
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["feast of blood|psx"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["check", "save"],
+            "abilities": ["str", "dex"]
+          },
+          "when": "Only while Feast of Blood lasts"
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["fey ancestry|aag"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["save"]
+          },
+          "when": "Only against being Charmed"
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["fey ancestry|efa"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["save"]
+          },
+          "when": "Only against being Charmed"
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["fey ancestry|lfl"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["save"]
+          },
+          "when": "Only against being Charmed"
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["fey ancestry|mpmm"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["save"]
+          },
+          "when": "Only against being Charmed"
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["fey ancestry|phb"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["save"]
+          },
+          "when": "Only against being Charmed"
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["fey ancestry|psk"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["save"]
+          },
+          "when": "Only against being Charmed"
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["fey ancestry|psz"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["save"]
+          },
+          "when": "Only against being Charmed"
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["fey ancestry|wow"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["save"]
+          },
+          "when": "Only against being Charmed"
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["fey ancestry|xphb"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["save"]
+          },
+          "when": "Only against being Charmed"
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["gnome cunning|dmg"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["save"],
+            "abilities": ["int", "wis", "cha"]
+          },
+          "when": "Only against magic"
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["gnome cunning|phb"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["save"],
+            "abilities": ["int", "wis", "cha"]
+          },
+          "when": "Only against magic"
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["gnomish cunning|wow"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["save"],
+            "abilities": ["int", "wis", "cha"]
+          }
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["gnomish cunning|xphb"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["save"],
+            "abilities": ["int", "wis", "cha"]
+          }
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["gnomish magic resistance|mpmm"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["save"],
+            "abilities": ["int", "wis", "cha"]
+          },
+          "when": "Only against spells"
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["hippo build|aag"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["check", "save"],
+            "abilities": ["str"]
+          }
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["incisive sense|egw"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["check"],
+            "skills": ["Investigation", "Insight"]
+          }
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["keen hearing and smell|dmg"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["check"],
+            "skills": ["Perception"]
+          },
+          "when": "Only when it relies on hearing or smell"
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["keen smell|ggr"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["check"],
+            "skills": ["Perception", "Survival", "Investigation"]
+          },
+          "when": "Only when it involves smell"
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["kobold legacy (defiance)|mpmm"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["save"]
+          },
+          "when": "Only against being Frightened"
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["labyrinthine recall|mpmm"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["check"],
+            "skills": ["Survival"]
+          },
+          "when": "Only to navigate or track"
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["large form|xphb"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["check"],
+            "abilities": ["str"]
+          },
+          "when": "Only while in Large Form"
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["lavastep grit|psz"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["check"],
+            "skills": ["Stealth"]
+          },
+          "when": "Only to hide in rocky or underground places"
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["leviathan will|lr"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["save"]
+          },
+          "when": "Only against being Charmed, Frightened, Paralyzed, Poisoned, Stunned or put to sleep"
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["loxodon serenity|ggr"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["save"]
+          },
+          "when": "Only against being Charmed or Frightened"
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["magic resistance|mot"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["save"]
+          },
+          "when": "Only against spells and other magical effects"
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["magic resistance|mpmm"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["save"]
+          },
+          "when": "Only against spells"
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["magic resistance|vgm"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["save"]
+          },
+          "when": "Only against spells and other magical effects"
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["mechanical nature|aag"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["save"]
+          },
+          "when": "Only against being Paralyzed or Poisoned"
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["mechanical nature|wow"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["save"]
+          },
+          "when": "Only against being Paralyzed or Poisoned"
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["mental discipline|mpmm"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["save"]
+          },
+          "when": "Only against being Charmed or Frightened"
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["mental discipline|mtf"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["save"]
+          },
+          "when": "Only against being Charmed or Frightened"
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["natural resilience|aag"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["save"]
+          },
+          "when": "Only against being Poisoned"
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["pack tactics|dmg"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["attack"]
+          },
+          "when": "Only with an ally who is not Incapacitated within 5 feet of the target"
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["pack tactics|vgm"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["attack"]
+          },
+          "when": "Only with an ally who is not Incapacitated within 5 feet of the target"
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["poison resilience|mpmm"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["save"]
+          },
+          "when": "Only against being Poisoned"
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["powerful build|xphb"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["check"]
+          },
+          "when": "Only to end the Grappled condition"
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["psionic fortitude|mpmm"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["save"]
+          },
+          "when": "Only against being Charmed or Stunned"
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["shape-shifter|efa"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["check"],
+            "abilities": ["cha"]
+          },
+          "when": "Only while shape-shifted"
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["shell defense|mpmm"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["save"],
+            "abilities": ["str", "con"]
+          },
+          "when": "Only while in your shell"
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["shell defense|ttp"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["save"],
+            "abilities": ["str", "con"]
+          },
+          "when": "Only while in your shell"
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["shifting (wildhunt)|efa"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["check"],
+            "abilities": ["wis"]
+          },
+          "when": "Only while shifted"
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["shifting (wildhunt)|mpmm"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["check"],
+            "abilities": ["wis"]
+          },
+          "when": "Only while shifted"
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["shifting feature|wildhunt|erlw"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["check"],
+            "abilities": ["wis"]
+          },
+          "when": "Only while shifted"
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["slippery|dmg"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["check", "save"],
+            "abilities": ["str", "dex"]
+          },
+          "when": "Only to escape a grapple"
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["speech of beast and leaf|mpmm"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["check"],
+            "abilities": ["cha"]
+          },
+          "when": "Only to influence beasts and plants"
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["speech of beast and leaf|vgm"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["check"],
+            "abilities": ["cha"]
+          },
+          "when": "Only to influence beasts and plants"
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["stone camouflage|dmg"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["check"],
+            "skills": ["Stealth"]
+          },
+          "when": "Only to hide in rocky terrain"
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["stone camouflage|mtf"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["check"],
+            "skills": ["Stealth"]
+          },
+          "when": "Only to hide in rocky terrain"
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["stone camouflage|scag"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["check"],
+            "skills": ["Stealth"]
+          },
+          "when": "Only to hide in rocky terrain"
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["stout resilience|phb"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["save"]
+          },
+          "when": "Only against poison"
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["swamp camouflage|dmg"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["check"],
+            "skills": ["Stealth"]
+          },
+          "when": "Only to hide in swampy terrain"
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["telepathic insight|ai"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["save"],
+            "abilities": ["wis", "cha"]
+          }
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["vedalken cunning|psk"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["save"],
+            "abilities": ["int", "wis", "cha"]
+          },
+          "when": "Only against magic"
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["vedalken dispassion|ggr"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["save"],
+            "abilities": ["int", "wis", "cha"]
+          }
+        }
+      ]
+    },
+    {
+      "part": "rollAdvantage",
+      "keys": ["will of the forsaken|wow"],
+      "effects": [
+        {
+          "kind": "rollAdvantage",
+          "mode": "adv",
+          "on": {
+            "rolls": ["save"]
+          },
+          "when": "Only against being Charmed or Frightened"
+        }
+      ]
+    }
+  ]
+}

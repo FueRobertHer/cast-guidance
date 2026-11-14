@@ -3,6 +3,7 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { RULE_SET_TYPE } from '@/engine/castGuidance';
 import { CURATED } from '@/engine/curated/curatedEffects';
+import { ROLL_EXTRAS } from '@/engine/curated/rollExtras';
 import { STANDING } from '@/engine/curated/standingEffects';
 import { readRuleSet } from '@/engine/effects/mechanics';
 import { BUILT_IN_RULE_SETS } from '../../tests-fixtures/testWorld';
@@ -58,6 +59,14 @@ describe('the built-in rule sets', () => {
     );
     expect(keys.length).toBeGreaterThan(0);
     expect(keys.filter((k) => Object.hasOwn(STANDING, k))).toEqual([]);
+  });
+
+  it('keeps no roll extra row also in ROLL_EXTRAS, which it stands in for', async () => {
+    const keys = (await loadBuiltInRules()).sets.flatMap((set) =>
+      readRuleSet(set).rows.flatMap((r) => (r.part === 'rollExtra' ? r.keys : [])),
+    );
+    expect(keys.length).toBeGreaterThan(0);
+    expect(keys.filter((k) => Object.hasOwn(ROLL_EXTRAS, k))).toEqual([]);
   });
 
   it('reach the engine through the registry', async () => {

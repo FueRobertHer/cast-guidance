@@ -6,8 +6,7 @@ import {
   dragonOptions,
   namedDragon,
 } from '../curated/draconicAncestry';
-import { emitRollAdvantages } from '../curated/rollAdvantages';
-import { emitRollExtras } from '../curated/rollExtras';
+import { emitRollExtras, hasRollExtraRow } from '../curated/rollExtras';
 import {
   type CharacterDoc,
   type DataEntity,
@@ -17,7 +16,7 @@ import {
 } from '../types';
 import { collectAdditionalSpells } from './additionalSpells';
 import { asEntityArray, type Collector, num, str } from './base';
-import { basedOn, mechanicsOf } from './mechanics';
+import { basedOn, emitBuiltInRows, mechanicsOf } from './mechanics';
 import { DAMAGE_TYPES, proseScanFeature } from './proseScan';
 import {
   genericOptions,
@@ -307,8 +306,12 @@ function collectFrom(col: Collector, e: DataEntity, origin: EffectOrigin, idBase
           ...(based !== undefined ? [`${based.name}|${based.source}`] : []),
         ];
         const traitOrigin = { ...origin, label: traitName };
-        emitRollAdvantages(col, rollKeys, traitOrigin);
-        emitRollExtras(col, rollKeys, traitOrigin);
+        emitBuiltInRows(col, 'rollAdvantage', rollKeys, traitOrigin);
+        if (
+          !emitBuiltInRows(col, 'rollExtra', rollKeys, traitOrigin, { inCode: hasRollExtraRow })
+        ) {
+          emitRollExtras(col, rollKeys, traitOrigin);
+        }
       },
     });
   }
