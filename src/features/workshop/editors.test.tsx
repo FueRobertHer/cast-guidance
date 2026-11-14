@@ -151,7 +151,7 @@ describe('FeatEditor', () => {
   });
 });
 
-describe('the Advantage and Added die cards', () => {
+describe('the Advantage, Added die and Initiative cards', () => {
   const effectsOf = (draft: Json) =>
     ((draft.castGuidance as Json | undefined)?.effects ?? []) as Json[];
   const problemsOf = (draft: Json) => readStoredEffects(effectsOf(draft)).problems;
@@ -283,6 +283,15 @@ describe('the Advantage and Added die cards', () => {
     expect(rollKindOf({ rolls: ['attack', 'save'] })).toBeUndefined();
     expect(rollKindOf({ rolls: ['attack'], range: 'melee' })).toBeUndefined();
     expect(rollKindOf(undefined)).toBeUndefined();
+  });
+
+  it('words the proficiency bonus on initiative, and an amount typed in takes its place', () => {
+    const draft = withCard({ kind: 'initiativeBonus', profBonus: true });
+    shown('Your proficiency bonus to Initiative, once however many add it');
+    type('Initiative: Amount', '2');
+    expect(effectsOf(draft())).toEqual([{ kind: 'initiativeBonus', amount: 2 }]);
+    shown('+2 to Initiative');
+    expect(problemsOf(draft())).toEqual([]);
   });
 });
 

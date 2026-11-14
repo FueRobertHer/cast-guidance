@@ -221,6 +221,34 @@ describe('readMoments', () => {
     ]);
   });
 
+  it("names an AC formula with no label for the effect, and refuses the character's proficiency bonus", () => {
+    const read = readMoments(
+      [
+        {
+          at: 'turnStart',
+          do: [
+            {
+              kind: 'addEffect',
+              name: 'Bark Skin',
+              effects: [
+                { kind: 'acFormula', base: { f: '10 + prof' }, addAbilities: ['dex'] },
+                { kind: 'initiativeBonus', profBonus: true },
+              ],
+            },
+          ],
+        },
+      ],
+      'Gritty',
+    );
+    const [bark] = read.moments[0]?.do ?? [];
+    expect(bark?.kind === 'addEffect' && bark.effects.map((t) => t.effect)).toEqual([
+      { kind: 'acFormula', label: 'Bark Skin', base: 0, addAbilities: ['dex'] },
+    ]);
+    expect(read.problems).toEqual([
+      'moment 1 (turnStart), outcome 1: effect 2 (initiativeBonus): an effect in play takes a plain number, not "profBonus"',
+    ]);
+  });
+
   it('says what keeps a moment or an outcome from counting, and counts the rest', () => {
     const read = readMoments(
       [

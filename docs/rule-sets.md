@@ -10,19 +10,21 @@ stands in for `ROLL_EXTRAS` (`src/engine/curated/rollExtras.ts`). The files
 live in `src/rules/`, one a part. (Source of truth: `readRuleSet` and
 `mechanicsOf` in `src/engine/effects/mechanics.ts`, `src/data5e/builtInRules.ts`.)
 
-106 rows have moved so far (`src/rules/cast-guidance/curated.json`). Four came
+115 rows have moved so far (`src/rules/cast-guidance/curated.json`). Four came
 first, one for each kind of call site, to prove the routes: Stunning Strike (a
 class feature), Lucky (PHB, a feat), Disarming Attack (PHB, an optional
-feature) and Warforged's Integrated Protection (a species trait). The other 102
-are every `CURATED` row the stored format holds as it is: fighting styles,
-feats, standing numbers (speeds, saves, scores, immunities), riders on every
-hit or cast, pools and actions, and subclass features. The rows left in
+feature) and Warforged's Integrated Protection (a species trait). The other 111
+are every `CURATED` row the stored format holds: fighting styles, feats,
+standing numbers (speeds, saves, scores, immunities), riders on every hit or
+cast, pools and actions, and subclass features. Nine of them needed a term the
+format gained for them (rule pack port 2a): a pool's `die` (Martial Adept and
+Superior Technique's d6), Metamagic Adept's `noSlotConversion`, the initiative
+bonus `"profBonus": true` (2024 Alert, Hare-Trigger), which counts once however
+many features add it, and an AC formula with no `label`, which is named for
+what gives it, so a renamed copy shows its own name (Unarmored Defense for the
+College of Dance, Draconic Resilience, Immortal Durability). The rows left in
 `CURATED` need something the format lacks: a pick, a test of the printing, a
-named class's level, an engine call, a field (a pool's `die`, Metamagic
-Adept's `noSlotConversion`, the initiative bonus `profBonus`, which counts once
-however many features add it), or a label read from the entry (Unarmored
-Defense for the College of Dance, Draconic Resilience and Immortal Durability,
-which a renamed copy would show under the official name).
+named class's level or name, text or a reset by level, or an engine call.
 
 55 `standing` rows have moved (`src/rules/cast-guidance/standing.json`): every
 `STANDING` row the format holds, the defenses, senses and speeds a subclass or

@@ -395,25 +395,6 @@ const skillOrLanguage =
       markKnownLanguages(col, LANGUAGE_OPTIONS),
     );
 
-/** Superior Technique fighting style: one d6 superiority die (stacks) + a maneuver. */
-const superiorTechnique: CuratedFn = (col, origin) => {
-  col.add({
-    kind: 'resource',
-    key: 'superiority-dice',
-    label: 'Superiority Dice (d6)',
-    die: '1d6',
-    max: 1,
-    resetOn: 'short',
-    stack: true,
-    origin,
-  });
-  col.add({
-    kind: 'note',
-    text: 'Superior Technique: learn one maneuver and gain one d6 superiority die.',
-    origin,
-  });
-};
-
 /** 2024: one back on a short rest, all on a long rest. 2014: all back on either. */
 function recovery(is2024: boolean) {
   return is2024
@@ -653,28 +634,6 @@ const signatureSpells: CuratedFn = (col, origin) => {
 export const CURATED: Record<string, CuratedFn> = {
   // --- Feats ---------------------------------------------------------------
   // More of this section's rows are data, in `src/rules/cast-guidance/curated.json`.
-  'alert|xphb': (col, origin) => {
-    col.add({ kind: 'initiativeBonus', amount: 'profBonus', origin });
-  },
-  'martial adept|phb': (col, origin) => {
-    // Shares the 'superiority-dice' pool so it stacks with Battle Master and
-    // Superior Technique instead of showing a separate tracker.
-    col.add({
-      kind: 'resource',
-      key: 'superiority-dice',
-      label: 'Superiority Dice (d6)',
-      die: '1d6',
-      max: 1,
-      resetOn: 'short',
-      stack: true,
-      origin,
-    });
-    col.add({
-      kind: 'note',
-      text: 'Martial Adept: one superiority die (d6); learn two maneuvers.',
-      origin,
-    });
-  },
   // Battle Master's superiority dice: 4/5/6 by fighter level, growing d8→d10→d12.
   'combat superiority|battle master': (col, origin) => {
     const lvl = classLevel(col, 'Fighter');
@@ -691,8 +650,6 @@ export const CURATED: Record<string, CuratedFn> = {
       origin,
     });
   },
-  // Superior Technique fighting style (TCE): one d6 superiority die + a maneuver.
-  'superior technique|tce': superiorTechnique,
 
   // --- Fighting styles (2014 optional features; 2024 feats share names) ----
   // Every row of this section is data, in `src/rules/cast-guidance/curated.json`.
@@ -887,19 +844,6 @@ export const CURATED: Record<string, CuratedFn> = {
       resetOn: 'long',
       // Adds to Metamagic Adept's two, whichever comes first.
       stack: true,
-      origin,
-    });
-  },
-  'metamagic adept|tce': (col, origin) => {
-    col.add({
-      kind: 'resource',
-      key: 'sorcery-points',
-      label: 'Sorcery Points',
-      max: 2,
-      resetOn: 'long',
-      stack: true,
-      // They add to the pool but go only on Metamagic.
-      noSlotConversion: 2,
       origin,
     });
   },
@@ -1192,7 +1136,6 @@ export const CURATED: Record<string, CuratedFn> = {
     { tools: ['Disguise Kit', 'Forgery Kit'] },
     toolPick(1, ['gaming set']),
   ),
-  'unarmored defense|college of dance': unarmored(10, 'dex', 'cha'),
   // The artificer subclasses (TCE and EFA share each subclass name).
   'tool proficiency|battle smith': toolsOrAnother("Smith's Tools"),
   'tool proficiency|alchemist': toolsOrAnother("Alchemist's Supplies"),
@@ -1224,11 +1167,6 @@ export const CURATED: Record<string, CuratedFn> = {
     "calligrapher's supplies",
     "painter's supplies",
   ]),
-  // The 2014 printing's +1 hit point per level is what the scanner read; keep it.
-  'draconic resilience|draconic bloodline': all(unarmored(13, 'dex'), (col, origin) =>
-    col.add({ kind: 'hpPerLevel', amount: 1, origin }),
-  ),
-  'draconic resilience|draconic sorcery': unarmored(10, 'dex', 'cha'),
   // The 2014 Dragon Ancestor: a dragon whose damage type later features use,
   // and Draconic. Its doubled proficiency with dragons stays in the card.
   'dragon ancestor|draconic bloodline': (col, origin) => {
@@ -1282,8 +1220,6 @@ export const CURATED: Record<string, CuratedFn> = {
       },
     );
   },
-  // The UA Mystic's orders.
-  'immortal durability|order of the immortal': unarmored(10, 'dex', 'con'),
   'acolyte of nature|nature domain': skillPick(1, ['Animal Handling', 'Nature', 'Survival']),
   'acolyte of strength|strength domain (psa)': skillPick(1, [
     'Animal Handling',
@@ -1397,13 +1333,9 @@ export const CURATED: Record<string, CuratedFn> = {
   // --- Racial traits (keyed `trait:<traitName>`) ---------------------------
   // Most limited-use traits (Relentless Endurance, Breath Weapon, Fey Step,
   // Stone's Endurance, …) are handled per-source by the prose scanner, which
-  // reads each printing's actual wording. Curate here only what prose can't
-  // see (passive numbers with no usage phrasing).
-  // Surprise Attack, Kefnet's Blessing and Warforged's Integrated Protection
-  // (both printings) are rows in `src/rules/cast-guidance/curated.json`.
-  'trait:hare-trigger': (col, origin) => {
-    col.add({ kind: 'initiativeBonus', amount: 'profBonus', origin });
-  },
+  // reads each printing's actual wording. Curated traits are what prose can't
+  // see (passive numbers with no usage phrasing); every one is now data, in
+  // `src/rules/cast-guidance/curated.json`, so none is left here.
 };
 
 /**

@@ -556,7 +556,13 @@ export function conditionMechanics(entry: unknown): ConditionMechanics {
   }
   const version = guidanceVersion(guidance);
   if ('problem' in version) return { parts: [], problems: [{ why: version.problem }] };
-  return storedInPlay(own(guidance, 'effects'), 'a condition', conditionRefuses);
+  const name = own(entry, 'name');
+  return storedInPlay(
+    own(guidance, 'effects'),
+    'a condition',
+    conditionRefuses,
+    typeof name === 'string' && name.trim() !== '' ? name.trim() : undefined,
+  );
 }
 
 /** A problem as a sheet warning says it: "Dazed: effect 2 does not count: ...". */

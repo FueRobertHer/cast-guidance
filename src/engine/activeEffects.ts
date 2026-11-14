@@ -4,7 +4,7 @@
  * never add up. Pure: derive folds what counts in beside the build's own.
  */
 import { CAST_GUIDANCE_LIMITS } from './castGuidance';
-import { readStoredEffects } from './effects/mechanics';
+import { inPlayProfBonus, namedFor, readStoredEffects } from './effects/mechanics';
 import {
   ABILITIES,
   ACTIVE_PART_KINDS,
@@ -291,8 +291,10 @@ const whyOf = (problem: string) => problem.replace(/^effect \d+( \([^)]*\))?: /,
  * An entry's stored effects (`castGuidance`, read by the reader every stored
  * effect goes through) as the parts an effect in play holds: numbers and
  * rolls, in plain amounts, holding for as long as the effect does. `holder`
- * names what holds them in the words a problem uses ("a condition"), and
- * `refuse` says why it cannot hold a part it otherwise would. Each one that
+ * names what holds them in the words a problem uses ("a condition"),
+ * `refuse` says why it cannot hold a part it otherwise would, and `named` is
+ * the name of what gives them, which an AC formula with no label of its own
+ * shows (`namedFor`). Each one that
  * cannot count is a problem by its place in the list, so an editor can put it
  * on its card; nothing here throws.
  */
@@ -300,6 +302,7 @@ export function storedInPlay(
   raw: unknown,
   holder = 'an effect in play',
   refuse?: (part: EffectPart) => string | undefined,
+  named?: string,
 ): { parts: EffectPart[]; problems: StoredProblem[] } {
   const parts: EffectPart[] = [];
   const problems: StoredProblem[] = [];
@@ -313,7 +316,8 @@ export function storedInPlay(
     .forEach((x, i) => {
       const place = i + 1;
       const one = readStoredEffects([x]);
-      const t = one.effects[0];
+      const read = one.effects[0];
+      const t = read === undefined || named === undefined ? read : namedFor(read, named);
       if (t === undefined) {
         problems.push({
           place,
@@ -329,7 +333,7 @@ export function storedInPlay(
             ? `${holder} changes only numbers and rolls, not proficiencies, uses or actions`
             : t.formulas !== undefined
               ? `${holder} takes a plain number, not a formula`
-              : undefined;
+              : inPlayProfBonus(t, holder);
       const [held] =
         why === undefined
           ? readActiveEffects([{ id: 'part', name: 'part', parts: [t.effect] }]).effects

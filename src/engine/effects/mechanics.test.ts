@@ -183,6 +183,69 @@ describe('readMechanics', () => {
     expect(read.effects[0]?.effect).toMatchObject({ save });
   });
 
+  it("reads a pool's die, foretelling and points kept off slots, the proficiency bonus on initiative, and an AC with no label", () => {
+    const read = readMechanics({
+      v: 1,
+      effects: [
+        {
+          kind: 'resource',
+          key: 'omens',
+          label: 'Omens',
+          max: 2,
+          reset: 'long',
+          die: '1d8',
+          foretell: true,
+          noSlotConversion: 1,
+        },
+        { kind: 'initiativeBonus', profBonus: true },
+        { kind: 'acFormula', base: 12, addAbilities: ['dex'] },
+      ],
+    });
+    expect(read.problems).toEqual([]);
+    expect(read.effects.map((t) => t.effect)).toEqual([
+      {
+        kind: 'resource',
+        key: 'omens',
+        label: 'Omens',
+        max: 2,
+        resetOn: 'long',
+        die: '1d8',
+        foretell: true,
+        noSlotConversion: 1,
+      },
+      // The engine's own word for it, which counts once (`deriveSheet`).
+      { kind: 'initiativeBonus', amount: 'profBonus' },
+      { kind: 'acFormula', base: 12, addAbilities: ['dex'] },
+    ]);
+    const pool = { kind: 'resource', key: 'omens', label: 'Omens', max: 2, reset: 'long' };
+    const bad = readMechanics({
+      v: 1,
+      effects: [
+        { ...pool, die: '2d6' },
+        { ...pool, die: 'd6' },
+        { ...pool, noSlotConversion: 0 },
+        { ...pool, foretell: 'yes' },
+        { kind: 'initiativeBonus', profBonus: true, amount: 2 },
+        { kind: 'initiativeBonus', profBonus: false },
+        { kind: 'initiativeBonus', profBonus: 'yes' },
+        { kind: 'initiativeBonus' },
+        // A false flag is the same as none.
+        { kind: 'initiativeBonus', profBonus: false, amount: 2 },
+      ],
+    });
+    expect(bad.effects.map((t) => t.effect)).toEqual([{ kind: 'initiativeBonus', amount: 2 }]);
+    expect(bad.problems).toEqual([
+      'effect 1 (resource): "die" is one die, like 1d6',
+      'effect 2 (resource): "die" is one die, like 1d6',
+      'effect 3 (resource): "noSlotConversion" is a whole number from 1 to 20',
+      'effect 4 (resource): "foretell" is true or false',
+      'effect 5 (initiativeBonus): names "amount" or "profBonus", not both',
+      'effect 6 (initiativeBonus): "amount" is missing',
+      'effect 7 (initiativeBonus): "profBonus" is true or false',
+      'effect 8 (initiativeBonus): "amount" is missing',
+    ]);
+  });
+
   it('keeps each formula for fold time, with a 0 in its field until then', () => {
     const t = readMechanics({ v: 1, effects: every }).effects.find(
       (x) => x.effect.kind === 'resource',
@@ -487,6 +550,23 @@ describe('mechanicsOf: the layers', () => {
     expect(col.effects[1]?.origin).toBe(origin);
   });
 
+  it('names an AC formula with no label for what gives it', () => {
+    const col = new Collector(character(), world({}));
+    subject(
+      col,
+      cg({
+        effects: [
+          { kind: 'acFormula', base: 12, addAbilities: ['dex'] },
+          { kind: 'acFormula', label: 'Bark Hide', base: 13 },
+        ],
+      }),
+    );
+    expect(col.effects.flatMap((e) => (e.kind === 'acFormula' ? [e.label] : []))).toEqual([
+      'Lantern',
+      'Bark Hide',
+    ]);
+  });
+
   it('inherits nothing when it says replace', () => {
     const col = new Collector(character(), world({}));
     const inherited = subject(
@@ -720,6 +800,83 @@ describe('basedOn reaches the curated row', () => {
     };
     expect(superiority()).toBeUndefined();
     expect(superiority({ basedOn: 'Battle Master|PHB' })).toBe('Combat Superiority');
+  });
+
+  it('adds the proficiency bonus to initiative once, from 2024 Alert and Hare-Trigger', () => {
+    // Warrior 4: proficiency +2, DEX +2.
+    const initiative = (feats: DataEntity[], trait: boolean) => {
+      const race: DataEntity = {
+        name: 'Harefolk',
+        source: 'HB',
+        speed: 30,
+        entries: [{ type: 'entries', name: 'Hare-Trigger', entries: ['You are quick.'] }],
+      };
+      const doc = character((d) => {
+        d.feats = feats.map((f, i) => ({
+          ref: { name: String(f.name), source: 'HB' },
+          instanceId: `f${i}`,
+        }));
+        if (trait) d.race = { name: 'Harefolk', source: 'HB' };
+      });
+      return deriveSheet(doc, world({ feat: feats, race: [race] })).initiative.value;
+    };
+    const alert = feat('Watchful', { basedOn: 'Alert|XPHB' });
+    expect(initiative([], false)).toBe(2);
+    expect(initiative([alert], false)).toBe(4);
+    expect(initiative([], true)).toBe(4);
+    expect(initiative([alert], true)).toBe(4);
+    expect(initiative([alert, feat('Wary', { basedOn: 'Alert|XPHB' })], false)).toBe(4);
+    // An amount that only comes to the proficiency bonus adds beside it.
+    const keen = feat('Keen', { effects: [{ kind: 'initiativeBonus', amount: { f: 'prof' } }] });
+    expect(initiative([alert, keen], false)).toBe(6);
+    const once = feat('Once', { effects: [{ kind: 'initiativeBonus', profBonus: true }] });
+    expect(initiative([once], true)).toBe(4);
+  });
+
+  it("names a copied subclass feature's Armor Class for the copy, renamed or not", () => {
+    // Draconic Resilience (2024): 10 + DEX + CHA; DEX +2, CHA +3.
+    const ac = (name: string) => {
+      const ctx = world({
+        subclass: [
+          {
+            name: 'Wyrmblood',
+            shortName: 'Wyrmblood',
+            source: 'HB',
+            className: 'Warrior',
+            classSource: 'TST',
+            subclassFeatures: [`${name}|Warrior|TST|Wyrmblood|HB|3`],
+            ...cg({ basedOn: 'Draconic Sorcery|XPHB' }),
+          },
+        ],
+        subclassFeature: [
+          {
+            name,
+            source: 'HB',
+            className: 'Warrior',
+            classSource: 'TST',
+            subclassShortName: 'Wyrmblood',
+            subclassSource: 'HB',
+            level: 3,
+            entries: ['Scales cover you.'],
+            ...cg({ basedOn: 'Draconic Resilience|XPHB' }),
+          },
+        ],
+      });
+      const doc = character((d) => {
+        d.classes = [
+          {
+            ref: { name: 'Warrior', source: 'TST' },
+            subclass: { name: 'Wyrmblood', source: 'HB' },
+            levels: 3,
+            hp: [],
+          },
+        ];
+      });
+      const sheet = deriveSheet(doc, ctx);
+      return [sheet.acFormulaLabel, sheet.ac.value];
+    };
+    expect(ac('Draconic Resilience')).toEqual(['Draconic Resilience', 15]);
+    expect(ac('Scaled Hide')).toEqual(['Scaled Hide', 15]);
   });
 
   it("for a species trait, by the trait's basedOn", () => {

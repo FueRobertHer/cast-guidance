@@ -169,7 +169,10 @@ const KINDS: readonly KindSpec[] = [
     add: 'Initiative',
     make: () => ({ kind: 'initiativeBonus', amount: 1 }),
     fields: [amountField],
-    line: (e) => `${amount(e.amount)} to Initiative`,
+    line: (e) =>
+      e.profBonus === true
+        ? 'Your proficiency bonus to Initiative, once however many add it'
+        : `${amount(e.amount)} to Initiative`,
   },
   {
     kinds: ['speedBonus'],
@@ -738,6 +741,10 @@ function Card({
       // The roll prompt offers only advantage to claim, so a disadvantage holds always.
       const { when: _, ...rest } = effect;
       onChange({ ...rest, mode: v });
+    } else if (effect.kind === 'initiativeBonus' && f.key === 'amount') {
+      // An amount typed in takes the place of the proficiency bonus.
+      const { profBonus: _, ...rest } = effect;
+      onChange({ ...rest, amount: v });
     } else if (effect.kind === 'resource' && f.key === 'label') {
       // The key follows the name, and an action spending it follows the key.
       const key = keyOf(text);

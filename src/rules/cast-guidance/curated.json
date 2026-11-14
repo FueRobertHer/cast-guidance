@@ -1431,6 +1431,127 @@
           "abilities": ["int"]
         }
       ]
+    },
+    {
+      "part": "curated",
+      "keys": ["alert|xphb"],
+      "effects": [
+        {
+          "kind": "initiativeBonus",
+          "profBonus": true
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["martial adept|phb"],
+      "effects": [
+        {
+          "kind": "resource",
+          "key": "superiority-dice",
+          "label": "Superiority Dice (d6)",
+          "die": "1d6",
+          "max": 1,
+          "reset": "short",
+          "stack": true
+        },
+        {
+          "kind": "note",
+          "text": "Martial Adept: one superiority die (d6); learn two maneuvers."
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["superior technique|tce"],
+      "effects": [
+        {
+          "kind": "resource",
+          "key": "superiority-dice",
+          "label": "Superiority Dice (d6)",
+          "die": "1d6",
+          "max": 1,
+          "reset": "short",
+          "stack": true
+        },
+        {
+          "kind": "note",
+          "text": "Superior Technique: learn one maneuver and gain one d6 superiority die."
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["metamagic adept|tce"],
+      "effects": [
+        {
+          "kind": "resource",
+          "key": "sorcery-points",
+          "label": "Sorcery Points",
+          "max": 2,
+          "reset": "long",
+          "stack": true,
+          "noSlotConversion": 2
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["unarmored defense|college of dance"],
+      "effects": [
+        {
+          "kind": "acFormula",
+          "base": 10,
+          "addAbilities": ["dex", "cha"]
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["draconic resilience|draconic bloodline"],
+      "effects": [
+        {
+          "kind": "acFormula",
+          "base": 13,
+          "addAbilities": ["dex"]
+        },
+        {
+          "kind": "hpPerLevel",
+          "amount": 1
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["draconic resilience|draconic sorcery"],
+      "effects": [
+        {
+          "kind": "acFormula",
+          "base": 10,
+          "addAbilities": ["dex", "cha"]
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["immortal durability|order of the immortal"],
+      "effects": [
+        {
+          "kind": "acFormula",
+          "base": 10,
+          "addAbilities": ["dex", "con"]
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["trait:hare-trigger"],
+      "effects": [
+        {
+          "kind": "initiativeBonus",
+          "profBonus": true
+        }
+      ]
     }
   ]
 }

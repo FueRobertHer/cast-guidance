@@ -56,6 +56,22 @@ describe('homebrewLanding', () => {
     expect(entry?.self).toBeUndefined();
   });
 
+  it("names an AC formula with no label for the spell, and refuses the caster's proficiency bonus", () => {
+    const { entry, problems } = homebrewLanding(
+      valor([
+        { kind: 'acFormula', base: 13, addAbilities: ['dex'] },
+        { kind: 'initiativeBonus', profBonus: true },
+      ]),
+      'spell',
+    );
+    expect(entry && landEntry(entry, {}, 'a').effect.parts).toEqual([
+      { kind: 'acFormula', label: 'Valor Hymn', base: 13, addAbilities: ['dex'] },
+    ]);
+    expect(problems).toEqual([
+      'Valor Hymn: effect 2 does not count: an effect on a target takes a plain number, not "profBonus".',
+    ]);
+  });
+
   it('lands as an ordinary effect in play, read whole, its parts its own each time', () => {
     const { entry } = homebrewLanding(valor([DIE_ON_ATTACKS]), 'spell');
     if (entry === undefined) throw new Error('no entry');

@@ -165,7 +165,7 @@ describe('emitCuratedEffects', () => {
   it('gives Superior Technique and Martial Adept a d6 superiority die', () => {
     for (const key of ['superior technique|tce', 'martial adept|phb']) {
       const c = col('Fighter', 5);
-      emitCuratedEffects(c, key, origin);
+      expect(emitRow(c, key, origin), key).toBe(true);
       const pool = c.effects.find((e) => e.kind === 'resource' && e.key === 'superiority-dice');
       expect(pool, key).toMatchObject({ die: '1d6', stack: true });
     }
