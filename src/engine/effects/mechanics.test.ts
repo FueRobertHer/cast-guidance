@@ -273,7 +273,7 @@ describe('readMechanics', () => {
     ]);
   });
 
-  it('reads when an advantage holds, and initiative and death or concentration saves alone', () => {
+  it('reads when an advantage holds, initiative and death or concentration saves alone, and proficient checks', () => {
     const read = readMechanics({
       v: 1,
       effects: [
@@ -326,6 +326,19 @@ describe('readMechanics', () => {
           mode: 'adv',
           on: { rolls: ['check'], abilities: ['dex', 'wis'], initiative: true },
         },
+        { kind: 'rollDie', dice: '1d4', on: { rolls: ['attack', 'check'], proficient: true } },
+        { kind: 'rollDie', dice: '1d4', on: { rolls: ['save'], proficient: true } },
+        {
+          kind: 'rollDie',
+          dice: '1d4',
+          on: { rolls: ['check'], proficient: true, initiative: true },
+        },
+        {
+          kind: 'rollAdvantage',
+          mode: 'adv',
+          on: { rolls: ['attack', 'check'], initiative: true },
+        },
+        { kind: 'rollAdvantage', mode: 'adv', on: { rolls: ['save', 'check'], save: 'death' } },
       ],
     });
     expect(read.effects.map((t) => t.effect)).toEqual([
@@ -348,18 +361,23 @@ describe('readMechanics', () => {
         mode: 'adv',
         on: { rolls: ['check'], abilities: ['dex', 'wis'], initiative: true },
       },
+      { kind: 'rollDie', dice: '1d4', on: { rolls: ['attack', 'check'], proficient: true } },
     ]);
     expect(read.problems).toEqual([
       'effect 6 (rollAdvantage): "when" goes with "mode": "adv" alone',
       'effect 7 (rollAdvantage): "when" needs words',
-      'effect 8 (rollAdvantage): "on.initiative" is a check: "rolls" lists "check"',
-      'effect 9 (rollAdvantage): "on.save" is a kind of save: "rolls" lists "save"',
+      'effect 8 (rollAdvantage): "on.initiative" is a check: "rolls" lists "check" alone',
+      'effect 9 (rollAdvantage): "on.save" is a kind of save: "rolls" lists "save" alone',
       'effect 10 (rollAdvantage): "on.save" is one of death, concentration',
-      'effect 11 (rollAdvantage): "on.initiative" uses no skill: leave out "skills" and "skilled"',
-      'effect 12 (rollAdvantage): "on.initiative" uses no skill: leave out "skills" and "skilled"',
+      'effect 11 (rollAdvantage): "on.initiative" uses no skill: leave out "skills", "skilled" and "proficient"',
+      'effect 12 (rollAdvantage): "on.initiative" uses no skill: leave out "skills", "skilled" and "proficient"',
       'effect 13 (rollAdvantage): "on.initiative" is a Dexterity check: "abilities" lists "dex"',
       'effect 14 (rollAdvantage): "on.abilities" reach no death save, which uses no ability: leave them out',
       'effect 15 (rollAdvantage): "on.abilities" reach no concentration save without "con", a Constitution save',
+      'effect 18 (rollDie): "on.proficient" narrows checks: "rolls" lists "check"',
+      'effect 19 (rollDie): "on.initiative" uses no skill: leave out "skills", "skilled" and "proficient"',
+      'effect 20 (rollAdvantage): "on.initiative" is a check: "rolls" lists "check" alone',
+      'effect 21 (rollAdvantage): "on.save" is a kind of save: "rolls" lists "save" alone',
     ]);
   });
 

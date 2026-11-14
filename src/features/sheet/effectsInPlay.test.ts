@@ -145,6 +145,16 @@ describe('partLine', () => {
       partLine({ kind: 'rollAdvantage', mode: 'adv', on: { rolls: ['check'], initiative: true } }),
     ).toBe('Advantage on initiative rolls');
     expect(
+      partLine({ kind: 'rollDie', dice: '1d4', on: { rolls: ['check'], proficient: true } }),
+    ).toBe('Add 1d4 to checks with a skill you are proficient in');
+    expect(
+      partLine({
+        kind: 'rollDie',
+        dice: '1d4',
+        on: { rolls: ['check'], skills: ['Stealth'], proficient: true },
+      }),
+    ).toBe('Add 1d4 to Stealth checks you are proficient in');
+    expect(
       partLine({
         kind: 'attackBonus',
         amount: 1,

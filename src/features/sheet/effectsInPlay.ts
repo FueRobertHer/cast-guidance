@@ -135,7 +135,12 @@ export function rollsWords(on: RollFilter): string {
     }
     if (r === 'check') {
       if (on.initiative === true) return 'initiative rolls';
-      if (on.skills !== undefined && on.skills.length > 0) return `${andList(on.skills)} checks`;
+      if (on.skills !== undefined && on.skills.length > 0) {
+        return `${andList(on.skills)} checks${on.proficient === true ? ' you are proficient in' : ''}`;
+      }
+      if (on.proficient === true) {
+        return `${abilities ? `${abilities} ` : ''}checks with a skill you are proficient in`;
+      }
       if (on.skilled === true) return abilities ? `${abilities} skill checks` : 'skill checks';
       return abilities ? `${abilities} checks` : 'ability checks';
     }
