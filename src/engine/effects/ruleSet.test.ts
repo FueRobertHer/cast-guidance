@@ -10,7 +10,7 @@ import {
   newCharacterDoc,
 } from '../types';
 import { Collector } from './base';
-import { builtInRuleFor, mechanicsOf, readRuleSet } from './mechanics';
+import { builtInRuleFor, mechanicsOf, readRuleSet, readStoredEffects } from './mechanics';
 
 // Invented rows: what the reader and the seam do with them is the point. Keys
 // reuse real feature names (Stunning Strike), which are rule facts.
@@ -149,6 +149,53 @@ describe('readRuleSet', () => {
       [['c'], 1],
       [['d'], 1],
     ]);
+  });
+
+  describe('strictly, as the app’s own files', () => {
+    // Each holds a field the reader does not read, or reads past.
+    const unread = [
+      {
+        kind: 'rollAdvantage',
+        mode: 'adv',
+        on: { rolls: ['save'] },
+        when: 'against being frightened',
+      },
+      { kind: 'action', economy: 'none', label: 'Shove', save: { targetAbility: 'str', dc: 12 } },
+      { kind: 'acBonus', amount: 1, while: { effect: 'Rage', until: 'end' } },
+      { kind: 'acBonus', amount: { f: 'prof', byLevel: { 1: 1 } } },
+      { kind: 'acBonus', amount: { f: 'prof', round: 'up' } },
+    ];
+
+    it('says what a row holds that it does not read, and leaves that effect out', () => {
+      const read = readRuleSet(ruleSet([row(['b'], [...unread, cue('Kept')])]));
+      expect(read.problems).toEqual([
+        'row 1 (b): effect 1 (rollAdvantage): "when" is not a field this kind reads',
+        'row 1 (b): effect 2 (action): "save.dc" is not a field this kind reads',
+        'row 1 (b): effect 3 (acBonus): "while.until" is not a field a state reads',
+        'row 1 (b): effect 4 (acBonus): "amount" is a formula or a level table, not both',
+        'row 1 (b): effect 5 (acBonus): "amount.round" is not a field an amount reads',
+      ]);
+      expect(read.rows.map((r) => [r.keys, r.effects.map((e) => e.effect.kind)])).toEqual([
+        [['b'], ['cue']],
+      ]);
+    });
+
+    it('leaves out a row with a field its part does not have, and names a set’s', () => {
+      const read = readRuleSet(
+        ruleSet([{ ...row(['a'], [cue('A')]), level: 3 }, row(['b'], [])], { author: 'me' }),
+      );
+      expect(read.problems).toEqual([
+        '"author" is not a field a rule set has',
+        'row 1: "level" is not a field a curated row has',
+      ]);
+      expect(read.rows.map((r) => r.keys)).toEqual([['b']]);
+    });
+
+    it('while a player’s file keeps reading past what it does not know', () => {
+      const read = readStoredEffects(unread);
+      expect(read.problems).toEqual([]);
+      expect(read.effects).toHaveLength(unread.length);
+    });
   });
 
   it('keeps the first row under a key and says so of a later one', () => {
