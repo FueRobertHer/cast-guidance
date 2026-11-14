@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest';
+import { BUILT_IN_RULE_SETS } from '../../../tests-fixtures/testWorld';
+import type { Entity } from '../copyMod';
 import { normalizeDataset } from '../normalize';
 import { BONUS_SCOPE, BONUS_SET, bonusCues, bonusSubjects } from './bonusScope';
 import { CAPABILITY_SCOPE, CAPABILITY_SET, capabilitySubjects } from './capabilityScope';
@@ -211,6 +213,8 @@ const registry = normalizeDataset(
     }),
   ),
 );
+// The rule sets the app's registry loads beside the release (`setRuleSets`).
+registry.setRuleSets(BUILT_IN_RULE_SETS as Entity[]);
 
 type Answer = Record<string, number>;
 

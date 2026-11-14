@@ -4,7 +4,9 @@
  * and ref strings of the pinned release, and placeholder prose.
  */
 import { describe, expect, it } from 'vitest';
+import { BUILT_IN_RULE_SETS } from '../../../tests-fixtures/testWorld';
 import { pruneChoicesFor } from '../../lib/pruneChoices';
+import { RULE_SET_TYPE } from '../castGuidance';
 import { deriveSheet } from '../derive';
 import { Collector } from '../effects/base';
 import {
@@ -141,7 +143,7 @@ const ctx: EngineContext = {
         String(e.name).toLowerCase() === name.toLowerCase() &&
         (source === undefined || String(e.source).toLowerCase() === source.toLowerCase()),
     ),
-  byType: (type) => WORLD[type] ?? [],
+  byType: (type) => (type === RULE_SET_TYPE ? BUILT_IN_RULE_SETS : (WORLD[type] ?? [])),
 };
 
 const ROGUE = { name: 'Rogue', source: 'PHB' };

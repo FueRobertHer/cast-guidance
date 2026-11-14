@@ -93,6 +93,8 @@ const registry = normalizeDataset(
     }),
   ),
 );
+// The rule sets the app's registry loads beside the release (`setRuleSets`).
+registry.setRuleSets(BUILT_IN_RULE_SETS as Entity[]);
 
 describe('readableEntries', () => {
   it('keeps case and leads named sub-entries with their name', () => {

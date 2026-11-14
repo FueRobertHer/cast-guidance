@@ -7,7 +7,15 @@
     {
       "part": "curated",
       "keys": ["lucky|phb"],
-      "effects": [{ "kind": "resource", "key": "luck", "label": "Luck", "max": 3, "reset": "long" }]
+      "effects": [
+        {
+          "kind": "resource",
+          "key": "luck",
+          "label": "Luck",
+          "max": 3,
+          "reset": "long"
+        }
+      ]
     },
     {
       "part": "curated",
@@ -17,7 +25,10 @@
           "kind": "action",
           "economy": "none",
           "label": "Disarming Attack",
-          "save": { "targetAbility": "str", "dcAbility": "strOrDex" }
+          "save": {
+            "targetAbility": "str",
+            "dcAbility": "strOrDex"
+          }
         }
       ]
     },
@@ -30,14 +41,1396 @@
           "economy": "none",
           "label": "Stunning Strike",
           "note": "stunned until your next turn on a failed save",
-          "save": { "targetAbility": "con", "dcAbility": "wis" }
+          "save": {
+            "targetAbility": "con",
+            "dcAbility": "wis"
+          }
         }
       ]
     },
     {
       "part": "curated",
       "keys": ["trait:integrated protection"],
-      "effects": [{ "kind": "acBonus", "amount": 1 }]
+      "effects": [
+        {
+          "kind": "acBonus",
+          "amount": 1
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["tides of chaos|wild magic"],
+      "effects": [
+        {
+          "kind": "resource",
+          "key": "tides-of-chaos",
+          "label": "Tides of Chaos",
+          "max": 1,
+          "reset": "long"
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["tides of chaos|wild magic sorcery"],
+      "effects": [
+        {
+          "kind": "resource",
+          "key": "tides-of-chaos",
+          "label": "Tides of Chaos",
+          "max": 1,
+          "reset": "long"
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["alert|phb"],
+      "effects": [
+        {
+          "kind": "initiativeBonus",
+          "amount": 5
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["observant|phb"],
+      "effects": [
+        {
+          "kind": "passivePerceptionBonus",
+          "amount": 5
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["tough|phb"],
+      "effects": [
+        {
+          "kind": "hpPerLevel",
+          "amount": 2
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["tough|xphb"],
+      "effects": [
+        {
+          "kind": "hpPerLevel",
+          "amount": 2
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["mobile|phb"],
+      "effects": [
+        {
+          "kind": "speedBonus",
+          "amount": 10
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["speedy|xphb"],
+      "effects": [
+        {
+          "kind": "speedBonus",
+          "amount": 10
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["lucky|xphb"],
+      "effects": [
+        {
+          "kind": "resource",
+          "key": "luck",
+          "label": "Luck Points",
+          "max": {
+            "f": "prof"
+          },
+          "reset": "long"
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["polearm master|phb"],
+      "effects": [
+        {
+          "kind": "action",
+          "economy": "bonus",
+          "label": "Polearm strike (butt end)",
+          "roll": "1d4"
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["polearm master|xphb"],
+      "effects": [
+        {
+          "kind": "action",
+          "economy": "bonus",
+          "label": "Polearm strike (butt end)",
+          "roll": "1d4"
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["heroic leap|wow"],
+      "effects": [
+        {
+          "kind": "action",
+          "economy": "bonus",
+          "label": "Heroic Leap",
+          "note": "bludgeoning, the die rolled · creatures within 5 feet of where you land",
+          "save": {
+            "targetAbility": "str",
+            "dcAbility": "strOrDex"
+          }
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["disarming attack|xphb"],
+      "effects": [
+        {
+          "kind": "action",
+          "economy": "none",
+          "label": "Disarming Attack",
+          "save": {
+            "targetAbility": "str",
+            "dcAbility": "strOrDex"
+          }
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["goading attack|phb"],
+      "effects": [
+        {
+          "kind": "action",
+          "economy": "none",
+          "label": "Goading Attack",
+          "save": {
+            "targetAbility": "wis",
+            "dcAbility": "strOrDex"
+          }
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["goading attack|xphb"],
+      "effects": [
+        {
+          "kind": "action",
+          "economy": "none",
+          "label": "Goading Attack",
+          "save": {
+            "targetAbility": "wis",
+            "dcAbility": "strOrDex"
+          }
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["menacing attack|phb"],
+      "effects": [
+        {
+          "kind": "action",
+          "economy": "none",
+          "label": "Menacing Attack",
+          "save": {
+            "targetAbility": "wis",
+            "dcAbility": "strOrDex"
+          }
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["menacing attack|xphb"],
+      "effects": [
+        {
+          "kind": "action",
+          "economy": "none",
+          "label": "Menacing Attack",
+          "save": {
+            "targetAbility": "wis",
+            "dcAbility": "strOrDex"
+          }
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["pushing attack|phb"],
+      "effects": [
+        {
+          "kind": "action",
+          "economy": "none",
+          "label": "Pushing Attack",
+          "save": {
+            "targetAbility": "str",
+            "dcAbility": "strOrDex"
+          }
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["pushing attack|xphb"],
+      "effects": [
+        {
+          "kind": "action",
+          "economy": "none",
+          "label": "Pushing Attack",
+          "save": {
+            "targetAbility": "str",
+            "dcAbility": "strOrDex"
+          }
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["trip attack|phb"],
+      "effects": [
+        {
+          "kind": "action",
+          "economy": "none",
+          "label": "Trip Attack",
+          "save": {
+            "targetAbility": "str",
+            "dcAbility": "strOrDex"
+          }
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["trip attack|xphb"],
+      "effects": [
+        {
+          "kind": "action",
+          "economy": "none",
+          "label": "Trip Attack",
+          "save": {
+            "targetAbility": "str",
+            "dcAbility": "strOrDex"
+          }
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["healer|phb"],
+      "effects": [
+        {
+          "kind": "action",
+          "economy": "action",
+          "label": "Healer (kit)",
+          "roll": "1d6+4",
+          "heals": true
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["healer|xphb"],
+      "effects": [
+        {
+          "kind": "action",
+          "economy": "bonus",
+          "label": "Healer (kit)",
+          "roll": "1d6+4",
+          "heals": true
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["crossbow expert|phb"],
+      "effects": [
+        {
+          "kind": "action",
+          "economy": "bonus",
+          "label": "Crossbow Expert bonus attack"
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["crossbow expert|xphb"],
+      "effects": [
+        {
+          "kind": "action",
+          "economy": "bonus",
+          "label": "Crossbow Expert bonus attack"
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["shield master|phb"],
+      "effects": [
+        {
+          "kind": "action",
+          "economy": "bonus",
+          "label": "Shield Master shove"
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["shield master|xphb"],
+      "effects": [
+        {
+          "kind": "action",
+          "economy": "bonus",
+          "label": "Shield Master shove"
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["telekinetic|tce"],
+      "effects": [
+        {
+          "kind": "action",
+          "economy": "bonus",
+          "label": "Telekinetic shove (5 ft)"
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["telekinetic|xphb"],
+      "effects": [
+        {
+          "kind": "action",
+          "economy": "bonus",
+          "label": "Telekinetic shove (5 ft)"
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["inspiring leader|phb"],
+      "effects": [
+        {
+          "kind": "action",
+          "economy": "action",
+          "label": "Inspiring Leader (temp HP)"
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["inspiring leader|xphb"],
+      "effects": [
+        {
+          "kind": "action",
+          "economy": "action",
+          "label": "Inspiring Leader (temp HP)"
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["chef|tce"],
+      "effects": [
+        {
+          "kind": "resource",
+          "key": "chef-treats",
+          "label": "Chef Treats",
+          "max": {
+            "f": "prof"
+          },
+          "reset": "long"
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["chef|xphb"],
+      "effects": [
+        {
+          "kind": "resource",
+          "key": "chef-treats",
+          "label": "Chef Treats",
+          "max": {
+            "f": "prof"
+          },
+          "reset": "long"
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["great weapon master|phb"],
+      "effects": [
+        {
+          "kind": "action",
+          "economy": "bonus",
+          "label": "GWM bonus attack (on crit or kill)"
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["charger|phb"],
+      "effects": [
+        {
+          "kind": "action",
+          "economy": "bonus",
+          "label": "Charge attack (+5 dmg)"
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["defense|phb"],
+      "effects": [
+        {
+          "kind": "acBonus",
+          "amount": 1
+        },
+        {
+          "kind": "note",
+          "text": "+1 AC applies only while wearing armor."
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["defense|xphb"],
+      "effects": [
+        {
+          "kind": "acBonus",
+          "amount": 1
+        },
+        {
+          "kind": "note",
+          "text": "+1 AC applies only while wearing armor."
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["archery|phb"],
+      "effects": [
+        {
+          "kind": "attackBonus",
+          "scope": "ranged",
+          "amount": 2
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["archery|xphb"],
+      "effects": [
+        {
+          "kind": "attackBonus",
+          "scope": "ranged",
+          "amount": 2
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["dueling|phb"],
+      "effects": [
+        {
+          "kind": "damageBonus",
+          "scope": "melee",
+          "amount": 2
+        },
+        {
+          "kind": "note",
+          "text": "+2 damage applies while wielding a single one-handed weapon."
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["dueling|xphb"],
+      "effects": [
+        {
+          "kind": "damageBonus",
+          "scope": "melee",
+          "amount": 2
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["unarmored defense|barbarian"],
+      "effects": [
+        {
+          "kind": "acFormula",
+          "label": "Unarmored Defense",
+          "base": 10,
+          "addAbilities": ["dex", "con"]
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["unarmored defense|monk"],
+      "effects": [
+        {
+          "kind": "acFormula",
+          "label": "Unarmored Defense",
+          "base": 10,
+          "addAbilities": ["dex", "wis"]
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["fast movement|barbarian"],
+      "effects": [
+        {
+          "kind": "speedBonus",
+          "amount": 10,
+          "unless": "heavyArmor"
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["aura of protection|paladin"],
+      "effects": [
+        {
+          "kind": "saveBonus",
+          "amount": {
+            "f": "max(1, mod.cha)"
+          }
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["divine health|paladin"],
+      "effects": [
+        {
+          "kind": "conditionImmune",
+          "condition": "disease"
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["purity of body|monk"],
+      "effects": [
+        {
+          "kind": "immune",
+          "damageType": "poison"
+        },
+        {
+          "kind": "conditionImmune",
+          "condition": "poisoned"
+        },
+        {
+          "kind": "conditionImmune",
+          "condition": "disease"
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["diamond soul|monk"],
+      "effects": [
+        {
+          "kind": "saveProf",
+          "ability": "str"
+        },
+        {
+          "kind": "saveProf",
+          "ability": "dex"
+        },
+        {
+          "kind": "saveProf",
+          "ability": "con"
+        },
+        {
+          "kind": "saveProf",
+          "ability": "int"
+        },
+        {
+          "kind": "saveProf",
+          "ability": "wis"
+        },
+        {
+          "kind": "saveProf",
+          "ability": "cha"
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["disciplined survivor|monk"],
+      "effects": [
+        {
+          "kind": "saveProf",
+          "ability": "str"
+        },
+        {
+          "kind": "saveProf",
+          "ability": "dex"
+        },
+        {
+          "kind": "saveProf",
+          "ability": "con"
+        },
+        {
+          "kind": "saveProf",
+          "ability": "int"
+        },
+        {
+          "kind": "saveProf",
+          "ability": "wis"
+        },
+        {
+          "kind": "saveProf",
+          "ability": "cha"
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["body and mind|monk"],
+      "effects": [
+        {
+          "kind": "abilityBonus",
+          "ability": "dex",
+          "amount": 4,
+          "max": 25
+        },
+        {
+          "kind": "abilityBonus",
+          "ability": "wis",
+          "amount": 4,
+          "max": 25
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["improved divine smite|paladin"],
+      "effects": [
+        {
+          "kind": "damageDie",
+          "scope": "melee",
+          "dice": "1d8",
+          "damageType": "radiant",
+          "weaponsOnly": true
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["radiant strikes|paladin"],
+      "effects": [
+        {
+          "kind": "damageDie",
+          "scope": "melee",
+          "dice": "1d8",
+          "damageType": "radiant"
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["agonizing blast|phb"],
+      "effects": [
+        {
+          "kind": "spellDamageBonus",
+          "amount": {
+            "f": "mod.cha"
+          },
+          "spells": ["eldritch blast"]
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["advanced artifice|artificer"],
+      "effects": [
+        {
+          "kind": "resourceRegain",
+          "key": "flash-of-genius",
+          "amount": 1
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["dread incarnate|scion of the three"],
+      "effects": [
+        {
+          "kind": "resourceRegain",
+          "key": "bloodthirst",
+          "amount": 1
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["indomitable (two uses)|fighter"],
+      "effects": []
+    },
+    {
+      "part": "curated",
+      "keys": ["indomitable (three uses)|fighter"],
+      "effects": []
+    },
+    {
+      "part": "curated",
+      "keys": ["indomitable improvement|warrior sidekick"],
+      "effects": []
+    },
+    {
+      "part": "curated",
+      "keys": ["improved warding flare|light domain"],
+      "effects": []
+    },
+    {
+      "part": "curated",
+      "keys": ["greater portent|school of divination"],
+      "effects": []
+    },
+    {
+      "part": "curated",
+      "keys": ["greater portent|diviner"],
+      "effects": []
+    },
+    {
+      "part": "curated",
+      "keys": ["arcane recovery|wizard"],
+      "effects": [
+        {
+          "kind": "resource",
+          "key": "arcane-recovery",
+          "label": "Arcane Recovery",
+          "max": 1,
+          "reset": "long"
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["protector|cleric"],
+      "effects": [
+        {
+          "kind": "armorProf",
+          "name": "heavy"
+        },
+        {
+          "kind": "weaponProf",
+          "name": "martial"
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["warden|druid"],
+      "effects": [
+        {
+          "kind": "armorProf",
+          "name": "medium"
+        },
+        {
+          "kind": "weaponProf",
+          "name": "martial"
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["thaumaturge|cleric"],
+      "effects": [
+        {
+          "kind": "checkBonus",
+          "skills": ["Arcana", "Religion"],
+          "amount": {
+            "f": "max(1, mod.wis)"
+          }
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["magician|druid"],
+      "effects": [
+        {
+          "kind": "checkBonus",
+          "skills": ["Arcana", "Nature"],
+          "amount": {
+            "f": "max(1, mod.wis)"
+          }
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["death coil|death knight"],
+      "effects": [
+        {
+          "kind": "resource",
+          "key": "death-coil",
+          "label": "Death Coil (d8 pool)",
+          "max": {
+            "f": "1 + mod.cha"
+          },
+          "min": 1,
+          "reset": "long"
+        },
+        {
+          "kind": "action",
+          "economy": "bonus",
+          "label": "Death Coil",
+          "note": "necrotic, or hit points to an Undead · 60 feet",
+          "save": {
+            "targetAbility": "con"
+          }
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["totems|shaman"],
+      "effects": [
+        {
+          "kind": "action",
+          "economy": "bonus",
+          "label": "Totems"
+        },
+        {
+          "kind": "resource",
+          "key": "primal-knowledge-totem",
+          "label": "Primal Knowledge Totem",
+          "max": 1,
+          "reset": "long"
+        },
+        {
+          "kind": "action",
+          "economy": "bonus",
+          "label": "Primal Knowledge Totem"
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["rakish audacity|swashbuckler"],
+      "effects": [
+        {
+          "kind": "initiativeBonus",
+          "amount": {
+            "f": "max(0, mod.cha)"
+          }
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["tactical wit|war magic"],
+      "effects": [
+        {
+          "kind": "initiativeBonus",
+          "amount": {
+            "f": "max(0, mod.int)"
+          }
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["temporal awareness|chronurgy magic"],
+      "effects": [
+        {
+          "kind": "initiativeBonus",
+          "amount": {
+            "f": "max(0, mod.int)"
+          }
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["aura of the sentinel|oath of the watchers"],
+      "effects": [
+        {
+          "kind": "initiativeBonus",
+          "amount": {
+            "f": "prof"
+          }
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["elegant courtier|samurai"],
+      "effects": [
+        {
+          "kind": "checkBonus",
+          "skills": ["Persuasion"],
+          "amount": {
+            "f": "mod.wis"
+          }
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["survivalist|scout"],
+      "effects": [
+        {
+          "kind": "skillProf",
+          "skill": "Nature",
+          "level": 1
+        },
+        {
+          "kind": "skillProf",
+          "skill": "Nature",
+          "level": 2
+        },
+        {
+          "kind": "skillProf",
+          "skill": "Survival",
+          "level": 1
+        },
+        {
+          "kind": "skillProf",
+          "skill": "Survival",
+          "level": 2
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["bonus proficiencies|rune knight"],
+      "effects": [
+        {
+          "kind": "toolProf",
+          "name": "Smith's Tools"
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["bonus proficiencies|assassin"],
+      "effects": [
+        {
+          "kind": "toolProf",
+          "name": "Disguise Kit"
+        },
+        {
+          "kind": "toolProf",
+          "name": "Poisoner's Kit"
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["assassin's tools|assassin"],
+      "effects": [
+        {
+          "kind": "toolProf",
+          "name": "Disguise Kit"
+        },
+        {
+          "kind": "toolProf",
+          "name": "Poisoner's Kit"
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["hex warrior|the hexblade"],
+      "effects": [
+        {
+          "kind": "armorProf",
+          "name": "medium"
+        },
+        {
+          "kind": "armorProf",
+          "name": "shield"
+        },
+        {
+          "kind": "weaponProf",
+          "name": "martial"
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["bonus proficiencies|college of valor"],
+      "effects": [
+        {
+          "kind": "armorProf",
+          "name": "medium"
+        },
+        {
+          "kind": "armorProf",
+          "name": "shield"
+        },
+        {
+          "kind": "weaponProf",
+          "name": "martial"
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["martial training|college of valor"],
+      "effects": [
+        {
+          "kind": "armorProf",
+          "name": "medium"
+        },
+        {
+          "kind": "armorProf",
+          "name": "shield"
+        },
+        {
+          "kind": "weaponProf",
+          "name": "martial"
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["bonus proficiencies|college of swords"],
+      "effects": [
+        {
+          "kind": "armorProf",
+          "name": "medium"
+        },
+        {
+          "kind": "weaponProf",
+          "name": "scimitar"
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["channeler|college of spirits"],
+      "effects": [
+        {
+          "kind": "toolProf",
+          "name": "Playing Card Set"
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["bonus proficiency|life domain"],
+      "effects": [
+        {
+          "kind": "armorProf",
+          "name": "heavy"
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["bonus proficiency|nature domain"],
+      "effects": [
+        {
+          "kind": "armorProf",
+          "name": "heavy"
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["bonus proficiency|strength domain (psa)"],
+      "effects": [
+        {
+          "kind": "armorProf",
+          "name": "heavy"
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["bonus proficiency|solidarity domain (psa)"],
+      "effects": [
+        {
+          "kind": "armorProf",
+          "name": "heavy"
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["bonus proficiency|forge domain"],
+      "effects": [
+        {
+          "kind": "armorProf",
+          "name": "heavy"
+        },
+        {
+          "kind": "toolProf",
+          "name": "Smith's Tools"
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["bonus proficiencies|tempest domain"],
+      "effects": [
+        {
+          "kind": "armorProf",
+          "name": "heavy"
+        },
+        {
+          "kind": "weaponProf",
+          "name": "martial"
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["bonus proficiencies|war domain"],
+      "effects": [
+        {
+          "kind": "armorProf",
+          "name": "heavy"
+        },
+        {
+          "kind": "weaponProf",
+          "name": "martial"
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["bonus proficiencies|zeal domain (psa)"],
+      "effects": [
+        {
+          "kind": "armorProf",
+          "name": "heavy"
+        },
+        {
+          "kind": "weaponProf",
+          "name": "martial"
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["bonus proficiencies|twilight domain"],
+      "effects": [
+        {
+          "kind": "armorProf",
+          "name": "heavy"
+        },
+        {
+          "kind": "weaponProf",
+          "name": "martial"
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["bonus proficiency|death domain"],
+      "effects": [
+        {
+          "kind": "weaponProf",
+          "name": "martial"
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["battle ready|battle smith"],
+      "effects": [
+        {
+          "kind": "weaponProf",
+          "name": "martial"
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["armor training|order of the avatar"],
+      "effects": [
+        {
+          "kind": "armorProf",
+          "name": "medium"
+        },
+        {
+          "kind": "armorProf",
+          "name": "shield"
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["martial training|order of the soul knife"],
+      "effects": [
+        {
+          "kind": "armorProf",
+          "name": "medium"
+        },
+        {
+          "kind": "weaponProf",
+          "name": "martial"
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["arcane initiate|arcana domain"],
+      "effects": [
+        {
+          "kind": "skillProf",
+          "skill": "Arcana",
+          "level": 1
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["implements of mercy|way of mercy"],
+      "effects": [
+        {
+          "kind": "toolProf",
+          "name": "Herbalism Kit"
+        },
+        {
+          "kind": "skillProf",
+          "skill": "Insight",
+          "level": 1
+        },
+        {
+          "kind": "skillProf",
+          "skill": "Medicine",
+          "level": 1
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["implements of mercy|warrior of mercy"],
+      "effects": [
+        {
+          "kind": "toolProf",
+          "name": "Herbalism Kit"
+        },
+        {
+          "kind": "skillProf",
+          "skill": "Insight",
+          "level": 1
+        },
+        {
+          "kind": "skillProf",
+          "skill": "Medicine",
+          "level": 1
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["bonus proficiencies|way of the drunken master"],
+      "effects": [
+        {
+          "kind": "toolProf",
+          "name": "Brewer's Supplies"
+        },
+        {
+          "kind": "skillProf",
+          "skill": "Performance",
+          "level": 1
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["runic mastery|oath of the ebon blade"],
+      "effects": [
+        {
+          "kind": "resource",
+          "key": "runic-mastery",
+          "label": "Runic Mastery",
+          "max": 1,
+          "reset": "long"
+        },
+        {
+          "kind": "action",
+          "economy": "reaction",
+          "label": "Runic Mastery: Blood",
+          "note": "an ally hit within 10 feet takes less damage, and you lose as much",
+          "cost": {
+            "resource": "runic-mastery",
+            "amount": 1
+          }
+        },
+        {
+          "kind": "action",
+          "economy": "none",
+          "label": "Runic Mastery: Frost",
+          "roll": "8d6",
+          "note": "cold · 30-foot cone, in place of one attack",
+          "save": {
+            "targetAbility": "dex",
+            "dcAbility": "spell"
+          },
+          "cost": {
+            "resource": "runic-mastery",
+            "amount": 1
+          }
+        },
+        {
+          "kind": "action",
+          "economy": "none",
+          "label": "Runic Mastery: Unholy",
+          "note": "Summon Undead with no concentration",
+          "cost": {
+            "resource": "runic-mastery",
+            "amount": 1
+          }
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["trait:surprise attack"],
+      "effects": [
+        {
+          "kind": "action",
+          "economy": "action",
+          "label": "Surprise Attack (+2d6, first round)",
+          "roll": "2d6"
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["trait:kefnet's blessing"],
+      "effects": [
+        {
+          "kind": "halfProf",
+          "round": "down",
+          "abilities": ["int"]
+        }
+      ]
     }
   ]
 }

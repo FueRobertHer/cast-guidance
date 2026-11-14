@@ -6,8 +6,10 @@
  * and each class's feature list is cut down to what the tests reach.
  */
 
+import { RULE_SET_TYPE } from '@/engine/castGuidance';
 import type { CharacterDoc, DataEntity, EngineContext, EntityRef } from '@/engine/types';
 import { newCharacterDoc } from '@/engine/types';
+import { BUILT_IN_RULE_SETS } from './testWorld';
 
 const classRef = (classFeature: string) => ({ type: 'refClassFeature', classFeature });
 const subRef = (subclassFeature: string) => ({ type: 'refSubclassFeature', subclassFeature });
@@ -499,8 +501,9 @@ export function makePickOneContext(): EngineContext {
           (source === undefined || String(e.source).toLowerCase() === source.toLowerCase()),
       );
     },
+    // The shipped rule sets, as every registry holds them.
     byType(type) {
-      return WORLD[type] ?? [];
+      return type === RULE_SET_TYPE ? BUILT_IN_RULE_SETS : (WORLD[type] ?? []);
     },
   };
 }

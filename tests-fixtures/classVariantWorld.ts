@@ -8,8 +8,10 @@
  * feature" in, which is what the engine reads.
  */
 
+import { RULE_SET_TYPE } from '@/engine/castGuidance';
 import type { CharacterDoc, DataEntity, EngineContext, EntityRef } from '@/engine/types';
 import { newCharacterDoc } from '@/engine/types';
+import { BUILT_IN_RULE_SETS } from './testWorld';
 
 function classFeature(
   name: string,
@@ -240,8 +242,9 @@ export function makeClassVariantContext(): EngineContext {
           (source === undefined || String(e.source).toLowerCase() === source.toLowerCase()),
       );
     },
+    // The shipped rule sets, as every registry holds them.
     byType(type) {
-      return WORLD[type] ?? [];
+      return type === RULE_SET_TYPE ? BUILT_IN_RULE_SETS : (WORLD[type] ?? []);
     },
   };
 }
