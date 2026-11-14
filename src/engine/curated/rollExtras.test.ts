@@ -1,10 +1,17 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { makeTestContext } from '../../../tests-fixtures/testWorld';
+import { BUILT_IN_RULE_SETS, makeTestContext } from '../../../tests-fixtures/testWorld';
+import { RULE_SET_TYPE } from '../castGuidance';
 import { deriveSheet } from '../derive';
 import { Collector } from '../effects/base';
+import { builtInRuleIn } from '../effects/mechanics';
 import { rollEffects } from '../playRules';
-import { type EffectInput, type EffectOrigin, type EngineContext, newCharacterDoc } from '../types';
-import { ROLL_ADVANTAGES } from './rollAdvantages';
+import {
+  type DataEntity,
+  type EffectInput,
+  type EffectOrigin,
+  type EngineContext,
+  newCharacterDoc,
+} from '../types';
 import { emitRollExtras, ROLL_EXTRAS } from './rollExtras';
 
 const empty: EngineContext = { get: () => undefined, byType: () => [] };
@@ -16,8 +23,7 @@ function emit(keys: string[], level?: number) {
   return {
     found,
     rows: col.effects.filter(
-      (e): e is Extract<EffectInput, { kind: 'rollDie' | 'rollPaid' }> =>
-        e.kind === 'rollDie' || e.kind === 'rollPaid',
+      (e): e is Extract<EffectInput, { kind: 'rollPaid' }> => e.kind === 'rollPaid',
     ),
   };
 }
@@ -27,7 +33,7 @@ describe('the roll extras table', () => {
     for (const [key, rows] of Object.entries(ROLL_EXTRAS)) {
       expect(key).toBe(key.toLowerCase());
       for (const row of rows) {
-        if (row.free === true || row.reroll !== undefined || row.when === undefined) continue;
+        if (row.reroll !== undefined || row.when === undefined) continue;
         expect(row.when, key).toMatch(/^Only /);
         expect(row.when, key).not.toMatch(/[–—.]$/);
       }
@@ -37,7 +43,7 @@ describe('the roll extras table', () => {
   it('gives every paid row one thing to add, and a flat bonus only once the d20 shows', () => {
     for (const [key, rows] of Object.entries(ROLL_EXTRAS)) {
       for (const row of rows) {
-        if (row.free === true || row.reroll !== undefined) continue;
+        if (row.reroll !== undefined) continue;
         const adds = [row.dice, row.poolDie, row.bonus, row.advantage].filter(
           (x) => x !== undefined,
         );
@@ -51,30 +57,22 @@ describe('the roll extras table', () => {
     }
   });
 
-  it('never sells advantage that the advantage table already gives for the key', () => {
+  it('never sells advantage that a built-in advantage row already gives for the key', () => {
+    let held = 0;
     for (const [key, rows] of Object.entries(ROLL_EXTRAS)) {
-      const held = ROLL_ADVANTAGES[key];
-      if (held === undefined) continue;
+      if (builtInRuleIn(BUILT_IN_RULE_SETS, 'rollAdvantage', [key]) === undefined) continue;
+      held++;
       expect(
-        rows.some((r) => r.free !== true && r.reroll === undefined && r.advantage === true),
+        rows.some((r) => r.reroll === undefined && r.advantage === true),
         key,
       ).toBe(false);
     }
+    // Living Legend has both: an advantage to claim and a reroll.
+    expect(held).toBeGreaterThan(0);
   });
 
   it('adds nothing, and says so, for keys it has no row for', () => {
     expect(emit(['nothing|tst'])).toEqual({ found: false, rows: [] });
-  });
-
-  it('reads a free die as one that rolls in', () => {
-    expect(emit(["warder's intuition|erlw"]).rows).toEqual([
-      {
-        kind: 'rollDie',
-        dice: '1d4',
-        on: { rolls: ['check'], skills: ['Investigation'] },
-        origin,
-      },
-    ]);
   });
 
   it('reads a paid row with what it adds and its flags', () => {
@@ -296,7 +294,6 @@ describe('roll extras on a derived sheet', () => {
       },
     ],
     'grit|warrior|tst': [
-      { free: true as const, on: { rolls: ['check' as const] }, dice: '1d4' },
       {
         on: { rolls: ['save' as const] },
         reroll: { ifFailed: true, bonus: 'classLevel' as const },
@@ -320,11 +317,31 @@ describe('roll extras on a derived sheet', () => {
     for (const key of Object.keys(ADDED)) Reflect.deleteProperty(ROLL_EXTRAS, key);
   });
 
+  // A free die is a built-in row (`rollExtra`), beside the code table's paid ones.
+  const FREE: DataEntity = {
+    type: RULE_SET_TYPE,
+    v: 1,
+    name: 'Test free dice',
+    rows: [
+      {
+        part: 'rollExtra',
+        keys: ['plain lore|prosefolk|tst'],
+        effects: [{ kind: 'rollDie', dice: '1d4', on: { rolls: ['check'] } }],
+      },
+    ],
+  };
+  const world = makeTestContext();
+  const ruleSets = [...world.byType(RULE_SET_TYPE), FREE];
+  const ctx: EngineContext = {
+    get: (type, name, source) => world.get(type, name, source),
+    byType: (type) => (type === RULE_SET_TYPE ? ruleSets : world.byType(type)),
+  };
+
   const sheet = () => {
     const doc = newCharacterDoc('c', 'H', 't');
     doc.classes = [{ ref: { name: 'Warrior', source: 'TST' }, levels: 5, hp: [] }];
     doc.race = { name: 'Prosefolk', source: 'TST' };
-    return deriveSheet(doc, makeTestContext());
+    return deriveSheet(doc, ctx);
   };
 
   it('names a trait’s extra for the trait, and counts its bonus as the sheet stands', () => {
@@ -388,7 +405,7 @@ describe('roll extras on a derived sheet', () => {
 
   it('rolls a free die in, and leaves the paid ones to be priced', () => {
     const check = rollEffects(sheet(), { kind: 'check', ability: 'wis' });
-    expect(check.dice).toEqual([{ dice: '1d4', source: 'Grit' }]);
+    expect(check.dice).toEqual([{ dice: '1d4', source: 'Plain Lore' }]);
     expect(check.paid?.map((p) => p.source)).toEqual(['Test Surge', 'Inspiration']);
     expect(check.offers).toEqual([]);
   });

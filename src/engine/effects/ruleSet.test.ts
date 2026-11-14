@@ -13,6 +13,7 @@ import { Collector } from './base';
 import {
   builtInRowsFor,
   builtInRuleFor,
+  emitBuiltInRows,
   emitRuleRows,
   mechanicsOf,
   readRuleSet,
@@ -161,12 +162,7 @@ describe('readRuleSet', () => {
   describe('strictly, as the app’s own files', () => {
     // Each holds a field the reader does not read, or reads past.
     const unread = [
-      {
-        kind: 'rollAdvantage',
-        mode: 'adv',
-        on: { rolls: ['save'] },
-        when: 'against being frightened',
-      },
+      { kind: 'rollAdvantage', mode: 'adv', on: { rolls: ['check'], proficient: true } },
       { kind: 'action', economy: 'none', label: 'Shove', save: { targetAbility: 'str', dc: 12 } },
       { kind: 'acBonus', amount: 1, while: { effect: 'Rage', until: 'end' } },
       { kind: 'acBonus', amount: { f: 'prof', byLevel: { 1: 1 } } },
@@ -176,7 +172,7 @@ describe('readRuleSet', () => {
     it('says what a row holds that it does not read, and leaves that effect out', () => {
       const read = readRuleSet(ruleSet([row(['b'], [...unread, cue('Kept')])]));
       expect(read.problems).toEqual([
-        'row 1 (b): effect 1 (rollAdvantage): "when" is not a field this kind reads',
+        'row 1 (b): effect 1 (rollAdvantage): "on.proficient" is not a field this kind reads',
         'row 1 (b): effect 2 (action): "save.dc" is not a field this kind reads',
         'row 1 (b): effect 3 (acBonus): "while.until" is not a field a state reads',
         'row 1 (b): effect 4 (acBonus): "amount" is a formula or a level table, not both',
@@ -352,6 +348,88 @@ describe('standing rows', () => {
     const col = new Collector(character(), ctx);
     expect(builtInRuleFor(col, 'curated', ['lantern|hb'])).toBeUndefined();
     expect(builtInRowsFor(col, 'standing', ['lamp|hb'])).toBeUndefined();
+  });
+});
+
+describe('roll rows', () => {
+  const roll = (
+    part: 'rollAdvantage' | 'rollExtra',
+    keys: unknown[],
+    effects: unknown[],
+    level?: number,
+  ) => ({ part, keys, ...(level !== undefined ? { level } : {}), effects });
+  const adv = { kind: 'rollAdvantage', mode: 'adv', on: { rolls: ['save'] } };
+  const die = { kind: 'rollDie', dice: '1d4', on: { rolls: ['check'], skills: ['History'] } };
+
+  it('read beside the scan, at one feature level or at every one, with no scan', () => {
+    const read = readRuleSet(
+      ruleSet([
+        roll('rollAdvantage', ['Bear|Totem|PHB'], [adv], 6),
+        roll('rollExtra', ['gifted scribe|erlw'], [die]),
+        { ...roll('rollExtra', ['b'], [die]), scan: 'keep' },
+      ]),
+    );
+    expect(read.problems).toEqual(['row 3: "scan" is not a field a rollExtra row has']);
+    expect(read.rows.map((r) => [r.part, r.keys, r.scan, r.level])).toEqual([
+      ['rollAdvantage', ['bear|totem|phb'], 'keep', 6],
+      ['rollExtra', ['gifted scribe|erlw'], 'keep', undefined],
+    ]);
+  });
+
+  it('are found part by part, each part’s first key with rows winning', () => {
+    const ctx = withRules(
+      ruleSet([
+        roll('rollAdvantage', ['brave|kin|phb'], [adv]),
+        roll('rollExtra', ['brave|phb'], [die]),
+      ]),
+    );
+    const col = new Collector(character(), ctx);
+    const keys = ['brave|kin|phb', 'brave|phb'];
+    expect(emitBuiltInRows(col, 'rollAdvantage', keys, origin)).toBe(true);
+    expect(emitBuiltInRows(col, 'rollExtra', keys, origin)).toBe(true);
+    expect(emitBuiltInRows(col, 'standing', keys, origin)).toBe(false);
+    expect(col.effects.map((e) => e.kind)).toEqual(['rollAdvantage', 'rollDie']);
+    expect(col.effects.every((e) => e.origin === origin)).toBe(true);
+  });
+
+  it('count a level row only for the feature at that level, so never for a feat or trait', () => {
+    const ctx = withRules(ruleSet([roll('rollAdvantage', ['bear|totem|phb'], [adv], 6)]));
+    const at = (featureLevel?: number) => {
+      const col = new Collector(character(), ctx);
+      const found = emitBuiltInRows(col, 'rollAdvantage', ['bear|totem|phb'], origin, {
+        featureLevel,
+      });
+      return [found, col.effects.length];
+    };
+    expect(at(6)).toEqual([true, 1]);
+    expect(at(3)).toEqual([true, 0]);
+    expect(at()).toEqual([true, 0]);
+  });
+
+  it('read a formula at the character’s level where the call site passes no class level', () => {
+    const ctx = withRules(
+      ruleSet([
+        {
+          part: 'standing',
+          keys: ['x'],
+          effects: [{ kind: 'acBonus', amount: { f: 'classLevel' } }],
+        },
+      ]),
+    );
+    const col = new Collector(
+      character((d) => {
+        d.classes = [
+          { ref: { name: 'Fighter', source: 'PHB' }, levels: 3, hp: [] },
+          { ref: { name: 'Wizard', source: 'PHB' }, levels: 4, hp: [] },
+        ];
+      }),
+      ctx,
+    );
+    expect(emitBuiltInRows(col, 'standing', ['x'], origin)).toBe(true);
+    expect(col.effects[0]?.formulas?.[0]).toMatchObject({ classLevel: 7, builtIn: true });
+    const fighter = new Collector(character(), ctx);
+    emitBuiltInRows(fighter, 'standing', ['x'], origin, { classLevel: 2 });
+    expect(fighter.effects[0]?.formulas?.[0]).toMatchObject({ classLevel: 2 });
   });
 });
 

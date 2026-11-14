@@ -25,8 +25,8 @@
  * each later usable option of each feature pick (ids hold `| <pick> = <option>`),
  * since a build takes the first.
  *
- * `--coverage <file>` writes, for each code table (`CURATED`, `STANDING`, the
- * roll tables) and the built-in rows, the keys no build read: a move of one of
+ * `--coverage <file>` writes, for each code table (`CURATED`, `STANDING`,
+ * `ROLL_EXTRAS`) and the built-in rows, the keys no build read: a move of one of
  * those rows must be proved some other way. It wraps the tables in place to
  * count, so it changes no sheet.
  */
@@ -131,7 +131,6 @@ async function withRules(reg: EntityRegistry): Promise<string> {
 const TABLES: ReadonlyArray<readonly [string, string]> = [
   ['../src/engine/curated/curatedEffects.ts', 'CURATED'],
   ['../src/engine/curated/standingEffects.ts', 'STANDING'],
-  ['../src/engine/curated/rollAdvantages.ts', 'ROLL_ADVANTAGES'],
   ['../src/engine/curated/rollExtras.ts', 'ROLL_EXTRAS'],
 ];
 

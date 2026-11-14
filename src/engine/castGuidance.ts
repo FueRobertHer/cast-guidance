@@ -424,9 +424,12 @@ export const RULE_SET_TYPE = 'ruleSet';
  * The code table each row stands in for. `curated` is `CURATED`: a row there is
  * the entry's curated row, found under the keys that table uses. `standing` is
  * `STANDING`: defenses, senses and speeds a feature adds beside what its
- * prose scan or curated row reads.
+ * prose scan or curated row reads. `rollAdvantage` and `rollExtra` are what a
+ * feature adds to the character's own d20 tests (the advantage table that was
+ * `ROLL_ADVANTAGES`, and `ROLL_EXTRAS`), found under the roll keys, which name
+ * the book: `brave|phb`, `feral instinct|barbarian|phb`.
  */
-export const RULE_SET_PARTS = ['curated', 'standing'] as const;
+export const RULE_SET_PARTS = ['curated', 'standing', 'rollAdvantage', 'rollExtra'] as const;
 
 /** Whether a built-in row turns the prose scan off for its entry, or runs beside it. */
 export const RULE_SET_SCANS = ['replace', 'keep'] as const;
@@ -450,9 +453,9 @@ export interface StoredRuleRow {
   /** `curated` rows only. Absent: `replace`, as a curated row does. */
   scan?: (typeof RULE_SET_SCANS)[number];
   /**
-   * `standing` rows only: the row counts only for the feature gained at this
-   * level, which tells apart features of one name (Storm Herald's Desert at 3,
-   * 6 and 14). Absent: at every level.
+   * Every part but `curated`: the row counts only for the feature gained at
+   * this level, which tells apart features of one name (Storm Herald's Desert
+   * at 3, 6 and 14). Absent: at every level.
    */
   level?: number;
   effects: StoredEffect[];

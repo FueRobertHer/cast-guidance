@@ -1,12 +1,11 @@
 import { emitCuratedEffects, hasCuratedRow } from '../curated/curatedEffects';
-import { emitRollAdvantages } from '../curated/rollAdvantages';
-import { emitRollExtras } from '../curated/rollExtras';
+import { emitRollExtras, hasRollExtraRow } from '../curated/rollExtras';
 import { linkSpend } from '../curated/spendLinks';
 import { type DataEntity, type EffectOrigin, refUid, SKILLS } from '../types';
 import { collectAdditionalSpells } from './additionalSpells';
 import { asEntityArray, type Collector, num, str } from './base';
 import { isRepeatableFeat, readFeatOptionalFeatures, readProsePick } from './featPicks';
-import { entryKeys, mechanicsOf, officialOf } from './mechanics';
+import { emitBuiltInRows, entryKeys, mechanicsOf, officialOf } from './mechanics';
 import { proseScanFeature } from './proseScan';
 import {
   expertiseOptions,
@@ -187,8 +186,10 @@ export function collectFeatEntity(
               emitCuratedEffects(col, key, origin, key === uid ? undefined : printed),
             );
       if (!curated) proseScanFeature(col, origin.label, e.entries, origin);
-      emitRollAdvantages(col, uids, origin);
-      emitRollExtras(col, uids, origin);
+      emitBuiltInRows(col, 'rollAdvantage', uids, origin);
+      if (!emitBuiltInRows(col, 'rollExtra', uids, origin, { inCode: hasRollExtraRow })) {
+        emitRollExtras(col, uids, origin);
+      }
       uids.some((key) => linkSpend(col, key, origin.label, origin));
     },
   });

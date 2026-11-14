@@ -16,6 +16,8 @@ import type { EntityRegistry } from './normalize';
 const FILES: ReadonlyArray<() => Promise<{ default: unknown }>> = [
   () => import('../rules/cast-guidance/curated.json'),
   () => import('../rules/cast-guidance/standing.json'),
+  () => import('../rules/cast-guidance/roll-advantages.json'),
+  () => import('../rules/cast-guidance/roll-extras.json'),
 ];
 
 export interface BuiltInRules {

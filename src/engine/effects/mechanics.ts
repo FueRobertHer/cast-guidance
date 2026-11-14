@@ -259,7 +259,7 @@ const record =
     return out;
   };
 
-const rollFilter = record({
+const rollFilterFields = record({
   rolls: [list(oneOf('attack', 'save', 'check'), 3), true],
   abilities: [list(ability, 6)],
   skills: [list(skill, 18)],
@@ -267,7 +267,45 @@ const rollFilter = record({
   attack: [oneOf('weapon', 'spell')],
   range: [oneOf('melee', 'ranged')],
   className: [text()],
+  initiative: [flag],
+  save: [oneOf('death', 'concentration')],
 });
+
+/**
+ * A roll filter. One for initiative or a kind of save names that kind of roll
+ * too, and narrows it only as that roll can be narrowed (`filterReaches`):
+ * initiative is a Dexterity check with no skill, a death save has no ability,
+ * and a concentration save is a Constitution save.
+ */
+const rollFilter: Field = (v, r, k) => {
+  const f = rollFilterFields(v, r, k) as {
+    rolls: string[];
+    abilities?: string[];
+    skills?: string[];
+    skilled?: true;
+    initiative?: true;
+    save?: string;
+  };
+  if (f.initiative === true) {
+    if (!f.rolls.includes('check')) throw new Bad('"initiative" is a check: "rolls" lists "check"');
+    if (f.skills !== undefined || f.skilled === true) {
+      throw new Bad('"initiative" uses no skill: leave out "skills" and "skilled"');
+    }
+    if (f.abilities !== undefined && !f.abilities.includes('dex')) {
+      throw new Bad('"initiative" is a Dexterity check: "abilities" lists "dex"');
+    }
+  }
+  if (f.save !== undefined) {
+    if (!f.rolls.includes('save')) throw new Bad('"save" is a kind of save: "rolls" lists "save"');
+    if (f.save === 'death' && f.abilities !== undefined) {
+      throw new Bad('"abilities" reach no death save, which uses no ability: leave them out');
+    }
+    if (f.save === 'concentration' && f.abilities !== undefined && !f.abilities.includes('con')) {
+      throw new Bad('"abilities" reach no concentration save without "con", a Constitution save');
+    }
+  }
+  return f;
+};
 
 const scope = (o: Record<string, unknown>, r: Reading) =>
   own(o, 'scope') === undefined
@@ -474,7 +512,15 @@ const KINDS = new Map<Kind, Build>([
   ],
   [
     'rollAdvantage',
-    (o, r) => ({ mode: req(o, r, 'mode', oneOf('adv', 'dis')), on: req(o, r, 'on', rollFilter) }),
+    (o, r) => {
+      const mode = req(o, r, 'mode', oneOf('adv', 'dis'));
+      const when = opt(o, r, 'when', text(L.textLength));
+      // The roll prompt offers only advantage to claim (`rollEffects`).
+      if (mode === 'dis' && when.when !== undefined) {
+        throw new Bad('"when" goes with "mode": "adv" alone');
+      }
+      return { mode, on: req(o, r, 'on', rollFilter), ...when };
+    },
   ],
   ['tempHpEachTurn', amountOnly],
   [
@@ -845,9 +891,9 @@ export interface RuleRow {
   part: RulePart;
   /** Lowercased, as the part's code table keys its rows. */
   keys: readonly string[];
-  /** A `standing` row always runs beside the scan: `keep`. */
+  /** Only a `curated` row may turn the scan off; every other part's runs beside it: `keep`. */
   scan: RuleScan;
-  /** `standing` rows: the feature level it counts at alone. */
+  /** Every part but `curated`: the feature level it counts at alone. */
   level?: number;
   effects: readonly EffectTemplate[];
 }
@@ -881,9 +927,12 @@ const isOneOf = <T extends string>(values: readonly T[], v: unknown): v is T =>
  * fail on, so a row written for a field not built yet is never read without it.
  */
 const SET_FIELDS: ReadonlySet<string> = new Set(['type', 'v', 'name', 'edition', 'rows']);
+const LEVEL_ROW: ReadonlySet<string> = new Set(['part', 'keys', 'level', 'effects']);
 const ROW_FIELDS: Record<RulePart, ReadonlySet<string>> = {
   curated: new Set(['part', 'keys', 'scan', 'effects']),
-  standing: new Set(['part', 'keys', 'level', 'effects']),
+  standing: LEVEL_ROW,
+  rollAdvantage: LEVEL_ROW,
+  rollExtra: LEVEL_ROW,
 };
 
 const isFeatureLevel = (v: unknown): v is number =>
@@ -936,8 +985,8 @@ function readRuleSetOnce(raw: Record<string, unknown>): ReadRuleSet {
       read.problems.push(`${where}: "${clip(extra)}" is not a field a ${part} row has`);
       return;
     }
-    // A standing row has no `scan` field: it always runs beside the scan.
-    const scan = part === 'standing' ? 'keep' : (own(row, 'scan') ?? 'replace');
+    // Only a curated row has a `scan` field: every other part's always runs beside the scan.
+    const scan = part === 'curated' ? (own(row, 'scan') ?? 'replace') : 'keep';
     if (!isOneOf(RULE_SET_SCANS, scan)) {
       read.problems.push(`${where}: "scan" is "replace" or "keep"`);
       return;
@@ -1086,23 +1135,53 @@ export function builtInRowsFor(
 }
 
 /**
- * Emit built-in rows where the code table they stand in for runs (`STANDING`):
- * each row with no level, or at `featureLevel`, with `origin` itself.
- * `classLevel` is what their formulas read as the class's level.
+ * Emit built-in rows where the code table they stand in for runs (`STANDING`,
+ * the roll tables): each row with no level, or at `featureLevel`, with `origin`
+ * itself. `classLevel` is what their formulas read as the class's level; the
+ * character's level when absent, as `mechanicsOf` reads it.
  */
 export function emitRuleRows(
   col: Collector,
   rows: readonly RuleRow[],
   origin: EffectOrigin,
-  featureLevel: number,
-  classLevel: number,
+  featureLevel?: number,
+  classLevel?: number,
 ): void {
   for (const row of rows) {
     if (row.level === undefined || row.level === featureLevel) {
-      emit(col, row.effects, origin, classLevel, true);
+      emit(col, row.effects, origin, classLevel ?? characterLevel(col), true);
     }
   }
 }
+
+/** Where a call site emits a part's built-in rows: the levels and the code table it still reads. */
+export interface RuleRowsAt {
+  featureLevel?: number;
+  classLevel?: number;
+  /** The keys the part's code table still has a row under (`builtInRowsFor`). */
+  inCode?: (key: string) => boolean;
+}
+
+/**
+ * Emit the built-in rows of `part` under the first of `keys` with any
+ * (`builtInRowsFor`), as `emitRuleRows` does. Says whether a key had rows, so
+ * the call site reads the code table only when none did.
+ */
+export function emitBuiltInRows(
+  col: Collector,
+  part: RulePart,
+  keys: readonly string[],
+  origin: EffectOrigin,
+  at: RuleRowsAt = {},
+): boolean {
+  const rows = builtInRowsFor(col, part, keys, at.inCode);
+  if (rows === undefined) return false;
+  emitRuleRows(col, rows, origin, at.featureLevel, at.classLevel);
+  return true;
+}
+
+const characterLevel = (col: Collector): number =>
+  col.doc.classes.reduce((sum, c) => sum + c.levels, 0);
 
 function firstRows(
   index: RuleIndex,
@@ -1215,7 +1294,7 @@ export function mechanicsOf(col: Collector, s: MechanicsSubject): void {
   const mine = raw === undefined ? undefined : readMechanics(raw);
   for (const problem of mine?.problems ?? []) col.warn(`${s.label}: ${problem}`);
   const patches = patchesFor(col).get(s.target.toLowerCase());
-  const level = s.classLevel ?? col.doc.classes.reduce((sum, c) => sum + c.levels, 0);
+  const level = s.classLevel ?? characterLevel(col);
 
   if (patches?.replace !== undefined) {
     emit(col, patches.replace.effects, { ...s.origin, pack: patches.replace.pack }, level);

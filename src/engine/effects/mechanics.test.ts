@@ -273,6 +273,96 @@ describe('readMechanics', () => {
     ]);
   });
 
+  it('reads when an advantage holds, and initiative and death or concentration saves alone', () => {
+    const read = readMechanics({
+      v: 1,
+      effects: [
+        {
+          kind: 'rollAdvantage',
+          mode: 'adv',
+          on: { rolls: ['save'] },
+          when: ' Only against being Frightened ',
+        },
+        { kind: 'rollAdvantage', mode: 'adv', on: { rolls: ['check'], initiative: true } },
+        { kind: 'rollAdvantage', mode: 'adv', on: { rolls: ['save'], save: 'death' } },
+        {
+          kind: 'rollDie',
+          dice: '1d4',
+          on: { rolls: ['save'], abilities: ['con'], save: 'concentration' },
+        },
+        { kind: 'rollAdvantage', mode: 'adv', on: { rolls: ['check'], initiative: false } },
+        { kind: 'rollAdvantage', mode: 'dis', on: { rolls: ['save'] }, when: 'Only at night' },
+        { kind: 'rollAdvantage', mode: 'adv', on: { rolls: ['save'] }, when: '' },
+        { kind: 'rollAdvantage', mode: 'adv', on: { rolls: ['attack'], initiative: true } },
+        { kind: 'rollAdvantage', mode: 'adv', on: { rolls: ['check'], save: 'death' } },
+        { kind: 'rollAdvantage', mode: 'adv', on: { rolls: ['save'], save: 'charm' } },
+        {
+          kind: 'rollAdvantage',
+          mode: 'adv',
+          on: { rolls: ['check'], skills: ['Perception'], initiative: true },
+        },
+        {
+          kind: 'rollAdvantage',
+          mode: 'adv',
+          on: { rolls: ['check'], skilled: true, initiative: true },
+        },
+        {
+          kind: 'rollAdvantage',
+          mode: 'adv',
+          on: { rolls: ['check'], abilities: ['wis'], initiative: true },
+        },
+        {
+          kind: 'rollAdvantage',
+          mode: 'adv',
+          on: { rolls: ['save'], abilities: ['con'], save: 'death' },
+        },
+        {
+          kind: 'rollAdvantage',
+          mode: 'adv',
+          on: { rolls: ['save'], abilities: ['wis'], save: 'concentration' },
+        },
+        {
+          kind: 'rollAdvantage',
+          mode: 'adv',
+          on: { rolls: ['check'], abilities: ['dex', 'wis'], initiative: true },
+        },
+      ],
+    });
+    expect(read.effects.map((t) => t.effect)).toEqual([
+      {
+        kind: 'rollAdvantage',
+        mode: 'adv',
+        on: { rolls: ['save'] },
+        when: 'Only against being Frightened',
+      },
+      { kind: 'rollAdvantage', mode: 'adv', on: { rolls: ['check'], initiative: true } },
+      { kind: 'rollAdvantage', mode: 'adv', on: { rolls: ['save'], save: 'death' } },
+      {
+        kind: 'rollDie',
+        dice: '1d4',
+        on: { rolls: ['save'], abilities: ['con'], save: 'concentration' },
+      },
+      { kind: 'rollAdvantage', mode: 'adv', on: { rolls: ['check'] } },
+      {
+        kind: 'rollAdvantage',
+        mode: 'adv',
+        on: { rolls: ['check'], abilities: ['dex', 'wis'], initiative: true },
+      },
+    ]);
+    expect(read.problems).toEqual([
+      'effect 6 (rollAdvantage): "when" goes with "mode": "adv" alone',
+      'effect 7 (rollAdvantage): "when" needs words',
+      'effect 8 (rollAdvantage): "on.initiative" is a check: "rolls" lists "check"',
+      'effect 9 (rollAdvantage): "on.save" is a kind of save: "rolls" lists "save"',
+      'effect 10 (rollAdvantage): "on.save" is one of death, concentration',
+      'effect 11 (rollAdvantage): "on.initiative" uses no skill: leave out "skills" and "skilled"',
+      'effect 12 (rollAdvantage): "on.initiative" uses no skill: leave out "skills" and "skilled"',
+      'effect 13 (rollAdvantage): "on.initiative" is a Dexterity check: "abilities" lists "dex"',
+      'effect 14 (rollAdvantage): "on.abilities" reach no death save, which uses no ability: leave them out',
+      'effect 15 (rollAdvantage): "on.abilities" reach no concentration save without "con", a Constitution save',
+    ]);
+  });
+
   it('reads drops, replace and basedOn', () => {
     const read = readMechanics({
       v: 1,
