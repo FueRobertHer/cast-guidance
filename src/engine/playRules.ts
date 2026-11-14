@@ -128,7 +128,13 @@ export function filterReaches(on: RollFilter, test: D20Test): boolean {
     if (skill === undefined) return false;
     if (on.skills !== undefined && !on.skills.some((s) => same(s, skill))) return false;
   }
-  if (on.proficient === true && (test.kind !== 'check' || test.proficient !== true)) return false;
+  if (
+    on.proficient === true &&
+    kind === 'check' &&
+    (test.kind !== 'check' || test.proficient !== true)
+  ) {
+    return false;
+  }
   if (test.kind === 'attack') {
     if (on.attack !== undefined && test.attack !== on.attack) return false;
     if (on.range !== undefined && test.range !== on.range) return false;

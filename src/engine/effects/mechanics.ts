@@ -267,6 +267,7 @@ const rollFilterFields = record({
   attack: [oneOf('weapon', 'spell')],
   range: [oneOf('melee', 'ranged')],
   className: [text()],
+  proficient: [flag],
   initiative: [flag],
   save: [oneOf('death', 'concentration')],
 });
@@ -275,7 +276,9 @@ const rollFilterFields = record({
  * A roll filter. One for initiative or a kind of save names that kind of roll
  * too, and narrows it only as that roll can be narrowed (`filterReaches`):
  * initiative is a Dexterity check with no skill, a death save has no ability,
- * and a concentration save is a Constitution save.
+ * and a concentration save is a Constitution save. Either reaches no other
+ * roll, so its "rolls" names that kind alone. A proficient skill, like skills,
+ * narrows checks alone, so it needs one.
  */
 const rollFilter: Field = (v, r, k) => {
   const f = rollFilterFields(v, r, k) as {
@@ -283,20 +286,28 @@ const rollFilter: Field = (v, r, k) => {
     abilities?: string[];
     skills?: string[];
     skilled?: true;
+    proficient?: true;
     initiative?: true;
     save?: string;
   };
   if (f.initiative === true) {
-    if (!f.rolls.includes('check')) throw new Bad('"initiative" is a check: "rolls" lists "check"');
-    if (f.skills !== undefined || f.skilled === true) {
-      throw new Bad('"initiative" uses no skill: leave out "skills" and "skilled"');
+    if (f.rolls.length !== 1 || f.rolls[0] !== 'check') {
+      throw new Bad('"initiative" is a check: "rolls" lists "check" alone');
+    }
+    if (f.skills !== undefined || f.skilled === true || f.proficient === true) {
+      throw new Bad('"initiative" uses no skill: leave out "skills", "skilled" and "proficient"');
     }
     if (f.abilities !== undefined && !f.abilities.includes('dex')) {
       throw new Bad('"initiative" is a Dexterity check: "abilities" lists "dex"');
     }
   }
+  if (f.proficient === true && !f.rolls.includes('check')) {
+    throw new Bad('"proficient" narrows checks: "rolls" lists "check"');
+  }
   if (f.save !== undefined) {
-    if (!f.rolls.includes('save')) throw new Bad('"save" is a kind of save: "rolls" lists "save"');
+    if (f.rolls.length !== 1 || f.rolls[0] !== 'save') {
+      throw new Bad('"save" is a kind of save: "rolls" lists "save" alone');
+    }
     if (f.save === 'death' && f.abilities !== undefined) {
       throw new Bad('"abilities" reach no death save, which uses no ability: leave them out');
     }

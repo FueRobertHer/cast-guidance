@@ -90,6 +90,15 @@ describe('filterReaches', () => {
     ).toBe(false);
     // A filter that does not say proficient reaches a check with or without it.
     expect(filterReaches({ rolls: ['check'] }, { kind: 'check', skill: 'Stealth' })).toBe(true);
+    // Like skills, it narrows checks alone: the filter's other rolls stay whole.
+    const testsToo = {
+      rolls: ['attack' as const, 'save' as const, 'check' as const],
+      proficient: true,
+    };
+    expect(filterReaches(testsToo, { kind: 'attack' })).toBe(true);
+    expect(filterReaches(testsToo, { kind: 'save', ability: 'wis' })).toBe(true);
+    expect(filterReaches(testsToo, { kind: 'check', skill: 'Stealth' })).toBe(false);
+    expect(filterReaches(testsToo, { kind: 'initiative' })).toBe(false);
   });
 
   it('reaches initiative alone, and no other Dexterity check, when it names initiative', () => {

@@ -162,7 +162,7 @@ describe('readRuleSet', () => {
   describe('strictly, as the app’s own files', () => {
     // Each holds a field the reader does not read, or reads past.
     const unread = [
-      { kind: 'rollAdvantage', mode: 'adv', on: { rolls: ['check'], proficient: true } },
+      { kind: 'rollAdvantage', mode: 'adv', on: { rolls: ['check'], tools: ['Fishing Tackle'] } },
       { kind: 'action', economy: 'none', label: 'Shove', save: { targetAbility: 'str', dc: 12 } },
       { kind: 'acBonus', amount: 1, while: { effect: 'Rage', until: 'end' } },
       { kind: 'acBonus', amount: { f: 'prof', byLevel: { 1: 1 } } },
@@ -172,7 +172,7 @@ describe('readRuleSet', () => {
     it('says what a row holds that it does not read, and leaves that effect out', () => {
       const read = readRuleSet(ruleSet([row(['b'], [...unread, cue('Kept')])]));
       expect(read.problems).toEqual([
-        'row 1 (b): effect 1 (rollAdvantage): "on.proficient" is not a field this kind reads',
+        'row 1 (b): effect 1 (rollAdvantage): "on.tools" is not a field this kind reads',
         'row 1 (b): effect 2 (action): "save.dc" is not a field this kind reads',
         'row 1 (b): effect 3 (acBonus): "while.until" is not a field a state reads',
         'row 1 (b): effect 4 (acBonus): "amount" is a formula or a level table, not both',

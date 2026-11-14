@@ -9,7 +9,8 @@ import { CircleAlert, Plus, X } from 'lucide-react';
 import { useId, useState } from 'react';
 import { isRecord, type StoredEffect, type StoredState } from '@/engine/castGuidance';
 import { readStoredEffects } from '@/engine/effects/mechanics';
-import { SKILLS } from '@/engine/types';
+import { type RollFilter, SKILLS } from '@/engine/types';
+import { rollsWords } from '@/features/sheet/effectsInPlay';
 import { signed } from '@/lib/signed';
 import { Chip } from '@/ui/Chip';
 import { askChoice } from '@/ui/dialogs';
@@ -52,11 +53,21 @@ const CONDITION: Options = [
   'Stunned',
   'Unconscious',
 ].map((c) => [c, c] as const);
-const ROLLS: Options = [
-  ['attack', 'attack rolls'],
-  ['save', 'saving throws'],
-  ['check', 'ability checks'],
+/**
+ * The rolls an Advantage or Added die card can name, each one stored filter,
+ * worded as the sheet words it (`rollsWords`).
+ */
+const ROLL_KINDS: ReadonlyArray<readonly [string, RollFilter]> = [
+  ['attack', { rolls: ['attack'] }],
+  ['save', { rolls: ['save'] }],
+  ['death', { rolls: ['save'], save: 'death' }],
+  ['concentration', { rolls: ['save'], save: 'concentration' }],
+  ['check', { rolls: ['check'] }],
+  ['proficient', { rolls: ['check'], proficient: true }],
+  ['initiative', { rolls: ['check'], initiative: true }],
 ];
+/** The kinds an ability narrows: a death save has none, and the others name theirs. */
+const TAKES_ABILITY = new Set(['attack', 'save', 'check', 'proficient']);
 const SCOPE: Options = [
   ['all', 'All'],
   ['melee', 'Melee'],
@@ -95,7 +106,48 @@ interface KindSpec {
 }
 
 const amountField: FieldSpec = { key: 'amount', label: 'Amount', type: 'amount' };
-const on = (e: Eff) => (e.on as { rolls?: string[] } | undefined)?.rolls?.[0];
+
+/**
+ * An effect's roll filter as the reader reads it, so a stored one it refuses
+ * (abilities as a word, a roll it does not know) is worded as no filter, not
+ * thrown or misread; the card's problem line says what is wrong.
+ */
+function filterOf(e: Eff): RollFilter | undefined {
+  const read = readStoredEffects([{ kind: 'rollAdvantage', mode: 'adv', on: e.on }]).effects[0];
+  return read?.effect.on as RollFilter | undefined;
+}
+
+const rollWords = (e: Eff) => {
+  const on = filterOf(e);
+  return on !== undefined ? rollsWords(on) : 'rolls';
+};
+
+/**
+ * Which of `ROLL_KINDS` a filter is, with any abilities beside it where the
+ * kind takes one; undefined for one the card cannot show (skills, a range, two
+ * kinds of roll), which it keeps as written until the player picks a kind.
+ */
+export function rollKindOf(on: unknown): string | undefined {
+  if (!isRecord(on)) return undefined;
+  const { abilities, ...rest } = on;
+  const same = (f: RollFilter) => {
+    const keys = Object.keys(rest);
+    return (
+      keys.length === Object.keys(f).length &&
+      keys.every((k) => JSON.stringify(rest[k]) === JSON.stringify(f[k as keyof RollFilter]))
+    );
+  };
+  const kind = ROLL_KINDS.find(([, f]) => same(f))?.[0];
+  if (kind === undefined) return undefined;
+  if (abilities === undefined) return kind;
+  const known = (a: unknown) => ABILITY.some(([v]) => v === a);
+  return TAKES_ABILITY.has(kind) &&
+    Array.isArray(abilities) &&
+    abilities.length > 0 &&
+    abilities.every(known)
+    ? kind
+    : undefined;
+}
 
 const KINDS: readonly KindSpec[] = [
   {
@@ -272,19 +324,18 @@ const KINDS: readonly KindSpec[] = [
           ['dis', 'Disadvantage'],
         ],
       },
-      { key: 'on', label: 'On', type: 'pick', options: ROLLS },
     ],
-    line: (e) => `${e.mode === 'dis' ? 'Disadvantage' : 'Advantage'} on ${word(ROLLS, on(e))}`,
+    line: (e) =>
+      `${e.mode === 'dis' ? 'Disadvantage' : 'Advantage'} on ${rollWords(e)}${
+        typeof e.when === 'string' && e.when.trim() !== '' ? `. ${e.when.trim()}` : ''
+      }`,
   },
   {
     kinds: ['rollDie'],
     add: 'Added die',
     make: () => ({ kind: 'rollDie', dice: '1d4', on: { rolls: ['attack'] } }),
-    fields: [
-      { key: 'dice', label: 'Dice', type: 'dice' },
-      { key: 'on', label: 'On', type: 'pick', options: ROLLS },
-    ],
-    line: (e) => `+${String(e.dice)} to ${word(ROLLS, on(e))}`,
+    fields: [{ key: 'dice', label: 'Dice', type: 'dice' }],
+    line: (e) => `+${String(e.dice)} to ${rollWords(e)}`,
   },
   {
     kinds: ['attackBonus'],
@@ -527,6 +578,110 @@ function GrantFields({
   );
 }
 
+/**
+ * A roll card's own controls: which rolls, narrowed to an ability where that
+ * kind takes one, and for an advantage, when it holds if the app cannot see it
+ * (the roll prompt then offers it to claim).
+ */
+function RollFields({
+  effect,
+  title,
+  onChange,
+}: {
+  effect: Eff;
+  title: string;
+  onChange: (next: Eff) => void;
+}) {
+  const on = isRecord(effect.on) ? effect.on : {};
+  const kind = rollKindOf(on);
+  const abilities = Array.isArray(on.abilities) ? on.abilities.map(String) : [];
+  const several = abilities.map((a) => word(ABILITY, a)).join(' or ');
+  const setKind = (k: string) => {
+    const base = ROLL_KINDS.find(([v]) => v === k)?.[1];
+    if (base === undefined) return;
+    const kept = TAKES_ABILITY.has(k) && abilities.length > 0 ? { abilities } : {};
+    const { when: _, ...rest } = effect;
+    onChange({ ...(claims(base) ? effect : rest), on: { ...base, ...kept } });
+  };
+  const setAbility = (a: string) => {
+    const { abilities: _, ...rest } = on;
+    onChange({ ...effect, on: a === '' ? rest : { ...rest, abilities: [a] } });
+  };
+  return (
+    <>
+      <Field label="On">
+        <Select
+          aria-label={`${title}: On`}
+          value={kind ?? ''}
+          onChange={(e) => setKind(e.target.value)}
+        >
+          {kind === undefined && <option value="">{rollWords(effect)}, as written</option>}
+          {ROLL_KINDS.map(([v, f]) => (
+            <option key={v} value={v}>
+              {rollsWords(f)}
+            </option>
+          ))}
+        </Select>
+      </Field>
+      {kind !== undefined && TAKES_ABILITY.has(kind) && (
+        <Field label="Ability">
+          <Select
+            aria-label={`${title}: Ability`}
+            value={abilities.length > 1 ? 'several' : (abilities[0] ?? '')}
+            onChange={(e) => {
+              if (e.target.value !== 'several') setAbility(e.target.value);
+            }}
+          >
+            <option value="">Any ability</option>
+            {abilities.length > 1 && <option value="several">{several}</option>}
+            {ABILITY.map(([v, text]) => (
+              <option key={v} value={v}>
+                {text}
+              </option>
+            ))}
+          </Select>
+        </Field>
+      )}
+    </>
+  );
+}
+
+/**
+ * Whether an advantage on this kind of roll can wait for the player to claim
+ * it: the roll prompt offers it, but a concentration save rolls at once, with
+ * no prompt to offer it in.
+ */
+const claims = (on: unknown) => !(isRecord(on) && on.save === 'concentration');
+
+/** An advantage's `when`: it holds only then, and the roll prompt offers it to claim. */
+function ClaimField({
+  effect,
+  title,
+  onChange,
+}: {
+  effect: Eff;
+  title: string;
+  onChange: (next: Eff) => void;
+}) {
+  if (effect.mode === 'dis' || !claims(effect.on)) return null;
+  return (
+    <div className="col-span-2">
+      <Field label="Only when">
+        <input
+          aria-label={`${title}: Only when`}
+          value={typeof effect.when === 'string' ? effect.when : ''}
+          placeholder="Only against being Frightened"
+          onChange={(e) => {
+            const { when: _, ...rest } = effect;
+            onChange(e.target.value.trim() === '' ? rest : { ...rest, when: e.target.value });
+          }}
+          className={fieldClass}
+        />
+      </Field>
+    </div>
+  );
+}
+
 /** A resource's key, from the name a player gives it. */
 const keyOf = (label: string) =>
   label
@@ -536,7 +691,7 @@ const keyOf = (label: string) =>
 
 /** A field's value as its box shows it. */
 function shown(e: Eff, f: FieldSpec): string {
-  const v = f.key === 'on' ? on(e) : e[f.key];
+  const v = e[f.key];
   if (v === undefined) return '';
   if (typeof v === 'object' && v !== null && 'f' in v) return String(v.f);
   if (typeof v === 'object') return JSON.stringify(v);
@@ -578,9 +733,12 @@ function Card({
   const state = typeof effect.while === 'string' ? effect.while : '';
   const set = (f: FieldSpec, text: string) => {
     const v = stored(f, text);
-    if (f.key === 'on') onChange({ ...effect, on: { rolls: [v] } });
-    else if (f.key === 'kind') onChange({ ...effect, kind: String(v) });
-    else if (effect.kind === 'resource' && f.key === 'label') {
+    if (f.key === 'kind') onChange({ ...effect, kind: String(v) });
+    else if (effect.kind === 'rollAdvantage' && f.key === 'mode' && v === 'dis') {
+      // The roll prompt offers only advantage to claim, so a disadvantage holds always.
+      const { when: _, ...rest } = effect;
+      onChange({ ...rest, mode: v });
+    } else if (effect.kind === 'resource' && f.key === 'label') {
       // The key follows the name, and an action spending it follows the key.
       const key = keyOf(text);
       onChange({ ...effect, label: v, key }, [String(effect.key), key]);
@@ -628,6 +786,9 @@ function Card({
               )}
             </Field>
           ))}
+          {(effect.kind === 'rollAdvantage' || effect.kind === 'rollDie') && (
+            <RollFields effect={effect} title={title} onChange={onChange} />
+          )}
           {effect.kind === 'grantSpell' && (
             <GrantFields
               effect={effect}
@@ -682,6 +843,9 @@ function Card({
                 )}
               </Select>
             </Field>
+          )}
+          {effect.kind === 'rollAdvantage' && (
+            <ClaimField effect={effect} title={title} onChange={onChange} />
           )}
         </div>
       )}

@@ -124,6 +124,26 @@ describe('roll advantages on a derived sheet', () => {
     { name: 'War Caster', source: 'PHB', entries: ['Placeholder text.'] },
     { name: 'Durable', source: 'XPHB', entries: ['Placeholder text.'] },
     { name: 'Purple Dragon Commandant', source: 'FRHoF', entries: ['Placeholder text.'] },
+    // A homebrew feat as the Workshop's Advantage and Added die cards write one.
+    {
+      name: 'Steady Nerves',
+      source: 'MyHomebrew',
+      entries: ['Placeholder text.'],
+      castGuidance: {
+        v: 1,
+        effects: [
+          {
+            kind: 'rollAdvantage',
+            mode: 'adv',
+            on: { rolls: ['save'], abilities: ['wis'] },
+            when: 'Only against being Charmed',
+          },
+          { kind: 'rollAdvantage', mode: 'adv', on: { rolls: ['save'], save: 'death' } },
+          { kind: 'rollDie', dice: '1d4', on: { rolls: ['check'], initiative: true } },
+          { kind: 'rollDie', dice: '1d6', on: { rolls: ['check'], proficient: true } },
+        ],
+      },
+    },
   ];
   const trait = (name: string) => ({ name, type: 'entries', entries: ['Placeholder text.'] });
   const RACES: DataEntity[] = [
@@ -259,6 +279,27 @@ describe('roll advantages on a derived sheet', () => {
       { dice: '1d6', source: 'Combat Stance: Archery' },
     ]);
     expect(dice(archer, { kind: 'attack', range: 'melee' })).toEqual([]);
+  });
+
+  it('reads a homebrew feat that sets when, a death save, initiative and a proficient skill', () => {
+    const sheet = deriveSheet(withFeat('Steady Nerves', 'MyHomebrew'), ctx);
+    expect(rollEffects(sheet, { kind: 'save', ability: 'wis' }).declare).toEqual([
+      { source: 'Steady Nerves', mode: 'adv', when: 'Only against being Charmed' },
+    ]);
+    expect(rollEffects(sheet, { kind: 'save', ability: 'cha' }).declare).toBeUndefined();
+    expect(rollEffects(sheet, { kind: 'save', purpose: 'death' }).advantage).toEqual([
+      'Steady Nerves',
+    ]);
+    // Beside the test class's own Grit.
+    expect(dice(sheet, { kind: 'initiative' })).toEqual([
+      { dice: '1d4', source: 'Grit' },
+      { dice: '1d4', source: 'Steady Nerves' },
+    ]);
+    const stealth = { kind: 'check', ability: 'dex', skill: 'Stealth' } as const;
+    expect(dice(sheet, { ...stealth, proficient: true })).toEqual([
+      { dice: '1d6', source: 'Steady Nerves' },
+    ]);
+    expect(dice(sheet, stealth)).toEqual([]);
   });
 
   it('gives War Caster to concentration saves and no other Constitution save', () => {

@@ -95,7 +95,7 @@ class level) the format does not have.
 - **`effects`** read as a rule pack's (`readStoredEffects`), formulas and
   `while` included, but strictly: a field the reader does not read is a problem
   and that effect is left out, where a player's file reads past it. So a row
-  written with a field the format does not have yet (`proficient` on a roll
+  written with a field the format does not have yet (`tools` on a roll
   filter) fails the tests instead of losing half of itself unseen. The
   same goes for a nested field (`save.dc`), a `while` state's and an amount's
   (an amount is `{ "f": ... }` or `{ "byLevel": ... }`, never both). An unknown
@@ -173,18 +173,23 @@ prompt names the trait.
 
 ## Roll fields
 
-Three stored fields came in with the roll parts, for rule packs too:
+Three stored fields came in with the roll parts, and a fourth after them, for rule packs too:
 
 - **`when`** on `rollAdvantage`: the advantage holds only then, which the app
   cannot see, so the roll prompt offers it to claim ("Only against being
   Frightened"). With `"mode": "adv"` alone: the prompt offers no disadvantage.
   The app's rows word it from "Only", as the prompt and the Defenses sheet read
-  it.
+  it. A concentration save rolls at once, with no prompt, so one there is read
+  but never offered (Extended Spell), and the Workshop's card does not ask.
 - **`initiative: true`** on a roll filter: initiative rolls alone, not other
-  Dexterity checks (Feral Instinct). Its `rolls` lists `check`, it takes no
-  `skills` or `skilled`, and any `abilities` list `dex`.
+  Dexterity checks (Feral Instinct). Its `rolls` is `check` alone, it takes no
+  `skills`, `skilled` or `proficient`, and any `abilities` list `dex`.
+- **`proficient: true`** on a roll filter: checks with a skill the character is
+  proficient in, or has expertise in (Reliable Talent). Like `skills`, it
+  narrows checks alone, so its `rolls` lists `check`; any other rolls it lists
+  stay whole.
 - **`save: "death"`** or **`"concentration"`** on a roll filter: one kind of
-  save alone (2024 Durable, War Caster). Its `rolls` lists `save`. A death save
+  save alone (2024 Durable, War Caster). Its `rolls` is `save` alone. A death save
   has no ability, so a row for some abilities' saves never reaches one, and an
   advantage to claim (`when`) or a paid extra reaches one only when it names it.
   So `"death"` takes no `abilities`, and with `"concentration"` any `abilities`

@@ -5,7 +5,9 @@ import { useState } from 'react';
 import { MemoryRouter } from 'react-router';
 import { afterEach, describe, expect, it } from 'vitest';
 import { EntityRegistry } from '@/data5e/normalize';
+import { readStoredEffects } from '@/engine/effects/mechanics';
 import { writeEntry } from './copyWriter';
+import { rollKindOf } from './EffectCards';
 import { editor as background, featLabel } from './editors/BackgroundEditor';
 import { abilityFor, abilityPicks, editor as feat } from './editors/FeatEditor';
 import { editor as optional } from './editors/OptionalFeatureEditor';
@@ -146,6 +148,141 @@ describe('FeatEditor', () => {
     expect(abilityPicks([{ str: 1, dex: 1 }])).toBeUndefined();
     expect(abilityPicks([{ choose: { from: ['str'], count: 2 } }])).toBeUndefined();
     expect(abilityFor([], {})).toBeUndefined();
+  });
+});
+
+describe('the Advantage and Added die cards', () => {
+  const effectsOf = (draft: Json) =>
+    ((draft.castGuidance as Json | undefined)?.effects ?? []) as Json[];
+  const problemsOf = (draft: Json) => readStoredEffects(effectsOf(draft)).problems;
+  const shown = (text: string) => expect(screen.getByText(text)).toBeTruthy();
+  const withCard = (effect: Json) =>
+    mount(feat, { name: 'Steady', ...feat.blank(), castGuidance: { v: 1, effects: [effect] } });
+
+  it('narrows an advantage to one ability, a kind of save, or when the player says', () => {
+    // As More adds it.
+    const draft = withCard({ kind: 'rollAdvantage', mode: 'adv', on: { rolls: ['save'] } });
+    type('Advantage: Ability', 'wis');
+    type('Advantage: Only when', 'Only against being Charmed');
+    expect(effectsOf(draft())).toEqual([
+      {
+        kind: 'rollAdvantage',
+        mode: 'adv',
+        on: { rolls: ['save'], abilities: ['wis'] },
+        when: 'Only against being Charmed',
+      },
+    ]);
+    shown('Advantage on Wisdom saving throws. Only against being Charmed');
+    // A death save has no ability, so the pick drops it and is gone.
+    type('Advantage: On', 'death');
+    expect(effectsOf(draft())[0]?.on).toEqual({ rolls: ['save'], save: 'death' });
+    expect(screen.queryByLabelText('Advantage: Ability')).toBeNull();
+    expect(effectsOf(draft())[0]?.when).toBe('Only against being Charmed');
+    // A concentration save rolls at once, with no prompt to claim it in.
+    type('Advantage: On', 'concentration');
+    expect(effectsOf(draft())[0]).toEqual({
+      kind: 'rollAdvantage',
+      mode: 'adv',
+      on: { rolls: ['save'], save: 'concentration' },
+    });
+    expect(screen.queryByLabelText('Advantage: Only when')).toBeNull();
+    expect(problemsOf(draft())).toEqual([]);
+    // The prompt offers no disadvantage to claim: it holds always.
+    type('Advantage: Kind', 'dis');
+    expect(effectsOf(draft())[0]).not.toHaveProperty('when');
+    expect(screen.queryByLabelText('Advantage: Only when')).toBeNull();
+    shown('Disadvantage on saving throws to keep concentrating');
+    expect(problemsOf(draft())).toEqual([]);
+  });
+
+  it('clears an emptied when, and keeps one ability across kinds that take one', () => {
+    // As More adds it.
+    const draft = withCard({ kind: 'rollAdvantage', mode: 'adv', on: { rolls: ['save'] } });
+    type('Advantage: Only when', 'Only at night');
+    type('Advantage: Only when', '  ');
+    expect(effectsOf(draft())[0]).not.toHaveProperty('when');
+    type('Advantage: Ability', 'str');
+    type('Advantage: On', 'check');
+    expect(effectsOf(draft())[0]?.on).toEqual({ rolls: ['check'], abilities: ['str'] });
+    type('Advantage: Ability', '');
+    expect(effectsOf(draft())[0]?.on).toEqual({ rolls: ['check'] });
+  });
+
+  it('adds a die to initiative alone, or to checks with a proficient skill', () => {
+    const draft = withCard({ kind: 'rollDie', dice: '1d4', on: { rolls: ['attack'] } });
+    type('Added die: On', 'initiative');
+    expect(effectsOf(draft())[0]?.on).toEqual({ rolls: ['check'], initiative: true });
+    expect(screen.queryByLabelText('Added die: Ability')).toBeNull();
+    shown('+1d4 to initiative rolls');
+    type('Added die: On', 'proficient');
+    type('Added die: Ability', 'dex');
+    expect(effectsOf(draft())[0]?.on).toEqual({
+      rolls: ['check'],
+      proficient: true,
+      abilities: ['dex'],
+    });
+    shown('+1d4 to Dexterity checks with a skill you are proficient in');
+    expect(screen.queryByLabelText('Added die: Only when')).toBeNull();
+    expect(problemsOf(draft())).toEqual([]);
+  });
+
+  it('keeps a filter it cannot show as written, until a kind is picked', () => {
+    const stealth = {
+      kind: 'rollAdvantage',
+      mode: 'adv',
+      on: { rolls: ['check'], skills: ['Stealth'] },
+    };
+    const draft = mount(feat, {
+      name: 'Sneaky',
+      ...feat.blank(),
+      castGuidance: { v: 1, effects: [stealth] },
+    });
+    const pick = screen.getByLabelText('Advantage: On') as HTMLSelectElement;
+    expect(pick.value).toBe('');
+    expect(pick.selectedOptions[0]?.textContent).toBe('Stealth checks, as written');
+    type('Advantage: Only when', 'Only in dim light');
+    expect(effectsOf(draft())[0]?.on).toEqual(stealth.on);
+    type('Advantage: On', 'check');
+    expect(effectsOf(draft())[0]?.on).toEqual({ rolls: ['check'] });
+  });
+
+  it('shows two abilities as one choice and keeps them when the kind changes', () => {
+    const both = {
+      kind: 'rollDie',
+      dice: '1d4',
+      on: { rolls: ['save'], abilities: ['str', 'dex'] },
+    };
+    const draft = mount(feat, {
+      name: 'Sure',
+      ...feat.blank(),
+      castGuidance: { v: 1, effects: [both] },
+    });
+    const ability = screen.getByLabelText('Added die: Ability') as HTMLSelectElement;
+    expect(ability.selectedOptions[0]?.textContent).toBe('Strength or Dexterity');
+    type('Added die: On', 'attack');
+    expect(effectsOf(draft())[0]?.on).toEqual({ rolls: ['attack'], abilities: ['str', 'dex'] });
+  });
+
+  it('opens an entry whose filter the reader refuses, and says so on the card', () => {
+    withCard({ kind: 'rollAdvantage', mode: 'adv', on: { rolls: ['save'], abilities: 'wis' } });
+    shown('Advantage on rolls');
+    expect(screen.getByText(/This does not count yet/)).toBeTruthy();
+    cleanup();
+    withCard({ kind: 'rollDie', dice: '1d4', on: { rolls: ['initiative'] } });
+    shown('+1d4 to rolls');
+    expect(
+      (screen.getByLabelText('Added die: On') as HTMLSelectElement).selectedOptions[0]?.textContent,
+    ).toBe('rolls, as written');
+  });
+
+  it('reads which kind a stored filter is', () => {
+    expect(rollKindOf({ rolls: ['save'], save: 'death' })).toBe('death');
+    expect(rollKindOf({ rolls: ['save'], abilities: ['con'] })).toBe('save');
+    expect(rollKindOf({ rolls: ['check'], initiative: true })).toBe('initiative');
+    expect(rollKindOf({ rolls: ['check'], initiative: true, abilities: ['dex'] })).toBeUndefined();
+    expect(rollKindOf({ rolls: ['attack', 'save'] })).toBeUndefined();
+    expect(rollKindOf({ rolls: ['attack'], range: 'melee' })).toBeUndefined();
+    expect(rollKindOf(undefined)).toBeUndefined();
   });
 });
 
