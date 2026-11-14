@@ -35,8 +35,15 @@ trait). Their 2024 printings, where they differ, are still in code.
   out, and the reader says so.
 - **`scan`**: `replace` turns the prose scan off for the entry, as a `CURATED`
   row does; `keep` runs the scan beside the row.
-- **`effects`** read exactly as a rule pack's (`readStoredEffects`), formulas
-  and `while` included.
+- **`effects`** read as a rule pack's (`readStoredEffects`), formulas and
+  `while` included, but strictly: a field the reader does not read is a problem
+  and that effect is left out, where a player's file reads past it. So a row
+  written with a field the format does not have yet (`when` on
+  `rollAdvantage`) fails the tests instead of losing half of itself unseen. The
+  same goes for a nested field (`save.dc`), a `while` state's and an amount's
+  (an amount is `{ "f": ... }` or `{ "byLevel": ... }`, never both). An unknown
+  field on a row leaves the row out; one on the file is a problem, and its rows
+  still count.
 - A row the reader cannot read is left out, and the rest still count. What it
   left out goes to the console once, not the sheet: the files are the app's, so
   a problem in one is a bug its tests catch, not something a player can fix.
@@ -122,10 +129,19 @@ Ki, Channel Divinity and others).
 
 ## Checking a change on real data
 
-`scripts/rules-diff.ts` derives about 8,500 builds over the pinned release
+`scripts/rules-diff.ts` derives about 8,600 builds over the pinned release
 (every class and subclass across levels in both editions, every feat, race,
 background, optional feature and magic item, and some multiclasses) and
-records a hash of each sheet field. Moving rows out of code must change none:
+records a hash of each sheet field, about 26,000 sheets in all, in about two
+minutes. It makes each build three times: with every
+ability 14; with every ability 8 (ids ending `[8s]`), where a minimum such as
+`max(1, mod.cha)` shows; and raging at 1 hit point (`[on]`), since an effect
+that holds only while raging or bloodied is on no sheet otherwise, so a wrong
+one would change nothing. Since a build answers each pick with its first
+option, a class build at level 20 in its own edition is also made once for each
+later option of each feature pick that is not greyed out (Totem Spirit's Elk,
+ids holding `| <pick> = <option>`).
+Moving rows out of code must change none:
 
 ```bash
 bun --tsconfig-override=tsconfig.app.json scripts/rules-diff.ts snapshot --release <cache.json> --out before.json
@@ -137,3 +153,14 @@ bun --tsconfig-override=tsconfig.app.json scripts/rules-diff.ts compare before.j
 read the same data. Take `before.json` in a checkout of the base commit (with
 this script copied in when the base has none). `compare` names the builds that
 changed, field by field, and with `--expect-zero` exits 1 when any did.
+
+`snapshot --coverage <file>` also writes, for each code table (`CURATED`,
+`STANDING`, `ROLL_ADVANTAGES`, `ROLL_EXTRAS`) and the built-in rows, the keys no
+build read. A row read is not a row that added something (a row for one
+feature level is read at every level and adds at one), but a row never read is
+one zero change says nothing about, so a move of one is
+proved another way: compare the effects the code row and the data row emit
+across levels, ability scores, multiclass builds and copies, before the code
+row goes. That check also catches what the reader rewrites as it reads (a
+`false` flag read as absent, a list's repeats dropped, a skill's case), and
+level table thresholds at levels the harness does not build.

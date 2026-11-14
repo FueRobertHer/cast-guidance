@@ -91,13 +91,39 @@ class Bad extends Error {}
 interface Reading {
   kind: Kind;
   slots: Array<{ field: FormulaField; formula: Formula }>;
+  /**
+   * A strict reading (a built-in rule set's): the keys read off each object, so
+   * a field the reader does not know is a problem rather than dropped unseen.
+   */
+  seen?: Map<object, Set<string>>;
 }
 
 /** Reads one field's value, or throws `Bad` with what it should be. `undefined` leaves it out. */
 type Field = (v: unknown, r: Reading, key: string) => unknown;
 type Build = (o: Record<string, unknown>, r: Reading) => Record<string, unknown>;
 
+/** Note that a strict reading read `key` off `o`, whether or not it is there. */
+function mark(o: Record<string, unknown>, r: Reading, key: string): void {
+  if (r.seen === undefined) return;
+  const keys = r.seen.get(o) ?? new Set<string>();
+  r.seen.set(o, keys);
+  keys.add(key);
+}
+
+/** In a strict reading, throw for the first of `o`'s keys that is not among `known`. */
+function onlyKnown(
+  o: Record<string, unknown>,
+  r: Reading,
+  known: (key: string) => boolean,
+  what: string,
+): void {
+  if (r.seen === undefined) return;
+  const extra = Object.keys(o).find((k) => !known(k));
+  if (extra !== undefined) throw new Bad(`"${clip(extra)}" is not a field ${what} reads`);
+}
+
 function req(o: Record<string, unknown>, r: Reading, key: string, read: Field): unknown {
+  mark(o, r, key);
   const v = own(o, key);
   if (v === undefined) throw new Bad(`"${key}" is missing`);
   const out = field(v, r, key, read);
@@ -111,6 +137,7 @@ function opt(
   key: string,
   read: Field,
 ): Record<string, unknown> {
+  mark(o, r, key);
   const v = own(o, key);
   if (v === undefined) return {};
   const out = field(v, r, key, read);
@@ -177,6 +204,13 @@ const dice: Field = (v) => {
 
 /** A number that may be a formula or a level table, filled at fold time. */
 const amount: Field = (v, r, key) => {
+  if (isRecord(v)) {
+    onlyKnown(v, r, (k) => k === 'f' || k === 'byLevel', 'an amount');
+    // One of the two would be read and the other dropped, so a strict reading names both.
+    if (r.seen !== undefined && own(v, 'f') !== undefined && own(v, 'byLevel') !== undefined) {
+      throw new Bad('is a formula or a level table, not both');
+    }
+  }
   const { names, why } = formulaNamesFor(r.kind);
   const read = readAmount(v, names, why);
   if ('problem' in read) throw new Bad(read.problem);
@@ -217,6 +251,7 @@ const record =
   (spec: Record<string, readonly [Field, boolean?]>): Field =>
   (v, r) => {
     if (!isRecord(v)) throw new Bad('is not an object');
+    onlyKnown(v, r, (k) => Object.hasOwn(spec, k), 'this kind');
     let out: Record<string, unknown> = {};
     for (const [key, [read, need]] of Object.entries(spec)) {
       out = { ...out, ...(need === true ? { [key]: req(v, r, key, read) } : opt(v, r, key, read)) };
@@ -508,7 +543,8 @@ const PLAIN_STATES: ReadonlySet<string> = new Set([
   'shield',
 ]);
 
-function readState(s: unknown, kind: Kind): WhileState {
+function readState(s: unknown, r: Reading): WhileState {
+  const { kind } = r;
   if (typeof s === 'string' && PLAIN_STATES.has(s)) {
     if (s === 'bloodied' && EARLY_KINDS.has(kind)) {
       throw new Bad('bloodied cannot hold for a score or the hit point maximum');
@@ -516,6 +552,7 @@ function readState(s: unknown, kind: Kind): WhileState {
     return { state: s as 'bloodied' };
   }
   if (isRecord(s)) {
+    onlyKnown(s, r, (k) => k === 'effect' || k === 'condition', 'a state');
     const effect = own(s, 'effect');
     const condition = own(s, 'condition');
     const name = (v: unknown) => text()(v, { kind, slots: [] }, 'while') as string;
@@ -538,27 +575,32 @@ const readWhile: Field = (raw, r) => {
   if (states.length === 0 || states.length > L.statesPerEffect) {
     throw new Bad(`lists from 1 to ${L.statesPerEffect} states`);
   }
-  return states.map((s) => readState(s, r.kind));
+  return states.map((s) => readState(s, r));
 };
 
-function readEffect(raw: unknown): EffectTemplate {
+function readEffect(raw: unknown, strict: boolean): EffectTemplate {
   if (!isRecord(raw)) throw new Bad('is not an effect');
   const kind = own(raw, 'kind');
   const build = typeof kind === 'string' ? KINDS.get(kind as Kind) : undefined;
   if (build === undefined) throw new Bad(`has no kind "${clip(kind)}"`);
-  const r: Reading = { kind: kind as Kind, slots: [] };
+  const r: Reading = { kind: kind as Kind, slots: [], ...(strict ? { seen: new Map() } : {}) };
   const effect = { kind: kind as Kind, ...build(raw, r) };
   const states = opt(raw, r, 'while', readWhile) as { while?: WhileState[] };
+  const read = r.seen?.get(raw);
+  onlyKnown(raw, r, (k) => k === 'kind' || read?.has(k) === true, 'this kind');
   return { effect, ...(r.slots.length > 0 ? { formulas: r.slots } : {}), ...states };
 }
 
 /**
  * A stored list of effects (an entry's, a patch's, a moment's), each read on its
- * own: a bad one is a problem and is left out, the rest count.
+ * own: a bad one is a problem and is left out, the rest count. `strict` (the
+ * app's own rule sets) also makes a field the reader does not read a problem,
+ * which a player's file may carry for a newer version of the format.
  */
 export function readStoredEffects(
   raw: unknown,
   name = 'effects',
+  strict = false,
 ): { effects: EffectTemplate[]; problems: string[] } {
   const effects: EffectTemplate[] = [];
   const problems: string[] = [];
@@ -569,7 +611,7 @@ export function readStoredEffects(
   }
   raw.slice(0, L.effectsPerEntry).forEach((x, i) => {
     try {
-      effects.push(readEffect(x));
+      effects.push(readEffect(x, strict));
     } catch (err) {
       if (!(err instanceof Bad)) throw err;
       const kind =
@@ -830,6 +872,16 @@ export function readRuleSet(raw: unknown): ReadRuleSet {
 const isOneOf = <T extends string>(values: readonly T[], v: unknown): v is T =>
   typeof v === 'string' && (values as readonly string[]).includes(v);
 
+/**
+ * The fields a rule set and each part's rows have. The app's own files are read
+ * strictly: a field the reader does not know is a problem, which their tests
+ * fail on, so a row written for a field not built yet is never read without it.
+ */
+const SET_FIELDS: ReadonlySet<string> = new Set(['type', 'v', 'name', 'edition', 'rows']);
+const ROW_FIELDS: Record<RulePart, ReadonlySet<string>> = {
+  curated: new Set(['part', 'keys', 'scan', 'effects']),
+};
+
 function readRuleSetOnce(raw: Record<string, unknown>): ReadRuleSet {
   const named = own(raw, 'name');
   const name = typeof named === 'string' && named.trim() !== '' ? clip(named.trim()) : 'A rule set';
@@ -842,6 +894,9 @@ function readRuleSetOnce(raw: Record<string, unknown>): ReadRuleSet {
   if ('problem' in version) {
     read.problems.push(version.problem);
     return read;
+  }
+  for (const key of Object.keys(raw)) {
+    if (!SET_FIELDS.has(key)) read.problems.push(`"${clip(key)}" is not a field a rule set has`);
   }
   const edition = own(raw, 'edition');
   if (isOneOf(RULE_SET_EDITIONS, edition)) read.edition = edition;
@@ -865,6 +920,13 @@ function readRuleSetOnce(raw: Record<string, unknown>): ReadRuleSet {
     const part = own(row, 'part');
     if (!isOneOf(RULE_SET_PARTS, part)) {
       read.problems.push(`${where}: has no part "${clip(part)}"`);
+      return;
+    }
+    // A field the reader does not know would change what the row means unseen,
+    // so the row is left out rather than read without it.
+    const extra = Object.keys(row).find((k) => !ROW_FIELDS[part].has(k));
+    if (extra !== undefined) {
+      read.problems.push(`${where}: "${clip(extra)}" is not a field a ${part} row has`);
       return;
     }
     const scan = own(row, 'scan') ?? 'replace';
@@ -903,7 +965,7 @@ function readRuleSetOnce(raw: Record<string, unknown>): ReadRuleSet {
     }
     // Only a row that counts takes its keys, so a later one may still have them.
     for (const key of keys) inPart.add(key);
-    const { effects, problems } = readStoredEffects(own(row, 'effects'));
+    const { effects, problems } = readStoredEffects(own(row, 'effects'), 'effects', true);
     for (const problem of problems) read.problems.push(`${at}: ${problem}`);
     read.rows.push({ part, keys, scan, effects });
   });
