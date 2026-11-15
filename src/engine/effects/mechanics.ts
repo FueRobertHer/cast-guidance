@@ -72,6 +72,20 @@ export function namedFor(t: EffectTemplate, name: string): EffectTemplate {
 }
 
 /**
+ * The template with `"ownClass": true` read as `cls`, the class that gives it
+ * (`MechanicsSubject.className`): its `className`, so a reskin's spells (a
+ * Mage's) are its own. Undefined when no class gives it (a feat's, a species
+ * trait's): it holds for the spells of no class, so it is left out.
+ */
+export function forClass(t: EffectTemplate, cls: string | undefined): EffectTemplate | undefined {
+  if (t.effect.ownClass !== true) return t;
+  if (cls === undefined) return undefined;
+  const effect: Record<string, unknown> = { ...t.effect, className: cls };
+  delete effect.ownClass;
+  return { ...t, effect: effect as EffectTemplate['effect'] };
+}
+
+/**
  * Why an effect in play cannot hold a stored effect's amount: the proficiency
  * bonus counted once (`"profBonus": true`) is the character's own, and an
  * amount in play is a plain number, worked out on the sheet it came from.
@@ -516,14 +530,22 @@ const KINDS = new Map<Kind, Build>([
   ],
   [
     'spellDamageBonus',
-    (o, r) => ({
-      amount: req(o, r, 'amount', amount),
-      ...opt(o, r, 'spells', list(spellName, 50)),
-      ...opt(o, r, 'className', text()),
-      ...opt(o, r, 'cantrips', flag),
-      ...opt(o, r, 'school', oneOf(...Object.keys(SPELL_SCHOOLS))),
-      ...opt(o, r, 'oneRoll', flag),
-    }),
+    (o, r) => {
+      // "ownClass": the spells of the class that gives it (`forClass`).
+      const ofOwnClass = opt(o, r, 'ownClass', flag);
+      if (ofOwnClass.ownClass === true && own(o, 'className') !== undefined) {
+        throw new Bad('names "className" or "ownClass", not both');
+      }
+      return {
+        amount: req(o, r, 'amount', amount),
+        ...opt(o, r, 'spells', list(spellName, 50)),
+        ...opt(o, r, 'className', text()),
+        ...ofOwnClass,
+        ...opt(o, r, 'cantrips', flag),
+        ...opt(o, r, 'school', oneOf(...Object.keys(SPELL_SCHOOLS))),
+        ...opt(o, r, 'oneRoll', flag),
+      };
+    },
   ],
   [
     'saveBonus',
@@ -1210,7 +1232,8 @@ export function builtInRowsFor(
  * Emit built-in rows where the code table they stand in for runs (`STANDING`,
  * the roll tables): each row with no level, or at `featureLevel`, with `origin`
  * itself. `classLevel` is what their formulas read as the class's level; the
- * character's level when absent, as `mechanicsOf` reads it.
+ * character's level when absent, as `mechanicsOf` reads it. `className` is the
+ * class that gives them (`MechanicsSubject.className`).
  */
 export function emitRuleRows(
   col: Collector,
@@ -1218,10 +1241,11 @@ export function emitRuleRows(
   origin: EffectOrigin,
   featureLevel?: number,
   classLevel?: number,
+  className?: string,
 ): void {
   for (const row of rows) {
     if (row.level === undefined || row.level === featureLevel) {
-      emit(col, row.effects, origin, classLevel ?? characterLevel(col), true);
+      emit(col, row.effects, origin, classLevel ?? characterLevel(col), className, true);
     }
   }
 }
@@ -1230,6 +1254,8 @@ export function emitRuleRows(
 export interface RuleRowsAt {
   featureLevel?: number;
   classLevel?: number;
+  /** The class that gives them (`MechanicsSubject.className`). */
+  className?: string;
   /** The keys the part's code table still has a row under (`builtInRowsFor`). */
   inCode?: (key: string) => boolean;
 }
@@ -1248,7 +1274,7 @@ export function emitBuiltInRows(
 ): boolean {
   const rows = builtInRowsFor(col, part, keys, at.inCode);
   if (rows === undefined) return false;
-  emitRuleRows(col, rows, origin, at.featureLevel, at.classLevel);
+  emitRuleRows(col, rows, origin, at.featureLevel, at.classLevel, at.className);
   return true;
 }
 
@@ -1292,6 +1318,13 @@ export interface MechanicsSubject {
   /** What `classLevel` and level tables read in its formulas; the character's level when absent. */
   classLevel?: number;
   /**
+   * The class that gives it, by the character's name for it: the class walked
+   * for a class's or subclass's feature, the host class for an optional
+   * feature it offers. What `"ownClass": true` reads (`forClass`). Absent for
+   * anything else (a feat, a species trait, an item).
+   */
+  className?: string;
+  /**
    * The keys its curated row is found under, in the order the call site tries
    * `CURATED`: a built-in rule set's `curated` row under the first of them that
    * has one is its curated row (layer 3). Absent: none is looked for.
@@ -1325,11 +1358,14 @@ function emit(
   templates: readonly EffectTemplate[],
   origin: EffectOrigin,
   classLevel: number,
+  className: string | undefined,
   builtIn = false,
 ): void {
   for (const t of templates) {
+    const named = forClass(namedFor(t, origin.label), className);
+    if (named === undefined) continue;
     // A fresh copy each time: fold time fills its numbers in place.
-    const e = { ...structuredClone(namedFor(t, origin.label).effect), origin } as EffectInput;
+    const e = { ...structuredClone(named.effect), origin } as EffectInput;
     if (t.formulas !== undefined) {
       e.formulas = t.formulas.map((f) => ({
         field: f.field,
@@ -1369,14 +1405,20 @@ export function mechanicsOf(col: Collector, s: MechanicsSubject): void {
   const level = s.classLevel ?? characterLevel(col);
 
   if (patches?.replace !== undefined) {
-    emit(col, patches.replace.effects, { ...s.origin, pack: patches.replace.pack }, level);
+    emit(
+      col,
+      patches.replace.effects,
+      { ...s.origin, pack: patches.replace.pack },
+      level,
+      s.className,
+    );
   }
   for (const add of patches?.add ?? [])
-    emit(col, add.effects, { ...s.origin, pack: add.pack }, level);
+    emit(col, add.effects, { ...s.origin, pack: add.pack }, level, s.className);
   if (patches?.replace !== undefined) return;
 
   const self = mine?.readable === true ? mine : undefined;
-  if (self !== undefined) emit(col, self.effects, { ...s.origin }, level);
+  if (self !== undefined) emit(col, self.effects, { ...s.origin }, level, s.className);
   if (self?.replace === true) return;
   const from = col.effects.length;
   // The built-in curated row is inherited, as the `CURATED` row it stands in
@@ -1384,7 +1426,7 @@ export function mechanicsOf(col: Collector, s: MechanicsSubject): void {
   // own origin, which spend links find its action by.
   const row =
     s.ruleKeys === undefined ? undefined : builtInRuleFor(col, 'curated', s.ruleKeys, s.inCode);
-  if (row !== undefined) emit(col, row.effects, s.origin, level, true);
+  if (row !== undefined) emit(col, row.effects, s.origin, level, s.className, true);
   s.inherited?.(row === undefined ? undefined : { scan: row.scan });
   if (self === undefined || self.drop.length === 0) return;
   for (let i = col.effects.length - 1; i >= from; i--) {
