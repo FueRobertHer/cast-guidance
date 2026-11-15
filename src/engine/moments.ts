@@ -26,7 +26,12 @@ import {
   own,
   RULE_PACK_TYPE,
 } from './castGuidance';
-import { type EffectTemplate, readStoredEffects } from './effects/mechanics';
+import {
+  type EffectTemplate,
+  inPlayProfBonus,
+  namedFor,
+  readStoredEffects,
+} from './effects/mechanics';
 import { type Formula, readAmount } from './formula';
 import {
   ACTIVE_PART_KINDS,
@@ -205,8 +210,10 @@ function readOutcome(raw: unknown, problems: string[], where: string): ReadOutco
         : [];
       const effects: EffectTemplate[] = [];
       const places: number[] = [];
-      for (const [i, t] of read.effects.entries()) {
+      for (const [i, each] of read.effects.entries()) {
         const place = readAt[i] ?? i + 1;
+        // An AC formula with no label of its own is named for the effect.
+        const t = namedFor(each, name);
         // Effects in play are stricter than an entry's own: plain dice ("1d6",
         // never "1d6 + 2"), a critical range from 2 to 20, no negative amounts.
         // A part with a formula is checked once its numbers are worked out.
@@ -215,9 +222,10 @@ function readOutcome(raw: unknown, problems: string[], where: string): ReadOutco
             ? 'an effect in play has no "while"'
             : !PART_KINDS.has(t.effect.kind)
               ? 'an effect in play reaches only numbers and rolls'
-              : t.formulas === undefined && !holds(t.effect)
-                ? 'an effect in play cannot hold it as written'
-                : undefined;
+              : (inPlayProfBonus(t, 'an effect in play') ??
+                (t.formulas === undefined && !holds(t.effect)
+                  ? 'an effect in play cannot hold it as written'
+                  : undefined));
         if (why !== undefined) {
           problems.push(`${where}: effect ${place} (${t.effect.kind}): ${why}`);
           continue;

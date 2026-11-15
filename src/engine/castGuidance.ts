@@ -151,8 +151,11 @@ export type StoredState =
  * One stored effect, version 1. Its kinds and fields are the engine's
  * `EffectInput` as it was when version 1 shipped, without `origin`, except:
  * numbers may be `StoredAmount`s (see `FORMULA_FIELDS`), a resource's `resetOn`
- * is stored as `reset`, and any effect that reaches only numbers and rolls may
- * hold only `while` the states listed (all of them).
+ * is stored as `reset`, an initiative bonus of the proficiency bonus counted
+ * once (`amount: 'profBonus'`) is stored as `profBonus: true`, an AC formula's
+ * `label` may be left out (it is then named for what gives it), and any effect
+ * that reaches only numbers and rolls may hold only `while` the states listed
+ * (all of them).
  *
  * The reader (`readMechanics`) checks each kind's fields one by one; an unknown
  * kind or a bad value is a problem, and that effect does not count.

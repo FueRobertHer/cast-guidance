@@ -61,6 +61,26 @@ export interface EffectTemplate {
   while?: readonly WhileState[];
 }
 
+/**
+ * The template with its AC formula named `name` when it has no label of its
+ * own: what gives it, so a renamed copy shows its own name.
+ */
+export function namedFor(t: EffectTemplate, name: string): EffectTemplate {
+  return t.effect.kind === 'acFormula' && t.effect.label === undefined
+    ? { ...t, effect: { ...t.effect, label: name } }
+    : t;
+}
+
+/**
+ * Why an effect in play cannot hold a stored effect's amount: the proficiency
+ * bonus counted once (`"profBonus": true`) is the character's own, and an
+ * amount in play is a plain number, worked out on the sheet it came from.
+ */
+export const inPlayProfBonus = (t: EffectTemplate, holder: string): string | undefined =>
+  t.effect.kind === 'initiativeBonus' && t.effect.amount === 'profBonus'
+    ? `${holder} takes a plain number, not "profBonus"`
+    : undefined;
+
 /** An inherited effect an entry leaves out: of this kind, and this label when given. */
 export interface DropRule {
   kind: Kind;
@@ -202,6 +222,13 @@ const dice: Field = (v) => {
   return s;
 };
 
+/** One die, as a pool's die is: what one use rolls (a superiority die). */
+const oneDie: Field = (v) => {
+  const s = typeof v === 'string' ? v.trim() : '';
+  if (!/^1d[1-9]\d{0,2}$/.test(s)) throw new Bad('is one die, like 1d6');
+  return s;
+};
+
 /** A number that may be a formula or a level table, filled at fold time. */
 const amount: Field = (v, r, key) => {
   if (isRecord(v)) {
@@ -325,6 +352,19 @@ const scope = (o: Record<string, unknown>, r: Reading) =>
 
 const named: Build = (o, r) => ({ name: req(o, r, 'name', text()) });
 const amountOnly: Build = (o, r) => ({ amount: req(o, r, 'amount', amount) });
+
+/**
+ * The proficiency bonus itself, `"profBonus": true`, goes on initiative once
+ * however many features add it (2024 Alert beside Hare-Trigger); an amount
+ * that only comes to it, `{ "f": "prof" }`, adds every time.
+ */
+const initiativeBonus: Build = (o, r) => {
+  // A false flag is the same as none.
+  if (Object.keys(opt(o, r, 'profBonus', flag)).length === 0) return amountOnly(o, r);
+  mark(o, r, 'amount');
+  if (own(o, 'amount') !== undefined) throw new Bad('names "amount" or "profBonus", not both');
+  return { amount: 'profBonus' };
+};
 const defense: Build = (o, r) => ({
   damageType: req(o, r, 'damageType', text()),
   ...opt(o, r, 'note', text(L.textLength)),
@@ -405,8 +445,10 @@ const KINDS = new Map<Kind, Build>([
   ['language', named],
   [
     'acFormula',
+    // With no label, the AC shows the name of what gives it (`namedFor`), so
+    // a renamed copy shows its own.
     (o, r) => ({
-      label: req(o, r, 'label', text()),
+      ...opt(o, r, 'label', text()),
       base: req(o, r, 'base', amount),
       addAbilities:
         own(o, 'addAbilities') === undefined ? [] : req(o, r, 'addAbilities', list(ability, 6)),
@@ -417,7 +459,7 @@ const KINDS = new Map<Kind, Build>([
   ['acMin', (o, r) => ({ min: req(o, r, 'min', amount) })],
   ['hpPerLevel', amountOnly],
   ['maxHpBonus', amountOnly],
-  ['initiativeBonus', amountOnly],
+  ['initiativeBonus', initiativeBonus],
   [
     'speedBonus',
     (o, r) => ({
@@ -559,6 +601,9 @@ const KINDS = new Map<Kind, Build>([
       resetOn: req(o, r, 'reset', oneOf('short', 'long')),
       ...opt(o, r, 'stack', flag),
       ...opt(o, r, 'regainOnShort', amount),
+      ...opt(o, r, 'noSlotConversion', int(1, 20)),
+      ...opt(o, r, 'die', oneDie),
+      ...opt(o, r, 'foretell', flag),
     }),
   ],
   [
@@ -1268,7 +1313,7 @@ function emit(
 ): void {
   for (const t of templates) {
     // A fresh copy each time: fold time fills its numbers in place.
-    const e = { ...structuredClone(t.effect), origin } as EffectInput;
+    const e = { ...structuredClone(namedFor(t, origin.label).effect), origin } as EffectInput;
     if (t.formulas !== undefined) {
       e.formulas = t.formulas.map((f) => ({
         field: f.field,

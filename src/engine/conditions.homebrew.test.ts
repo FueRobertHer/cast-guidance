@@ -59,6 +59,21 @@ describe('conditionMechanics', () => {
     expect(read.problems[2]?.why).toMatch(/plain number/);
   });
 
+  it("names an AC formula with no label for the condition, and refuses the character's proficiency bonus", () => {
+    const read = conditionMechanics(
+      dazed([
+        { kind: 'acFormula', base: 11, addAbilities: ['dex'] },
+        { kind: 'initiativeBonus', profBonus: true },
+      ]),
+    );
+    expect(read.parts).toEqual([
+      { kind: 'acFormula', label: 'Dazed', base: 11, addAbilities: ['dex'] },
+    ]);
+    expect(read.problems).toEqual([
+      { place: 2, why: 'a condition takes a plain number, not "profBonus"' },
+    ]);
+  });
+
   it('counts none of it without a version, or from a newer app', () => {
     const none = conditionMechanics({ name: 'Dazed', castGuidance: { effects: [DIS_ATTACKS] } });
     expect(none.parts).toEqual([]);

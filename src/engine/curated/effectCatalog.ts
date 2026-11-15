@@ -1266,7 +1266,7 @@ export function homebrewLanding(raw: unknown, type: 'spell' | 'item'): HomebrewL
     say(version.problem);
     return { problems };
   }
-  const read = storedInPlay(stored, 'an effect on a target');
+  const read = storedInPlay(stored, 'an effect on a target', undefined, name.trim());
   for (const p of read.problems) {
     say(p.place === undefined ? p.why : `effect ${p.place} does not count: ${p.why}`);
   }
