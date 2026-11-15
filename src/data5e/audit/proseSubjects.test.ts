@@ -194,6 +194,57 @@ describe('a row moved to the built-in rule set', () => {
     };
     expect(trait([keep])?.curated).toBe(false);
   });
+
+  it("finds a class or subclass feature's row for its printing, as the class walk does", () => {
+    const feature = (key: string, type: 'classFeature' | 'subclassFeature', source: string) => {
+      const sub = type === 'subclassFeature';
+      const reg = normalizeDataset(
+        new Map<string, unknown>([
+          [
+            'class/class-test.json',
+            {
+              class: [{ name: 'Testclass', source: 'HB' }],
+              subclass: [
+                {
+                  name: 'Path of Tests',
+                  shortName: 'Tests',
+                  source,
+                  className: 'Testclass',
+                  classSource: 'HB',
+                },
+              ],
+              [type]: [
+                {
+                  name: 'Surge',
+                  source: 'HB',
+                  className: 'Testclass',
+                  classSource: sub ? 'HB' : source,
+                  ...(sub ? { subclassShortName: 'Tests', subclassSource: source } : {}),
+                  level: 2,
+                  entries: ['You surge.'],
+                },
+              ],
+            },
+          ],
+        ]),
+      );
+      const set = {
+        type: 'ruleSet',
+        v: 1,
+        name: 'Printing',
+        rows: [{ part: 'curated', keys: [key], effects: [] }],
+      };
+      reg.setRuleSets([set] as Entity[]);
+      return proseSubjects(reg).find((s) => s.name === 'Surge')?.curated;
+    };
+    // Its own book, then its class's or subclass's, then every printing.
+    expect(feature('surge|testclass|hb', 'classFeature', 'XPHB')).toBe(true);
+    expect(feature('surge|testclass|xphb', 'classFeature', 'XPHB')).toBe(true);
+    expect(feature('surge|testclass|xphb', 'classFeature', 'PHB')).toBe(false);
+    expect(feature('surge|testclass', 'classFeature', 'PHB')).toBe(true);
+    expect(feature('surge|path of tests|xphb', 'subclassFeature', 'XPHB')).toBe(true);
+    expect(feature('surge|path of tests|xphb', 'subclassFeature', 'XGE')).toBe(false);
+  });
 });
 
 describe('textHash', () => {

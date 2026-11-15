@@ -10,11 +10,11 @@ stands in for `ROLL_EXTRAS` (`src/engine/curated/rollExtras.ts`). The files
 live in `src/rules/`, one a part. (Source of truth: `readRuleSet` and
 `mechanicsOf` in `src/engine/effects/mechanics.ts`, `src/data5e/builtInRules.ts`.)
 
-115 rows have moved so far (`src/rules/cast-guidance/curated.json`). Four came
+133 rows have moved so far (`src/rules/cast-guidance/curated.json`). Four came
 first, one for each kind of call site, to prove the routes: Stunning Strike (a
 class feature), Lucky (PHB, a feat), Disarming Attack (PHB, an optional
 feature) and Warforged's Integrated Protection (a species trait). The other 111
-are every `CURATED` row the stored format holds: fighting styles, feats,
+are every `CURATED` row the stored format held before 2b: fighting styles, feats,
 standing numbers (speeds, saves, scores, immunities), riders on every hit or
 cast, pools and actions, and subclass features. Nine of them needed a term the
 format gained for them (rule pack port 2a): a pool's `die` (Martial Adept and
@@ -22,16 +22,22 @@ Superior Technique's d6), Metamagic Adept's `noSlotConversion`, the initiative
 bonus `"profBonus": true` (2024 Alert, Hare-Trigger), which counts once however
 many features add it, and an AC formula with no `label`, which is named for
 what gives it, so a renamed copy shows its own name (Unarmored Defense for the
-College of Dance, Draconic Resilience, Immortal Durability). The rows left in
-`CURATED` need something the format lacks: a pick, a test of the printing, a
-named class's level or name, text or a reset by level, or an engine call.
+College of Dance, Draconic Resilience, Immortal Durability). Eighteen more are
+the two printings of nine class and subclass features that differ between 2014
+and 2024 (rule pack port 2b), each under a key that names its printing
+(`roving|ranger|xphb`) beside the key alone, which every other printing reads.
+A printing that adds nothing has a row with no effects, which still turns the
+prose scan off (2014 Roving and Feral Senses, 2024 Remarkable Athlete). The
+rows left in `CURATED` need something the format lacks: a pick, the class's
+level or name, text or a reset by level, or an engine call.
 
-55 `standing` rows have moved (`src/rules/cast-guidance/standing.json`): every
+63 `standing` rows have moved (`src/rules/cast-guidance/standing.json`): every
 `STANDING` row the format holds, the defenses, senses and speeds a subclass or
-optional feature adds beside what its prose scan reads. The 18 left in
-`STANDING` need a pick (Bestial Soul, Fiendish Resilience), a test of the
-printing (Avatar of Battle, Nature's Ward), or what the character has already
-(darkvision that grows, a save it may have, the branch or cantrip it picked).
+optional feature adds beside what its prose scan reads, eight of them split by
+printing (Avatar of Battle, Aura of Warding, Aura of Devotion, Second-Story
+Work, whose 2014 row adds nothing). The 14 left in `STANDING` need a pick (Bestial Soul,
+Fiendish Resilience) or what the character has already (darkvision that grows,
+a save it may have, the branch or cantrip it picked).
 
 Every advantage row has moved, under 181 keys (`src/rules/cast-guidance/roll-advantages.json`):
 advantage on the character's own d20 tests that a feature, feat, optional
@@ -114,11 +120,18 @@ class level) the format does not have.
 
 | Call site | Key | Example |
 | --- | --- | --- |
-| Class or subclass feature | `name\|class` for each name and class or subclass label tried | `stunning strike\|monk` |
+| Class or subclass feature | `name\|class\|printing` for each printing, then `name\|class`, for each name and class or subclass label tried | `roving\|ranger\|xphb`, `stunning strike\|monk` |
 | Class row | `class:` and the class uid | `class:monk\|phb` |
 | Feat | its uid, then the uid of the feat it copies | `alert\|phb` |
 | Optional feature | its uid, then the uid of the one it copies | `defense\|phb` |
 | Race trait | `trait:` and the trait name | `trait:relentless endurance` |
+
+A class or subclass feature's printings are its own book (the official one's,
+for a copy), then its class's or subclass's, so a 2014 subclass kept under a
+2024 class reads its own printing's row. A row under the key alone is for every
+printing with no row of its own. Code rows have no printing in their keys: they
+test it in code, and a printing's built-in row stands in for the code row under
+the key alone.
 
 The first key with a row wins, in the order the call site tried `CURATED`, and
 across both tables: while rows are moving, a `CURATED` row under an earlier key

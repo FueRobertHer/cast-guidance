@@ -822,6 +822,22 @@ export function entryKeys(e: DataEntity | undefined, uid: string): string[] {
   return key === uid ? [uid] : [uid, key];
 }
 
+/**
+ * The keys a class or subclass feature's built-in rows are found under: each of
+ * `keys` (`roving|ranger`) for one printing first (`roving|ranger|xphb`), then
+ * alone, the row for every printing. The printings are the feature's own
+ * (`printing`, the official one's for a copy), then that of the class or
+ * subclass whose uid is `uid`, so a 2014 subclass under a 2024 class reads its
+ * own, as `CURATED` rows test the printing in code.
+ */
+export function printingKeys(keys: readonly string[], printing: string, uid: string): string[] {
+  const at = uid.lastIndexOf('|');
+  const printings = [
+    ...new Set([printing, at < 0 ? '' : uid.slice(at + 1)].map((p) => p.toLowerCase())),
+  ].filter((p) => p !== '');
+  return keys.flatMap((k) => [...printings.map((p) => `${k}|${p}`), k]);
+}
+
 // ---------------------------------------------------------------------------
 // Rule packs
 // ---------------------------------------------------------------------------

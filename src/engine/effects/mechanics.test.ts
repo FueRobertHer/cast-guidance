@@ -879,6 +879,111 @@ describe('basedOn reaches the curated row', () => {
     expect(ac('Scaled Hide')).toEqual(['Scaled Hide', 15]);
   });
 
+  it("finds a feature's row for its printing before the row for every printing", () => {
+    // Dread Ambusher: Wisdom on initiative in both printings, and uses in 2024.
+    // WIS +2, DEX +2.
+    const ambusher = (feature: Record<string, unknown>, subSource = 'HB', wis = 14) => {
+      const name = String(feature.name);
+      const ctx = world({
+        subclass: [
+          {
+            name: 'Gloom Stalker',
+            shortName: 'Gloom Stalker',
+            source: subSource,
+            className: 'Warrior',
+            classSource: 'TST',
+            subclassFeatures: [`${name}|Warrior|TST|Gloom Stalker|${subSource}|3`],
+          },
+        ],
+        subclassFeature: [
+          {
+            source: 'HB',
+            className: 'Warrior',
+            classSource: 'TST',
+            subclassShortName: 'Gloom Stalker',
+            subclassSource: subSource,
+            level: 3,
+            entries: ['You strike first.'],
+            ...feature,
+          },
+        ],
+      });
+      const doc = character((d) => {
+        d.abilities.base.wis = wis;
+        d.classes = [
+          {
+            ref: { name: 'Warrior', source: 'TST' },
+            subclass: { name: 'Gloom Stalker', source: subSource },
+            levels: 3,
+            hp: [],
+          },
+        ];
+      });
+      const sheet = deriveSheet(doc, ctx);
+      return [sheet.initiative.value, sheet.resources.find((r) => r.key === 'dread-ambusher')?.max];
+    };
+    // Its own book names no printing a row is for: the row for every printing.
+    expect(ambusher({ name: 'Dread Ambusher' })).toEqual([4, undefined]);
+    // A copy is the printing it copies, renamed or not.
+    expect(ambusher({ name: 'Dread Ambusher', ...cg({ basedOn: 'Dread Ambusher|XPHB' }) })).toEqual(
+      [4, 2],
+    );
+    expect(ambusher({ name: 'Ambush', ...cg({ basedOn: 'Dread Ambusher|XPHB' }) })).toEqual([4, 2]);
+    expect(ambusher({ name: 'Ambush', ...cg({ basedOn: 'Dread Ambusher|XGE' }) })).toEqual([
+      4,
+      undefined,
+    ]);
+    // A feature of a 2024 subclass reads the 2024 row, whatever book the feature names.
+    expect(ambusher({ name: 'Dread Ambusher' }, 'XPHB')).toEqual([4, 2]);
+    // No Wisdom below 0 on initiative, and one use at the least (WIS -1 and 0).
+    expect(ambusher({ name: 'Dread Ambusher' }, 'XPHB', 8)).toEqual([2, 1]);
+    expect(ambusher({ name: 'Dread Ambusher' }, 'XPHB', 10)).toEqual([2, 1]);
+  });
+
+  it("finds a feature's standing row for its printing, as its curated row", () => {
+    // 2024 Second-Story Work: a climb speed; the 2014 one has none.
+    const climbs = (basedOn: string) => {
+      const ctx = world({
+        subclass: [
+          {
+            name: 'Thief',
+            shortName: 'Thief',
+            source: 'HB',
+            className: 'Warrior',
+            classSource: 'TST',
+            subclassFeatures: ['Second-Story Work|Warrior|TST|Thief|HB|3'],
+          },
+        ],
+        subclassFeature: [
+          {
+            name: 'Second-Story Work',
+            source: 'HB',
+            className: 'Warrior',
+            classSource: 'TST',
+            subclassShortName: 'Thief',
+            subclassSource: 'HB',
+            level: 3,
+            entries: ['You climb well.'],
+            ...cg({ basedOn }),
+          },
+        ],
+      });
+      const doc = character((d) => {
+        d.classes = [
+          {
+            ref: { name: 'Warrior', source: 'TST' },
+            subclass: { name: 'Thief', source: 'HB' },
+            levels: 3,
+            hp: [],
+          },
+        ];
+      });
+      return deriveSheet(doc, ctx).otherSpeeds.map((s) => s.mode);
+    };
+    expect(climbs('Second-Story Work|XPHB')).toEqual(['climb']);
+    expect(climbs('Second-Story Work|PHB')).toEqual([]);
+  });
+
   it("for a species trait, by the trait's basedOn", () => {
     const ac = (body?: Record<string, unknown>) => {
       const race: DataEntity = {

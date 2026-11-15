@@ -3,7 +3,7 @@ import { BUILT_IN_RULE_SETS, makeTestContext } from '../../../tests-fixtures/tes
 import { RULE_SET_TYPE } from '../castGuidance';
 import { deriveSheet } from '../derive';
 import { Collector } from '../effects/base';
-import { builtInRowsFor, emitRuleRows } from '../effects/mechanics';
+import { builtInRowsFor, emitRuleRows, printingKeys } from '../effects/mechanics';
 import {
   type CharacterDoc,
   type DataEntity,
@@ -22,13 +22,15 @@ const sub = (uid: string, label = 'Feature'): EffectOrigin => ({ label, uid, typ
 
 /**
  * A feature's standing row, as the call sites emit it: the code row, or the
- * built-in rule set's (`src/rules/cast-guidance/standing.json`) once it moved.
+ * built-in rule set's (`src/rules/cast-guidance/standing.json`) once it moved,
+ * under the key for its printing first (`from`, then the origin's uid's).
  */
 function emit(key: string, origin: EffectOrigin, opts: { from?: string; level?: number } = {}) {
   const col = new Collector(newCharacterDoc('c', 'H', 't'), empty);
   const level = opts.level ?? 20;
   if (emitStandingEffects(col, key, origin, opts.from, level)) return col;
-  const rows = builtInRowsFor(col, 'standing', [key], hasStandingRow);
+  const keys = printingKeys([key], opts.from ?? '', origin.uid);
+  const rows = builtInRowsFor(col, 'standing', keys, hasStandingRow);
   if (rows === undefined) throw new Error(`No standing row under ${key}`);
   emitRuleRows(col, rows, origin, level, level);
   return col;
@@ -161,6 +163,13 @@ describe('standing rows', () => {
       ['psychic', 'not while incapacitated'],
       ['radiant', 'not while incapacitated'],
     ]);
+    const devotion = (uid: string) =>
+      of(emit('aura of devotion|oath of devotion', sub(uid)), 'conditionImmune').map((e) => [
+        e.condition,
+        e.note,
+      ]);
+    expect(devotion('oath of devotion|phb')).toEqual([['charmed', 'while conscious']]);
+    expect(devotion('oath of devotion|xphb')).toEqual([['charmed', 'not while incapacitated']]);
   });
 
   it('reads a 2024 feature another book lends as 2024', () => {
