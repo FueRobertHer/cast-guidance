@@ -7,6 +7,8 @@
  * placeholder prose.
  */
 import { describe, expect, it } from 'vitest';
+import { BUILT_IN_RULE_SETS } from '../../../tests-fixtures/testWorld';
+import { RULE_SET_TYPE } from '../castGuidance';
 import { deriveSheet } from '../derive';
 import { type DataEntity, type EngineContext, type EntityRef, newCharacterDoc } from '../types';
 
@@ -103,7 +105,8 @@ const ctx: EngineContext = {
         String(e.name).toLowerCase() === name.toLowerCase() &&
         (source === undefined || String(e.source).toLowerCase() === source.toLowerCase()),
     ),
-  byType: (type) => WORLD[type] ?? [],
+  // The rule sets every registry holds: Psionic Power's dice are a row of them.
+  byType: (type) => (type === RULE_SET_TYPE ? BUILT_IN_RULE_SETS : (WORLD[type] ?? [])),
 };
 
 function sheetAt18(source: Printing, subclass: EntityRef) {

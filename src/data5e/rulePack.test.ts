@@ -115,6 +115,13 @@ describe('the registry’s packs', () => {
 describe('a pack past a limit is refused, with the reason', () => {
   const effect = { kind: 'acBonus', amount: 1 };
   const many = (n: number, v: unknown) => Array(n).fill(v);
+  /** An action whose `field` is a level table, its words at level 5 `length` long. */
+  const byLevel = (field: 'label' | 'note', length: number) => ({
+    kind: 'action',
+    economy: 'action',
+    label: 'Flare',
+    [field]: { byLevel: { '1': 'x', '5': 'x'.repeat(length) } },
+  });
   it.each([
     [
       'patches',
@@ -217,10 +224,25 @@ describe('a pack past a limit is refused, with the reason', () => {
       },
       /a reference to an entry is at most 200 characters/,
     ],
+    [
+      'a label by level',
+      { patches: [{ target: 'a|b', add: [byLevel('label', 101)] }] },
+      /a name or label is at most 100 characters/,
+    ],
+    [
+      'a note by level',
+      { patches: [{ target: 'a|b', add: [byLevel('note', 501)] }] },
+      /a text is at most 500 characters/,
+    ],
   ])('%s', (_, guidance, reason) => {
     const refusals = packRefusals({ v: 1, ...guidance });
     expect(refusals).toHaveLength(1);
     expect(refusals[0]).toMatch(reason);
+  });
+
+  it('holds the words of a level table to the field that holds it', () => {
+    const add = [byLevel('label', 100), byLevel('note', 500)];
+    expect(packRefusals({ v: 1, patches: [{ target: 'a|b', add }] })).toEqual([]);
   });
 
   it('keeps to every limit at the limit itself', () => {

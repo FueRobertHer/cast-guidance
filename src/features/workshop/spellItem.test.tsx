@@ -487,6 +487,66 @@ describe('ItemEditor', () => {
     expect(readStoredEffects(effects).problems).toEqual([]);
   });
 
+  it('shows words a file gives by level, and puts one value in their place when changed', () => {
+    const draft = mount(item, {
+      name: 'Ember Lamp',
+      type: 'OTH',
+      entries: [],
+      castGuidance: {
+        v: 1,
+        effects: [
+          {
+            kind: 'resource',
+            key: 'embers',
+            label: { byLevel: { '5': 'Embers (d8)', '1': 'Embers (d6)' } },
+            max: 2,
+            reset: { byLevel: { '1': 'long', '5': 'short' } },
+          },
+          { kind: 'action', economy: 'bonus', label: { byLevel: { '1': 'Flare' } } },
+        ],
+      },
+    });
+    const effects = () => (draft().castGuidance as Json).effects as Json[];
+    expect(readStoredEffects(effects()).problems).toEqual([]);
+    expect(
+      screen.getByText('Embers (d6), by level: 2 uses, back on a rest that changes by level'),
+    ).toBeTruthy();
+    expect(screen.getByText('Bonus action: Flare, by level')).toBeTruthy();
+    const name = screen.getByLabelText('Uses per rest: Name') as HTMLInputElement;
+    expect([name.value, name.placeholder]).toEqual(['', 'By level, as written']);
+    const back = screen.getByLabelText('Uses per rest: Back on') as HTMLSelectElement;
+    expect(back.selectedOptions[0]?.textContent).toBe('By level, as written');
+    type('Uses per rest: Back on', 'short');
+    type('Action: Name', 'Flare');
+    expect(effects()[0]).toMatchObject({ reset: 'short', label: { byLevel: expect.anything() } });
+    expect(effects()[1]).toMatchObject({ label: 'Flare' });
+    expect(readStoredEffects(effects()).problems).toEqual([]);
+  });
+
+  it('counts a spell spending uses that rest by level by its first level’s rest', () => {
+    const draft = mount(item, {
+      name: 'Ember Lamp',
+      type: 'OTH',
+      entries: [],
+      castGuidance: {
+        v: 1,
+        effects: [
+          {
+            kind: 'resource',
+            key: 'embers',
+            label: 'Embers',
+            max: 2,
+            reset: { byLevel: { '1': 'short', '11': 'long' } },
+          },
+          { kind: 'grantSpell', spell: 'Shield|PHB' },
+        ],
+      },
+    });
+    type('Cast a spell: Cast', 'use:embers');
+    const effects = (draft().castGuidance as Json).effects as Json[];
+    expect(effects[1]).toMatchObject({ resourceKey: 'embers', usage: '1/rest' });
+  });
+
   it('shows the spell a Cast a spell card holds after the card above it goes', () => {
     mount(item, {
       name: 'Staff',

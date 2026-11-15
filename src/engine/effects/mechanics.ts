@@ -53,12 +53,36 @@ import { printingOf } from './reskin';
 
 type Kind = EffectInput['kind'];
 
+/**
+ * Words a stored effect gives by class level (`byLevelWords`): the effect's
+ * `field`, as the rows say at the highest level reached, filled when the effect
+ * is emitted. Below the first row's level a field the kind needs keeps the
+ * first row's words and any other is left out.
+ */
+export interface LevelWords {
+  field: string;
+  rows: ReadonlyArray<readonly [number, string]>;
+  needed?: true;
+}
+
 /** One stored effect, read: the engine's fields, its formulas and its states. */
 export interface EffectTemplate {
   /** The effect without `origin`, which the collector adds. */
   effect: Readonly<Record<string, unknown>> & { kind: Kind };
   formulas?: ReadonlyArray<{ field: FormulaField; formula: Formula }>;
+  /** Its words by class level; the effect holds the first row's until it is emitted. */
+  byLevel?: readonly LevelWords[];
   while?: readonly WhileState[];
+}
+
+/** `t`'s words by level filled in on `e`, a fresh copy of its effect, at `classLevel`. */
+function fillLevelWords(e: Record<string, unknown>, t: EffectTemplate, classLevel: number): void {
+  for (const { field, rows, needed } of t.byLevel ?? []) {
+    let at: string | undefined;
+    for (const [level, words] of rows) if (level <= classLevel) at = words;
+    if (at !== undefined) e[field] = at;
+    else if (needed !== true) delete e[field];
+  }
 }
 
 /**
@@ -125,6 +149,8 @@ class Bad extends Error {}
 interface Reading {
   kind: Kind;
   slots: Array<{ field: FormulaField; formula: Formula }>;
+  /** Words by class level, filled when the effect is emitted (`byLevelWords`). */
+  words?: LevelWords[];
   /**
    * A strict reading (a built-in rule set's): the keys read off each object, so
    * a field the reader does not know is a problem rather than dropped unseen.
@@ -242,6 +268,50 @@ const oneDie: Field = (v) => {
   if (!/^1d[1-9]\d{0,2}$/.test(s)) throw new Bad('is one die, like 1d6');
   return s;
 };
+
+/**
+ * Words that may change with the class level: as written, or a level table of
+ * them (`{ "byLevel": { "1": "1d8", "10": "1d10" } }`), each read by `read`.
+ * The words at the highest level reached are filled in when the effect is
+ * emitted, from the level its call site passes, as an amount's table is. Below
+ * the first level the field is left out, so the table of a field the kind
+ * needs (`needed`) starts at level 1. `as` names the effect's field where it
+ * is not the stored one (`reset` is `resetOn`).
+ */
+const byLevelWords =
+  (read: Field, how: { needed?: true; as?: string } = {}): Field =>
+  (v, r, key) => {
+    if (!isRecord(v)) return read(v, r, key);
+    onlyKnown(v, r, (k) => k === 'byLevel', 'a level table');
+    const table = own(v, 'byLevel');
+    if (!isRecord(table)) throw new Bad('is words or a level table ({ "byLevel": ... })');
+    const entries = Object.entries(table);
+    if (entries.length === 0) throw new Bad('byLevel needs at least one level');
+    if (entries.length > L.byLevelRows) {
+      throw new Bad(`byLevel has at most ${L.byLevelRows} levels`);
+    }
+    const rows = entries
+      .map(([level, words]): readonly [number, string] => {
+        if (!/^\d{1,2}$/.test(level)) throw new Bad(`byLevel: "${clip(level)}" is not a level`);
+        try {
+          return [Number(level), read(words, r, key) as string];
+        } catch (err) {
+          if (err instanceof Bad) throw new Bad(`byLevel: level ${level} ${err.message}`);
+          throw err;
+        }
+      })
+      .sort((x, y) => x[0] - y[0]);
+    const [first] = rows;
+    if (first === undefined) throw new Bad('byLevel needs at least one level');
+    if (how.needed === true && first[0] > 1) {
+      throw new Bad('byLevel starts at level 1, since the effect needs it');
+    }
+    r.words = [
+      ...(r.words ?? []),
+      { field: how.as ?? key, rows, ...(how.needed === true ? { needed: true as const } : {}) },
+    ];
+    return first[1];
+  };
 
 /** A number that may be a formula or a level table, filled at fold time. */
 const amount: Field = (v, r, key) => {
@@ -397,11 +467,11 @@ const checkBonus: Build = (o, r) => {
 
 const action: Build = (o, r) => ({
   economy: req(o, r, 'economy', oneOf('action', 'bonus', 'reaction', 'none')),
-  label: req(o, r, 'label', text()),
-  ...opt(o, r, 'roll', dice),
+  label: req(o, r, 'label', byLevelWords(text(), { needed: true })),
+  ...opt(o, r, 'roll', byLevelWords(dice)),
   ...opt(o, r, 'heals', flag),
   ...opt(o, r, 'plainDice', flag),
-  ...opt(o, r, 'note', text(L.textLength)),
+  ...opt(o, r, 'note', byLevelWords(text(L.textLength))),
   ...opt(
     o,
     r,
@@ -617,14 +687,19 @@ const KINDS = new Map<Kind, Build>([
     'resource',
     (o, r) => ({
       key: req(o, r, 'key', text()),
-      label: req(o, r, 'label', text()),
+      label: req(o, r, 'label', byLevelWords(text(), { needed: true })),
       max: req(o, r, 'max', amount),
       ...opt(o, r, 'min', amount),
-      resetOn: req(o, r, 'reset', oneOf('short', 'long')),
+      resetOn: req(
+        o,
+        r,
+        'reset',
+        byLevelWords(oneOf('short', 'long'), { needed: true, as: 'resetOn' }),
+      ),
       ...opt(o, r, 'stack', flag),
       ...opt(o, r, 'regainOnShort', amount),
       ...opt(o, r, 'noSlotConversion', int(1, 20)),
-      ...opt(o, r, 'die', oneDie),
+      ...opt(o, r, 'die', byLevelWords(oneDie)),
       ...opt(o, r, 'foretell', flag),
     }),
   ],
@@ -712,7 +787,12 @@ function readEffect(raw: unknown, strict: boolean): EffectTemplate {
   const states = opt(raw, r, 'while', readWhile) as { while?: WhileState[] };
   const read = r.seen?.get(raw);
   onlyKnown(raw, r, (k) => k === 'kind' || read?.has(k) === true, 'this kind');
-  return { effect, ...(r.slots.length > 0 ? { formulas: r.slots } : {}), ...states };
+  return {
+    effect,
+    ...(r.slots.length > 0 ? { formulas: r.slots } : {}),
+    ...(r.words === undefined ? {} : { byLevel: r.words }),
+    ...states,
+  };
 }
 
 /**
@@ -1366,6 +1446,7 @@ function emit(
     if (named === undefined) continue;
     // A fresh copy each time: fold time fills its numbers in place.
     const e = { ...structuredClone(named.effect), origin } as EffectInput;
+    fillLevelWords(e as unknown as Record<string, unknown>, named, classLevel);
     if (t.formulas !== undefined) {
       e.formulas = t.formulas.map((f) => ({
         field: f.field,

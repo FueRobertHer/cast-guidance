@@ -30,7 +30,6 @@ import {
   SKILLS,
 } from '../types';
 import { DRACONIC_ANCESTRY, DRAGONS, dragonOptions } from './draconicAncestry';
-import { BARDIC_DICE } from './namedEffects';
 
 /**
  * `from` is the printing of the feature itself, lowercase, where it can differ from
@@ -402,51 +401,6 @@ function recovery(is2024: boolean) {
 }
 
 /**
- * Psionic Energy Dice, a pool per subclass: "use only the dice from this subclass".
- * 2024 prints a table and regains one on a short rest. 2014 regains one with a bonus
- * action, once per short or long rest. A 2014 character with both subclasses gets one
- * shared chip, which refills the first pool: the other is a pip tap.
- */
-function psionicEnergyDice(
-  col: Collector,
-  origin: EffectOrigin,
-  key: string,
-  cls: string,
-  from?: string,
-): void {
-  const level = classLevel(col, cls);
-  const die = level >= 17 ? 12 : level >= 11 ? 10 : level >= 5 ? 8 : 6;
-  const printed2024 = printedIn(origin, 'xphb', from);
-  const count2024 = level >= 17 ? 12 : level >= 13 ? 10 : level >= 9 ? 8 : level >= 5 ? 6 : 4;
-  col.add({
-    kind: 'resource',
-    key,
-    label: `Psionic Energy Dice (d${die})`,
-    die: `1d${die}`,
-    max: printed2024 ? count2024 : 'twiceProfBonus',
-    resetOn: 'long',
-    ...(printed2024 ? { regainOnShort: 1 } : {}),
-    origin,
-  });
-  if (printed2024) return;
-  col.add({
-    kind: 'resource',
-    key: 'psionic-power',
-    label: 'Psionic Power',
-    max: 1,
-    resetOn: 'short',
-    origin,
-  });
-  col.add({
-    kind: 'action',
-    economy: 'bonus',
-    label: 'Psionic Power',
-    regains: { resource: key, amount: 1 },
-    origin,
-  });
-}
-
-/**
  * The 2024 Agonizing Blast: Charisma on the damage of a Warlock cantrip the
  * player picks. The pick sits beside the invocations' prompt, not under it, so
  * saving that prompt keeps it. The picker lists every Warlock cantrip; the label
@@ -547,23 +501,7 @@ const signatureSpells: CuratedFn = (col, origin) => {
 
 export const CURATED: Record<string, CuratedFn> = {
   // --- Feats ---------------------------------------------------------------
-  // More of this section's rows are data, in `src/rules/cast-guidance/curated.json`.
-  // Battle Master's superiority dice: 4/5/6 by fighter level, growing d8→d10→d12.
-  'combat superiority|battle master': (col, origin) => {
-    const lvl = classLevel(col, 'Fighter');
-    const count = lvl >= 15 ? 6 : lvl >= 7 ? 5 : 4;
-    const die = lvl >= 18 ? 'd12' : lvl >= 10 ? 'd10' : 'd8';
-    col.add({
-      kind: 'resource',
-      key: 'superiority-dice',
-      label: `Superiority Dice (${die})`,
-      die: `1${die}`,
-      max: count,
-      resetOn: 'short',
-      stack: true,
-      origin,
-    });
-  },
+  // Every row of this section is data, in `src/rules/cast-guidance/curated.json`.
 
   // --- Fighting styles (2014 optional features; 2024 feats share names) ----
   // Every row of this section is data, in `src/rules/cast-guidance/curated.json`.
@@ -608,10 +546,6 @@ export const CURATED: Record<string, CuratedFn> = {
   // cross-feature DC, so its row pins it: Con save vs 8 + prof + Wis mod. It rides
   // on a hit, so it takes no slot of its own. Its cost is in `SPEND_LINKS`. The row
   // is in `src/rules/cast-guidance/curated.json`.
-  'psionic power|psi warrior': (col, origin, from) =>
-    psionicEnergyDice(col, origin, 'psi-warrior-dice', 'Fighter', from),
-  'psionic power|soulknife': (col, origin, from) =>
-    psionicEnergyDice(col, origin, 'soulknife-dice', 'Rogue', from),
   'channel divinity|cleric': (col, origin) => {
     // Scales with cleric level; the prose scanner can't see level gates.
     const lvl = classLevel(col, 'Cleric');
@@ -623,28 +557,6 @@ export const CURATED: Record<string, CuratedFn> = {
       label: 'Channel Divinity',
       max: uses,
       ...recovery(is2024),
-      origin,
-    });
-  },
-  'bardic inspiration|bard': (col, origin) => {
-    // The die it gives, by Bard level: d6, d8 at 5, d10 at 10, d12 at 15. The
-    // 2014 printing says so in cards of its own, the 2024 one in its table.
-    const level = classLevel(col, 'Bard');
-    const die = BARDIC_DICE[level >= 15 ? 3 : level >= 10 ? 2 : level >= 5 ? 1 : 0];
-    col.add({
-      kind: 'resource',
-      key: 'bardic-inspiration',
-      label: 'Bardic Inspiration',
-      max: 'abilityMod:cha', // resolved against final CHA in the resources calc
-      resetOn: level >= 5 ? 'short' : 'long',
-      die: `1${die}`,
-      origin,
-    });
-    col.add({
-      kind: 'action',
-      economy: 'bonus',
-      label: 'Bardic Inspiration',
-      note: `gives one ${die} · another creature within 60 feet`,
       origin,
     });
   },
@@ -717,46 +629,12 @@ export const CURATED: Record<string, CuratedFn> = {
       origin,
     });
   },
-  // Wisdom modifier uses (at least one) a long rest. The 2024 Improved Warding
-  // Flare (Cleric 6) brings them back on a short rest too, and its temporary hit
-  // points go on the reaction's chip. The 2014 printing's Improved Flare, which
-  // lets it guard others, changes no number.
-  'warding flare|light domain': (col, origin, from) => {
-    const improved = printedIn(origin, 'xphb', from) && classLevel(col, 'Cleric') >= 6;
-    col.add({
-      kind: 'resource',
-      key: 'warding-flare',
-      label: 'Warding Flare',
-      max: 'abilityMod:wis',
-      resetOn: improved ? 'short' : 'long',
-      origin,
-    });
-    col.add({
-      kind: 'action',
-      economy: 'reaction',
-      label: 'Warding Flare',
-      ...(improved
-        ? { note: 'the target gains 2d6 + your Wisdom modifier temporary hit points' }
-        : {}),
-      origin,
-    });
-  },
   // Tasha's Harness Divine Power spends Channel Divinity, and has uses of its own
   // by class level: the cleric's at 2, 6 and 18, the paladin's at 3, 7 and 15.
   'channel divinity: harness divine power|cleric': harnessDivinePower('Cleric', [2, 6, 18]),
   'channel divinity: harness divine power|paladin': harnessDivinePower('Paladin', [3, 7, 15]),
   // The scan read one pool for both spells, and nothing in the 2024 printing.
   'signature spells|wizard': signatureSpells,
-  'sneak attack|rogue': (col, origin) => {
-    const dice = Math.ceil(classLevel(col, 'Rogue') / 2);
-    col.add({
-      kind: 'action',
-      economy: 'action',
-      label: `Sneak Attack (+${dice}d6 once/turn)`,
-      roll: `${dice}d6`,
-      origin,
-    });
-  },
   // TCE's optional feature (under the 2014 class) picks again at barbarian 10.
   'primal knowledge|barbarian': (col, origin, from) => {
     const count = printedIn(origin, 'phb', from) && classLevel(col, 'Barbarian') >= 10 ? 2 : 1;

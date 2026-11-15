@@ -211,10 +211,16 @@ export function packRefusals(guidance: Record<string, unknown>): string[] {
       }
       for (const v of value) stack.push([v, key]);
     } else if (isRecord(value)) {
-      if (key === 'byLevel' && Object.keys(value).length > L.byLevelRows) {
-        reasons.add(`a level table has at most ${L.byLevelRows} levels`);
+      for (const k of Object.keys(value)) {
+        const child = value[k];
+        if (k === 'byLevel' && isRecord(child)) {
+          if (Object.keys(child).length > L.byLevelRows) {
+            reasons.add(`a level table has at most ${L.byLevelRows} levels`);
+          }
+          // A level table's rows are the values of the field that holds it: a note's are texts.
+          for (const row of Object.values(child)) stack.push([row, key]);
+        } else stack.push([child, k]);
       }
-      for (const k of Object.keys(value)) stack.push([value[k], k]);
     }
   }
   const all = [...reasons];

@@ -181,17 +181,28 @@ describe('emitCuratedEffects', () => {
   });
 
   it('emits a stacking superiority-dice pool for Battle Master', () => {
-    const c = col('Fighter', 5);
-    expect(emitCuratedEffects(c, 'combat superiority|battle master', origin)).toBe(true);
-    const pool = c.effects.find(
-      (e): e is Extract<typeof e, { kind: 'resource' }> =>
-        e.kind === 'resource' && e.key === 'superiority-dice',
-    );
-    expect(pool).toBeDefined();
-    expect(pool?.stack).toBe(true);
-    expect(typeof pool?.max === 'number' && pool.max > 0).toBe(true);
-    // The die a maneuver adds to a roll: d8, d10 at 10, d12 at 18.
-    expect(pool?.die).toBe('1d8');
+    const pool = (levels: number) => {
+      const c = col('Fighter', levels);
+      expect(emitRow(c, 'combat superiority|battle master', origin)).toBe(true);
+      return worked(c).effects.flatMap((e) =>
+        e.kind === 'resource' && e.key === 'superiority-dice'
+          ? [`${e.max} ${e.die} ${e.label} ${e.resetOn} ${e.stack}`]
+          : [],
+      );
+    };
+    // Four dice, five at 7 and six at 15; the die a maneuver adds to a roll is
+    // a d8, a d10 at 10 and a d12 at 18.
+    expect([3, 6, 7, 9, 10, 14, 15, 17, 18].map(pool)).toEqual([
+      ['4 1d8 Superiority Dice (d8) short true'],
+      ['4 1d8 Superiority Dice (d8) short true'],
+      ['5 1d8 Superiority Dice (d8) short true'],
+      ['5 1d8 Superiority Dice (d8) short true'],
+      ['5 1d10 Superiority Dice (d10) short true'],
+      ['5 1d10 Superiority Dice (d10) short true'],
+      ['6 1d10 Superiority Dice (d10) short true'],
+      ['6 1d10 Superiority Dice (d10) short true'],
+      ['6 1d12 Superiority Dice (d12) short true'],
+    ]);
   });
 
   it('gives Superior Technique and Martial Adept a d6 superiority die', () => {
@@ -331,26 +342,28 @@ describe('pools a cost spends', () => {
   ])('keeps a pool per subclass for %s', (key, cls, pool) => {
     const dice = (levels: number, source: string) =>
       resource(emit(key, cls, levels, printed(source)), pool);
-    // 2014: twice the proficiency bonus, whatever the class level.
-    expect(dice(3, 'tce')?.max).toBe('twiceProfBonus');
+    // 2014: twice the proficiency bonus (+2 here), whatever the class level.
+    expect([3, 17].map((level) => dice(level, 'tce')?.max)).toEqual([4, 4]);
     expect(dice(3, 'tce')?.resetOn).toBe('long');
     // 2024 prints a table.
     expect([3, 5, 9, 11, 13, 17].map((level) => dice(level, 'xphb')?.max)).toEqual([
       4, 6, 8, 8, 10, 12,
     ]);
-    // The die grows at the same levels in both.
-    expect([3, 5, 11, 17].map((level) => dice(level, 'xphb')?.label)).toEqual([
-      'Psionic Energy Dice (d6)',
-      'Psionic Energy Dice (d8)',
-      'Psionic Energy Dice (d10)',
-      'Psionic Energy Dice (d12)',
-    ]);
-    expect([3, 5, 11, 17].map((level) => dice(level, 'tce')?.die)).toEqual([
-      '1d6',
-      '1d8',
-      '1d10',
-      '1d12',
-    ]);
+    // The die grows at the same levels in both, on the pool's name and its die.
+    const levels = [3, 4, 5, 10, 11, 16, 17];
+    const sides = [6, 6, 8, 8, 10, 10, 12];
+    for (const source of ['tce', 'xphb']) {
+      expect(
+        levels.map((level) => {
+          const p = dice(level, source);
+          return `${p?.label} ${p?.die}`;
+        }),
+        source,
+      ).toEqual(sides.map((d) => `Psionic Energy Dice (d${d}) 1d${d}`));
+    }
+    // 2024 regains one on a short rest; 2014 regains one with its bonus action.
+    expect(dice(3, 'xphb')?.regainOnShort).toBe(1);
+    expect(dice(3, 'tce')?.regainOnShort).toBeUndefined();
   });
 
   it('keeps the 2014 bonus action that regains a die, which 2024 does not have', () => {
@@ -662,7 +675,9 @@ describe('pools, dice and DCs only class prose states', () => {
       expect.objectContaining({
         kind: 'resource',
         key: 'warding-flare',
-        max: 'abilityMod:wis',
+        // The Wisdom modifier (0 here), at least 1.
+        max: 0,
+        min: 1,
         resetOn: 'short',
       }),
       expect.objectContaining({
@@ -681,10 +696,16 @@ describe('pools, dice and DCs only class prose states', () => {
         origin: light('light domain|xphb'),
       },
     ]);
-    // The 2014 domain, under either Cleric, keeps a long rest.
-    expect(flare(6, 'light domain|phb', 'phb')[0]).toEqual(
+    // The 2014 domain, under either Cleric, keeps a long rest and a reaction with no note.
+    expect(flare(6, 'light domain|phb', 'phb')).toEqual([
       expect.objectContaining({ kind: 'resource', resetOn: 'long' }),
-    );
+      {
+        kind: 'action',
+        economy: 'reaction',
+        label: 'Warding Flare',
+        origin: light('light domain|phb'),
+      },
+    ]);
   });
 
   it('asks for two level 3 Wizard spells for Signature Spells, each free once a short rest', () => {
@@ -799,6 +820,21 @@ describe('pools, dice and DCs only class prose states', () => {
       ['1d10 short'],
       ['1d12 short'],
     ]);
+    // As many uses as the Charisma modifier (0 here), at least 1.
+    expect(run('bardic inspiration|bard', col('Bard', 1)).effects[0]).toMatchObject({
+      max: 0,
+      min: 1,
+    });
+  });
+
+  it('rolls a Sneak Attack die for every two Rogue levels, rounded up', () => {
+    const sneak = (levels: number) =>
+      run('sneak attack|rogue', col('Rogue', levels)).effects.flatMap((e) =>
+        e.kind === 'action' ? [`${e.economy} ${e.label} ${e.roll}`] : [],
+      );
+    expect([1, 2, 3, 10, 19, 20].map(sneak)).toEqual(
+      [1, 1, 2, 5, 10, 10].map((n) => [`action Sneak Attack (+${n}d6 once/turn) ${n}d6`]),
+    );
   });
 
   it('gives the maneuvers that force a save the maneuver DC, Strength or Dexterity', () => {

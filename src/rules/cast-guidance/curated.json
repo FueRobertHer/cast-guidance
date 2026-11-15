@@ -2086,6 +2086,337 @@
           "oneRoll": true
         }
       ]
+    },
+    {
+      "part": "curated",
+      "keys": ["combat superiority|battle master"],
+      "effects": [
+        {
+          "kind": "resource",
+          "key": "superiority-dice",
+          "label": {
+            "byLevel": {
+              "1": "Superiority Dice (d8)",
+              "10": "Superiority Dice (d10)",
+              "18": "Superiority Dice (d12)"
+            }
+          },
+          "die": {
+            "byLevel": {
+              "1": "1d8",
+              "10": "1d10",
+              "18": "1d12"
+            }
+          },
+          "max": {
+            "byLevel": {
+              "1": 4,
+              "7": 5,
+              "15": 6
+            }
+          },
+          "reset": "short",
+          "stack": true
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["psionic power|psi warrior|xphb"],
+      "effects": [
+        {
+          "kind": "resource",
+          "key": "psi-warrior-dice",
+          "label": {
+            "byLevel": {
+              "1": "Psionic Energy Dice (d6)",
+              "5": "Psionic Energy Dice (d8)",
+              "11": "Psionic Energy Dice (d10)",
+              "17": "Psionic Energy Dice (d12)"
+            }
+          },
+          "die": {
+            "byLevel": {
+              "1": "1d6",
+              "5": "1d8",
+              "11": "1d10",
+              "17": "1d12"
+            }
+          },
+          "max": {
+            "byLevel": {
+              "1": 4,
+              "5": 6,
+              "9": 8,
+              "13": 10,
+              "17": 12
+            }
+          },
+          "reset": "long",
+          "regainOnShort": 1
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["psionic power|psi warrior"],
+      "effects": [
+        {
+          "kind": "resource",
+          "key": "psi-warrior-dice",
+          "label": {
+            "byLevel": {
+              "1": "Psionic Energy Dice (d6)",
+              "5": "Psionic Energy Dice (d8)",
+              "11": "Psionic Energy Dice (d10)",
+              "17": "Psionic Energy Dice (d12)"
+            }
+          },
+          "die": {
+            "byLevel": {
+              "1": "1d6",
+              "5": "1d8",
+              "11": "1d10",
+              "17": "1d12"
+            }
+          },
+          "max": {
+            "f": "prof * 2"
+          },
+          "reset": "long"
+        },
+        {
+          "kind": "resource",
+          "key": "psionic-power",
+          "label": "Psionic Power",
+          "max": 1,
+          "reset": "short"
+        },
+        {
+          "kind": "action",
+          "economy": "bonus",
+          "label": "Psionic Power",
+          "regains": {
+            "resource": "psi-warrior-dice",
+            "amount": 1
+          }
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["psionic power|soulknife|xphb"],
+      "effects": [
+        {
+          "kind": "resource",
+          "key": "soulknife-dice",
+          "label": {
+            "byLevel": {
+              "1": "Psionic Energy Dice (d6)",
+              "5": "Psionic Energy Dice (d8)",
+              "11": "Psionic Energy Dice (d10)",
+              "17": "Psionic Energy Dice (d12)"
+            }
+          },
+          "die": {
+            "byLevel": {
+              "1": "1d6",
+              "5": "1d8",
+              "11": "1d10",
+              "17": "1d12"
+            }
+          },
+          "max": {
+            "byLevel": {
+              "1": 4,
+              "5": 6,
+              "9": 8,
+              "13": 10,
+              "17": 12
+            }
+          },
+          "reset": "long",
+          "regainOnShort": 1
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["psionic power|soulknife"],
+      "effects": [
+        {
+          "kind": "resource",
+          "key": "soulknife-dice",
+          "label": {
+            "byLevel": {
+              "1": "Psionic Energy Dice (d6)",
+              "5": "Psionic Energy Dice (d8)",
+              "11": "Psionic Energy Dice (d10)",
+              "17": "Psionic Energy Dice (d12)"
+            }
+          },
+          "die": {
+            "byLevel": {
+              "1": "1d6",
+              "5": "1d8",
+              "11": "1d10",
+              "17": "1d12"
+            }
+          },
+          "max": {
+            "f": "prof * 2"
+          },
+          "reset": "long"
+        },
+        {
+          "kind": "resource",
+          "key": "psionic-power",
+          "label": "Psionic Power",
+          "max": 1,
+          "reset": "short"
+        },
+        {
+          "kind": "action",
+          "economy": "bonus",
+          "label": "Psionic Power",
+          "regains": {
+            "resource": "soulknife-dice",
+            "amount": 1
+          }
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["bardic inspiration|bard"],
+      "effects": [
+        {
+          "kind": "resource",
+          "key": "bardic-inspiration",
+          "label": "Bardic Inspiration",
+          "max": {
+            "f": "mod.cha"
+          },
+          "min": 1,
+          "reset": {
+            "byLevel": {
+              "1": "long",
+              "5": "short"
+            }
+          },
+          "die": {
+            "byLevel": {
+              "1": "1d6",
+              "5": "1d8",
+              "10": "1d10",
+              "15": "1d12"
+            }
+          }
+        },
+        {
+          "kind": "action",
+          "economy": "bonus",
+          "label": "Bardic Inspiration",
+          "note": {
+            "byLevel": {
+              "1": "gives one d6 · another creature within 60 feet",
+              "5": "gives one d8 · another creature within 60 feet",
+              "10": "gives one d10 · another creature within 60 feet",
+              "15": "gives one d12 · another creature within 60 feet"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["warding flare|light domain|xphb"],
+      "effects": [
+        {
+          "kind": "resource",
+          "key": "warding-flare",
+          "label": "Warding Flare",
+          "max": {
+            "f": "mod.wis"
+          },
+          "min": 1,
+          "reset": {
+            "byLevel": {
+              "1": "long",
+              "6": "short"
+            }
+          }
+        },
+        {
+          "kind": "action",
+          "economy": "reaction",
+          "label": "Warding Flare",
+          "note": {
+            "byLevel": {
+              "6": "the target gains 2d6 + your Wisdom modifier temporary hit points"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["warding flare|light domain"],
+      "effects": [
+        {
+          "kind": "resource",
+          "key": "warding-flare",
+          "label": "Warding Flare",
+          "max": {
+            "f": "mod.wis"
+          },
+          "min": 1,
+          "reset": "long"
+        },
+        {
+          "kind": "action",
+          "economy": "reaction",
+          "label": "Warding Flare"
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["sneak attack|rogue"],
+      "effects": [
+        {
+          "kind": "action",
+          "economy": "action",
+          "label": {
+            "byLevel": {
+              "1": "Sneak Attack (+1d6 once/turn)",
+              "3": "Sneak Attack (+2d6 once/turn)",
+              "5": "Sneak Attack (+3d6 once/turn)",
+              "7": "Sneak Attack (+4d6 once/turn)",
+              "9": "Sneak Attack (+5d6 once/turn)",
+              "11": "Sneak Attack (+6d6 once/turn)",
+              "13": "Sneak Attack (+7d6 once/turn)",
+              "15": "Sneak Attack (+8d6 once/turn)",
+              "17": "Sneak Attack (+9d6 once/turn)",
+              "19": "Sneak Attack (+10d6 once/turn)"
+            }
+          },
+          "roll": {
+            "byLevel": {
+              "1": "1d6",
+              "3": "2d6",
+              "5": "3d6",
+              "7": "4d6",
+              "9": "5d6",
+              "11": "6d6",
+              "13": "7d6",
+              "15": "8d6",
+              "17": "9d6",
+              "19": "10d6"
+            }
+          }
+        }
+      ]
     }
   ]
 }

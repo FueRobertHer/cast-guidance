@@ -268,6 +268,121 @@ describe('readMechanics', () => {
     ]);
   });
 
+  it('reads words by class level on a pool and an action, kept for when it is emitted', () => {
+    const pool = {
+      kind: 'resource',
+      key: 'embers',
+      label: { byLevel: { '1': 'Embers (d6)', '9': 'Embers (d8)' } },
+      die: { byLevel: { '9': '1d8', '1': '1d6' } },
+      max: 2,
+      reset: { byLevel: { '1': 'long', '5': 'short' } },
+    };
+    const act = {
+      kind: 'action',
+      economy: 'bonus',
+      label: 'Flare',
+      roll: { byLevel: { '1': '1d6', '11': '2d6' } },
+      note: { byLevel: { '6': 'and again' } },
+    };
+    const read = readMechanics({ v: 1, effects: [pool, act] });
+    expect(read.problems).toEqual([]);
+    // Each holds its first level's words until it is emitted.
+    expect(read.effects.map((t) => t.effect)).toEqual([
+      {
+        kind: 'resource',
+        key: 'embers',
+        label: 'Embers (d6)',
+        die: '1d6',
+        max: 2,
+        resetOn: 'long',
+      },
+      { kind: 'action', economy: 'bonus', label: 'Flare', roll: '1d6', note: 'and again' },
+    ]);
+    expect(read.effects.map((t) => t.byLevel)).toEqual([
+      [
+        {
+          field: 'label',
+          rows: [
+            [1, 'Embers (d6)'],
+            [9, 'Embers (d8)'],
+          ],
+          needed: true,
+        },
+        {
+          field: 'resetOn',
+          rows: [
+            [1, 'long'],
+            [5, 'short'],
+          ],
+          needed: true,
+        },
+        {
+          field: 'die',
+          rows: [
+            [1, '1d6'],
+            [9, '1d8'],
+          ],
+        },
+      ],
+      [
+        {
+          field: 'roll',
+          rows: [
+            [1, '1d6'],
+            [11, '2d6'],
+          ],
+        },
+        { field: 'note', rows: [[6, 'and again']] },
+      ],
+    ]);
+  });
+
+  it('says what keeps words by level from counting', () => {
+    const pool = (fields: Record<string, unknown>) => ({
+      kind: 'resource',
+      key: 'k',
+      label: 'K',
+      max: 1,
+      reset: 'long',
+      ...fields,
+    });
+    const levels = (n: number) =>
+      Object.fromEntries(Array.from({ length: n }, (_, i) => [String(i + 1), 'K']));
+    const read = readMechanics({
+      v: 1,
+      effects: [
+        pool({ reset: { byLevel: { '5': 'short' } } }),
+        pool({ die: { byLevel: { '1': '1d6', '5': '2d6' } } }),
+        pool({ label: { byLevel: { one: 'K' } } }),
+        pool({ label: { byLevel: {} } }),
+        pool({ label: { byLevel: 'K' } }),
+        pool({ reset: { byLevel: { '1': 'dawn' } } }),
+        { kind: 'action', economy: 'action', label: { byLevel: { '3': 'Late' } } },
+        // Only a pool's and an action's words take a table.
+        { kind: 'cue', text: { byLevel: { '1': 'Remember' } } },
+        pool({ label: { byLevel: levels(31) } }),
+      ],
+    });
+    expect(read.effects).toEqual([]);
+    expect(read.problems).toEqual([
+      'effect 1 (resource): "reset" byLevel starts at level 1, since the effect needs it',
+      'effect 2 (resource): "die" byLevel: level 5 is one die, like 1d6',
+      'effect 3 (resource): "label" byLevel: "one" is not a level',
+      'effect 4 (resource): "label" byLevel needs at least one level',
+      'effect 5 (resource): "label" is words or a level table ({ "byLevel": ... })',
+      'effect 6 (resource): "reset" byLevel: level 1 is one of short, long',
+      'effect 7 (action): "label" byLevel starts at level 1, since the effect needs it',
+      'effect 8 (cue): "text" needs words',
+      'effect 9 (resource): "label" byLevel has at most 30 levels',
+    ]);
+    // A built-in rule set's reading names a field beside the table; a player's reads past it.
+    const extra = [pool({ label: { byLevel: { '1': 'K' }, f: 'x' } })];
+    expect(readStoredEffects(extra, 'effects', true).problems).toEqual([
+      'effect 1 (resource): "label.f" is not a field a level table reads',
+    ]);
+    expect(readStoredEffects(extra).effects.map((t) => t.effect.label)).toEqual(['K']);
+  });
+
   it('keeps each formula for fold time, with a 0 in its field until then', () => {
     const t = readMechanics({ v: 1, effects: every }).effects.find(
       (x) => x.effect.kind === 'resource',
@@ -1329,6 +1444,95 @@ describe('formulas at fold time', () => {
 });
 
 // ---------------------------------------------------------------------------
+
+describe('words by class level', () => {
+  const effects = [
+    {
+      kind: 'resource',
+      key: 'embers',
+      label: { byLevel: { '1': 'Embers (d6)', '5': 'Embers (d8)' } },
+      die: { byLevel: { '1': '1d6', '5': '1d8' } },
+      max: 2,
+      reset: { byLevel: { '1': 'long', '5': 'short' } },
+    },
+    {
+      kind: 'action',
+      economy: 'bonus',
+      label: 'Flare',
+      roll: { byLevel: { '1': '1d6', '5': '2d6' } },
+      note: { byLevel: { '5': 'and the next turn too' } },
+    },
+  ];
+  const embers: DataEntity = {
+    name: 'Embers',
+    source: 'HB',
+    className: 'Brute',
+    classSource: 'HB',
+    level: 1,
+    entries: ['You smoulder.'],
+    ...cg({ effects }),
+  };
+  const ctx = world({
+    class: [
+      {
+        name: 'Brute',
+        source: 'HB',
+        hd: { number: 1, faces: 12 },
+        classFeatures: ['Embers|Brute|HB|1'],
+      },
+    ],
+    classFeature: [embers],
+  });
+  const shown = (bruteLevels: number) => {
+    const doc = character((d) => {
+      d.classes = [
+        { ref: { name: 'Brute', source: 'HB' }, levels: bruteLevels, hp: [] },
+        { ref: { name: 'Warrior', source: 'TST' }, levels: 4, hp: [] },
+      ];
+    });
+    const sheet = deriveSheet(doc, ctx);
+    return [
+      ...sheet.resources
+        .filter((r) => r.key === 'embers')
+        .map((r) => `${r.label} ${r.die} ${r.resetOn}`),
+      ...sheet.actions
+        .filter((a) => a.label === 'Flare')
+        .map((a) => `${a.roll} ${a.note ?? 'no note'}`),
+    ];
+  };
+
+  it('reads the level of the class that gives it, and leaves a field out below its first level', () => {
+    // Brute 4 beside Warrior 4 is a level 8 character, still on the first row.
+    expect(shown(4)).toEqual(['Embers (d6) 1d6 long', '1d6 no note']);
+    expect(shown(5)).toEqual(['Embers (d8) 1d8 short', '2d6 and the next turn too']);
+    // Each derive fills a fresh copy, so the entry read once keeps its table.
+    expect(shown(4)).toEqual(['Embers (d6) 1d6 long', '1d6 no note']);
+    const [pool, flare] = readMechanics(embers.castGuidance).effects;
+    expect(pool?.effect).toMatchObject({ label: 'Embers (d6)', die: '1d6', resetOn: 'long' });
+    expect(flare?.effect).toMatchObject({ roll: '1d6', note: 'and the next turn too' });
+  });
+
+  it("reads the character's level for a feat", () => {
+    const labels = (levels: number) => {
+      const doc = withFeats('Gift');
+      doc.classes = [{ ref: { name: 'Warrior', source: 'TST' }, levels, hp: [] }];
+      const gift = feat('Gift', {
+        effects: [
+          {
+            kind: 'action',
+            economy: 'action',
+            label: { byLevel: { '1': 'Gift', '5': 'Greater Gift' } },
+          },
+        ],
+      });
+      return deriveSheet(doc, world({ feat: [gift] }))
+        .actions.filter((a) => a.origin === 'Gift')
+        .map((a) => a.label);
+    };
+    expect(labels(4)).toEqual(['Gift']);
+    expect(labels(5)).toEqual(['Greater Gift']);
+  });
+});
 
 describe('while states (H10)', () => {
   const effect = (states: unknown) => [{ kind: 'acBonus', amount: 1, while: states }];
