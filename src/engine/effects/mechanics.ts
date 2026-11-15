@@ -23,6 +23,7 @@
 import {
   clip,
   EARLY_KINDS,
+  EFFECT_EDITIONS,
   formulaNamesFor,
   guidanceVersion,
   isRecord,
@@ -74,6 +75,8 @@ export interface EffectTemplate {
   /** Its words by class level; the effect holds the first row's until it is emitted. */
   byLevel?: readonly LevelWords[];
   while?: readonly WhileState[];
+  /** The rules version it counts under alone; `emit` leaves it out under the other. */
+  edition?: (typeof EFFECT_EDITIONS)[number];
 }
 
 /** `t`'s words by level filled in on `e`, a fresh copy of its effect, at `classLevel`. */
@@ -167,9 +170,10 @@ function countedByClass(
  * The template with `"ownClass": true` read as `cls`, the class that gives it
  * (`MechanicsSubject.className`). A spell grant is cast with that class's
  * spellcasting ability, or with none when no class gives it (a feat's) or the
- * class casts no spells. Any other kind takes its `className`, so a reskin's
- * spells (a Mage's) are its own; with no class giving it, it holds for the
- * spells of no class, so it is left out (undefined).
+ * class casts no spells. A pool is named for it once its words by level are in
+ * (`classNamed`). Any other kind takes its `className`, so a reskin's spells (a
+ * Mage's) are its own; with no class giving it, it holds for the spells of no
+ * class, so it is left out (undefined).
  */
 export function forClass(t: EffectTemplate, cls: OwnClass | undefined): EffectTemplate | undefined {
   if (t.effect.ownClass !== true) return t;
@@ -177,7 +181,7 @@ export function forClass(t: EffectTemplate, cls: OwnClass | undefined): EffectTe
   delete effect.ownClass;
   if (t.effect.kind === 'grantSpell') {
     if (cls?.ability !== undefined) effect.ability = cls.ability;
-  } else {
+  } else if (t.effect.kind !== 'resource') {
     if (cls === undefined) return undefined;
     effect.className = cls.name;
   }
@@ -185,14 +189,29 @@ export function forClass(t: EffectTemplate, cls: OwnClass | undefined): EffectTe
 }
 
 /**
- * Why an effect in play cannot hold a stored effect's amount: the proficiency
- * bonus counted once (`"profBonus": true`) is the character's own, and an
- * amount in play is a plain number, worked out on the sheet it came from.
+ * `e`, a fresh copy of `t`'s pool with its words by level in, named for `cls`,
+ * the class that gives it, when it says `"ownClass": true`: "Channel Divinity
+ * (Death Knight)", so two classes' pools of one name show apart. With no class
+ * giving it, its own name alone.
  */
-export const inPlayProfBonus = (t: EffectTemplate, holder: string): string | undefined =>
+function classNamed(e: Record<string, unknown>, t: EffectTemplate, cls: OwnClass | undefined) {
+  if (t.effect.kind === 'resource' && t.effect.ownClass === true && cls !== undefined) {
+    e.label = `${String(e.label)} (${cls.name})`;
+  }
+}
+
+/**
+ * Why an effect in play cannot hold a stored effect: the proficiency bonus
+ * counted once (`"profBonus": true`) is the character's own, and an amount in
+ * play is a plain number, worked out on the sheet it came from; and it holds
+ * under the rules it is put in play under, so it names no `edition` of its own.
+ */
+export const inPlayRefusal = (t: EffectTemplate, holder: string): string | undefined =>
   t.effect.kind === 'initiativeBonus' && t.effect.amount === 'profBonus'
     ? `${holder} takes a plain number, not "profBonus"`
-    : undefined;
+    : t.edition !== undefined
+      ? `${holder} holds under either rules version, with no "edition" of its own`
+      : undefined;
 
 /** An inherited effect an entry leaves out: of this kind, and this label when given. */
 export interface DropRule {
@@ -776,6 +795,8 @@ const KINDS = new Map<Kind, Build>([
       ...opt(o, r, 'noSlotConversion', int(1, 20)),
       ...opt(o, r, 'die', byLevelWords(oneDie)),
       ...opt(o, r, 'foretell', flag),
+      // "ownClass": named for the class that gives it (`classNamed`).
+      ...opt(o, r, 'ownClass', flag),
     }),
   ],
   [
@@ -868,6 +889,9 @@ function readEffect(raw: unknown, strict: boolean): EffectTemplate {
   const r: Reading = { kind: kind as Kind, slots: [], ...(strict ? { seen: new Map() } : {}) };
   const effect = { kind: kind as Kind, ...build(raw, r) };
   const states = opt(raw, r, 'while', readWhile) as { while?: WhileState[] };
+  const edition = opt(raw, r, 'edition', oneOf(...EFFECT_EDITIONS)) as {
+    edition?: (typeof EFFECT_EDITIONS)[number];
+  };
   const read = r.seen?.get(raw);
   onlyKnown(raw, r, (k) => k === 'kind' || read?.has(k) === true, 'this kind');
   return {
@@ -875,6 +899,7 @@ function readEffect(raw: unknown, strict: boolean): EffectTemplate {
     ...(r.slots.length > 0 ? { formulas: r.slots } : {}),
     ...(r.words === undefined ? {} : { byLevel: r.words }),
     ...states,
+    ...edition,
   };
 }
 
@@ -1524,15 +1549,21 @@ function emit(
   className: string | undefined,
   builtIn = false,
 ): void {
-  const cls = ownClassOf(col, templates, className);
-  const counted = countedByClass(templates, cls);
-  for (const t of templates) {
+  // An effect of one rules version alone counts as though it were not there under
+  // the other. A character with none, or one this app does not know, plays 2014,
+  // as the sheet reads it everywhere (`asWritten`).
+  const version = col.doc.rulesVersion === '2024' ? '2024' : '2014';
+  const live = templates.filter((t) => t.edition === undefined || t.edition === version);
+  const cls = ownClassOf(col, live, className);
+  const counted = countedByClass(live, cls);
+  for (const t of live) {
     if (counted.has(t)) continue;
     const named = forClass(namedFor(t, origin.label), cls);
     if (named === undefined) continue;
     // A fresh copy each time: fold time fills its numbers in place.
     const e = { ...structuredClone(named.effect), origin } as EffectInput;
     fillLevelWords(e as unknown as Record<string, unknown>, named, classLevel);
+    classNamed(e as unknown as Record<string, unknown>, t, cls);
     if (t.formulas !== undefined) {
       e.formulas = t.formulas.map((f) => ({
         field: f.field,

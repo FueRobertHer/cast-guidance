@@ -153,9 +153,10 @@ export type StoredState =
  * numbers may be `StoredAmount`s (see `FORMULA_FIELDS`), a resource's `resetOn`
  * is stored as `reset`, an initiative bonus of the proficiency bonus counted
  * once (`amount: 'profBonus'`) is stored as `profBonus: true`, an AC formula's
- * `label` may be left out (it is then named for what gives it), and any effect
+ * `label` may be left out (it is then named for what gives it), any effect
  * that reaches only numbers and rolls may hold only `while` the states listed
- * (all of them).
+ * (all of them), and any effect may count under one rules version alone
+ * (`edition`).
  *
  * The reader (`readMechanics`) checks each kind's fields one by one; an unknown
  * kind or a bad value is a problem, and that effect does not count.
@@ -163,8 +164,13 @@ export type StoredState =
 export interface StoredEffect {
   kind: string;
   while?: StoredState | StoredState[];
+  /** The rules version it counts under (the character's `rulesVersion`); absent, both. */
+  edition?: (typeof EFFECT_EDITIONS)[number];
   [field: string]: unknown;
 }
+
+/** The rules versions one stored effect may count under alone (`StoredEffect.edition`). */
+export const EFFECT_EDITIONS = ['2014', '2024'] as const;
 
 /** Stored effect fields that may be a `StoredAmount`, by kind. Others are plain values. */
 export const FORMULA_FIELDS: Readonly<Partial<Record<EffectInput['kind'], readonly string[]>>> = {

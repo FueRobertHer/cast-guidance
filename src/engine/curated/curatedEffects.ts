@@ -359,13 +359,6 @@ const skillOrLanguage =
       markKnownLanguages(col, LANGUAGE_OPTIONS),
     );
 
-/** 2024: one back on a short rest, all on a long rest. 2014: all back on either. */
-function recovery(is2024: boolean) {
-  return is2024
-    ? ({ resetOn: 'long', regainOnShort: 1 } as const)
-    : ({ resetOn: 'short' } as const);
-}
-
 /**
  * The 2024 Agonizing Blast: Charisma on the damage of a Warlock cantrip the
  * player picks. The pick sits beside the invocations' prompt, not under it, so
@@ -485,87 +478,15 @@ export const CURATED: Record<string, CuratedFn> = {
   // --- Always-on riders: damage every hit or every cast adds -----------------
   // More of this section's rows are data, in `src/rules/cast-guidance/curated.json`.
   'agonizing blast|xphb': agonizingPick,
-  'second wind|fighter': (col, origin) => {
-    // 2024 scales uses (2 → 3 @4 → 4 @10); 2014 is once per rest.
-    const lvl = classLevel(col, 'Fighter');
-    const uses2024 = lvl >= 10 ? 4 : lvl >= 4 ? 3 : 2;
-    const is2024 = col.doc.rulesVersion === '2024';
-    col.add({
-      kind: 'resource',
-      key: 'second-wind',
-      label: 'Second Wind',
-      max: is2024 ? uses2024 : 1,
-      ...recovery(is2024),
-      origin,
-    });
-    col.add({
-      kind: 'action',
-      economy: 'bonus',
-      label: 'Second Wind',
-      roll: `1d10+${classLevel(col, 'Fighter')}`,
-      heals: true,
-      origin,
-    });
-  },
   // Stunning Strike states its effect but leaves the DC to the "ki save DC"
   // defined in the Ki/Monk's Focus feature. The prose scanner can't resolve a
   // cross-feature DC, so its row pins it: Con save vs 8 + prof + Wis mod. It rides
   // on a hit, so it takes no slot of its own. Its cost is in `SPEND_LINKS`. The row
   // is in `src/rules/cast-guidance/curated.json`.
-  'channel divinity|cleric': (col, origin) => {
-    // Scales with cleric level; the prose scanner can't see level gates.
-    const lvl = classLevel(col, 'Cleric');
-    const is2024 = col.doc.rulesVersion === '2024';
-    const uses = is2024 ? (lvl >= 6 ? 3 : 2) : lvl >= 18 ? 3 : lvl >= 6 ? 2 : 1;
-    col.add({
-      kind: 'resource',
-      key: 'channel-divinity',
-      label: 'Channel Divinity',
-      max: uses,
-      ...recovery(is2024),
-      origin,
-    });
-  },
-  // Lay on Hands is a POOL of hit points (5 x paladin level), not a use count,
-  // so the prose scanner's "times per rest" patterns can never see it.
-  'lay on hands|paladin': (col, origin) => {
-    const is2024 = col.doc.rulesVersion === '2024';
-    col.add({
-      kind: 'resource',
-      key: 'lay-on-hands',
-      label: 'Lay on Hands (HP pool)',
-      max: classLevel(col, 'Paladin') * 5,
-      resetOn: 'long',
-      origin,
-    });
-    col.add({
-      kind: 'action',
-      economy: is2024 ? 'bonus' : 'action',
-      label: 'Lay on Hands',
-      note: is2024
-        ? 'heal from the pool · 5 points removes Poisoned'
-        : 'heal from the pool · 5 points cures a disease or poison',
-      origin,
-    });
-  },
-  'channel divinity|paladin': (col, origin) => {
-    // 2024 scales with paladin level (2, 3 at 11); 2014 is once per rest.
-    // Keyed per class, not shared with the cleric's pool: the 2024 text says
-    // "each time you use THIS CLASS'S Channel Divinity", and the 2014 pools are
-    // separate features with separate uses. A shared key would also make the
-    // max depend on which class the player happened to add first.
-    // A Death Knight's pool is this one, named for the class that has it.
-    const is2024 = col.doc.rulesVersion === '2024';
-    const uses = is2024 ? (classLevel(col, 'Paladin') >= 11 ? 3 : 2) : 1;
-    col.add({
-      kind: 'resource',
-      key: 'channel-divinity-paladin',
-      label: `Channel Divinity (${classEntry(col, 'Paladin')?.ref.name ?? 'Paladin'})`,
-      max: uses,
-      ...recovery(is2024),
-      origin,
-    });
-  },
+  // Second Wind, both Channel Divinities and Lay on Hands are data, by rules
+  // version (`edition`). The Paladin's pool has a key of its own, not the
+  // Cleric's: the 2024 text says "each time you use this class's Channel
+  // Divinity", and a shared key made the uses depend on the class added first.
   // Tasha's Harness Divine Power spends Channel Divinity, and has uses of its own
   // by class level: the cleric's at 2, 6 and 18, the paladin's at 3, 7 and 15.
   'channel divinity: harness divine power|cleric': harnessDivinePower('Cleric', [2, 6, 18]),

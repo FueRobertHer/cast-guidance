@@ -4,7 +4,7 @@
  * never add up. Pure: derive folds what counts in beside the build's own.
  */
 import { CAST_GUIDANCE_LIMITS } from './castGuidance';
-import { inPlayProfBonus, namedFor, readStoredEffects } from './effects/mechanics';
+import { inPlayRefusal, namedFor, readStoredEffects } from './effects/mechanics';
 import {
   ABILITIES,
   ACTIVE_PART_KINDS,
@@ -333,7 +333,7 @@ export function storedInPlay(
             ? `${holder} changes only numbers and rolls, not proficiencies, uses or actions`
             : t.formulas !== undefined
               ? `${holder} takes a plain number, not a formula`
-              : inPlayProfBonus(t, holder);
+              : inPlayRefusal(t, holder);
       const [held] =
         why === undefined
           ? readActiveEffects([{ id: 'part', name: 'part', parts: [t.effect] }]).effects

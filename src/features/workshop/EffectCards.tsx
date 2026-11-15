@@ -7,7 +7,12 @@
  */
 import { CircleAlert, Plus, X } from 'lucide-react';
 import { useId, useState } from 'react';
-import { isRecord, type StoredEffect, type StoredState } from '@/engine/castGuidance';
+import {
+  EFFECT_EDITIONS,
+  isRecord,
+  type StoredEffect,
+  type StoredState,
+} from '@/engine/castGuidance';
 import { readStoredEffects } from '@/engine/effects/mechanics';
 import { type RollFilter, SKILLS } from '@/engine/types';
 import { rollsWords } from '@/features/sheet/effectsInPlay';
@@ -80,6 +85,19 @@ const STATES: Options = [
   ['noArmor', 'While wearing no armor'],
   ['shield', 'While holding a shield'],
 ];
+
+/**
+ * The rules version an effect counts under alone (`edition`). A file may say
+ * one; no card adds it, so its box shows only while it is set, and "Either
+ * rules" takes it away.
+ */
+const EDITIONS: Options = [
+  ['2014', '2014 rules only'],
+  ['2024', '2024 rules only'],
+  ['', 'Either rules'],
+];
+const editionOf = (e: Eff) =>
+  EFFECT_EDITIONS.find((v) => v === e.edition) as (typeof EFFECT_EDITIONS)[number] | undefined;
 
 const word = (options: Options, v: unknown) => options.find(([k]) => k === v)?.[1] ?? String(v);
 
@@ -436,8 +454,9 @@ const KINDS: readonly KindSpec[] = [
         ],
       },
     ],
+    // "ownClass": the sheet names it for the class that gives it, "Channel Divinity (Paladin)".
     line: (e) =>
-      `${words(e.label)}: ${amount(e.max, false)} ${e.max === 1 ? 'use' : 'uses'}, back on ${restWords(e.reset)}`,
+      `${words(e.label)}${e.ownClass === true ? ' (name of the class that gives it)' : ''}: ${amount(e.max, false)} ${e.max === 1 ? 'use' : 'uses'}, back on ${restWords(e.reset)}`,
   },
   {
     kinds: ['action'],
@@ -780,9 +799,16 @@ function Card({
 }) {
   const spec = specOf(effect);
   const title = spec?.add ?? effect.kind;
-  const own = list.filter((x) => x.kind === 'resource' && typeof x.key === 'string');
+  // One of each key: a pool given once for each rules version (`edition`) is one pool.
+  const own = list.filter(
+    (x, i) =>
+      x.kind === 'resource' &&
+      typeof x.key === 'string' &&
+      list.findIndex((y) => y.kind === 'resource' && y.key === x.key) === i,
+  );
   const resources = [...own, ...pools.filter((p) => !own.some((x) => x.key === p.key))];
   const state = typeof effect.while === 'string' ? effect.while : '';
+  const edition = editionOf(effect);
   const set = (f: FieldSpec, text: string) => {
     const v = stored(f, text);
     if (f.key === 'kind') onChange({ ...effect, kind: String(v) });
@@ -902,6 +928,28 @@ function Card({
               </Select>
             </Field>
           )}
+          {edition !== undefined && (
+            <Field label="Rules">
+              <Select
+                aria-label={`${title}: Rules`}
+                value={edition}
+                onChange={(e) => {
+                  const { edition: _, ...rest } = effect;
+                  onChange(
+                    e.target.value === ''
+                      ? (rest as Eff)
+                      : { ...rest, edition: e.target.value as typeof edition },
+                  );
+                }}
+              >
+                {EDITIONS.map(([v, text]) => (
+                  <option key={v} value={v}>
+                    {text}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+          )}
           {effect.kind === 'rollAdvantage' && (
             <ClaimField effect={effect} title={title} onChange={onChange} />
           )}
@@ -909,6 +957,9 @@ function Card({
       )}
       {state !== '' && readOnly && (
         <span className="text-caption text-ink-muted">{word(STATES, state)}</span>
+      )}
+      {edition !== undefined && readOnly && (
+        <span className="text-caption text-ink-muted">{word(EDITIONS, edition)}</span>
       )}
       {problems.map((p) => (
         <p key={p} className="flex items-start gap-1.5 pr-2 text-caption text-danger">
@@ -1005,7 +1056,10 @@ export function EffectCards({
                   if (j === i) return next;
                   if (renamed === undefined) return x;
                   // What spends the renamed uses follows it: an action's cost,
-                  // a spell cast with them.
+                  // a spell cast with them, and the same pool given for the
+                  // other rules version (`edition`), which stays one pool.
+                  if (x.kind === 'resource' && x.key === renamed[0])
+                    return { ...x, key: renamed[1] };
                   const cost = x.cost as { resource?: unknown } | undefined;
                   if (x.kind === 'action' && cost?.resource === renamed[0])
                     return { ...x, cost: { ...cost, resource: renamed[1] } };
