@@ -51,7 +51,7 @@ import {
 } from '../types';
 import { countedSpells } from './additionalSpells';
 import type { Collector } from './base';
-import { printingOf } from './reskin';
+import { printingOf, reskinOf } from './reskin';
 
 type Kind = EffectInput['kind'];
 
@@ -171,31 +171,61 @@ function countedByClass(
  * (`MechanicsSubject.className`). A spell grant is cast with that class's
  * spellcasting ability, or with none when no class gives it (a feat's) or the
  * class casts no spells. A pool is named for it once its words by level are in
- * (`classNamed`). Any other kind takes its `className`, so a reskin's spells (a
- * Mage's) are its own; with no class giving it, it holds for the spells of no
- * class, so it is left out (undefined).
+ * (`classNamed`), and so is an action. Any other kind takes its `className`, so a
+ * reskin's spells (a Mage's) are its own; with no class giving it, it holds for
+ * the spells of no class, so it is left out (undefined).
  */
 export function forClass(t: EffectTemplate, cls: OwnClass | undefined): EffectTemplate | undefined {
-  if (t.effect.ownClass !== true) return t;
+  if (t.effect.ownClass !== true && t.effect.ownClassBeside === undefined) return t;
   const effect: Record<string, unknown> = { ...t.effect };
   delete effect.ownClass;
+  delete effect.ownClassBeside;
   if (t.effect.kind === 'grantSpell') {
     if (cls?.ability !== undefined) effect.ability = cls.ability;
-  } else if (t.effect.kind !== 'resource') {
+  } else if (!CLASS_NAMED.has(t.effect.kind)) {
     if (cls === undefined) return undefined;
     effect.className = cls.name;
   }
   return { ...t, effect: effect as EffectTemplate['effect'] };
 }
 
+/** The kinds whose name may say the class that gives them (`classNaming`). */
+const CLASS_NAMED: ReadonlySet<string> = new Set(['resource', 'action']);
+
 /**
- * `e`, a fresh copy of `t`'s pool with its words by level in, named for `cls`,
- * the class that gives it, when it says `"ownClass": true`: "Channel Divinity
- * (Death Knight)", so two classes' pools of one name show apart. With no class
- * giving it, its own name alone.
+ * Whether the character has a class besides `giver` (the one that gives the
+ * feature) named one of `names`, or reskinning or copying one, as a curated row
+ * finds a class by name: a Death Knight stands beside a Cleric as a Paladin.
  */
-function classNamed(e: Record<string, unknown>, t: EffectTemplate, cls: OwnClass | undefined) {
-  if (t.effect.kind === 'resource' && t.effect.ownClass === true && cls !== undefined) {
+function besideClass(col: Collector, giver: string, names: readonly string[]): boolean {
+  const wanted = new Set(names.map((n) => n.toLowerCase()));
+  return col.doc.classes.some((c) => {
+    if (c.ref.name === giver) return false;
+    const data = col.ctx.get('class', c.ref.name, c.ref.source);
+    return [c.ref, reskinOf(data), basedOn(data)].some(
+      (ref) => ref !== undefined && wanted.has(ref.name.toLowerCase()),
+    );
+  });
+}
+
+/**
+ * `e`, a fresh copy of `t`'s pool or action with its words by level in, named
+ * for `cls`, the class that gives it: always when it says `"ownClass": true`
+ * ("Channel Divinity (Death Knight)"), or when the character has another class
+ * it names in `"ownClassBeside"` ("Channel Divinity: Harness Divine Power
+ * (Cleric)" beside a Paladin), so two classes' features of one name show apart.
+ * A pool and the action sharing its name say it alike, so the action still
+ * spends a use of the pool. With no class giving it, its own name alone.
+ */
+function classNamed(
+  col: Collector,
+  e: Record<string, unknown>,
+  t: EffectTemplate,
+  cls: OwnClass | undefined,
+) {
+  if (cls === undefined || !CLASS_NAMED.has(t.effect.kind)) return;
+  const beside = t.effect.ownClassBeside as readonly string[] | undefined;
+  if (t.effect.ownClass === true || (beside !== undefined && besideClass(col, cls.name, beside))) {
     e.label = `${String(e.label)} (${cls.name})`;
   }
 }
@@ -559,9 +589,24 @@ const checkBonus: Build = (o, r) => {
   return { amount: amountOut, ...picked[0] };
 };
 
+/**
+ * A pool's or an action's name with the class that gives it (`classNamed`):
+ * always (`"ownClass": true`), or only beside another class of these names
+ * (`"ownClassBeside"`), so two classes' features of one name show apart.
+ */
+const classNaming: Build = (o, r) => {
+  const always = opt(o, r, 'ownClass', flag);
+  const beside = opt(o, r, 'ownClassBeside', list(text(), 12));
+  if (always.ownClass === true && beside.ownClassBeside !== undefined) {
+    throw new Bad('names "ownClass" or "ownClassBeside", not both');
+  }
+  return { ...always, ...beside };
+};
+
 const action: Build = (o, r) => ({
   economy: req(o, r, 'economy', oneOf('action', 'bonus', 'reaction', 'none')),
   label: req(o, r, 'label', byLevelWords(text(), { needed: true })),
+  ...classNaming(o, r),
   ...opt(o, r, 'roll', byLevelWords(dice)),
   ...opt(o, r, 'heals', flag),
   ...opt(o, r, 'plainDice', flag),
@@ -795,8 +840,7 @@ const KINDS = new Map<Kind, Build>([
       ...opt(o, r, 'noSlotConversion', int(1, 20)),
       ...opt(o, r, 'die', byLevelWords(oneDie)),
       ...opt(o, r, 'foretell', flag),
-      // "ownClass": named for the class that gives it (`classNamed`).
-      ...opt(o, r, 'ownClass', flag),
+      ...classNaming(o, r),
     }),
   ],
   [
@@ -1563,7 +1607,7 @@ function emit(
     // A fresh copy each time: fold time fills its numbers in place.
     const e = { ...structuredClone(named.effect), origin } as EffectInput;
     fillLevelWords(e as unknown as Record<string, unknown>, named, classLevel);
-    classNamed(e as unknown as Record<string, unknown>, t, cls);
+    classNamed(col, e as unknown as Record<string, unknown>, t, cls);
     if (t.formulas !== undefined) {
       e.formulas = t.formulas.map((f) => ({
         field: f.field,

@@ -132,6 +132,19 @@ function words(v: unknown): string {
  */
 export const BY_LEVEL = 'By level, as written';
 
+/**
+ * What a file's `ownClass` or `ownClassBeside` adds to a pool's or an action's
+ * name: the sheet names it for the class that gives it, "Channel Divinity
+ * (Paladin)", always or only beside a class it lists.
+ */
+function classWords(e: Eff): string {
+  if (e.ownClass === true) return ' (name of the class that gives it)';
+  const beside = Array.isArray(e.ownClassBeside) ? e.ownClassBeside.map(String) : [];
+  return beside.length === 0
+    ? ''
+    : ` (name of the class that gives it, beside a level in ${beside.join(' or ')})`;
+}
+
 /** When a pool comes back, as a sentence reads it. */
 const restWords = (v: unknown) =>
   isByLevel(v)
@@ -454,9 +467,8 @@ const KINDS: readonly KindSpec[] = [
         ],
       },
     ],
-    // "ownClass": the sheet names it for the class that gives it, "Channel Divinity (Paladin)".
     line: (e) =>
-      `${words(e.label)}${e.ownClass === true ? ' (name of the class that gives it)' : ''}: ${amount(e.max, false)} ${e.max === 1 ? 'use' : 'uses'}, back on ${restWords(e.reset)}`,
+      `${words(e.label)}${classWords(e)}: ${amount(e.max, false)} ${e.max === 1 ? 'use' : 'uses'}, back on ${restWords(e.reset)}`,
   },
   {
     kinds: ['action'],
@@ -476,7 +488,7 @@ const KINDS: readonly KindSpec[] = [
       { key: 'label', label: 'Name', type: 'text' },
     ],
     line: (e) =>
-      `${e.economy === 'bonus' ? 'Bonus action' : e.economy === 'reaction' ? 'Reaction' : 'Action'}: ${words(e.label)}${costOf(e) ? `, spends 1 use of ${costOf(e)}` : ''}`,
+      `${e.economy === 'bonus' ? 'Bonus action' : e.economy === 'reaction' ? 'Reaction' : 'Action'}: ${words(e.label)}${classWords(e)}${costOf(e) ? `, spends 1 use of ${costOf(e)}` : ''}`,
   },
   {
     kinds: ['cue'],

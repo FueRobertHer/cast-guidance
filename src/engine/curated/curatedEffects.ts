@@ -387,29 +387,6 @@ const agonizingPick: CuratedFn = (col, origin) => {
 };
 
 /**
- * Harness Divine Power's own uses, a long rest, one more at each level given. The
- * pool shares the chip's name, which is how the chip spends a use of it beside
- * the Channel Divinity its cost names. A Cleric and Paladin with it from both
- * classes gets each named for its class, or the sheet keeps one chip of the two.
- */
-const harnessDivinePower =
-  (className: string, at: readonly number[]): CuratedFn =>
-  (col, origin) => {
-    const level = classLevel(col, className);
-    const both = classLevel(col, 'Cleric') > 0 && classLevel(col, 'Paladin') > 0;
-    const label = `Channel Divinity: Harness Divine Power${both ? ` (${className})` : ''}`;
-    col.add({
-      kind: 'resource',
-      key: `harness-divine-power-${className.toLowerCase()}`,
-      label,
-      max: at.filter((l) => level >= l).length,
-      resetOn: 'long',
-      origin,
-    });
-    col.add({ kind: 'action', economy: 'bonus', label, origin });
-  };
-
-/**
  * Signature Spells: two level 3 Wizard spells, always prepared, each cast once a
  * short rest at level 3 without a slot, as a limited innate spell is. The pick
  * sits beside the class's prompts (`class:wizard|xphb:signature`), not under one,
@@ -487,10 +464,8 @@ export const CURATED: Record<string, CuratedFn> = {
   // version (`edition`). The Paladin's pool has a key of its own, not the
   // Cleric's: the 2024 text says "each time you use this class's Channel
   // Divinity", and a shared key made the uses depend on the class added first.
-  // Tasha's Harness Divine Power spends Channel Divinity, and has uses of its own
-  // by class level: the cleric's at 2, 6 and 18, the paladin's at 3, 7 and 15.
-  'channel divinity: harness divine power|cleric': harnessDivinePower('Cleric', [2, 6, 18]),
-  'channel divinity: harness divine power|paladin': harnessDivinePower('Paladin', [3, 7, 15]),
+  // Tasha's Harness Divine Power is data too: uses of its own by class level, a
+  // pool and chip named for their class beside the other class (`ownClassBeside`).
   // The scan read one pool for both spells, and nothing in the 2024 printing.
   'signature spells|wizard': signatureSpells,
   // TCE's optional feature (under the 2014 class) picks again at barbarian 10.

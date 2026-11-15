@@ -25,8 +25,9 @@ const origin: EffectOrigin = { label: 'Feature', uid: 'x', type: 'class' };
  * A curated row, wherever it lives while rows move out of code: `CURATED`, else
  * the shipped rule set's row, emitted as the seam emits it: under the key for
  * its printing first (`from`, then the origin's uid's), as a class walk looks
- * it up, with `className` the class that gives it. False when neither has a
- * row under the key. A moved row's formulas are
+ * it up, with `className` the class that gives it at `classLevel` (the
+ * character's level when absent). False when neither has a row under the key.
+ * A moved row's formulas are
  * filled only at fold time: `worked` works them out here as the fold does.
  */
 function emitRow(
@@ -35,6 +36,7 @@ function emitRow(
   o: EffectOrigin,
   from?: string,
   className?: string,
+  classLevel?: number,
 ): boolean {
   if (emitCuratedEffects(c, key, o, from)) return true;
   let builtIn = false;
@@ -44,6 +46,7 @@ function emitRow(
     origin: o,
     target: key,
     ...(className === undefined ? {} : { className }),
+    ...(classLevel === undefined ? {} : { classLevel }),
     ruleKeys: printingKeys([key], from ?? '', o.uid),
     inherited: (hit) => {
       builtIn = hit !== undefined;
@@ -958,21 +961,50 @@ describe('pools, dice and DCs only class prose states', () => {
   });
 
   it('names each Harness Divine Power for its class when a character has both', () => {
-    const both = col();
-    both.doc.classes = [
-      { ref: { name: 'Cleric', source: 'PHB' }, levels: 6, hp: [] },
-      { ref: { name: 'Paladin', source: 'PHB' }, levels: 7, hp: [] },
-    ];
     const name = 'channel divinity: harness divine power';
-    run(`${name}|cleric`, both);
-    run(`${name}|paladin`, both);
-    const labels = both.effects.map((e) => `${e.kind} ${'label' in e ? e.label : ''}`);
-    expect(labels).toEqual([
-      'resource Channel Divinity: Harness Divine Power (Cleric)',
-      'action Channel Divinity: Harness Divine Power (Cleric)',
-      'resource Channel Divinity: Harness Divine Power (Paladin)',
-      'action Channel Divinity: Harness Divine Power (Paladin)',
+    const label = 'Channel Divinity: Harness Divine Power';
+    const both = col('Cleric', 6);
+    both.doc.classes.push({ ref: { name: 'Paladin', source: 'PHB' }, levels: 3, hp: [] });
+    expect(emitRow(both, `${name}|cleric`, origin, undefined, 'Cleric', 6)).toBe(true);
+    expect(emitRow(both, `${name}|paladin`, origin, undefined, 'Paladin', 3)).toBe(true);
+    // Each pool at its own class's level, the action sharing its name to spend it.
+    expect(shown(worked(both))).toEqual([
+      {
+        kind: 'resource',
+        key: 'harness-divine-power-cleric',
+        label: `${label} (Cleric)`,
+        max: 2,
+        resetOn: 'long',
+      },
+      { kind: 'action', economy: 'bonus', label: `${label} (Cleric)` },
+      {
+        kind: 'resource',
+        key: 'harness-divine-power-paladin',
+        label: `${label} (Paladin)`,
+        max: 1,
+        resetOn: 'long',
+      },
+      { kind: 'action', economy: 'bonus', label: `${label} (Paladin)` },
     ]);
+    // Alone, or beside another class: its own name, one more use at each level given.
+    const alone = (cls: string, levels: number, beside?: string) => {
+      const c = col(cls, levels);
+      if (beside !== undefined) {
+        c.doc.classes.push({ ref: { name: beside, source: 'PHB' }, levels: 5, hp: [] });
+      }
+      expect(emitRow(c, `${name}|${cls.toLowerCase()}`, origin, undefined, cls, levels)).toBe(true);
+      return shown(worked(c)).map(
+        (e) => `${'label' in e ? e.label : ''} ${'max' in e ? e.max : e.kind}`,
+      );
+    };
+    expect([2, 5, 6, 17, 18].map((n) => alone('Cleric', n)[0])).toEqual(
+      [1, 1, 2, 2, 3].map((n) => `${label} ${n}`),
+    );
+    expect([3, 6, 7, 14, 15].map((n) => alone('Paladin', n)[0])).toEqual(
+      [1, 1, 2, 2, 3].map((n) => `${label} ${n}`),
+    );
+    expect(alone('Cleric', 2, 'Fighter')).toEqual([`${label} 1`, `${label} action`]);
+    expect(alone('Paladin', 3, 'Wizard')).toEqual([`${label} 1`, `${label} action`]);
   });
 
   it('puts the Bardic Inspiration die on its chip: d6, d8 at 5, d10 at 10, d12 at 15', () => {

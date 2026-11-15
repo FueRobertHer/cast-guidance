@@ -2690,6 +2690,58 @@
           "reset": "short"
         }
       ]
+    },
+    {
+      "part": "curated",
+      "keys": ["channel divinity: harness divine power|cleric"],
+      "effects": [
+        {
+          "kind": "resource",
+          "key": "harness-divine-power-cleric",
+          "label": "Channel Divinity: Harness Divine Power",
+          "ownClassBeside": ["Paladin"],
+          "max": {
+            "byLevel": {
+              "2": 1,
+              "6": 2,
+              "18": 3
+            }
+          },
+          "reset": "long"
+        },
+        {
+          "kind": "action",
+          "economy": "bonus",
+          "label": "Channel Divinity: Harness Divine Power",
+          "ownClassBeside": ["Paladin"]
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["channel divinity: harness divine power|paladin"],
+      "effects": [
+        {
+          "kind": "resource",
+          "key": "harness-divine-power-paladin",
+          "label": "Channel Divinity: Harness Divine Power",
+          "ownClassBeside": ["Cleric"],
+          "max": {
+            "byLevel": {
+              "3": 1,
+              "7": 2,
+              "15": 3
+            }
+          },
+          "reset": "long"
+        },
+        {
+          "kind": "action",
+          "economy": "bonus",
+          "label": "Channel Divinity: Harness Divine Power",
+          "ownClassBeside": ["Cleric"]
+        }
+      ]
     }
   ]
 }

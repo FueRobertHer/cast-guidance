@@ -10,7 +10,7 @@ stands in for `ROLL_EXTRAS` (`src/engine/curated/rollExtras.ts`). The files
 live in `src/rules/`, one a part. (Source of truth: `readRuleSet` and
 `mechanicsOf` in `src/engine/effects/mechanics.ts`, `src/data5e/builtInRules.ts`.)
 
-167 rows have moved so far (`src/rules/cast-guidance/curated.json`). Four came
+169 rows have moved so far (`src/rules/cast-guidance/curated.json`). Four came
 first, one for each kind of call site, to prove the routes: Stunning Strike (a
 class feature), Lucky (PHB, a feat), Disarming Attack (PHB, an optional
 feature) and Warforged's Integrated Protection (a species trait). The other 111
@@ -46,9 +46,11 @@ Smite, Contact Patron, and the 2024 Favored Enemy, whose casts go up with the
 Ranger's level; the 2014 Favored Enemy's row has no effects. Four more count
 some of their effects under one rules version alone (rule pack port 2g): Second
 Wind, the Cleric's and the Paladin's Channel Divinity, the Paladin's named for
-the class that gives it, and Lay on Hands. The rows left in `CURATED` need
-something the format lacks: a pick, a name that says the class only when
-another class gives the feature too (Harness Divine Power), or an engine call.
+the class that gives it, and Lay on Hands. Two more name a pool and its action
+for the class that gives them only when the character also has the other class
+(rule pack port 2h): the Cleric's and the Paladin's Harness Divine Power. The
+rows left in `CURATED` need something the format lacks: a pick or an engine
+call.
 
 63 `standing` rows have moved (`src/rules/cast-guidance/standing.json`): every
 `STANDING` row the format holds, the defenses, senses and speeds a subclass or
@@ -365,6 +367,21 @@ Paladin's and the Cleric's pools of one name show apart. With no class giving
 it, it has its own name alone (the code named a Paladin's pool for the
 character's Paladin, or "Paladin"). The Workshop's line for the pool says it is
 named for the class.
+
+An action takes `"ownClass": true` as well, so an action sharing such a pool's
+name still spends a use of it. A pool or an action may instead take
+`"ownClassBeside"`, a list of class names: it is named for the class that gives
+it only when the character has another class of one of those names, or one
+reskinning or copying it, as a curated row finds a class. Harness Divine Power
+is "Channel Divinity: Harness Divine Power" alone and "Channel Divinity:
+Harness Divine Power (Cleric)" beside a Paladin, its pool and its action alike.
+An effect takes one of the two, not both. The code named both for "Cleric" and
+"Paladin"; the row names them for the class that gives them, so a Workshop copy
+of the 2014 Paladin beside a Cleric has its own name there. No reskin in the data
+has the feature (each reskins a 2024 class). A Paladin, a copy of it and a Cleric
+keep the first class's pool, as any two pools of one key do, so the copy's action
+finds no pool of its name and spends only Channel Divinity. The Workshop's lines
+say which.
 
 ## Checking a change on real data
 
