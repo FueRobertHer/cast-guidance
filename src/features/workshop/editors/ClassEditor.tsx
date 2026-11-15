@@ -47,6 +47,7 @@ import { listClass } from '@/ui/surfaces';
 import { fieldClass } from '@/ui/TextField';
 import type { TableColumn } from '../ClassTable';
 import { basedOnKey, changeCount, copiedFrom, readStored, same, writeEntry } from '../copyWriter';
+import { BY_LEVEL, firstWords, isByLevel } from '../EffectCards';
 import type { EditorProps, EditorSpec, Json, WriteContext, Written } from '../editorTypes';
 import { FeatureRow, type FeatureStatus } from '../FeatureRow';
 import { ABILITY_WORDS, ChipPicks, Field, Kept, NumberField, Section, Select } from '../fields';
@@ -381,7 +382,7 @@ const poolValues = (p: StoredEffect) => byLevelValues(own(p.max as Json, 'byLeve
 function poolGroup(pools: readonly StoredEffect[]): Json {
   const values = pools.map(poolValues);
   return {
-    colLabels: pools.map((p) => String(p.label ?? 'Pool')),
+    colLabels: pools.map((p) => firstWords(p.label ?? 'Pool')),
     rows: LEVELS.map((_, i) => values.map((v) => v[i] ?? 0)),
   };
 }
@@ -902,7 +903,7 @@ function check(draft: Json, at?: Omit<WriteContext, 'draft'>): string | undefine
   }
   if (typeof draft.casterProgression === 'string' && typeof draft.spellcastingAbility !== 'string')
     return 'Pick the ability it casts its spells with.';
-  const pools = poolsOf(draft).map((p) => lower(String(p.label ?? '').trim()));
+  const pools = poolsOf(draft).map((p) => lower(firstWords(p.label ?? '').trim()));
   if (pools.some((p) => p === '')) return 'Every pool needs a name.';
   if (new Set(pools).size !== pools.length) return 'Two pools have the same name.';
   return undefined;
@@ -1221,7 +1222,8 @@ function Pools({ draft, change, readOnly }: Pick<EditorProps, 'draft' | 'change'
                 <div className="min-w-0 flex-1">
                   <Field label="Pool name">
                     <input
-                      value={String(p.label ?? '')}
+                      value={isByLevel(p.label) ? '' : String(p.label ?? '')}
+                      placeholder={isByLevel(p.label) ? BY_LEVEL : undefined}
                       disabled={readOnly}
                       onChange={(e) => edit(p, { label: e.target.value })}
                       className={fieldClass}
@@ -1231,7 +1233,7 @@ function Pools({ draft, change, readOnly }: Pick<EditorProps, 'draft' | 'change'
                 {!readOnly && (
                   <button
                     type="button"
-                    aria-label={`Remove ${String(p.label || 'pool')}`}
+                    aria-label={`Remove ${firstWords(p.label || 'pool')}`}
                     onClick={() => set(all.filter((e) => e !== p))}
                     className="tap rounded-full text-ink-muted hover:bg-surface-raised hover:text-ink"
                   >
@@ -1239,12 +1241,13 @@ function Pools({ draft, change, readOnly }: Pick<EditorProps, 'draft' | 'change'
                   </button>
                 )}
               </div>
-              <Field label={`${String(p.label || 'Pool')}: back on`}>
+              <Field label={`${firstWords(p.label || 'Pool')}: back on`}>
                 <Select
-                  value={p.reset === 'short' ? 'short' : 'long'}
+                  value={isByLevel(p.reset) ? '' : p.reset === 'short' ? 'short' : 'long'}
                   disabled={readOnly}
                   onChange={(e) => edit(p, { reset: e.target.value })}
                 >
+                  {isByLevel(p.reset) && <option value="">{BY_LEVEL}</option>}
                   <option value="short">A short or long rest</option>
                   <option value="long">A long rest</option>
                 </Select>
@@ -1271,7 +1274,7 @@ function columnsOf(draft: Json, change: EditorProps['change']): TableColumn[] {
     const values = poolValues(p);
     cols.push({
       key: `pool:${String(p.key)}`,
-      label: String(p.label || 'Pool'),
+      label: firstWords(p.label || 'Pool'),
       values: values.map(String),
       set: (level, v) => {
         const max = { byLevel: asByLevel(setFrom(values, level, v)) };

@@ -90,6 +90,38 @@ function amount(v: unknown, sign = true): string {
   return 'a number by level';
 }
 
+/** A stored level table (`{ "byLevel": ... }`), of numbers or of words. */
+export const isByLevel = (v: unknown): v is { byLevel: Record<string, unknown> } =>
+  isRecord(v) && isRecord(v.byLevel);
+
+/** Stored words as one value: a level table's first level's, else as written. */
+export function firstWords(v: unknown): string {
+  if (!isByLevel(v)) return String(v);
+  const [first] = Object.entries(v.byLevel).sort(([a], [b]) => Number(a) - Number(b));
+  return first === undefined ? '' : String(first[1]);
+}
+
+/** Stored words as a sentence reads them: a level table's by its first level's. */
+function words(v: unknown): string {
+  if (!isByLevel(v)) return String(v);
+  const first = firstWords(v);
+  return first === '' ? 'words by level' : `${first}, by level`;
+}
+
+/**
+ * What a box shows for a level table, which a file may hold and no box edits:
+ * picking or typing a value puts that one value in its place.
+ */
+export const BY_LEVEL = 'By level, as written';
+
+/** When a pool comes back, as a sentence reads it. */
+const restWords = (v: unknown) =>
+  isByLevel(v)
+    ? 'a rest that changes by level'
+    : v === 'short'
+      ? 'a short or long rest'
+      : 'a long rest';
+
 type FieldSpec =
   | { key: string; label: string; type: 'pick'; options: Options }
   | { key: string; label: string; type: 'amount' | 'text' | 'dice' };
@@ -405,7 +437,7 @@ const KINDS: readonly KindSpec[] = [
       },
     ],
     line: (e) =>
-      `${String(e.label)}: ${amount(e.max, false)} ${e.max === 1 ? 'use' : 'uses'}, back on a ${e.reset === 'short' ? 'short or long' : 'long'} rest`,
+      `${words(e.label)}: ${amount(e.max, false)} ${e.max === 1 ? 'use' : 'uses'}, back on ${restWords(e.reset)}`,
   },
   {
     kinds: ['action'],
@@ -425,7 +457,7 @@ const KINDS: readonly KindSpec[] = [
       { key: 'label', label: 'Name', type: 'text' },
     ],
     line: (e) =>
-      `${e.economy === 'bonus' ? 'Bonus action' : e.economy === 'reaction' ? 'Reaction' : 'Action'}: ${String(e.label)}${costOf(e) ? `, spends 1 use of ${costOf(e)}` : ''}`,
+      `${e.economy === 'bonus' ? 'Bonus action' : e.economy === 'reaction' ? 'Reaction' : 'Action'}: ${words(e.label)}${costOf(e) ? `, spends 1 use of ${costOf(e)}` : ''}`,
   },
   {
     kinds: ['cue'],
@@ -479,9 +511,12 @@ export interface SpellOption {
   source: string;
 }
 
-/** The resource a grant spends, as the Spells tab counts it: per day back on a long rest. */
+/**
+ * The resource a grant spends, as the Spells tab counts it: per day back on a
+ * long rest. A rest by level is one value here, its first level's.
+ */
 function usageFor(resource: Eff | undefined): string {
-  return `1/${resource?.reset === 'short' ? 'rest' : 'day'}`;
+  return `1/${firstWords(resource?.reset) === 'short' ? 'rest' : 'day'}`;
 }
 
 /** A spell grant's own controls: which spell, how it is cast, whose ability sets its numbers. */
@@ -555,7 +590,7 @@ function GrantFields({
           <option value="prepared">Always prepared</option>
           {resources.map((r) => (
             <option key={String(r.key)} value={`use:${String(r.key)}`}>
-              Spending 1 use of {String(r.label)}
+              Spending 1 use of {words(r.label)}
             </option>
           ))}
         </Select>
@@ -695,7 +730,8 @@ const keyOf = (label: string) =>
 /** A field's value as its box shows it. */
 function shown(e: Eff, f: FieldSpec): string {
   const v = e[f.key];
-  if (v === undefined) return '';
+  // A level table has no box of its own: the box offers to replace it (`BY_LEVEL`).
+  if (v === undefined || isByLevel(v)) return '';
   if (typeof v === 'object' && v !== null && 'f' in v) return String(v.f);
   if (typeof v === 'object') return JSON.stringify(v);
   return String(v);
@@ -777,6 +813,7 @@ function Card({
                   value={f.key === 'kind' ? effect.kind : shown(effect, f)}
                   onChange={(e) => set(f, e.target.value)}
                 >
+                  {isByLevel(effect[f.key]) && <option value="">{BY_LEVEL}</option>}
                   {f.options.map(([v, text]) => (
                     <option key={v} value={v}>
                       {text}
@@ -787,6 +824,7 @@ function Card({
                 <input
                   aria-label={`${title}: ${f.label}`}
                   value={shown(effect, f)}
+                  placeholder={isByLevel(effect[f.key]) ? BY_LEVEL : undefined}
                   onChange={(e) => set(f, e.target.value)}
                   className={fieldClass}
                 />
@@ -821,7 +859,7 @@ function Card({
                 <option value="">Nothing</option>
                 {resources.map((r) => (
                   <option key={String(r.key)} value={String(r.key)}>
-                    1 use of {String(r.label)}
+                    1 use of {words(r.label)}
                   </option>
                 ))}
               </Select>

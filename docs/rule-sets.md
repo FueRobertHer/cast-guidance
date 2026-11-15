@@ -10,7 +10,7 @@ stands in for `ROLL_EXTRAS` (`src/engine/curated/rollExtras.ts`). The files
 live in `src/rules/`, one a part. (Source of truth: `readRuleSet` and
 `mechanicsOf` in `src/engine/effects/mechanics.ts`, `src/data5e/builtInRules.ts`.)
 
-148 rows have moved so far (`src/rules/cast-guidance/curated.json`). Four came
+157 rows have moved so far (`src/rules/cast-guidance/curated.json`). Four came
 first, one for each kind of call site, to prove the routes: Stunning Strike (a
 class feature), Lucky (PHB, a feat), Disarming Attack (PHB, an optional
 feature) and Warforged's Integrated Protection (a species trait). The other 111
@@ -34,9 +34,13 @@ Focus, Font of Magic, both Indomitables, Soul Fragments, Portent, and Rage and
 Wild Shape by printing. Two more, under eleven keys, add an ability modifier to
 the damage of the spells of the class that gives them, `"ownClass": true` (rule
 pack port 2d): Potent Spellcasting (the 2024 Cleric and Druid, seven 2014
-domains) and Empowered Evocation in both printings. The rows left in `CURATED`
-need something the format lacks: a pick, the class's name in a label, text or a
-reset by level, the rules version, or an engine call.
+domains) and Empowered Evocation in both printings. Nine more, eight with a level
+table of words, give a pool's or an action's words by the level of the class
+that gives them (rule pack port 2e): Combat Superiority's die and its name,
+Psionic Power's in both printings for the Psi Warrior and the Soulknife, Bardic
+Inspiration's die, note and rest, Warding Flare's rest and 2024 note (its 2014
+row has neither), and Sneak Attack's dice. The rows left in `CURATED` need something the format lacks: a
+pick, the class's name in a label, the rules version, or an engine call.
 
 63 `standing` rows have moved (`src/rules/cast-guidance/standing.json`): every
 `STANDING` row the format holds, the defenses, senses and speeds a subclass or
@@ -113,7 +117,8 @@ class level) the format does not have.
   written with a field the format does not have yet (`tools` on a roll
   filter) fails the tests instead of losing half of itself unseen. The
   same goes for a nested field (`save.dc`), a `while` state's and an amount's
-  (an amount is `{ "f": ... }` or `{ "byLevel": ... }`, never both). An unknown
+  (an amount is `{ "f": ... }` or `{ "byLevel": ... }`, never both) and a level
+  table of words' (`{ "byLevel": ... }` alone). An unknown
   field on a row leaves the row out; one on the file is a problem, and its rows
   still count.
 - A row the reader cannot read is left out, and the rest still count. What it
@@ -302,6 +307,18 @@ it, so its row with `ownClass` adds nothing. The two differ in the same places
 as the level: a Cleric beside a class reskinning it has each one's Potent
 Spellcasting for its own cantrips, a Light Domain taken under a Bard adds to the
 Bard's, and a subclass taken under two classes adds to each.
+
+A code row that builds a pool's or an action's words from the class level (a
+die in a name, a rest that changes at level 5) moves to a level table of words,
+`{ "byLevel": { "1": "1d8", "10": "1d10" } }`, read the way an amount's table is:
+the words at the highest level reached, at the level its call site passes. A
+pool's `label`, `die` and `reset` take one, and an action's `label`, `roll` and
+`note`. They are filled in when the effect is emitted, before an entry's `drop`
+looks at its label. Below a table's first level the field is left out (the
+2024 Warding Flare's note from Cleric 6), so a table for a field the effect
+needs (a `label`, a `reset`) starts at level 1. A player's file takes the same
+tables; the Workshop shows one as "By level, as written" and puts a single
+value in its place when the box is changed, as it does for an amount's table.
 
 ## Checking a change on real data
 

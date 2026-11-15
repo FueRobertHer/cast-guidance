@@ -539,6 +539,25 @@ describe('pools', () => {
       cls.classTableGroups,
     );
   });
+
+  it('heads the column of a pool named by level with its first level’s name', () => {
+    const { registry, cls } = book();
+    const embers = {
+      kind: 'resource',
+      key: 'embers',
+      label: { byLevel: { '1': 'Embers (d6)', '5': 'Embers (d8)' } },
+      max: { byLevel: { '1': 2 } },
+      reset: 'long',
+    };
+    const written = save(registry, cls, {}, 'changes', {
+      castGuidance: { v: 1, effects: [embers] },
+    });
+    const { entry } = readStored(structuredClone(written.entry), cls);
+    expect((entry.classTableGroups as Json[]).at(-1)?.colLabels).toEqual(['Embers (d6)']);
+    expect(openClass(entry, { original: cls, registry }).classTableGroups).toEqual(
+      cls.classTableGroups,
+    );
+  });
 });
 
 describe('tableGroupsFor', () => {
@@ -640,6 +659,16 @@ describe('summarize and check', () => {
     expect(check({ name: 'L', castGuidance: { v: 1, effects: [pool('A'), pool('a')] } })).toBe(
       'Two pools have the same name.',
     );
+    // A pool a file names by level goes by its first level's name.
+    const byLevel = (key: string, first: string) => ({
+      kind: 'resource',
+      key,
+      label: { byLevel: { '1': first, '5': `${first} II` } },
+      max: { byLevel: {} },
+    });
+    const pools = (...effects: Json[]) => check({ name: 'L', castGuidance: { v: 1, effects } });
+    expect(pools(byLevel('e', 'Embers'), byLevel('s', 'Sparks'))).toBeUndefined();
+    expect(pools(byLevel('e', 'Embers'), pool('embers'))).toBe('Two pools have the same name.');
   });
 
   it('asks for names Save would write twice, a book feature it has to write among them', () => {
@@ -763,5 +792,26 @@ describe('the class editor on screen', () => {
     fireEvent.change(screen.getByLabelText('Vigil at level 5'), { target: { value: '3' } });
     const [pool] = (draft().castGuidance as { effects: Json[] }).effects;
     expect(pool).toMatchObject({ label: 'Vigil', max: { byLevel: { '1': 2, '5': 3 } } });
+  });
+
+  it('shows a pool a file names and rests by level by its first level, and replaces it when changed', async () => {
+    const { registry, cls } = book();
+    const embers = {
+      kind: 'resource',
+      key: 'embers',
+      label: { byLevel: { '1': 'Embers (d6)', '5': 'Embers (d8)' } },
+      max: { byLevel: { '1': 2 } },
+      reset: { byLevel: { '1': 'long', '5': 'short' } },
+    };
+    const draft = mount(registry, { ...cls, castGuidance: { v: 1, effects: [embers] } });
+    const name = (await screen.findByLabelText('Pool name')) as HTMLInputElement;
+    expect([name.value, name.placeholder]).toEqual(['', 'By level, as written']);
+    const back = screen.getByLabelText('Embers (d6): back on') as HTMLSelectElement;
+    expect(back.selectedOptions[0]?.textContent).toBe('By level, as written');
+    expect(screen.queryByText(/object Object/)).toBeNull();
+    expect((editor.check ?? (() => undefined))(draft())).toBeUndefined();
+    fireEvent.change(back, { target: { value: 'short' } });
+    const [pool] = (draft().castGuidance as { effects: Json[] }).effects;
+    expect(pool).toMatchObject({ reset: 'short', label: embers.label });
   });
 });
