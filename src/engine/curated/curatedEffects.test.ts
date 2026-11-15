@@ -533,6 +533,7 @@ describe('free casts of a spell the class always has prepared', () => {
     { name: 'Ranger', source: 'PHB', spellcastingAbility: 'wis' },
     { name: 'Paladin', source: 'XPHB', spellcastingAbility: 'cha' },
     { name: 'Warlock', source: 'XPHB', spellcastingAbility: 'cha' },
+    { name: 'Death Knight', source: 'HB', spellcastingAbility: 'int' },
     // A class whose own data counts the casts, as a Death Knight's does.
     {
       name: 'Knight',
@@ -544,15 +545,17 @@ describe('free casts of a spell the class always has prepared', () => {
   const world: EngineContext = {
     get: (type, name, source) =>
       type === 'class' ? classes.find((c) => c.name === name && c.source === source) : undefined,
-    byType: () => [],
+    byType: (type) => (type === RULE_SET_TYPE ? BUILT_IN_RULE_SETS : []),
   };
+  /** The row as a class walk emits it: the class walked gives it, at its level. */
   const cast = (key: string, name: string, source: string, levels: number, from = source) => {
     const doc = newCharacterDoc('c', 'H', 't');
     doc.classes = [{ ref: { name, source }, levels, hp: [] }];
     const c = new Collector(doc, world);
     const uid = `${name}|${source}`.toLowerCase();
-    emitCuratedEffects(c, key, { label: 'Feature', uid, type: 'class' }, from.toLowerCase());
-    return c.effects;
+    const o: EffectOrigin = { label: 'Feature', uid, type: 'class' };
+    expect(emitRow(c, key, o, from.toLowerCase(), name)).toBe(true);
+    return worked(c).effects;
   };
   const resource = (effects: EffectInput[], key: string) =>
     effects.find((e) => e.kind === 'resource' && e.key === key) as
@@ -571,31 +574,82 @@ describe('free casts of a spell the class always has prepared', () => {
         resourceKey: 'favored-enemy',
       }),
     ]);
-    expect([4, 5, 9, 13, 17, 20].map((l) => resource(at(l), 'favored-enemy')?.max)).toEqual([
-      2, 3, 4, 5, 6, 6,
+    const levels = [4, 5, 9, 13, 17, 20];
+    expect(levels.map((l) => resource(at(l), 'favored-enemy')?.max)).toEqual([2, 3, 4, 5, 6, 6]);
+    const usage = (effects: EffectInput[]) =>
+      effects.find((e) => e.kind === 'grantSpell' && e.resourceKey === 'favored-enemy') as
+        | { usage?: string }
+        | undefined;
+    expect(levels.map((l) => usage(at(l))?.usage)).toEqual([
+      '2/day',
+      '3/day',
+      '4/day',
+      '5/day',
+      '6/day',
+      '6/day',
     ]);
   });
 
-  it('gives the 2014 Favored Enemy nothing, as its prose scan did', () => {
+  it('gives the 2014 Favored Enemy nothing, and keeps its prose scan off as its code row did', () => {
     expect(cast('favored enemy|ranger', 'Ranger', 'PHB', 5)).toEqual([]);
+    let scan: string | undefined;
+    mechanicsOf(new Collector(newCharacterDoc('c', 'H', 't'), world), {
+      entry: {},
+      label: 'Favored Enemy',
+      origin: { label: 'Favored Enemy', uid: 'ranger|phb', type: 'class' },
+      target: 'favored enemy|ranger',
+      ruleKeys: printingKeys(['favored enemy|ranger'], 'phb', 'ranger|phb'),
+      inherited: (hit) => {
+        scan = hit?.scan;
+      },
+    });
+    expect(scan).toBe('replace');
   });
 
   it.each([
-    ["paladin's smite|paladin", 'Paladin', 'divine smite', 'paladin-s-smite', "Paladin's Smite"],
-    ['faithful steed|paladin', 'Paladin', 'find steed', 'faithful-steed', 'Faithful Steed'],
+    [
+      "paladin's smite|paladin",
+      'Paladin',
+      'XPHB',
+      'divine smite',
+      'paladin-s-smite',
+      "Paladin's Smite",
+      'cha',
+    ],
+    [
+      'faithful steed|paladin',
+      'Paladin',
+      'XPHB',
+      'find steed',
+      'faithful-steed',
+      'Faithful Steed',
+      'cha',
+    ],
+    [
+      'runic smite|death knight',
+      'Death Knight',
+      'HB',
+      'rune strike',
+      'runic-smite',
+      'Runic Smite',
+      'int',
+    ],
     [
       'contact patron|warlock',
       'Warlock',
+      'XPHB',
       'contact other plane',
       'contact-patron',
       'Contact Patron',
+      'cha',
     ],
-  ])('ties %s to its spell, under the pool the prose scan made', (key, cls, spell, pool, label) => {
-    const made = cast(key, cls, 'XPHB', 9);
+  ])('ties %s to its spell, under the pool the prose scan made', (key, cls, source, spell, pool, label, ability) => {
+    const made = cast(key, cls, source, 9);
+    expect(made).toHaveLength(2);
     expect(resource(made, pool)).toMatchObject({ label, max: 1, resetOn: 'long' });
     expect(made.find((e) => e.kind === 'grantSpell')).toMatchObject({
       spell: { name: spell },
-      ability: 'cha',
+      ability,
       usage: '1/day',
       resourceKey: pool,
     });

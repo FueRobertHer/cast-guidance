@@ -2417,6 +2417,127 @@
           }
         }
       ]
+    },
+    {
+      "part": "curated",
+      "keys": ["paladin's smite|paladin"],
+      "effects": [
+        {
+          "kind": "resource",
+          "key": "paladin-s-smite",
+          "label": "Paladin's Smite",
+          "max": 1,
+          "reset": "long"
+        },
+        {
+          "kind": "grantSpell",
+          "spell": "divine smite|xphb",
+          "ownClass": true,
+          "usage": "1/day",
+          "resourceKey": "paladin-s-smite"
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["faithful steed|paladin"],
+      "effects": [
+        {
+          "kind": "resource",
+          "key": "faithful-steed",
+          "label": "Faithful Steed",
+          "max": 1,
+          "reset": "long"
+        },
+        {
+          "kind": "grantSpell",
+          "spell": "find steed|xphb",
+          "ownClass": true,
+          "usage": "1/day",
+          "resourceKey": "faithful-steed"
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["runic smite|death knight"],
+      "effects": [
+        {
+          "kind": "resource",
+          "key": "runic-smite",
+          "label": "Runic Smite",
+          "max": 1,
+          "reset": "long"
+        },
+        {
+          "kind": "grantSpell",
+          "spell": "rune strike|wow",
+          "ownClass": true,
+          "usage": "1/day",
+          "resourceKey": "runic-smite"
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["contact patron|warlock"],
+      "effects": [
+        {
+          "kind": "resource",
+          "key": "contact-patron",
+          "label": "Contact Patron",
+          "max": 1,
+          "reset": "long"
+        },
+        {
+          "kind": "grantSpell",
+          "spell": "contact other plane|xphb",
+          "ownClass": true,
+          "usage": "1/day",
+          "resourceKey": "contact-patron"
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["favored enemy|ranger|xphb"],
+      "effects": [
+        {
+          "kind": "resource",
+          "key": "favored-enemy",
+          "label": "Favored Enemy",
+          "max": {
+            "byLevel": {
+              "1": 2,
+              "5": 3,
+              "9": 4,
+              "13": 5,
+              "17": 6
+            }
+          },
+          "reset": "long"
+        },
+        {
+          "kind": "grantSpell",
+          "spell": "hunter's mark|xphb",
+          "ownClass": true,
+          "usage": {
+            "byLevel": {
+              "1": "2/day",
+              "5": "3/day",
+              "9": "4/day",
+              "13": "5/day",
+              "17": "6/day"
+            }
+          },
+          "resourceKey": "favored-enemy"
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["favored enemy|ranger"],
+      "effects": []
     }
   ]
 }
