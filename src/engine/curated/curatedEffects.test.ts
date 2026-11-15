@@ -25,10 +25,17 @@ const origin: EffectOrigin = { label: 'Feature', uid: 'x', type: 'class' };
  * A curated row, wherever it lives while rows move out of code: `CURATED`, else
  * the shipped rule set's row, emitted as the seam emits it: under the key for
  * its printing first (`from`, then the origin's uid's), as a class walk looks
- * it up. False when neither has a row under the key. A moved row's formulas are
+ * it up, with `className` the class that gives it. False when neither has a
+ * row under the key. A moved row's formulas are
  * filled only at fold time: `worked` works them out here as the fold does.
  */
-function emitRow(c: Collector, key: string, o: EffectOrigin, from?: string): boolean {
+function emitRow(
+  c: Collector,
+  key: string,
+  o: EffectOrigin,
+  from?: string,
+  className?: string,
+): boolean {
   if (emitCuratedEffects(c, key, o, from)) return true;
   let builtIn = false;
   mechanicsOf(c, {
@@ -36,6 +43,7 @@ function emitRow(c: Collector, key: string, o: EffectOrigin, from?: string): boo
     label: o.label,
     origin: o,
     target: key,
+    ...(className === undefined ? {} : { className }),
     ruleKeys: printingKeys([key], from ?? '', o.uid),
     inherited: (hit) => {
       builtIn = hit !== undefined;
@@ -949,19 +957,25 @@ describe('always-on riders', () => {
     expect(picked.pending).toEqual([]);
   });
 
-  it('adds Wisdom to a cleric’s or druid’s cantrips, named as the character’s class', () => {
+  /** A row read as a class walk reads it, for the features of `className`, which gives them. */
+  const emitFor = (key: string, className: string | undefined) => {
+    const c = col(className ?? 'Cleric', 8);
+    expect(emitRow(c, key, origin, undefined, className)).toBe(true);
+    return shown(c);
+  };
+
+  it('adds Wisdom to the cantrips of the class that gives Potent Spellcasting, by its own name', () => {
     const cantrips = (className: string) => ({
       kind: 'spellDamageBonus',
-      amount: 'abilityMod:wis',
+      amount: 'mod.wis',
       className,
       cantrips: true,
     });
-    expect(emit('potent spellcasting|cleric', 'cleric|xphb', col('Cleric', 8))).toEqual([
-      cantrips('Cleric'),
-    ]);
-    expect(emit('potent spellcasting|druid', 'druid|xphb', col('Druid', 8))).toEqual([
-      cantrips('Druid'),
-    ]);
+    expect(emitFor('potent spellcasting|cleric', 'Cleric')).toEqual([cantrips('Cleric')]);
+    expect(emitFor('potent spellcasting|druid', 'Druid')).toEqual([cantrips('Druid')]);
+    // A class reskinning the Cleric reads its row under the Cleric's key, and
+    // its cantrips are its own.
+    expect(emitFor('potent spellcasting|cleric', 'Priest')).toEqual([cantrips('Priest')]);
     for (const domain of [
       'ambition domain (psa)',
       'arcana domain',
@@ -971,23 +985,24 @@ describe('always-on riders', () => {
       'light domain',
       'peace domain',
     ]) {
-      expect(emit(`potent spellcasting|${domain}`, 'x|phb', col('Cleric', 8))).toEqual([
-        cantrips('Cleric'),
-      ]);
+      expect(emitFor(`potent spellcasting|${domain}`, 'Cleric')).toEqual([cantrips('Cleric')]);
     }
+    // A domain taken under another class (a Workshop author's) adds to that class's.
+    expect(emitFor('potent spellcasting|light domain', 'Bard')).toEqual([cantrips('Bard')]);
+    // A call site that names no class (a feat's, a trait's) adds to no class's cantrips.
+    expect(emitFor('potent spellcasting|cleric', undefined)).toEqual([]);
   });
 
-  it('adds Intelligence to one damage roll of a wizard’s evocation spells, in both printings', () => {
-    const roll = {
+  it('adds Intelligence to one damage roll of the evocation spells of the class that gives Empowered Evocation, in both printings', () => {
+    const roll = (className: string) => ({
       kind: 'spellDamageBonus',
-      amount: 'abilityMod:int',
-      className: 'Wizard',
+      amount: 'mod.int',
+      className,
       school: 'V',
       oneRoll: true,
-    };
-    expect(emit('empowered evocation|school of evocation', 'x|phb', col('Wizard', 10))).toEqual([
-      roll,
-    ]);
-    expect(emit('empowered evocation|evoker', 'x|xphb', col('Wizard', 10))).toEqual([roll]);
+    });
+    expect(emitFor('empowered evocation|school of evocation', 'Wizard')).toEqual([roll('Wizard')]);
+    expect(emitFor('empowered evocation|evoker', 'Wizard')).toEqual([roll('Wizard')]);
+    expect(emitFor('empowered evocation|school of evocation', 'Mage')).toEqual([roll('Mage')]);
   });
 });

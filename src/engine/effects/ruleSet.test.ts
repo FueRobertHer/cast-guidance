@@ -313,6 +313,23 @@ describe('standing rows', () => {
     expect(at(ctx, ['desert|storm'], 6).effects.every((e) => e.origin === origin)).toBe(true);
   });
 
+  it('give a class feature’s rows the class that gives it, which "ownClass" reads', () => {
+    const bonus = { kind: 'spellDamageBonus', amount: 1, ownClass: true, cantrips: true };
+    const ctx = withRules(ruleSet([standing(['grit|warrior'], [bonus])]));
+    expect(deriveSheet(character(), ctx).spellDamageBonuses).toEqual([
+      { amount: 1, origin: 'Grit', className: 'Warrior', cantrips: true },
+    ]);
+    // A feat's rows have no class, so the bonus is left out; a call site names one.
+    const col = new Collector(character(), ctx);
+    expect(emitBuiltInRows(col, 'standing', ['grit|warrior'], origin)).toBe(true);
+    expect(col.effects).toEqual([]);
+    expect(emitBuiltInRows(col, 'standing', ['grit|warrior'], origin, { className: 'Bard' })).toBe(
+      true,
+    );
+    expect(col.effects).toMatchObject([{ kind: 'spellDamageBonus', className: 'Bard' }]);
+    expect(col.effects[0]).not.toHaveProperty('ownClass');
+  });
+
   it('find a key whose rows are all at other levels, so no later key is read', () => {
     const ctx = withRules(
       ruleSet([

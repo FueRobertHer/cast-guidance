@@ -447,33 +447,6 @@ function psionicEnergyDice(
 }
 
 /**
- * An ability modifier on the damage of a class's spells: its cantrips (Potent
- * Spellcasting), or one roll of its spells of a school (Empowered Evocation). The
- * class is the one the character has, so a reskin's spells (a Mage's) count.
- */
-const spellDamage =
-  (
-    cls: string,
-    ability: Ability,
-    limits: { cantrips?: boolean; school?: string; oneRoll?: boolean },
-  ): CuratedFn =>
-  (col, origin) => {
-    col.add({
-      kind: 'spellDamageBonus',
-      amount: `abilityMod:${ability}`,
-      className: classEntry(col, cls)?.ref.name ?? cls,
-      ...limits,
-      origin,
-    });
-  };
-
-/** A cleric's cantrips add Wisdom to their damage: the 2014 domains' and 2024's Potent Spellcasting. */
-const potentClericCantrips = spellDamage('Cleric', 'wis', { cantrips: true });
-
-/** One damage roll of a wizard's evocation spell adds Intelligence: both printings. */
-const empoweredEvocation = spellDamage('Wizard', 'int', { school: 'V', oneRoll: true });
-
-/**
  * The 2024 Agonizing Blast: Charisma on the damage of a Warlock cantrip the
  * player picks. The pick sits beside the invocations' prompt, not under it, so
  * saving that prompt keeps it. The picker lists every Warlock cantrip; the label
@@ -608,19 +581,6 @@ export const CURATED: Record<string, CuratedFn> = {
   // --- Always-on riders: damage every hit or every cast adds -----------------
   // More of this section's rows are data, in `src/rules/cast-guidance/curated.json`.
   'agonizing blast|xphb': agonizingPick,
-  // 2024: one branch of Blessed Strikes (Cleric) or Elemental Fury (Druid).
-  'potent spellcasting|cleric': potentClericCantrips,
-  'potent spellcasting|druid': spellDamage('Druid', 'wis', { cantrips: true }),
-  // 2014: the domains whose 8th-level feature it is, by the subclass's own name.
-  'potent spellcasting|ambition domain (psa)': potentClericCantrips,
-  'potent spellcasting|arcana domain': potentClericCantrips,
-  'potent spellcasting|grave domain': potentClericCantrips,
-  'potent spellcasting|knowledge domain': potentClericCantrips,
-  'potent spellcasting|knowledge domain (psa)': potentClericCantrips,
-  'potent spellcasting|light domain': potentClericCantrips,
-  'potent spellcasting|peace domain': potentClericCantrips,
-  'empowered evocation|school of evocation': empoweredEvocation,
-  'empowered evocation|evoker': empoweredEvocation,
   'second wind|fighter': (col, origin) => {
     // 2024 scales uses (2 → 3 @4 → 4 @10); 2014 is once per rest.
     const lvl = classLevel(col, 'Fighter');

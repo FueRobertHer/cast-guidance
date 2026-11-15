@@ -2047,6 +2047,45 @@
           "foretell": true
         }
       ]
+    },
+    {
+      "part": "curated",
+      "keys": [
+        "potent spellcasting|cleric",
+        "potent spellcasting|druid",
+        "potent spellcasting|ambition domain (psa)",
+        "potent spellcasting|arcana domain",
+        "potent spellcasting|grave domain",
+        "potent spellcasting|knowledge domain",
+        "potent spellcasting|knowledge domain (psa)",
+        "potent spellcasting|light domain",
+        "potent spellcasting|peace domain"
+      ],
+      "effects": [
+        {
+          "kind": "spellDamageBonus",
+          "amount": {
+            "f": "mod.wis"
+          },
+          "ownClass": true,
+          "cantrips": true
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["empowered evocation|school of evocation", "empowered evocation|evoker"],
+      "effects": [
+        {
+          "kind": "spellDamageBonus",
+          "amount": {
+            "f": "mod.int"
+          },
+          "ownClass": true,
+          "school": "V",
+          "oneRoll": true
+        }
+      ]
     }
   ]
 }

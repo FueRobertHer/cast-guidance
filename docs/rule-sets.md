@@ -10,7 +10,7 @@ stands in for `ROLL_EXTRAS` (`src/engine/curated/rollExtras.ts`). The files
 live in `src/rules/`, one a part. (Source of truth: `readRuleSet` and
 `mechanicsOf` in `src/engine/effects/mechanics.ts`, `src/data5e/builtInRules.ts`.)
 
-146 rows have moved so far (`src/rules/cast-guidance/curated.json`). Four came
+148 rows have moved so far (`src/rules/cast-guidance/curated.json`). Four came
 first, one for each kind of call site, to prove the routes: Stunning Strike (a
 class feature), Lucky (PHB, a feat), Disarming Attack (PHB, an optional
 feature) and Warforged's Integrated Protection (a species trait). The other 111
@@ -31,9 +31,12 @@ prose scan off (2014 Roving and Feral Senses, 2024 Remarkable Athlete).
 Thirteen more need the level of the class that gives them, in a level table or
 `classLevel` (rule pack port 2c): Unarmored Movement, Action Surge, Ki, Monk's
 Focus, Font of Magic, both Indomitables, Soul Fragments, Portent, and Rage and
-Wild Shape by printing. The rows left in `CURATED` need something the format
-lacks: a pick, the class's name, text or a reset by level, the rules version,
-or an engine call.
+Wild Shape by printing. Two more, under eleven keys, add an ability modifier to
+the damage of the spells of the class that gives them, `"ownClass": true` (rule
+pack port 2d): Potent Spellcasting (the 2024 Cleric and Druid, seven 2014
+domains) and Empowered Evocation in both printings. The rows left in `CURATED`
+need something the format lacks: a pick, the class's name in a label, text or a
+reset by level, the rules version, or an engine call.
 
 63 `standing` rows have moved (`src/rules/cast-guidance/standing.json`): every
 `STANDING` row the format holds, the defenses, senses and speeds a subclass or
@@ -286,6 +289,19 @@ where the class walked is not the one the code named:
 - A subclass row, found under the subclass's name, under another class: a
   homebrew Diviner for a Bard 14 has Portent's three rolls at Bard 14, where the
   code read the character's Wizard level (none).
+
+A code row that names a class's spells (`className: 'Cleric'`, read as the
+character's class of that name, else one reskinning it, else one copying it)
+moves to `"ownClass": true` on a spell damage bonus. The call site passes the
+class that gives the feature beside its level (`MechanicsSubject.className`):
+the class walked for a class's or subclass's feature, the host class for an
+optional feature it offers. `emit()` writes that class's name into `className`,
+so a reskin's spells are its own (a Mage's Empowered Evocation adds to the
+Mage's evocations). A feat, a species trait or an item has no class that gives
+it, so its row with `ownClass` adds nothing. The two differ in the same places
+as the level: a Cleric beside a class reskinning it has each one's Potent
+Spellcasting for its own cantrips, a Light Domain taken under a Bard adds to the
+Bard's, and a subclass taken under two classes adds to each.
 
 ## Checking a change on real data
 

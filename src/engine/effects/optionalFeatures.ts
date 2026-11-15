@@ -48,6 +48,11 @@ export interface OptionalFeatureSource {
   origin: EffectOrigin;
   /** The level that decides picks by count and options by their level prerequisite. */
   level: number;
+  /**
+   * The class that offers the picks, which gives them (`MechanicsSubject.className`):
+   * absent for a feat's.
+   */
+  className?: string;
   /** Options another pick of the character holds cannot be picked (see `markHeldPicks`). */
   distinct?: boolean;
   /** Why an option cannot be taken, ahead of the level check. */
@@ -60,7 +65,7 @@ export interface OptionalFeatureSource {
 export function readOptionalFeatures(
   col: Collector,
   entity: DataEntity,
-  { idBase, origin, level, distinct, blocked, spellAbility }: OptionalFeatureSource,
+  { idBase, origin, level, className, distinct, blocked, spellAbility }: OptionalFeatureSource,
 ): void {
   for (const prog of asEntityArray(entity.optionalfeatureProgression)) {
     const name = str(prog.name) ?? 'Optional feature';
@@ -149,6 +154,7 @@ export function readOptionalFeatures(
             origin: ofOrigin,
             target: uid,
             classLevel: level,
+            ...(className === undefined ? {} : { className }),
             ruleKeys: uids,
             inCode: hasCuratedRow,
             inherited: (builtIn) => {
@@ -159,7 +165,11 @@ export function readOptionalFeatures(
                       emitCurated(col, key, ofOrigin, i === 0 ? undefined : printed),
                     );
               if (!curated) proseScanFeature(col, str(of.name) ?? uid, of.entries, ofOrigin);
-              const at = { featureLevel: level, classLevel: level };
+              const at = {
+                featureLevel: level,
+                classLevel: level,
+                ...(className === undefined ? {} : { className }),
+              };
               if (
                 !emitBuiltInRows(col, 'standing', uids, ofOrigin, { ...at, inCode: hasStandingRow })
               ) {

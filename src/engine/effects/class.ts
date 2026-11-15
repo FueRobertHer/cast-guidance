@@ -256,6 +256,8 @@ interface FeatureWalk {
    */
   curatedAliases: readonly string[];
   classLevel: number;
+  /** The class walked, by the character's name for it (`MechanicsSubject.className`). */
+  className: string;
   ledger: FeatureLedger;
 }
 
@@ -346,6 +348,7 @@ function collectFeatureWithNested(
     origin: featureOrigin,
     target: `${name}|${curatedLabel}`,
     classLevel: walk.classLevel,
+    className: walk.className,
     ruleKeys,
     inCode: hasCuratedRow,
     inherited: (builtIn) => {
@@ -354,7 +357,7 @@ function collectFeatureWithNested(
           ? builtIn.scan === 'replace'
           : curatedKeys.some((k) => emitCurated(col, k, featureOrigin, printing));
       if (!curated) proseScanFeature(col, name, feature.entries, featureOrigin, cardOrigin.label);
-      const at = { featureLevel: level, classLevel: walk.classLevel };
+      const at = { featureLevel: level, classLevel: walk.classLevel, className: walk.className };
       // Standing rows are found under the curated keys, in the same order.
       if (
         !emitBuiltInRows(col, 'standing', ruleKeys, featureOrigin, {
@@ -729,6 +732,7 @@ export function collectClasses(col: Collector): void {
       curatedLabel: origin.label,
       curatedAliases: [reskin?.name, classBasedOn?.name].filter((n) => n !== undefined),
       classLevel,
+      className: entry.ref.name,
       ledger,
     };
     for (const rawRef of featureRefs) {
@@ -860,6 +864,7 @@ export function collectClasses(col: Collector): void {
           origin: subOrigin,
           target: subOrigin.uid,
           classLevel,
+          className: entry.ref.name,
         });
         const subRefs = Array.isArray(sub.subclassFeatures) ? sub.subclassFeatures : [];
         for (const rawRef of subRefs) {
@@ -907,6 +912,7 @@ export function collectClasses(col: Collector): void {
           idBase: `subclass:${subOrigin.uid}`,
           origin: subOrigin,
           level: classLevel,
+          className: entry.ref.name,
           distinct: true,
           spellAbility,
         });
@@ -917,6 +923,7 @@ export function collectClasses(col: Collector): void {
       idBase: `class:${classUid}`,
       origin,
       level: classLevel,
+      className: entry.ref.name,
       spellAbility,
     });
 
@@ -952,6 +959,7 @@ export function collectClasses(col: Collector): void {
       origin,
       target: classUid,
       classLevel,
+      className: entry.ref.name,
       ruleKeys: rowKeys,
       inCode: hasCuratedRow,
       inherited: (builtIn) => {

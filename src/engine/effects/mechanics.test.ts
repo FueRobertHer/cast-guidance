@@ -246,6 +246,28 @@ describe('readMechanics', () => {
     ]);
   });
 
+  it('reads a spell damage bonus for the spells of the class that gives it', () => {
+    const bonus = { kind: 'spellDamageBonus', amount: 2 };
+    const read = readMechanics({
+      v: 1,
+      effects: [
+        { ...bonus, ownClass: true, cantrips: true },
+        // A false flag is the same as none.
+        { ...bonus, ownClass: false, className: 'Bard' },
+        { ...bonus, ownClass: true, className: 'Bard' },
+        { ...bonus, ownClass: 'yes' },
+      ],
+    });
+    expect(read.effects.map((t) => t.effect)).toEqual([
+      { ...bonus, ownClass: true, cantrips: true },
+      { ...bonus, className: 'Bard' },
+    ]);
+    expect(read.problems).toEqual([
+      'effect 3 (spellDamageBonus): names "className" or "ownClass", not both',
+      'effect 4 (spellDamageBonus): "ownClass" is true or false',
+    ]);
+  });
+
   it('keeps each formula for fold time, with a 0 in its field until then', () => {
     const t = readMechanics({ v: 1, effects: every }).effects.find(
       (x) => x.effect.kind === 'resource',
@@ -704,6 +726,37 @@ describe('mechanicsOf: the layers', () => {
     expect(b?.formulas?.[0]?.classLevel).toBe(4);
     expect(a?.while).toEqual([{ state: 'shield' }]);
   });
+
+  it('reads "ownClass" as the class the call site gives, on its own effects and a pack’s', () => {
+    const bonus = (amount: number) => ({ kind: 'spellDamageBonus', amount, ownClass: true });
+    const packs = world({
+      [RULE_PACK_TYPE]: [
+        pack('Swap', [{ target: 'lantern|hb', effects: [bonus(1)] }]),
+        pack('More', [{ target: 'lantern|hb', add: [bonus(2)] }]),
+      ],
+    });
+    const given = (ctx: EngineContext, className?: string) => {
+      const col = new Collector(character(), ctx);
+      mechanicsOf(col, {
+        entry: cg({ effects: [bonus(3)] }),
+        label: 'Lantern',
+        origin,
+        target: 'Lantern|HB',
+        ...(className === undefined ? {} : { className }),
+      });
+      return col.effects.map((e) => [
+        e.kind === 'spellDamageBonus' ? e.amount : e.kind,
+        'className' in e ? e.className : undefined,
+      ]);
+    };
+    expect(given(packs, 'Bard')).toEqual([
+      [1, 'Bard'],
+      [2, 'Bard'],
+    ]);
+    expect(given(world({}), 'Bard')).toEqual([[3, 'Bard']]);
+    expect(given(packs)).toEqual([]);
+    expect(given(world({}))).toEqual([]);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -1048,6 +1101,94 @@ describe('formulas at fold time', () => {
     expect(sheetWith([{ kind: 'spellDamageBonus', amount: 2, school: 'Fire' }]).warnings).toEqual([
       expect.stringContaining('"school"'),
     ]);
+  });
+
+  it('limits an "ownClass" bonus to the class that gives it, and leaves it out of a feat', () => {
+    const bonus = { kind: 'spellDamageBonus', amount: 2, ownClass: true, cantrips: true };
+    const hexer: DataEntity = {
+      name: 'Hexer',
+      source: 'HB',
+      hd: { number: 1, faces: 8 },
+      proficiency: ['wis', 'cha'],
+      classFeatures: [],
+      optionalfeatureProgression: [{ name: 'Hexes', featureType: ['QQ'], progression: { 1: 1 } }],
+    };
+    const hex: DataEntity = {
+      name: 'Bright Hex',
+      source: 'HB',
+      featureType: ['QQ'],
+      entries: ['Your cantrips burn brighter.'],
+      ...cg({ effects: [bonus] }),
+    };
+    // A homebrew subclass for the class `of` names, with a feature that adds it.
+    const lanterns = (of: string, ofSource: string): Record<string, DataEntity[]> => ({
+      subclass: [
+        {
+          name: 'Lanternbearer',
+          shortName: 'Lanternbearer',
+          source: 'HB',
+          className: of,
+          classSource: ofSource,
+          subclassFeatures: [`Bright Cantrips|${of}|${ofSource}|Lanternbearer|HB|3`],
+        },
+      ],
+      subclassFeature: [
+        {
+          name: 'Bright Cantrips',
+          source: 'HB',
+          className: of,
+          classSource: ofSource,
+          subclassShortName: 'Lanternbearer',
+          subclassSource: 'HB',
+          level: 3,
+          entries: ['Your cantrips burn brighter.'],
+          ...cg({ effects: [bonus] }),
+        },
+      ],
+    });
+    const lantern = { name: 'Lanternbearer', source: 'HB' };
+    const at = (name: string, source: string, subclass?: { name: string; source: string }) => ({
+      ref: { name, source },
+      ...(subclass === undefined ? {} : { subclass }),
+      levels: 3,
+      hp: [],
+    });
+    const bonuses = (
+      data: Record<string, DataEntity[]>,
+      classes: CharacterDoc['classes'],
+      choices: Record<string, string[]> = {},
+    ) => {
+      const doc = character((d) => {
+        d.classes = classes;
+        d.choices = { ...d.choices, ...choices };
+      });
+      return deriveSheet(doc, world({ class: [hexer], optionalfeature: [hex], ...data }))
+        .spellDamageBonuses;
+    };
+    const gain = (className: string, origin = 'Bright Cantrips') => ({
+      amount: 2,
+      origin,
+      className,
+      cantrips: true,
+    });
+    // Taken under the class the subclass names or, as a Workshop author may,
+    // under another: either way it is the class it is taken under.
+    const warrior = at('Warrior', 'TST', lantern);
+    expect(bonuses(lanterns('Warrior', 'TST'), [warrior])).toEqual([gain('Warrior')]);
+    expect(bonuses(lanterns('Bard', 'PHB'), [warrior])).toEqual([gain('Warrior')]);
+    // Taken under two classes, each gives its own.
+    expect(bonuses(lanterns('Warrior', 'TST'), [warrior, at('Hexer', 'HB', lantern)])).toEqual([
+      gain('Warrior'),
+      gain('Hexer'),
+    ]);
+    // An optional feature's is the class that offers it, here the second.
+    const picked = { 'class:hexer|hb:optfeature:QQ': ['bright hex|hb'] };
+    expect(bonuses({}, [at('Warrior', 'TST'), at('Hexer', 'HB')], picked)).toEqual([
+      gain('Hexer', 'Hexes: Bright Hex'),
+    ]);
+    // No class gives a feat, so its bonus holds for no class's spells.
+    expect(sheetWith([bonus]).spellDamageBonuses).toEqual([]);
+    expect(sheetWith([bonus]).warnings).toEqual([]);
   });
 
   it('reads a spell given as "name|source" by its name, which casts match on', () => {
