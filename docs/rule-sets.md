@@ -10,7 +10,7 @@ stands in for `ROLL_EXTRAS` (`src/engine/curated/rollExtras.ts`). The files
 live in `src/rules/`, one a part. (Source of truth: `readRuleSet` and
 `mechanicsOf` in `src/engine/effects/mechanics.ts`, `src/data5e/builtInRules.ts`.)
 
-157 rows have moved so far (`src/rules/cast-guidance/curated.json`). Four came
+163 rows have moved so far (`src/rules/cast-guidance/curated.json`). Four came
 first, one for each kind of call site, to prove the routes: Stunning Strike (a
 class feature), Lucky (PHB, a feat), Disarming Attack (PHB, an optional
 feature) and Warforged's Integrated Protection (a species trait). The other 111
@@ -39,8 +39,13 @@ table of words, give a pool's or an action's words by the level of the class
 that gives them (rule pack port 2e): Combat Superiority's die and its name,
 Psionic Power's in both printings for the Psi Warrior and the Soulknife, Bardic
 Inspiration's die, note and rest, Warding Flare's rest and 2024 note (its 2014
-row has neither), and Sneak Attack's dice. The rows left in `CURATED` need something the format lacks: a
-pick, the class's name in a label, the rules version, or an engine call.
+row has neither), and Sneak Attack's dice. Six more, for five features, give
+a spell to cast without a slot, cast with the spellcasting ability of the class
+that gives them (rule pack port 2f): Paladin's Smite, Faithful Steed, Runic
+Smite, Contact Patron, and the 2024 Favored Enemy, whose casts go up with the
+Ranger's level; the 2014 Favored Enemy's row has no effects. The rows left in
+`CURATED` need something the format lacks: a pick, the class's name in a label,
+the rules version, or an engine call.
 
 63 `standing` rows have moved (`src/rules/cast-guidance/standing.json`): every
 `STANDING` row the format holds, the defenses, senses and speeds a subclass or
@@ -308,12 +313,28 @@ as the level: a Cleric beside a class reskinning it has each one's Potent
 Spellcasting for its own cantrips, a Light Domain taken under a Bard adds to the
 Bard's, and a subclass taken under two classes adds to each.
 
+A spell grant takes `"ownClass": true` as well: it is cast with the
+spellcasting ability of the class that gives it, read from that class's data
+when the effect is emitted, in place of an `ability` of its own (naming both is
+a problem). A feat's, or one a class that casts no spells gives, has no ability.
+When that class's own data counts casts of the spell at any level (a Death
+Knight's Rune Strike, in its `additionalSpells`), the class's row gives them, so
+the grant is left out rather than shown twice, with the pool its `resourceKey`
+names from the same list, unless another effect kept there names that pool too.
+The code found the class by the feature's card, which is the class's only for a
+class's own feature: from a subclass's or an optional feature's card it found
+none, so such a grant had no ability and was never left out. It now reads the
+class that gives it, as a level does. The Workshop's "Cast a spell" card shows a
+file's `ownClass` as "The class that gives it", and picking an ability there
+puts the ability in its place.
+
 A code row that builds a pool's or an action's words from the class level (a
 die in a name, a rest that changes at level 5) moves to a level table of words,
 `{ "byLevel": { "1": "1d8", "10": "1d10" } }`, read the way an amount's table is:
 the words at the highest level reached, at the level its call site passes. A
-pool's `label`, `die` and `reset` take one, and an action's `label`, `roll` and
-`note`. They are filled in when the effect is emitted, before an entry's `drop`
+pool's `label`, `die` and `reset` take one, an action's `label`, `roll` and
+`note`, and a spell grant's `usage` (the 2024 Favored Enemy's "2/day" to
+"6/day"). They are filled in when the effect is emitted, before an entry's `drop`
 looks at its label. Below a table's first level the field is left out (the
 2024 Warding Flare's note from Cleric 6), so a table for a field the effect
 needs (a `label`, a `reset`) starts at level 1. A player's file takes the same

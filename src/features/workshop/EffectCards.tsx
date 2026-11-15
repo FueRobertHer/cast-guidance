@@ -519,6 +519,9 @@ function usageFor(resource: Eff | undefined): string {
   return `1/${firstWords(resource?.reset) === 'short' ? 'rest' : 'day'}`;
 }
 
+/** The "Attack and DC from" value for a grant cast with the class that gives it. */
+const OWN_CLASS = 'ownClass';
+
 /** A spell grant's own controls: which spell, how it is cast, whose ability sets its numbers. */
 function GrantFields({
   effect,
@@ -598,13 +601,23 @@ function GrantFields({
       <Field label="Attack and DC from">
         <Select
           aria-label="Cast a spell: Attack and DC from"
-          value={typeof effect.ability === 'string' ? effect.ability : ''}
+          value={
+            effect.ownClass === true
+              ? OWN_CLASS
+              : typeof effect.ability === 'string'
+                ? effect.ability
+                : ''
+          }
           onChange={(e) => {
-            const { ability: _, ...rest } = effect;
+            // A file's grant may name the class that gives it ("ownClass") in
+            // place of an ability. Its option shows only while it is chosen, so a
+            // change always leaves it: naming both would not read.
+            const { ability: _, ownClass: _own, ...rest } = effect;
             onChange(e.target.value === '' ? (rest as Eff) : { ...rest, ability: e.target.value });
           }}
         >
           <option value="">No ability</option>
+          {effect.ownClass === true && <option value={OWN_CLASS}>The class that gives it</option>}
           {ABILITY.map(([v, text]) => (
             <option key={v} value={v}>
               {text}

@@ -268,6 +268,43 @@ describe('readMechanics', () => {
     ]);
   });
 
+  it('reads a spell grant cast with the class that gives it, with its usage by level', () => {
+    const grant = { kind: 'grantSpell', spell: 'Hex Bolt|HB' };
+    const spell = { name: 'Hex Bolt', source: 'HB' };
+    const read = readMechanics({
+      v: 1,
+      effects: [
+        { ...grant, ownClass: true, usage: { byLevel: { '5': '3/day', '1': '2/day' } } },
+        // A false flag is the same as none.
+        { ...grant, ownClass: false, ability: 'wis', usage: '1/day' },
+        { ...grant, ownClass: true, ability: 'wis' },
+        { ...grant, ownClass: 'yes' },
+        { ...grant, usage: { byLevel: { '1': 2 } } },
+      ],
+    });
+    expect(read.effects.map((t) => t.effect)).toEqual([
+      { kind: 'grantSpell', spell, ownClass: true, usage: '2/day' },
+      { kind: 'grantSpell', spell, ability: 'wis', usage: '1/day' },
+    ]);
+    expect(read.effects.map((t) => t.byLevel)).toEqual([
+      [
+        {
+          field: 'usage',
+          rows: [
+            [1, '2/day'],
+            [5, '3/day'],
+          ],
+        },
+      ],
+      undefined,
+    ]);
+    expect(read.problems).toEqual([
+      'effect 3 (grantSpell): names "ability" or "ownClass", not both',
+      'effect 4 (grantSpell): "ownClass" is true or false',
+      'effect 5 (grantSpell): "usage" byLevel: level 1 needs words',
+    ]);
+  });
+
   it('reads words by class level on a pool and an action, kept for when it is emitted', () => {
     const pool = {
       kind: 'resource',
@@ -871,6 +908,98 @@ describe('mechanicsOf: the layers', () => {
     expect(given(world({}), 'Bard')).toEqual([[3, 'Bard']]);
     expect(given(packs)).toEqual([]);
     expect(given(world({}))).toEqual([]);
+  });
+
+  it('casts an "ownClass" grant with its class’s ability, and leaves one its class counts to the class', () => {
+    const classes: DataEntity[] = [
+      { name: 'Hexer', source: 'HB', spellcastingAbility: 'int' },
+      // Its own data counts the casts, as a Death Knight's counts Rune Strike's.
+      {
+        name: 'Counter',
+        source: 'HB',
+        spellcastingAbility: 'wis',
+        additionalSpells: [{ innate: { 3: { daily: { 1: ['hex bolt|hb'] } } } }],
+      },
+      // It casts no spells.
+      { name: 'Brute', source: 'HB' },
+    ];
+    const ctx = world({ class: classes });
+    const pool = (key: string) => ({ kind: 'resource', key, label: key, max: 1, reset: 'long' });
+    const row = [
+      pool('bolts'),
+      pool('other'),
+      {
+        kind: 'grantSpell',
+        spell: 'Hex Bolt|HB',
+        ownClass: true,
+        usage: { byLevel: { '1': '1/day', '5': '2/day' } },
+        resourceKey: 'bolts',
+      },
+    ];
+    const given = (className?: string, classLevel = 3, effects: unknown[] = row) => {
+      const doc = character((d) => {
+        d.classes = classes.map((c) => ({
+          ref: { name: String(c.name), source: 'HB' },
+          levels: 1,
+          hp: [],
+        }));
+      });
+      const col = new Collector(doc, ctx);
+      mechanicsOf(col, {
+        entry: cg({ effects }),
+        label: 'Bolt',
+        origin,
+        target: 'bolt|hb',
+        classLevel,
+        ...(className === undefined ? {} : { className }),
+      });
+      return col.effects.map(({ origin: _, ...e }) => e);
+    };
+    const cast = (effects: ReturnType<typeof given>) =>
+      effects.find((e) => e.kind === 'grantSpell');
+    expect(given('Hexer')).toEqual([
+      { kind: 'resource', key: 'bolts', label: 'bolts', max: 1, resetOn: 'long' },
+      { kind: 'resource', key: 'other', label: 'other', max: 1, resetOn: 'long' },
+      {
+        kind: 'grantSpell',
+        spell: { name: 'Hex Bolt', source: 'HB' },
+        ability: 'int',
+        usage: '1/day',
+        resourceKey: 'bolts',
+      },
+    ]);
+    expect(cast(given('Hexer', 5))).toMatchObject({ usage: '2/day' });
+    // The grant and the pool it spends are the class's own; the other pool stays.
+    const named = (effects: ReturnType<typeof given>) =>
+      effects.map((e) => (e.kind === 'resource' ? e.key : e.kind));
+    expect(named(given('Counter'))).toEqual(['other']);
+    // A pool another effect in the list still spends stays, for that one.
+    const counted = row[2];
+    const flare = { kind: 'action', economy: 'action', label: 'Flare' };
+    expect(
+      named(
+        given('Counter', 3, [
+          pool('bolts'),
+          counted,
+          { ...flare, cost: { resource: 'bolts', amount: 1 } },
+        ]),
+      ),
+    ).toEqual(['bolts', 'action']);
+    expect(
+      named(
+        given('Counter', 3, [
+          pool('bolts'),
+          counted,
+          { kind: 'grantSpell', spell: 'Shield|PHB', resourceKey: 'bolts' },
+        ]),
+      ),
+    ).toEqual(['bolts', 'grantSpell']);
+    // No ability to cast it with: a class that casts none, or no class at all (a feat's).
+    for (const effects of [given('Brute'), given()]) {
+      expect(effects).toHaveLength(3);
+      expect(cast(effects)).not.toHaveProperty('ability');
+      expect(cast(effects)).not.toHaveProperty('ownClass');
+    }
   });
 });
 

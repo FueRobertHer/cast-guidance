@@ -523,6 +523,35 @@ describe('ItemEditor', () => {
     expect(readStoredEffects(effects()).problems).toEqual([]);
   });
 
+  it('shows a spell a file casts with the class that gives it, and keeps it readable when changed', () => {
+    const draft = mount(item, {
+      name: 'Ember Lamp',
+      type: 'OTH',
+      entries: [],
+      castGuidance: {
+        v: 1,
+        effects: [
+          {
+            kind: 'grantSpell',
+            spell: 'Shield|PHB',
+            ownClass: true,
+            usage: { byLevel: { '1': '1/day', '5': '2/day' } },
+          },
+        ],
+      },
+    });
+    const effects = () => (draft().castGuidance as Json).effects as Json[];
+    const from = screen.getByLabelText('Cast a spell: Attack and DC from') as HTMLSelectElement;
+    expect(from.selectedOptions[0]?.textContent).toBe('The class that gives it');
+    type('Cast a spell: Attack and DC from', 'wis');
+    expect(effects()[0]).toMatchObject({ ability: 'wis' });
+    expect(effects()[0]).not.toHaveProperty('ownClass');
+    expect(readStoredEffects(effects()).problems).toEqual([]);
+    type('Cast a spell: Attack and DC from', '');
+    expect(effects()[0]).not.toHaveProperty('ability');
+    expect(readStoredEffects(effects()).problems).toEqual([]);
+  });
+
   it('counts a spell spending uses that rest by level by its first level’s rest', () => {
     const draft = mount(item, {
       name: 'Ember Lamp',

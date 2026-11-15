@@ -48,6 +48,7 @@ import {
   SKILLS,
   type WhileState,
 } from '../types';
+import { countedSpells } from './additionalSpells';
 import type { Collector } from './base';
 import { printingOf } from './reskin';
 
@@ -95,17 +96,91 @@ export function namedFor(t: EffectTemplate, name: string): EffectTemplate {
     : t;
 }
 
+/** The class that gives an entry (`MechanicsSubject.className`), as `"ownClass": true` reads it. */
+interface OwnClass {
+  /** Its name, as the character's document has it. */
+  name: string;
+  /** Its spellcasting ability, which a spell grant of its own is cast with. */
+  ability?: string;
+  /** The spells its own data counts casts of, by lowercase name (`countedSpells`). */
+  counted: ReadonlySet<string>;
+}
+
+const ownGrant = (t: EffectTemplate): boolean =>
+  t.effect.kind === 'grantSpell' && t.effect.ownClass === true;
+
+/**
+ * The class named `className` as `"ownClass"` reads it, or undefined when no
+ * class gives the entry. Its data is looked up only for a spell grant of its
+ * own, the one reading that needs it.
+ */
+function ownClassOf(
+  col: Collector,
+  templates: readonly EffectTemplate[],
+  className: string | undefined,
+): OwnClass | undefined {
+  if (className === undefined) return undefined;
+  if (!templates.some(ownGrant)) return { name: className, counted: new Set() };
+  const entry = col.doc.classes.find((c) => c.ref.name === className);
+  const cls = entry && col.ctx.get('class', entry.ref.name, entry.ref.source);
+  const ability = String(cls?.spellcastingAbility);
+  return {
+    name: className,
+    ...((ABILITY_LIST as readonly string[]).includes(ability) ? { ability } : {}),
+    counted: countedSpells(cls?.additionalSpells),
+  };
+}
+
+/** Whether `v`, an effect or any value inside it, is `key` (a pool it names). */
+const namesKey = (v: unknown, key: string): boolean =>
+  v === key || (isRecord(v) && Object.values(v).some((x) => namesKey(x, key)));
+
+/**
+ * The spell grants of their class's own (`"ownClass"`) whose class's data
+ * counts casts of their spell at any level (a Death Knight's Rune Strike), with
+ * the pools they spend from the same list that nothing kept there names: that
+ * class's own row gives those casts, so these are left out.
+ */
+function countedByClass(
+  templates: readonly EffectTemplate[],
+  cls: OwnClass | undefined,
+): ReadonlySet<EffectTemplate> {
+  const out = new Set<EffectTemplate>();
+  if (cls === undefined || cls.counted.size === 0) return out;
+  const pools = new Set<string>();
+  for (const t of templates) {
+    const spell = t.effect.spell as EntityRef | undefined;
+    if (!ownGrant(t) || spell === undefined || !cls.counted.has(spell.name.toLowerCase())) continue;
+    out.add(t);
+    if (typeof t.effect.resourceKey === 'string') pools.add(t.effect.resourceKey);
+  }
+  for (const t of templates) {
+    const key = String(t.effect.key);
+    if (t.effect.kind !== 'resource' || !pools.has(key)) continue;
+    // Another action or grant may spend it too: then it stays, for that one.
+    if (!templates.some((o) => o !== t && !out.has(o) && namesKey(o.effect, key))) out.add(t);
+  }
+  return out;
+}
+
 /**
  * The template with `"ownClass": true` read as `cls`, the class that gives it
- * (`MechanicsSubject.className`): its `className`, so a reskin's spells (a
- * Mage's) are its own. Undefined when no class gives it (a feat's, a species
- * trait's): it holds for the spells of no class, so it is left out.
+ * (`MechanicsSubject.className`). A spell grant is cast with that class's
+ * spellcasting ability, or with none when no class gives it (a feat's) or the
+ * class casts no spells. Any other kind takes its `className`, so a reskin's
+ * spells (a Mage's) are its own; with no class giving it, it holds for the
+ * spells of no class, so it is left out (undefined).
  */
-export function forClass(t: EffectTemplate, cls: string | undefined): EffectTemplate | undefined {
+export function forClass(t: EffectTemplate, cls: OwnClass | undefined): EffectTemplate | undefined {
   if (t.effect.ownClass !== true) return t;
-  if (cls === undefined) return undefined;
-  const effect: Record<string, unknown> = { ...t.effect, className: cls };
+  const effect: Record<string, unknown> = { ...t.effect };
   delete effect.ownClass;
+  if (t.effect.kind === 'grantSpell') {
+    if (cls?.ability !== undefined) effect.ability = cls.ability;
+  } else {
+    if (cls === undefined) return undefined;
+    effect.className = cls.name;
+  }
   return { ...t, effect: effect as EffectTemplate['effect'] };
 }
 
@@ -723,12 +798,20 @@ const KINDS = new Map<Kind, Build>([
   ],
   [
     'grantSpell',
-    (o, r) => ({
-      spell: req(o, r, 'spell', spellRef),
-      ...opt(o, r, 'ability', ability),
-      ...opt(o, r, 'usage', text()),
-      ...opt(o, r, 'resourceKey', text()),
-    }),
+    (o, r) => {
+      // "ownClass": cast with the ability of the class that gives it (`forClass`).
+      const ofOwnClass = opt(o, r, 'ownClass', flag);
+      if (ofOwnClass.ownClass === true && own(o, 'ability') !== undefined) {
+        throw new Bad('names "ability" or "ownClass", not both');
+      }
+      return {
+        spell: req(o, r, 'spell', spellRef),
+        ...opt(o, r, 'ability', ability),
+        ...ofOwnClass,
+        ...opt(o, r, 'usage', byLevelWords(text())),
+        ...opt(o, r, 'resourceKey', text()),
+      };
+    },
   ],
   ['note', (o, r) => ({ text: req(o, r, 'text', text(L.textLength)) })],
 ]);
@@ -1441,8 +1524,11 @@ function emit(
   className: string | undefined,
   builtIn = false,
 ): void {
+  const cls = ownClassOf(col, templates, className);
+  const counted = countedByClass(templates, cls);
   for (const t of templates) {
-    const named = forClass(namedFor(t, origin.label), className);
+    if (counted.has(t)) continue;
+    const named = forClass(namedFor(t, origin.label), cls);
     if (named === undefined) continue;
     // A fresh copy each time: fold time fills its numbers in place.
     const e = { ...structuredClone(named.effect), origin } as EffectInput;
