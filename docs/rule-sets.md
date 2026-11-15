@@ -10,7 +10,7 @@ stands in for `ROLL_EXTRAS` (`src/engine/curated/rollExtras.ts`). The files
 live in `src/rules/`, one a part. (Source of truth: `readRuleSet` and
 `mechanicsOf` in `src/engine/effects/mechanics.ts`, `src/data5e/builtInRules.ts`.)
 
-163 rows have moved so far (`src/rules/cast-guidance/curated.json`). Four came
+167 rows have moved so far (`src/rules/cast-guidance/curated.json`). Four came
 first, one for each kind of call site, to prove the routes: Stunning Strike (a
 class feature), Lucky (PHB, a feat), Disarming Attack (PHB, an optional
 feature) and Warforged's Integrated Protection (a species trait). The other 111
@@ -43,9 +43,12 @@ row has neither), and Sneak Attack's dice. Six more, for five features, give
 a spell to cast without a slot, cast with the spellcasting ability of the class
 that gives them (rule pack port 2f): Paladin's Smite, Faithful Steed, Runic
 Smite, Contact Patron, and the 2024 Favored Enemy, whose casts go up with the
-Ranger's level; the 2014 Favored Enemy's row has no effects. The rows left in
-`CURATED` need something the format lacks: a pick, the class's name in a label,
-the rules version, or an engine call.
+Ranger's level; the 2014 Favored Enemy's row has no effects. Four more count
+some of their effects under one rules version alone (rule pack port 2g): Second
+Wind, the Cleric's and the Paladin's Channel Divinity, the Paladin's named for
+the class that gives it, and Lay on Hands. The rows left in `CURATED` need
+something the format lacks: a pick, a name that says the class only when
+another class gives the feature too (Harness Divine Power), or an engine call.
 
 63 `standing` rows have moved (`src/rules/cast-guidance/standing.json`): every
 `STANDING` row the format holds, the defenses, senses and speeds a subclass or
@@ -340,6 +343,28 @@ looks at its label. Below a table's first level the field is left out (the
 needs (a `label`, a `reset`) starts at level 1. A player's file takes the same
 tables; the Workshop shows one as "By level, as written" and puts a single
 value in its place when the box is changed, as it does for an amount's table.
+
+A code row that reads the character's rules version (`doc.rulesVersion`, the
+2014 or 2024 rules the player picked, not the feature's printing) moves to
+effects that say `"edition": "2014"` or `"edition": "2024"`: any stored effect
+may name one, and it counts only under that version, as though it were not
+there under the other (it keeps no pool another effect names). An effect
+without one counts under both. A character with no rules version, or one the
+app does not know, plays 2014, as the sheet reads it everywhere. Second Wind's and both Channel Divinities' pools
+differ by version this way, and Lay on Hands' action; a 2014 Fighter under 2024
+rules has the 2024 uses, as the code gave. An effect in play (a condition, a
+moment's effect, a spell's on a target) holds under the rules of the sheet it is
+on, so one naming an edition is a problem there and does not count. The
+Workshop shows a file's edition as a "Rules" box only while it is set; "Either
+rules" takes it away. A pool given once for each version under one key is one
+pool there: an action lists it once to spend, and renaming one renames both.
+
+A pool takes `"ownClass": true` too: the sheet names it for the class that
+gives it, after its words by level, "Channel Divinity (Paladin)", so the
+Paladin's and the Cleric's pools of one name show apart. With no class giving
+it, it has its own name alone (the code named a Paladin's pool for the
+character's Paladin, or "Paladin"). The Workshop's line for the pool says it is
+named for the class.
 
 ## Checking a change on real data
 

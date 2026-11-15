@@ -28,7 +28,7 @@ import {
 } from './castGuidance';
 import {
   type EffectTemplate,
-  inPlayProfBonus,
+  inPlayRefusal,
   namedFor,
   readStoredEffects,
 } from './effects/mechanics';
@@ -222,7 +222,7 @@ function readOutcome(raw: unknown, problems: string[], where: string): ReadOutco
             ? 'an effect in play has no "while"'
             : !PART_KINDS.has(t.effect.kind)
               ? 'an effect in play reaches only numbers and rolls'
-              : (inPlayProfBonus(t, 'an effect in play') ??
+              : (inPlayRefusal(t, 'an effect in play') ??
                 (t.formulas === undefined && !holds(t.effect)
                   ? 'an effect in play cannot hold it as written'
                   : undefined));

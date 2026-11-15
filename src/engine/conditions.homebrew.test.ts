@@ -64,6 +64,8 @@ describe('conditionMechanics', () => {
       dazed([
         { kind: 'acFormula', base: 11, addAbilities: ['dex'] },
         { kind: 'initiativeBonus', profBonus: true },
+        // It holds under the rules of the sheet it is on.
+        { kind: 'acBonus', amount: -1, edition: '2014' },
       ]),
     );
     expect(read.parts).toEqual([
@@ -71,6 +73,10 @@ describe('conditionMechanics', () => {
     ]);
     expect(read.problems).toEqual([
       { place: 2, why: 'a condition takes a plain number, not "profBonus"' },
+      {
+        place: 3,
+        why: 'a condition holds under either rules version, with no "edition" of its own',
+      },
     ]);
   });
 

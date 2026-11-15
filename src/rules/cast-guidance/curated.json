@@ -2538,6 +2538,158 @@
       "part": "curated",
       "keys": ["favored enemy|ranger"],
       "effects": []
+    },
+    {
+      "part": "curated",
+      "keys": ["second wind|fighter"],
+      "effects": [
+        {
+          "kind": "resource",
+          "edition": "2024",
+          "key": "second-wind",
+          "label": "Second Wind",
+          "max": {
+            "byLevel": {
+              "1": 2,
+              "4": 3,
+              "10": 4
+            }
+          },
+          "reset": "long",
+          "regainOnShort": 1
+        },
+        {
+          "kind": "resource",
+          "edition": "2014",
+          "key": "second-wind",
+          "label": "Second Wind",
+          "max": 1,
+          "reset": "short"
+        },
+        {
+          "kind": "action",
+          "economy": "bonus",
+          "label": "Second Wind",
+          "roll": {
+            "byLevel": {
+              "1": "1d10+1",
+              "2": "1d10+2",
+              "3": "1d10+3",
+              "4": "1d10+4",
+              "5": "1d10+5",
+              "6": "1d10+6",
+              "7": "1d10+7",
+              "8": "1d10+8",
+              "9": "1d10+9",
+              "10": "1d10+10",
+              "11": "1d10+11",
+              "12": "1d10+12",
+              "13": "1d10+13",
+              "14": "1d10+14",
+              "15": "1d10+15",
+              "16": "1d10+16",
+              "17": "1d10+17",
+              "18": "1d10+18",
+              "19": "1d10+19",
+              "20": "1d10+20"
+            }
+          },
+          "heals": true
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["channel divinity|cleric"],
+      "effects": [
+        {
+          "kind": "resource",
+          "edition": "2024",
+          "key": "channel-divinity",
+          "label": "Channel Divinity",
+          "max": {
+            "byLevel": {
+              "1": 2,
+              "6": 3
+            }
+          },
+          "reset": "long",
+          "regainOnShort": 1
+        },
+        {
+          "kind": "resource",
+          "edition": "2014",
+          "key": "channel-divinity",
+          "label": "Channel Divinity",
+          "max": {
+            "byLevel": {
+              "1": 1,
+              "6": 2,
+              "18": 3
+            }
+          },
+          "reset": "short"
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["lay on hands|paladin"],
+      "effects": [
+        {
+          "kind": "resource",
+          "key": "lay-on-hands",
+          "label": "Lay on Hands (HP pool)",
+          "max": {
+            "f": "classLevel * 5"
+          },
+          "reset": "long"
+        },
+        {
+          "kind": "action",
+          "edition": "2024",
+          "economy": "bonus",
+          "label": "Lay on Hands",
+          "note": "heal from the pool · 5 points removes Poisoned"
+        },
+        {
+          "kind": "action",
+          "edition": "2014",
+          "economy": "action",
+          "label": "Lay on Hands",
+          "note": "heal from the pool · 5 points cures a disease or poison"
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["channel divinity|paladin"],
+      "effects": [
+        {
+          "kind": "resource",
+          "edition": "2024",
+          "key": "channel-divinity-paladin",
+          "label": "Channel Divinity",
+          "ownClass": true,
+          "max": {
+            "byLevel": {
+              "1": 2,
+              "11": 3
+            }
+          },
+          "reset": "long",
+          "regainOnShort": 1
+        },
+        {
+          "kind": "resource",
+          "edition": "2014",
+          "key": "channel-divinity-paladin",
+          "label": "Channel Divinity",
+          "ownClass": true,
+          "max": 1,
+          "reset": "short"
+        }
+      ]
     }
   ]
 }

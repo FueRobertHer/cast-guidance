@@ -233,6 +233,8 @@ describe('readMoments', () => {
               effects: [
                 { kind: 'acFormula', base: { f: '10 + prof' }, addAbilities: ['dex'] },
                 { kind: 'initiativeBonus', profBonus: true },
+                // It holds under the rules it is put in play under.
+                { kind: 'acBonus', amount: 1, edition: '2024' },
               ],
             },
           ],
@@ -246,6 +248,7 @@ describe('readMoments', () => {
     ]);
     expect(read.problems).toEqual([
       'moment 1 (turnStart), outcome 1: effect 2 (initiativeBonus): an effect in play takes a plain number, not "profBonus"',
+      'moment 1 (turnStart), outcome 1: effect 3 (acBonus): an effect in play holds under either rules version, with no "edition" of its own',
     ]);
   });
 

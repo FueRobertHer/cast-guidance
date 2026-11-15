@@ -552,6 +552,88 @@ describe('ItemEditor', () => {
     expect(readStoredEffects(effects()).problems).toEqual([]);
   });
 
+  it('shows the rules version a file gives an effect, and a pool named for its class', () => {
+    const draft = mount(item, {
+      name: 'Ember Lamp',
+      type: 'OTH',
+      entries: [],
+      castGuidance: {
+        v: 1,
+        effects: [
+          {
+            kind: 'resource',
+            edition: '2024',
+            key: 'embers',
+            label: 'Embers',
+            ownClass: true,
+            max: 2,
+            reset: 'long',
+          },
+          { kind: 'acBonus', amount: 1 },
+        ],
+      },
+    });
+    const effects = () => (draft().castGuidance as Json).effects as Json[];
+    expect(
+      screen.getByText('Embers (name of the class that gives it): 2 uses, back on a long rest'),
+    ).toBeTruthy();
+    const rules = screen.getByLabelText('Uses per rest: Rules') as HTMLSelectElement;
+    expect(rules.selectedOptions[0]?.textContent).toBe('2024 rules only');
+    // No card adds one, so an effect without it has no box.
+    expect(screen.queryByLabelText('Armor Class: Rules')).toBeNull();
+    // Renaming the pool keeps both.
+    type('Uses per rest: Name', 'Sparks');
+    expect(effects()[0]).toMatchObject({ label: 'Sparks', edition: '2024', ownClass: true });
+    type('Uses per rest: Rules', '2014');
+    expect(effects()[0]).toMatchObject({ edition: '2014' });
+    expect(readStoredEffects(effects()).problems).toEqual([]);
+    type('Uses per rest: Rules', '');
+    expect(effects()[0]).not.toHaveProperty('edition');
+    expect(screen.queryByLabelText('Uses per rest: Rules')).toBeNull();
+    expect(readStoredEffects(effects()).problems).toEqual([]);
+  });
+
+  it('keeps a pool given for each rules version one pool when renamed', () => {
+    const pool = (edition: string, max: number) => ({
+      kind: 'resource',
+      edition,
+      key: 'embers',
+      label: 'Embers',
+      max,
+      reset: 'long',
+    });
+    const draft = mount(item, {
+      name: 'Ember Lamp',
+      type: 'OTH',
+      entries: [],
+      castGuidance: {
+        v: 1,
+        effects: [
+          pool('2024', 2),
+          pool('2014', 1),
+          {
+            kind: 'action',
+            economy: 'bonus',
+            label: 'Flare',
+            cost: { resource: 'embers', amount: 1 },
+          },
+        ],
+      },
+    });
+    const effects = () => (draft().castGuidance as Json).effects as Json[];
+    // One pool to spend, under either version.
+    const spends = screen.getByLabelText('Action: Spends') as HTMLSelectElement;
+    expect([...spends.options].map((o) => o.textContent)).toEqual(['Nothing', '1 use of Embers']);
+    const [name] = screen.getAllByLabelText('Uses per rest: Name');
+    fireEvent.change(name as HTMLElement, { target: { value: 'Sparks' } });
+    expect(effects().map((e) => e.key ?? (e.cost as Json).resource)).toEqual([
+      'sparks',
+      'sparks',
+      'sparks',
+    ]);
+    expect(readStoredEffects(effects()).problems).toEqual([]);
+  });
+
   it('counts a spell spending uses that rest by level by its first level’s rest', () => {
     const draft = mount(item, {
       name: 'Ember Lamp',

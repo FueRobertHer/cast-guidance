@@ -305,6 +305,34 @@ describe('readMechanics', () => {
     ]);
   });
 
+  it('reads the rules version an effect counts under beside it, and a pool named for its class', () => {
+    const pool = { kind: 'resource', key: 'cd', label: 'Channel Divinity', max: 1, reset: 'short' };
+    const read = readMechanics({
+      v: 1,
+      effects: [
+        { ...pool, edition: '2014', ownClass: true },
+        { kind: 'acBonus', amount: 1, edition: '2024', while: 'shield' },
+        // A false flag is the same as none.
+        { ...pool, ownClass: false },
+        { ...pool, edition: '5e' },
+        { ...pool, edition: 2024 },
+        { ...pool, ownClass: 'yes' },
+      ],
+    });
+    const { reset: _, ...readPool } = { ...pool, resetOn: 'short' };
+    expect(read.effects.map((t) => [t.effect, t.edition])).toEqual([
+      [{ ...readPool, ownClass: true }, '2014'],
+      [{ kind: 'acBonus', amount: 1 }, '2024'],
+      [readPool, undefined],
+    ]);
+    expect(read.effects[1]?.while).toEqual([{ state: 'shield' }]);
+    expect(read.problems).toEqual([
+      'effect 4 (resource): "edition" is one of 2014, 2024',
+      'effect 5 (resource): "edition" is one of 2014, 2024',
+      'effect 6 (resource): "ownClass" is true or false',
+    ]);
+  });
+
   it('reads words by class level on a pool and an action, kept for when it is emitted', () => {
     const pool = {
       kind: 'resource',
@@ -994,12 +1022,81 @@ describe('mechanicsOf: the layers', () => {
         ]),
       ),
     ).toEqual(['bolts', 'grantSpell']);
+    // One of the other rules version (the character's are 2014) spends nothing.
+    expect(
+      named(
+        given('Counter', 3, [
+          pool('bolts'),
+          counted,
+          { ...flare, cost: { resource: 'bolts', amount: 1 }, edition: '2024' },
+        ]),
+      ),
+    ).toEqual([]);
     // No ability to cast it with: a class that casts none, or no class at all (a feat's).
     for (const effects of [given('Brute'), given()]) {
       expect(effects).toHaveLength(3);
       expect(cast(effects)).not.toHaveProperty('ability');
       expect(cast(effects)).not.toHaveProperty('ownClass');
     }
+  });
+
+  it('counts an effect of one rules version under it alone, and names an "ownClass" pool for its class', () => {
+    const effects = [
+      {
+        kind: 'resource',
+        edition: '2014',
+        key: 'cd',
+        label: 'Channel Divinity',
+        ownClass: true,
+        max: 1,
+        reset: 'short',
+      },
+      {
+        kind: 'resource',
+        edition: '2024',
+        key: 'cd',
+        label: { byLevel: { '1': 'Channel', '5': 'Greater Channel' } },
+        ownClass: true,
+        max: 2,
+        reset: 'long',
+      },
+      { kind: 'action', edition: '2024', economy: 'bonus', label: 'Channel' },
+      { kind: 'acBonus', amount: 1 },
+    ];
+    const given = (version: '2014' | '2024', className?: string, classLevel = 3) => {
+      const col = new Collector(
+        character((d) => {
+          d.rulesVersion = version;
+        }),
+        world({}),
+      );
+      mechanicsOf(col, {
+        entry: cg({ effects }),
+        label: 'Lantern',
+        origin,
+        target: 'Lantern|HB',
+        classLevel,
+        ...(className === undefined ? {} : { className }),
+      });
+      for (const e of col.effects) {
+        expect(e).not.toHaveProperty('ownClass');
+        expect(e).not.toHaveProperty('className');
+        expect(e).not.toHaveProperty('edition');
+      }
+      return col.effects.map((e) => ('label' in e ? `${e.kind} ${e.label}` : e.kind));
+    };
+    expect(given('2014', 'Death Knight')).toEqual([
+      'resource Channel Divinity (Death Knight)',
+      'acBonus',
+    ]);
+    // The class's name goes after the words for its level.
+    expect(given('2024', 'Paladin', 5)).toEqual([
+      'resource Greater Channel (Paladin)',
+      'action Channel',
+      'acBonus',
+    ]);
+    // No class gives it (a feat's): its own name alone.
+    expect(given('2014')).toEqual(['resource Channel Divinity', 'acBonus']);
   });
 });
 

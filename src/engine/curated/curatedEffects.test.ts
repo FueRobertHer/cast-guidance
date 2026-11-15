@@ -119,39 +119,164 @@ describe('emitCuratedEffects', () => {
     expect(rolls('polearm master|phb')).toEqual([false]);
   });
 
+  /** One field of an effect `shown` gives, whatever its kind. */
+  const fieldOf = (e: object | undefined, key: string) =>
+    (e as Record<string, unknown> | undefined)?.[key];
+
+  /**
+   * A class's row under the rules version `version`, from a feature of the
+   * printing `from`, with the class that gives it `cls` at `levels`.
+   */
+  const ofVersion = (
+    key: string,
+    cls: string,
+    levels: number,
+    version: '2014' | '2024',
+    from?: string,
+    className = cls,
+  ) => {
+    const c = col(cls, levels);
+    c.doc.rulesVersion = version;
+    expect(emitRow(c, key, origin, from, className)).toBe(true);
+    return shown(worked(c));
+  };
+
   it('emits the Lay on Hands pool as 5 x paladin level with an action', () => {
-    const c = col('Paladin', 5);
-    expect(emitCuratedEffects(c, 'lay on hands|paladin', origin)).toBe(true);
-    expect(c.effects).toContainEqual(
-      expect.objectContaining({ kind: 'resource', key: 'lay-on-hands', max: 25, resetOn: 'long' }),
-    );
-    expect(c.effects).toContainEqual(
-      expect.objectContaining({ kind: 'action', economy: 'action', label: 'Lay on Hands' }),
-    );
+    expect(ofVersion('lay on hands|paladin', 'Paladin', 5, '2014')).toEqual([
+      {
+        kind: 'resource',
+        key: 'lay-on-hands',
+        label: 'Lay on Hands (HP pool)',
+        max: 25,
+        resetOn: 'long',
+      },
+      {
+        kind: 'action',
+        economy: 'action',
+        label: 'Lay on Hands',
+        note: 'heal from the pool · 5 points cures a disease or poison',
+      },
+    ]);
   });
 
   it('makes Lay on Hands a bonus action under 2024 rules', () => {
-    const c = col('Paladin', 3);
-    c.doc.rulesVersion = '2024';
-    emitCuratedEffects(c, 'lay on hands|paladin', origin);
-    expect(c.effects).toContainEqual(
-      expect.objectContaining({ kind: 'action', economy: 'bonus', label: 'Lay on Hands' }),
-    );
+    expect(ofVersion('lay on hands|paladin', 'Paladin', 3, '2024')).toEqual([
+      {
+        kind: 'resource',
+        key: 'lay-on-hands',
+        label: 'Lay on Hands (HP pool)',
+        max: 15,
+        resetOn: 'long',
+      },
+      {
+        kind: 'action',
+        economy: 'bonus',
+        label: 'Lay on Hands',
+        note: 'heal from the pool · 5 points removes Poisoned',
+      },
+    ]);
   });
 
-  it('scales paladin Channel Divinity by edition and level', () => {
-    const c2014 = col('Paladin', 12);
-    emitCuratedEffects(c2014, 'channel divinity|paladin', origin);
-    expect(c2014.effects).toContainEqual(
-      expect.objectContaining({ kind: 'resource', key: 'channel-divinity-paladin', max: 1 }),
-    );
+  it('scales paladin Channel Divinity by edition and level, named for the class that gives it', () => {
+    const pool = (levels: number, version: '2014' | '2024', className?: string) =>
+      ofVersion('channel divinity|paladin', 'Paladin', levels, version, undefined, className);
+    expect(pool(12, '2014')).toEqual([
+      {
+        kind: 'resource',
+        key: 'channel-divinity-paladin',
+        label: 'Channel Divinity (Paladin)',
+        max: 1,
+        resetOn: 'short',
+      },
+    ]);
+    expect(pool(3, '2024')).toEqual([
+      {
+        kind: 'resource',
+        key: 'channel-divinity-paladin',
+        label: 'Channel Divinity (Paladin)',
+        max: 2,
+        resetOn: 'long',
+        regainOnShort: 1,
+      },
+    ]);
+    expect(pool(10, '2024')[0]).toMatchObject({ max: 2 });
+    expect(pool(11, '2024')[0]).toMatchObject({ max: 3 });
+    expect(pool(20, '2024')[0]).toMatchObject({ max: 3 });
+    // A Death Knight's is this one, named for the class that has it.
+    expect(pool(3, '2024', 'Death Knight')[0]).toMatchObject({
+      label: 'Channel Divinity (Death Knight)',
+    });
+  });
 
-    const c2024 = col('Paladin', 12);
-    c2024.doc.rulesVersion = '2024';
-    emitCuratedEffects(c2024, 'channel divinity|paladin', origin);
-    expect(c2024.effects).toContainEqual(
-      expect.objectContaining({ kind: 'resource', key: 'channel-divinity-paladin', max: 3 }),
-    );
+  it('counts cleric Channel Divinity by edition and level', () => {
+    const uses = (levels: number, version: '2014' | '2024') =>
+      ofVersion('channel divinity|cleric', 'Cleric', levels, version).map((e) => fieldOf(e, 'max'));
+    expect([2, 5, 6, 17, 18, 20].map((n) => uses(n, '2014'))).toEqual([
+      [1],
+      [1],
+      [2],
+      [2],
+      [3],
+      [3],
+    ]);
+    expect([2, 5, 6, 18, 20].map((n) => uses(n, '2024'))).toEqual([[2], [2], [3], [3], [3]]);
+    expect(ofVersion('channel divinity|cleric', 'Cleric', 2, '2014')).toEqual([
+      {
+        kind: 'resource',
+        key: 'channel-divinity',
+        label: 'Channel Divinity',
+        max: 1,
+        resetOn: 'short',
+      },
+    ]);
+  });
+
+  it('counts Second Wind by edition and level, healing 1d10 plus the Fighter level', () => {
+    const wind = (levels: number, version: '2014' | '2024', from?: string) =>
+      ofVersion('second wind|fighter', 'Fighter', levels, version, from);
+    expect(wind(1, '2014')).toEqual([
+      { kind: 'resource', key: 'second-wind', label: 'Second Wind', max: 1, resetOn: 'short' },
+      { kind: 'action', economy: 'bonus', label: 'Second Wind', roll: '1d10+1', heals: true },
+    ]);
+    expect(wind(1, '2024')[0]).toEqual({
+      kind: 'resource',
+      key: 'second-wind',
+      label: 'Second Wind',
+      max: 2,
+      resetOn: 'long',
+      regainOnShort: 1,
+    });
+    const uses = (levels: number, version: '2014' | '2024') =>
+      fieldOf(wind(levels, version)[0], 'max');
+    expect([1, 3, 4, 9, 10, 20].map((n) => uses(n, '2024'))).toEqual([2, 2, 3, 3, 4, 4]);
+    expect([1, 10, 20].map((n) => uses(n, '2014'))).toEqual([1, 1, 1]);
+    expect([7, 20].map((n) => fieldOf(wind(n, '2014')[1], 'roll'))).toEqual(['1d10+7', '1d10+20']);
+    // The rules version decides, not the printing: a 2014 Fighter under 2024 rules.
+    expect(wind(4, '2024', 'phb')[0]).toMatchObject({ max: 3, regainOnShort: 1 });
+    expect(wind(4, '2014', 'xphb')[0]).toMatchObject({ max: 1, resetOn: 'short' });
+  });
+
+  it('reads a character with no rules version, or one it does not know, as 2014', () => {
+    // A stored character may lack one (the reader takes any string), and the
+    // sheet reads anything but 2024 as 2014.
+    for (const version of [undefined, '5e']) {
+      const of = (key: string, cls: string) => {
+        const c = col(cls, 5);
+        (c.doc as { rulesVersion?: string }).rulesVersion = version;
+        expect(emitRow(c, key, origin, undefined, cls)).toBe(true);
+        return shown(worked(c));
+      };
+      expect(of('second wind|fighter', 'Fighter'), String(version)).toEqual(
+        ofVersion('second wind|fighter', 'Fighter', 5, '2014'),
+      );
+      expect(of('channel divinity|cleric', 'Cleric')).toEqual(
+        ofVersion('channel divinity|cleric', 'Cleric', 5, '2014'),
+      );
+      expect(of('lay on hands|paladin', 'Paladin')).toEqual(
+        ofVersion('lay on hands|paladin', 'Paladin', 5, '2014'),
+      );
+      expect(of('channel divinity|paladin', 'Paladin')).toHaveLength(1);
+    }
   });
 
   it('keeps paladin and cleric Channel Divinity in separate pools', () => {
@@ -159,8 +284,8 @@ describe('emitCuratedEffects', () => {
     // the 2024 text is explicit that the uses belong to each class separately.
     const c = col('Paladin', 5);
     c.doc.classes.push({ ref: { name: 'Cleric', source: 'PHB' }, levels: 6, hp: [] });
-    emitCuratedEffects(c, 'channel divinity|paladin', origin);
-    emitCuratedEffects(c, 'channel divinity|cleric', origin);
+    emitRow(c, 'channel divinity|paladin', origin, undefined, 'Paladin');
+    emitRow(c, 'channel divinity|cleric', origin, undefined, 'Cleric');
     const keys = c.effects
       .filter((e) => e.kind === 'resource')
       .map((e) => (e as Extract<typeof e, { kind: 'resource' }>).key);
@@ -418,8 +543,8 @@ describe('pools a cost spends', () => {
     const of = (version: '2014' | '2024') => {
       const c = col(cls, 5);
       c.doc.rulesVersion = version;
-      emitCuratedEffects(c, key, origin);
-      return resource(c.effects, pool);
+      expect(emitRow(c, key, origin, undefined, cls)).toBe(true);
+      return resource(worked(c).effects, pool);
     };
     expect(of('2024')).toMatchObject({ resetOn: 'long', regainOnShort: 1 });
     expect(of('2014')).toMatchObject({ resetOn: 'short' });

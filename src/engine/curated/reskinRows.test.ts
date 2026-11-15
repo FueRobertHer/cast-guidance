@@ -619,14 +619,23 @@ describe('a class copied in the Workshop', () => {
     });
   });
 
-  it('reads a class that reskins before one that copies, whichever was taken first', () => {
-    const sheet = deriveCopy(
+  it('keeps the pool of the class taken first when a reskin and a copy both give it', () => {
+    // Each gives Channel Divinity at its own level, named for itself (the owner's
+    // call, 2026-11-14); the pools have one key, and the sheet keeps the first.
+    const oathkeeperFirst = deriveCopy(
       build(DEATH_KNIGHT, 11, {
         subclass: wow('Oath of the Ebon Blade'),
         after: { cls: hb('Oathkeeper'), levels: 5 },
       }),
     );
-    expect(pool(sheet, 'channel-divinity-paladin')).toMatchObject({
+    expect(pool(oathkeeperFirst, 'channel-divinity-paladin')).toMatchObject({
+      label: 'Channel Divinity (Oathkeeper)',
+      max: 2,
+    });
+    const deathKnightFirst = deriveCopy(
+      build(hb('Oathkeeper'), 5, { after: { cls: DEATH_KNIGHT, levels: 11 } }),
+    );
+    expect(pool(deathKnightFirst, 'channel-divinity-paladin')).toMatchObject({
       label: 'Channel Divinity (Death Knight)',
       max: 3,
     });
