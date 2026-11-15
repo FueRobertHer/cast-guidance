@@ -593,6 +593,45 @@ describe('ItemEditor', () => {
     expect(readStoredEffects(effects()).problems).toEqual([]);
   });
 
+  it('says a pool and an action are named for their class beside a class a file lists', () => {
+    const draft = mount(item, {
+      name: 'Ember Lamp',
+      type: 'OTH',
+      entries: [],
+      castGuidance: {
+        v: 1,
+        effects: [
+          {
+            kind: 'resource',
+            key: 'embers',
+            label: 'Embers',
+            ownClassBeside: ['Cleric', 'Paladin'],
+            max: 2,
+            reset: 'long',
+          },
+          { kind: 'action', economy: 'bonus', label: 'Embers', ownClassBeside: ['Paladin'] },
+          { kind: 'action', economy: 'action', label: 'Vow', ownClass: true },
+        ],
+      },
+    });
+    const effects = () => (draft().castGuidance as Json).effects as Json[];
+    expect(
+      screen.getByText(
+        'Embers (name of the class that gives it, beside a level in Cleric or Paladin): 2 uses, back on a long rest',
+      ),
+    ).toBeTruthy();
+    expect(
+      screen.getByText(
+        'Bonus action: Embers (name of the class that gives it, beside a level in Paladin)',
+      ),
+    ).toBeTruthy();
+    expect(screen.getByText('Action: Vow (name of the class that gives it)')).toBeTruthy();
+    // Editing a card keeps what no box shows.
+    type('Uses per rest: Name', 'Sparks');
+    expect(effects()[0]).toMatchObject({ label: 'Sparks', ownClassBeside: ['Cleric', 'Paladin'] });
+    expect(readStoredEffects(effects()).problems).toEqual([]);
+  });
+
   it('keeps a pool given for each rules version one pool when renamed', () => {
     const pool = (edition: string, max: number) => ({
       kind: 'resource',

@@ -333,6 +333,38 @@ describe('readMechanics', () => {
     ]);
   });
 
+  it('reads a pool or action named for its class beside another class, or always', () => {
+    const pool = { kind: 'resource', key: 'hdp', label: 'Harness', max: 1, reset: 'long' };
+    const act = { kind: 'action', economy: 'bonus', label: 'Harness' };
+    const read = readMechanics({
+      v: 1,
+      effects: [
+        { ...pool, ownClassBeside: ['Paladin', 'Paladin', ' Oathsworn '] },
+        { ...act, ownClassBeside: ['Cleric'] },
+        { ...act, ownClass: true },
+        { ...pool, ownClass: true, ownClassBeside: ['Cleric'] },
+        { ...act, ownClassBeside: [] },
+        { ...act, ownClassBeside: 'Cleric' },
+        { ...pool, ownClassBeside: [''] },
+        // Only a pool or an action reads it.
+        { kind: 'acBonus', amount: 1, ownClassBeside: ['Cleric'] },
+      ],
+    });
+    const { reset: _, ...readPool } = { ...pool, resetOn: 'long' };
+    expect(read.effects.map((t) => t.effect)).toEqual([
+      { ...readPool, ownClassBeside: ['Paladin', 'Oathsworn'] },
+      { ...act, ownClassBeside: ['Cleric'] },
+      { ...act, ownClass: true },
+      { kind: 'acBonus', amount: 1 },
+    ]);
+    expect(read.problems).toEqual([
+      'effect 4 (resource): names "ownClass" or "ownClassBeside", not both',
+      'effect 5 (action): "ownClassBeside" is a list',
+      'effect 6 (action): "ownClassBeside" is a list',
+      'effect 7 (resource): "ownClassBeside" needs words',
+    ]);
+  });
+
   it('reads words by class level on a pool and an action, kept for when it is emitted', () => {
     const pool = {
       kind: 'resource',
@@ -1097,6 +1129,78 @@ describe('mechanicsOf: the layers', () => {
     ]);
     // No class gives it (a feat's): its own name alone.
     expect(given('2014')).toEqual(['resource Channel Divinity', 'acBonus']);
+  });
+
+  it('names a pool and its action for their class only beside a class they list', () => {
+    const label = { byLevel: { '1': 'Harness', '6': 'Greater Harness' } };
+    const effects = [
+      { kind: 'resource', key: 'hdp', label, ownClassBeside: ['Paladin'], max: 1, reset: 'long' },
+      // A name it lists matches in any case.
+      { kind: 'action', economy: 'bonus', label, ownClassBeside: ['paladin'] },
+      // Always, on an action too, so it keeps spending its pool's use.
+      { kind: 'action', economy: 'none', label: 'Vow', ownClass: true },
+    ];
+    const ctx = world({
+      class: [
+        { name: 'Cleric', source: 'HB' },
+        { name: 'Paladin', source: 'HB' },
+        { name: 'Death Knight', source: 'HB', reskinOf: ['Paladin|HB'] },
+        { name: 'Oathbound', source: 'HB', castGuidance: { v: 1, basedOn: 'Paladin|HB' } },
+        { name: 'Ranger', source: 'HB' },
+      ],
+    });
+    const given = (classes: string[], className?: string, classLevel = 2) => {
+      const doc = character((d) => {
+        d.classes = classes.map((name) => ({ ref: { name, source: 'HB' }, levels: 1, hp: [] }));
+      });
+      const col = new Collector(doc, ctx);
+      mechanicsOf(col, {
+        entry: cg({ effects }),
+        label: 'Harness',
+        origin,
+        target: 'harness|hb',
+        classLevel,
+        ...(className === undefined ? {} : { className }),
+      });
+      for (const e of col.effects) {
+        expect(e).not.toHaveProperty('ownClass');
+        expect(e).not.toHaveProperty('ownClassBeside');
+        expect(e).not.toHaveProperty('className');
+      }
+      return col.effects.map((e) => ('label' in e ? `${e.kind} ${e.label}` : e.kind));
+    };
+    // Alone, or beside a class it does not list: its own name.
+    expect(given(['Cleric'], 'Cleric')).toEqual([
+      'resource Harness',
+      'action Harness',
+      'action Vow (Cleric)',
+    ]);
+    expect(given(['Cleric', 'Ranger'], 'Cleric')).toEqual([
+      'resource Harness',
+      'action Harness',
+      'action Vow (Cleric)',
+    ]);
+    // Beside a Paladin, the class reskinning one or a copy of one: named for its class,
+    // after its words by level.
+    for (const other of ['Paladin', 'Death Knight', 'Oathbound']) {
+      expect(given(['Cleric', other], 'Cleric', 6)).toEqual([
+        'resource Greater Harness (Cleric)',
+        'action Greater Harness (Cleric)',
+        'action Vow (Cleric)',
+      ]);
+    }
+    // The class that gives it is not beside itself.
+    expect(given(['Paladin'], 'Paladin')).toEqual([
+      'resource Harness',
+      'action Harness',
+      'action Vow (Paladin)',
+    ]);
+    // No class gives it (a feat's): its own name alone.
+    expect(given(['Cleric', 'Paladin'])).toEqual([
+      'resource Harness',
+      'action Harness',
+      'action Vow',
+    ]);
   });
 });
 
