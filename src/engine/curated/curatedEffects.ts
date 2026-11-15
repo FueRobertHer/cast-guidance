@@ -233,8 +233,7 @@ export const skillPick =
  * The character's class of this name, or else the class reskinning it (a
  * Warrior for "Fighter"), or else the class copying it (a Workshop copy of the
  * Fighter), in that order, whose features are that class's and read its level
- * as theirs. A class is checked for both: a copy of the Demon Hunter is a Demon
- * Hunter, for the rows written under that name, and the Ranger it reskins.
+ * as theirs. Each class is checked for both, in that order.
  */
 function classEntry(col: Collector, className: string) {
   const name = className.toLowerCase();
@@ -447,15 +446,6 @@ function psionicEnergyDice(
   });
 }
 
-/** Both printings' Monk table: +10 feet at 2, then 5 more at 6, 10, 14 and 18. */
-function unarmoredMovement(level: number): number {
-  if (level >= 18) return 30;
-  if (level >= 14) return 25;
-  if (level >= 10) return 20;
-  if (level >= 6) return 15;
-  return 10;
-}
-
 /**
  * An ability modifier on the damage of a class's spells: its cantrips (Potent
  * Spellcasting), or one roll of its spells of a school (Empowered Evocation). The
@@ -510,29 +500,6 @@ const agonizingPick: CuratedFn = (col, origin) => {
   );
 };
 
-/** 2014's table says Unlimited at 20. 2024's stays at 6. */
-function rageUses(level: number, printed2024: boolean): number {
-  if (level >= 20 && !printed2024) return 99;
-  if (level >= 17) return 6;
-  if (level >= 12) return 5;
-  if (level >= 6) return 4;
-  if (level >= 3) return 3;
-  return 2;
-}
-
-/** Indomitable's uses by Fighter level: 1, 2 at 13, 3 at 17. */
-const indomitable: CuratedFn = (col, origin) => {
-  const level = classLevel(col, 'Fighter');
-  col.add({
-    kind: 'resource',
-    key: 'indomitable',
-    label: 'Indomitable',
-    max: level >= 17 ? 3 : level >= 13 ? 2 : 1,
-    resetOn: 'long',
-    origin,
-  });
-};
-
 /**
  * Harness Divine Power's own uses, a long rest, one more at each level given. The
  * pool shares the chip's name, which is how the chip spends a use of it beside
@@ -555,22 +522,6 @@ const harnessDivinePower =
     });
     col.add({ kind: 'action', economy: 'bonus', label, origin });
   };
-
-/**
- * Portent's foretelling rolls, rolled after a long rest: 2, or 3 from Wizard 14.
- * The numbers are kept (`foretell`), and one replaces a d20 test's d20.
- */
-const portent: CuratedFn = (col, origin) => {
-  col.add({
-    kind: 'resource',
-    key: 'portent',
-    label: 'Portent',
-    max: classLevel(col, 'Wizard') >= 14 ? 3 : 2,
-    resetOn: 'long',
-    foretell: true,
-    origin,
-  });
-};
 
 /**
  * Signature Spells: two level 3 Wizard spells, always prepared, each cast once a
@@ -648,10 +599,6 @@ export const CURATED: Record<string, CuratedFn> = {
   // More of this section's rows are data, in `src/rules/cast-guidance/curated.json`.
   // --- Standing numbers: speeds, saves, scores and defenses ----------------
   // More of this section's rows are data, in `src/rules/cast-guidance/curated.json`.
-  'unarmored movement|monk': (col, origin) => {
-    const amount = unarmoredMovement(classLevel(col, 'Monk'));
-    col.add({ kind: 'speedBonus', amount, unless: 'armorOrShield', origin });
-  },
   // The 2024 classes' (no 2014 class has the feature).
   'weapon mastery|barbarian': weaponMastery({ melee: true }),
   'weapon mastery|fighter': weaponMastery(),
@@ -674,19 +621,6 @@ export const CURATED: Record<string, CuratedFn> = {
   'potent spellcasting|peace domain': potentClericCantrips,
   'empowered evocation|school of evocation': empoweredEvocation,
   'empowered evocation|evoker': empoweredEvocation,
-  'rage|barbarian': (col, origin, from) => {
-    const printed2024 = printedIn(origin, 'xphb', from);
-    col.add({
-      kind: 'resource',
-      key: 'rage',
-      label: 'Rage',
-      max: rageUses(classLevel(col, 'Barbarian'), printed2024),
-      resetOn: 'long',
-      ...(printed2024 ? { regainOnShort: 1 } : {}),
-      origin,
-    });
-    col.add({ kind: 'action', economy: 'bonus', label: 'Rage', origin });
-  },
   'second wind|fighter': (col, origin) => {
     // 2024 scales uses (2 → 3 @4 → 4 @10); 2014 is once per rest.
     const lvl = classLevel(col, 'Fighter');
@@ -709,64 +643,11 @@ export const CURATED: Record<string, CuratedFn> = {
       origin,
     });
   },
-  // Not a built-in row yet: a level table reads the walked class's level, and this
-  // reads the Fighter's, which differ when a Fighter shares a build with a
-  // reskin or a copy of one.
-  'action surge|fighter': (col, origin) => {
-    col.add({
-      kind: 'resource',
-      key: 'action-surge',
-      label: 'Action Surge',
-      max: classLevel(col, 'Fighter') >= 17 ? 2 : 1,
-      resetOn: 'short',
-      origin,
-    });
-  },
-  'ki|monk': (col, origin) => {
-    col.add({
-      kind: 'resource',
-      key: 'ki',
-      label: 'Ki',
-      max: classLevel(col, 'Monk'),
-      resetOn: 'short',
-      origin,
-    });
-  },
-  "monk's focus|monk": (col, origin) => {
-    col.add({
-      kind: 'resource',
-      key: 'focus',
-      label: 'Focus',
-      max: classLevel(col, 'Monk'),
-      resetOn: 'short',
-      origin,
-    });
-  },
   // Stunning Strike states its effect but leaves the DC to the "ki save DC"
   // defined in the Ki/Monk's Focus feature. The prose scanner can't resolve a
   // cross-feature DC, so its row pins it: Con save vs 8 + prof + Wis mod. It rides
   // on a hit, so it takes no slot of its own. Its cost is in `SPEND_LINKS`. The row
   // is in `src/rules/cast-guidance/curated.json`.
-  // 2024 says "you can use Wild Shape twice" in a table the scanner cannot see, so
-  // it gave that printing no pool and nothing could spend one.
-  'wild shape|druid': (col, origin, from) => {
-    const printed2024 = printedIn(origin, 'xphb', from);
-    const lvl = classLevel(col, 'Druid');
-    col.add({
-      kind: 'resource',
-      key: 'wild-shape',
-      label: 'Wild Shape',
-      max: printed2024 ? (lvl >= 17 ? 4 : lvl >= 6 ? 3 : 2) : 2,
-      ...recovery(printed2024),
-      origin,
-    });
-    col.add({
-      kind: 'action',
-      economy: printed2024 ? 'bonus' : 'action',
-      label: 'Wild Shape',
-      origin,
-    });
-  },
   'psionic power|psi warrior': (col, origin, from) =>
     psionicEnergyDice(col, origin, 'psi-warrior-dice', 'Fighter', from),
   'psionic power|soulknife': (col, origin, from) =>
@@ -782,18 +663,6 @@ export const CURATED: Record<string, CuratedFn> = {
       label: 'Channel Divinity',
       max: uses,
       ...recovery(is2024),
-      origin,
-    });
-  },
-  'font of magic|sorcerer': (col, origin) => {
-    col.add({
-      kind: 'resource',
-      key: 'sorcery-points',
-      label: 'Sorcery Points',
-      max: classLevel(col, 'Sorcerer'),
-      resetOn: 'long',
-      // Adds to Metamagic Adept's two, whichever comes first.
-      stack: true,
       origin,
     });
   },
@@ -888,23 +757,6 @@ export const CURATED: Record<string, CuratedFn> = {
       origin,
     });
   },
-  // Once a long rest, twice from Fighter 13 and three times from 17. The scan
-  // reads the first sentence's "can't use this feature again" as one use. The
-  // 2014 printing states the later uses in cards of their own, and the 2024 one
-  // repeats the whole card at 13 and 17: each is this one pool.
-  'indomitable|fighter': indomitable,
-  // The Warrior sidekick's: once a long rest, twice from 18, where the scan read
-  // twice from 11 and a second pool for Indomitable Improvement.
-  'indomitable|warrior sidekick': (col, origin) => {
-    col.add({
-      kind: 'resource',
-      key: 'indomitable',
-      label: 'Indomitable',
-      max: classLevel(col, 'Warrior Sidekick') >= 18 ? 2 : 1,
-      resetOn: 'long',
-      origin,
-    });
-  },
   // Wisdom modifier uses (at least one) a long rest. The 2024 Improved Warding
   // Flare (Cleric 6) brings them back on a short rest too, and its temporary hit
   // points go on the reaction's chip. The 2014 printing's Improved Flare, which
@@ -935,9 +787,6 @@ export const CURATED: Record<string, CuratedFn> = {
   'channel divinity: harness divine power|paladin': harnessDivinePower('Paladin', [3, 7, 15]),
   // The scan read one pool for both spells, and nothing in the 2024 printing.
   'signature spells|wizard': signatureSpells,
-  // Two foretelling rolls a long rest, three from Wizard 14 (Greater Portent).
-  'portent|school of divination': portent,
-  'portent|diviner': portent,
   'sneak attack|rogue': (col, origin) => {
     const dice = Math.ceil(classLevel(col, 'Rogue') / 2);
     col.add({
@@ -1201,27 +1050,6 @@ export const CURATED: Record<string, CuratedFn> = {
       }
     },
   ),
-  // Fragments gathered on a long rest: the Wisdom modifier's worth (at least one),
-  // one more from level 13 and two from 17. A reaction when an enemy dies takes one
-  // back without spending any; what spends them is in `SPEND_LINKS`. The levels are
-  // the Demon Hunter's own, not a Ranger's or a Hunter's beside them.
-  'soul fragments|demon hunter': (col, origin) => {
-    const level = classLevel(col, 'Demon Hunter');
-    const fragments = { key: 'soul-fragments', label: 'Soul Fragments', resetOn: 'long' } as const;
-    col.add({ kind: 'resource', ...fragments, max: 'abilityMod:wis', origin });
-    if (level >= 13) {
-      col.add({ kind: 'resource', ...fragments, max: level >= 17 ? 2 : 1, stack: true, origin });
-    }
-    col.add({
-      kind: 'action',
-      economy: 'reaction',
-      label: 'Soul Fragments',
-      note: 'regain one when an enemy you can see within 30 feet dies',
-      regains: { resource: 'soul-fragments', amount: 1 },
-      spendsNoUse: true,
-      origin,
-    });
-  },
   "genie's splendor|oath of the noble genies": all(
     unarmored(10, 'dex', 'cha'),
     skillPick(1, ['Acrobatics', 'Intimidation', 'Performance', 'Persuasion']),
