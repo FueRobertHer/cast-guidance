@@ -348,11 +348,14 @@ describe('a class that reskins another', () => {
     expect(action(warrior, 'Tactical Mind')?.cost).toMatchObject({ resource: 'second-wind' });
   });
 
-  it("keeps a Fighter 17's two Action Surges beside a Warrior taken first", () => {
-    // The row reads the Fighter's level, not the level of the class walked first:
-    // a level table in a built-in row would read the Warrior's 2 here.
-    const both = derive(build(FIGHTER, 17, { after: { cls: WARRIOR, levels: 2 } }));
-    expect(pool(both, 'action-surge')?.max).toBe(2);
+  it('reads the level of the class that gives a feature, and keeps the first pool of one key', () => {
+    // Beside a Fighter, a Warrior's Action Surge reads the Warrior's own level
+    // (the owner's call, 2026-11-14). Both pools have one key, and the sheet keeps
+    // the first class's: one use with the Warrior 2 first, two with the Fighter 17.
+    const warriorFirst = derive(build(FIGHTER, 17, { after: { cls: WARRIOR, levels: 2 } }));
+    expect(pool(warriorFirst, 'action-surge')?.max).toBe(1);
+    const fighterFirst = derive(build(WARRIOR, 2, { after: { cls: FIGHTER, levels: 17 } }));
+    expect(pool(fighterFirst, 'action-surge')?.max).toBe(2);
   });
 
   it('reads the Shaman as the Barbarian it is', () => {

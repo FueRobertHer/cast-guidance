@@ -10,7 +10,7 @@ stands in for `ROLL_EXTRAS` (`src/engine/curated/rollExtras.ts`). The files
 live in `src/rules/`, one a part. (Source of truth: `readRuleSet` and
 `mechanicsOf` in `src/engine/effects/mechanics.ts`, `src/data5e/builtInRules.ts`.)
 
-133 rows have moved so far (`src/rules/cast-guidance/curated.json`). Four came
+146 rows have moved so far (`src/rules/cast-guidance/curated.json`). Four came
 first, one for each kind of call site, to prove the routes: Stunning Strike (a
 class feature), Lucky (PHB, a feat), Disarming Attack (PHB, an optional
 feature) and Warforged's Integrated Protection (a species trait). The other 111
@@ -27,9 +27,13 @@ the two printings of nine class and subclass features that differ between 2014
 and 2024 (rule pack port 2b), each under a key that names its printing
 (`roving|ranger|xphb`) beside the key alone, which every other printing reads.
 A printing that adds nothing has a row with no effects, which still turns the
-prose scan off (2014 Roving and Feral Senses, 2024 Remarkable Athlete). The
-rows left in `CURATED` need something the format lacks: a pick, the class's
-level or name, text or a reset by level, or an engine call.
+prose scan off (2014 Roving and Feral Senses, 2024 Remarkable Athlete).
+Thirteen more need the level of the class that gives them, in a level table or
+`classLevel` (rule pack port 2c): Unarmored Movement, Action Surge, Ki, Monk's
+Focus, Font of Magic, both Indomitables, Soul Fragments, Portent, and Rage and
+Wild Shape by printing. The rows left in `CURATED` need something the format
+lacks: a pick, the class's name, text or a reset by level, the rules version,
+or an engine call.
 
 63 `standing` rows have moved (`src/rules/cast-guidance/standing.json`): every
 `STANDING` row the format holds, the defenses, senses and speeds a subclass or
@@ -266,14 +270,22 @@ The stored effect format is the one rule packs use, so a row that needs a field
 the format lacks widens the format for players too: `dcAbility: "strOrDex"` (a
 maneuver's DC) came in with Disarming Attack.
 
-A code row that reads a named class's level (`classLevel(col, 'Fighter')`) does
-not move to a level table as it is. A table reads the level its call site
+A code row that reads a named class's level (`classLevel(col, 'Fighter')`)
+moves to a level table or `classLevel`, which read the level its call site
 passes: the class being walked for a class feature, the host class for an
-optional feature, and the character's level for a feat or a trait. A Fighter 17
-who took a Warrior (a reskin) first walks the Warrior at 2, and the resource
-keeps the first pool, so Action Surge would drop to one use. Those rows wait for
-a formula term that names a class's level (Action Surge, Indomitable, Portent,
-Ki, Channel Divinity and others).
+optional feature, and the character's level for a feat or a trait. That is the
+level of the class that gives the feature, which the owner chose (2026-11-14)
+over the first class that is or stands for the named one. The two differ
+where the class walked is not the one the code named:
+
+- Two classes stand for one (a Fighter and a Warrior, which reskins it). Each
+  gives the feature at its own level. A pool of one key keeps the first class's
+  unless it stacks, so a Warrior 2 taken before a Fighter 17 has one Action
+  Surge, while a Sorcerer 5 and an Evoker 3 (WoW) add their own 5 and 3 sorcery
+  points, where the code gave 5 twice.
+- A subclass row, found under the subclass's name, under another class: a
+  homebrew Diviner for a Bard 14 has Portent's three rolls at Bard 14, where the
+  code read the character's Wizard level (none).
 
 ## Checking a change on real data
 

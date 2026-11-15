@@ -1771,6 +1771,282 @@
           }
         }
       ]
+    },
+    {
+      "part": "curated",
+      "keys": ["unarmored movement|monk"],
+      "effects": [
+        {
+          "kind": "speedBonus",
+          "amount": {
+            "byLevel": {
+              "1": 10,
+              "6": 15,
+              "10": 20,
+              "14": 25,
+              "18": 30
+            }
+          },
+          "unless": "armorOrShield"
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["action surge|fighter"],
+      "effects": [
+        {
+          "kind": "resource",
+          "key": "action-surge",
+          "label": "Action Surge",
+          "max": {
+            "byLevel": {
+              "1": 1,
+              "17": 2
+            }
+          },
+          "reset": "short"
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["ki|monk"],
+      "effects": [
+        {
+          "kind": "resource",
+          "key": "ki",
+          "label": "Ki",
+          "max": {
+            "f": "classLevel"
+          },
+          "reset": "short"
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["monk's focus|monk"],
+      "effects": [
+        {
+          "kind": "resource",
+          "key": "focus",
+          "label": "Focus",
+          "max": {
+            "f": "classLevel"
+          },
+          "reset": "short"
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["font of magic|sorcerer"],
+      "effects": [
+        {
+          "kind": "resource",
+          "key": "sorcery-points",
+          "label": "Sorcery Points",
+          "max": {
+            "f": "classLevel"
+          },
+          "reset": "long",
+          "stack": true
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["indomitable|fighter"],
+      "effects": [
+        {
+          "kind": "resource",
+          "key": "indomitable",
+          "label": "Indomitable",
+          "max": {
+            "byLevel": {
+              "1": 1,
+              "13": 2,
+              "17": 3
+            }
+          },
+          "reset": "long"
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["indomitable|warrior sidekick"],
+      "effects": [
+        {
+          "kind": "resource",
+          "key": "indomitable",
+          "label": "Indomitable",
+          "max": {
+            "byLevel": {
+              "1": 1,
+              "18": 2
+            }
+          },
+          "reset": "long"
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["soul fragments|demon hunter"],
+      "effects": [
+        {
+          "kind": "resource",
+          "key": "soul-fragments",
+          "label": "Soul Fragments",
+          "max": {
+            "f": "mod.wis"
+          },
+          "reset": "long",
+          "min": 1
+        },
+        {
+          "kind": "resource",
+          "key": "soul-fragments",
+          "label": "Soul Fragments",
+          "max": {
+            "byLevel": {
+              "13": 1,
+              "17": 2
+            }
+          },
+          "reset": "long",
+          "stack": true
+        },
+        {
+          "kind": "action",
+          "economy": "reaction",
+          "label": "Soul Fragments",
+          "note": "regain one when an enemy you can see within 30 feet dies",
+          "regains": {
+            "resource": "soul-fragments",
+            "amount": 1
+          },
+          "spendsNoUse": true
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["rage|barbarian|xphb"],
+      "effects": [
+        {
+          "kind": "resource",
+          "key": "rage",
+          "label": "Rage",
+          "max": {
+            "byLevel": {
+              "1": 2,
+              "3": 3,
+              "6": 4,
+              "12": 5,
+              "17": 6
+            }
+          },
+          "reset": "long",
+          "regainOnShort": 1
+        },
+        {
+          "kind": "action",
+          "economy": "bonus",
+          "label": "Rage"
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["rage|barbarian"],
+      "effects": [
+        {
+          "kind": "resource",
+          "key": "rage",
+          "label": "Rage",
+          "max": {
+            "byLevel": {
+              "1": 2,
+              "3": 3,
+              "6": 4,
+              "12": 5,
+              "17": 6,
+              "20": 99
+            }
+          },
+          "reset": "long"
+        },
+        {
+          "kind": "action",
+          "economy": "bonus",
+          "label": "Rage"
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["wild shape|druid|xphb"],
+      "effects": [
+        {
+          "kind": "resource",
+          "key": "wild-shape",
+          "label": "Wild Shape",
+          "max": {
+            "byLevel": {
+              "1": 2,
+              "6": 3,
+              "17": 4
+            }
+          },
+          "reset": "long",
+          "regainOnShort": 1
+        },
+        {
+          "kind": "action",
+          "economy": "bonus",
+          "label": "Wild Shape"
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["wild shape|druid"],
+      "effects": [
+        {
+          "kind": "resource",
+          "key": "wild-shape",
+          "label": "Wild Shape",
+          "max": 2,
+          "reset": "short"
+        },
+        {
+          "kind": "action",
+          "economy": "action",
+          "label": "Wild Shape"
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["portent|school of divination", "portent|diviner"],
+      "effects": [
+        {
+          "kind": "resource",
+          "key": "portent",
+          "label": "Portent",
+          "max": {
+            "byLevel": {
+              "1": 2,
+              "14": 3
+            }
+          },
+          "reset": "long",
+          "foretell": true
+        }
+      ]
     }
   ]
 }

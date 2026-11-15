@@ -25,8 +25,8 @@ const origin: EffectOrigin = { label: 'Feature', uid: 'x', type: 'class' };
  * A curated row, wherever it lives while rows move out of code: `CURATED`, else
  * the shipped rule set's row, emitted as the seam emits it: under the key for
  * its printing first (`from`, then the origin's uid's), as a class walk looks
- * it up. False when neither has a row under the key. A moved row's formulas are filled only at fold time,
- * so a test of one reads it through `deriveSheet`, not here.
+ * it up. False when neither has a row under the key. A moved row's formulas are
+ * filled only at fold time: `worked` works them out here as the fold does.
  */
 function emitRow(c: Collector, key: string, o: EffectOrigin, from?: string): boolean {
   if (emitCuratedEffects(c, key, o, from)) return true;
@@ -54,6 +54,29 @@ function shown(c: Collector) {
     if (formulas === undefined) return rest;
     return { ...rest, ...Object.fromEntries(formulas.map((s) => [s.field, s.formula.text])) };
   });
+}
+
+/**
+ * The collector with each moved row's formulas worked out in place, as
+ * `fillFormulas` in `derive.ts` does at fold time: the class's level each slot
+ * carries (the character's here), proficiency +2 and every ability modifier 0.
+ * Only an amount may be below zero.
+ */
+function worked(c: Collector): Collector {
+  const mod = { str: 0, dex: 0, con: 0, int: 0, wis: 0, cha: 0 };
+  const score = { str: 10, dex: 10, con: 10, int: 10, wis: 10, cha: 10 };
+  const level = c.doc.classes.reduce((n, cl) => n + cl.levels, 0);
+  for (const e of c.effects) {
+    const slots = (e as { formulas?: readonly FormulaSlot[] }).formulas;
+    if (slots === undefined) continue;
+    for (const s of slots) {
+      const scope = { level, classLevel: s.classLevel, prof: 2, hp: 10, maxHp: 10, mod, score };
+      const value = s.formula.evaluate(scope);
+      (e as Record<string, unknown>)[s.field] = s.field === 'amount' ? value : Math.max(0, value);
+    }
+    delete (e as { formulas?: unknown }).formulas;
+  }
+  return c;
 }
 
 function col(className?: string, levels = 5) {
@@ -269,7 +292,7 @@ describe('pools a cost spends', () => {
   const emit = (key: string, cls: string, levels: number, from: EffectOrigin) => {
     const c = col(cls, levels);
     expect(emitRow(c, key, from)).toBe(true);
-    return c.effects;
+    return worked(c).effects;
   };
   const resource = (effects: EffectInput[], key: string) =>
     effects.find((e) => e.kind === 'resource' && e.key === key) as
@@ -569,8 +592,17 @@ describe('pools, dice and DCs only class prose states', () => {
     );
   const run = (key: string, c: Collector, o: EffectOrigin = origin, from?: string) => {
     expect(emitRow(c, key, o, from)).toBe(true);
-    return c;
+    return worked(c);
   };
+
+  it('gives Ki (2014) and Focus (2024) a point per Monk level, back on a short rest', () => {
+    for (const levels of [2, 11, 20]) {
+      expect(pools(run('ki|monk', col('Monk', levels)))).toEqual([`ki Ki ${levels} short`]);
+      expect(pools(run("monk's focus|monk", col('Monk', levels)))).toEqual([
+        `focus Focus ${levels} short`,
+      ]);
+    }
+  });
 
   it('gives Indomitable one use, two from Fighter 13 and three from 17, in one pool', () => {
     const uses = (l: number) => pools(run('indomitable|fighter', col('Fighter', l)));
@@ -793,7 +825,11 @@ describe('standing numbers of core class features', () => {
   };
 
   it('gives Unarmored Movement by Monk level, out of armor and shield', () => {
-    const bonus = (levels: number) => emit('unarmored movement|monk', 'monk|phb', 'Monk', levels);
+    const bonus = (levels: number) => {
+      const c = col('Monk', levels);
+      expect(emitRow(c, 'unarmored movement|monk', printed('monk|phb'))).toBe(true);
+      return shown(worked(c));
+    };
     expect(bonus(2)).toEqual([{ kind: 'speedBonus', amount: 10, unless: 'armorOrShield' }]);
     expect(bonus(6)[0]).toMatchObject({ amount: 15 });
     expect(bonus(13)[0]).toMatchObject({ amount: 20 });
