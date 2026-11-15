@@ -1552,6 +1552,225 @@
           "profBonus": true
         }
       ]
+    },
+    {
+      "part": "curated",
+      "keys": ["roving|ranger|xphb"],
+      "effects": [
+        {
+          "kind": "speedBonus",
+          "amount": 10,
+          "unless": "heavyArmor"
+        },
+        {
+          "kind": "moveSpeed",
+          "mode": "climb",
+          "speed": "walk"
+        },
+        {
+          "kind": "moveSpeed",
+          "mode": "swim",
+          "speed": "walk"
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["roving|ranger"],
+      "effects": []
+    },
+    {
+      "part": "curated",
+      "keys": ["aura of courage|paladin|xphb"],
+      "effects": [
+        {
+          "kind": "conditionImmune",
+          "condition": "frightened",
+          "note": "not while incapacitated"
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["aura of courage|paladin"],
+      "effects": [
+        {
+          "kind": "conditionImmune",
+          "condition": "frightened",
+          "note": "while conscious"
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["slippery mind|rogue|xphb"],
+      "effects": [
+        {
+          "kind": "saveProf",
+          "ability": "wis"
+        },
+        {
+          "kind": "saveProf",
+          "ability": "cha"
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["slippery mind|rogue"],
+      "effects": [
+        {
+          "kind": "saveProf",
+          "ability": "wis"
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["primal champion|barbarian|xphb"],
+      "effects": [
+        {
+          "kind": "abilityBonus",
+          "ability": "str",
+          "amount": 4,
+          "max": 25
+        },
+        {
+          "kind": "abilityBonus",
+          "ability": "con",
+          "amount": 4,
+          "max": 25
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["primal champion|barbarian"],
+      "effects": [
+        {
+          "kind": "abilityBonus",
+          "ability": "str",
+          "amount": 4,
+          "max": 24
+        },
+        {
+          "kind": "abilityBonus",
+          "ability": "con",
+          "amount": 4,
+          "max": 24
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["feral senses|ranger|xphb"],
+      "effects": [
+        {
+          "kind": "sense",
+          "sense": "blindsight",
+          "range": 30
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["feral senses|ranger"],
+      "effects": []
+    },
+    {
+      "part": "curated",
+      "keys": ["sorcerous restoration|sorcerer|xphb"],
+      "effects": [
+        {
+          "kind": "resource",
+          "key": "sorcerous-restoration",
+          "label": "Sorcerous Restoration",
+          "max": 1,
+          "reset": "long"
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["sorcerous restoration|sorcerer"],
+      "effects": [
+        {
+          "kind": "resourceRegain",
+          "key": "sorcery-points",
+          "amount": 4
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["jack of all trades|bard|xphb"],
+      "effects": [
+        {
+          "kind": "halfProf",
+          "round": "down",
+          "skillsOnly": true
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["jack of all trades|bard"],
+      "effects": [
+        {
+          "kind": "halfProf",
+          "round": "down"
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["remarkable athlete|champion|xphb"],
+      "effects": []
+    },
+    {
+      "part": "curated",
+      "keys": ["remarkable athlete|champion"],
+      "effects": [
+        {
+          "kind": "halfProf",
+          "round": "up",
+          "abilities": ["str", "dex", "con"]
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["dread ambusher|gloom stalker|xphb"],
+      "effects": [
+        {
+          "kind": "initiativeBonus",
+          "amount": {
+            "f": "max(0, mod.wis)"
+          }
+        },
+        {
+          "kind": "resource",
+          "key": "dread-ambusher",
+          "label": "Dread Ambusher",
+          "max": {
+            "f": "mod.wis"
+          },
+          "min": 1,
+          "reset": "long"
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["dread ambusher|gloom stalker"],
+      "effects": [
+        {
+          "kind": "initiativeBonus",
+          "amount": {
+            "f": "max(0, mod.wis)"
+          }
+        }
+      ]
     }
   ]
 }

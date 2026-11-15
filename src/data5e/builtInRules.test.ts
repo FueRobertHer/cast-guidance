@@ -23,6 +23,15 @@ function shippedFiles(dir = RULES_DIR): string[] {
   );
 }
 
+/**
+ * Whether a code table still has the row a built-in key stands in for: the key,
+ * or, for a row of one printing (`roving|ranger|xphb`), the key without it.
+ */
+const inTable = (table: Record<string, unknown>, key: string): boolean => {
+  const at = key.lastIndexOf('|');
+  return Object.hasOwn(table, key) || (at > 0 && Object.hasOwn(table, key.slice(0, at)));
+};
+
 describe('the built-in rule sets', () => {
   it('loads every file under src/rules, once', async () => {
     const rules = await loadBuiltInRules();
@@ -50,7 +59,7 @@ describe('the built-in rule sets', () => {
     const keys = (await loadBuiltInRules()).sets.flatMap((set) =>
       readRuleSet(set).rows.flatMap((r) => (r.part === 'curated' ? r.keys : [])),
     );
-    expect(keys.filter((k) => Object.hasOwn(CURATED, k))).toEqual([]);
+    expect(keys.filter((k) => inTable(CURATED, k))).toEqual([]);
   });
 
   it('keeps no standing row also in STANDING, which it stands in for', async () => {
@@ -58,7 +67,7 @@ describe('the built-in rule sets', () => {
       readRuleSet(set).rows.flatMap((r) => (r.part === 'standing' ? r.keys : [])),
     );
     expect(keys.length).toBeGreaterThan(0);
-    expect(keys.filter((k) => Object.hasOwn(STANDING, k))).toEqual([]);
+    expect(keys.filter((k) => inTable(STANDING, k))).toEqual([]);
   });
 
   it('keeps no roll extra row also in ROLL_EXTRAS, which it stands in for', async () => {

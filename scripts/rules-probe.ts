@@ -106,14 +106,26 @@ type Row = (...args: unknown[]) => unknown;
 /** A moved row by part and key, as `part key`: one key may have a row in two parts. */
 const idOf = (part: string, key: string) => `${part} ${key}`;
 
-/** Every built-in row's part and key whose code table still has a row under it. */
+/**
+ * The code row a built-in row's key stands in for: the key itself, or, for a row
+ * of one printing (`roving|ranger|xphb`), the key without its printing, which
+ * the code row reads the printing under.
+ */
+function codeKeyOf(table: Record<string, unknown>, key: string): string | undefined {
+  if (Object.hasOwn(table, key)) return key;
+  const at = key.lastIndexOf('|');
+  return at > 0 && Object.hasOwn(table, key.slice(0, at)) ? key.slice(0, at) : undefined;
+}
+
+/** Every code row a built-in row stands in for, by part and code key, while the code table has it. */
 const shipped = reg.byType(RULE_SET_TYPE);
 const moved = new Map<string, { part: RulePart; key: string; table: Record<string, unknown> }>();
 for (const set of shipped) {
   for (const row of readRuleSet(set).rows) {
     const table = TABLES[row.part];
-    for (const key of row.keys) {
-      if (table === undefined || !Object.hasOwn(table, key)) continue;
+    for (const rowKey of row.keys) {
+      const key = table === undefined ? undefined : codeKeyOf(table, rowKey);
+      if (table === undefined || key === undefined) continue;
       if (values.only === undefined || values.only.some((t) => key.includes(t.toLowerCase()))) {
         moved.set(idOf(row.part, key), { part: row.part, key, table });
       }
@@ -125,21 +137,22 @@ if (moved.size === 0) {
   process.exit(0);
 }
 
+/** Whether a shipped row stands in for a moved code row, under any of its keys. */
+function standsInForMoved(r: { part?: unknown; keys?: unknown }): boolean {
+  const table = TABLES[String(r.part) as RulePart];
+  if (table === undefined || !Array.isArray(r.keys)) return false;
+  return r.keys.some((k) => {
+    const key = codeKeyOf(table, String(k).trim().toLowerCase());
+    return key !== undefined && moved.has(idOf(String(r.part), key));
+  });
+}
+
 /** The shipped sets without the moved rows: what the tree read before the move. */
 const before: Entity[] = shipped.map((set) => {
   const rows = Array.isArray(set.rows)
     ? (set.rows as Array<{ part?: unknown; keys?: unknown }>)
     : [];
-  return {
-    ...set,
-    rows: rows.filter(
-      (r) =>
-        !(
-          Array.isArray(r.keys) &&
-          r.keys.some((k) => moved.has(idOf(String(r.part), String(k).trim().toLowerCase())))
-        ),
-    ),
-  };
+  return { ...set, rows: rows.filter((r) => !standsInForMoved(r)) };
 });
 
 /** Moved rows (`idOf`) a build under the code rows read. */

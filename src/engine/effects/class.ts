@@ -18,7 +18,7 @@ import { asEntityArray, type Collector, str } from './base';
 import { VariantGate } from './classVariants';
 import { collectFeatEntity } from './feat';
 import { isRepeatableFeat } from './featPicks';
-import { basedOn, emitBuiltInRows, mechanicsOf, officialOf } from './mechanics';
+import { basedOn, emitBuiltInRows, mechanicsOf, officialOf, printingKeys } from './mechanics';
 import { readOptionalFeatures } from './optionalFeatures';
 import { buildPrereqContext, featChoiceOption } from './prerequisites';
 import { proseScanFeature } from './proseScan';
@@ -338,13 +338,15 @@ function collectFeatureWithNested(
   const sources =
     printed !== undefined ? [String(feature.source), printed.source] : [String(feature.source)];
   const curatedKeys = names.flatMap((n) => labels.map((label) => `${n}|${label}`.toLowerCase()));
+  // A built-in row may be for one printing (`roving|ranger|xphb`).
+  const ruleKeys = printingKeys(curatedKeys, printing, cardOrigin.uid);
   mechanicsOf(col, {
     entry: feature,
     label: name,
     origin: featureOrigin,
     target: `${name}|${curatedLabel}`,
     classLevel: walk.classLevel,
-    ruleKeys: curatedKeys,
+    ruleKeys,
     inCode: hasCuratedRow,
     inherited: (builtIn) => {
       const curated =
@@ -355,7 +357,7 @@ function collectFeatureWithNested(
       const at = { featureLevel: level, classLevel: walk.classLevel };
       // Standing rows are found under the curated keys, in the same order.
       if (
-        !emitBuiltInRows(col, 'standing', curatedKeys, featureOrigin, {
+        !emitBuiltInRows(col, 'standing', ruleKeys, featureOrigin, {
           ...at,
           inCode: hasStandingRow,
         })

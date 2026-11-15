@@ -193,6 +193,12 @@ interface Owner {
   entries: unknown;
   /** The curated key the engine tries before it falls back to the scanner. */
   curatedKey: string;
+  /**
+   * The printings a built-in row under `curatedKey` may name (`roving|ranger|xphb`),
+   * tried first, as a class walk tries them: the feature's own, then its class's
+   * or subclass's.
+   */
+  printings?: readonly string[];
   /** The key the engine looks up in `SPEND_LINKS`. */
   spendKey: string;
   holder: Holder;
@@ -269,6 +275,7 @@ function* owners(registry: ByType): Generator<Owner> {
       label: `${name} (${str(e.className)}|${str(e.source)})`,
       entries: e.entries,
       curatedKey: lower(name, str(e.className)),
+      printings: [str(e.source), str(e.classSource)],
       spendKey: lower(name, str(e.className), str(e.source)),
       holder: inClass(e),
     };
@@ -291,6 +298,7 @@ function* owners(registry: ByType): Generator<Owner> {
       label: `${name} (${str(e.className)}: ${subName}|${str(e.source)})`,
       entries: e.entries,
       curatedKey: lower(name, subName),
+      printings: [str(e.source), str(e.subclassSource)],
       spendKey: lower(name, subName, str(e.source)),
       holder: inClass(e, sub !== undefined ? refOf(sub) : undefined),
     };
@@ -431,7 +439,12 @@ export function proseSubjects(registry: ByType): ProseSubject[] {
     // A curated row turns the scan off: in code, or a built-in row that replaces it.
     const curated =
       Object.hasOwn(CURATED, owner.curatedKey) ||
-      builtInRuleIn(ruleSets, 'curated', [owner.curatedKey])?.scan === 'replace';
+      builtInRuleIn(ruleSets, 'curated', [
+        ...(owner.printings ?? [])
+          .filter((p) => p !== '')
+          .map((p) => `${owner.curatedKey}|${p.toLowerCase()}`),
+        owner.curatedKey,
+      ])?.scan === 'replace';
     const limit = structuredLimitOf(registry, owner);
     const seen = byKey.get(key);
     if (seen !== undefined) {

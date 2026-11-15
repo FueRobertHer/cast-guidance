@@ -456,16 +456,6 @@ function unarmoredMovement(level: number): number {
   return 10;
 }
 
-/** Two scores up by 4, to a new maximum (Primal Champion, Body and Mind). */
-const capstone =
-  (abilities: readonly Ability[], max: (printed2024: boolean) => number): CuratedFn =>
-  (col, origin, from) => {
-    const cap = max(printedIn(origin, 'xphb', from));
-    for (const ability of abilities) {
-      col.add({ kind: 'abilityBonus', ability, amount: 4, max: cap, origin });
-    }
-  };
-
 /**
  * An ability modifier on the damage of a class's spells: its cantrips (Potent
  * Spellcasting), or one roll of its spells of a school (Empowered Evocation). The
@@ -662,29 +652,6 @@ export const CURATED: Record<string, CuratedFn> = {
     const amount = unarmoredMovement(classLevel(col, 'Monk'));
     col.add({ kind: 'speedBonus', amount, unless: 'armorOrShield', origin });
   },
-  // The 2024 feature. Tasha's Roving is a part of Deft Explorer Improvement, not read yet.
-  'roving|ranger': (col, origin, from) => {
-    if (!printedIn(origin, 'xphb', from)) return;
-    col.add({ kind: 'speedBonus', amount: 10, unless: 'heavyArmor', origin });
-    col.add({ kind: 'moveSpeed', mode: 'climb', speed: 'walk', origin });
-    col.add({ kind: 'moveSpeed', mode: 'swim', speed: 'walk', origin });
-  },
-  // An ally's aura is an effect in play; this is the paladin's own.
-  'aura of courage|paladin': (col, origin, from) => {
-    const note = printedIn(origin, 'xphb', from) ? 'not while incapacitated' : 'while conscious';
-    col.add({ kind: 'conditionImmune', condition: 'frightened', note, origin });
-  },
-  'slippery mind|rogue': (col, origin, from) => {
-    col.add({ kind: 'saveProf', ability: 'wis', origin });
-    if (printedIn(origin, 'xphb', from)) col.add({ kind: 'saveProf', ability: 'cha', origin });
-  },
-  'primal champion|barbarian': capstone(['str', 'con'], (printed2024) => (printed2024 ? 25 : 24)),
-  // 2014's Feral Senses is about attacking what you can't see: no number to show.
-  'feral senses|ranger': (col, origin, from) => {
-    if (printedIn(origin, 'xphb', from)) {
-      col.add({ kind: 'sense', sense: 'blindsight', range: 30, origin });
-    }
-  },
   // The 2024 classes' (no 2014 class has the feature).
   'weapon mastery|barbarian': weaponMastery({ melee: true }),
   'weapon mastery|fighter': weaponMastery(),
@@ -817,23 +784,6 @@ export const CURATED: Record<string, CuratedFn> = {
       ...recovery(is2024),
       origin,
     });
-  },
-  // 2014 is a flat 4 points on every short rest. 2024 is a choice of up to half the
-  // level, once per long rest, so its row counts that one use and the player taps
-  // the points back.
-  'sorcerous restoration|sorcerer': (col, origin, from) => {
-    if (printedIn(origin, 'xphb', from)) {
-      col.add({
-        kind: 'resource',
-        key: 'sorcerous-restoration',
-        label: 'Sorcerous Restoration',
-        max: 1,
-        resetOn: 'long',
-        origin,
-      });
-    } else {
-      col.add({ kind: 'resourceRegain', key: 'sorcery-points', amount: 4, origin });
-    }
   },
   'font of magic|sorcerer': (col, origin) => {
     col.add({
@@ -998,16 +948,6 @@ export const CURATED: Record<string, CuratedFn> = {
       origin,
     });
   },
-  // Half proficiency where it is not already added. The 2014 wording reaches
-  // every check, plain ability checks and initiative included; the 2024 one
-  // reaches only skills the bard lacks.
-  'jack of all trades|bard': (col, origin, from) => {
-    col.add(
-      printedIn(origin, 'xphb', from)
-        ? { kind: 'halfProf', round: 'down', skillsOnly: true, origin }
-        : { kind: 'halfProf', round: 'down', origin },
-    );
-  },
   // TCE's optional feature (under the 2014 class) picks again at barbarian 10.
   'primal knowledge|barbarian': (col, origin, from) => {
     const count = printedIn(origin, 'phb', from) && classLevel(col, 'Barbarian') >= 10 ? 2 : 1;
@@ -1044,28 +984,6 @@ export const CURATED: Record<string, CuratedFn> = {
 
   // --- Subclass features (keyed by the subclass's full name) ---------------
   // More of this section's rows are data, in `src/rules/cast-guidance/curated.json`.
-  // 2014 only: half proficiency rounded up on STR, DEX and CON checks. The
-  // 2024 feature of the same name grants advantage, which is no sheet number.
-  'remarkable athlete|champion': (col, origin, from) => {
-    if (printedIn(origin, 'xphb', from)) return;
-    col.add({ kind: 'halfProf', round: 'up', abilities: ['str', 'dex', 'con'], origin });
-  },
-  // These four say "you can", so a negative modifier stays off the roll.
-  'dread ambusher|gloom stalker': (col, origin, from) => {
-    col.add({ kind: 'initiativeBonus', amount: 'abilityModMin0:wis', origin });
-    // A curated entry turns off the prose scan, which is what found the 2024
-    // Dreadful Strike's uses ("equal to your Wisdom modifier"); keep them.
-    if (printedIn(origin, 'xphb', from)) {
-      col.add({
-        kind: 'resource',
-        key: 'dread-ambusher',
-        label: 'Dread Ambusher',
-        max: 'abilityMod:wis',
-        resetOn: 'long',
-        origin,
-      });
-    }
-  },
   // Both printings: the bonus, and one skill of three.
   'otherworldly glamour|fey wanderer': (col, origin) => {
     col.add({ kind: 'checkBonus', ability: 'cha', amount: 'abilityModMin1:wis', origin });

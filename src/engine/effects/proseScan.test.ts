@@ -5,7 +5,7 @@ import { emitCuratedEffects } from '../curated/curatedEffects';
 import { deriveSheet } from '../derive';
 import { type EffectInput, type EffectOrigin, type EngineContext, newCharacterDoc } from '../types';
 import { Collector } from './base';
-import { mechanicsOf } from './mechanics';
+import { mechanicsOf, printingKeys } from './mechanics';
 import { castsWithASlot, flattenEntries, proseScanFeature } from './proseScan';
 import { collectRace } from './race';
 
@@ -2933,7 +2933,10 @@ describe('proseScanFeature: standing bonuses to checks and initiative', () => {
       get: () => undefined,
       byType: (type) => (type === RULE_SET_TYPE ? BUILT_IN_RULE_SETS : []),
     };
-    /** The curated row's effects: `CURATED`'s, else the shipped rule set's, as the seam emits it. */
+    /**
+     * The curated row's effects: `CURATED`'s, else the shipped rule set's, as the
+     * seam emits it, under the key for the printing in `uid` first.
+     */
     const curatedEffects = (key: string, uid: string) => {
       const col = new Collector(newCharacterDoc('c', 'H', 't'), noData);
       const at = { ...origin, uid };
@@ -2944,7 +2947,7 @@ describe('proseScanFeature: standing bonuses to checks and initiative', () => {
         label: at.label,
         origin: at,
         target: key,
-        ruleKeys: [key],
+        ruleKeys: printingKeys([key], '', uid),
         inherited: (hit) => {
           builtIn = hit !== undefined;
         },

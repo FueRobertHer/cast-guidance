@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { BUILT_IN_RULE_SETS } from '../../../tests-fixtures/testWorld';
 import { RULE_SET_TYPE } from '../castGuidance';
 import { Collector } from '../effects/base';
-import { mechanicsOf } from '../effects/mechanics';
+import { mechanicsOf, printingKeys } from '../effects/mechanics';
 import {
   type DataEntity,
   type EffectInput,
@@ -23,8 +23,9 @@ const origin: EffectOrigin = { label: 'Feature', uid: 'x', type: 'class' };
 
 /**
  * A curated row, wherever it lives while rows move out of code: `CURATED`, else
- * the shipped rule set's row, emitted as the seam emits it. False when neither
- * has a row under the key. A moved row's formulas are filled only at fold time,
+ * the shipped rule set's row, emitted as the seam emits it: under the key for
+ * its printing first (`from`, then the origin's uid's), as a class walk looks
+ * it up. False when neither has a row under the key. A moved row's formulas are filled only at fold time,
  * so a test of one reads it through `deriveSheet`, not here.
  */
 function emitRow(c: Collector, key: string, o: EffectOrigin, from?: string): boolean {
@@ -35,7 +36,7 @@ function emitRow(c: Collector, key: string, o: EffectOrigin, from?: string): boo
     label: o.label,
     origin: o,
     target: key,
-    ruleKeys: [key],
+    ruleKeys: printingKeys([key], from ?? '', o.uid),
     inherited: (hit) => {
       builtIn = hit !== undefined;
     },
@@ -216,13 +217,14 @@ describe('features that add to checks and initiative', () => {
 
   it('keeps the 2024 Dread Ambusher uses the prose scan used to find', () => {
     expect(emit('dread ambusher|gloom stalker', 'gloom stalker|xge')).toEqual([
-      { kind: 'initiativeBonus', amount: 'abilityModMin0:wis' },
+      { kind: 'initiativeBonus', amount: 'max(0, mod.wis)' },
     ]);
     expect(emit('dread ambusher|gloom stalker', 'gloom stalker|xphb')).toContainEqual({
       kind: 'resource',
       key: 'dread-ambusher',
       label: 'Dread Ambusher',
-      max: 'abilityMod:wis',
+      max: 'mod.wis',
+      min: 1,
       resetOn: 'long',
     });
   });
@@ -811,7 +813,7 @@ describe('standing numbers of core class features', () => {
     // A 2024 Roving lent to another book's class still reads as 2024.
     expect(emit('roving|ranger', 'hunter|wow')).toEqual([]);
     const lent = col();
-    emitCuratedEffects(lent, 'roving|ranger', printed('hunter|wow'), 'xphb');
+    expect(emitRow(lent, 'roving|ranger', printed('hunter|wow'), 'xphb')).toBe(true);
     expect(lent.effects).toHaveLength(3);
   });
 

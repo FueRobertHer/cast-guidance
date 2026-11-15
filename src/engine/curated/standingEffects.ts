@@ -35,7 +35,6 @@ const DAMAGE_TYPES = [
   'slashing',
   'thunder',
 ] as const;
-const PHYSICAL = ['bludgeoning', 'piercing', 'slashing'];
 
 /** The 2024 printing of a feature whose subclass shares its name with the 2014 one. */
 const printed2024 = (origin: EffectOrigin, from?: string) =>
@@ -168,14 +167,6 @@ const atLevel =
     if (level === at) fn(col, origin, from, level);
   };
 
-/** "From nonmagical attacks" in 2014; plain in 2024. */
-const physicalResists =
-  (note2014: string): StandingFn =>
-  (col, origin, from, level) =>
-    printed2024(origin, from)
-      ? resists(PHYSICAL)(col, origin, from, level)
-      : resists(PHYSICAL, note2014)(col, origin, from, level);
-
 /** A paladin's own place in its aura: while conscious (2014), not while incapacitated (2024). */
 const auraNote = (origin: EffectOrigin, from?: string) =>
   printed2024(origin, from) ? 'not while incapacitated' : 'while conscious';
@@ -238,7 +229,6 @@ export const STANDING: Record<string, StandingFn> = {
     ),
 
   // --- Cleric ----------------------------------------------------------------
-  'avatar of battle|war domain': physicalResists('nonmagical'),
   'unfettered mind|knowledge domain': saveOrPick('int'),
 
   // --- Druid -----------------------------------------------------------------
@@ -273,17 +263,6 @@ export const STANDING: Record<string, StandingFn> = {
 
   // --- Paladin ---------------------------------------------------------------
   // The paladin is always inside its own aura, while it holds.
-  'aura of warding|oath of the ancients': (col, origin, from, level) =>
-    printed2024(origin, from)
-      ? resists(['necrotic', 'psychic', 'radiant'], auraNote(origin, from))(
-          col,
-          origin,
-          from,
-          level,
-        )
-      : resists(['all'], 'from spells')(col, origin, from, level),
-  'aura of devotion|oath of devotion': (col, origin, from, level) =>
-    conditionImmunities(['charmed'], auraNote(origin, from))(col, origin, from, level),
   'aura of elemental shielding|oath of the noble genies': (col, origin, from, level) =>
     resistPick(
       'elemental-shielding',
@@ -316,12 +295,6 @@ export const STANDING: Record<string, StandingFn> = {
     const type =
       cantrip?.kind === 'grantSpell' ? byCantrip[cantrip.spell.name.toLowerCase()] : undefined;
     if (type !== undefined) resists([type])(col, origin, from, level);
-  },
-  // 2014's climbing at no extra cost is not a climb speed of its own.
-  'second-story work|thief': (col, origin, from) => {
-    if (printed2024(origin, from)) {
-      col.add({ kind: 'moveSpeed', mode: 'climb', speed: 'walk', origin });
-    }
   },
 
   // --- Warlock ---------------------------------------------------------------

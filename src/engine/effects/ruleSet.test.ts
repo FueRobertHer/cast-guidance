@@ -16,6 +16,7 @@ import {
   emitBuiltInRows,
   emitRuleRows,
   mechanicsOf,
+  printingKeys,
   readRuleSet,
   readStoredEffects,
 } from './mechanics';
@@ -477,6 +478,22 @@ describe('mechanicsOf: a built-in row is the curated row', () => {
     expect(subject(col, { ruleKeys: undefined })).toHaveBeenCalledWith(undefined);
     expect(subject(col, { ruleKeys: ['other|hb'] })).toHaveBeenCalledWith(undefined);
     expect(kinds(col)).toEqual(['speedBonus', 'speedBonus']);
+  });
+
+  it("tries a class feature's key for its printing, then its class's, then alone", () => {
+    expect(printingKeys(['roving|ranger'], 'XPHB', 'hunter|WoW')).toEqual([
+      'roving|ranger|xphb',
+      'roving|ranger|wow',
+      'roving|ranger',
+    ]);
+    // One printing once; none from a uid with no book, or an empty printing.
+    expect(printingKeys(['a|b', 'a|c'], 'phb', 'ranger|PHB')).toEqual([
+      'a|b|phb',
+      'a|b',
+      'a|c|phb',
+      'a|c',
+    ]);
+    expect(printingKeys(['a|b'], '', 'x')).toEqual(['a|b']);
   });
 
   it('takes the row of the first key that has one, whatever its case', () => {

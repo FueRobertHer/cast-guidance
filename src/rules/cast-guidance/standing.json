@@ -779,6 +779,115 @@
           "range": 30
         }
       ]
+    },
+    {
+      "part": "standing",
+      "keys": ["avatar of battle|war domain|xphb"],
+      "effects": [
+        {
+          "kind": "resist",
+          "damageType": "bludgeoning"
+        },
+        {
+          "kind": "resist",
+          "damageType": "piercing"
+        },
+        {
+          "kind": "resist",
+          "damageType": "slashing"
+        }
+      ]
+    },
+    {
+      "part": "standing",
+      "keys": ["avatar of battle|war domain"],
+      "effects": [
+        {
+          "kind": "resist",
+          "damageType": "bludgeoning",
+          "note": "nonmagical"
+        },
+        {
+          "kind": "resist",
+          "damageType": "piercing",
+          "note": "nonmagical"
+        },
+        {
+          "kind": "resist",
+          "damageType": "slashing",
+          "note": "nonmagical"
+        }
+      ]
+    },
+    {
+      "part": "standing",
+      "keys": ["aura of warding|oath of the ancients|xphb"],
+      "effects": [
+        {
+          "kind": "resist",
+          "damageType": "necrotic",
+          "note": "not while incapacitated"
+        },
+        {
+          "kind": "resist",
+          "damageType": "psychic",
+          "note": "not while incapacitated"
+        },
+        {
+          "kind": "resist",
+          "damageType": "radiant",
+          "note": "not while incapacitated"
+        }
+      ]
+    },
+    {
+      "part": "standing",
+      "keys": ["aura of warding|oath of the ancients"],
+      "effects": [
+        {
+          "kind": "resist",
+          "damageType": "all",
+          "note": "from spells"
+        }
+      ]
+    },
+    {
+      "part": "standing",
+      "keys": ["aura of devotion|oath of devotion|xphb"],
+      "effects": [
+        {
+          "kind": "conditionImmune",
+          "condition": "charmed",
+          "note": "not while incapacitated"
+        }
+      ]
+    },
+    {
+      "part": "standing",
+      "keys": ["aura of devotion|oath of devotion"],
+      "effects": [
+        {
+          "kind": "conditionImmune",
+          "condition": "charmed",
+          "note": "while conscious"
+        }
+      ]
+    },
+    {
+      "part": "standing",
+      "keys": ["second-story work|thief|xphb"],
+      "effects": [
+        {
+          "kind": "moveSpeed",
+          "mode": "climb",
+          "speed": "walk"
+        }
+      ]
+    },
+    {
+      "part": "standing",
+      "keys": ["second-story work|thief"],
+      "effects": []
     }
   ]
 }
