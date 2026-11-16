@@ -231,6 +231,23 @@ describe("an entry's amend", () => {
       ['Flurry of Blows', { resource: 'focus', amount: 2 }, null, true],
     ]);
   });
+
+  it('gives each sheet its own copy of a price, read once per entry', () => {
+    const entry = cg({
+      amend: [{ cost: { resource: 'ki', amount: 2 }, buyBack: { resource: 'ki', amount: 1 } }],
+    });
+    const first = collect(entry).effects[0];
+    if (first?.kind !== 'action' || first.cost === undefined || first.buyBack === undefined)
+      throw new Error('no price');
+    first.cost.amount = 9;
+    first.buyBack.amount = 9;
+    expect(actions(collect(entry))[0]).toEqual([
+      'Flurry of Blows',
+      { resource: 'ki', amount: 2 },
+      { resource: 'ki', amount: 1 },
+      true,
+    ]);
+  });
 });
 
 describe("a pack's amend", () => {

@@ -159,6 +159,9 @@ describe('the price card', () => {
 
   it("gives a new buy-back no use of its own: an inherited action's pool is not known here", () => {
     const { amend } = onScreen(LANTERN, { effects: [POOL], amend: [{ cost: { amount: 2 } }] });
+    // A new amount is the cost's; the buy-back keeps what it has.
+    expect(box('Price: Buys back a use with').value).toBe('');
+    expect(choices('Price: Buys back a use with')).toEqual(['', 'glow', 'spell-slot']);
     pick('Price: Buys back a use with', 'glow');
     expect(amend()).toEqual([{ cost: { amount: 2 }, buyBack: { resource: 'glow', amount: 1 } }]);
     expect(box('Price: Restores').value).toBe('');

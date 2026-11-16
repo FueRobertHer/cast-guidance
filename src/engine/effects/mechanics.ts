@@ -1491,7 +1491,7 @@ function readPackOnce(entry: DataEntity): ReadPack {
       target: target.trim().toLowerCase(),
       ...(replaces ? { replace: replace.effects } : {}),
       ...(add.effects.length > 0 ? { add: add.effects } : {}),
-      ...(amend.length > 0 && !replaces ? { amend } : {}),
+      ...(amend.length > 0 ? { amend } : {}),
     });
   });
   return read;
