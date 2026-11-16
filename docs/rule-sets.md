@@ -340,6 +340,25 @@ its class, is missed, and the link adds its own action or nothing as above.
 A player's file prices an action itself (an action's `cost` and `buyBack`);
 spend rows are the app's.
 
+Every pool price but Divine Reaper's is a row in `spend.json` (3b and 3c).
+`SPEND_LINKS` keeps that one, since a key leaves both code tables at once and
+its slot buy-back is still in `SLOT_LINKS` (3d). JSON holds no comments, so the reasons
+the table gave beside its rows are kept here:
+
+- Monk prices name `focus`, the 2024 pool; `costOnSheet` finds a 2014 monk's
+  ki (`SAME_POOL`).
+- Radiant Sun Bolt's row prices the bonus attacks: the bolt alone is part of
+  the Attack action and spends nothing.
+- Lunar Phenomenon is once per benefit, with three benefits. The sheet does not
+  track which was used, so repeating one while another is left is a manual pip
+  tap.
+- Telekinetic Master's chip is the bonus attack, and the use it buys back is the
+  granted spell's (`ownSpell`).
+- The Death Knight's `death-coil` d8s stand where a paladin has Lay on Hands.
+- 2024 Turn Undead and Divine Spark are options of the parent feature and never
+  name the pool, nor do Divine Sense, Champion Challenge and Dreadful Aspect;
+  their rows say which Channel Divinity they spend.
+
 ## Loading
 
 Each file is a dynamic `import()` listed in `src/data5e/builtInRules.ts`, so the
@@ -545,8 +564,12 @@ proved another way, before the code row goes.
 each build that reads the row twice in one process, once with the code row and
 once with the data row, comparing every sheet field and the actions and pools
 the build collected, since the sheet drops a price the character cannot pay (a
-pool or slots it lacks). Each moved spend key is also linked alone, both ways,
-in each state a feature may leave its actions in (`SPEND_SEEDS` in
+pool or slots it lacks). On the code side a row drops only its moved keys, so a
+key that shares the row and moved earlier, with no code row left, still reads
+it; a key new to a row, with no code row, reads it both ways and is never
+compared, so `rules-diff` against the base is what shows it. Each moved spend
+key is also linked alone, both ways, in each state a feature may leave its
+actions in (`SPEND_SEEDS` in
 `tests-fixtures/spendSeeds.ts`), which proves a key no build reads; the summary
 lists those. Its builds go wider than
 `rules-diff`'s. Each class and subclass that reads a moved row is built at
@@ -572,7 +595,8 @@ once across features, and a formula's number would not).
 bun --tsconfig-override=tsconfig.app.json scripts/rules-probe.ts --release <cache.json>
 ```
 
-A full run takes about 35 minutes; `--only <text>` probes only the moved keys
+A full run takes about 35 minutes (about 50 for the 287 spend keys of 3c);
+`--only <text>` probes only the moved keys
 that hold the text, in a minute or two, and may be given more than once (a
 mutant of several rows in one run). It exits 1 when a sheet differs, a spend
 key linked alone differs, or a moved row other than a spend row is read by no

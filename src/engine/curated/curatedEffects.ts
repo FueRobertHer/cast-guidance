@@ -458,8 +458,9 @@ export const CURATED: Record<string, CuratedFn> = {
   // Stunning Strike states its effect but leaves the DC to the "ki save DC"
   // defined in the Ki/Monk's Focus feature. The prose scanner can't resolve a
   // cross-feature DC, so its row pins it: Con save vs 8 + prof + Wis mod. It rides
-  // on a hit, so it takes no slot of its own. Its cost is in `SPEND_LINKS`. The row
-  // is in `src/rules/cast-guidance/curated.json`.
+  // on a hit, so it takes no slot of its own. Its cost is a `spend` row in
+  // `src/rules/cast-guidance/spend.json`. The row is in
+  // `src/rules/cast-guidance/curated.json`.
   // Second Wind, both Channel Divinities and Lay on Hands are data, by rules
   // version (`edition`). The Paladin's pool has a key of its own, not the
   // Cleric's: the 2024 text says "each time you use this class's Channel

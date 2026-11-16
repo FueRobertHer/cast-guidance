@@ -5,8 +5,9 @@
  * deleted (rule pack port; `docs/rule-sets.md`). Run it while both are in the
  * tree: for every built-in row whose key its part's code tables still have,
  * each build that reads the row is derived twice in one process, once with the
- * code rows (the built-in row hidden) and once with the built-in row (the code
- * rows hidden), and every sheet field must match, as must the actions and uses
+ * code rows (the built-in row's moved keys hidden, its others kept) and once
+ * with the built-in row (the code rows hidden), and every sheet field must
+ * match, as must the actions and uses
  * the build collected (`collected`), since the sheet drops a price whose pool or
  * slots the build lacks.
  *
@@ -33,7 +34,8 @@
  *
  *   bun --tsconfig-override=tsconfig.app.json scripts/rules-probe.ts --release <release.json> [--only <text>]...
  *
- * A full run takes about 35 minutes. `--only <text>` probes only the moved keys
+ * A full run takes about 35 minutes (about 50 with every spend key of 3c).
+ * `--only <text>` probes only the moved keys
  * that hold `<text>`, to check one row (or a mutant of it) in a minute or two;
  * it may be given more than once.
  *
@@ -161,21 +163,31 @@ if (moved.size === 0) {
   process.exit(0);
 }
 
-/** Whether a shipped row stands in for a moved code row, under any of its keys. */
-function standsInForMoved(r: { part?: unknown; keys?: unknown }): boolean {
-  if (TABLES[String(r.part) as RulePart] === undefined || !Array.isArray(r.keys)) return false;
-  return r.keys.some((k) => {
-    const code = codeKeyOf(String(r.part) as RulePart, String(k).trim().toLowerCase());
-    return code !== undefined && moved.has(idOf(String(r.part), code.key));
-  });
+/** Whether a shipped row's key stands in for a moved code row. */
+function standsInForMoved(part: unknown, k: unknown): boolean {
+  if (TABLES[String(part) as RulePart] === undefined) return false;
+  const code = codeKeyOf(String(part) as RulePart, String(k).trim().toLowerCase());
+  return code !== undefined && moved.has(idOf(String(part), code.key));
 }
 
-/** The shipped sets without the moved rows: what the tree read before the move. */
+/**
+ * The shipped sets without the moved keys: what the tree read before the move.
+ * A row keeps its other keys, since a moved key may share a row with one moved
+ * earlier, whose code row is gone (rows with one body share their keys).
+ */
 const before: Entity[] = shipped.map((set) => {
   const rows = Array.isArray(set.rows)
     ? (set.rows as Array<{ part?: unknown; keys?: unknown }>)
     : [];
-  return { ...set, rows: rows.filter((r) => !standsInForMoved(r)) };
+  return {
+    ...set,
+    rows: rows.flatMap((r) => {
+      if (!Array.isArray(r.keys)) return [r];
+      const keys = r.keys.filter((k) => !standsInForMoved(r.part, k));
+      if (keys.length === r.keys.length) return [r];
+      return keys.length === 0 ? [] : [{ ...r, keys }];
+    }),
+  };
 });
 
 /** Moved rows (`idOf`) a build under the code rows read. */

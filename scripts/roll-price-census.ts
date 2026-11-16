@@ -3,8 +3,8 @@
  * build's features give, and what paying takes, to prove a move between code
  * and data changes no price (rule pack port phase 3; `docs/rule-sets.md`). A
  * paid extra is priced as the Use of its feature's action (`pricedRollEffects`),
- * and that action's cost often comes from a spend link (`SPEND_LINKS`, a
- * built-in `spend` row): drop the link and the prompt offers nothing. The price
+ * and that action's cost often comes from a spend link (a built-in `spend`
+ * row): drop the link and the prompt offers nothing. The price
  * is worked out in the prompt, not on the sheet, so `rules-diff.ts` sees it only
  * through the actions it hashes, on fewer builds.
  *
