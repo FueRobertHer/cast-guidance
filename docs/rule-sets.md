@@ -408,15 +408,15 @@ wins. It reaches only what the entry inherits, never an action its author wrote
 or a pack's `effects` or `add` gave. An entry that replaces what it inherits
 (`replace: true`, or a pack's `effects`) has nothing for it to price, and an
 `amend` that finds no action says so on the sheet; a patch with both `effects`
-and `amend` says so once, as the pack is read. It reaches what `drop` reaches: class and subclass features, feats,
-optional features and species traits. Items add their charges after it, and
-backgrounds price nothing themselves.
+and `amend` says so once, as the pack is read. It reaches what `drop` reaches:
+class and subclass features, feats, optional features and species traits. Items
+add their charges after it, and backgrounds price nothing themselves.
 
-The Workshop's "Change its price" card makes one on a copy that still does what
-the original does: Action (empty for its first), then the Action card's price
-boxes, where an empty box keeps what the action has and "Same pool" changes
-how many uses of its pool it spends. Renaming one of the copy's own pools moves
-its prices too, and starting from nothing clears them.
+The Workshop's "Change its price" card makes one on a copy of any of those that
+still does what the original does: Action (empty for its first), then the
+Action card's price boxes, where an empty box keeps what the action has and
+"Same pool" changes how many uses of its pool it spends. Renaming one of the
+copy's own pools moves its prices too, and starting from nothing clears them.
 
 Every price is a row in `spend.json`: the pool prices since 3b and 3c, the
 spell slot and Hit Point Die prices and Divine Reaper's since 3d, so no spend
