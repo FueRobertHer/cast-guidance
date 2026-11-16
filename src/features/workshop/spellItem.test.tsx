@@ -879,16 +879,31 @@ describe('ItemEditor', () => {
     counts();
     type('Action: Spends', 'embers');
     expect(action().cost).toEqual({ resource: 'embers', amount: 1 });
-    // What buys a use back once none are left.
+    // What buys a use back once none are left, of the pool it spends: the
+    // sheet gives back only a use it is told of, or one sharing the action's name.
     type('Action: Buys back a use with', 'spell-slot');
     type('Action: Buy-back slots', '5');
+    expect(action().buyBack).toEqual({
+      resource: 'spell-slot',
+      amount: 1,
+      own: 'embers',
+      minLevel: 5,
+    });
+    line(
+      'No action: Flare, spends 1 use of embers, buys a use of embers back with a level 5+ spell slot',
+    );
+    const restores = screen.getByLabelText('Action: Restores') as HTMLSelectElement;
+    expect([...restores.options].map((o) => o.textContent)).toEqual(['Same name', 'Embers']);
+    type('Action: Restores', '');
     expect(action().buyBack).toEqual({ resource: 'spell-slot', amount: 1, minLevel: 5 });
     line('No action: Flare, spends 1 use of embers, buys a use back with a level 5+ spell slot');
+    type('Action: Restores', 'embers');
     type('Action: Buys back a use with', 'embers');
     type('Action: Buy-back uses', '2');
-    expect(action().buyBack).toEqual({ resource: 'embers', amount: 2 });
+    expect(action().buyBack).toEqual({ resource: 'embers', amount: 2, own: 'embers' });
     counts();
     type('Action: Buys back a use with', '');
+    expect(shows('Restores')).toBe(false);
     type('Action: Spends', '');
     expect(action()).toEqual({ kind: 'action', economy: 'none', label: 'Flare' });
   });
@@ -926,8 +941,15 @@ describe('ItemEditor', () => {
     const chosen = (label: string) =>
       (screen.getByLabelText(`Action: ${label}`) as HTMLSelectElement).selectedOptions[0]
         ?.textContent;
+    // A slot pays for every use, free base use or not.
+    expect(
+      screen.getByText(
+        'Bonus action: Flare, spends a level 3+ Pact Magic slot, buys a use of embers back with 15 uses of cinders',
+      ),
+    ).toBeTruthy();
     expect(chosen('Which slots')).toBe('a level 3+ Pact Magic slot');
     expect(chosen('Buys back a use with')).toBe('cinders');
+    expect(chosen('Restores')).toBe('Embers');
     expect(chosen('Buy-back uses')).toBe('15');
     // A free base use a file gives a slot price shows, so it can be taken away.
     expect(chosen('Paid for')).toBe('Extra uses');
@@ -941,6 +963,85 @@ describe('ItemEditor', () => {
     type('Uses per rest: Name', 'Sparks');
     expect(action().cost).toMatchObject({ slotRefills: 'sparks' });
     expect(action().buyBack).toEqual({ resource: 'cinders', amount: 2, own: 'sparks' });
+  });
+
+  it('never names a pool for a spell slot or a Hit Point Die, so a rename leaves their prices alone', () => {
+    const draft = mount(item, {
+      name: 'Ember Lamp',
+      type: 'OTH',
+      entries: [],
+      castGuidance: {
+        v: 1,
+        effects: [
+          { kind: 'resource', key: 'embers', label: 'Embers', max: 2, reset: 'long' },
+          {
+            kind: 'action',
+            economy: 'action',
+            label: 'Flare',
+            cost: { resource: 'spell-slot', amount: 1, minLevel: 2 },
+            buyBack: { resource: 'spell-slot', amount: 1, own: 'embers' },
+          },
+        ],
+      },
+    });
+    const effects = () => (draft().castGuidance as Json).effects as Json[];
+    // Typed a letter at a time, the name passes through a price's own word.
+    for (const name of ['Spell Slot', 'Spell Slots']) type('Uses per rest: Name', name);
+    expect(effects()[0]?.key).toBe('spell-slots');
+    expect(effects()[1]).toMatchObject({
+      cost: { resource: 'spell-slot', amount: 1, minLevel: 2 },
+      buyBack: { resource: 'spell-slot', amount: 1, own: 'spell-slots' },
+    });
+    type('Uses per rest: Name', 'Hit Die');
+    expect(effects()[0]?.key).toBe('hit-die-uses');
+    const spends = screen.getByLabelText('Action: Spends') as HTMLSelectElement;
+    expect([...spends.options].map((o) => o.value)).toEqual([
+      '',
+      'hit-die-uses',
+      'spell-slot',
+      'hit-die',
+    ]);
+    expect(readStoredEffects(effects()).problems).toEqual([]);
+  });
+
+  it('shows a value no box means as written, and takes it away when one is picked', () => {
+    const action = (label: string, cost: Json) => ({
+      kind: 'action',
+      economy: 'action',
+      label,
+      cost,
+    });
+    const draft = mount(item, {
+      name: 'Ember Lamp',
+      type: 'OTH',
+      entries: [],
+      castGuidance: {
+        v: 1,
+        effects: [
+          { kind: 'resource', key: 'embers', label: 'Embers', max: 2, reset: 'long' },
+          action('Mend', { resource: 'hit-die', amount: 1, hitDieHeals: 'all' }),
+          action('Flare', { resource: 'spell-slot', amount: 1, minLevel: '3' }),
+          action('Glow', { resource: 'embers', amount: '2' }),
+        ],
+      },
+    });
+    const cost = (i: number) => ((draft().castGuidance as Json).effects as Json[])[i]?.cost;
+    const chosen = (label: string) =>
+      (screen.getByLabelText(`Action: ${label}`) as HTMLSelectElement).selectedOptions[0]
+        ?.textContent;
+    expect([chosen('It heals'), chosen('Which slots'), chosen('How many')]).toEqual([
+      'all',
+      '"3"',
+      '"2"',
+    ]);
+    type('Action: It heals', 'roll');
+    type('Action: Which slots', '3');
+    type('Action: How many', '2');
+    expect([cost(1), cost(2), cost(3)]).toEqual([
+      { resource: 'hit-die', amount: 1 },
+      { resource: 'spell-slot', amount: 1, minLevel: 3 },
+      { resource: 'embers', amount: 2 },
+    ]);
   });
 
   it('keeps a pool given for each rules version one pool when renamed', () => {

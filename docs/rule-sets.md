@@ -239,12 +239,14 @@ them, now loses such an effect, with the problem shown.
 ## An action's price
 
 An `action` takes every price the engine has (rule pack port 3a), ahead of the
-spend and slot links moving out of code. Its `cost` is what using it spends:
+spend and slot links moving out of code. Its `cost` is what using it spends,
+`resource` and `amount` always given (`amount` is 1 for a slot or a die):
 
 - a pool's uses, by the pool's key, `amount` a whole number or `"varies"` (the
   player's call, so nothing spends by itself); `optional` makes the base use
-  free and the pool pay for more (2024 Patient Defense); `ownUseToo` spends a
-  use of the pool sharing the action's name as well (Hand of Ultimate Mercy);
+  free and the pool pay for more (2024 Patient Defense), and counts only for a
+  pool; `ownUseToo` spends a use of the pool sharing the action's name as well
+  (Hand of Ultimate Mercy);
 - a spell slot, `"resource": "spell-slot"`, which the player picks by level as
   they pay: `minLevel` (the lowest level that pays), `pactOnly` (only a Pact
   Magic slot), `slotDice` (dice by the slot's level: `base` plus one a level,
@@ -255,9 +257,9 @@ spend and slot links moving out of code. Its `cost` is what using it spends:
   `hitDieHeals` `"roll"` (the default) or `"rollPlusCon"`, and `hitDieAtLeast`.
 
 Its `buyBack` is what buys a use back once none are left: a pool's uses
-(`amount` 1 or more) or a spell slot (with `minLevel` and `pactOnly`), and
-`own`, the key of the use it gives back when that use does not share the
-action's name. A field for one way of paying on another is refused, by name
+(`amount` 1 or more) or a spell slot (with `minLevel` and `pactOnly`, `amount`
+1), and `own`, the key of the use it gives back. Without `own` it gives back a
+use of the pool sharing the action's name, and nothing when none does. A field for one way of paying on another is refused, by name
 ("`cost.minLevel` is for a price paid with a spell slot"). The sheet offers a
 price only when the character can pay it: a pool it has (under either name, ki
 or Focus), a slot of the level, or a Hit Point Die.
@@ -265,9 +267,11 @@ or Focus), a slot of the level, or a Hit Point Die.
 The Workshop's Action card sets most of this: "Takes" offers no action (a
 rider), "Spends" a pool, a spell slot or a Hit Point Die, with how many, a free
 base use, which slots and how the die heals, and "Buys back a use with" a pool
-or a slot. A slot's dice, the points it gives back, `ownUseToo` and a
-buy-back's `own` are kept as a file writes them, and a value no box offers
-shows as written. Renaming a pool moves every price that names it.
+or a slot, with "Restores" for the use it gives back (at first the pool the
+action spends). A slot's dice, the points it gives back and `ownUseToo` are
+kept as a file writes them, and a value no box offers shows as written.
+Renaming a pool moves every price that names it, and a pool never takes
+`spell-slot` or `hit-die` as its key.
 
 ## Loading
 

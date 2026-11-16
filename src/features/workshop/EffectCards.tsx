@@ -578,6 +578,14 @@ type Price = Record<string, unknown>;
 const priceOf = (v: unknown): Price | undefined =>
   isRecord(v) && typeof v.resource === 'string' ? v : undefined;
 
+/** A price paid with a pool's uses, not a spell slot or a Hit Point Die. */
+const isPool = (p: Price) => p.resource !== SLOT_COST && p.resource !== HIT_DIE_COST;
+
+/** A stored value as a box holds it: one a box can mean as it is, any other as JSON. */
+const held = (v: unknown, means: (x: unknown) => boolean): string =>
+  means(v) ? String(v) : (JSON.stringify(v) ?? '');
+const isString = (x: unknown) => typeof x === 'string';
+
 /** What a price takes: "2 uses of focus", "a level 3+ spell slot", "a Hit Point Die". */
 function paidWords(p: Price): string {
   if (p.resource === SLOT_COST) return slotPriceWords(p as SlotPrice);
@@ -587,17 +595,21 @@ function paidWords(p: Price): string {
   return `${String(n)} ${n === 1 ? 'use' : 'uses'} of ${String(p.resource)}`;
 }
 
-/** An action card's line after its name: what it spends, and what buys a use back. */
+/**
+ * An action card's line after its name: what it spends, and what buys a use
+ * back. A slot or a die pays for every use, so only a pool's price has a free one.
+ */
 function priceWords(e: Eff): string {
   const cost = priceOf(e.cost);
   const back = priceOf(e.buyBack);
+  const of = back?.own === undefined ? '' : ` of ${String(back.own)}`;
   return [
     cost === undefined
       ? ''
-      : cost.optional === true
+      : cost.optional === true && isPool(cost)
         ? `, free, or ${paidWords(cost)} for more`
         : `, spends ${paidWords(cost)}`,
-    back === undefined ? '' : `, buys a use back with ${paidWords(back)}`,
+    back === undefined ? '' : `, buys a use${of} back with ${paidWords(back)}`,
   ].join('');
 }
 
@@ -664,9 +676,11 @@ const HEALS: Options = [
 
 /** Which slots pay a slot price, as its box holds it: any, a level or higher, Pact Magic. */
 function slotPriceBox(p: Price): { value: string; options: Options } {
-  const level = typeof p.minLevel === 'number' ? String(p.minLevel) : '';
+  const means = (x: unknown) => x === undefined || typeof x === 'number';
+  const level = p.minLevel === undefined ? '' : held(p.minLevel, means);
   const value = p.pactOnly === true ? (level === '' ? 'pact' : `pact:${level}`) : level;
-  return { value, options: offering(SLOT_PRICES, value, slotPriceWords(p as SlotPrice)) };
+  const written = means(p.minLevel) ? slotPriceWords(p as SlotPrice) : value;
+  return { value, options: offering(SLOT_PRICES, value, written) };
 }
 
 function withSlotPrice(p: Price, value: string): Price {
@@ -678,8 +692,8 @@ function withSlotPrice(p: Price, value: string): Price {
 /**
  * An action card's price: what using it spends (`cost`: a pool's uses, a spell
  * slot or a Hit Point Die) and what buys a use back once none are left
- * (`buyBack`). What no box here shows (a slot's dice, the points it gives back,
- * a use of its own too, the use a buy-back gives back) is kept as written.
+ * (`buyBack`), and the use it gives back. What no box here shows (a slot's
+ * dice, the points it gives back, a use of its own too) is kept as written.
  */
 function PriceFields({
   effect,
@@ -728,11 +742,25 @@ function PriceFields({
       </Select>
     </Field>
   );
-  const isPool = (p: Price) => p.resource !== SLOT_COST && p.resource !== HIT_DIE_COST;
-  const count = (p: Price, options: Options) => ({
-    value: String(p.amount),
-    options: offering(options, String(p.amount), String(p.amount)),
-  });
+  const count = (p: Price, options: Options) => {
+    const value = held(p.amount, (x) => typeof x === 'number' || x === 'varies');
+    return { value, options: offering(options, value, value) };
+  };
+  const heals = cost?.hitDieHeals === undefined ? 'roll' : held(cost.hitDieHeals, isString);
+  // The sheet gives back only a use it is told of, or one sharing the action's
+  // name, so a new buy-back gives back a use of the pool the action spends.
+  const restoring = (): Price => {
+    const own = cost !== undefined && isPool(cost) ? cost.resource : resources[0]?.key;
+    return own === undefined ? {} : { own };
+  };
+  const restores = (p: Price) => {
+    const value = p.own === undefined ? '' : held(p.own, isString);
+    const options: Options = [
+      ['', 'Same name'],
+      ...resources.map((r): readonly [string, string] => [String(r.key), words(r.label)]),
+    ];
+    return { value, options: offering(options, value, value) };
+  };
   return (
     <>
       {pick('Spends', payWith(cost, true), (v) =>
@@ -757,16 +785,12 @@ function PriceFields({
       {cost?.resource === SLOT_COST &&
         pick('Which slots', slotPriceBox(cost), (v) => set('cost', withSlotPrice(cost, v)))}
       {cost?.resource === HIT_DIE_COST &&
-        pick(
-          'It heals',
-          { value: cost.hitDieHeals === 'rollPlusCon' ? 'rollPlusCon' : 'roll', options: HEALS },
-          (v) => {
-            const { hitDieHeals: _, ...rest } = cost;
-            set('cost', v === 'rollPlusCon' ? { ...rest, hitDieHeals: v } : rest);
-          },
-        )}
+        pick('It heals', { value: heals, options: offering(HEALS, heals, heals) }, (v) => {
+          const { hitDieHeals: _, ...rest } = cost;
+          set('cost', v === 'roll' ? rest : { ...rest, hitDieHeals: v });
+        })}
       {pick('Buys back a use with', payWith(back, false), (v) =>
-        set('buyBack', v === '' ? undefined : repaid(back, v)),
+        set('buyBack', v === '' ? undefined : repaid(back ?? restoring(), v)),
       )}
       {back !== undefined &&
         isPool(back) &&
@@ -775,6 +799,11 @@ function PriceFields({
         )}
       {back?.resource === SLOT_COST &&
         pick('Buy-back slots', slotPriceBox(back), (v) => set('buyBack', withSlotPrice(back, v)))}
+      {back !== undefined &&
+        pick('Restores', restores(back), (v) => {
+          const { own: _, ...rest } = back;
+          set('buyBack', v === '' ? rest : { ...rest, own: v });
+        })}
     </>
   );
 }
@@ -1009,12 +1038,19 @@ function ClaimField({
   );
 }
 
-/** A resource's key, from the name a player gives it. */
-const keyOf = (label: string) =>
-  label
-    .toLowerCase()
-    .replaceAll(/[^a-z0-9]+/g, '-')
-    .replaceAll(/^-|-$/g, '') || 'uses';
+/**
+ * A resource's key, from the name a player gives it. A price names a spell
+ * slot or a Hit Point Die by its own word, so a pool never takes one: a price
+ * naming it would be read as the slot or the die.
+ */
+function keyOf(label: string): string {
+  const key =
+    label
+      .toLowerCase()
+      .replaceAll(/[^a-z0-9]+/g, '-')
+      .replaceAll(/^-|-$/g, '') || 'uses';
+  return key === SLOT_COST || key === HIT_DIE_COST ? `${key}-uses` : key;
+}
 
 /** A field's value as its box shows it. */
 function shown(e: Eff, f: FieldSpec): string {
