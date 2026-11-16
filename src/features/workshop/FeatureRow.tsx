@@ -14,7 +14,7 @@ import { isRecord, type StoredEffect } from '@/engine/castGuidance';
 import { Badge, type BadgeTone } from '@/ui/Badge';
 import { SegmentedControl } from '@/ui/SegmentedControl';
 import { fieldClass } from '@/ui/TextField';
-import { EffectCards, guidanceWith } from './EffectCards';
+import { amendPatch, EffectCards, guidanceWith } from './EffectCards';
 import { Field, TextBlocks } from './fields';
 
 type Json = Record<string, unknown>;
@@ -88,10 +88,18 @@ export function FeatureEditor({
             inherits={inherits}
             resources={resources}
             replace={g.replace === true}
-            onReplace={(replace) => setGuidance({ replace: replace ? true : undefined })}
-            onChange={(effects) =>
-              setGuidance({ effects: effects.length > 0 ? effects : undefined })
+            // Starting from nothing leaves no inherited action to price.
+            onReplace={(replace) =>
+              setGuidance(replace ? { replace: true, amend: undefined } : { replace: undefined })
             }
+            onChange={(effects, amend) =>
+              setGuidance({
+                effects: effects.length > 0 ? effects : undefined,
+                ...amendPatch(amend),
+              })
+            }
+            amend={g.amend}
+            onAmend={(amend) => setGuidance(amendPatch(amend))}
           />
         </div>
       )}

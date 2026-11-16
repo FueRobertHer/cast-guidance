@@ -6,14 +6,14 @@
  * reader the sheet uses, so a card that would not count says why, here.
  */
 import { CircleAlert, Plus, X } from 'lucide-react';
-import { useId, useState } from 'react';
+import { useId, useRef, useState } from 'react';
 import {
   EFFECT_EDITIONS,
   isRecord,
   type StoredEffect,
   type StoredState,
 } from '@/engine/castGuidance';
-import { readStoredEffects } from '@/engine/effects/mechanics';
+import { readMechanics, readStoredEffects } from '@/engine/effects/mechanics';
 import { HIT_DIE_COST, type RollFilter, SKILLS, SLOT_COST, type SlotPrice } from '@/engine/types';
 import { rollsWords } from '@/features/sheet/effectsInPlay';
 import { slotPriceWords } from '@/features/sheet/slotCost';
@@ -905,17 +905,27 @@ function repaid(price: Price | undefined, resource: string): Price {
   return { ...rest, resource, amount: one || rest.amount === undefined ? 1 : rest.amount };
 }
 
-/** A price's fields that name the renamed pool, named for its new key. */
+/** A price's fields that name a pool, for its cost and its buy-back. */
+const PRICE_KEYS = [
+  ['cost', ['resource', 'slotRefills']],
+  ['buyBack', ['resource', 'own']],
+] as const;
+
+/** A price's fields that name the renamed pool (those `follows` keeps), named for its new key. */
 function renamedIn(
   key: 'cost' | 'buyBack',
   v: unknown,
   fields: readonly string[],
   [from, to]: readonly [string, string],
+  follows: (field: string) => boolean = () => true,
 ): Record<string, Price> {
   if (!isRecord(v)) return {};
   return {
     [key]: Object.fromEntries(
-      Object.entries(v).map(([k, x]) => [k, fields.includes(k) && x === from ? to : x]),
+      Object.entries(v).map(([k, x]) => [
+        k,
+        fields.includes(k) && x === from && follows(k) ? to : x,
+      ]),
     ),
   };
 }
@@ -956,30 +966,45 @@ function withSlotPrice(p: Price, value: string): Price {
   return value === '' ? rest : { ...rest, minLevel: Number(value) };
 }
 
+/** Spends "Same pool": a price's new amount alone (`AmendedAmount`). */
+const KEEPS = ':now';
+
+/** A `cost` with no `resource`: how many of what an inherited action spends now. */
+const keptOf = (v: unknown): Price | undefined =>
+  isRecord(v) && !Object.hasOwn(v, 'resource') ? v : undefined;
+
 /**
  * An action card's price: what using it spends (`cost`: a pool's uses, a spell
  * slot or a Hit Point Die) and what buys a use back once none are left
  * (`buyBack`), and the use it gives back. What no box here shows (a slot's
  * dice, the points it gives back, a use of its own too) is kept as written.
+ * On a price for an inherited action (`amend`), an empty box keeps what it has
+ * (`unset`), and Spends offers a new amount of the pool it spends now (`keeps`).
  */
 function PriceFields({
   effect,
   title,
   resources,
   onChange,
+  unset = 'Nothing',
+  keeps = false,
 }: {
   effect: Eff;
   title: string;
   resources: readonly Eff[];
   onChange: (next: Eff) => void;
+  unset?: string;
+  keeps?: boolean;
 }) {
   const cost = priceOf(effect.cost);
+  const kept = keeps ? keptOf(effect.cost) : undefined;
   const back = priceOf(effect.buyBack);
   const pools: Options = resources.map((r) => [String(r.key), `Uses of ${words(r.label)}`]);
   const payWith = (p: Price | undefined, hitDie: boolean): { value: string; options: Options } => {
-    const value = p === undefined ? '' : String(p.resource);
+    const value = hitDie && kept !== undefined ? KEEPS : p === undefined ? '' : String(p.resource);
     const options: Options = [
-      ['', 'Nothing'],
+      ['', unset],
+      ...(hitDie && keeps ? ([[KEEPS, 'Same pool']] as const) : []),
       ...pools,
       [SLOT_COST, 'A spell slot'],
       ...(hitDie ? ([[HIT_DIE_COST, 'A Hit Point Die']] as const) : []),
@@ -1015,10 +1040,19 @@ function PriceFields({
   };
   const heals = cost?.hitDieHeals === undefined ? 'roll' : held(cost.hitDieHeals, isString);
   // The sheet gives back only a use it is told of, or one sharing the action's
-  // name, so a new buy-back gives back a use of the pool the action spends.
+  // name, so a new buy-back gives back a use of the pool the action spends. An
+  // inherited action's pool is not known here, so its buy-back gives back its own.
   const restoring = (): Price => {
-    const own = cost !== undefined && isPool(cost) ? cost.resource : resources[0]?.key;
+    const pool = cost !== undefined && isPool(cost) ? cost.resource : undefined;
+    const own = keeps ? pool : (pool ?? resources[0]?.key);
     return own === undefined ? {} : { own };
+  };
+  const spend = (v: string) => {
+    if (v === '') return set('cost', undefined);
+    if (v !== KEEPS) return set('cost', repaid(cost ?? kept, v));
+    // How many it spends stays, when it says.
+    const now = cost !== undefined && isPool(cost) ? cost.amount : undefined;
+    set('cost', { amount: typeof now === 'number' || now === 'varies' ? now : 1 });
   };
   const restores = (p: Price) => {
     const value = p.own === undefined ? '' : held(p.own, isString);
@@ -1030,9 +1064,11 @@ function PriceFields({
   };
   return (
     <>
-      {pick('Spends', payWith(cost, true), (v) =>
-        set('cost', v === '' ? undefined : repaid(cost, v)),
-      )}
+      {pick('Spends', payWith(cost, true), spend)}
+      {kept !== undefined &&
+        pick('How many', count(kept, AMOUNTS), (v) =>
+          set('cost', { amount: v === 'varies' ? v : Number(v) }),
+        )}
       {cost !== undefined &&
         isPool(cost) &&
         pick('How many', count(cost, AMOUNTS), (v) =>
@@ -1890,6 +1926,123 @@ function Card({
   );
 }
 
+/** An amend card's line: which action, and what it now spends and buys a use back with. */
+export function amendWords(a: Eff): string {
+  const named = typeof a.label === 'string' ? a.label.trim() : '';
+  const kept = keptOf(a.cost);
+  const n = kept?.amount;
+  const uses =
+    n === 'varies'
+      ? 'as many uses as you choose'
+      : typeof n === 'number'
+        ? `${n} ${n === 1 ? 'use' : 'uses'}`
+        : 'uses';
+  const more =
+    kept === undefined
+      ? priceWords(a)
+      : `, spends ${uses} of its pool${priceWords({ ...a, cost: undefined })}`;
+  return `${named === '' ? 'Its first action' : named}${more === '' ? ', as it is' : more}`;
+}
+
+/**
+ * A copy's prices on what it inherits (`amend`, rule pack port 3g): each on the
+ * first action the original gives it, or on each of a name, as the sheet names
+ * it. Its own cards are its own to price, so these never reach them.
+ */
+function AmendCards({
+  amend,
+  inherits,
+  resources,
+  readOnly,
+  onChange,
+}: {
+  amend: unknown;
+  inherits: string;
+  resources: readonly Eff[];
+  readOnly: boolean;
+  onChange: (next: Eff[]) => void;
+}) {
+  const list: Eff[] = Array.isArray(amend) ? (amend as Eff[]) : [];
+  const { problems } = readMechanics({ v: 1, amend: list });
+  const title = 'Price';
+  const setAt = (i: number, next: Eff) => onChange(list.map((x, j) => (j === i ? next : x)));
+  return (
+    <>
+      {list.map((a, i) => (
+        <div
+          // Prices have no id of their own; a card is its place in the list.
+          // biome-ignore lint/suspicious/noArrayIndexKey: see above
+          key={i}
+          className="flex flex-col gap-2 rounded-control bg-surface py-2.5 pr-1 pl-3 ring-1 ring-line ring-inset"
+        >
+          <div className="flex items-center gap-2">
+            <b className="flex-1 text-caption text-ink-muted">Price of what {inherits} gives</b>
+            {!readOnly && (
+              <button
+                type="button"
+                aria-label={`Remove ${amendWords(a)}`}
+                onClick={() => onChange(list.filter((_, j) => j !== i))}
+                className="tap -my-2 rounded-full text-ink-muted hover:bg-surface-raised hover:text-ink"
+              >
+                <X size={16} aria-hidden />
+              </button>
+            )}
+          </div>
+          <span className="pr-2 text-body-strong">{amendWords(a)}</span>
+          {!readOnly && (
+            <div className="grid grid-cols-2 items-end gap-2 pr-2">
+              <Field label="Action">
+                <input
+                  aria-label={`${title}: Action`}
+                  value={typeof a.label === 'string' ? a.label : ''}
+                  placeholder="Its first"
+                  onChange={(e) => {
+                    const { label: _, ...rest } = a;
+                    setAt(
+                      i,
+                      e.target.value === '' ? (rest as Eff) : { ...rest, label: e.target.value },
+                    );
+                  }}
+                  className={fieldClass}
+                />
+              </Field>
+              <PriceFields
+                effect={a}
+                title={title}
+                resources={resources}
+                unset="As it is"
+                keeps
+                onChange={(next) => setAt(i, next)}
+              />
+            </div>
+          )}
+          {problems
+            .filter((p) => p.startsWith(`amend ${i + 1}:`))
+            .map((p) => p.replace(/^amend \d+: /, ''))
+            .map((p) => (
+              <p key={p} className="flex items-start gap-1.5 pr-2 text-caption text-danger">
+                <CircleAlert size={14} aria-hidden className="mt-0.5 shrink-0" />
+                This does not count yet: {p}
+              </p>
+            ))}
+        </div>
+      ))}
+      {!readOnly && (
+        <div className="-mx-1.5 flex flex-wrap">
+          <Chip
+            tone="outline"
+            className="px-2.5"
+            onClick={() => onChange([...list, { cost: { amount: 1 } } as unknown as Eff])}
+          >
+            <Plus size={14} aria-hidden />
+            Change its price
+          </Chip>
+        </div>
+      )}
+    </>
+  );
+}
+
 /**
  * What More offers, by the names the add list gives: the kinds past the first
  * chips, with Cast a spell only where spells can be named, and in play only
@@ -1920,10 +2073,19 @@ export function EffectCards({
   hide,
   resources,
   inPlay = false,
+  amend,
+  onAmend,
 }: {
   effects: unknown;
-  onChange: (next: Eff[]) => void;
+  /** The effects, and the prices (`amend`) when renaming a pool moved them too. */
+  onChange: (next: Eff[], amend?: Eff[]) => void;
   readOnly: boolean;
+  /**
+   * A copy's prices on the actions it inherits (`amend`), offered while it
+   * still does what `inherits` does.
+   */
+  amend?: unknown;
+  onAmend?: (next: Eff[]) => void;
   /**
    * The effects are in play (a condition's, a spell's on its target): they hold
    * under the sheet's rules, so no card offers a rules version.
@@ -1940,11 +2102,44 @@ export function EffectCards({
   resources?: readonly Eff[];
 }) {
   const list: Eff[] = Array.isArray(effects) ? (effects as Eff[]) : [];
+  const amends: Eff[] = Array.isArray(amend) ? (amend as Eff[]) : [];
   const { problems } = readStoredEffects(list);
   const problemsOf = (i: number) =>
     problems
       .filter((p) => p.startsWith(`effect ${i + 1}:`) || p.startsWith(`effect ${i + 1} (`))
       .map((p) => p.replace(/^effect \d+( \([^)]*\))?: /, ''));
+  // Which prices on what it inherits follow a pool being renamed: those naming
+  // it as its name starts to change, kept while it changes. On the way to
+  // Kindle its key is ki for a moment, and a price on the class's Ki stays put.
+  // It is the same rename while nothing else has changed since the last step.
+  const following = useRef<{ key: string; was: string; at: Set<string> }>(undefined);
+  const follow = ([from, to]: readonly [string, string], effects: Eff[]): Eff[] => {
+    const last = following.current;
+    const at =
+      last !== undefined && last.key === from && last.was === JSON.stringify([list, amends])
+        ? last.at
+        : new Set(
+            amends.flatMap((a, i) =>
+              PRICE_KEYS.flatMap(([key, fields]) => {
+                const price = a[key];
+                return isRecord(price)
+                  ? fields.filter((f) => price[f] === from).map((f) => `${i} ${key} ${f}`)
+                  : [];
+              }),
+            ),
+          );
+    const next = amends.map((a, i) => ({
+      ...a,
+      ...Object.assign(
+        {},
+        ...PRICE_KEYS.map(([key, fields]) =>
+          renamedIn(key, a[key], fields, [from, to], (f) => at.has(`${i} ${key} ${f}`)),
+        ),
+      ),
+    }));
+    following.current = { key: to, was: JSON.stringify([effects, next]), at };
+    return next;
+  };
   const add = (spec: KindSpec) => onChange([...list, spec.make()]);
   const more = async () => {
     const id = await askChoice({
@@ -1971,6 +2166,17 @@ export function EffectCards({
           Also does what {inherits} does on the sheet
         </label>
       )}
+      {inherits !== undefined && replace !== true && onAmend !== undefined && (
+        <AmendCards
+          amend={amend}
+          inherits={inherits}
+          resources={[...list.filter((x) => x.kind === 'resource'), ...(resources ?? [])].filter(
+            (x, i, all) => typeof x.key === 'string' && all.findIndex((y) => y.key === x.key) === i,
+          )}
+          readOnly={readOnly}
+          onChange={onAmend}
+        />
+      )}
       {list.map((effect, i) =>
         hide?.(effect) === true ? null : (
           <Card
@@ -1985,30 +2191,35 @@ export function EffectCards({
             inPlay={inPlay}
             readOnly={readOnly}
             onRemove={() => onChange(list.filter((_, j) => j !== i))}
-            onChange={(next, renamed) =>
+            onChange={(next, renamed) => {
+              const effects = list.map((x, j) => {
+                if (j === i) return next;
+                if (renamed === undefined) return x;
+                // What spends the renamed uses follows it: an action's cost
+                // (and the points a slot gives back), what buys a use back and
+                // the use it gives back, a spell cast with them, and the same
+                // pool given for the other rules version (`edition`), which
+                // stays one pool.
+                if (x.kind === 'resource' && x.key === renamed[0])
+                  return { ...x, key: renamed[1], label: next.label };
+                if (x.kind === 'action' && (x.cost !== undefined || x.buyBack !== undefined))
+                  return {
+                    ...x,
+                    ...renamedIn('cost', x.cost, ['resource', 'slotRefills'], renamed),
+                    ...renamedIn('buyBack', x.buyBack, ['resource', 'own'], renamed),
+                  };
+                if (x.kind === 'grantSpell' && x.resourceKey === renamed[0])
+                  return { ...x, resourceKey: renamed[1] };
+                return x;
+              });
               onChange(
-                list.map((x, j) => {
-                  if (j === i) return next;
-                  if (renamed === undefined) return x;
-                  // What spends the renamed uses follows it: an action's cost
-                  // (and the points a slot gives back), what buys a use back and
-                  // the use it gives back, a spell cast with them, and the same
-                  // pool given for the other rules version (`edition`), which
-                  // stays one pool.
-                  if (x.kind === 'resource' && x.key === renamed[0])
-                    return { ...x, key: renamed[1], label: next.label };
-                  if (x.kind === 'action' && (x.cost !== undefined || x.buyBack !== undefined))
-                    return {
-                      ...x,
-                      ...renamedIn('cost', x.cost, ['resource', 'slotRefills'], renamed),
-                      ...renamedIn('buyBack', x.buyBack, ['resource', 'own'], renamed),
-                    };
-                  if (x.kind === 'grantSpell' && x.resourceKey === renamed[0])
-                    return { ...x, resourceKey: renamed[1] };
-                  return x;
-                }),
-              )
-            }
+                effects,
+                // A price on what the copy inherits that spends the pool follows it too.
+                renamed === undefined || onAmend === undefined || amends.length === 0
+                  ? undefined
+                  : follow(renamed, effects),
+              );
+            }}
           />
         ),
       )}
@@ -2032,6 +2243,14 @@ export function EffectCards({
       )}
     </div>
   );
+}
+
+/**
+ * The `castGuidance` patch for a copy's prices on what it inherits: an empty
+ * list leaves none; `undefined` (no change to them) patches nothing.
+ */
+export function amendPatch(amend: Eff[] | undefined): Record<string, unknown> {
+  return amend === undefined ? {} : { amend: amend.length > 0 ? amend : undefined };
 }
 
 /** `castGuidance` with `patch` applied, or undefined once it says nothing. */
@@ -2061,8 +2280,14 @@ export function EntryEffects({
         readOnly={readOnly}
         inherits={original !== undefined ? String(original.name) : undefined}
         replace={g.replace === true}
-        onReplace={(replace) => set({ replace: replace ? true : undefined })}
-        onChange={(effects) => set({ effects: effects.length > 0 ? effects : undefined })}
+        onReplace={(replace) =>
+          set(replace ? { replace: true, amend: undefined } : { replace: undefined })
+        }
+        onChange={(effects, amend) =>
+          set({ effects: effects.length > 0 ? effects : undefined, ...amendPatch(amend) })
+        }
+        amend={g.amend}
+        onAmend={(amend) => set(amendPatch(amend))}
       />
     </Section>
   );

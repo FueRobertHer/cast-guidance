@@ -136,6 +136,11 @@ describe('a pack past a limit is refused, with the reason', () => {
       /change 1 has 65 effects/,
     ],
     [
+      'prices in a change',
+      { patches: [{ target: 'a|b', amend: many(L.amendsPerEntry + 1, { cost: { amount: 2 } }) }] },
+      /change 1 has 65 prices; one change has at most 64/,
+    ],
+    [
       'what a moment does',
       { moments: [{ at: 'zeroHp', do: many(65, { kind: 'cue', text: 'x' }) }] },
       /moment 1 does 65 things/,
