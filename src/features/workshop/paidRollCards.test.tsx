@@ -8,6 +8,7 @@ import { useState } from 'react';
 import { MemoryRouter } from 'react-router';
 import { afterEach, describe, expect, it } from 'vitest';
 import { EntityRegistry } from '@/data5e/normalize';
+import type { StoredEffect } from '@/engine/castGuidance';
 import { deriveSheet } from '@/engine/derive';
 import { readStoredEffects } from '@/engine/effects/mechanics';
 import { rollEffects } from '@/engine/playRules';
@@ -15,9 +16,10 @@ import { type DataEntity, type EngineContext, newCharacterDoc } from '@/engine/t
 import { pricedRollEffects } from '@/features/sheet/rollPrice';
 import rollExtras from '@/rules/cast-guidance/roll-extras.json';
 import { makeTestContext } from '../../../tests-fixtures/testWorld';
-import { moreKinds } from './EffectCards';
+import { EffectCards, moreKinds } from './EffectCards';
 import { editor as feat } from './editors/FeatEditor';
 import type { Json } from './editorTypes';
+import { pricedAlone } from './paidPrice';
 
 afterEach(cleanup);
 
@@ -51,8 +53,50 @@ const has = (label: string) => screen.queryByLabelText(label) !== null;
 const pick = (label: string, value: string) =>
   fireEvent.change(screen.getByLabelText(label), { target: { value } });
 const choices = (label: string) => [...box(label).options].map((o) => o.value);
+
+/**
+ * Boxes on screen showing a choice other than the value they hold: a value
+ * none of a box's choices is would show as its first choice, unsaid.
+ */
+function misshown(): string[] {
+  return screen.getAllByRole('combobox').flatMap((select) => {
+    if (!(select instanceof HTMLSelectElement)) return [];
+    const props = Object.entries(select).find(([k]) => k.startsWith('__reactProps'))?.[1] as
+      | { value?: unknown }
+      | undefined;
+    const held = String(props?.value ?? '');
+    return select.value === held ? [] : [`${select.getAttribute('aria-label')}: ${held}`];
+  });
+}
 const shown = (text: string) => expect(screen.getByText(text)).toBeTruthy();
-const problems = (effects: Json[]) => readStoredEffects(effects).problems;
+// The strict reading: a field the reader would pass over is a problem too.
+const problems = (effects: Json[]) => readStoredEffects(effects, 'effects', true).problems;
+
+/** A roll each kind of On box choice reaches. */
+function rollOf(e: Json): Parameters<typeof rollEffects>[1] {
+  const on = (e.on ?? {}) as Json;
+  const rolls = (on.rolls ?? []) as string[];
+  if (rolls.includes('attack')) return { kind: 'attack' };
+  if (rolls.includes('save')) return { kind: 'save', ability: 'con' };
+  if (on.initiative === true) return { kind: 'initiative' };
+  return { kind: 'check', ability: 'str', skill: 'athletics', proficient: on.proficient === true };
+}
+
+/**
+ * Whether the roll prompt offers a card's effect on a roll it names, with a
+ * pool to pay for it and Inspiration in hand: as a die or a bonus, as
+ * advantage to claim, as a reroll on the result, or as one made as the d20
+ * lands.
+ */
+function offeredOnItsRoll(effect: Json): boolean {
+  const { sheet, play } = sheetWith([POOL, effect]);
+  const rolled = rollEffects(sheet, rollOf(effect));
+  if (effect.auto === true) return (rolled.rerolls ?? []).length > 0;
+  const priced = pricedRollEffects(rolled, sheet, { ...play, inspiration: true });
+  return (
+    priced.offers.length + (priced.declare ?? []).length + (priced.rerollOffers ?? []).length > 0
+  );
+}
 
 // As More adds them.
 const PAID = { kind: 'rollPaid', on: { rolls: ['check'] }, dice: '1d4', ifFailed: true };
@@ -100,7 +144,7 @@ describe('the Paid extra card', () => {
       spentOnSuccess: true,
     });
     shown(
-      '+1d10 to Intelligence checks, after a failed roll, paid with its use (the use comes back if it still fails)',
+      '+1d10 to Intelligence checks, after a failed roll, paid with its use (its price comes back if it still fails)',
     );
     // Offered on any roll, the use is always spent.
     pick('Paid extra: Offered', 'after');
@@ -153,6 +197,50 @@ describe('the Paid extra card', () => {
     expect(problems(effects())).toEqual([]);
   });
 
+  it("words a file's free or automatic paid extra as the prompt charges it: as its use", () => {
+    for (const field of ['free', 'auto']) {
+      const effects = withCards([POOL, { ...PAID, [field]: true }]);
+      shown('+1d4 to ability checks, after a failed roll, paid with its use');
+      expect(box('Paid extra: Paid with').value).toBe('use');
+      expect(has('Paid extra: Only when')).toBe(true);
+      const { sheet, play } = sheetWith(effects());
+      const priced = pricedRollEffects(rollEffects(sheet, rollOf(PAID)), sheet, play);
+      expect(priced.offers).toEqual([
+        expect.objectContaining({
+          pay: expect.objectContaining({ spends: [{ key: 'gift', max: 2, amount: 1 }] }),
+        }),
+      ]);
+      cleanup();
+    }
+  });
+
+  it('turns one offered after a failed roll into one after any roll, put on initiative', () => {
+    const effects = withCards([POOL, { ...PAID, spentOnSuccess: true }]);
+    pick('Paid extra: On', 'initiative');
+    expect(effects()[1]).toEqual({
+      kind: 'rollPaid',
+      on: { rolls: ['check'], initiative: true },
+      dice: '1d4',
+      after: true,
+    });
+    expect(choices('Paid extra: Offered')).toEqual(['before', 'after']);
+    expect(offeredOnItsRoll(effects()[1] as Json)).toBe(true);
+    cleanup();
+    // A file's that waits on a failure opens as written, and keeps it.
+    const failed = { ...PAID, on: { rolls: ['check'], initiative: true } };
+    const kept = withCards([POOL, failed]);
+    expect(box('Paid extra: Offered').selectedOptions[0]?.textContent).toBe(
+      'After a failed roll, never offered on initiative',
+    );
+    pick('Paid extra: Dice', '1d6');
+    expect(kept()[1]).toEqual({ ...failed, dice: '1d6' });
+    cleanup();
+    const reroll = withCards([POOL, REROLL]);
+    pick('Reroll: On', 'initiative');
+    expect(reroll()[1]).toEqual({ kind: 'rollReroll', on: { rolls: ['check'], initiative: true } });
+    expect(choices('Reroll: Offered')).toEqual(['']);
+  });
+
   it("keeps the paying pool's die as written, and offers no Inspiration for it", () => {
     const poolDie = { kind: 'rollPaid', on: { rolls: ['attack'] }, poolDie: true, ifFailed: true };
     const effects = withCards([POOL, poolDie]);
@@ -165,7 +253,7 @@ describe('the Paid extra card', () => {
   });
 
   it('says what pays for it while the entry has nothing to pay with', () => {
-    const text = /offers it while this entry has an Action or Uses per rest/;
+    const text = /Nothing here pays for it/;
     withCards([PAID]);
     expect(screen.getByText(text)).toBeTruthy();
     pick('Paid extra: Paid with', 'inspiration');
@@ -175,31 +263,37 @@ describe('the Paid extra card', () => {
     expect(screen.queryByText(text)).toBeNull();
   });
 
-  it('stores only what the reader takes, whatever the boxes say', () => {
+  it('stores only what the reader takes and the prompt offers, whatever the boxes say', () => {
     const effects = withCards([POOL, PAID]);
     const seen = new Set<string>();
-    for (const adds of choices('Paid extra: Adds')) {
-      pick('Paid extra: Adds', adds);
-      for (const time of has('Paid extra: Offered') ? choices('Paid extra: Offered') : ['']) {
-        if (time !== '') pick('Paid extra: Offered', time);
-        const stills = has('Paid extra: If it still fails')
-          ? choices('Paid extra: If it still fails')
-          : [undefined];
-        for (const still of stills) {
-          if (still !== undefined) pick('Paid extra: If it still fails', still);
-          for (const pay of choices('Paid extra: Paid with')) {
-            pick('Paid extra: Paid with', pay);
-            const now = effects();
-            expect(problems(now), JSON.stringify(now[1])).toEqual([]);
-            seen.add(JSON.stringify(now[1]));
+    for (const on of choices('Paid extra: On')) {
+      pick('Paid extra: On', on);
+      for (const adds of choices('Paid extra: Adds')) {
+        pick('Paid extra: Adds', adds);
+        for (const time of has('Paid extra: Offered') ? choices('Paid extra: Offered') : ['']) {
+          if (time !== '') pick('Paid extra: Offered', time);
+          const stills = has('Paid extra: If it still fails')
+            ? choices('Paid extra: If it still fails')
+            : [undefined];
+          for (const still of stills) {
+            if (still !== undefined) pick('Paid extra: If it still fails', still);
+            for (const pay of choices('Paid extra: Paid with')) {
+              pick('Paid extra: Paid with', pay);
+              const now = effects();
+              expect(problems(now), JSON.stringify(now[1])).toEqual([]);
+              seen.add(JSON.stringify(now[1]));
+            }
           }
         }
       }
     }
     // Die: 3 times, the failed one twice; bonus: 2 times, the failed one twice;
-    // advantage: once; each paid 4 ways.
-    expect(seen.size).toBe((4 + 3 + 1) * 4);
-  });
+    // advantage: once; each paid 4 ways, on 4 kinds of roll. On initiative,
+    // never after a failed roll: a die 2 times, a bonus once, advantage once.
+    expect(seen.size).toBe((4 + 3 + 1) * 4 * 4 + (2 + 1 + 1) * 4);
+    const unoffered = [...seen].filter((e) => !offeredOnItsRoll(JSON.parse(e) as Json));
+    expect(unoffered, unoffered.join('\n')).toEqual([]);
+  }, 60_000);
 });
 
 describe('the Reroll card', () => {
@@ -299,7 +393,7 @@ describe('the Reroll card', () => {
     expect(problems(effects())).toEqual([]);
   });
 
-  it('stores only what the reader takes, whatever the boxes say', () => {
+  it('stores only what the reader takes and the prompt offers, whatever the boxes say', () => {
     const effects = withCards([POOL, REROLL]);
     const seen = new Set<string>();
     const numbers: Record<string, readonly string[]> = {
@@ -307,32 +401,42 @@ describe('the Reroll card', () => {
       'Reroll: At least': ['10', '20'],
       'Reroll: Score': ['str', 'wis'],
     };
-    for (const does of choices('Reroll: Does')) {
-      pick('Reroll: Does', does);
-      const label = Object.keys(numbers).find(has);
-      for (const n of label === undefined ? [undefined] : (numbers[label] ?? [])) {
-        if (label !== undefined && n !== undefined) pick(label, n);
-        for (const pay of has('Reroll: Paid with') ? choices('Reroll: Paid with') : [undefined]) {
-          if (pay !== undefined) pick('Reroll: Paid with', pay);
-          for (const off of has('Reroll: Offered') ? choices('Reroll: Offered') : [undefined]) {
-            if (off !== undefined) pick('Reroll: Offered', off);
-            const bonuses = has('Reroll: Adds to the new roll') ? ['2', ''] : [undefined];
-            for (const bonus of bonuses) {
-              if (bonus !== undefined) {
-                fireEvent.change(screen.getByLabelText('Reroll: Adds to the new roll'), {
-                  target: { value: bonus },
-                });
+    for (const on of choices('Reroll: On')) {
+      pick('Reroll: On', on);
+      for (const does of choices('Reroll: Does')) {
+        pick('Reroll: Does', does);
+        const label = Object.keys(numbers).find(has);
+        for (const n of label === undefined ? [undefined] : (numbers[label] ?? [])) {
+          if (label !== undefined && n !== undefined) pick(label, n);
+          for (const pay of has('Reroll: Paid with') ? choices('Reroll: Paid with') : [undefined]) {
+            if (pay !== undefined) pick('Reroll: Paid with', pay);
+            for (const off of has('Reroll: Offered') ? choices('Reroll: Offered') : [undefined]) {
+              if (off !== undefined) pick('Reroll: Offered', off);
+              const bonuses = has('Reroll: Adds to the new roll') ? ['2', ''] : [undefined];
+              for (const bonus of bonuses) {
+                if (bonus !== undefined) {
+                  fireEvent.change(screen.getByLabelText('Reroll: Adds to the new roll'), {
+                    target: { value: bonus },
+                  });
+                }
+                const now = effects();
+                expect(problems(now), JSON.stringify(now[1])).toEqual([]);
+                seen.add(JSON.stringify(now[1]));
               }
-              const now = effects();
-              expect(problems(now), JSON.stringify(now[1])).toEqual([]);
-              seen.add(JSON.stringify(now[1]));
             }
           }
         }
       }
     }
-    expect(seen.size).toBeGreaterThan(100);
-  });
+    // On each of 4 kinds of roll: a reroll of every die or one more d20, paid 6 ways
+    // (2 offered, 2 bonuses) is 24 each; a 1 is those 24 and 2 made as it lands, a 5
+    // is 24; the lower die is 2 (bonuses); a set is 13 at each of 2 numbers (12 paid
+    // with no bonus, 1 as it lands); a floor 1 at each of 2 scores. 128 in all.
+    // On initiative, offered after any roll alone: 12, 14 and 12, 12, 2, 14, 2.
+    expect(seen.size).toBe(128 * 4 + 68);
+    const unoffered = [...seen].filter((e) => !offeredOnItsRoll(JSON.parse(e) as Json));
+    expect(unoffered, unoffered.join('\n')).toEqual([]);
+  }, 60_000);
 });
 
 describe('a shipped paid extra or reroll on a card', () => {
@@ -349,6 +453,7 @@ describe('a shipped paid extra or reroll on a card', () => {
       const effects = withCards([effect]);
       const title = effect.kind === 'rollPaid' ? 'Paid extra' : 'Reroll';
       expect(document.body.textContent, key).not.toMatch(/undefined|NaN|\[object/);
+      expect(misshown(), key).toEqual([]);
       for (const select of screen.getAllByRole('combobox')) {
         const text =
           select instanceof HTMLSelectElement ? select.selectedOptions[0]?.textContent : '';
@@ -400,27 +505,183 @@ describe('a shipped paid extra or reroll on a card', () => {
   });
 });
 
-describe('a feat the cards write, on a sheet', () => {
-  /** A Warrior 4 with the feat, its effects as the cards left them. */
-  function sheetWith(effects: Json[]) {
-    const base = makeTestContext();
-    const gift: DataEntity = {
-      name: 'Gift',
-      source: 'HB',
-      entries: [],
-      castGuidance: { v: 1, effects },
-    };
-    const ctx: EngineContext = {
-      get: (type, name, source) =>
-        type === 'feat' && name.toLowerCase() === 'gift' ? gift : base.get(type, name, source),
-      byType: (type) => [...base.byType(type), ...(type === 'feat' ? [gift] : [])],
-    };
-    const doc = newCharacterDoc('c', 'Hero', 't');
-    doc.classes = [{ ref: { name: 'Warrior', source: 'TST' }, levels: 4, hp: [] }];
-    doc.feats = [{ ref: { name: 'Gift', source: 'HB' }, instanceId: 'f0' }];
-    return { sheet: deriveSheet(doc, ctx), play: doc.play };
-  }
+/**
+ * A character (a Warrior 4 unless `classes` says) with the feat Gift, its
+ * effects as the cards left them, and other feats beside it (a pool kept
+ * elsewhere, as a class keeps one).
+ */
+function sheetWith(
+  effects: Json[],
+  others: Record<string, Json[]> = {},
+  classes: Array<[string, number]> = [['Warrior', 4]],
+) {
+  const base = makeTestContext();
+  const feats: DataEntity[] = [['Gift', effects] as const, ...Object.entries(others)].map(
+    ([name, list]) => ({ name, source: 'HB', entries: [], castGuidance: { v: 1, effects: list } }),
+  );
+  const featOf = (name: string) =>
+    feats.find((f) => String(f.name).toLowerCase() === name.toLowerCase());
+  const ctx: EngineContext = {
+    get: (type, name, source) =>
+      (type === 'feat' ? featOf(name) : undefined) ?? base.get(type, name, source),
+    byType: (type) => [...base.byType(type), ...(type === 'feat' ? feats : [])],
+  };
+  const doc = newCharacterDoc('c', 'Hero', 't');
+  doc.classes = classes.map(([name, levels]) => ({ ref: { name, source: 'TST' }, levels, hp: [] }));
+  doc.feats = feats.map((f, i) => ({
+    ref: { name: String(f.name), source: 'HB' },
+    instanceId: `f${i}`,
+  }));
+  return { sheet: deriveSheet(doc, ctx), play: doc.play };
+}
 
+describe('the price caption', () => {
+  const CAPTION = /Nothing here pays for it/;
+  const CHARGES = { kind: 'resource', key: 'charges', label: 'Charges', max: 2, reset: 'long' };
+  const SPARKS = { kind: 'resource', key: 'sparks', label: 'Sparks', max: 2, reset: 'long' };
+  const zap = (more: Json = {}) => ({ kind: 'action', economy: 'action', label: 'Zap', ...more });
+  const BEFORE = { kind: 'rollPaid', on: { rolls: ['check'] }, dice: '1d4' };
+  const ON_SAVES = { kind: 'rollReroll', on: { rolls: ['save'] } };
+  /** Each entry: what Gift gives beside the card, and a pool kept elsewhere. */
+  const SHAPES: Array<[string, Json[], Json[]?]> = [
+    ['nothing', []],
+    ['a pool named for it', [POOL]],
+    ['one pool of another name', [CHARGES]],
+    ['two pools, neither named for it', [CHARGES, SPARKS]],
+    ['two pools, one named for it', [CHARGES, POOL]],
+    ['a pool and an action that costs nothing', [CHARGES, zap()]],
+    ['an action that costs nothing', [zap()]],
+    ['a bonus action that costs nothing', [zap({ economy: 'bonus' })]],
+    ['a reaction that costs nothing', [zap({ economy: 'reaction' })]],
+    [
+      'an action spending a pool',
+      [CHARGES, SPARKS, zap({ cost: { resource: 'sparks', amount: 1 } })],
+    ],
+    [
+      'an action spending varies',
+      [CHARGES, zap({ cost: { resource: 'charges', amount: 'varies' } })],
+    ],
+    [
+      'an action spending a pool, optional',
+      [CHARGES, zap({ cost: { resource: 'charges', amount: 1, optional: true } })],
+    ],
+    ['an action spending a slot', [zap({ cost: { resource: 'spell-slot', amount: 1 } })]],
+    [
+      'an action spending a 2nd level pact slot',
+      [zap({ cost: { resource: 'spell-slot', amount: 1, pactOnly: true, minLevel: 2 } })],
+    ],
+    ['an action spending a Hit Point Die', [zap({ cost: { resource: 'hit-die', amount: 1 } })]],
+    ['an action named for it, sharing its pool', [POOL, zap({ label: 'Gift' })]],
+    ['only a pool kept elsewhere', [], [CHARGES]],
+    [
+      'an action spending a pool kept elsewhere',
+      [zap({ cost: { resource: 'charges', amount: 1 } })],
+      [CHARGES],
+    ],
+  ];
+  const PRICES: Array<[string, Json]> = [
+    ['its use', {}],
+    ['its use and your reaction', { reaction: true }],
+    ['its use, never your reaction', { reaction: false }],
+  ];
+
+  it('shows exactly when the roll prompt finds no price for it', () => {
+    const wrong: string[] = [];
+    for (const [shape, list, elsewhere = []] of SHAPES) {
+      for (const [price, fields] of PRICES) {
+        for (const card of [
+          { ...BEFORE, ...fields },
+          { ...ON_SAVES, ...fields },
+        ]) {
+          // A character who can pay any cost: a slot or a die is never added to a roll.
+          const { sheet, play } = sheetWith(
+            [...list, card],
+            elsewhere.length > 0 ? { Store: elsewhere } : {},
+            [
+              ['Sorcerer', 17],
+              ['Pactcaster', 3],
+            ],
+          );
+          const priced = pricedRollEffects(
+            rollEffects(
+              sheet,
+              card.kind === 'rollPaid'
+                ? { kind: 'check', ability: 'str' }
+                : { kind: 'save', ability: 'con' },
+            ),
+            sheet,
+            play,
+          );
+          const offered =
+            (card.kind === 'rollPaid' ? priced.offers : (priced.rerollOffers ?? [])).length > 0;
+          render(
+            <EffectCards
+              name="Gift"
+              effects={[...list, card]}
+              resources={elsewhere as StoredEffect[]}
+              readOnly={false}
+              onChange={() => {}}
+            />,
+          );
+          const shown = screen.queryByText(CAPTION) !== null;
+          if (shown === offered)
+            wrong.push(
+              `${shape}, ${price}, ${String(card.kind)}: offered ${offered}, caption ${shown}`,
+            );
+          cleanup();
+        }
+      }
+    }
+    expect(wrong, wrong.join('\n')).toEqual([]);
+  });
+
+  it('prices a pool by what it costs, not by how many uses one character has', () => {
+    const byScore = { ...CHARGES, max: { f: 'mod.int' } };
+    expect(pricedAlone('Gift', [byScore, BEFORE], undefined)).toBe(true);
+    expect(pricedAlone('Gift', [BEFORE], undefined)).toBe(false);
+  });
+
+  it('prices under the rules version the card counts under', () => {
+    const only = (edition: string) => ({ ...CHARGES, edition });
+    for (const edition of ['2014', '2024'] as const) {
+      expect(
+        pricedAlone('Gift', [only(edition), { ...BEFORE, edition }], undefined, { edition }),
+      ).toBe(true);
+      render(
+        <EffectCards
+          name="Gift"
+          effects={[only(edition), { ...BEFORE, edition }]}
+          readOnly={false}
+          onChange={() => {}}
+        />,
+      );
+      expect(screen.queryByText(CAPTION)).toBeNull();
+      cleanup();
+    }
+  });
+
+  it('stays silent on a copy that keeps what it inherits, and speaks once it starts from nothing', () => {
+    const at = (replace: boolean) => {
+      render(
+        <EffectCards
+          name="Gift"
+          effects={[BEFORE]}
+          inherits="Gift"
+          replace={replace}
+          readOnly={false}
+          onChange={() => {}}
+        />,
+      );
+      const shown = screen.queryByText(CAPTION) !== null;
+      cleanup();
+      return shown;
+    };
+    expect(at(false)).toBe(false);
+    expect(at(true)).toBe(true);
+  });
+});
+
+describe('a feat the cards write, on a sheet', () => {
   it('is offered priced as a use of its pool, and not once the pool is spent', () => {
     const effects = withCards([POOL, PAID, REROLL]);
     pick('Paid extra: Dice', '1d6');

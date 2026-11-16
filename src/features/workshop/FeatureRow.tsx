@@ -84,6 +84,7 @@ export function FeatureEditor({
           <span className="text-label text-ink-muted">What it does on the sheet</span>
           <EffectCards
             effects={g.effects}
+            name={String(value.name ?? '')}
             readOnly={readOnly}
             inherits={inherits}
             resources={resources}

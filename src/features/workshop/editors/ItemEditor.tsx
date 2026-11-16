@@ -602,6 +602,7 @@ function Effects(props: EditorProps) {
       <GrantedSpell {...props} />
       <EffectCards
         effects={g.effects}
+        name={typeof draft.name === 'string' ? draft.name : ''}
         readOnly={readOnly}
         inherits={original !== undefined ? String(original.name) : undefined}
         replace={g.replace === true}

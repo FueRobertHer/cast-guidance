@@ -6,7 +6,7 @@
  * reader the sheet uses, so a card that would not count says why, here.
  */
 import { CircleAlert, Plus, X } from 'lucide-react';
-import { useId, useState } from 'react';
+import { useId, useMemo, useState } from 'react';
 import {
   EFFECT_EDITIONS,
   isRecord,
@@ -23,6 +23,7 @@ import { askChoice } from '@/ui/dialogs';
 import { fieldClass } from '@/ui/TextField';
 import type { EditorProps } from './editorTypes';
 import { ABILITY_WORDS, Field, Section, Select } from './fields';
+import { pricedAlone } from './paidPrice';
 
 type Eff = StoredEffect;
 type Options = ReadonlyArray<readonly [string, string]>;
@@ -80,6 +81,22 @@ const TAKES_ABILITY = new Set(['attack', 'save', 'check', 'proficient']);
  * file's filter for one shows as written.
  */
 const PAID_ROLL_KINDS = ROLL_KINDS.filter(([k]) => k !== 'death' && k !== 'concentration');
+
+/** Initiative has no failure to turn into a success: the prompt never offers one that waits on it. */
+const onInitiative = (e: Eff) => rollKindOf(e.on) === 'initiative';
+
+/**
+ * A paid extra or a reroll the author has just put on initiative: one offered
+ * after a failed roll is offered after any roll instead.
+ */
+function noFailure(e: Eff): Eff {
+  if (e.ifFailed !== true) return e;
+  const rest = omit(e, ['ifFailed', 'spentOnSuccess']);
+  return e.kind === 'rollPaid' ? { ...rest, after: true } : rest;
+}
+
+/** A failed roll's choice, left out on initiative unless a file gives it. */
+const FAILED_ON_INITIATIVE = 'After a failed roll, never offered on initiative';
 const SCOPE: Options = [
   ['all', 'All'],
   ['melee', 'Melee'],
@@ -270,9 +287,11 @@ function bonusWords(v: unknown): string {
  * alone, Inspiration, nothing, or nothing as the d20 lands (`auto`).
  */
 function paidWithOf(e: Eff): string {
-  if (e.auto === true) return 'auto';
+  // A paid extra has no free or automatic kind: the reader passes over both.
+  const reroll = e.kind === 'rollReroll';
+  if (reroll && e.auto === true) return 'auto';
   if (e.inspiration === true) return 'inspiration';
-  if (e.free === true) return e.reaction === true ? 'reaction' : 'free';
+  if (reroll && e.free === true) return e.reaction === true ? 'reaction' : 'free';
   if (e.reaction === true) return 'useReaction';
   if (e.reaction === false) return 'noReaction';
   return 'use';
@@ -371,7 +390,7 @@ function paidLine(e: Eff): string {
   const time = timingOf(e);
   const at =
     time === 'failed' ? ', after a failed roll' : time === 'after' ? ', after the roll' : '';
-  const back = e.spentOnSuccess === true ? ' (the use comes back if it still fails)' : '';
+  const back = e.spentOnSuccess === true ? ' (its price comes back if it still fails)' : '';
   return `${what}${at}${priceLine(e)}${back}${whenLine(e)}`;
 }
 
@@ -1373,8 +1392,8 @@ const TIMES: Options = [
   ['failed', 'After a failed roll'],
 ];
 const STILL_FAILS: Options = [
-  ['', 'The use is spent'],
-  ['back', 'The use comes back'],
+  ['', 'Its price is spent'],
+  ['back', 'Its price comes back'],
 ];
 const OFFERED: Options = [
   ['', 'After any roll'],
@@ -1408,6 +1427,7 @@ function PaidFields({
 }) {
   const adds = addsOf(effect);
   const time = timingOf(effect);
+  const initiative = onInitiative(effect);
   // Inspiration has no die of its own to add.
   const pays = adds === 'poolDie' ? PAID_WITH.filter(([v]) => v !== 'inspiration') : PAID_WITH;
   const paid = paidWithBox(effect, pays);
@@ -1438,7 +1458,13 @@ function PaidFields({
           title={title}
           label="Offered"
           value={time}
-          options={adds === 'bonus' ? TIMES.filter(([v]) => v !== 'before') : TIMES}
+          options={offering(
+            TIMES.filter(
+              ([v]) => !(v === 'before' && adds === 'bonus') && !(v === 'failed' && initiative),
+            ),
+            time,
+            FAILED_ON_INITIATIVE,
+          )}
           onPick={(v) => onChange(withTiming(effect, v))}
         />
       )}
@@ -1533,7 +1559,15 @@ function RerollFields({
           title={title}
           label="Offered"
           value={effect.ifFailed === true ? 'failed' : ''}
-          options={OFFERED}
+          options={
+            onInitiative(effect)
+              ? offering(
+                  OFFERED.filter(([v]) => v !== 'failed'),
+                  effect.ifFailed === true ? 'failed' : '',
+                  FAILED_ON_INITIATIVE,
+                )
+              : OFFERED
+          }
           onPick={(v) =>
             onChange(v === 'failed' ? { ...effect, ifFailed: true } : omit(effect, ['ifFailed']))
           }
@@ -1659,7 +1693,7 @@ function Card({
   pools,
   spells,
   inPlay,
-  paysHere,
+  unpaid,
   readOnly,
   onChange,
   onRemove,
@@ -1670,8 +1704,8 @@ function Card({
   pools: readonly Eff[];
   spells: readonly SpellOption[];
   inPlay: boolean;
-  /** The entry has an action or a pool a paid extra may be paid with, or inherits them. */
-  paysHere: boolean;
+  /** A paid extra or a reroll paid with its use that nothing in the entry pays for. */
+  unpaid: boolean;
   readOnly: boolean;
   onChange: (next: Eff, renamedKey?: [string, string]) => void;
   onRemove: () => void;
@@ -1751,7 +1785,14 @@ function Card({
             <RollFields effect={effect} title={title} onChange={onChange} />
           )}
           {paidRoll && (
-            <RollFields effect={effect} title={title} kinds={PAID_ROLL_KINDS} onChange={onChange} />
+            <RollFields
+              effect={effect}
+              title={title}
+              kinds={PAID_ROLL_KINDS}
+              // On initiative these boxes show On alone, so a change here that lands
+              // on initiative is the author putting the card there.
+              onChange={(next) => onChange(onInitiative(next) ? noFailure(next) : next)}
+            />
           )}
           {effect.kind === 'rollPaid' && (
             <PaidFields effect={effect} title={title} onChange={onChange} />
@@ -1820,7 +1861,7 @@ function Card({
             <ClaimField effect={effect} title={title} onChange={onChange} />
           )}
           {/* One made as the d20 lands waits on nothing, so it holds always. */}
-          {paidRoll && effect.auto !== true && (
+          {paidRoll && paidWithOf(effect) !== 'auto' && (
             <ClaimField
               effect={effect}
               title={title}
@@ -1830,9 +1871,11 @@ function Card({
           )}
         </div>
       )}
-      {paidRoll && !paysHere && PAYS_WITH_USE.has(paidWithOf(effect)) && (
+      {unpaid && (
         <p className="pr-2 text-caption text-ink-muted">
-          The roll prompt offers it while this entry has an Action or Uses per rest to pay with.
+          Nothing here pays for it, so the roll prompt never offers it. It is paid with this entry's
+          Action, which has to spend uses or take the reaction, or with no Action, with its Uses per
+          rest named for it or its only one.
         </p>
       )}
       {state !== '' && readOnly && (
@@ -1885,9 +1928,12 @@ export function EffectCards({
   spells,
   hide,
   resources,
+  name,
   inPlay = false,
 }: {
   effects: unknown;
+  /** The entry's name: the roll prompt pays for its paid extras by it first. */
+  name?: string;
   onChange: (next: Eff[]) => void;
   readOnly: boolean;
   /**
@@ -1912,11 +1958,27 @@ export function EffectCards({
       .filter((p) => p.startsWith(`effect ${i + 1}:`) || p.startsWith(`effect ${i + 1} (`))
       .map((p) => p.replace(/^effect \d+( \([^)]*\))?: /, ''));
   const add = (spec: KindSpec) => onChange([...list, spec.make()]);
-  // What pays for a paid extra: an action or a pool of the entry's own, or one it inherits.
-  const paysHere =
-    inherits !== undefined ||
-    (resources ?? []).length > 0 ||
-    list.some((x) => x.kind === 'action' || x.kind === 'resource');
+  // The paid extras and rerolls, by place, that the roll prompt would find no price for:
+  // none on a copy that keeps what it inherits, whose own price is not here to see.
+  const unpaid = useMemo(() => {
+    const out = new Set<number>();
+    if (inherits !== undefined && replace !== true) return out;
+    list.forEach((e, i) => {
+      if (e.kind !== 'rollPaid' && e.kind !== 'rollReroll') return;
+      if (!PAYS_WITH_USE.has(paidWithOf(e))) return;
+      const reaction = typeof e.reaction === 'boolean' ? e.reaction : undefined;
+      const edition = editionOf(e);
+      if (
+        !pricedAlone(name ?? '', list, reaction, {
+          kept: resources,
+          ...(edition !== undefined ? { edition } : {}),
+        })
+      ) {
+        out.add(i);
+      }
+    });
+    return out;
+  }, [list, name, resources, inherits, replace]);
   const more = async () => {
     const id = await askChoice({
       title: 'What does it do?',
@@ -1954,7 +2016,7 @@ export function EffectCards({
             spells={spells ?? []}
             problems={problemsOf(i)}
             inPlay={inPlay}
-            paysHere={paysHere}
+            unpaid={unpaid.has(i)}
             readOnly={readOnly}
             onRemove={() => onChange(list.filter((_, j) => j !== i))}
             onChange={(next, renamed) =>
@@ -2030,6 +2092,7 @@ export function EntryEffects({
     <Section title="What it does on the sheet">
       <EffectCards
         effects={g.effects}
+        name={typeof draft.name === 'string' ? draft.name : ''}
         readOnly={readOnly}
         inherits={original !== undefined ? String(original.name) : undefined}
         replace={g.replace === true}
