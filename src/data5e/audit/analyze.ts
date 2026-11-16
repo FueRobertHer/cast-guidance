@@ -58,7 +58,7 @@ export interface AuditReport {
   prose: ProseAudit;
   /** 2014/2024 reprint pairs and their labels. Counts only: nothing here can fail. */
   reprints: ReprintAudit;
-  /** Features that spend a pool, against the link table. Counts only: nothing here can fail. */
+  /** Features that spend a pool, against the spend rows. Counts only: nothing here can fail. */
   spend: SpendCounts;
 }
 

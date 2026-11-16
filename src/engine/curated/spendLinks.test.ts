@@ -1,5 +1,4 @@
 import { describe, expect, it } from 'vitest';
-import { onActionOf, SPEND_SEEDS } from '../../../tests-fixtures/spendSeeds';
 import { BUILT_IN_RULE_SETS } from '../../../tests-fixtures/testWorld';
 import { SPEND_POOLS, SPEND_SKIPPED } from '../../data5e/audit/spendScope';
 import { RULE_SET_TYPE } from '../castGuidance';
@@ -12,10 +11,9 @@ import {
   newCharacterDoc,
   SLOT_COST,
 } from '../types';
-import { SLOT_LINKS } from './slotLinks';
-import { codeLinksOf, linkCodeRows, linkPrice, linkSpend, SPEND_LINKS } from './spendLinks';
+import { linkSpend } from './spendLinks';
 
-// As every registry holds them: the rows moved out of the link tables.
+// As every registry holds them: the built-in rule sets, with every price.
 const ctx: EngineContext = {
   get: () => undefined,
   byType: (type) => (type === RULE_SET_TYPE ? BUILT_IN_RULE_SETS : []),
@@ -23,20 +21,13 @@ const ctx: EngineContext = {
 const origin: EffectOrigin = { label: 'Feature', uid: 'x', type: 'class' };
 const collector = () => new Collector(newCharacterDoc('c', 'H', 't'), ctx);
 
-/**
- * Every key's prices: its shipped spend row's links where the row moved there,
- * else its code rows' (`codeLinksOf`), so a rule a code row is held to still
- * holds once the row moves.
- */
+/** Every key's prices: its shipped spend row's links. */
 const PRICES: ReadonlyMap<string, readonly SpendLinkRow[]> = (() => {
   const prices = new Map<string, readonly SpendLinkRow[]>();
   for (const set of BUILT_IN_RULE_SETS) {
     for (const row of readRuleSet(set).rows) {
       if (row.part === 'spend') for (const key of row.keys) prices.set(key, row.links ?? []);
     }
-  }
-  for (const key of [...Object.keys(SPEND_LINKS), ...Object.keys(SLOT_LINKS)]) {
-    if (!prices.has(key)) prices.set(key, codeLinksOf(key));
   }
   return prices;
 })();
@@ -45,7 +36,7 @@ const COSTS = LINKS.flatMap(([key, link]) => ('cost' in link ? [[key, link] as c
 const resourceOf = (link: SpendLinkRow) =>
   'cost' in link ? link.cost.resource : link.buyBack.resource;
 
-describe('every price, in code or a shipped spend row', () => {
+describe('every price in a shipped spend row', () => {
   it('has one for every key', () => {
     expect([...PRICES].filter(([, links]) => links.length === 0)).toEqual([]);
   });
@@ -138,7 +129,7 @@ describe('spend keys and reasons', () => {
   });
 
   it('covers the cases that spent nothing', () => {
-    // Wherever the key's row is, in the table or the shipped rule set.
+    // Linked as the sheet links them, through the shipped rows.
     const pool = (key: string) => {
       const col = collector();
       linkSpend(col, [key], 'Feature', origin);
@@ -298,61 +289,102 @@ describe('linkSpend', () => {
   });
 });
 
-describe('a built-in spend row stands in for the code rows of its key (rule pack port 3b)', () => {
-  const keys = [...new Set([...Object.keys(SPEND_LINKS), ...Object.keys(SLOT_LINKS)])].sort();
-  // Every code row, as the links a moved row would hold, read as the app reads its files.
-  const read = readRuleSet(
-    JSON.parse(
-      JSON.stringify({
-        type: RULE_SET_TYPE,
-        v: 1,
-        name: 'Every link',
-        rows: keys.map((key) => ({ part: 'spend', keys: [key], links: codeLinksOf(key) })),
-      }),
-    ),
-  );
-  const linksOf = new Map(read.rows.map((r) => [r.keys[0], r.links ?? []]));
-
-  it('reads every code row as links', () => {
-    expect(read.problems).toEqual([]);
-    expect(read.rows).toHaveLength(keys.length);
-    // 1 pool row and 52 slot rows left in code, one key in both (Divine Reaper).
-    expect(keys).toHaveLength(1 + 52 - 1);
+describe('how a link prices the actions a feature left (`linkPrice`)', () => {
+  // One invented row under `feature|hb`, linked on the actions the feature
+  // emitted, so each rule shows on its own, whatever the shipped rows hold.
+  const linked = (links: unknown[], ...actions: Array<Record<string, unknown>>) => {
+    const set = {
+      type: RULE_SET_TYPE,
+      v: 1,
+      name: 'Links',
+      rows: [{ part: 'spend', keys: ['feature|hb'], links }],
+    };
+    const rowCtx: EngineContext = {
+      get: () => undefined,
+      byType: (type) => (type === RULE_SET_TYPE ? [set] : []),
+    };
+    const col = new Collector(newCharacterDoc('c', 'H', 't'), rowCtx);
+    for (const a of actions)
+      col.add({ kind: 'action', economy: 'bonus', label: 'Feature', origin, ...a });
+    linkSpend(col, ['feature|hb'], 'Feature', origin);
+    return col.effects.map((e) => (e.kind === 'action' ? { ...e, origin: undefined } : e));
+  };
+  const focus = { resource: 'focus', amount: 1 };
+  const slot = { resource: SLOT_COST, amount: 1 };
+  const die = { resource: HIT_DIE_COST, amount: 1, hitDieHeals: 'roll' };
+  const action = (fields: Record<string, unknown> = {}) => ({
+    kind: 'action',
+    economy: 'bonus',
+    label: 'Feature',
+    origin: undefined,
+    ...fields,
   });
 
-  it('pays with a pool in SPEND_LINKS and with a slot or a die in SLOT_LINKS alone', () => {
-    // How a link applies turns on how its price is paid (`linkPrice`).
-    const slotOrDie = (r: string) => r === 'spell-slot' || r === 'hit-die';
-    expect(
-      Object.keys(SPEND_LINKS).filter((k) => slotOrDie(SPEND_LINKS[k]?.resource ?? '')),
-    ).toEqual([]);
-    expect(
-      Object.entries(SLOT_LINKS).filter(([, row]) =>
-        row.kind === 'spend' ? !slotOrDie(row.cost.resource) : false,
-      ),
-    ).toEqual([]);
+  it("replaces the cost on the feature's action with a pool's", () => {
+    expect(linked([{ cost: { resource: 'ki', amount: 2 } }], { cost: focus })).toEqual([
+      action({ cost: { resource: 'ki', amount: 2 } }),
+    ]);
   });
 
-  it('puts the same effects on the sheet as the code rows, field for field', () => {
-    const differ: string[] = [];
-    for (const key of keys) {
-      const links = linksOf.get(key) ?? [];
-      const onAction = onActionOf(links);
-      for (const [state, seed] of Object.entries(SPEND_SEEDS)) {
-        const run = (link: (col: Collector, own: EffectOrigin) => void) => {
-          const col = collector();
-          const own: EffectOrigin = { label: 'Feature', uid: 'feature|tst', type: 'class' };
-          seed((e) => col.add(e), own, onAction);
-          link(col, own);
-          return JSON.stringify(col.effects);
-        };
-        const code = run((col, own) => linkCodeRows(col, key, 'Feature', own));
-        const data = run((col, own) => {
-          for (const link of links) linkPrice(col, link, 'Feature', own);
-        });
-        if (code !== data) differ.push(`${key} [${state}]`);
-      }
+  it('leaves an action that has a cost to a slot or a die, which add an action of their own', () => {
+    for (const cost of [slot, die]) {
+      expect(linked([{ cost }], { cost: focus }), cost.resource).toEqual([
+        action({ cost: focus }),
+        action({ economy: 'none', cost }),
+      ]);
+      expect(linked([{ cost }], {}), cost.resource).toEqual([action({ cost })]);
     }
-    expect(differ).toEqual([]);
+  });
+
+  it("adds a chip of its own for a link with a label, leaving the feature's action alone", () => {
+    expect(linked([{ cost: focus, label: 'Quick' }], {})).toEqual([
+      action(),
+      action({ economy: 'none', label: 'Quick', cost: focus }),
+    ]);
+  });
+
+  it('sets a note only on an action with none', () => {
+    expect(linked([{ cost: focus, note: 'Row' }], { note: 'Own' })).toEqual([
+      action({ cost: focus, note: 'Own' }),
+    ]);
+    expect(linked([{ cost: focus, note: 'Row' }], {})).toEqual([
+      action({ cost: focus, note: 'Row' }),
+    ]);
+  });
+
+  it("puts a slot's buy-back past an action that has one, and a pool's over it", () => {
+    const back = { buyBack: { resource: 'focus', amount: 1 } };
+    const bySlot = { buyBack: { resource: SLOT_COST, amount: 1, minLevel: 3 } };
+    expect(linked([bySlot], back, { label: 'Second' })).toEqual([
+      action(back),
+      action({ label: 'Second', ...bySlot }),
+    ]);
+    expect(linked([bySlot], back)).toEqual([action(back), action({ economy: 'none', ...bySlot })]);
+    expect(linked([{ buyBack: { resource: 'ki', amount: 2 } }], back)).toEqual([
+      action({ buyBack: { resource: 'ki', amount: 2 } }),
+    ]);
+  });
+
+  it('prices the first of two actions the feature emitted', () => {
+    const ki = { resource: 'ki', amount: 2 };
+    expect(linked([{ cost: ki }], {}, { label: 'Second', cost: focus })).toEqual([
+      action({ cost: ki }),
+      action({ label: 'Second', cost: focus }),
+    ]);
+    expect(linked([{ buyBack: ki }], {}, { label: 'Second' })).toEqual([
+      action({ buyBack: ki }),
+      action({ label: 'Second' }),
+    ]);
+  });
+
+  it("puts a slot's buy-back for another action past one that has a buy-back, adding nothing", () => {
+    const back = { buyBack: { resource: 'focus', amount: 1 } };
+    const bySlot = { buyBack: { resource: SLOT_COST, amount: 1 }, onAction: 'Other' };
+    expect(linked([bySlot], { label: 'Other', ...back })).toEqual([
+      action({ label: 'Other', ...back }),
+    ]);
+    expect(linked([bySlot], { label: 'Other' })).toEqual([
+      action({ label: 'Other', buyBack: bySlot.buyBack }),
+    ]);
   });
 });

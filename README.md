@@ -103,9 +103,9 @@ phrasings to teach the scanner, so keep that output out of the repository.
 
 `--set spend` asks which pool each feature spends, one `spend-<pool>` set per pool,
 because Jev ignores context and each question has to name its pool. Its answers
-fed `src/engine/curated/spendLinks.ts` once, and a person read every row, so
-nothing reads them at runtime. `--report spend` lists what is still outside that
-table, and the data audit prints the count.
+fed the spend rows (`src/rules/cast-guidance/spend.json`) once, and a person
+read every row, so nothing reads them at runtime. `--report spend` lists what is
+still outside those rows, and the data audit prints the count.
 
 Tests run on Vitest with `fake-indexeddb` (persistence) and jsdom +
 `@testing-library/react` (components). CI (`.github/workflows/ci.yml`) runs the

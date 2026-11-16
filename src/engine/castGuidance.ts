@@ -445,9 +445,9 @@ export const RULE_SET_TYPE = 'ruleSet';
  * feature adds to the character's own d20 tests (the advantage table that was
  * `ROLL_ADVANTAGES`, and `ROLL_EXTRAS`), found under the roll keys, which name
  * the book: `brave|phb`, `feral instinct|barbarian|phb`. `spend` is what a
- * feature's action costs or buys a use back with (`SPEND_LINKS` and
- * `SLOT_LINKS`), found under the roll keys: a row's `links` price the action the
- * feature emitted, or add one.
+ * feature's action costs or buys a use back with (the link tables that were
+ * `SPEND_LINKS` and `SLOT_LINKS`), found under the roll keys: a row's `links`
+ * price the action the feature emitted, or add one.
  */
 export const RULE_SET_PARTS = [
   'curated',
@@ -491,8 +491,8 @@ export interface StoredRuleRow {
 }
 
 /**
- * One price a `spend` row puts on a feature's action (`SPEND_LINKS`,
- * `SLOT_LINKS`). What it does turns on how the price is paid: a pool's price
+ * One price a `spend` row puts on a feature's action (`linkPrice` in
+ * `spendLinks.ts`). What it does turns on how the price is paid: a pool's price
  * replaces the one the action has, while a spell slot's or a Hit Point Die's
  * fills only an empty one, as it runs after a pool's under one key.
  */

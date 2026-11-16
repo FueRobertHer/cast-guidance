@@ -1,13 +1,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { BUILT_IN_RULE_SETS, makeTestContext } from '../../../tests-fixtures/testWorld';
+import { makeTestContext } from '../../../tests-fixtures/testWorld';
 import {
   CAST_GUIDANCE_LIMITS,
   RULE_PACK_TYPE,
   RULE_SET_LIMITS,
   RULE_SET_TYPE,
 } from '../castGuidance';
-import { SLOT_LINKS } from '../curated/slotLinks';
-import { linkCodeRows, linkSpend, SPEND_LINKS } from '../curated/spendLinks';
+import { linkSpend } from '../curated/spendLinks';
 import { deriveSheet } from '../derive';
 import {
   type CharacterDoc,
@@ -901,47 +900,24 @@ describe('spend rows (rule pack port 3b)', () => {
     expect(read.rows[0]?.links).toHaveLength(most);
   });
 
-  it('price the action before the code tables, unless a code row is under an earlier key', () => {
-    // Keys still in code, with no shipped row of their own: two that only the slot
-    // table has, and one the pool table has (Divine Reaper, in both until 3d).
-    const shipped = new Set(
-      BUILT_IN_RULE_SETS.flatMap((set) =>
-        readRuleSet(set).rows.flatMap((r) => (r.part === 'spend' ? r.keys : [])),
-      ),
-    );
-    const [slotOnly, slotToo] = Object.keys(SLOT_LINKS).filter(
-      (k) => !shipped.has(k) && !Object.hasOwn(SPEND_LINKS, k) && SLOT_LINKS[k]?.kind === 'spend',
-    );
-    const poolToo = Object.keys(SPEND_LINKS).find((k) => !shipped.has(k));
-    if (slotOnly === undefined || slotToo === undefined || poolToo === undefined) {
-      throw new Error('no key left in code');
-    }
+  it('price the action from the row under the first key that has one', () => {
     const ctx = withRules(
       ruleSet([
-        spend([slotOnly], [{ cost: { resource: 'focus', amount: 3 } }]),
+        spend(['first|hb'], [{ cost: { resource: 'focus', amount: 3 } }]),
         spend(['lantern|hb'], [{ cost: { resource: 'focus', amount: 4 } }]),
       ]),
     );
-    const costOf = (
-      keys: string[],
-      link = (col: Collector) => linkSpend(col, keys, 'Lantern', origin),
-    ) => {
+    const costOf = (keys: string[]) => {
       const col = new Collector(character(), ctx);
-      const found = link(col);
+      const found = linkSpend(col, keys, 'Lantern', origin);
       const action = col.effects.find((e) => e.kind === 'action');
       return [found, action?.kind === 'action' ? action.cost : undefined];
     };
-    const inCode = (key: string) =>
-      costOf([key], (col) => linkCodeRows(col, key, 'Lantern', origin));
-    // A built-in row stands in for the code row under its own key.
-    expect(costOf([slotOnly])).toEqual([true, { resource: 'focus', amount: 3 }]);
-    expect(costOf(['lantern|hb', slotToo])).toEqual([true, { resource: 'focus', amount: 4 }]);
-    // A code row under an earlier key still comes first, in either code table.
-    for (const key of [poolToo, slotToo]) {
-      expect(inCode(key)[1]).toBeDefined();
-      expect(inCode(key)[1]).not.toEqual({ resource: 'focus', amount: 4 });
-      expect(costOf([key, 'lantern|hb'])).toEqual(inCode(key));
-    }
+    expect(costOf(['first|hb'])).toEqual([true, { resource: 'focus', amount: 3 }]);
+    expect(costOf(['lantern|hb', 'first|hb'])).toEqual([true, { resource: 'focus', amount: 4 }]);
+    expect(costOf(['first|hb', 'lantern|hb'])).toEqual([true, { resource: 'focus', amount: 3 }]);
+    // A key with no row is passed over, and no row anywhere links nothing.
+    expect(costOf(['no such|hb', 'lantern|hb'])).toEqual([true, { resource: 'focus', amount: 4 }]);
     expect(costOf(['no such|hb'])).toEqual([false, undefined]);
   });
 });

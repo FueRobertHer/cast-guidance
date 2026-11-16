@@ -647,10 +647,9 @@ const slotDice: Field = (v, r, key) => {
  * slot (`"spell-slot"`, of the level the player picks as they pay), or a Hit
  * Point Die (`"hit-die"`, which heals as it is spent).
  */
-// A cost's fields come out in the order the code tables write them
-// (`SPEND_LINKS`, `SLOT_LINKS`), so a row moved out of them gives the same sheet.
-// A buy-back's keep 3a's order (`own` before the slot fields), which differs
-// from `SLOT_LINKS` only for a buy-back with both, and no code row has both.
+// A cost's fields come out in the order the link tables wrote them, before rule
+// pack port 3b to 3d moved every price into `spend.json`, so the moves changed
+// no sheet. A buy-back's keep 3a's order (`own` before the slot fields).
 const actionCost: Field = (v, r, key) =>
   paidWith(
     record({

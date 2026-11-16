@@ -141,8 +141,8 @@ describe('a built-in spend row on a homebrew optional feature', () => {
 });
 
 describe("a shipped buy-back finds another feature's action by its label", () => {
-  // The four links that name another feature's action: whichever table holds
-  // them, the shipped rule set or code, they land only on that exact label.
+  // The four shipped links that name another feature's action land only on
+  // that exact label.
   const LINKS = [
     {
       key: 'sorcery incarnate|sorcerer|xphb',

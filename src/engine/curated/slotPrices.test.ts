@@ -3,6 +3,7 @@ import { BUILT_IN_RULE_SETS, makeTestContext } from '../../../tests-fixtures/tes
 import { RULE_SET_TYPE } from '../castGuidance';
 import { deriveSheet } from '../derive';
 import { Collector } from '../effects/base';
+import { readRuleSet, type SpendLinkRow } from '../effects/mechanics';
 import {
   type CharacterDoc,
   type DataEntity,
@@ -12,39 +13,37 @@ import {
   newCharacterDoc,
   SLOT_COST,
 } from '../types';
-import { SLOT_LINKS } from './slotLinks';
 import { linkSpend } from './spendLinks';
 
-// As every registry holds them: the rows moved out of the link tables.
+// As every registry holds them: the built-in rule sets, with every price.
 const ctx: EngineContext = {
   get: () => undefined,
   byType: (type) => (type === RULE_SET_TYPE ? BUILT_IN_RULE_SETS : []),
 };
 const origin: EffectOrigin = { label: 'Feature', uid: 'x', type: 'class' };
 const collector = () => new Collector(newCharacterDoc('c', 'H', 't'), ctx);
-const rows = Object.entries(SLOT_LINKS);
+/** Every key's links in the shipped spend rows. */
+const links: ReadonlyArray<readonly [string, SpendLinkRow]> = BUILT_IN_RULE_SETS.flatMap((set) =>
+  readRuleSet(set).rows.flatMap((row) =>
+    row.part === 'spend'
+      ? row.keys.flatMap((key) => (row.links ?? []).map((link) => [key, link] as const))
+      : [],
+  ),
+);
 const actionNamed = (col: Collector, label: string) =>
   col.effects.find((e) => e.kind === 'action' && e.label === label);
 
-describe('SLOT_LINKS', () => {
-  it('keys every row by lowercase name and printing', () => {
-    for (const [key] of rows) {
-      expect(key, key).toBe(key.toLowerCase());
-      expect(key.split('|').length, key).toBeGreaterThanOrEqual(2);
-    }
-  });
-
-  // A slot level, dice and healing, and SPEND_SKIPPED, are checked for every
-  // price in `spendLinks.test.ts`, the shipped rule set's with the code's.
+describe('slot prices in the shipped spend rows', () => {
+  // Keys, a slot level, dice and healing, and SPEND_SKIPPED, are checked for
+  // every price in `spendLinks.test.ts`.
 
   it('rolls a 2014 smite as the rules say at each slot level', () => {
-    const smite = SLOT_LINKS['divine smite|paladin|phb'];
-    expect(smite?.kind === 'spend' && smite.cost.slotDice).toEqual({
+    const smite = links.find(([key]) => key === 'divine smite|paladin|phb')?.[1];
+    expect(smite !== undefined && 'cost' in smite && smite.cost.slotDice).toEqual({
       die: 8,
       base: 1,
       maxDice: 5,
     });
-    // Its row is in the shipped rule set (rule pack port 3b).
     const col = collector();
     linkSpend(col, ['eldritch smite|xphb'], 'Eldritch Smite', origin);
     expect(actionNamed(col, 'Eldritch Smite')).toMatchObject({
@@ -52,14 +51,15 @@ describe('SLOT_LINKS', () => {
     });
   });
 
-  it('keeps a Pact Magic price to the three 2024 patrons that say so', () => {
-    const pact = rows
-      .filter(([, row]) => row.kind === 'restore' && row.price.pactOnly === true)
-      .map(([key]) => key);
+  it('keeps a Pact Magic buy-back to the three 2024 patrons that say so', () => {
+    const pact = links
+      .filter(([, link]) => 'buyBack' in link && link.buyBack.pactOnly === true)
+      .map(([key]) => key)
+      .sort();
     expect(pact).toEqual([
       'beguiling defenses|archfey patron|xphb',
-      'hurl through hell|fiend patron|xphb',
       'clairvoyant combatant|great old one patron|xphb',
+      'hurl through hell|fiend patron|xphb',
     ]);
   });
 });

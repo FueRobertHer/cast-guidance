@@ -26,7 +26,7 @@
  * since a build takes the first.
  *
  * `--coverage <file>` writes, for each code table (`CURATED`, `STANDING`,
- * `ROLL_EXTRAS`, `SPEND_LINKS`, `SLOT_LINKS`) and the built-in rows, the keys no
+ * `ROLL_EXTRAS`) and the built-in rows, the keys no
  * build read: a move of one of those rows must be proved some other way. It wraps the tables in place to
  * count, so it changes no sheet.
  */
@@ -132,8 +132,6 @@ const TABLES: ReadonlyArray<readonly [string, string]> = [
   ['../src/engine/curated/curatedEffects.ts', 'CURATED'],
   ['../src/engine/curated/standingEffects.ts', 'STANDING'],
   ['../src/engine/curated/rollExtras.ts', 'ROLL_EXTRAS'],
-  ['../src/engine/curated/spendLinks.ts', 'SPEND_LINKS'],
-  ['../src/engine/curated/slotLinks.ts', 'SLOT_LINKS'],
 ];
 
 /**

@@ -2102,20 +2102,18 @@ describe("an action's price (rule pack port 3a)", () => {
     expect(read({ resource: 'focus', amount: 1, pactOnly: false }).problems).toEqual([]);
   });
 
-  it('reads every price the spend and slot links give, as they give it', async () => {
-    const { codeLinksOf, linkSpend, SPEND_LINKS } = await import('../curated/spendLinks');
-    const { SLOT_LINKS } = await import('../curated/slotLinks');
+  it('reads every price the shipped spend rows give, as they give it', async () => {
+    const { linkSpend } = await import('../curated/spendLinks');
     const shipped = BUILT_IN_RULE_SETS.flatMap((set) =>
       readRuleSet(set).rows.flatMap((r) => (r.part === 'spend' ? r.keys : [])),
     );
     const linked: EffectOrigin = { label: 'Feature', uid: 'feature|hb', type: 'class' };
     const other: EffectOrigin = { label: 'Other', uid: 'other|hb', type: 'class' };
     let prices = 0;
-    const keys = new Set([...Object.keys(SPEND_LINKS), ...Object.keys(SLOT_LINKS), ...shipped]);
-    for (const key of keys) {
+    for (const key of new Set(shipped)) {
       const col = new Collector(character(), world({}));
       // A slot's buy-back for another feature's use lands only on that feature's chip.
-      const links = builtInRuleIn(BUILT_IN_RULE_SETS, 'spend', [key])?.links ?? codeLinksOf(key);
+      const links = builtInRuleIn(BUILT_IN_RULE_SETS, 'spend', [key])?.links ?? [];
       const onAction = links.find(
         (l) => 'buyBack' in l && l.buyBack.resource === 'spell-slot' && l.onAction !== undefined,
       );
@@ -2137,8 +2135,7 @@ describe("an action's price (rule pack port 3a)", () => {
         prices += (e.cost !== undefined ? 1 : 0) + (e.buyBack !== undefined ? 1 : 0);
       }
     }
-    // Every row of both tables and of the shipped spend rows: 299 pool prices and
-    // 57 slot or Hit Point Die prices.
+    // Every shipped spend row: 299 pool prices and 57 slot or Hit Point Die prices.
     expect(prices).toBe(299 + 57);
   });
 
