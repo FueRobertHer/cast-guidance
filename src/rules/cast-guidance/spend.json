@@ -3,5 +3,174 @@
   "v": 1,
   "name": "Built-in spend links",
   "edition": "both",
-  "rows": []
+  "rows": [
+    {
+      "part": "spend",
+      "keys": ["combat wild shape|circle of the moon|phb"],
+      "links": [
+        {
+          "cost": {
+            "resource": "wild-shape",
+            "amount": 1,
+            "optional": true
+          }
+        },
+        {
+          "cost": {
+            "resource": "spell-slot",
+            "amount": 1,
+            "slotDice": {
+              "die": 8,
+              "base": 0,
+              "heals": true
+            }
+          },
+          "economy": "bonus",
+          "label": "Combat Wild Shape healing",
+          "note": "while you are transformed"
+        }
+      ]
+    },
+    {
+      "part": "spend",
+      "keys": ["durable|xphb"],
+      "links": [
+        {
+          "cost": {
+            "resource": "hit-die",
+            "amount": 1,
+            "hitDieHeals": "roll"
+          },
+          "economy": "bonus"
+        }
+      ]
+    },
+    {
+      "part": "spend",
+      "keys": ["eldritch smite|xge"],
+      "links": [
+        {
+          "cost": {
+            "resource": "spell-slot",
+            "amount": 1,
+            "pactOnly": true,
+            "slotDice": {
+              "die": 8,
+              "base": 1
+            }
+          },
+          "economy": "none",
+          "note": "Huge or smaller: you can knock it prone"
+        }
+      ]
+    },
+    {
+      "part": "spend",
+      "keys": ["eldritch smite|xphb"],
+      "links": [
+        {
+          "cost": {
+            "resource": "spell-slot",
+            "amount": 1,
+            "pactOnly": true,
+            "slotDice": {
+              "die": 8,
+              "base": 1
+            }
+          },
+          "economy": "none",
+          "note": "Huge or smaller: you can give it Prone"
+        }
+      ]
+    },
+    {
+      "part": "spend",
+      "keys": ["flurry of blows|monk|phb", "stunning strike|monk|xphb"],
+      "links": [
+        {
+          "cost": {
+            "resource": "focus",
+            "amount": 1
+          }
+        }
+      ]
+    },
+    {
+      "part": "spend",
+      "keys": ["illusory self|illusionist|xphb"],
+      "links": [
+        {
+          "buyBack": {
+            "resource": "spell-slot",
+            "amount": 1,
+            "minLevel": 2
+          }
+        }
+      ]
+    },
+    {
+      "part": "spend",
+      "keys": ["nature's sanctuary|circle of the land|xphb"],
+      "links": [
+        {
+          "cost": {
+            "resource": "wild-shape",
+            "amount": 1
+          },
+          "economy": "action"
+        }
+      ]
+    },
+    {
+      "part": "spend",
+      "keys": ["quickened spell|phb", "quickened spell|xphb"],
+      "links": [
+        {
+          "cost": {
+            "resource": "sorcery-points",
+            "amount": 2
+          },
+          "economy": "none"
+        }
+      ]
+    },
+    {
+      "part": "spend",
+      "keys": ["telekinetic master|psi warrior|tce", "telekinetic master|psi warrior|xphb"],
+      "links": [
+        {
+          "buyBack": {
+            "resource": "psi-warrior-dice",
+            "amount": 1
+          },
+          "ownSpell": "telekinesis"
+        }
+      ]
+    },
+    {
+      "part": "spend",
+      "keys": ["totems|shaman|wow"],
+      "links": [
+        {
+          "buyBack": {
+            "resource": "rage",
+            "amount": 1
+          },
+          "onAction": "Primal Knowledge Totem"
+        }
+      ]
+    },
+    {
+      "part": "spend",
+      "keys": ["warping implosion|aberrant mind|tce", "warping implosion|aberrant sorcery|xphb"],
+      "links": [
+        {
+          "buyBack": {
+            "resource": "sorcery-points",
+            "amount": 5
+          }
+        }
+      ]
+    }
+  ]
 }

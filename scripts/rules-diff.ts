@@ -26,8 +26,8 @@
  * since a build takes the first.
  *
  * `--coverage <file>` writes, for each code table (`CURATED`, `STANDING`,
- * `ROLL_EXTRAS`) and the built-in rows, the keys no build read: a move of one of
- * those rows must be proved some other way. It wraps the tables in place to
+ * `ROLL_EXTRAS`, `SPEND_LINKS`, `SLOT_LINKS`) and the built-in rows, the keys no
+ * build read: a move of one of those rows must be proved some other way. It wraps the tables in place to
  * count, so it changes no sheet.
  */
 import { createHash } from 'node:crypto';
@@ -132,11 +132,13 @@ const TABLES: ReadonlyArray<readonly [string, string]> = [
   ['../src/engine/curated/curatedEffects.ts', 'CURATED'],
   ['../src/engine/curated/standingEffects.ts', 'STANDING'],
   ['../src/engine/curated/rollExtras.ts', 'ROLL_EXTRAS'],
+  ['../src/engine/curated/spendLinks.ts', 'SPEND_LINKS'],
+  ['../src/engine/curated/slotLinks.ts', 'SLOT_LINKS'],
 ];
 
 /**
- * Wrap each code table's rows, and each built-in row's effects, so a read of one
- * is counted. A row is a function (called) or a list (read); either way the
+ * Wrap each code table's rows, and each built-in row's effects (a `spend` row's
+ * links), so a read of one is counted. A row is a function (called) or a list (read); either way the
  * engine gets what it got before. Returns the keys read and the keys in all.
  */
 async function instrument(
@@ -182,8 +184,9 @@ async function instrument(
         // A row at one level is read only when a feature of that level emits it.
         const key = `${row.part}:${row.keys[0]}${row.level === undefined ? '' : ` @${row.level}`}`;
         all.push(key);
-        const effects = (row as unknown as { effects: object }).effects;
-        (row as unknown as { effects: object }).effects = new Proxy(effects, {
+        const field = row.part === 'spend' ? 'links' : 'effects';
+        const held = row as unknown as Record<string, object>;
+        held[field] = new Proxy(held[field] ?? [], {
           get(target, prop, receiver) {
             read.add(key);
             return Reflect.get(target, prop, receiver);

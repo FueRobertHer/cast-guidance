@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { makeTestContext } from '../../../tests-fixtures/testWorld';
+import { BUILT_IN_RULE_SETS, makeTestContext } from '../../../tests-fixtures/testWorld';
 import { SPEND_POOLS, SPEND_SKIPPED } from '../../data5e/audit/spendScope';
+import { RULE_SET_TYPE } from '../castGuidance';
 import { deriveSheet } from '../derive';
 import { Collector } from '../effects/base';
 import {
@@ -13,9 +14,13 @@ import {
   SLOT_COST,
 } from '../types';
 import { SLOT_LINKS } from './slotLinks';
-import { linkSpend, SPEND_LINKS } from './spendLinks';
+import { linkSpend } from './spendLinks';
 
-const ctx: EngineContext = { get: () => undefined, byType: () => [] };
+// As every registry holds them: the rows moved out of the link tables.
+const ctx: EngineContext = {
+  get: () => undefined,
+  byType: (type) => (type === RULE_SET_TYPE ? BUILT_IN_RULE_SETS : []),
+};
 const origin: EffectOrigin = { label: 'Feature', uid: 'x', type: 'class' };
 const collector = () => new Collector(newCharacterDoc('c', 'H', 't'), ctx);
 const rows = Object.entries(SLOT_LINKS);
@@ -67,10 +72,11 @@ describe('SLOT_LINKS', () => {
       base: 1,
       maxDice: 5,
     });
-    const eldritch = SLOT_LINKS['eldritch smite|xphb'];
-    expect(eldritch?.kind === 'spend' && eldritch.cost).toMatchObject({
-      pactOnly: true,
-      slotDice: { die: 8, base: 1 },
+    // Its row is in the shipped rule set (rule pack port 3b).
+    const col = collector();
+    linkSpend(col, ['eldritch smite|xphb'], 'Eldritch Smite', origin);
+    expect(actionNamed(col, 'Eldritch Smite')).toMatchObject({
+      cost: { pactOnly: true, slotDice: { die: 8, base: 1 } },
     });
   });
 
@@ -133,7 +139,6 @@ describe('linkSpend with a slot or Hit Point Die row', () => {
       economy: 'bonus',
       cost: { resource: SLOT_COST, slotDice: { die: 8, base: 0, heals: true } },
     });
-    expect(SPEND_LINKS['combat wild shape|circle of the moon|phb']).toBeDefined();
   });
 
   it("buys back the feature's own use with a slot of the level it names", () => {

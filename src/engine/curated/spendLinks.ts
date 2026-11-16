@@ -94,9 +94,10 @@ function pool(
 }
 
 export const SPEND_LINKS: Readonly<Record<string, SpendLink>> = {
+  // Keys moved to `src/rules/cast-guidance/spend.json` (rule pack port 3b) are
+  // read there, and are in neither table.
   // Written under its 2024 name; `costOnSheet` finds a 2014 monk's ki.
   ...pool('focus', {
-    'flurry of blows|monk|phb': 1,
     'patient defense|monk|phb': 1,
     'step of the wind|monk|phb': 1,
     'deflect missiles|monk|phb': paid(),
@@ -109,7 +110,6 @@ export const SPEND_LINKS: Readonly<Record<string, SpendLink>> = {
     'patient defense|monk|xphb': paid(),
     'step of the wind|monk|xphb': paid(),
     'deflect attacks|monk|xphb': paid(),
-    'stunning strike|monk|xphb': 1,
     'disciplined survivor|monk|xphb': rider(),
     'superior defense|monk|xphb': rider(3),
     'ascendant aspect|way of the ascendant dragon|ftd': rider(),
@@ -189,8 +189,6 @@ export const SPEND_LINKS: Readonly<Record<string, SpendLink>> = {
     'extended spell|xphb': rider(),
     'heightened spell|phb': rider(3),
     'heightened spell|xphb': rider(2),
-    'quickened spell|phb': rider(2),
-    'quickened spell|xphb': rider(2),
     'seeking spell|tce': rider(2),
     'seeking spell|xphb': rider(),
     'subtle spell|phb': rider(),
@@ -204,8 +202,6 @@ export const SPEND_LINKS: Readonly<Record<string, SpendLink>> = {
     'lunar phenomenon|lunar sorcery|dsotdq': restore(5, {
       uses: { key: 'lunar-phenomenon', max: 3, resetOn: 'long' },
     }),
-    'warping implosion|aberrant mind|tce': restore(5),
-    'warping implosion|aberrant sorcery|xphb': restore(5),
     'trance of order|clockwork soul|tce': restore(5),
     'trance of order|clockwork sorcery|xphb': restore(5),
     'clockwork cavalcade|clockwork soul|tce': restore(7),
@@ -355,9 +351,6 @@ export const SPEND_LINKS: Readonly<Record<string, SpendLink>> = {
     'psi-powered leap|psi warrior|xphb': restore(1),
     'bulwark of force|psi warrior|tce': restore(1),
     'bulwark of force|psi warrior|xphb': restore(1),
-    // The chip is the bonus attack, and the use is the granted spell's.
-    'telekinetic master|psi warrior|tce': restore(1, { ownSpell: 'telekinesis' }),
-    'telekinetic master|psi warrior|xphb': restore(1, { ownSpell: 'telekinesis' }),
   }),
   ...pool('soulknife-dice', {
     'psi-bolstered knack|soulknife|tce': rider(),
@@ -396,13 +389,11 @@ export const SPEND_LINKS: Readonly<Record<string, SpendLink>> = {
   ...pool('wild-shape', {
     'wild companion|druid|tce': on('action'),
     'wild companion|druid|xphb': paid('action'),
-    'combat wild shape|circle of the moon|phb': paid(),
     'elemental wild shape|circle of the moon|phb': rider(2),
     'symbiotic entity|circle of spores|tce': on('action'),
     'starry form|circle of stars|tce': 1,
     'summon wildfire spirit|circle of wildfire|tce': on('action'),
     "land's aid|circle of the land|xphb": on('action'),
-    "nature's sanctuary|circle of the land|xphb": on('action'),
     'wrath of the sea|circle of the sea|xphb': 1,
     'oceanic gift|circle of the sea|xphb': rider('varies'),
     'starry form|circle of the stars|xphb': 1,
@@ -420,7 +411,6 @@ export const SPEND_LINKS: Readonly<Record<string, SpendLink>> = {
     'intimidating presence|path of the berserker|xphb': restore(1),
     'zealous presence|path of the zealot|xphb': restore(1),
     'echo of the elements|path of the elements|wow': on('action'),
-    'totems|shaman|wow': restore(1, { onAction: 'Primal Knowledge Totem' }),
   }),
   ...pool('second-wind', {
     'tactical mind|fighter|xphb': rider(),

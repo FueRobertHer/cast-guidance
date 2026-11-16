@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest';
+import { BUILT_IN_RULE_SETS } from '../../../tests-fixtures/testWorld';
+import { RULE_SET_TYPE } from '../../engine/castGuidance';
 import { HIT_DIE_COST, SLOT_COST } from '../../engine/types';
 import type { Entity } from '../copyMod';
 import {
@@ -212,8 +214,10 @@ describe('spendReport', () => {
     const options = [
       option('Eldritch Smite', 'XGE', 'You can expend a warlock spell slot to deal extra damage.'),
     ];
+    // As every registry holds them: its row is in the shipped spend rows.
     const smite = {
-      byType: (t: string) => (t === 'optionalfeature' ? options : []),
+      byType: (t: string) =>
+        t === 'optionalfeature' ? options : t === RULE_SET_TYPE ? BUILT_IN_RULE_SETS : [],
       get: () => undefined,
     };
     const subject = proseSubjects(smite)[0];

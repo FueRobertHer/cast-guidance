@@ -116,25 +116,12 @@ const hitDie = (
 const d8 = (base: number, extra: Partial<SlotDice> = {}): SlotDice => ({ die: 8, base, ...extra });
 
 export const SLOT_LINKS: Readonly<Record<string, SlotRow>> = {
+  // Keys moved to `src/rules/cast-guidance/spend.json` (rule pack port 3b) are
+  // read there, and are in neither table.
   // Spent for what the slot's level buys.
   'divine smite|paladin|phb': slot('none', {
     dice: d8(1, { maxDice: 5 }),
     note: '1d8 more against an undead or fiend',
-  }),
-  'eldritch smite|xge': slot('none', {
-    pactOnly: true,
-    dice: d8(1),
-    note: 'Huge or smaller: you can knock it prone',
-  }),
-  'eldritch smite|xphb': slot('none', {
-    pactOnly: true,
-    dice: d8(1),
-    note: 'Huge or smaller: you can give it Prone',
-  }),
-  'combat wild shape|circle of the moon|phb': slot('bonus', {
-    label: 'Combat Wild Shape healing',
-    dice: d8(0, { heals: true }),
-    note: 'while you are transformed',
   }),
   'primeval awareness|ranger|phb': slot('action', { note: '1 minute a slot level' }),
   'song of defense|bladesinging|tce': slot('reaction', { note: '5 less damage a slot level' }),
@@ -199,10 +186,8 @@ export const SLOT_LINKS: Readonly<Record<string, SlotRow>> = {
   'manifest mind|order of scribes|tce': slotBack(),
   'distant transposition|conjurer|au': slotBack(3),
   'splintered summons|conjurer|au': slotBack(5),
-  'illusory self|illusionist|xphb': slotBack(2),
   'strixhaven mascot|scc': slotBack(2),
   // Hit Point Dice spent to heal.
-  'durable|xphb': hitDie('bonus', 'roll'),
   'light bringer|abh': hitDie('bonus', 'roll', { ownUseToo: true }),
   'dwarven fortitude|xge': hitDie('none', 'rollPlusCon', { atLeast: 1 }),
   'lifedrinker|xphb': hitDie('none', 'rollPlusCon', { atLeast: 1 }),

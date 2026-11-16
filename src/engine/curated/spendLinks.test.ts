@@ -1,13 +1,19 @@
 import { describe, expect, it } from 'vitest';
+import { onActionOf, SPEND_SEEDS } from '../../../tests-fixtures/spendSeeds';
+import { BUILT_IN_RULE_SETS } from '../../../tests-fixtures/testWorld';
 import { SPEND_POOLS, SPEND_SKIPPED } from '../../data5e/audit/spendScope';
 import { RULE_SET_TYPE } from '../castGuidance';
 import { Collector } from '../effects/base';
 import { readRuleSet } from '../effects/mechanics';
-import { type EffectInput, type EffectOrigin, type EngineContext, newCharacterDoc } from '../types';
+import { type EffectOrigin, type EngineContext, newCharacterDoc } from '../types';
 import { SLOT_LINKS } from './slotLinks';
 import { codeLinksOf, linkCodeRows, linkPrice, linkSpend, SPEND_LINKS } from './spendLinks';
 
-const ctx: EngineContext = { get: () => undefined, byType: () => [] };
+// As every registry holds them: the rows moved out of the link tables.
+const ctx: EngineContext = {
+  get: () => undefined,
+  byType: (type) => (type === RULE_SET_TYPE ? BUILT_IN_RULE_SETS : []),
+};
 const origin: EffectOrigin = { label: 'Feature', uid: 'x', type: 'class' };
 const collector = () => new Collector(newCharacterDoc('c', 'H', 't'), ctx);
 const rows = Object.entries(SPEND_LINKS);
@@ -77,7 +83,13 @@ describe('SPEND_LINKS', () => {
   });
 
   it('covers the cases that spent nothing', () => {
-    const pool = (key: string) => SPEND_LINKS[key]?.resource;
+    // Wherever the key's row is, in the table or the shipped rule set.
+    const pool = (key: string) => {
+      const col = collector();
+      linkSpend(col, [key], 'Feature', origin);
+      const action = col.effects.find((e) => e.kind === 'action');
+      return action?.kind === 'action' ? action.cost?.resource : undefined;
+    };
     expect(pool('cutting words|college of lore|phb')).toBe('bardic-inspiration');
     expect(pool('cutting words|college of lore|xphb')).toBe('bardic-inspiration');
     expect(pool('flurry of blows|monk|xphb')).toBe('focus');
@@ -246,39 +258,11 @@ describe('a built-in spend row stands in for the code rows of its key (rule pack
   );
   const linksOf = new Map(read.rows.map((r) => [r.keys[0], r.links ?? []]));
 
-  /** What a feature may have emitted before its links run: by its own origin, or another's. */
-  type Seed = (add: (e: EffectInput) => void, own: EffectOrigin, onAction: string) => void;
-  const other: EffectOrigin = { label: 'Another', uid: 'another', type: 'class' };
-  const pool = { resource: 'other-pool', amount: 2 };
-  const SEEDS: Record<string, Seed> = {
-    'no action': () => {},
-    'an action': (add, own) =>
-      add({ kind: 'action', economy: 'bonus', label: 'Feature', origin: own }),
-    'an action with a cost': (add, own) =>
-      add({ kind: 'action', economy: 'bonus', label: 'Feature', cost: pool, origin: own }),
-    'an action with a buy-back': (add, own) =>
-      add({ kind: 'action', economy: 'bonus', label: 'Feature', buyBack: pool, origin: own }),
-    'an action with a note': (add, own) =>
-      add({ kind: 'action', economy: 'bonus', label: 'Feature', note: 'A note.', origin: own }),
-    'two actions': (add, own) => {
-      add({ kind: 'action', economy: 'reaction', label: 'Feature', origin: own });
-      add({ kind: 'action', economy: 'bonus', label: 'Feature Two', cost: pool, origin: own });
-    },
-    "another feature's action it names": (add, _own, onAction) =>
-      add({ kind: 'action', economy: 'bonus', label: onAction, origin: other }),
-    "another feature's action it names, with a buy-back": (add, _own, onAction) =>
-      add({ kind: 'action', economy: 'bonus', label: onAction, buyBack: pool, origin: other }),
-    both: (add, own, onAction) => {
-      add({ kind: 'action', economy: 'action', label: onAction, origin: other });
-      add({ kind: 'action', economy: 'bonus', label: 'Feature', cost: pool, origin: own });
-    },
-  };
-
   it('reads every code row as links', () => {
     expect(read.problems).toEqual([]);
     expect(read.rows).toHaveLength(keys.length);
-    // 299 pool rows and 57 slot rows, two keys in both.
-    expect(keys).toHaveLength(299 + 57 - 2);
+    // 288 pool rows and 52 slot rows left in code, one key in both (Divine Reaper).
+    expect(keys).toHaveLength(288 + 52 - 1);
   });
 
   it('pays with a pool in SPEND_LINKS and with a slot or a die in SLOT_LINKS alone', () => {
@@ -298,10 +282,8 @@ describe('a built-in spend row stands in for the code rows of its key (rule pack
     const differ: string[] = [];
     for (const key of keys) {
       const links = linksOf.get(key) ?? [];
-      const onAction =
-        links.flatMap((l) => ('buyBack' in l && l.onAction !== undefined ? [l.onAction] : []))[0] ??
-        'Another Feature';
-      for (const [state, seed] of Object.entries(SEEDS)) {
+      const onAction = onActionOf(links);
+      for (const [state, seed] of Object.entries(SPEND_SEEDS)) {
         const run = (link: (col: Collector, own: EffectOrigin) => void) => {
           const col = collector();
           const own: EffectOrigin = { label: 'Feature', uid: 'feature|tst', type: 'class' };
