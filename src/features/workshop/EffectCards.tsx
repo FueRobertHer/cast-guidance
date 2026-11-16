@@ -2141,9 +2141,7 @@ export function EffectCards({
   ): [Eff[], Eff[] | undefined] => {
     const last = following.current;
     const at =
-      last !== undefined &&
-      last.at.has(`effect ${i} key`) &&
-      last.was === JSON.stringify([list, amends])
+      last?.at.has(`effect ${i} key`) === true && last.was === JSON.stringify([list, amends])
         ? last.at
         : new Set([
             ...list.flatMap((x, j) => naming(x, `effect ${j}`, from)),
