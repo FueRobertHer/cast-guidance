@@ -1,6 +1,7 @@
 /**
- * Proves each row moved out of a code table (`TABLES`: `CURATED`, `STANDING`,
- * `ROLL_EXTRAS`; the spend link tables were proved the same way until 3d) into a
+ * Proves each row moved out of a code table (`TABLES`: `CURATED`, `STANDING`;
+ * the spend link tables until 3d and `ROLL_EXTRAS` until 3e were proved the
+ * same way) into a
  * built-in rule set adds what the code row added, before the code row is
  * deleted (rule pack port; `docs/rule-sets.md`). Run it while both are in the
  * tree: for every built-in row whose key its part's code tables still have,
@@ -51,7 +52,6 @@ import { normalizeDataset } from '../src/data5e/normalize';
 import { editionOf } from '../src/data5e/rulesVersion';
 import { RULE_SET_TYPE } from '../src/engine/castGuidance';
 import { CURATED } from '../src/engine/curated/curatedEffects';
-import { ROLL_EXTRAS } from '../src/engine/curated/rollExtras';
 import { STANDING } from '../src/engine/curated/standingEffects';
 import { deriveSheet } from '../src/engine/derive';
 import { Collector } from '../src/engine/effects/base';
@@ -102,14 +102,13 @@ type Table = Record<string, unknown>;
 /**
  * The code tables each part's rows stand in for, while they have rows. Each
  * table's rows take their own arguments: a function (`CURATED`, `STANDING`) or
- * a list or record (`ROLL_EXTRAS`). A part whose rows have all moved
- * (`rollAdvantage`, `spend`) has none: to probe again, put its table and its
- * call sites' fallback back.
+ * a list or record (`ROLL_EXTRAS` was). A part whose rows have all moved
+ * (`rollAdvantage`, `rollExtra`, `spend`) has none: to probe again, put its
+ * table and its call sites' fallback back.
  */
 const TABLES: Partial<Record<RulePart, readonly Table[]>> = {
   curated: [CURATED],
   standing: [STANDING],
-  rollExtra: [ROLL_EXTRAS],
 };
 type Row = (...args: unknown[]) => unknown;
 /** A moved row by part and key, as `part key`: one key may have a row in two parts. */

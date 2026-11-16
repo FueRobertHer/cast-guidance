@@ -6,7 +6,6 @@ import {
   dragonOptions,
   namedDragon,
 } from '../curated/draconicAncestry';
-import { emitRollExtras, hasRollExtraRow } from '../curated/rollExtras';
 import {
   type CharacterDoc,
   type DataEntity,
@@ -307,11 +306,7 @@ function collectFrom(col: Collector, e: DataEntity, origin: EffectOrigin, idBase
         ];
         const traitOrigin = { ...origin, label: traitName };
         emitBuiltInRows(col, 'rollAdvantage', rollKeys, traitOrigin);
-        if (
-          !emitBuiltInRows(col, 'rollExtra', rollKeys, traitOrigin, { inCode: hasRollExtraRow })
-        ) {
-          emitRollExtras(col, rollKeys, traitOrigin);
-        }
+        emitBuiltInRows(col, 'rollExtra', rollKeys, traitOrigin);
       },
     });
   }

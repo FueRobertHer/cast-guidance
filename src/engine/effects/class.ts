@@ -1,6 +1,5 @@
 import { plainEntryText } from '../../data5e/entries/plainText';
 import { emitCuratedEffects as emitCurated, hasCuratedRow } from '../curated/curatedEffects';
-import { emitRollExtras, hasRollExtraRow } from '../curated/rollExtras';
 import { linkSpend } from '../curated/spendLinks';
 import { emitStandingEffects as emitStanding, hasStandingRow } from '../curated/standingEffects';
 import { summarizeEntries } from '../summarize';
@@ -375,14 +374,7 @@ function collectFeatureWithNested(
         labels.flatMap((label) => sources.map((source) => `${n}|${label}|${source}`)),
       );
       emitBuiltInRows(col, 'rollAdvantage', rollKeys, featureOrigin, at);
-      if (
-        !emitBuiltInRows(col, 'rollExtra', rollKeys, featureOrigin, {
-          ...at,
-          inCode: hasRollExtraRow,
-        })
-      ) {
-        emitRollExtras(col, rollKeys, featureOrigin, level, walk.classLevel);
-      }
+      emitBuiltInRows(col, 'rollExtra', rollKeys, featureOrigin, at);
       linkSpend(col, rollKeys, name, featureOrigin);
     },
   });

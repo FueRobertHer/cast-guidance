@@ -6,6 +6,73 @@
   "rows": [
     {
       "part": "rollExtra",
+      "keys": ["aberrant dragonmark|efa", "transmuted anatomy|au"],
+      "effects": [
+        {
+          "kind": "rollPaid",
+          "on": {
+            "rolls": ["save"],
+            "abilities": ["con"]
+          },
+          "dice": "1d4",
+          "reaction": true,
+          "ifFailed": true
+        }
+      ]
+    },
+    {
+      "part": "rollExtra",
+      "keys": ["adept of the red robes|dsotdq"],
+      "effects": [
+        {
+          "kind": "rollReroll",
+          "on": {
+            "rolls": ["attack", "check"]
+          },
+          "to": 10
+        }
+      ]
+    },
+    {
+      "part": "rollExtra",
+      "keys": ["ambush|tce", "ambush|xphb"],
+      "effects": [
+        {
+          "kind": "rollPaid",
+          "on": {
+            "rolls": ["check"],
+            "skills": ["Stealth"]
+          },
+          "poolDie": true
+        },
+        {
+          "kind": "rollPaid",
+          "on": {
+            "rolls": ["check"],
+            "initiative": true
+          },
+          "poolDie": true
+        }
+      ]
+    },
+    {
+      "part": "rollExtra",
+      "keys": ["arcane deflection|war magic|xge"],
+      "effects": [
+        {
+          "kind": "rollPaid",
+          "on": {
+            "rolls": ["save"]
+          },
+          "bonus": 4,
+          "after": true,
+          "reaction": true,
+          "ifFailed": true
+        }
+      ]
+    },
+    {
+      "part": "rollExtra",
       "keys": ["arcane eloquence|au"],
       "effects": [
         {
@@ -15,6 +82,21 @@
             "rolls": ["check"],
             "skills": ["Deception", "Intimidation", "Persuasion"]
           }
+        }
+      ]
+    },
+    {
+      "part": "rollExtra",
+      "keys": ["arcane omens|au"],
+      "effects": [
+        {
+          "kind": "rollPaid",
+          "on": {
+            "rolls": ["save"]
+          },
+          "dice": "1d4",
+          "reaction": true,
+          "ifFailed": true
         }
       ]
     },
@@ -34,7 +116,108 @@
     },
     {
       "part": "rollExtra",
-      "keys": ["mark of detection|efa"],
+      "keys": ["artisan's intuition|erlw", "mark of making|efa"],
+      "effects": [
+        {
+          "kind": "rollDie",
+          "dice": "1d4",
+          "on": {
+            "rolls": ["check"],
+            "skills": ["Arcana"]
+          }
+        }
+      ]
+    },
+    {
+      "part": "rollExtra",
+      "keys": ["boon of fortune's favor|frhof"],
+      "effects": [
+        {
+          "kind": "rollReroll",
+          "on": {
+            "rolls": ["save"]
+          },
+          "ifFailed": true,
+          "free": true,
+          "when": "Once until the start of your next turn"
+        }
+      ]
+    },
+    {
+      "part": "rollExtra",
+      "keys": ["built for success|autognome|aag", "built for success|mechagnome|wow"],
+      "effects": [
+        {
+          "kind": "rollPaid",
+          "on": {
+            "rolls": ["attack", "check", "save"]
+          },
+          "dice": "1d4"
+        }
+      ]
+    },
+    {
+      "part": "rollExtra",
+      "keys": ["channel divinity: feat of strength|strength domain (psa)|psa"],
+      "level": 2,
+      "effects": [
+        {
+          "kind": "rollPaid",
+          "on": {
+            "rolls": ["attack", "check", "save"],
+            "abilities": ["str"]
+          },
+          "bonus": 10,
+          "after": true
+        }
+      ]
+    },
+    {
+      "part": "rollExtra",
+      "keys": ["channel divinity: guided strike|war domain|phb"],
+      "level": 2,
+      "effects": [
+        {
+          "kind": "rollPaid",
+          "on": {
+            "rolls": ["attack"]
+          },
+          "bonus": 10,
+          "after": true
+        }
+      ]
+    },
+    {
+      "part": "rollExtra",
+      "keys": ["commanding presence|tce", "commanding presence|xphb"],
+      "effects": [
+        {
+          "kind": "rollPaid",
+          "on": {
+            "rolls": ["check"],
+            "skills": ["Intimidation", "Performance", "Persuasion"]
+          },
+          "poolDie": true
+        }
+      ]
+    },
+    {
+      "part": "rollExtra",
+      "keys": ["cunning intuition|erlw"],
+      "effects": [
+        {
+          "kind": "rollDie",
+          "dice": "1d4",
+          "on": {
+            "rolls": ["check"],
+            "skills": ["Performance", "Stealth"]
+          }
+        }
+      ]
+    },
+    {
+      "part": "rollExtra",
+      "keys": ["deductive intuition|erlw", "mark of detection|efa"],
       "effects": [
         {
           "kind": "rollDie",
@@ -48,7 +231,260 @@
     },
     {
       "part": "rollExtra",
-      "keys": ["mark of finding|efa"],
+      "keys": [
+        "diamond soul|monk|phb",
+        "disciplined survivor|monk|xphb",
+        "indomitable|fighter|phb",
+        "indomitable|warrior sidekick|tce"
+      ],
+      "effects": [
+        {
+          "kind": "rollReroll",
+          "on": {
+            "rolls": ["save"]
+          },
+          "ifFailed": true
+        }
+      ]
+    },
+    {
+      "part": "rollExtra",
+      "keys": ["draconic disciple|way of the ascendant dragon|ftd"],
+      "effects": [
+        {
+          "kind": "rollReroll",
+          "on": {
+            "rolls": ["check"],
+            "skills": ["Intimidation", "Persuasion"]
+          },
+          "ifFailed": true,
+          "free": true,
+          "reaction": true,
+          "when": "Once it turns a failure into a success, not again until a long rest"
+        }
+      ]
+    },
+    {
+      "part": "rollExtra",
+      "keys": ["dragon|circle of stars|tce", "dragon|circle of the stars|xphb"],
+      "effects": [
+        {
+          "kind": "rollReroll",
+          "on": {
+            "rolls": ["check"],
+            "abilities": ["int", "wis"]
+          },
+          "to": 10,
+          "free": true,
+          "when": "Only in your Dragon form"
+        }
+      ]
+    },
+    {
+      "part": "rollExtra",
+      "keys": ["ear for deceit|inquisitive|xge"],
+      "effects": [
+        {
+          "kind": "rollReroll",
+          "on": {
+            "rolls": ["check"],
+            "skills": ["Insight"]
+          },
+          "to": 8,
+          "free": true,
+          "when": "Only to tell whether a creature is lying"
+        }
+      ]
+    },
+    {
+      "part": "rollExtra",
+      "keys": ["elven accuracy|xge"],
+      "effects": [
+        {
+          "kind": "rollReroll",
+          "on": {
+            "rolls": ["attack"],
+            "abilities": ["dex", "int", "wis", "cha"]
+          },
+          "die": "low",
+          "auto": true,
+          "free": true
+        }
+      ]
+    },
+    {
+      "part": "rollExtra",
+      "keys": ["ever hospitable|erlw", "mark of hospitality|efa"],
+      "effects": [
+        {
+          "kind": "rollDie",
+          "dice": "1d4",
+          "on": {
+            "rolls": ["check"],
+            "skills": ["Persuasion"]
+          }
+        }
+      ]
+    },
+    {
+      "part": "rollExtra",
+      "keys": ["fanatical focus|path of the zealot|xge"],
+      "effects": [
+        {
+          "kind": "rollReroll",
+          "on": {
+            "rolls": ["save"]
+          },
+          "ifFailed": true,
+          "free": true,
+          "when": "Once a Rage",
+          "while": {
+            "effect": "Rage"
+          }
+        }
+      ]
+    },
+    {
+      "part": "rollExtra",
+      "keys": ["fanatical focus|path of the zealot|xphb"],
+      "effects": [
+        {
+          "kind": "rollReroll",
+          "on": {
+            "rolls": ["save"]
+          },
+          "ifFailed": true,
+          "free": true,
+          "when": "Once a Rage",
+          "bonus": {
+            "byLevel": {
+              "1": 2,
+              "9": 3,
+              "16": 4
+            }
+          },
+          "while": {
+            "effect": "Rage"
+          }
+        }
+      ]
+    },
+    {
+      "part": "rollExtra",
+      "keys": ["flash of genius|artificer|efa"],
+      "effects": [
+        {
+          "kind": "rollPaid",
+          "on": {
+            "rolls": ["check", "save"]
+          },
+          "bonus": {
+            "f": "max(1, mod.int)"
+          },
+          "after": true,
+          "reaction": true,
+          "ifFailed": true
+        }
+      ]
+    },
+    {
+      "part": "rollExtra",
+      "keys": ["flash of genius|artificer|tce"],
+      "effects": [
+        {
+          "kind": "rollPaid",
+          "on": {
+            "rolls": ["check", "save"]
+          },
+          "bonus": {
+            "f": "max(0, mod.int)"
+          },
+          "after": true,
+          "reaction": true
+        }
+      ]
+    },
+    {
+      "part": "rollExtra",
+      "keys": ["gifted scribe|erlw", "mark of scribing|efa"],
+      "effects": [
+        {
+          "kind": "rollDie",
+          "dice": "1d4",
+          "on": {
+            "rolls": ["check"],
+            "skills": ["History"]
+          }
+        }
+      ]
+    },
+    {
+      "part": "rollExtra",
+      "keys": ["guided strike|oath of conquest|xge"],
+      "effects": [
+        {
+          "kind": "rollPaid",
+          "on": {
+            "rolls": ["attack"]
+          },
+          "bonus": 10,
+          "after": true
+        }
+      ]
+    },
+    {
+      "part": "rollExtra",
+      "keys": ["guided strike|war domain|xphb"],
+      "effects": [
+        {
+          "kind": "rollPaid",
+          "on": {
+            "rolls": ["attack"]
+          },
+          "bonus": 10,
+          "after": true,
+          "ifFailed": true,
+          "reaction": false
+        }
+      ]
+    },
+    {
+      "part": "rollExtra",
+      "keys": ["homing strikes|soulknife|tce"],
+      "effects": [
+        {
+          "kind": "rollPaid",
+          "on": {
+            "rolls": ["attack"],
+            "attack": "weapon"
+          },
+          "poolDie": true,
+          "ifFailed": true,
+          "spentOnSuccess": true,
+          "when": "Only with your Psychic Blades"
+        }
+      ]
+    },
+    {
+      "part": "rollExtra",
+      "keys": ["homing strikes|soulknife|xphb"],
+      "effects": [
+        {
+          "kind": "rollPaid",
+          "on": {
+            "rolls": ["attack"],
+            "attack": "weapon"
+          },
+          "poolDie": true,
+          "ifFailed": true,
+          "spentOnSuccess": true,
+          "when": "Only with your Psychic Blade"
+        }
+      ]
+    },
+    {
+      "part": "rollExtra",
+      "keys": ["hunter's intuition|erlw", "mark of finding|efa"],
       "effects": [
         {
           "kind": "rollDie",
@@ -57,6 +493,228 @@
             "rolls": ["check"],
             "skills": ["Perception", "Survival"]
           }
+        }
+      ]
+    },
+    {
+      "part": "rollExtra",
+      "keys": ["indomitable might|barbarian|phb"],
+      "effects": [
+        {
+          "kind": "rollReroll",
+          "on": {
+            "rolls": ["check"],
+            "abilities": ["str"]
+          },
+          "floorScore": "str",
+          "auto": true,
+          "free": true
+        }
+      ]
+    },
+    {
+      "part": "rollExtra",
+      "keys": ["indomitable might|barbarian|xphb"],
+      "effects": [
+        {
+          "kind": "rollReroll",
+          "on": {
+            "rolls": ["check", "save"],
+            "abilities": ["str"]
+          },
+          "floorScore": "str",
+          "auto": true,
+          "free": true
+        }
+      ]
+    },
+    {
+      "part": "rollExtra",
+      "keys": ["indomitable|fighter|xphb"],
+      "level": 9,
+      "effects": [
+        {
+          "kind": "rollReroll",
+          "on": {
+            "rolls": ["save"]
+          },
+          "ifFailed": true,
+          "bonus": {
+            "f": "classLevel"
+          }
+        }
+      ]
+    },
+    {
+      "part": "rollExtra",
+      "keys": ["intuitive motion|erlw", "mark of storm|efa", "windwright's intuition|erlw"],
+      "effects": [
+        {
+          "kind": "rollDie",
+          "dice": "1d4",
+          "on": {
+            "rolls": ["check"],
+            "skills": ["Acrobatics"]
+          }
+        }
+      ]
+    },
+    {
+      "part": "rollExtra",
+      "keys": ["kenku recall|kenku|mpmm"],
+      "effects": [
+        {
+          "kind": "rollPaid",
+          "on": {
+            "rolls": ["check"],
+            "skilled": true
+          },
+          "advantage": true,
+          "when": "Only with a skill you are proficient in"
+        }
+      ]
+    },
+    {
+      "part": "rollExtra",
+      "keys": ["khenra twins|khenra|psa"],
+      "effects": [
+        {
+          "kind": "rollReroll",
+          "on": {
+            "rolls": ["attack", "check", "save"]
+          },
+          "die": "one",
+          "atMost": 1,
+          "free": true,
+          "when": "Only while your twin lives and you can see them"
+        }
+      ]
+    },
+    {
+      "part": "rollExtra",
+      "keys": ["knowledge from a past life|reborn|rhw"],
+      "effects": [
+        {
+          "kind": "rollPaid",
+          "on": {
+            "rolls": ["check"]
+          },
+          "dice": "1d6",
+          "ifFailed": true
+        }
+      ]
+    },
+    {
+      "part": "rollExtra",
+      "keys": ["knowledge from a past life|reborn|vrgr"],
+      "effects": [
+        {
+          "kind": "rollPaid",
+          "on": {
+            "rolls": ["check"],
+            "skilled": true
+          },
+          "dice": "1d6",
+          "after": true
+        }
+      ]
+    },
+    {
+      "part": "rollExtra",
+      "keys": ["living legend|oath of glory|tce", "living legend|oath of glory|xphb"],
+      "effects": [
+        {
+          "kind": "rollReroll",
+          "on": {
+            "rolls": ["save"]
+          },
+          "ifFailed": true,
+          "free": true,
+          "reaction": true,
+          "when": "Only while Living Legend lasts"
+        }
+      ]
+    },
+    {
+      "part": "rollExtra",
+      "keys": ["lucky footwork|harengon|mpmm", "lucky footwork|harengon|wbtw"],
+      "effects": [
+        {
+          "kind": "rollPaid",
+          "on": {
+            "rolls": ["save"],
+            "abilities": ["dex"]
+          },
+          "dice": "1d4",
+          "reaction": true,
+          "ifFailed": true,
+          "when": "Only while you are not Prone and can move"
+        }
+      ]
+    },
+    {
+      "part": "rollExtra",
+      "keys": [
+        "lucky|halfling|phb",
+        "lucky|kor|psz",
+        "luck|halfling|xphb",
+        "luck|kithkin; lorwyn|lfl",
+        "luck|kithkin; shadowmoor|lfl",
+        "luck|kithkin|lfl"
+      ],
+      "effects": [
+        {
+          "kind": "rollReroll",
+          "on": {
+            "rolls": ["attack", "check", "save"]
+          },
+          "die": "one",
+          "atMost": 1,
+          "auto": true,
+          "free": true
+        }
+      ]
+    },
+    {
+      "part": "rollExtra",
+      "keys": ["lucky|phb"],
+      "effects": [
+        {
+          "kind": "rollReroll",
+          "on": {
+            "rolls": ["attack", "check", "save"]
+          },
+          "die": "extra"
+        }
+      ]
+    },
+    {
+      "part": "rollExtra",
+      "keys": [
+        "lucky|xphb",
+        "tides of chaos|wild magic sorcery|xphb",
+        "tides of chaos|wild magic|phb"
+      ],
+      "effects": [
+        {
+          "kind": "rollPaid",
+          "on": {
+            "rolls": ["attack", "check", "save"]
+          },
+          "advantage": true
+        }
+      ]
+    },
+    {
+      "part": "rollExtra",
+      "keys": ["magical guidance|sorcerer|tce"],
+      "effects": [
+        {
+          "kind": "rollReroll",
+          "on": {
+            "rolls": ["check"]
+          },
+          "ifFailed": true
         }
       ]
     },
@@ -76,7 +734,7 @@
     },
     {
       "part": "rollExtra",
-      "keys": ["mark of healing|efa"],
+      "keys": ["mark of healing|efa", "medical intuition|erlw"],
       "effects": [
         {
           "kind": "rollDie",
@@ -84,34 +742,6 @@
           "on": {
             "rolls": ["check"],
             "skills": ["Medicine"]
-          }
-        }
-      ]
-    },
-    {
-      "part": "rollExtra",
-      "keys": ["mark of hospitality|efa"],
-      "effects": [
-        {
-          "kind": "rollDie",
-          "dice": "1d4",
-          "on": {
-            "rolls": ["check"],
-            "skills": ["Persuasion"]
-          }
-        }
-      ]
-    },
-    {
-      "part": "rollExtra",
-      "keys": ["mark of making|efa"],
-      "effects": [
-        {
-          "kind": "rollDie",
-          "dice": "1d4",
-          "on": {
-            "rolls": ["check"],
-            "skills": ["Arcana"]
           }
         }
       ]
@@ -132,21 +762,7 @@
     },
     {
       "part": "rollExtra",
-      "keys": ["mark of scribing|efa"],
-      "effects": [
-        {
-          "kind": "rollDie",
-          "dice": "1d4",
-          "on": {
-            "rolls": ["check"],
-            "skills": ["History"]
-          }
-        }
-      ]
-    },
-    {
-      "part": "rollExtra",
-      "keys": ["mark of sentinel|efa"],
+      "keys": ["mark of sentinel|efa", "sentinel's intuition|erlw"],
       "effects": [
         {
           "kind": "rollDie",
@@ -174,21 +790,7 @@
     },
     {
       "part": "rollExtra",
-      "keys": ["mark of storm|efa"],
-      "effects": [
-        {
-          "kind": "rollDie",
-          "dice": "1d4",
-          "on": {
-            "rolls": ["check"],
-            "skills": ["Acrobatics"]
-          }
-        }
-      ]
-    },
-    {
-      "part": "rollExtra",
-      "keys": ["mark of warding|efa"],
+      "keys": ["mark of warding|efa", "warder's intuition|erlw"],
       "effects": [
         {
           "kind": "rollDie",
@@ -202,113 +804,256 @@
     },
     {
       "part": "rollExtra",
-      "keys": ["warder's intuition|erlw"],
+      "keys": ["peerless skill|college of lore|phb"],
       "effects": [
         {
-          "kind": "rollDie",
-          "dice": "1d4",
+          "kind": "rollPaid",
           "on": {
-            "rolls": ["check"],
-            "skills": ["Investigation"]
-          }
+            "rolls": ["check"]
+          },
+          "poolDie": true
         }
       ]
     },
     {
       "part": "rollExtra",
-      "keys": ["cunning intuition|erlw"],
+      "keys": ["peerless skill|college of lore|xphb"],
       "effects": [
         {
-          "kind": "rollDie",
-          "dice": "1d4",
+          "kind": "rollPaid",
           "on": {
-            "rolls": ["check"],
-            "skills": ["Performance", "Stealth"]
-          }
+            "rolls": ["attack", "check"]
+          },
+          "poolDie": true,
+          "ifFailed": true,
+          "spentOnSuccess": true
         }
       ]
     },
     {
       "part": "rollExtra",
-      "keys": ["gifted scribe|erlw"],
+      "keys": ["precision attack|phb"],
       "effects": [
         {
-          "kind": "rollDie",
-          "dice": "1d4",
+          "kind": "rollPaid",
           "on": {
-            "rolls": ["check"],
-            "skills": ["History"]
-          }
+            "rolls": ["attack"],
+            "attack": "weapon"
+          },
+          "poolDie": true
         }
       ]
     },
     {
       "part": "rollExtra",
-      "keys": ["deductive intuition|erlw"],
+      "keys": ["precision attack|xphb"],
       "effects": [
         {
-          "kind": "rollDie",
-          "dice": "1d4",
+          "kind": "rollPaid",
           "on": {
-            "rolls": ["check"],
-            "skills": ["Investigation", "Insight"]
-          }
+            "rolls": ["attack"]
+          },
+          "poolDie": true,
+          "ifFailed": true
         }
       ]
     },
     {
       "part": "rollExtra",
-      "keys": ["windwright's intuition|erlw"],
+      "keys": ["psi-bolstered knack|soulknife|tce", "psi-bolstered knack|soulknife|xphb"],
       "effects": [
         {
-          "kind": "rollDie",
-          "dice": "1d4",
+          "kind": "rollPaid",
           "on": {
             "rolls": ["check"],
-            "skills": ["Acrobatics"]
-          }
+            "skilled": true
+          },
+          "poolDie": true,
+          "ifFailed": true,
+          "spentOnSuccess": true,
+          "when": "Only with a skill you are proficient in"
         }
       ]
     },
     {
       "part": "rollExtra",
-      "keys": ["hunter's intuition|erlw"],
+      "keys": [
+        "reliable talent|expert sidekick|tce",
+        "reliable talent|rogue|phb",
+        "reliable talent|rogue|xphb"
+      ],
       "effects": [
         {
-          "kind": "rollDie",
-          "dice": "1d4",
+          "kind": "rollReroll",
           "on": {
             "rolls": ["check"],
-            "skills": ["Perception", "Survival"]
-          }
+            "proficient": true
+          },
+          "to": 10,
+          "auto": true,
+          "free": true
         }
       ]
     },
     {
       "part": "rollExtra",
-      "keys": ["medical intuition|erlw"],
+      "keys": ["seeking spell|tce", "seeking spell|xphb"],
       "effects": [
         {
-          "kind": "rollDie",
-          "dice": "1d4",
+          "kind": "rollReroll",
           "on": {
-            "rolls": ["check"],
-            "skills": ["Medicine"]
-          }
+            "rolls": ["attack"],
+            "attack": "spell"
+          },
+          "ifFailed": true
         }
       ]
     },
     {
       "part": "rollExtra",
-      "keys": ["ever hospitable|erlw"],
+      "keys": ["silver tongue|college of eloquence|tce"],
       "effects": [
         {
-          "kind": "rollDie",
-          "dice": "1d4",
+          "kind": "rollReroll",
           "on": {
             "rolls": ["check"],
-            "skills": ["Persuasion"]
-          }
+            "skills": ["Persuasion", "Deception"]
+          },
+          "to": 10,
+          "auto": true,
+          "free": true
+        }
+      ]
+    },
+    {
+      "part": "rollExtra",
+      "keys": ["spell resistant|au"],
+      "effects": [
+        {
+          "kind": "rollPaid",
+          "on": {
+            "rolls": ["save"]
+          },
+          "dice": "1d6",
+          "ifFailed": true,
+          "when": "Only against a spell or magical effect"
+        }
+      ]
+    },
+    {
+      "part": "rollExtra",
+      "keys": ["stroke of luck|rogue|phb"],
+      "effects": [
+        {
+          "kind": "rollReroll",
+          "on": {
+            "rolls": ["check"]
+          },
+          "to": 20,
+          "ifFailed": true
+        }
+      ]
+    },
+    {
+      "part": "rollExtra",
+      "keys": ["stroke of luck|rogue|xphb"],
+      "effects": [
+        {
+          "kind": "rollReroll",
+          "on": {
+            "rolls": ["attack", "check", "save"]
+          },
+          "to": 20,
+          "ifFailed": true
+        }
+      ]
+    },
+    {
+      "part": "rollExtra",
+      "keys": ["survivor|rhw"],
+      "effects": [
+        {
+          "kind": "rollPaid",
+          "on": {
+            "rolls": ["save"]
+          },
+          "bonus": {
+            "f": "prof"
+          },
+          "after": true,
+          "reaction": true,
+          "ifFailed": true,
+          "when": "Only to avoid or end being Charmed or Frightened"
+        },
+        {
+          "kind": "rollReroll",
+          "on": {
+            "rolls": ["check"],
+            "initiative": true
+          },
+          "die": "one",
+          "atMost": 9,
+          "free": true
+        }
+      ]
+    },
+    {
+      "part": "rollExtra",
+      "keys": ["tactical assessment|tce", "tactical assessment|xphb"],
+      "effects": [
+        {
+          "kind": "rollPaid",
+          "on": {
+            "rolls": ["check"],
+            "skills": ["Investigation", "History", "Insight"]
+          },
+          "poolDie": true
+        }
+      ]
+    },
+    {
+      "part": "rollExtra",
+      "keys": ["tactical mind|fighter|xphb"],
+      "effects": [
+        {
+          "kind": "rollPaid",
+          "on": {
+            "rolls": ["check"]
+          },
+          "dice": "1d10",
+          "ifFailed": true,
+          "spentOnSuccess": true
+        }
+      ]
+    },
+    {
+      "part": "rollExtra",
+      "keys": ["trance of order|clockwork sorcery|xphb", "trance of order|clockwork soul|tce"],
+      "effects": [
+        {
+          "kind": "rollReroll",
+          "on": {
+            "rolls": ["attack", "check", "save"]
+          },
+          "to": 10,
+          "free": true,
+          "when": "Only while Trance of Order lasts"
+        }
+      ]
+    },
+    {
+      "part": "rollExtra",
+      "keys": ["unerring accuracy|way of the kensei|xge"],
+      "effects": [
+        {
+          "kind": "rollReroll",
+          "on": {
+            "rolls": ["attack"],
+            "attack": "weapon"
+          },
+          "ifFailed": true,
+          "free": true,
+          "when": "Only with a monk weapon, on your turn, once a turn"
         }
       ]
     },
@@ -322,48 +1067,6 @@
           "on": {
             "rolls": ["check"],
             "skills": ["Animal Handling", "Nature"]
-          }
-        }
-      ]
-    },
-    {
-      "part": "rollExtra",
-      "keys": ["artisan's intuition|erlw"],
-      "effects": [
-        {
-          "kind": "rollDie",
-          "dice": "1d4",
-          "on": {
-            "rolls": ["check"],
-            "skills": ["Arcana"]
-          }
-        }
-      ]
-    },
-    {
-      "part": "rollExtra",
-      "keys": ["intuitive motion|erlw"],
-      "effects": [
-        {
-          "kind": "rollDie",
-          "dice": "1d4",
-          "on": {
-            "rolls": ["check"],
-            "skills": ["Acrobatics"]
-          }
-        }
-      ]
-    },
-    {
-      "part": "rollExtra",
-      "keys": ["sentinel's intuition|erlw"],
-      "effects": [
-        {
-          "kind": "rollDie",
-          "dice": "1d4",
-          "on": {
-            "rolls": ["check"],
-            "skills": ["Insight", "Perception"]
           }
         }
       ]

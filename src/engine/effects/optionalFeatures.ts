@@ -4,7 +4,6 @@
  * `optionalfeatureProgression`, and a pick works the same from either.
  */
 import { emitCuratedEffects as emitCurated, hasCuratedRow } from '../curated/curatedEffects';
-import { emitRollExtras, hasRollExtraRow } from '../curated/rollExtras';
 import { linkSpend } from '../curated/spendLinks';
 import { emitStandingEffects as emitStanding, hasStandingRow } from '../curated/standingEffects';
 import { summarizeEntries } from '../summarize';
@@ -178,14 +177,7 @@ export function readOptionalFeatures(
                 );
               }
               emitBuiltInRows(col, 'rollAdvantage', uids, ofOrigin, at);
-              if (
-                !emitBuiltInRows(col, 'rollExtra', uids, ofOrigin, {
-                  ...at,
-                  inCode: hasRollExtraRow,
-                })
-              ) {
-                emitRollExtras(col, uids, ofOrigin, level);
-              }
+              emitBuiltInRows(col, 'rollExtra', uids, ofOrigin, at);
               linkSpend(col, uids, str(of.name) ?? uid, ofOrigin);
             },
           });
