@@ -1921,10 +1921,16 @@ export function amendWords(a: Eff): string {
   const named = typeof a.label === 'string' ? a.label.trim() : '';
   const kept = keptOf(a.cost);
   const n = kept?.amount;
+  const uses =
+    n === 'varies'
+      ? 'as many uses as you choose'
+      : typeof n === 'number'
+        ? `${n} ${n === 1 ? 'use' : 'uses'}`
+        : 'uses';
   const more =
     kept === undefined
       ? priceWords(a)
-      : `, spends ${n === 'varies' ? 'as many uses as you choose' : `${String(n)} ${n === 1 ? 'use' : 'uses'}`} of its pool${priceWords({ ...a, cost: undefined })}`;
+      : `, spends ${uses} of its pool${priceWords({ ...a, cost: undefined })}`;
   return `${named === '' ? 'Its first action' : named}${more === '' ? ', as it is' : more}`;
 }
 
@@ -2061,7 +2067,8 @@ export function EffectCards({
   onAmend,
 }: {
   effects: unknown;
-  onChange: (next: Eff[]) => void;
+  /** The effects, and the prices (`amend`) when renaming a pool moved them too. */
+  onChange: (next: Eff[], amend?: Eff[]) => void;
   readOnly: boolean;
   /**
    * A copy's prices on the actions it inherits (`amend`), offered while it
@@ -2085,6 +2092,7 @@ export function EffectCards({
   resources?: readonly Eff[];
 }) {
   const list: Eff[] = Array.isArray(effects) ? (effects as Eff[]) : [];
+  const amends: Eff[] = Array.isArray(amend) ? (amend as Eff[]) : [];
   const { problems } = readStoredEffects(list);
   const problemsOf = (i: number) =>
     problems
@@ -2163,6 +2171,14 @@ export function EffectCards({
                     return { ...x, resourceKey: renamed[1] };
                   return x;
                 }),
+                // A price on what the copy inherits that spends the pool follows it too.
+                renamed === undefined || onAmend === undefined || amends.length === 0
+                  ? undefined
+                  : amends.map((a) => ({
+                      ...a,
+                      ...renamedIn('cost', a.cost, ['resource', 'slotRefills'], renamed),
+                      ...renamedIn('buyBack', a.buyBack, ['resource', 'own'], renamed),
+                    })),
               )
             }
           />
@@ -2188,6 +2204,14 @@ export function EffectCards({
       )}
     </div>
   );
+}
+
+/**
+ * The `castGuidance` patch for a copy's prices on what it inherits: an empty
+ * list leaves none; `undefined` (no change to them) patches nothing.
+ */
+export function amendPatch(amend: Eff[] | undefined): Record<string, unknown> {
+  return amend === undefined ? {} : { amend: amend.length > 0 ? amend : undefined };
 }
 
 /** `castGuidance` with `patch` applied, or undefined once it says nothing. */
@@ -2217,10 +2241,14 @@ export function EntryEffects({
         readOnly={readOnly}
         inherits={original !== undefined ? String(original.name) : undefined}
         replace={g.replace === true}
-        onReplace={(replace) => set({ replace: replace ? true : undefined })}
-        onChange={(effects) => set({ effects: effects.length > 0 ? effects : undefined })}
+        onReplace={(replace) =>
+          set(replace ? { replace: true, amend: undefined } : { replace: undefined })
+        }
+        onChange={(effects, amend) =>
+          set({ effects: effects.length > 0 ? effects : undefined, ...amendPatch(amend) })
+        }
         amend={g.amend}
-        onAmend={(amend) => set({ amend: amend.length > 0 ? amend : undefined })}
+        onAmend={(amend) => set(amendPatch(amend))}
       />
     </Section>
   );

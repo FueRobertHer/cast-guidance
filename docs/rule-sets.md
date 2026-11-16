@@ -384,7 +384,8 @@ copy) and on a rule pack's patch, next to `effects` and `add`:
 ```
 
 Each item takes `label`, `cost` and `buyBack`, with a `cost` or a `buyBack` or
-both:
+both, and nothing else: a misspelt `label` would price another action, so an
+item with a field it does not read is refused, with the problem shown.
 
 - Without `label` it prices the first action the entry inherits, where a spend
   row puts its price. With one it prices each inherited action of exactly that
@@ -393,9 +394,9 @@ both:
 - `cost` replaces what using it spends, as an action's `cost` reads ("An
   action's price", above). A `cost` with no `resource` takes `amount` alone and
   changes how many uses it spends of the pool it spends now, so it works
-  without knowing the pool's key (ki or Focus). On an action that spends a
-  spell slot, a Hit Point Die or nothing, that changes nothing, and the sheet
-  says so.
+  without knowing the pool's key (ki or Focus). On an action with no pool
+  price (one that spends a spell slot or a Hit Point Die, or a scanned chip
+  that spends only its own use), that changes nothing, and the sheet says so.
 - `buyBack` replaces what buys a use back. Another feature's spend row that
   buys a use of this action back (`onAction`, Totems on the Primal Knowledge
   Totem) leaves a buy-back a player set alone.
@@ -405,16 +406,17 @@ scan, then its standing, roll and spend rows) and after its `drop`, the entry's
 own `amend` first, then each pack's in the player's order, so the later price
 wins. It reaches only what the entry inherits, never an action its author wrote
 or a pack's `effects` or `add` gave. An entry that replaces what it inherits
-(`replace: true`, or a pack's `effects`) has nothing for it to price; a patch with
-both `effects` and `amend` says so. An `amend` that finds no action says so on
-the sheet. It reaches what `drop` reaches: class and subclass features, feats,
+(`replace: true`, or a pack's `effects`) has nothing for it to price, and an
+`amend` that finds no action says so on the sheet; a patch with both `effects`
+and `amend` says so once, as the pack is read. It reaches what `drop` reaches: class and subclass features, feats,
 optional features and species traits. Items add their charges after it, and
 backgrounds price nothing themselves.
 
 The Workshop's "Change its price" card makes one on a copy that still does what
 the original does: Action (empty for its first), then the Action card's price
 boxes, where an empty box keeps what the action has and "Same pool" changes
-how many uses of its pool it spends.
+how many uses of its pool it spends. Renaming one of the copy's own pools moves
+its prices too, and starting from nothing clears them.
 
 Every price is a row in `spend.json`: the pool prices since 3b and 3c, the
 spell slot and Hit Point Die prices and Divine Reaper's since 3d, so no spend

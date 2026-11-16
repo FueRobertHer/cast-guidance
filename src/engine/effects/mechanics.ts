@@ -731,8 +731,13 @@ export interface AmendRule {
 /** A `cost` with no `resource`: how many of what the action spends now. */
 const amendedAmount = record({ amount: [costAmount, true] });
 
+/** What an amend reads. A field it does not is a problem: a misspelt `label` would price another action. */
+const AMEND_FIELDS = new Set(['label', 'cost', 'buyBack']);
+
 function readAmend(raw: unknown): AmendRule {
   if (!isRecord(raw)) throw new Bad('is not a price');
+  const unknown = Object.keys(raw).find((k) => !AMEND_FIELDS.has(k));
+  if (unknown !== undefined) throw new Bad(`"${clip(unknown)}" is not a field an amend reads`);
   const cost = own(raw, 'cost');
   const keeps = isRecord(cost) && !Object.hasOwn(cost, 'resource');
   const extra = keeps ? Object.keys(cost).find((k) => k !== 'amount') : undefined;
@@ -1491,7 +1496,8 @@ function readPackOnce(entry: DataEntity): ReadPack {
       target: target.trim().toLowerCase(),
       ...(replaces ? { replace: replace.effects } : {}),
       ...(add.effects.length > 0 ? { add: add.effects } : {}),
-      ...(amend.length > 0 ? { amend } : {}),
+      // Said once above; the sheet would say it again for each price.
+      ...(amend.length > 0 && !replaces ? { amend } : {}),
     });
   });
   return read;
@@ -2002,11 +2008,11 @@ export function mechanicsOf(col: Collector, s: MechanicsSubject): void {
   }
   for (const add of patches?.add ?? [])
     emit(col, add.effects, { ...s.origin, pack: add.pack }, level, s.className);
-  if (patches?.replace !== undefined) return;
-
   const self = mine?.readable === true ? mine : undefined;
+  if (patches?.replace !== undefined) return unpriced(col, s, self, patches);
+
   if (self !== undefined) emit(col, self.effects, { ...s.origin }, level, s.className);
-  if (self?.replace === true) return;
+  if (self?.replace === true) return unpriced(col, s, self, patches);
   const from = col.effects.length;
   // The built-in curated row is inherited, as the `CURATED` row it stands in
   // for: after `from`, so the entry's `drop` reaches it, and with the subject's
@@ -2032,6 +2038,23 @@ export function mechanicsOf(col: Collector, s: MechanicsSubject): void {
     for (const rule of rules) amendInherited(col, from, rule, `${pack}: ${s.label}`);
 }
 
+/**
+ * An entry whose inherited mechanics are replaced (a pack's `effects`, its own
+ * `replace`) has no action for a price to land on: each `amend` says so. A
+ * pack's own `effects` beside its `amend` is said once, as the pack is read.
+ */
+function unpriced(
+  col: Collector,
+  s: MechanicsSubject,
+  self: ReadMechanics | undefined,
+  patches: PackPatches | undefined,
+): void {
+  const why = '"amend" finds no action it inherits: what it inherits is replaced';
+  for (const _ of self?.amend ?? []) col.warn(`${s.label}: ${why}`);
+  for (const { pack, rules } of patches?.amend ?? [])
+    for (const _ of rules) col.warn(`${pack}: ${s.label}: ${why}`);
+}
+
 /** Actions whose buy-back a player set (`amend`), which a later feature's link leaves alone. */
 const PLAYER_BUY_BACK = new WeakSet<object>();
 
@@ -2044,7 +2067,8 @@ export function playerBuyBack(e: object): boolean {
  * One player's price on the actions an entry inherits: those collected from
  * `from` on, so never an action its author or a pack wrote, which come before.
  * Without a label, its first; with one, each of that name. Says so on the
- * sheet when there is none, or when a new amount has no pool's uses to count.
+ * sheet when there is none, or when a new amount has no pool price to change
+ * (a spell slot's, a Hit Point Die's, or none: a scanned chip spending its own use).
  */
 function amendInherited(col: Collector, from: number, rule: AmendRule, who: string): void {
   const name = rule.label?.toLowerCase();
@@ -2060,7 +2084,9 @@ function amendInherited(col: Collector, from: number, rule: AmendRule, who: stri
       if (now !== undefined && now.resource !== SLOT_COST && now.resource !== HIT_DIE_COST)
         e.cost = { ...now, amount: cost.amount };
       else
-        col.warn(`${who}: "amend" sets how many it spends, and ${e.label} spends no pool's uses`);
+        col.warn(
+          `${who}: "amend" sets how many uses of its pool it spends, and ${e.label} has no pool price`,
+        );
     }
     if (rule.buyBack !== undefined) {
       e.buyBack = structuredClone(rule.buyBack);

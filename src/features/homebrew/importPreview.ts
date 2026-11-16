@@ -35,7 +35,7 @@ import {
   type TableRuleChoices,
   type TableRuleId,
 } from '@/engine/castGuidance';
-import { readPack } from '@/engine/effects/mechanics';
+import { readPack, readStoredEffects } from '@/engine/effects/mechanics';
 import { readPackMoments } from '@/engine/moments';
 import { appRulesFor, ruleSources } from '@/engine/rules';
 import type { CharacterDoc, DataEntity } from '@/engine/types';
@@ -915,8 +915,12 @@ function changeWords(p: Record<string, unknown>): string {
       parts.length === 0 ? `Gains ${plural(add.length, 'effect')}` : `gains ${add.length} more`,
     );
   }
-  // What the engine reads of it: beside a replacement, a price changes nothing.
-  const amend = Array.isArray(replace) ? [] : listOf(p, 'amend').filter(isRecord);
+  // What the engine reads of it: beside a replacement, a price changes nothing,
+  // and a list none of whose effects can be read replaces nothing.
+  const replaces =
+    Array.isArray(replace) &&
+    (replace.length === 0 || readStoredEffects(replace).effects.length > 0);
+  const amend = replaces ? [] : listOf(p, 'amend').filter(isRecord);
   if (amend.length > 0) {
     const names = [
       ...new Set(

@@ -108,6 +108,7 @@ describe('reading an amend', () => {
         { cost: { resource: 'focus', amount: 1, minLevel: 2 } },
         { buyBack: { resource: 'hit-die', amount: 1 } },
         { label: '', cost: FOCUS_1 },
+        { lable: 'Step', cost: FOCUS_1 },
         { cost: FOCUS_1 },
       ],
     });
@@ -119,6 +120,8 @@ describe('reading an amend', () => {
       'amend 4: "cost.minLevel" is for a price paid with a spell slot',
       'amend 5: "buyBack.resource" is a pool or a spell slot',
       'amend 6: "label" needs words',
+      // Read past, it would price the first action, not Step.
+      'amend 7: "lable" is not a field an amend reads',
     ]);
     expect(readMechanics({ v: 1, amend: {} }).problems).toEqual(['"amend" is not a list']);
   });
@@ -184,17 +187,22 @@ describe("an entry's amend", () => {
   });
 
   it('says so when a new amount has no pool price to change', () => {
-    const slot = { resource: 'spell-slot', amount: 1, minLevel: 2 };
-    const col = collect(
-      cg({ amend: [{ cost: { amount: 2 } }, { label: 'Step', cost: { amount: 3 } }] }),
-      [],
-      (c) => inheritTwo(c, slot),
-    );
-    expect(actions(col).map((a) => a[1])).toEqual([slot, null]);
-    expect(col.warnings).toEqual([
-      'Lantern: "amend" sets how many it spends, and Flurry of Blows spends no pool\'s uses',
-      'Lantern: "amend" sets how many it spends, and Step spends no pool\'s uses',
-    ]);
+    // A spell slot, a Hit Point Die, and none (a scanned chip spending its own use).
+    for (const cost of [
+      { resource: 'spell-slot', amount: 1, minLevel: 2 },
+      { resource: 'hit-die', amount: 1 },
+    ]) {
+      const col = collect(
+        cg({ amend: [{ cost: { amount: 2 } }, { label: 'Step', cost: { amount: 3 } }] }),
+        [],
+        (c) => inheritTwo(c, cost),
+      );
+      expect(actions(col).map((a) => a[1])).toEqual([cost, null]);
+      expect(col.warnings).toEqual([
+        'Lantern: "amend" sets how many uses of its pool it spends, and Flurry of Blows has no pool price',
+        'Lantern: "amend" sets how many uses of its pool it spends, and Step has no pool price',
+      ]);
+    }
   });
 
   it('says so when it finds no action it inherits', () => {
@@ -219,7 +227,9 @@ describe("an entry's amend", () => {
     expect(actions(dropped)).toEqual([['Step', { resource: 'ki', amount: 5 }, null, true]]);
     const replaced = collect(cg({ replace: true, amend: [{ cost: FOCUS_1 }] }));
     expect(actions(replaced)).toEqual([]);
-    expect(replaced.warnings).toEqual([]);
+    expect(replaced.warnings).toEqual([
+      'Lantern: "amend" finds no action it inherits: what it inherits is replaced',
+    ]);
   });
 
   it("replaces a spend link's price on the chip it made", () => {
@@ -291,7 +301,7 @@ describe("a pack's amend", () => {
     ]);
   });
 
-  it('changes nothing beside a replacement, and says so', () => {
+  it('changes nothing beside a replacement, and says so once', () => {
     const col = collect(official, [
       pack('Gritty', [{ target: 'lantern|hb', effects: [], amend: [{ cost: FOCUS_1 }] }]),
     ]);
@@ -299,6 +309,21 @@ describe("a pack's amend", () => {
     expect(col.warnings).toEqual([
       'Gritty: patch 1 (lantern|hb): "amend" changes nothing beside "effects", which inherit nothing',
     ]);
+  });
+
+  it("says so when another pack's replacement, or the entry's own, leaves it nothing", () => {
+    const amending = pack('Two', [{ target: 'lantern|hb', amend: [{ cost: FOCUS_1 }] }]);
+    const replaced = collect(official, [
+      pack('One', [{ target: 'lantern|hb', effects: [] }]),
+      amending,
+    ]);
+    const own = collect(cg({ replace: true }), [amending]);
+    for (const col of [replaced, own]) {
+      expect(actions(col)).toEqual([]);
+      expect(col.warnings).toEqual([
+        'Two: Lantern: "amend" finds no action it inherits: what it inherits is replaced',
+      ]);
+    }
   });
 });
 
@@ -337,6 +362,31 @@ describe("another feature's link on an amended action", () => {
   it('leaves a buy-back the player set, and adds no chip of its own', () => {
     expect(sorcerer([{ buyBack: { resource: 'mine', amount: 1 } }])).toEqual([
       ['Innate Sorcery', null, { resource: 'mine', amount: 1 }],
+    ]);
+  });
+
+  it("leaves a buy-back the player set to a slot's link too, which passes it over", () => {
+    // Font of Inspiration's row buys Bardic Inspiration back with a spell slot.
+    const col = new Collector(character(), world());
+    const bardic: EffectOrigin = { label: 'Bardic Inspiration', uid: 'bi', type: 'class' };
+    mechanicsOf(col, {
+      entry: {
+        name: 'Bardic Inspiration',
+        source: 'HB',
+        castGuidance: { v: 1, amend: [{ buyBack: { resource: 'mine', amount: 1 } }] },
+      },
+      label: 'Bardic Inspiration',
+      origin: bardic,
+      target: 'bi',
+      inherited: () =>
+        col.add({ kind: 'action', economy: 'bonus', label: 'Bardic Inspiration', origin: bardic }),
+    });
+    linkSpend(col, ['font of inspiration|bard|xphb'], 'Font of Inspiration', {
+      ...bardic,
+      uid: 'font',
+    });
+    expect(col.effects.map((e) => (e.kind === 'action' ? [e.label, e.buyBack] : []))).toEqual([
+      ['Bardic Inspiration', { resource: 'mine', amount: 1 }],
     ]);
   });
 

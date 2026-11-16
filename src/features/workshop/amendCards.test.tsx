@@ -9,13 +9,14 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { EntityRegistry } from '@/data5e/normalize';
 import { RULE_SET_TYPE } from '@/engine/castGuidance';
 import { deriveSheet } from '@/engine/derive';
-import { readMechanics } from '@/engine/effects/mechanics';
+import { readMechanics, readStoredEffects } from '@/engine/effects/mechanics';
 import { rollEffects } from '@/engine/playRules';
 import { type DataEntity, type EngineContext, newCharacterDoc } from '@/engine/types';
 import { pricedRollEffects } from '@/features/sheet/rollPrice';
 import { makeTestContext } from '../../../tests-fixtures/testWorld';
 import { changeCount, resolveStored, writeEntry } from './copyWriter';
 import { amendWords } from './EffectCards';
+import { FeatureEditor } from './FeatureRow';
 import { editor as feat } from './editors/FeatEditor';
 import { editor as item } from './editors/ItemEditor';
 import type { Json } from './editorTypes';
@@ -86,6 +87,23 @@ function misshown(): string[] {
 }
 
 const problems = (amend: Json[]) => readMechanics({ v: 1, amend }).problems;
+
+/**
+ * What a strict reading refuses in a price's whole `cost` or `buyBack`: a field
+ * the reader would pass over. A new amount alone (no `resource`) takes only
+ * `amount`, which the amend reader checks itself.
+ */
+function unread(a: Json): string[] {
+  const cost = a.cost as Json | undefined;
+  const action = {
+    kind: 'action',
+    economy: 'none',
+    label: 'Its action',
+    ...(cost !== undefined && cost.resource !== undefined ? { cost } : {}),
+    ...(a.buyBack !== undefined ? { buyBack: a.buyBack } : {}),
+  };
+  return readStoredEffects([action], 'effects', true).problems;
+}
 
 describe('where the card is offered', () => {
   it('only on a copy that still does what the original does', () => {
@@ -172,6 +190,33 @@ describe('the price card', () => {
     ).toBeTruthy();
   });
 
+  it('follows a pool of the copy renamed, in what it spends, buys back with and gives back', () => {
+    const glow = {
+      cost: { resource: 'glow', amount: 2 },
+      buyBack: { resource: 'glow', amount: 1, own: 'glow' },
+    };
+    const { guidance } = onScreen(LANTERN, { effects: [POOL], amend: [glow] });
+    fireEvent.change(screen.getByLabelText('Uses per rest: Name'), { target: { value: 'Ember' } });
+    expect(guidance()).toMatchObject({
+      effects: [{ kind: 'resource', key: 'ember', label: 'Ember' }],
+      amend: [
+        {
+          cost: { resource: 'ember', amount: 2 },
+          buyBack: { resource: 'ember', amount: 1, own: 'ember' },
+        },
+      ],
+    });
+    expect(misshown()).toEqual([]);
+  });
+
+  it('is cleared by starting from nothing, which leaves no inherited action to price', () => {
+    const { guidance } = onScreen(LANTERN, { amend: [{ cost: { amount: 2 } }] });
+    fireEvent.click(screen.getByLabelText(/Also does what Lantern does on the sheet/));
+    expect(guidance()).toEqual({ v: 1, replace: true });
+    fireEvent.click(screen.getByLabelText(/Also does what Lantern does on the sheet/));
+    expect(guidance()).toEqual({});
+  });
+
   it('says it counts for nothing with neither price, and is removed by its button', () => {
     const { amend, guidance } = onScreen(LANTERN, { amend: [{ cost: { amount: 2 } }] });
     pick('Price: Spends', '');
@@ -217,6 +262,7 @@ describe('the price card', () => {
       if (a !== undefined && a.cost === undefined && a.buyBack === undefined) {
         expect(read).toEqual(['amend 1: changes a "cost" or a "buyBack"']);
       } else expect(read).toEqual([]);
+      if (a !== undefined) expect(unread(a)).toEqual([]);
       seen.add(JSON.stringify(a));
     }
     // The walk reached prices of every shape: a new amount, a pool, a slot, a die, a buy-back.
@@ -243,6 +289,51 @@ describe('amendWords', () => {
         cost: { resource: 'rage', amount: 2, optional: true },
       } as never),
     ).toBe('Rage, free, or 2 uses of rage for more');
+    // A file's new amount with none given says so in its problem line, not "undefined".
+    expect(amendWords({ cost: {} } as never)).toBe('Its first action, spends uses of its pool');
+  });
+});
+
+describe("a class's or a species' feature", () => {
+  /** The feature editor a class, subclass or species copy shows, with its own pool. */
+  function feature(castGuidance: Json) {
+    let latest: Json = {};
+    function Harness() {
+      const [value, setValue] = useState<Json>({
+        name: 'Flurry of Blows',
+        entries: [],
+        castGuidance,
+      });
+      latest = value;
+      return (
+        <FeatureEditor
+          value={value}
+          noun="feature"
+          onChange={setValue}
+          onRename={() => {}}
+          readOnly={false}
+          withEffects
+          inherits="Flurry of Blows"
+        />
+      );
+    }
+    render(
+      <MemoryRouter>
+        <Harness />
+      </MemoryRouter>,
+    );
+    return () => (latest.castGuidance ?? {}) as Json;
+  }
+
+  it('prices what it inherits, follows a renamed pool, and is cleared by starting from nothing', () => {
+    const guidance = feature({ v: 1, effects: [POOL] });
+    addPrice();
+    pick('Price: Spends', 'glow');
+    expect(guidance().amend).toEqual([{ cost: { amount: 1, resource: 'glow' } }]);
+    fireEvent.change(screen.getByLabelText('Uses per rest: Name'), { target: { value: 'Ember' } });
+    expect(guidance().amend).toEqual([{ cost: { amount: 1, resource: 'ember' } }]);
+    fireEvent.click(screen.getByLabelText(/Also does what Flurry of Blows does on the sheet/));
+    expect(guidance()).not.toHaveProperty('amend');
   });
 });
 
