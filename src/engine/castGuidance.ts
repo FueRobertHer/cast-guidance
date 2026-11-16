@@ -202,6 +202,8 @@ export const FORMULA_FIELDS: Readonly<Partial<Record<EffectInput['kind'], readon
   sense: ['range'],
   tempHpEachTurn: ['amount'],
   critRange: ['min'],
+  rollPaid: ['bonus'],
+  rollReroll: ['bonus'],
   resource: ['max', 'min', 'regainOnShort'],
   resourceRegain: ['amount'],
 };
@@ -442,8 +444,8 @@ export const RULE_SET_TYPE = 'ruleSet';
  * the entry's curated row, found under the keys that table uses. `standing` is
  * `STANDING`: defenses, senses and speeds a feature adds beside what its
  * prose scan or curated row reads. `rollAdvantage` and `rollExtra` are what a
- * feature adds to the character's own d20 tests (the advantage table that was
- * `ROLL_ADVANTAGES`, and `ROLL_EXTRAS`), found under the roll keys, which name
+ * feature adds to the character's own d20 tests (the tables that were
+ * `ROLL_ADVANTAGES` and `ROLL_EXTRAS`), found under the roll keys, which name
  * the book: `brave|phb`, `feral instinct|barbarian|phb`. `spend` is what a
  * feature's action costs or buys a use back with (the link tables that were
  * `SPEND_LINKS` and `SLOT_LINKS`), found under the roll keys: a row's `links`

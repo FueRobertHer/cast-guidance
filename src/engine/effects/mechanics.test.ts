@@ -114,6 +114,8 @@ describe('readMechanics', () => {
     { kind: 'rollDie', dice: '1d4', on: { rolls: ['attack', 'save'] } },
     { kind: 'rollOffer', dice: '1d6', on: { rolls: ['check'], skilled: true }, once: true },
     { kind: 'rollAdvantage', mode: 'adv', on: { rolls: ['check'], skills: ['athletics'] } },
+    { kind: 'rollPaid', on: { rolls: ['save'] }, dice: '1d4', ifFailed: true },
+    { kind: 'rollReroll', on: { rolls: ['save'] }, ifFailed: true },
     { kind: 'tempHpEachTurn', amount: 5 },
     { kind: 'extraAction', label: 'Dash only' },
     { kind: 'critRange', min: 19 },
@@ -2349,6 +2351,245 @@ describe('what a review found', () => {
 
     it('but an empty list replaces them with nothing, on purpose', () => {
       expect(run([])).toBe(0);
+    });
+  });
+});
+
+describe("a feature's paid extras and rerolls (rule pack port 3e)", () => {
+  const read = (...effects: unknown[]) => readMechanics({ v: 1, effects });
+  const SAVES = { rolls: ['save'] };
+
+  it('reads what a paid extra adds, a reaction it never takes, and a bonus always once the d20 shows', () => {
+    const r = read(
+      { kind: 'rollPaid', on: SAVES, dice: '1d10', ifFailed: true, spentOnSuccess: true },
+      { kind: 'rollPaid', on: { rolls: ['attack'] }, poolDie: true },
+      { kind: 'rollPaid', on: { rolls: ['attack'] }, bonus: 10, ifFailed: true, reaction: false },
+      {
+        kind: 'rollPaid',
+        on: SAVES,
+        bonus: { f: 'max(1, mod.int)' },
+        after: true,
+        reaction: true,
+        when: 'Only against a spell',
+      },
+      { kind: 'rollPaid', on: { rolls: ['check'] }, advantage: true, inspiration: true },
+    );
+    expect(r.problems).toEqual([]);
+    expect(r.effects.map((t) => t.effect)).toEqual([
+      {
+        kind: 'rollPaid',
+        on: SAVES,
+        dice: '1d10',
+        ifFailed: true,
+        spentOnSuccess: true,
+      },
+      { kind: 'rollPaid', on: { rolls: ['attack'] }, poolDie: true },
+      {
+        kind: 'rollPaid',
+        on: { rolls: ['attack'] },
+        bonus: 10,
+        after: true,
+        ifFailed: true,
+        reaction: false,
+      },
+      {
+        kind: 'rollPaid',
+        on: SAVES,
+        bonus: 0,
+        after: true,
+        reaction: true,
+        when: 'Only against a spell',
+      },
+      { kind: 'rollPaid', on: { rolls: ['check'] }, advantage: true, inspiration: true },
+    ]);
+    expect(r.effects[3]?.formulas?.map((f) => f.field)).toEqual(['bonus']);
+  });
+
+  it('refuses a paid extra that adds nothing, or two things, or waits on what it cannot', () => {
+    const r = read(
+      { kind: 'rollPaid', on: SAVES },
+      { kind: 'rollPaid', on: SAVES, dice: '1d4', bonus: 2 },
+      // A false flag is the same as none.
+      { kind: 'rollPaid', on: SAVES, poolDie: false },
+      { kind: 'rollPaid', on: SAVES, advantage: true, ifFailed: true },
+      { kind: 'rollPaid', on: SAVES, advantage: true, after: true },
+      { kind: 'rollPaid', on: SAVES, dice: '1d4', spentOnSuccess: true },
+      { kind: 'rollPaid', on: SAVES, bonus: -1 },
+      { kind: 'rollPaid', on: SAVES, dice: '1d4', reaction: 'yes' },
+      { kind: 'rollPaid', dice: '1d4' },
+      // Inspiration pays alone, and has no die of its own.
+      { kind: 'rollPaid', on: SAVES, poolDie: true, inspiration: true },
+      { kind: 'rollPaid', on: SAVES, dice: '1d4', inspiration: true, reaction: true },
+    );
+    expect(r.effects).toEqual([]);
+    expect(r.problems).toEqual([
+      'effect 1 (rollPaid): names one of "dice", "poolDie", "bonus" or "advantage"',
+      'effect 2 (rollPaid): names one of "dice", "poolDie", "bonus" or "advantage"',
+      'effect 3 (rollPaid): names one of "dice", "poolDie", "bonus" or "advantage"',
+      'effect 4 (rollPaid): "advantage" is claimed before the d20: leave out "after" and "ifFailed"',
+      'effect 5 (rollPaid): "advantage" is claimed before the d20: leave out "after" and "ifFailed"',
+      'effect 6 (rollPaid): "spentOnSuccess" gives the use back on a roll that still failed: "ifFailed" is true',
+      'effect 7 (rollPaid): "bonus" is 0 or more',
+      'effect 8 (rollPaid): "reaction" is true or false',
+      'effect 9 (rollPaid): "on" is missing',
+      'effect 10 (rollPaid): "poolDie" adds the die of the pool that pays, and Inspiration has none: leave out "inspiration"',
+      'effect 11 (rollPaid): "inspiration" is the whole price: "reaction" is not true beside it',
+    ]);
+    // Inspiration with a die, and beside a reaction never taken, are read.
+    const ok = read(
+      { kind: 'rollPaid', on: SAVES, dice: '1d4', inspiration: true, reaction: false },
+      { kind: 'rollReroll', on: SAVES, inspiration: true, reaction: false },
+    );
+    expect(ok.problems).toEqual([]);
+    expect(ok.effects).toHaveLength(2);
+  });
+
+  it('reads a reroll, a number set and a floor, with a bonus by level and a state it holds in', () => {
+    const r = read(
+      { kind: 'rollReroll', on: SAVES, ifFailed: true, bonus: { f: 'classLevel' } },
+      { kind: 'rollReroll', on: SAVES, die: 'one', atMost: 1, auto: true, free: true },
+      { kind: 'rollReroll', on: { rolls: ['check'] }, to: 10, auto: true, free: true },
+      { kind: 'rollReroll', on: { rolls: ['check'] }, to: 20, ifFailed: true },
+      { kind: 'rollReroll', on: { rolls: ['check'] }, floorScore: 'str', auto: true, free: true },
+      { kind: 'rollReroll', on: { rolls: ['attack'] }, die: 'low', auto: true, free: true },
+      { kind: 'rollReroll', on: SAVES, die: 'extra' },
+      { kind: 'rollReroll', on: SAVES, die: 'one', atMost: 9, free: true },
+      {
+        kind: 'rollReroll',
+        on: SAVES,
+        ifFailed: true,
+        free: true,
+        reaction: true,
+        when: 'Only while it lasts',
+      },
+      {
+        kind: 'rollReroll',
+        on: SAVES,
+        ifFailed: true,
+        free: true,
+        bonus: { byLevel: { '1': 2, '9': 3 } },
+        while: { effect: 'Rage' },
+      },
+      { kind: 'rollPaid', on: SAVES, dice: '1d4', while: 'bloodied' },
+    );
+    expect(r.problems).toEqual([]);
+    expect(r.effects.map((t) => t.effect)).toEqual([
+      { kind: 'rollReroll', on: SAVES, ifFailed: true, bonus: 0 },
+      { kind: 'rollReroll', on: SAVES, die: 'one', atMost: 1, auto: true, free: true },
+      { kind: 'rollReroll', on: { rolls: ['check'] }, to: 10, auto: true, free: true },
+      { kind: 'rollReroll', on: { rolls: ['check'] }, to: 20, ifFailed: true },
+      { kind: 'rollReroll', on: { rolls: ['check'] }, floorScore: 'str', auto: true, free: true },
+      { kind: 'rollReroll', on: { rolls: ['attack'] }, die: 'low', auto: true, free: true },
+      { kind: 'rollReroll', on: SAVES, die: 'extra' },
+      { kind: 'rollReroll', on: SAVES, die: 'one', atMost: 9, free: true },
+      {
+        kind: 'rollReroll',
+        on: SAVES,
+        ifFailed: true,
+        free: true,
+        reaction: true,
+        when: 'Only while it lasts',
+      },
+      { kind: 'rollReroll', on: SAVES, ifFailed: true, free: true, bonus: 0 },
+      { kind: 'rollPaid', on: SAVES, dice: '1d4' },
+    ]);
+    expect(r.effects.map((t) => t.formulas?.map((f) => f.field))).toEqual([
+      ['bonus'],
+      ...Array(8).fill(undefined),
+      ['bonus'],
+      undefined,
+    ]);
+    expect(r.effects[9]?.while).toEqual([{ state: 'effect', name: 'Rage' }]);
+    expect(r.effects[10]?.while).toEqual([{ state: 'bloodied' }]);
+  });
+
+  it('refuses a reroll that names what it cannot do, or rolls on its own what may hurt', () => {
+    const auto = { auto: true, free: true };
+    const r = read(
+      { kind: 'rollReroll', on: SAVES, to: 10, floorScore: 'str', ...auto },
+      { kind: 'rollReroll', on: SAVES, to: 10, die: 'one', atMost: 1 },
+      { kind: 'rollReroll', on: SAVES, floorScore: 'str', atMost: 1, ...auto },
+      { kind: 'rollReroll', on: SAVES, atMost: 1 },
+      { kind: 'rollReroll', on: SAVES, die: 'one' },
+      { kind: 'rollReroll', on: SAVES, floorScore: 'str', free: true },
+      { kind: 'rollReroll', on: SAVES, die: 'low', free: true },
+      { kind: 'rollReroll', on: SAVES, to: 10, auto: true },
+      { kind: 'rollReroll', on: SAVES, to: 10, ...auto, ifFailed: true },
+      { kind: 'rollReroll', on: SAVES, to: 10, ...auto, when: 'Only at night' },
+      { kind: 'rollReroll', on: SAVES, to: 10, ...auto, reaction: false },
+      // Free as well, but what an automatic one waits on is named first.
+      { kind: 'rollReroll', on: SAVES, to: 10, ...auto, inspiration: true },
+      { kind: 'rollReroll', on: SAVES, ...auto },
+      { kind: 'rollReroll', on: SAVES, die: 'one', atMost: 9, ...auto },
+      { kind: 'rollReroll', on: SAVES, die: 'extra', ...auto },
+      { kind: 'rollReroll', on: SAVES, to: 1 },
+      { kind: 'rollReroll', on: SAVES, die: 'one', atMost: 20 },
+      { kind: 'rollReroll', on: SAVES, die: 'twice' },
+      { kind: 'rollReroll', on: SAVES, to: 10, bonus: 3 },
+      { kind: 'rollReroll', on: SAVES, floorScore: 'str', ...auto, bonus: { f: 'prof' } },
+      { kind: 'rollReroll', on: SAVES, free: true, inspiration: true },
+      { kind: 'rollReroll', on: SAVES, inspiration: true, reaction: true },
+    );
+    expect(r.effects).toEqual([]);
+    const worse = '"auto" never makes the roll worse: a 1, the lower die, a number set or a floor';
+    expect(r.problems.map((p) => p.replace(/^effect \d+ \(rollReroll\): /, ''))).toEqual([
+      'sets the d20 ("to") or a floor ("floorScore"), not both',
+      '"to" and "floorScore" reroll nothing: leave out "die" and "atMost"',
+      '"to" and "floorScore" reroll nothing: leave out "die" and "atMost"',
+      '"die": "one" rerolls a die showing "atMost" or less, and "atMost" needs it',
+      '"die": "one" rerolls a die showing "atMost" or less, and "atMost" needs it',
+      'a floor and the lower die are made as the d20 lands: "auto" is true',
+      'a floor and the lower die are made as the d20 lands: "auto" is true',
+      '"auto" is made with nothing paid: "free" is true',
+      '"auto" waits on nothing: leave out "ifFailed"',
+      '"auto" waits on nothing: leave out "when"',
+      '"auto" waits on nothing: leave out "reaction"',
+      '"auto" waits on nothing: leave out "inspiration"',
+      worse,
+      worse,
+      worse,
+      '"to" is a whole number from 2 to 20',
+      '"atMost" is a whole number from 1 to 19',
+      '"die" is one of all, one, low, extra',
+      'a number set or a floor adds no "bonus": leave it out',
+      'a number set or a floor adds no "bonus": leave it out',
+      '"free" pays nothing: leave out "inspiration"',
+      '"inspiration" is the whole price: "reaction" is not true beside it',
+    ]);
+  });
+
+  describe('on a sheet, from an entry of its own', () => {
+    const riders = (effects: unknown[], edit: (d: CharacterDoc) => void = () => {}) => {
+      const doc = withFeats('Gift');
+      edit(doc);
+      return deriveSheet(doc, world({ feat: [feat('Gift', { effects })] })).rollRiders.filter(
+        (x) => x.origin === 'Gift',
+      );
+    };
+
+    it('works out a bonus formula as the sheet stands, and holds one only in its state', () => {
+      expect(
+        riders([
+          { kind: 'rollPaid', on: SAVES, bonus: { f: 'max(1, mod.cha)' }, reaction: true },
+          { kind: 'rollPaid', on: SAVES, bonus: { f: 'max(1, mod.int)' }, ifFailed: true },
+          { kind: 'rollReroll', on: SAVES, ifFailed: true, while: 'zeroHp' },
+        ]),
+      ).toEqual([
+        // Charisma 16 and Intelligence 10: +3, and +0 raised to at least +1.
+        { kind: 'paid', on: SAVES, origin: 'Gift', bonus: 3, after: true, reaction: true },
+        { kind: 'paid', on: SAVES, origin: 'Gift', bonus: 1, after: true, ifFailed: true },
+      ]);
+      expect(
+        riders([{ kind: 'rollReroll', on: SAVES, ifFailed: true, while: 'zeroHp' }], (d) => {
+          d.play.currentHp = 0;
+        }),
+      ).toEqual([{ kind: 'reroll', on: SAVES, origin: 'Gift', ifFailed: true }]);
+    });
+
+    it("reads a feat's bonus by class level as the character's level, as every formula with no class does", () => {
+      expect(
+        riders([{ kind: 'rollReroll', on: SAVES, ifFailed: true, bonus: { f: 'classLevel' } }]),
+      ).toEqual([{ kind: 'reroll', on: SAVES, origin: 'Gift', ifFailed: true, bonus: 4 }]);
     });
   });
 });

@@ -221,6 +221,33 @@ describe('readMoments', () => {
     ]);
   });
 
+  it("refuses a feature's paid extra and reroll, which never go in play", () => {
+    const roll = { rolls: ['save'] };
+    const read = readMoments(
+      [
+        {
+          at: 'turnStart',
+          do: [
+            {
+              kind: 'addEffect',
+              name: 'Fury',
+              effects: [
+                { kind: 'rollPaid', on: roll, dice: '1d4' },
+                { kind: 'rollReroll', on: roll, ifFailed: true },
+                { kind: 'acBonus', amount: 1 },
+              ],
+            },
+          ],
+        },
+      ],
+      'Gritty',
+    );
+    expect(read.problems).toEqual([
+      'moment 1 (turnStart), outcome 1: effect 1 (rollPaid): an effect in play reaches only numbers and rolls',
+      'moment 1 (turnStart), outcome 1: effect 2 (rollReroll): an effect in play reaches only numbers and rolls',
+    ]);
+  });
+
   it("names an AC formula with no label for the effect, and refuses the character's proficiency bonus", () => {
     const read = readMoments(
       [

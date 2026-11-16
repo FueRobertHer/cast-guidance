@@ -6,7 +6,7 @@ parts: `curated`, which stands in for `CURATED`
 (`src/engine/curated/curatedEffects.ts`); `standing`, which stands in for
 `STANDING` (`src/engine/curated/standingEffects.ts`); `rollAdvantage`, which
 holds what was the advantage table, `ROLL_ADVANTAGES`; `rollExtra`, which
-stands in for `ROLL_EXTRAS` (`src/engine/curated/rollExtras.ts`); and `spend`,
+holds what was `ROLL_EXTRAS`; and `spend`,
 which holds what were the spend links, `SPEND_LINKS` and `SLOT_LINKS`
 (`linkSpend` in `src/engine/curated/spendLinks.ts` reads it). The files live in
 `src/rules/`, one a part. (Source of truth: `readRuleSet` and
@@ -67,11 +67,25 @@ advantage on the character's own d20 tests that a feature, feat, optional
 feature or species trait states only in prose, which always holds (Feral
 Instinct on initiative), holds while a state the app sees (Bloodied), or holds
 only when the player says (`when`, Brave against being Frightened). So has every
-free die of `ROLL_EXTRAS`, 26 rows (`src/rules/cast-guidance/roll-extras.json`):
-the dragonmarks' d4 that rolls in with a skill's checks. The 75 keys left in
-`ROLL_EXTRAS` are paid extras and rerolls: a price the sheet works out from the
-feature's Use, and fields (a reroll's die, a number set, a floor, a bonus by
-class level) the format does not have.
+row of `ROLL_EXTRAS` (`src/rules/cast-guidance/roll-extras.json`): its 26 free
+dice (1d), the dragonmarks' d4 that rolls in with a skill's checks, and its 75
+keys of paid extras and rerolls (3e), as `rollPaid` and `rollReroll` effects. A
+paid extra is a die, the paying pool's die, a flat bonus or advantage the roll
+prompt offers at the price of the feature's Use (Precision Attack, Flash of
+Genius, Tides of Chaos); a reroll is offered on the result or made as the d20
+lands, or sets a number (Reliable Talent's 10) or a floor (Indomitable Might).
+A bonus the table wrote as words is a formula (`max(0, mod.int)`,
+`max(1, mod.int)`, `prof`), a reroll's bonus by class level is `classLevel` or
+a level table of Rage's damage, and Fanatical Focus holds `while` raging. Keys
+with the same rows share one, as spend keys do: 101 keys in 68 rows. The table
+left some out on purpose, and so do the rows: Portent's foretold rolls (kept in
+play) and Curving Shot (another target); 2014 Stroke of Luck's miss into a hit
+and Starry Form's Dragon on concentration saves, which roll at once; a price the
+player picks (Focused Aim) or a bonus the app cannot count (Saving Face); what
+lasts the turn or adds damage (Fighting Spirit, Feinting Attack) and Grappling
+Strike, which needs a hit; dice paid with Hit Point Dice or Heroic Inspiration
+(Symbiotic Being, Zhentarim Ruffian); and other creatures' rolls and tool
+checks, which no roll on the sheet names (`FUTURE_WORK.md` lists the rest).
 
 Fifteen spend links have moved, as 11 rows (`src/rules/cast-guidance/spend.json`,
 rule pack port 3b), one for each way a link prices an action: a cost on the
@@ -143,7 +157,7 @@ keys, in 115 rows, and both link tables are gone.
   have a row at each of several levels and one for every level. The first key
   with a row at any level wins: a feature whose key has rows only at other
   levels gets none, and the walk does not go on to a later key, as `STANDING`
-  and `ROLL_EXTRAS` answer today, and the advantage table did.
+  answers today, and the advantage table and `ROLL_EXTRAS` did.
 - **`effects`** read as a rule pack's (`readStoredEffects`), formulas and
   `while` included, but strictly: a field the reader does not read is a problem
   and that effect is left out, where a player's file reads past it. So a row
@@ -226,7 +240,7 @@ ADR-001), so it keeps every rule a `CURATED` row has:
    effects, and its `replace: true` leaves the row out.
 3. The row is emitted in place of `CURATED`, with the entry's own origin
    object, which spend links find actions by. The rest of layer 3 (standing
-   rows, roll rows and `ROLL_EXTRAS`, spend links) runs as before.
+   rows, roll rows, spend rows) runs as before.
 
 A `standing` row runs where `STANDING` runs, after the curated row or the prose
 scan: beside them, with the entry's origin object, and after the curated row's
@@ -266,6 +280,18 @@ Three stored fields came in with the roll parts, and a fourth after them, for ru
   advantage to claim (`when`) or a paid extra reaches one only when it names it.
   So `"death"` takes no `abilities`, and with `"concentration"` any `abilities`
   list `con`.
+
+A paid extra (`rollPaid`, 3e) names one of `dice`, `poolDie`, `bonus` or
+`advantage`. A bonus is added once the d20 shows (`after`), advantage is claimed
+before it, so it waits on no failure (`ifFailed`), and a use given back on a
+roll that still failed (`spentOnSuccess`) needs `ifFailed`. A reroll
+(`rollReroll`, 3e) rerolls a `die` (`one` with `atMost`), or sets the d20 (`to`)
+or a floor (`floorScore`), which take no die and no `bonus`. One made as the d20
+lands (`auto`) is `free`, waits on nothing and never makes the roll worse: a 1,
+the lower die of advantage, a number set or a floor, and a floor and the lower
+die are made only so. Inspiration pays alone: never beside a reaction, a pool's
+die or `free`. Each refusal is one the roll prompt would otherwise drop or
+misread.
 
 The reader refuses a filter that could reach no roll, and `when` with
 disadvantage. A pack written before these fields, when the reader passed over
@@ -389,8 +415,8 @@ equal to what the loader loads.
 
 Add it under `src/rules/`, list it in `FILES` in `builtInRules.ts` and in
 `BUILT_IN_RULE_SETS`; the tests fail on a file not listed. They also fail on a row the reader leaves anything
-out of, and on a key its part's code table (`CURATED`, `STANDING` or
-`ROLL_EXTRAS`) still has (the row would never be the one read, or the code row
+out of, and on a key its part's code table (`CURATED` or `STANDING`) still
+has (the row would never be the one read, or the code row
 would be dead).
 
 ## Moving a row out of code
@@ -406,7 +432,8 @@ would be dead).
    zero change.
 5. A test that read the row through a code table reads it through the seam
    instead (`emitRow` in `curatedEffects.test.ts`, `emit` in
-   `standingEffects.test.ts`, `emitRolls` in `rollRows.test.ts`); a test
+   `standingEffects.test.ts`, `emitRolls` in `rollRows.test.ts`, `emit` in
+   `paidRolls.test.ts`); a test
    context or registry holds `BUILT_IN_RULE_SETS`, as every registry does.
 6. For a row the roll prompt prices (a spend row, a paid extra or a reroll),
    the roll prompt's prices must not change either
@@ -551,7 +578,7 @@ this script copied in when the base has none). `compare` names the builds that
 changed, field by field, and with `--expect-zero` exits 1 when any did.
 
 `snapshot --coverage <file>` also writes, for each code table (`CURATED`,
-`STANDING`, `ROLL_EXTRAS`) and the built-in rows
+`STANDING`) and the built-in rows
 (a spend row's links), the keys no build read. A row read is not a row that added something (a code row for one
 feature level is read at every level and adds at one; a built-in row at one
 level, named with `@` and the level, is read only where it adds), but a row never read is
@@ -559,8 +586,8 @@ one zero change says nothing about, so a move of one is
 proved another way, before the code row goes.
 
 `scripts/rules-probe.ts` is that proof. It runs while a row is in both places
-(a built-in row whose key its part's code table, `CURATED`, `STANDING` or
-`ROLL_EXTRAS`, still has) and derives
+(a built-in row whose key its part's code table, `CURATED` or `STANDING`,
+still has; `ROLL_EXTRAS` until 3e) and derives
 each build that reads the row twice in one process, once with the code row and
 once with the data row, comparing every sheet field and the actions and pools
 the build collected, since the sheet drops a price the character cannot pay (a

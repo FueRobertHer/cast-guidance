@@ -366,6 +366,11 @@ const flag: Field = (v) => {
   if (typeof v !== 'boolean') throw new Bad('is true or false');
   return v ? true : undefined;
 };
+/** True or false, each kept: where false says something of its own (a reaction never taken). */
+const bool: Field = (v) => {
+  if (typeof v !== 'boolean') throw new Bad('is true or false');
+  return v;
+};
 
 const int =
   (min: number, max: number): Field =>
@@ -770,6 +775,108 @@ function readSpendLinks(raw: unknown): { links: SpendLinkRow[]; problems: string
   return { links, problems };
 }
 
+const INSPIRATION_ALONE = '"inspiration" is the whole price: "reaction" is not true beside it';
+
+/**
+ * What a feature of the character's own adds to a roll, paid as its Use is
+ * (`PaidRoll`): one of a die (`dice`), the paying pool's own die (`poolDie`), a
+ * flat bonus or advantage. A bonus is added once the d20 shows, so it is always
+ * `after`. Advantage is claimed before the d20, so it waits on no failure, and a
+ * use given back on a roll that still failed (`spentOnSuccess`) needs one.
+ * Inspiration pays alone: no reaction beside it, and no pool's die to add.
+ */
+const rollPaid: Build = (o, r) => {
+  const on = req(o, r, 'on', rollFilter);
+  const adds = {
+    ...opt(o, r, 'dice', dice),
+    ...opt(o, r, 'poolDie', flag),
+    ...opt(o, r, 'bonus', amount),
+    ...opt(o, r, 'advantage', flag),
+  };
+  if (Object.keys(adds).length !== 1) {
+    throw new Bad('names one of "dice", "poolDie", "bonus" or "advantage"');
+  }
+  const rest = {
+    ...opt(o, r, 'after', flag),
+    ...opt(o, r, 'ifFailed', flag),
+    ...opt(o, r, 'spentOnSuccess', flag),
+    ...opt(o, r, 'reaction', bool),
+    ...opt(o, r, 'when', text(L.textLength)),
+    ...opt(o, r, 'inspiration', flag),
+  };
+  if ('advantage' in adds && ('after' in rest || 'ifFailed' in rest)) {
+    throw new Bad('"advantage" is claimed before the d20: leave out "after" and "ifFailed"');
+  }
+  if ('spentOnSuccess' in rest && !('ifFailed' in rest)) {
+    throw new Bad(
+      '"spentOnSuccess" gives the use back on a roll that still failed: "ifFailed" is true',
+    );
+  }
+  if ('poolDie' in adds && 'inspiration' in rest) {
+    throw new Bad(
+      '"poolDie" adds the die of the pool that pays, and Inspiration has none: leave out "inspiration"',
+    );
+  }
+  if ('inspiration' in rest && rest.reaction === true) throw new Bad(INSPIRATION_ALONE);
+  return { on, ...adds, ...('bonus' in adds ? { after: true } : {}), ...rest };
+};
+
+/**
+ * A reroll a feature of the character's own gives (`Reroll`), or a number set
+ * in place of the d20 (`to`), or a floor at an ability's score
+ * (`floorScore`). One made as the d20 lands (`auto`) costs nothing, waits on
+ * nothing and never makes the roll worse: the lower die of advantage, a 1, a
+ * number set or a floor. The prompt offers a lower die and a floor only so. A
+ * number set or a floor adds no bonus, and a free reroll is not paid with Inspiration.
+ */
+const rollReroll: Build = (o, r) => {
+  const out: Record<string, unknown> = {
+    on: req(o, r, 'on', rollFilter),
+    ...opt(o, r, 'die', oneOf('all', 'one', 'low', 'extra')),
+    ...opt(o, r, 'atMost', int(1, 19)),
+    ...opt(o, r, 'to', int(2, 20)),
+    ...opt(o, r, 'floorScore', ability),
+    ...opt(o, r, 'auto', flag),
+    ...opt(o, r, 'free', flag),
+    ...opt(o, r, 'reaction', bool),
+    ...opt(o, r, 'ifFailed', flag),
+    ...opt(o, r, 'bonus', amount),
+    ...opt(o, r, 'when', text(L.textLength)),
+    ...opt(o, r, 'inspiration', flag),
+  };
+  const sets = out.to !== undefined || out.floorScore !== undefined;
+  if (out.to !== undefined && out.floorScore !== undefined) {
+    throw new Bad('sets the d20 ("to") or a floor ("floorScore"), not both');
+  }
+  if (sets && (out.die !== undefined || out.atMost !== undefined)) {
+    throw new Bad('"to" and "floorScore" reroll nothing: leave out "die" and "atMost"');
+  }
+  if (sets && out.bonus !== undefined) {
+    throw new Bad('a number set or a floor adds no "bonus": leave it out');
+  }
+  if ((out.atMost !== undefined) !== (out.die === 'one')) {
+    throw new Bad('"die": "one" rerolls a die showing "atMost" or less, and "atMost" needs it');
+  }
+  if ((out.floorScore !== undefined || out.die === 'low') && out.auto !== true) {
+    throw new Bad('a floor and the lower die are made as the d20 lands: "auto" is true');
+  }
+  if (out.auto === true) {
+    if (out.free !== true) throw new Bad('"auto" is made with nothing paid: "free" is true');
+    const waits = ['ifFailed', 'when', 'reaction', 'inspiration'].find((k) => k in out);
+    if (waits !== undefined) throw new Bad(`"auto" waits on nothing: leave out "${waits}"`);
+    if (!(sets || out.die === 'low' || (out.die === 'one' && out.atMost === 1))) {
+      throw new Bad(
+        '"auto" never makes the roll worse: a 1, the lower die, a number set or a floor',
+      );
+    }
+  }
+  if (out.free === true && 'inspiration' in out) {
+    throw new Bad('"free" pays nothing: leave out "inspiration"');
+  }
+  if ('inspiration' in out && out.reaction === true) throw new Bad(INSPIRATION_ALONE);
+  return out;
+};
+
 /**
  * Version 1's kinds: the engine's `EffectInput` kinds, each field read on its
  * own. The one kind left out, `weaponProfFilter`, takes the data's internal
@@ -940,6 +1047,8 @@ const KINDS = new Map<Kind, Build>([
       return { mode, on: req(o, r, 'on', rollFilter), ...when };
     },
   ],
+  ['rollPaid', rollPaid],
+  ['rollReroll', rollReroll],
   ['tempHpEachTurn', amountOnly],
   [
     'extraAction',
@@ -1015,7 +1124,12 @@ const KINDS = new Map<Kind, Build>([
   ['note', (o, r) => ({ text: req(o, r, 'text', text(L.textLength)) })],
 ]);
 
-const ACTIVE: ReadonlySet<string> = new Set(ACTIVE_PART_KINDS);
+/**
+ * The kinds that may hold `while` a state lasts: those an effect in play may
+ * carry, and a feature's paid extras and rerolls, which never go in play
+ * (Fanatical Focus, while raging).
+ */
+const ACTIVE: ReadonlySet<string> = new Set([...ACTIVE_PART_KINDS, 'rollPaid', 'rollReroll']);
 const PLAIN_STATES: ReadonlySet<string> = new Set([
   'bloodied',
   'zeroHp',
@@ -1611,11 +1725,12 @@ export function builtInRowsFor(
 }
 
 /**
- * Emit built-in rows where the code table they stand in for runs (`STANDING`,
- * the roll tables): each row with no level, or at `featureLevel`, with `origin`
- * itself. `classLevel` is what their formulas read as the class's level; the
- * character's level when absent, as `mechanicsOf` reads it. `className` is the
- * class that gives them (`MechanicsSubject.className`).
+ * Emit built-in rows where the code they stand in for ran (`STANDING`, and the
+ * roll parts that were `ROLL_ADVANTAGES` and `ROLL_EXTRAS`): each row with no
+ * level, or at `featureLevel`, with `origin` itself. `classLevel` is what their
+ * formulas read as the class's level; the character's level when absent, as
+ * `mechanicsOf` reads it. `className` is the class that gives them
+ * (`MechanicsSubject.className`).
  */
 export function emitRuleRows(
   col: Collector,

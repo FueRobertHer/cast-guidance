@@ -5,9 +5,8 @@
 // caster blessed themself too.
 import 'fake-indexeddb/auto';
 import { fireEvent, screen } from '@testing-library/react';
-import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { innateSorceryEffect, rageEffect } from '@/engine/curated/namedEffects';
-import { ROLL_EXTRAS } from '@/engine/curated/rollExtras';
 import type { CharacterDoc, DataEntity } from '@/engine/types';
 import { rollLogStore } from '@/stores/rollLog';
 import {
@@ -422,21 +421,22 @@ describe('Innate Sorcery from its own Use', () => {
     });
 
     describe('and a reroll on Charisma spell attacks', () => {
-      // A row that reaches a spell attack only when the roll names the ability
-      // it is made with (Elven Accuracy's kind of limit).
-      beforeAll(() => {
-        Object.assign(ROLL_EXTRAS, {
-          'dart charm|tst': [
+      // The feat's own reroll, which reaches a spell attack only when the roll
+      // names the ability it is made with (Elven Accuracy's kind of limit).
+      const rerolling: DataEntity = {
+        ...charm,
+        castGuidance: {
+          v: 1,
+          effects: [
             {
+              kind: 'rollReroll',
               on: { rolls: ['attack'], attack: 'spell', abilities: ['cha'] },
-              reroll: { free: true },
+              free: true,
             },
           ],
-        });
-      });
-      afterAll(() => {
-        Reflect.deleteProperty(ROLL_EXTRAS, 'dart charm|tst');
-      });
+        },
+      };
+      const withReroll = { ...extra, feat: [rerolling] };
       const offered = () => (lastRoll()?.meta?.rerolls ?? []).map((o) => o.source);
       /** A middling d20, which neither crits nor settles the attack. */
       const middling = () => {
@@ -460,7 +460,7 @@ describe('Innate Sorcery from its own Use', () => {
 
       it("offers it on a granted spell's attack on Play", async () => {
         rollLogStore.getState().clear();
-        await renderSheet(charmed(), { extra });
+        await renderSheet(charmed(), { extra: withReroll });
         middling();
         expect(rollFirst('Atk +5')).toEqual(['spark dart spell attack', ['Dart Charm']]);
       });
@@ -470,14 +470,14 @@ describe('Innate Sorcery from its own Use', () => {
         const doc = charmed();
         const ref = { name: 'Spark Dart', source: 'TST' };
         doc.spellcasting = { 'sorcerer|xphb': { known: [ref], prepared: [ref] } };
-        await renderSheet(doc, { extra });
+        await renderSheet(doc, { extra: withReroll });
         middling();
         expect(rollFirst('Atk +5')).toEqual(['Spark Dart spell attack', ['Dart Charm']]);
       });
 
       it('offers it on the Spells tab', async () => {
         rollLogStore.getState().clear();
-        await renderSheet(charmed(), { path: 'spells', extra });
+        await renderSheet(charmed(), { path: 'spells', extra: withReroll });
         await screen.findByRole('button', { name: '+5' });
         middling();
         expect(rollFirst('+5')).toEqual(['Spark Dart spell attack', ['Dart Charm']]);
@@ -486,7 +486,7 @@ describe('Innate Sorcery from its own Use', () => {
       it("offers it on an innate spell's attack on the Spells tab", async () => {
         rollLogStore.getState().clear();
         const innate: DataEntity = {
-          ...charm,
+          ...rerolling,
           additionalSpells: [
             { ability: 'cha', innate: { _: { daily: { '1': ['spark dart|tst'] } } } },
           ],

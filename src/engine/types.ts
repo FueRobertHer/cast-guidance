@@ -355,7 +355,15 @@ export interface FormulaLike {
 }
 
 /** The effect fields a formula may fill (`FORMULA_FIELDS` in `castGuidance.ts`). */
-export type FormulaField = 'amount' | 'min' | 'max' | 'range' | 'speed' | 'base' | 'regainOnShort';
+export type FormulaField =
+  | 'amount'
+  | 'min'
+  | 'max'
+  | 'range'
+  | 'speed'
+  | 'base'
+  | 'regainOnShort'
+  | 'bonus';
 
 /**
  * A number an entry's formula fills in at fold time, once abilities and hit

@@ -375,6 +375,11 @@ describe('a class that reskins another', () => {
     expect(action(warrior, 'Second Wind')?.roll).toBe('1d10+17');
     // A Fighter's spend row reaches the same feature walked under the Warrior.
     expect(action(warrior, 'Tactical Mind')?.cost).toMatchObject({ resource: 'second-wind' });
+    // And its paid extra, the Fighter's row under the class it reskins.
+    const fighter = derive(build(FIGHTER, 17));
+    const paid = (s: DerivedSheet) => s.rollRiders.filter((r) => r.kind === 'paid');
+    expect(paid(warrior)).toEqual(paid(fighter));
+    expect(paid(warrior)).toMatchObject([{ dice: '1d10', origin: 'Tactical Mind' }]);
   });
 
   it('reads the level of the class that gives a feature, and keeps the first pool of one key', () => {

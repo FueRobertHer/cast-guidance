@@ -1,5 +1,4 @@
 import { emitCuratedEffects, hasCuratedRow } from '../curated/curatedEffects';
-import { emitRollExtras, hasRollExtraRow } from '../curated/rollExtras';
 import { linkSpend } from '../curated/spendLinks';
 import { type DataEntity, type EffectOrigin, refUid, SKILLS } from '../types';
 import { collectAdditionalSpells } from './additionalSpells';
@@ -187,9 +186,7 @@ export function collectFeatEntity(
             );
       if (!curated) proseScanFeature(col, origin.label, e.entries, origin);
       emitBuiltInRows(col, 'rollAdvantage', uids, origin);
-      if (!emitBuiltInRows(col, 'rollExtra', uids, origin, { inCode: hasRollExtraRow })) {
-        emitRollExtras(col, uids, origin);
-      }
+      emitBuiltInRows(col, 'rollExtra', uids, origin);
       linkSpend(col, uids, origin.label, origin);
     },
   });
