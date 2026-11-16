@@ -357,7 +357,7 @@
             "check": "limitedUses",
             "kind": "missed",
             "label": "War God's Blessing (Cleric: War Domain|XPHB)",
-            "note": "Spends Channel Divinity through its SPEND_LINKS row, with no pool of its own."
+            "note": "Spends Channel Divinity through its spend row, with no pool of its own."
           },
           {
             "key": "0a4a4eb2e350bb",
@@ -371,7 +371,7 @@
             "check": "bonusAction",
             "kind": "missed",
             "label": "Commander's Strike (optional feature|PHB)",
-            "note": "Its SPEND_LINKS row gives it this slot on a real sheet."
+            "note": "Its spend row gives it this slot on a real sheet."
           },
           {
             "key": "04e8e796be5c95",
@@ -413,7 +413,7 @@
             "check": "bonusAction",
             "kind": "missed",
             "label": "Feinting Attack (optional feature|PHB)",
-            "note": "Its SPEND_LINKS row gives it this slot on a real sheet."
+            "note": "Its spend row gives it this slot on a real sheet."
           },
           {
             "key": "0bc790d1b7270b",
@@ -1008,7 +1008,7 @@
             "check": "limitedUses",
             "kind": "missed",
             "label": "War God's Blessing (Cleric: War Domain|XPHB)",
-            "note": "Spends Channel Divinity through its SPEND_LINKS row, with no pool of its own."
+            "note": "Spends Channel Divinity through its spend row, with no pool of its own."
           },
           {
             "key": "0a4a4eb2e350bb",
@@ -1022,7 +1022,7 @@
             "check": "bonusAction",
             "kind": "missed",
             "label": "Commander's Strike (optional feature|PHB)",
-            "note": "Its SPEND_LINKS row gives it this slot on a real sheet."
+            "note": "Its spend row gives it this slot on a real sheet."
           },
           {
             "key": "04e8e796be5c95",
@@ -1064,7 +1064,7 @@
             "check": "bonusAction",
             "kind": "missed",
             "label": "Feinting Attack (optional feature|PHB)",
-            "note": "Its SPEND_LINKS row gives it this slot on a real sheet."
+            "note": "Its spend row gives it this slot on a real sheet."
           },
           {
             "key": "0bc790d1b7270b",

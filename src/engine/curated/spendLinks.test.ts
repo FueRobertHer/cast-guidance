@@ -22,7 +22,6 @@ const ctx: EngineContext = {
 };
 const origin: EffectOrigin = { label: 'Feature', uid: 'x', type: 'class' };
 const collector = () => new Collector(newCharacterDoc('c', 'H', 't'), ctx);
-const rows = Object.entries(SPEND_LINKS);
 
 /**
  * Every key's prices: its shipped spend row's links where the row moved there,
@@ -95,9 +94,15 @@ describe('every price, in code or a shipped spend row', () => {
   });
 });
 
-describe('SPEND_LINKS', () => {
+describe('spend keys and reasons', () => {
+  /** A key's pool price: its first link's resource and amount, when it is a cost. */
+  const costOf = (key: string) => {
+    const link = PRICES.get(key)?.[0];
+    return link !== undefined && 'cost' in link ? link.cost : undefined;
+  };
+
   it('keys every row by lowercase name and printing', () => {
-    for (const [key] of rows) {
+    for (const [key] of PRICES) {
       expect(key, key).toBe(key.toLowerCase());
       expect(key.split('|').length, key).toBeGreaterThanOrEqual(2);
     }
@@ -115,21 +120,21 @@ describe('SPEND_LINKS', () => {
     expect(headings).toHaveLength(9);
     for (const key of headings) {
       const [, subclass, source] = key.split('|');
-      const options = rows.filter(
+      const options = LINKS.filter(
         ([row, link]) =>
-          row.endsWith(`|${subclass}|${source}`) && link.resource === 'channel-divinity-paladin',
+          row.endsWith(`|${subclass}|${source}`) && resourceOf(link) === 'channel-divinity-paladin',
       );
       expect(options.length, key).toBeGreaterThanOrEqual(2);
     }
   });
 
   it('keeps the printings apart where their costs differ', () => {
-    expect(SPEND_LINKS['heightened spell|phb']?.amount).toBe(3);
-    expect(SPEND_LINKS['heightened spell|xphb']?.amount).toBe(2);
-    expect(SPEND_LINKS['twinned spell|phb']?.amount).toBe('varies');
-    expect(SPEND_LINKS['twinned spell|xphb']?.amount).toBe(1);
-    expect(SPEND_LINKS['patient defense|monk|phb']?.optional).toBeUndefined();
-    expect(SPEND_LINKS['patient defense|monk|xphb']?.optional).toBe(true);
+    expect(costOf('heightened spell|phb')?.amount).toBe(3);
+    expect(costOf('heightened spell|xphb')?.amount).toBe(2);
+    expect(costOf('twinned spell|phb')?.amount).toBe('varies');
+    expect(costOf('twinned spell|xphb')?.amount).toBe(1);
+    expect(costOf('patient defense|monk|phb')?.optional).toBeUndefined();
+    expect(costOf('patient defense|monk|xphb')?.optional).toBe(true);
   });
 
   it('covers the cases that spent nothing', () => {
@@ -311,8 +316,8 @@ describe('a built-in spend row stands in for the code rows of its key (rule pack
   it('reads every code row as links', () => {
     expect(read.problems).toEqual([]);
     expect(read.rows).toHaveLength(keys.length);
-    // 288 pool rows and 52 slot rows left in code, one key in both (Divine Reaper).
-    expect(keys).toHaveLength(288 + 52 - 1);
+    // 1 pool row and 52 slot rows left in code, one key in both (Divine Reaper).
+    expect(keys).toHaveLength(1 + 52 - 1);
   });
 
   it('pays with a pool in SPEND_LINKS and with a slot or a die in SLOT_LINKS alone', () => {

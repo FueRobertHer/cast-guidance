@@ -12,8 +12,9 @@
  * of Channel Divinity only because the parent feature says so. Those are linked by
  * hand.
  *
- * Like a scoping set, nothing here gates a check. The answers fed `SPEND_LINKS`
- * once; the report and the audit's count say what is still outside it.
+ * Like a scoping set, nothing here gates a check. The answers fed the spend links
+ * once (now the built-in `spend` rows); the report and the audit's count say what
+ * is still outside them.
  *
  * Relative imports only: `scripts/data-judge.ts` loads this under plain Bun.
  */
@@ -38,8 +39,8 @@ export interface SpendPool {
   /** A narrower net, for a pool that a lot of prose names without spending it. */
   inNet?: (state: string) => boolean;
   /**
-   * Its keys in `SPEND_LINKS`, or the cost `SLOT_LINKS` names for a spell slot or a
-   * Hit Point Die (using one means choosing a slot's level or a die's size).
+   * The resources its spend links name: a pool's key, or `spell-slot` or `hit-die`
+   * (using one means choosing a slot's level or a die's size).
    */
   resources: readonly string[];
 }
@@ -460,7 +461,7 @@ export function spendCounts(registry: ByType, file: JudgmentFile): SpendCounts {
   return counts;
 }
 
-/** What is outside `SPEND_LINKS`, per pool, from saved answers. Never asks Jev. */
+/** What is outside the spend links, per pool, from saved answers. Never asks Jev. */
 export function spendReport(registry: ByType, file: JudgmentFile): string {
   const out = [
     `# spend: which pool each feature spends. ${YES_MEANS}`,

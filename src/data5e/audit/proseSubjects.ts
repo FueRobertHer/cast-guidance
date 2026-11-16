@@ -60,7 +60,7 @@ export interface ProseSubject {
   curated: boolean;
   /** What `proseScanFeature` draws from the prose. */
   effects: EffectInput[];
-  /** Each owner's key in `SPEND_LINKS`, which names the printing unlike the curated key. */
+  /** Each owner's spend link key, which names the printing unlike the curated key. */
   spendKeys: string[];
   /**
    * The sheet of every owner holds a per-rest pool that belongs to this prose, read
@@ -199,7 +199,7 @@ interface Owner {
    * or subclass's.
    */
   printings?: readonly string[];
-  /** The key the engine looks up in `SPEND_LINKS`. */
+  /** The key the engine looks up its spend links under (`linkSpend`). */
   spendKey: string;
   holder: Holder;
 }

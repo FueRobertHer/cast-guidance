@@ -6,6 +6,478 @@
   "rows": [
     {
       "part": "spend",
+      "keys": [
+        "abjure enemy|oath of vengeance|phb",
+        "abjure foes|paladin|xphb",
+        "abjure the extraplanar|oath of the watchers|tce",
+        "beacon of light|oath of the holy|wow",
+        "conquering presence|oath of conquest|xge",
+        "control undead|oathbreaker|dmg",
+        "dreadful aspect|oathbreaker|dmg",
+        "nature's wrath|oath of the ancients|phb",
+        "nature's wrath|oath of the ancients|xphb",
+        "sacred weapon|oath of devotion|phb",
+        "turn the faithless|oath of the ancients|phb",
+        "turn the unholy|oath of devotion|phb",
+        "watcher's will|oath of the watchers|tce"
+      ],
+      "links": [
+        {
+          "cost": {
+            "resource": "channel-divinity-paladin",
+            "amount": 1
+          },
+          "economy": "action"
+        }
+      ]
+    },
+    {
+      "part": "spend",
+      "keys": [
+        "agile strikes|college of dance|xphb",
+        "defensive flourish|college of swords|xge",
+        "moon's inspiration|college of the moon|frhof",
+        "peerless skill|college of lore|phb",
+        "peerless skill|college of lore|xphb",
+        "psychic blades|college of whispers|xge",
+        "slashing flourish|college of swords|xge",
+        "tandem footwork|college of dance|xphb"
+      ],
+      "links": [
+        {
+          "cost": {
+            "resource": "bardic-inspiration",
+            "amount": 1
+          },
+          "economy": "none"
+        }
+      ]
+    },
+    {
+      "part": "spend",
+      "keys": [
+        "ambush|tce",
+        "ambush|xphb",
+        "bait and switch|tce",
+        "bait and switch|xphb",
+        "commanding presence|tce",
+        "commanding presence|xphb",
+        "disarming attack|phb",
+        "disarming attack|xphb",
+        "distracting strike|phb",
+        "distracting strike|xphb",
+        "evasive footwork|phb",
+        "goading attack|phb",
+        "goading attack|xphb",
+        "lunging attack|phb",
+        "maneuvering attack|phb",
+        "maneuvering attack|xphb"
+      ],
+      "links": [
+        {
+          "cost": {
+            "resource": "superiority-dice",
+            "amount": 1
+          },
+          "economy": "none"
+        }
+      ]
+    },
+    {
+      "part": "spend",
+      "keys": [
+        "arms of the astral self|way of the astral self|tce",
+        "flurry of blows|monk|phb",
+        "flurry of blows|monk|xphb",
+        "patient defense|monk|phb",
+        "radiant sun bolt|way of the sun soul|xge",
+        "redirect attack|warrior of mystic brews|wow",
+        "redirect attack|way of the drunken master|xge",
+        "step of the wind|monk|phb",
+        "stunning strike|monk|phb",
+        "stunning strike|monk|xphb",
+        "visage of the astral self|way of the astral self|tce"
+      ],
+      "links": [
+        {
+          "cost": {
+            "resource": "focus",
+            "amount": 1
+          }
+        }
+      ]
+    },
+    {
+      "part": "spend",
+      "keys": [
+        "ascendant aspect|way of the ascendant dragon|ftd",
+        "diamond soul|monk|phb",
+        "disciplined survivor|monk|xphb",
+        "elemental attunement|warrior of the elements|xphb",
+        "enhancing a magical beverage|warrior of mystic brews|wow",
+        "hand of harm|warrior of mercy|xphb",
+        "hand of harm|way of mercy|tce",
+        "improved shadow step|warrior of shadow|xphb",
+        "mastery of death|way of the long death|scag",
+        "one with the blade|way of the kensei|xge"
+      ],
+      "links": [
+        {
+          "cost": {
+            "resource": "focus",
+            "amount": 1
+          },
+          "economy": "none"
+        }
+      ]
+    },
+    {
+      "part": "spend",
+      "keys": ["aspect of the wyrm|way of the ascendant dragon|ftd"],
+      "links": [
+        {
+          "buyBack": {
+            "resource": "focus",
+            "amount": 3
+          },
+          "uses": {
+            "key": "aspect-of-the-wyrm",
+            "max": 1,
+            "resetOn": "long"
+          }
+        }
+      ]
+    },
+    {
+      "part": "spend",
+      "keys": ["awakened astral self|way of the astral self|tce"],
+      "links": [
+        {
+          "cost": {
+            "resource": "focus",
+            "amount": 5
+          }
+        }
+      ]
+    },
+    {
+      "part": "spend",
+      "keys": ["bastion of law|clockwork sorcery|xphb", "bastion of law|clockwork soul|tce"],
+      "links": [
+        {
+          "cost": {
+            "resource": "sorcery-points",
+            "amount": "varies"
+          },
+          "economy": "action"
+        }
+      ]
+    },
+    {
+      "part": "spend",
+      "keys": [
+        "battle shout|wow",
+        "brace|tce",
+        "demoralizing shout|wow",
+        "evasive footwork|xphb",
+        "feinting attack|xphb",
+        "grappling strike|tce",
+        "heroic leap|wow",
+        "lunging attack|xphb",
+        "parry|phb",
+        "parry|xphb",
+        "quick toss|tce",
+        "rally|xphb",
+        "riposte|phb",
+        "riposte|xphb",
+        "warding maneuver|wow"
+      ],
+      "links": [
+        {
+          "cost": {
+            "resource": "superiority-dice",
+            "amount": 1
+          }
+        }
+      ]
+    },
+    {
+      "part": "spend",
+      "keys": ["beasts of ill omen|shadow sorcery|rhw", "hound of ill omen|shadow magic|xge"],
+      "links": [
+        {
+          "cost": {
+            "resource": "sorcery-points",
+            "amount": 3
+          }
+        }
+      ]
+    },
+    {
+      "part": "spend",
+      "keys": ["beguiling magic|college of glamour|xphb"],
+      "links": [
+        {
+          "buyBack": {
+            "resource": "bardic-inspiration",
+            "amount": 1
+          }
+        }
+      ]
+    },
+    {
+      "part": "spend",
+      "keys": ["bend luck|wild magic sorcery|xphb", "waxing and waning|lunar sorcery|dsotdq"],
+      "links": [
+        {
+          "cost": {
+            "resource": "sorcery-points",
+            "amount": 1
+          }
+        }
+      ]
+    },
+    {
+      "part": "spend",
+      "keys": ["bend luck|wild magic|phb"],
+      "links": [
+        {
+          "cost": {
+            "resource": "sorcery-points",
+            "amount": 2
+          }
+        }
+      ]
+    },
+    {
+      "part": "spend",
+      "keys": ["breath of the dragon|way of the ascendant dragon|ftd"],
+      "links": [
+        {
+          "buyBack": {
+            "resource": "focus",
+            "amount": 2
+          }
+        }
+      ]
+    },
+    {
+      "part": "spend",
+      "keys": ["breath of winter|phb", "wave of rolling earth|phb"],
+      "links": [
+        {
+          "cost": {
+            "resource": "focus",
+            "amount": 6
+          },
+          "economy": "action"
+        }
+      ]
+    },
+    {
+      "part": "spend",
+      "keys": [
+        "bulwark of force|psi warrior|tce",
+        "bulwark of force|psi warrior|xphb",
+        "psi-powered leap|psi warrior|tce",
+        "psi-powered leap|psi warrior|xphb",
+        "telekinetic movement|psi warrior|tce",
+        "telekinetic movement|psi warrior|xphb"
+      ],
+      "links": [
+        {
+          "buyBack": {
+            "resource": "psi-warrior-dice",
+            "amount": 1
+          }
+        }
+      ]
+    },
+    {
+      "part": "spend",
+      "keys": [
+        "careful spell|phb",
+        "careful spell|xphb",
+        "distant spell|phb",
+        "distant spell|xphb",
+        "elemental affinity|draconic bloodline|phb",
+        "empowered healing|divine soul|xge",
+        "empowered spell|phb",
+        "empowered spell|xphb",
+        "extended spell|phb",
+        "extended spell|xphb",
+        "magical guidance|sorcerer|tce",
+        "seeking spell|xphb",
+        "subtle spell|phb",
+        "subtle spell|xphb",
+        "transmuted spell|tce",
+        "transmuted spell|xphb"
+      ],
+      "links": [
+        {
+          "cost": {
+            "resource": "sorcery-points",
+            "amount": 1
+          },
+          "economy": "none"
+        }
+      ]
+    },
+    {
+      "part": "spend",
+      "keys": [
+        "champion challenge|oath of the crown|scag",
+        "divine sense|paladin|xphb",
+        "emissary of peace|oath of redemption|xge",
+        "inspiring smite|oath of glory|tce",
+        "peerless athlete|oath of glory|tce",
+        "peerless athlete|oath of glory|xphb",
+        "rebuke the violent|oath of redemption|xge",
+        "turn the tide|oath of the crown|scag",
+        "vow of enmity|oath of vengeance|phb"
+      ],
+      "links": [
+        {
+          "cost": {
+            "resource": "channel-divinity-paladin",
+            "amount": 1
+          }
+        }
+      ]
+    },
+    {
+      "part": "spend",
+      "keys": [
+        "channel divinity: arcane abjuration|arcana domain|scag",
+        "channel divinity: balm of peace|peace domain|tce",
+        "channel divinity: charm animals and plants|nature domain|phb",
+        "channel divinity: cloak of shadows|ambition domain (psa)|psa",
+        "channel divinity: cloak of shadows|trickery domain|phb",
+        "channel divinity: invoke duplicity|ambition domain (psa)|psa",
+        "channel divinity: invoke duplicity|trickery domain|phb",
+        "channel divinity: knowledge of the ages|knowledge domain|phb",
+        "channel divinity: order's demand|order domain|tce",
+        "channel divinity: path to the grave|grave domain|xge",
+        "channel divinity: preserve life|life domain|phb",
+        "channel divinity: preserve life|solidarity domain (psa)|psa",
+        "channel divinity: radiance of the dawn|light domain|phb",
+        "channel divinity: read thoughts|knowledge domain|phb",
+        "channel divinity: turn undead|cleric|phb",
+        "channel divinity: twilight sanctuary|twilight domain|tce"
+      ],
+      "links": [
+        {
+          "cost": {
+            "resource": "channel-divinity",
+            "amount": 1
+          },
+          "economy": "action"
+        }
+      ]
+    },
+    {
+      "part": "spend",
+      "keys": [
+        "channel divinity: artisan's blessing|forge domain|xge",
+        "channel divinity: consuming fervor|zeal domain (psa)|psa",
+        "channel divinity: destructive wrath|tempest domain|phb",
+        "channel divinity: feat of strength|strength domain (psa)|psa",
+        "channel divinity: guided strike|war domain|phb",
+        "channel divinity: touch of death|death domain|dmg",
+        "modify magic|arcana domain|au"
+      ],
+      "links": [
+        {
+          "cost": {
+            "resource": "channel-divinity",
+            "amount": 1
+          },
+          "economy": "none"
+        }
+      ]
+    },
+    {
+      "part": "spend",
+      "keys": ["channel divinity: harness divine power|cleric|tce"],
+      "links": [
+        {
+          "cost": {
+            "resource": "channel-divinity",
+            "amount": 1,
+            "ownUseToo": true
+          }
+        }
+      ]
+    },
+    {
+      "part": "spend",
+      "keys": ["channel divinity: harness divine power|paladin|tce"],
+      "links": [
+        {
+          "cost": {
+            "resource": "channel-divinity-paladin",
+            "amount": 1,
+            "ownUseToo": true
+          }
+        }
+      ]
+    },
+    {
+      "part": "spend",
+      "keys": [
+        "channel divinity: war god's blessing|war domain|phb",
+        "guided strike|war domain|xphb",
+        "holy bolt|discipline domain|wow",
+        "invoke duplicity|trickery domain|xphb",
+        "luminous barrier|discipline domain|wow",
+        "oketra's blessing|solidarity domain (psa)|psa",
+        "path to the grave|grave domain|rhw",
+        "rhonas's blessing|strength domain (psa)|psa",
+        "shadowform|shadow domain|wow"
+      ],
+      "links": [
+        {
+          "cost": {
+            "resource": "channel-divinity",
+            "amount": 1
+          }
+        }
+      ]
+    },
+    {
+      "part": "spend",
+      "keys": [
+        "clench of the north wind|phb",
+        "cloak of shadows|warrior of shadow|xphb",
+        "gong of the summit|phb"
+      ],
+      "links": [
+        {
+          "cost": {
+            "resource": "focus",
+            "amount": 3
+          },
+          "economy": "action"
+        }
+      ]
+    },
+    {
+      "part": "spend",
+      "keys": [
+        "clockwork cavalcade|clockwork sorcery|xphb",
+        "clockwork cavalcade|clockwork soul|tce"
+      ],
+      "links": [
+        {
+          "buyBack": {
+            "resource": "sorcery-points",
+            "amount": 7
+          }
+        }
+      ]
+    },
+    {
+      "part": "spend",
       "keys": ["combat wild shape|circle of the moon|phb"],
       "links": [
         {
@@ -33,6 +505,213 @@
     },
     {
       "part": "spend",
+      "keys": [
+        "commander's strike|phb",
+        "commander's strike|xphb",
+        "feinting attack|phb",
+        "rally|phb"
+      ],
+      "links": [
+        {
+          "cost": {
+            "resource": "superiority-dice",
+            "amount": 1
+          },
+          "economy": "bonus"
+        }
+      ]
+    },
+    {
+      "part": "spend",
+      "keys": [
+        "crown of spellfire|spellfire sorcery|frhof",
+        "trance of order|clockwork sorcery|xphb",
+        "trance of order|clockwork soul|tce",
+        "warping implosion|aberrant mind|tce",
+        "warping implosion|aberrant sorcery|xphb"
+      ],
+      "links": [
+        {
+          "buyBack": {
+            "resource": "sorcery-points",
+            "amount": 5
+          }
+        }
+      ]
+    },
+    {
+      "part": "spend",
+      "keys": [
+        "cutting words|college of lore|phb",
+        "cutting words|college of lore|xphb",
+        "inspiring movement|college of dance|xphb",
+        "mantle of inspiration|college of glamour|xge",
+        "mantle of inspiration|college of glamour|xphb",
+        "mobile flourish|college of swords|xge",
+        "spirits from beyond|college of spirits|rhw",
+        "unsettling words|college of eloquence|tce"
+      ],
+      "links": [
+        {
+          "cost": {
+            "resource": "bardic-inspiration",
+            "amount": 1
+          }
+        }
+      ]
+    },
+    {
+      "part": "spend",
+      "keys": ["darkness|warrior of shadow|xphb", "shape the flowing river|phb"],
+      "links": [
+        {
+          "cost": {
+            "resource": "focus",
+            "amount": 1
+          },
+          "economy": "action"
+        }
+      ]
+    },
+    {
+      "part": "spend",
+      "keys": ["death coil|death knight|wow"],
+      "links": [
+        {
+          "cost": {
+            "resource": "death-coil",
+            "amount": "varies"
+          }
+        }
+      ]
+    },
+    {
+      "part": "spend",
+      "keys": [
+        "deflect attacks|monk|xphb",
+        "deflect missiles|monk|phb",
+        "patient defense|monk|xphb",
+        "step of the wind|monk|xphb"
+      ],
+      "links": [
+        {
+          "cost": {
+            "resource": "focus",
+            "amount": 1,
+            "optional": true
+          }
+        }
+      ]
+    },
+    {
+      "part": "spend",
+      "keys": ["dispelling recovery|arcana domain|au"],
+      "links": [
+        {
+          "buyBack": {
+            "resource": "channel-divinity",
+            "amount": 1
+          }
+        }
+      ]
+    },
+    {
+      "part": "spend",
+      "keys": ["disrupt|demon hunter|wow"],
+      "links": [
+        {
+          "cost": {
+            "resource": "soul-fragments",
+            "amount": 2
+          },
+          "economy": "reaction"
+        }
+      ]
+    },
+    {
+      "part": "spend",
+      "keys": [
+        "divine spark|cleric|xphb",
+        "mind magic|knowledge domain|frhof",
+        "preserve life|life domain|xphb",
+        "radiance of the dawn|light domain|xphb",
+        "turn undead|cleric|xphb"
+      ],
+      "links": [
+        {
+          "cost": {
+            "resource": "channel-divinity",
+            "amount": 1
+          },
+          "economy": "action"
+        }
+      ]
+    },
+    {
+      "part": "spend",
+      "keys": ["double jump|demon hunter|wow", "warglaive mastery|demon hunter|wow"],
+      "links": [
+        {
+          "cost": {
+            "resource": "soul-fragments",
+            "amount": 1
+          }
+        }
+      ]
+    },
+    {
+      "part": "spend",
+      "keys": ["draconic presence|draconic bloodline|phb"],
+      "links": [
+        {
+          "cost": {
+            "resource": "sorcery-points",
+            "amount": 5
+          },
+          "economy": "action"
+        }
+      ]
+    },
+    {
+      "part": "spend",
+      "keys": ["dragon fear|xge"],
+      "links": [
+        {
+          "cost": {
+            "resource": "breath-weapon",
+            "amount": 1
+          },
+          "economy": "action"
+        }
+      ]
+    },
+    {
+      "part": "spend",
+      "keys": ["dragon wings|draconic sorcery|xphb"],
+      "links": [
+        {
+          "buyBack": {
+            "resource": "sorcery-points",
+            "amount": 3
+          }
+        }
+      ]
+    },
+    {
+      "part": "spend",
+      "keys": ["drunkard's luck|way of the drunken master|xge"],
+      "links": [
+        {
+          "cost": {
+            "resource": "focus",
+            "amount": 2
+          },
+          "economy": "none"
+        }
+      ]
+    },
+    {
+      "part": "spend",
       "keys": ["durable|xphb"],
       "links": [
         {
@@ -42,6 +721,19 @@
             "hitDieHeals": "roll"
           },
           "economy": "bonus"
+        }
+      ]
+    },
+    {
+      "part": "spend",
+      "keys": ["echo of the elements|path of the elements|wow"],
+      "links": [
+        {
+          "cost": {
+            "resource": "rage",
+            "amount": 1
+          },
+          "economy": "action"
         }
       ]
     },
@@ -85,13 +777,223 @@
     },
     {
       "part": "spend",
-      "keys": ["flurry of blows|monk|phb", "stunning strike|monk|xphb"],
+      "keys": [
+        "elemental burst|warrior of the elements|xphb",
+        "fist of four thunders|phb",
+        "quickened healing|monk|tce",
+        "rush of the gale spirits|phb",
+        "shadow arts|way of shadow|phb",
+        "sweeping cinder strike|phb"
+      ],
       "links": [
         {
           "cost": {
             "resource": "focus",
+            "amount": 2
+          },
+          "economy": "action"
+        }
+      ]
+    },
+    {
+      "part": "spend",
+      "keys": [
+        "elemental smite|oath of the noble genies|frhof",
+        "guided strike|oath of conquest|xge",
+        "inspiring smite|oath of glory|xphb",
+        "runic power|oath of the ebon blade|wow",
+        "sacred weapon|oath of devotion|xphb",
+        "vow of enmity|oath of vengeance|xphb"
+      ],
+      "links": [
+        {
+          "cost": {
+            "resource": "channel-divinity-paladin",
             "amount": 1
+          },
+          "economy": "none"
+        }
+      ]
+    },
+    {
+      "part": "spend",
+      "keys": ["elemental wild shape|circle of the moon|phb"],
+      "links": [
+        {
+          "cost": {
+            "resource": "wild-shape",
+            "amount": 2
+          },
+          "economy": "none"
+        }
+      ]
+    },
+    {
+      "part": "spend",
+      "keys": [
+        "empty body|monk|phb",
+        "searing sunburst|way of the sun soul|xge",
+        "touch of the long death|way of the long death|scag",
+        "unbroken air|phb",
+        "water whip|phb"
+      ],
+      "links": [
+        {
+          "cost": {
+            "resource": "focus",
+            "amount": "varies"
+          },
+          "economy": "action"
+        }
+      ]
+    },
+    {
+      "part": "spend",
+      "keys": ["eternal mountain defense|phb", "river of hungry flame|phb"],
+      "links": [
+        {
+          "cost": {
+            "resource": "focus",
+            "amount": 5
+          },
+          "economy": "action"
+        }
+      ]
+    },
+    {
+      "part": "spend",
+      "keys": ["eyes of the dark|shadow magic|xge"],
+      "links": [
+        {
+          "cost": {
+            "resource": "sorcery-points",
+            "amount": 2,
+            "optional": true
+          },
+          "economy": "action"
+        }
+      ]
+    },
+    {
+      "part": "spend",
+      "keys": ["fangs of the fire snake|phb", "focused aim|monk|tce"],
+      "links": [
+        {
+          "cost": {
+            "resource": "focus",
+            "amount": "varies"
+          },
+          "economy": "none"
+        }
+      ]
+    },
+    {
+      "part": "spend",
+      "keys": ["flames of the phoenix|phb", "mist stance|phb", "ride the wind|phb"],
+      "links": [
+        {
+          "cost": {
+            "resource": "focus",
+            "amount": 4
+          },
+          "economy": "action"
+        }
+      ]
+    },
+    {
+      "part": "spend",
+      "keys": [
+        "guarded mind|psi warrior|tce",
+        "guarded mind|psi warrior|xphb",
+        "psionic strike|psi warrior|tce",
+        "psionic strike|psi warrior|xphb"
+      ],
+      "links": [
+        {
+          "cost": {
+            "resource": "psi-warrior-dice",
+            "amount": 1
+          },
+          "economy": "none"
+        }
+      ]
+    },
+    {
+      "part": "spend",
+      "keys": ["hand of healing|warrior of mercy|xphb", "hand of healing|way of mercy|tce"],
+      "links": [
+        {
+          "cost": {
+            "resource": "focus",
+            "amount": 1,
+            "optional": true
+          },
+          "economy": "action"
+        }
+      ]
+    },
+    {
+      "part": "spend",
+      "keys": [
+        "hand of ultimate mercy|warrior of mercy|xphb",
+        "hand of ultimate mercy|way of mercy|tce"
+      ],
+      "links": [
+        {
+          "cost": {
+            "resource": "focus",
+            "amount": 5,
+            "ownUseToo": true
           }
+        }
+      ]
+    },
+    {
+      "part": "spend",
+      "keys": ["heightened spell|phb"],
+      "links": [
+        {
+          "cost": {
+            "resource": "sorcery-points",
+            "amount": 3
+          },
+          "economy": "none"
+        }
+      ]
+    },
+    {
+      "part": "spend",
+      "keys": [
+        "heightened spell|xphb",
+        "quickened spell|phb",
+        "quickened spell|xphb",
+        "seeking spell|tce"
+      ],
+      "links": [
+        {
+          "cost": {
+            "resource": "sorcery-points",
+            "amount": 2
+          },
+          "economy": "none"
+        }
+      ]
+    },
+    {
+      "part": "spend",
+      "keys": [
+        "homing strikes|soulknife|tce",
+        "homing strikes|soulknife|xphb",
+        "psi-bolstered knack|soulknife|tce",
+        "psi-bolstered knack|soulknife|xphb"
+      ],
+      "links": [
+        {
+          "cost": {
+            "resource": "soulknife-dice",
+            "amount": 1
+          },
+          "economy": "none"
         }
       ]
     },
@@ -110,7 +1012,40 @@
     },
     {
       "part": "spend",
-      "keys": ["nature's sanctuary|circle of the land|xphb"],
+      "keys": [
+        "intimidating presence|path of the berserker|xphb",
+        "zealous presence|path of the zealot|xphb"
+      ],
+      "links": [
+        {
+          "buyBack": {
+            "resource": "rage",
+            "amount": 1
+          }
+        }
+      ]
+    },
+    {
+      "part": "spend",
+      "keys": ["know your enemy|battle master|xphb"],
+      "links": [
+        {
+          "buyBack": {
+            "resource": "superiority-dice",
+            "amount": 1
+          }
+        }
+      ]
+    },
+    {
+      "part": "spend",
+      "keys": [
+        "land's aid|circle of the land|xphb",
+        "nature's sanctuary|circle of the land|xphb",
+        "summon wildfire spirit|circle of wildfire|tce",
+        "symbiotic entity|circle of spores|tce",
+        "wild companion|druid|tce"
+      ],
       "links": [
         {
           "cost": {
@@ -123,14 +1058,281 @@
     },
     {
       "part": "spend",
-      "keys": ["quickened spell|phb", "quickened spell|xphb"],
+      "keys": ["lay on hands|paladin|phb", "lay on hands|paladin|xphb"],
+      "links": [
+        {
+          "cost": {
+            "resource": "lay-on-hands",
+            "amount": "varies"
+          }
+        }
+      ]
+    },
+    {
+      "part": "spend",
+      "keys": ["lunar phenomenon|lunar sorcery|dsotdq"],
+      "links": [
+        {
+          "buyBack": {
+            "resource": "sorcery-points",
+            "amount": 5
+          },
+          "uses": {
+            "key": "lunar-phenomenon",
+            "max": 3,
+            "resetOn": "long"
+          }
+        }
+      ]
+    },
+    {
+      "part": "spend",
+      "keys": [
+        "menacing attack|phb",
+        "menacing attack|xphb",
+        "mortal strike|wow",
+        "precision attack|phb",
+        "precision attack|xphb",
+        "pushing attack|phb",
+        "pushing attack|xphb",
+        "sweeping attack|phb",
+        "sweeping attack|xphb",
+        "tactical assessment|tce",
+        "tactical assessment|xphb",
+        "trip attack|phb",
+        "trip attack|xphb"
+      ],
+      "links": [
+        {
+          "cost": {
+            "resource": "superiority-dice",
+            "amount": 1
+          },
+          "economy": "none"
+        }
+      ]
+    },
+    {
+      "part": "spend",
+      "keys": ["oceanic gift|circle of the sea|xphb"],
+      "links": [
+        {
+          "cost": {
+            "resource": "wild-shape",
+            "amount": "varies"
+          },
+          "economy": "none"
+        }
+      ]
+    },
+    {
+      "part": "spend",
+      "keys": ["protective field|psi warrior|tce", "protective field|psi warrior|xphb"],
+      "links": [
+        {
+          "cost": {
+            "resource": "psi-warrior-dice",
+            "amount": 1
+          }
+        }
+      ]
+    },
+    {
+      "part": "spend",
+      "keys": ["psychic teleportation|soulknife|tce", "psychic teleportation|soulknife|xphb"],
+      "links": [
+        {
+          "cost": {
+            "resource": "soulknife-dice",
+            "amount": 1
+          }
+        }
+      ]
+    },
+    {
+      "part": "spend",
+      "keys": ["psychic veil|soulknife|tce", "psychic veil|soulknife|xphb"],
+      "links": [
+        {
+          "buyBack": {
+            "resource": "soulknife-dice",
+            "amount": 1
+          }
+        }
+      ]
+    },
+    {
+      "part": "spend",
+      "keys": ["psychic whispers|soulknife|tce", "psychic whispers|soulknife|xphb"],
+      "links": [
+        {
+          "cost": {
+            "resource": "soulknife-dice",
+            "amount": 1,
+            "optional": true
+          },
+          "economy": "action"
+        }
+      ]
+    },
+    {
+      "part": "spend",
+      "keys": ["quivering palm|warrior of the open hand|xphb"],
+      "links": [
+        {
+          "cost": {
+            "resource": "focus",
+            "amount": 4
+          },
+          "economy": "none"
+        }
+      ]
+    },
+    {
+      "part": "spend",
+      "keys": ["quivering palm|way of the open hand|phb", "superior defense|monk|xphb"],
+      "links": [
+        {
+          "cost": {
+            "resource": "focus",
+            "amount": 3
+          },
+          "economy": "none"
+        }
+      ]
+    },
+    {
+      "part": "spend",
+      "keys": ["rend mind|soulknife|tce", "rend mind|soulknife|xphb"],
+      "links": [
+        {
+          "buyBack": {
+            "resource": "soulknife-dice",
+            "amount": 3
+          }
+        }
+      ]
+    },
+    {
+      "part": "spend",
+      "keys": ["restoring touch|paladin|xphb"],
+      "links": [
+        {
+          "cost": {
+            "resource": "lay-on-hands",
+            "amount": "varies"
+          },
+          "economy": "none"
+        }
+      ]
+    },
+    {
+      "part": "spend",
+      "keys": [
+        "revelation in flesh|aberrant mind|tce",
+        "revelation in flesh|aberrant sorcery|xphb"
+      ],
       "links": [
         {
           "cost": {
             "resource": "sorcery-points",
+            "amount": "varies"
+          }
+        }
+      ]
+    },
+    {
+      "part": "spend",
+      "keys": [
+        "searing arc strike|way of the sun soul|xge",
+        "sharpen the blade|way of the kensei|xge"
+      ],
+      "links": [
+        {
+          "cost": {
+            "resource": "focus",
+            "amount": "varies"
+          }
+        }
+      ]
+    },
+    {
+      "part": "spend",
+      "keys": ["shared resilience|banneret|frhof"],
+      "links": [
+        {
+          "cost": {
+            "resource": "indomitable",
+            "amount": 1
+          }
+        }
+      ]
+    },
+    {
+      "part": "spend",
+      "keys": ["sorcery incarnate|sorcerer|xphb"],
+      "links": [
+        {
+          "buyBack": {
+            "resource": "sorcery-points",
             "amount": 2
           },
+          "onAction": "Innate Sorcery"
+        }
+      ]
+    },
+    {
+      "part": "spend",
+      "keys": ["soul cleave|demon hunter|wow"],
+      "links": [
+        {
+          "cost": {
+            "resource": "soul-fragments",
+            "amount": 1
+          },
           "economy": "none"
+        }
+      ]
+    },
+    {
+      "part": "spend",
+      "keys": [
+        "starry form|circle of stars|tce",
+        "starry form|circle of the stars|xphb",
+        "wrath of the sea|circle of the sea|xphb"
+      ],
+      "links": [
+        {
+          "cost": {
+            "resource": "wild-shape",
+            "amount": 1
+          }
+        }
+      ]
+    },
+    {
+      "part": "spend",
+      "keys": ["tactical mind|fighter|xphb"],
+      "links": [
+        {
+          "cost": {
+            "resource": "second-wind",
+            "amount": 1
+          },
+          "economy": "none"
+        }
+      ]
+    },
+    {
+      "part": "spend",
+      "keys": ["tales from beyond|college of spirits|vrgr"],
+      "links": [
+        {
+          "cost": {
+            "resource": "bardic-inspiration",
+            "amount": 1
+          },
+          "economy": "bonus"
         }
       ]
     },
@@ -162,13 +1364,78 @@
     },
     {
       "part": "spend",
-      "keys": ["warping implosion|aberrant mind|tce", "warping implosion|aberrant sorcery|xphb"],
+      "keys": ["twinned spell|phb"],
+      "links": [
+        {
+          "cost": {
+            "resource": "sorcery-points",
+            "amount": "varies"
+          },
+          "economy": "none"
+        }
+      ]
+    },
+    {
+      "part": "spend",
+      "keys": ["twinned spell|xphb"],
+      "links": [
+        {
+          "cost": {
+            "resource": "sorcery-points",
+            "amount": 1
+          },
+          "economy": "none"
+        }
+      ]
+    },
+    {
+      "part": "spend",
+      "keys": ["umbral form|shadow magic|xge"],
+      "links": [
+        {
+          "cost": {
+            "resource": "sorcery-points",
+            "amount": 6
+          }
+        }
+      ]
+    },
+    {
+      "part": "spend",
+      "keys": ["umbral form|shadow sorcery|rhw"],
       "links": [
         {
           "buyBack": {
             "resource": "sorcery-points",
-            "amount": 5
+            "amount": 6
           }
+        }
+      ]
+    },
+    {
+      "part": "spend",
+      "keys": ["war god's blessing|war domain|xphb"],
+      "links": [
+        {
+          "cost": {
+            "resource": "channel-divinity",
+            "amount": 1
+          },
+          "economy": "bonus"
+        }
+      ]
+    },
+    {
+      "part": "spend",
+      "keys": ["wild companion|druid|xphb"],
+      "links": [
+        {
+          "cost": {
+            "resource": "wild-shape",
+            "amount": 1,
+            "optional": true
+          },
+          "economy": "action"
         }
       ]
     }

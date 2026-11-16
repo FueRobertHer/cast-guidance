@@ -40,9 +40,16 @@ const OPTIONS = [
 ];
 const FEATS = [option('Martial Adept', 'PHB', 'You gain one superiority die.')];
 
+// As every registry holds them: Trip Attack's row is in the shipped spend rows.
 const registry = {
   byType: (type: string) =>
-    type === 'optionalfeature' ? OPTIONS : type === 'feat' ? FEATS : ([] as Entity[]),
+    type === 'optionalfeature'
+      ? OPTIONS
+      : type === 'feat'
+        ? FEATS
+        : type === RULE_SET_TYPE
+          ? BUILT_IN_RULE_SETS
+          : ([] as Entity[]),
   get: () => undefined,
 };
 
@@ -151,8 +158,10 @@ describe('spendCounts', () => {
     const options = [
       option('Trip Attack', 'PHB', 'You can expend a spell slot and roll a superiority die.'),
     ];
+    // As every registry holds them: its row is in the shipped spend rows.
     const both = {
-      byType: (t: string) => (t === 'optionalfeature' ? options : []),
+      byType: (t: string) =>
+        t === 'optionalfeature' ? options : t === RULE_SET_TYPE ? BUILT_IN_RULE_SETS : [],
       get: () => undefined,
     };
     const subject = proseSubjects(both)[0];
@@ -166,8 +175,10 @@ describe('spendCounts', () => {
     const options = [
       option('Twinned Spell', 'XPHB', 'Spend a sorcery point on a higher-level spell slot.'),
     ];
+    // As every registry holds them: its row is in the shipped spend rows.
     const both = {
-      byType: (t: string) => (t === 'optionalfeature' ? options : []),
+      byType: (t: string) =>
+        t === 'optionalfeature' ? options : t === RULE_SET_TYPE ? BUILT_IN_RULE_SETS : [],
       get: () => undefined,
     };
     const subject = proseSubjects(both)[0];
