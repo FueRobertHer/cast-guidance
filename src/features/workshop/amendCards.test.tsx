@@ -7,7 +7,7 @@ import { useState } from 'react';
 import { MemoryRouter } from 'react-router';
 import { afterEach, describe, expect, it } from 'vitest';
 import { EntityRegistry } from '@/data5e/normalize';
-import { RULE_SET_TYPE } from '@/engine/castGuidance';
+import { RULE_SET_TYPE, type StoredEffect } from '@/engine/castGuidance';
 import { deriveSheet } from '@/engine/derive';
 import { readMechanics, readStoredEffects } from '@/engine/effects/mechanics';
 import { rollEffects } from '@/engine/playRules';
@@ -297,7 +297,7 @@ describe('amendWords', () => {
 
 describe("a class's or a species' feature", () => {
   /** The feature editor a class, subclass or species copy shows, with its own pool. */
-  function feature(castGuidance: Json) {
+  function feature(castGuidance: Json, resources?: StoredEffect[]) {
     let latest: Json = {};
     function Harness() {
       const [value, setValue] = useState<Json>({
@@ -315,6 +315,7 @@ describe("a class's or a species' feature", () => {
           readOnly={false}
           withEffects
           inherits="Flurry of Blows"
+          resources={resources}
         />
       );
     }
@@ -325,6 +326,37 @@ describe("a class's or a species' feature", () => {
     );
     return () => (latest.castGuidance ?? {}) as Json;
   }
+
+  it("moves only its own pool's prices while its name is typed, through a class pool's key", () => {
+    const ki = { kind: 'resource', key: 'ki', label: 'Ki', max: 2, reset: 'short' };
+    const onKi = { cost: { resource: 'ki', amount: 2 } };
+    const guidance = feature(
+      { v: 1, effects: [POOL], amend: [onKi, { cost: { resource: 'glow', amount: 1 } }] },
+      [ki],
+    );
+    // Typed a letter at a time, its key is ki between Ki and Kin.
+    for (const value of ['K', 'Ki', 'Kin', 'Kindle']) {
+      fireEvent.change(screen.getByLabelText('Uses per rest: Name'), { target: { value } });
+    }
+    expect(guidance().amend).toEqual([onKi, { cost: { resource: 'kindle', amount: 1 } }]);
+    // A price set on it between two renames follows the next one too.
+    addPrice();
+    const third = screen.getAllByLabelText('Price: Spends')[2] as HTMLElement;
+    fireEvent.change(third, { target: { value: 'kindle' } });
+    fireEvent.change(screen.getByLabelText('Uses per rest: Name'), { target: { value: 'Ember' } });
+    const ember = { cost: { resource: 'ember', amount: 1 } };
+    expect(guidance().amend).toEqual([onKi, ember, ember]);
+  });
+
+  it('moves the prices of each pool renamed in turn', () => {
+    const sparks = { ...POOL, key: 'sparks', label: 'Sparks' };
+    const on = (resource: string) => ({ cost: { resource, amount: 1 } });
+    const guidance = feature({ v: 1, effects: [POOL, sparks], amend: [on('glow'), on('sparks')] });
+    const names = () => screen.getAllByLabelText('Uses per rest: Name');
+    fireEvent.change(names()[0] as HTMLElement, { target: { value: 'Ember' } });
+    fireEvent.change(names()[1] as HTMLElement, { target: { value: 'Flash' } });
+    expect(guidance().amend).toEqual([on('ember'), on('flash')]);
+  });
 
   it('prices what it inherits, follows a renamed pool, and is cleared by starting from nothing', () => {
     const guidance = feature({ v: 1, effects: [POOL] });

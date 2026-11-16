@@ -381,10 +381,13 @@ describe("another feature's link on an amended action", () => {
       inherited: () =>
         col.add({ kind: 'action', economy: 'bonus', label: 'Bardic Inspiration', origin: bardic }),
     });
-    linkSpend(col, ['font of inspiration|bard|xphb'], 'Font of Inspiration', {
-      ...bardic,
-      uid: 'font',
-    });
+    // The row is found, so what it leaves alone is not for want of one.
+    expect(
+      linkSpend(col, ['font of inspiration|bard|xphb'], 'Font of Inspiration', {
+        ...bardic,
+        uid: 'font',
+      }),
+    ).toBe(true);
     expect(col.effects.map((e) => (e.kind === 'action' ? [e.label, e.buyBack] : []))).toEqual([
       ['Bardic Inspiration', { resource: 'mine', amount: 1 }],
     ]);

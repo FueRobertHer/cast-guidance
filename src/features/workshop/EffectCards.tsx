@@ -6,7 +6,7 @@
  * reader the sheet uses, so a card that would not count says why, here.
  */
 import { CircleAlert, Plus, X } from 'lucide-react';
-import { useId, useState } from 'react';
+import { useId, useRef, useState } from 'react';
 import {
   EFFECT_EDITIONS,
   isRecord,
@@ -905,17 +905,27 @@ function repaid(price: Price | undefined, resource: string): Price {
   return { ...rest, resource, amount: one || rest.amount === undefined ? 1 : rest.amount };
 }
 
-/** A price's fields that name the renamed pool, named for its new key. */
+/** A price's fields that name a pool, for its cost and its buy-back. */
+const PRICE_KEYS = [
+  ['cost', ['resource', 'slotRefills']],
+  ['buyBack', ['resource', 'own']],
+] as const;
+
+/** A price's fields that name the renamed pool (those `follows` keeps), named for its new key. */
 function renamedIn(
   key: 'cost' | 'buyBack',
   v: unknown,
   fields: readonly string[],
   [from, to]: readonly [string, string],
+  follows: (field: string) => boolean = () => true,
 ): Record<string, Price> {
   if (!isRecord(v)) return {};
   return {
     [key]: Object.fromEntries(
-      Object.entries(v).map(([k, x]) => [k, fields.includes(k) && x === from ? to : x]),
+      Object.entries(v).map(([k, x]) => [
+        k,
+        fields.includes(k) && x === from && follows(k) ? to : x,
+      ]),
     ),
   };
 }
@@ -2098,6 +2108,38 @@ export function EffectCards({
     problems
       .filter((p) => p.startsWith(`effect ${i + 1}:`) || p.startsWith(`effect ${i + 1} (`))
       .map((p) => p.replace(/^effect \d+( \([^)]*\))?: /, ''));
+  // Which prices on what it inherits follow a pool being renamed: those naming
+  // it as its name starts to change, kept while it changes. On the way to
+  // Kindle its key is ki for a moment, and a price on the class's Ki stays put.
+  // It is the same rename while nothing else has changed since the last step.
+  const following = useRef<{ key: string; was: string; at: Set<string> }>(undefined);
+  const follow = ([from, to]: readonly [string, string], effects: Eff[]): Eff[] => {
+    const last = following.current;
+    const at =
+      last !== undefined && last.key === from && last.was === JSON.stringify([list, amends])
+        ? last.at
+        : new Set(
+            amends.flatMap((a, i) =>
+              PRICE_KEYS.flatMap(([key, fields]) => {
+                const price = a[key];
+                return isRecord(price)
+                  ? fields.filter((f) => price[f] === from).map((f) => `${i} ${key} ${f}`)
+                  : [];
+              }),
+            ),
+          );
+    const next = amends.map((a, i) => ({
+      ...a,
+      ...Object.assign(
+        {},
+        ...PRICE_KEYS.map(([key, fields]) =>
+          renamedIn(key, a[key], fields, [from, to], (f) => at.has(`${i} ${key} ${f}`)),
+        ),
+      ),
+    }));
+    following.current = { key: to, was: JSON.stringify([effects, next]), at };
+    return next;
+  };
   const add = (spec: KindSpec) => onChange([...list, spec.make()]);
   const more = async () => {
     const id = await askChoice({
@@ -2149,38 +2191,35 @@ export function EffectCards({
             inPlay={inPlay}
             readOnly={readOnly}
             onRemove={() => onChange(list.filter((_, j) => j !== i))}
-            onChange={(next, renamed) =>
+            onChange={(next, renamed) => {
+              const effects = list.map((x, j) => {
+                if (j === i) return next;
+                if (renamed === undefined) return x;
+                // What spends the renamed uses follows it: an action's cost
+                // (and the points a slot gives back), what buys a use back and
+                // the use it gives back, a spell cast with them, and the same
+                // pool given for the other rules version (`edition`), which
+                // stays one pool.
+                if (x.kind === 'resource' && x.key === renamed[0])
+                  return { ...x, key: renamed[1], label: next.label };
+                if (x.kind === 'action' && (x.cost !== undefined || x.buyBack !== undefined))
+                  return {
+                    ...x,
+                    ...renamedIn('cost', x.cost, ['resource', 'slotRefills'], renamed),
+                    ...renamedIn('buyBack', x.buyBack, ['resource', 'own'], renamed),
+                  };
+                if (x.kind === 'grantSpell' && x.resourceKey === renamed[0])
+                  return { ...x, resourceKey: renamed[1] };
+                return x;
+              });
               onChange(
-                list.map((x, j) => {
-                  if (j === i) return next;
-                  if (renamed === undefined) return x;
-                  // What spends the renamed uses follows it: an action's cost
-                  // (and the points a slot gives back), what buys a use back and
-                  // the use it gives back, a spell cast with them, and the same
-                  // pool given for the other rules version (`edition`), which
-                  // stays one pool.
-                  if (x.kind === 'resource' && x.key === renamed[0])
-                    return { ...x, key: renamed[1], label: next.label };
-                  if (x.kind === 'action' && (x.cost !== undefined || x.buyBack !== undefined))
-                    return {
-                      ...x,
-                      ...renamedIn('cost', x.cost, ['resource', 'slotRefills'], renamed),
-                      ...renamedIn('buyBack', x.buyBack, ['resource', 'own'], renamed),
-                    };
-                  if (x.kind === 'grantSpell' && x.resourceKey === renamed[0])
-                    return { ...x, resourceKey: renamed[1] };
-                  return x;
-                }),
+                effects,
                 // A price on what the copy inherits that spends the pool follows it too.
                 renamed === undefined || onAmend === undefined || amends.length === 0
                   ? undefined
-                  : amends.map((a) => ({
-                      ...a,
-                      ...renamedIn('cost', a.cost, ['resource', 'slotRefills'], renamed),
-                      ...renamedIn('buyBack', a.buyBack, ['resource', 'own'], renamed),
-                    })),
-              )
-            }
+                  : follow(renamed, effects),
+              );
+            }}
           />
         ),
       )}

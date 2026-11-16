@@ -346,6 +346,8 @@ describe('what a pack holds', () => {
             { target: 'Alert|PHB', effects: [], amend: [{ cost: price }] },
             // None of its effects can be read, so it replaces nothing and the price counts.
             { target: 'Tough|PHB', effects: [{ kind: 'nope' }], amend: [{ cost: price }] },
+            // Refused, so it prices nothing.
+            { target: 'Lucky|PHB', amend: [{ lable: 'Step', cost: price }] },
           ],
         },
       },
@@ -354,11 +356,13 @@ describe('what a pack holds', () => {
       'Changes the price of its action',
       'Gains 1 effect, and changes the price of Rage and Reckless Attack',
       'Does nothing now',
-      'Works by 1 effect in place of its own, and changes the price of its action',
+      'Changes the price of its action',
+      'Changes nothing',
     ]);
     expect(review?.problems).toEqual([
       'patch 3 (Alert|PHB): "amend" changes nothing beside "effects", which inherit nothing',
       'patch 4 (Tough|PHB): effect 1 (nope): has no kind "nope"',
+      'patch 5 (Lucky|PHB): amend 1: "lable" is not a field an amend reads',
     ]);
   });
 });

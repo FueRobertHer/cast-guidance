@@ -35,7 +35,7 @@ import {
   type TableRuleChoices,
   type TableRuleId,
 } from '@/engine/castGuidance';
-import { readPack, readStoredEffects } from '@/engine/effects/mechanics';
+import { readMechanics, readPack, readStoredEffects } from '@/engine/effects/mechanics';
 import { readPackMoments } from '@/engine/moments';
 import { appRulesFor, ruleSources } from '@/engine/rules';
 import type { CharacterDoc, DataEntity } from '@/engine/types';
@@ -902,8 +902,14 @@ function outcomeWords(o: unknown): string | undefined {
 function changeWords(p: Record<string, unknown>): string {
   const replace = own(p, 'effects');
   const add = own(p, 'add');
+  // What the engine reads of it: a list none of whose effects can be read
+  // replaces nothing (its problems say why), and beside a replacement a price
+  // changes nothing.
+  const replaces =
+    Array.isArray(replace) &&
+    (replace.length === 0 || readStoredEffects(replace).effects.length > 0);
   const parts: string[] = [];
-  if (Array.isArray(replace)) {
+  if (replaces) {
     parts.push(
       replace.length === 0
         ? 'Does nothing now'
@@ -915,18 +921,10 @@ function changeWords(p: Record<string, unknown>): string {
       parts.length === 0 ? `Gains ${plural(add.length, 'effect')}` : `gains ${add.length} more`,
     );
   }
-  // What the engine reads of it: beside a replacement, a price changes nothing,
-  // and a list none of whose effects can be read replaces nothing.
-  const replaces =
-    Array.isArray(replace) &&
-    (replace.length === 0 || readStoredEffects(replace).effects.length > 0);
-  const amend = replaces ? [] : listOf(p, 'amend').filter(isRecord);
+  // Only the prices it reads: one it refuses (a misspelt field) is a problem.
+  const amend = replaces ? [] : readMechanics({ v: 1, amend: listOf(p, 'amend') }).amend;
   if (amend.length > 0) {
-    const names = [
-      ...new Set(
-        amend.map((a) => (text(own(a, 'label')) === '' ? 'its action' : text(own(a, 'label')))),
-      ),
-    ];
+    const names = [...new Set(amend.map((a) => a.label ?? 'its action'))];
     const what = `the price of ${names.join(' and ')}`;
     parts.push(parts.length === 0 ? `Changes ${what}` : `changes ${what}`);
   }
