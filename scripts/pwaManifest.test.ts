@@ -100,11 +100,11 @@ describe('apple touch icon', () => {
 });
 
 describe('icon source', () => {
-  it('the PNGs were generated from the current icon-source.svg', () => {
+  it('the PNGs were generated from the current favicon.svg', () => {
     const stamp = JSON.parse(readFileSync(ICON_STAMP, 'utf8')) as IconStamp;
     expect(
       hashIconSource(readFileSync(ICON_SOURCE, 'utf8')),
-      'scripts/icon-source.svg changed: run `bun run icons:generate` and commit public/icons/',
+      'public/favicon.svg changed: run `bun run icons:generate` and commit public/icons/',
     ).toBe(stamp.sha256);
   });
 

@@ -1,9 +1,8 @@
 /// <reference lib="dom" />
 /**
- * Renders the raster PWA icons in `public/icons/` from `scripts/icon-source.svg`
- * (PWA-002, #107), the full icon; `public/favicon.svg` is its small-size
- * version and is not read here. Run it after changing the source and commit
- * the output:
+ * Renders the raster PWA icons in `public/icons/` from `public/favicon.svg`
+ * (PWA-002, #107), the logo, which is also the favicon. Run it after changing
+ * the SVG and commit the output:
  *
  *   bun run icons:generate
  *
@@ -233,7 +232,7 @@ async function main(): Promise<void> {
   const fontDependent = FONT_DEPENDENT_ELEMENT.exec(source);
   if (fontDependent !== null) {
     throw new Error(
-      `scripts/icon-source.svg uses ${fontDependent[0]}>; draw glyphs as paths so no font is involved.`,
+      `public/favicon.svg uses ${fontDependent[0]}>; draw glyphs as paths so no font is involved.`,
     );
   }
   mkdirSync(OUT_DIR, { recursive: true });
@@ -281,9 +280,8 @@ async function main(): Promise<void> {
   }
 
   const stamp: IconStamp = {
-    $comment:
-      'Written by scripts/generate-icons.ts: the scripts/icon-source.svg the PNGs came from.',
-    source: 'scripts/icon-source.svg',
+    $comment: 'Written by scripts/generate-icons.ts: the public/favicon.svg the PNGs came from.',
+    source: 'public/favicon.svg',
     sha256: hashIconSource(source),
   };
   writeFileSync(ICON_STAMP, `${JSON.stringify(stamp, null, 2)}\n`);
