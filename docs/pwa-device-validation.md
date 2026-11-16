@@ -157,10 +157,9 @@ Result is pass, fail (with an issue link) or n/a (with a reason).
 
 ## Changing the icons
 
-The PNGs in `public/icons/` are generated from `scripts/icon-source.svg`, the
-full Spark d20 icon. `public/favicon.svg` is the same mark drawn for 32 px and
-below (no facet lines, a larger spark), for the browser tab and the
-manifest's SVG entry; change the two together. After editing the source, run
+The app's icons are one file, `public/favicon.svg`: the logo, the full Spark
+d20 icon. It is the browser tab's icon and the manifest's SVG entry, and the
+PNGs in `public/icons/` are generated from it. After editing it, run
 `bun run icons:generate` and commit the new files along
 with `scripts/icons-source.json`, the hash of the SVG they came from;
 `bun run test` fails while the SVG and that hash disagree. The SVG draws its
