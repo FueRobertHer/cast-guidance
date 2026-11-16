@@ -190,7 +190,7 @@ export function collectFeatEntity(
       if (!emitBuiltInRows(col, 'rollExtra', uids, origin, { inCode: hasRollExtraRow })) {
         emitRollExtras(col, uids, origin);
       }
-      uids.some((key) => linkSpend(col, key, origin.label, origin));
+      linkSpend(col, uids, origin.label, origin);
     },
   });
 }

@@ -17,8 +17,10 @@
  *
  * Relative imports only: `scripts/data-judge.ts` loads this under plain Bun.
  */
+import { RULE_SET_TYPE } from '../../engine/castGuidance';
 import { SLOT_LINKS } from '../../engine/curated/slotLinks';
 import { SPEND_LINKS } from '../../engine/curated/spendLinks';
+import { builtInRuleIn } from '../../engine/effects/mechanics';
 import { chipPhrase } from '../../engine/effects/proseScan';
 import { HIT_DIE_COST, SLOT_COST } from '../../engine/types';
 import { answersFor, type JudgeSet, type JudgeSubject, type JudgmentFile } from './judgments';
@@ -386,18 +388,29 @@ function proposal(state: string, answers: Answers): string {
   return `${amount} ${slot}${pOf(answers, FREE) >= 0.8 ? ' free base use' : ''}`;
 }
 
+type RuleSets = ReturnType<ByType['byType']>;
+
+/**
+ * What a key's prices are paid with: its built-in `spend` row's links, which the
+ * sheet reads first, else its code rows' (`linkSpend`). A key moves out of both
+ * code tables at once, so it is in one place or the other.
+ */
+function paidWith(key: string, ruleSets: RuleSets): string[] {
+  const row = builtInRuleIn(ruleSets, 'spend', [key]);
+  if (row !== undefined) {
+    return (row.links ?? []).map((l) => ('cost' in l ? l.cost.resource : l.buyBack.resource));
+  }
+  const link = SPEND_LINKS[key];
+  const slot = SLOT_LINKS[key];
+  return [
+    ...(link !== undefined ? [link.resource] : []),
+    ...(slot === undefined ? [] : [slot.kind === 'restore' ? SLOT_COST : slot.cost.resource]),
+  ];
+}
+
 /** A link or a reason counts for its own pool: a feature can name several. */
-const isLinked = (s: ProseSubject, pool: SpendPool) =>
-  s.spendKeys.some((k) => {
-    const link = SPEND_LINKS[k];
-    const slot = SLOT_LINKS[k];
-    const slotResource =
-      slot === undefined ? undefined : slot.kind === 'restore' ? SLOT_COST : slot.cost.resource;
-    return (
-      (link !== undefined && pool.resources.includes(link.resource)) ||
-      (slotResource !== undefined && pool.resources.includes(slotResource))
-    );
-  });
+const isLinked = (s: ProseSubject, pool: SpendPool, ruleSets: RuleSets) =>
+  s.spendKeys.some((k) => paidWith(k, ruleSets).some((r) => pool.resources.includes(r)));
 const skipReason = (s: ProseSubject, pool: SpendPool) =>
   s.spendKeys.map((k) => SPEND_SKIPPED[pool.id]?.[k]).find((r) => r !== undefined);
 
@@ -420,6 +433,7 @@ interface PoolRow {
 /** Each pool's net, joined with today's saved answers. */
 function poolRows(registry: ByType, file: JudgmentFile) {
   const subjects = proseSubjects(registry);
+  const ruleSets = registry.byType(RULE_SET_TYPE);
   return SPEND_POOLS.map((pool) => {
     const set = spendSet(pool);
     const net = subjects.filter((s) => inNet(pool, s.state));
@@ -428,16 +442,16 @@ function poolRows(registry: ByType, file: JudgmentFile) {
       const answers = answersFor(file, set, subject.key);
       if (answers !== undefined) rows.push({ subject, answers });
     }
-    return { pool, rows, unasked: net.length - rows.length };
+    return { pool, rows, unasked: net.length - rows.length, ruleSets };
   });
 }
 
 export function spendCounts(registry: ByType, file: JudgmentFile): SpendCounts {
   const counts: SpendCounts = { linked: 0, skipped: 0, unlinked: 0, unasked: 0 };
-  for (const { pool, rows, unasked } of poolRows(registry, file)) {
+  for (const { pool, rows, unasked, ruleSets } of poolRows(registry, file)) {
     counts.unasked += unasked;
     for (const { subject, answers } of rows) {
-      if (isLinked(subject, pool)) counts.linked++;
+      if (isLinked(subject, pool, ruleSets)) counts.linked++;
       else if (skipReason(subject, pool) !== undefined) counts.skipped++;
       else if (!saysYes(answers, SPENDS)) continue;
       else counts.unlinked++;
@@ -450,10 +464,10 @@ export function spendCounts(registry: ByType, file: JudgmentFile): SpendCounts {
 export function spendReport(registry: ByType, file: JudgmentFile): string {
   const out = [
     `# spend: which pool each feature spends. ${YES_MEANS}`,
-    `Rows live in src/engine/curated/spendLinks.ts, reasons in SPEND_SKIPPED.`,
+    `Rows live in src/rules/cast-guidance/spend.json and src/engine/curated/spendLinks.ts, reasons in SPEND_SKIPPED.`,
     '',
   ];
-  for (const { pool, rows, unasked } of poolRows(registry, file)) {
+  for (const { pool, rows, unasked, ruleSets } of poolRows(registry, file)) {
     const unlinked: string[] = [];
     const skipped: string[] = [];
     const restores: string[] = [];
@@ -462,7 +476,7 @@ export function spendReport(registry: ByType, file: JudgmentFile): string {
     for (const { subject, answers } of rows) {
       const line = `- ${showP(pOf(answers, SPENDS))} ${subject.label}`;
       const reason = skipReason(subject, pool);
-      if (isLinked(subject, pool)) linked++;
+      if (isLinked(subject, pool, ruleSets)) linked++;
       else if (reason !== undefined) skipped.push(`${line}: ${reason}`);
       else if (saysYes(answers, SPENDS))
         unlinked.push(`${line}: ${proposal(subject.state, answers)}`);

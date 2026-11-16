@@ -1,12 +1,18 @@
 /**
  * Proves each row moved out of a code table (`TABLES`: `CURATED`, `STANDING`,
- * `ROLL_EXTRAS`) into a built-in rule set adds what the code row added, before
- * the code row is deleted (rule pack port; `docs/rule-sets.md`). Run it while
- * both are in the tree: for every built-in row whose key its part's code table
- * still has, each build that reads the row is
- * derived twice in one process, once with the code row (the built-in row
- * hidden) and once with the built-in row (the code row hidden), and every
- * sheet field must match.
+ * `ROLL_EXTRAS`, and `SPEND_LINKS` with `SLOT_LINKS` for a `spend` row) into a
+ * built-in rule set adds what the code row added, before the code row is
+ * deleted (rule pack port; `docs/rule-sets.md`). Run it while both are in the
+ * tree: for every built-in row whose key its part's code tables still have,
+ * each build that reads the row is derived twice in one process, once with the
+ * code rows (the built-in row hidden) and once with the built-in row (the code
+ * rows hidden), and every sheet field must match, as must the actions and uses
+ * the build collected (`collected`), since the sheet drops a price whose pool or
+ * slots the build lacks.
+ *
+ * Each moved `spend` key is also linked on its own (`linkSpend`), both ways, in
+ * each state of `SPEND_SEEDS`, and the collected effects must match: a key no
+ * build reads is proved there.
  *
  * Its builds go wider than `rules-diff.ts`'s, since a level table, a minimum or
  * a gear condition can differ where that harness does not look. Every class
@@ -18,11 +24,12 @@
  * and in heavy or light gear, each with two (`State`). It is built again as a
  * multiclass where the class's level is not the character's: levels 1 to 17
  * and three of another class, raging, with three arrays. Every feat, optional
- * feature and race that reads one is built across levels in the four states.
+ * feature and race that reads one is built across levels in the four states; a
+ * feat on a Fighter and again on a Wizard, whose slots a feat's slot price needs.
  *
  * It sees one entity at a time (a class alone, a feat or race on a bare
- * Fighter), so a row that only differs beside another entity's row (two
- * proficiency bonuses on initiative that count once) needs its own test.
+ * Fighter or Wizard), so a row that only differs beside another entity's row
+ * (two proficiency bonuses on initiative that count once) needs its own test.
  *
  *   bun --tsconfig-override=tsconfig.app.json scripts/rules-probe.ts --release <release.json> [--only <text>]...
  *
@@ -30,9 +37,10 @@
  * that hold `<text>`, to check one row (or a mutant of it) in a minute or two;
  * it may be given more than once.
  *
- * It exits 1 when a sheet differs or a moved row is read by no build, which
- * then needs a proof of its own. A build that throws the same way both times
- * compared no sheet, so it counts for no row; the summary says how many.
+ * It exits 1 when a sheet differs, a spend key linked alone differs, or a moved
+ * row is read by no build, which then needs a proof of its own; a spend key no
+ * build reads is listed, proved alone. A build that throws the same way both
+ * times compared no sheet, so it counts for no row; the summary says how many.
  */
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -47,16 +55,22 @@ import { editionOf } from '../src/data5e/rulesVersion';
 import { RULE_SET_TYPE } from '../src/engine/castGuidance';
 import { CURATED } from '../src/engine/curated/curatedEffects';
 import { ROLL_EXTRAS } from '../src/engine/curated/rollExtras';
+import { SLOT_LINKS } from '../src/engine/curated/slotLinks';
+import { linkSpend, SPEND_LINKS } from '../src/engine/curated/spendLinks';
 import { STANDING } from '../src/engine/curated/standingEffects';
 import { deriveSheet } from '../src/engine/derive';
-import { type RulePart, readRuleSet } from '../src/engine/effects/mechanics';
+import { Collector } from '../src/engine/effects/base';
+import { builtInRuleIn, type RulePart, readRuleSet } from '../src/engine/effects/mechanics';
 import {
   type CharacterDoc,
   type DerivedSheet,
+  type EffectInput,
+  type EffectOrigin,
   type EngineContext,
   type EntityRef,
   newCharacterDoc,
 } from '../src/engine/types';
+import { onActionOf, SPEND_SEEDS } from '../tests-fixtures/spendSeeds';
 import { fetchRelease } from './data-release';
 
 const { values } = parseArgs({
@@ -91,43 +105,53 @@ const ctx: EngineContext = engineContextFor(reg, {});
 
 // ------------------------------------------------------------ the two configs
 
+type Table = Record<string, unknown>;
 /**
- * The code table each part's rows stand in for, while it has rows. Each table's
- * rows take their own arguments: a function (`CURATED`, `STANDING`) or a list of
- * rows (`ROLL_EXTRAS`). A part whose rows have all moved (`rollAdvantage`) has
- * none: to probe again, put its table and its call sites' fallback back.
+ * The code tables each part's rows stand in for, while they have rows. Each
+ * table's rows take their own arguments: a function (`CURATED`, `STANDING`) or
+ * a list or record (`ROLL_EXTRAS`, the link tables). A `spend` row stands in for
+ * a key's rows in both link tables at once. A part whose rows have all moved
+ * (`rollAdvantage`) has none: to probe again, put its table and its call
+ * sites' fallback back.
  */
-const TABLES: Partial<Record<RulePart, Record<string, unknown>>> = {
-  curated: CURATED,
-  standing: STANDING,
-  rollExtra: ROLL_EXTRAS,
+const TABLES: Partial<Record<RulePart, readonly Table[]>> = {
+  curated: [CURATED],
+  standing: [STANDING],
+  rollExtra: [ROLL_EXTRAS],
+  spend: [SPEND_LINKS as Table, SLOT_LINKS as Table],
 };
 type Row = (...args: unknown[]) => unknown;
 /** A moved row by part and key, as `part key`: one key may have a row in two parts. */
 const idOf = (part: string, key: string) => `${part} ${key}`;
 
 /**
- * The code row a built-in row's key stands in for: the key itself, or, for a row
- * of one printing (`roving|ranger|xphb`), the key without its printing, which
- * the code row reads the printing under.
+ * The code key a built-in row's key stands in for, and the part's tables that
+ * have it: the key itself, or, for a row of one printing (`roving|ranger|xphb`),
+ * the key without its printing, which the code row reads the printing under. A
+ * `spend` key is the roll key the call site passes (`linkSpend`), which the link
+ * tables hold whole, so it stands in for that key alone.
  */
-function codeKeyOf(table: Record<string, unknown>, key: string): string | undefined {
-  if (Object.hasOwn(table, key)) return key;
+function codeKeyOf(part: RulePart, key: string): { key: string; tables: Table[] } | undefined {
+  const tables = TABLES[part] ?? [];
+  const holding = (k: string) => tables.filter((t) => Object.hasOwn(t, k));
+  if (holding(key).length > 0) return { key, tables: holding(key) };
   const at = key.lastIndexOf('|');
-  return at > 0 && Object.hasOwn(table, key.slice(0, at)) ? key.slice(0, at) : undefined;
+  if (part === 'spend' || at <= 0) return undefined;
+  const bare = key.slice(0, at);
+  return holding(bare).length > 0 ? { key: bare, tables: holding(bare) } : undefined;
 }
 
-/** Every code row a built-in row stands in for, by part and code key, while the code table has it. */
+/** Every code row a built-in row stands in for, by part and code key, while a code table has it. */
 const shipped = reg.byType(RULE_SET_TYPE);
-const moved = new Map<string, { part: RulePart; key: string; table: Record<string, unknown> }>();
+const moved = new Map<string, { part: RulePart; key: string; tables: Table[] }>();
 for (const set of shipped) {
   for (const row of readRuleSet(set).rows) {
-    const table = TABLES[row.part];
     for (const rowKey of row.keys) {
-      const key = table === undefined ? undefined : codeKeyOf(table, rowKey);
-      if (table === undefined || key === undefined) continue;
+      const code = codeKeyOf(row.part, rowKey);
+      if (code === undefined) continue;
+      const { key, tables } = code;
       if (values.only === undefined || values.only.some((t) => key.includes(t.toLowerCase()))) {
-        moved.set(idOf(row.part, key), { part: row.part, key, table });
+        moved.set(idOf(row.part, key), { part: row.part, key, tables });
       }
     }
   }
@@ -139,11 +163,10 @@ if (moved.size === 0) {
 
 /** Whether a shipped row stands in for a moved code row, under any of its keys. */
 function standsInForMoved(r: { part?: unknown; keys?: unknown }): boolean {
-  const table = TABLES[String(r.part) as RulePart];
-  if (table === undefined || !Array.isArray(r.keys)) return false;
+  if (TABLES[String(r.part) as RulePart] === undefined || !Array.isArray(r.keys)) return false;
   return r.keys.some((k) => {
-    const key = codeKeyOf(table, String(k).trim().toLowerCase());
-    return key !== undefined && moved.has(idOf(String(r.part), key));
+    const code = codeKeyOf(String(r.part) as RulePart, String(k).trim().toLowerCase());
+    return code !== undefined && moved.has(idOf(String(r.part), code.key));
   });
 }
 
@@ -174,21 +197,33 @@ function noting(id: string, row: unknown): unknown {
   });
 }
 
-const counted = new Map(
-  [...moved].map(
-    ([id, { key, table }]) => [id, { key, table, row: noting(id, table[key]) }] as const,
-  ),
+const counted = [...moved].flatMap(([id, { key, tables }]) =>
+  tables.map((table) => ({ key, table, row: noting(id, table[key]) })),
 );
 
 function codeRowsOn(): void {
   reg.setRuleSets(before);
-  for (const { key, table, row } of counted.values()) table[key] = row;
+  for (const { key, table, row } of counted) table[key] = row;
 }
 
 function dataRowsOn(): void {
   reg.setRuleSets(shipped);
-  for (const { key, table } of moved.values()) delete table[key];
+  for (const { key, tables } of moved.values()) for (const table of tables) delete table[key];
 }
+
+/**
+ * The collectors of the latest `deriveSheet`, so a build's actions and uses can
+ * be compared before the sheet drops a price it cannot pay (`costOnSheet`).
+ */
+let collectors = new Set<Collector>();
+const collectorAdd = Collector.prototype.add;
+Collector.prototype.add = function add(this: Collector, e: EffectInput): void {
+  collectors.add(this);
+  collectorAdd.call(this, e);
+};
+/** What linking a price can change: the actions and the uses. */
+const collected = () =>
+  [...collectors].map((c) => c.effects.filter((e) => e.kind === 'action' || e.kind === 'resource'));
 
 // ------------------------------------------------------------------ builds
 
@@ -276,6 +311,7 @@ interface FeaturePick {
 
 /** As `rules-diff.ts` does: answer every open prompt with its first usable options. */
 function settle(doc: CharacterDoc, picks: FeaturePick[] = []): DerivedSheet {
+  collectors = new Set();
   let sheet = deriveSheet(doc, ctx);
   for (let round = 0; round < 6; round++) {
     let changed = false;
@@ -291,6 +327,7 @@ function settle(doc: CharacterDoc, picks: FeaturePick[] = []): DerivedSheet {
       changed = true;
     }
     if (!changed) break;
+    collectors = new Set();
     sheet = deriveSheet(doc, ctx);
   }
   return sheet;
@@ -306,6 +343,7 @@ function fields(doc: CharacterDoc): Record<string, string> {
   const out: Record<string, string> = { choices: '' };
   for (const [k, v] of Object.entries(sheet)) out[k] = hash(v);
   out.choices = hash(doc.choices);
+  out.collected = hash(collected());
   return out;
 }
 
@@ -503,7 +541,8 @@ for (const of of reg.byType('optionalfeature')) {
   }
 }
 
-// Feats and races, on a Fighter of their edition.
+// Feats on a Fighter of their edition and on a Wizard, whose slots a slot price
+// needs; races on a Fighter.
 const FEAT_LEVELS = [1, 2, 3, 4, 5, 8, 11, 12, 16, 17, 20];
 for (const f of reg.byType('feat')) {
   const edition = editionOf(f);
@@ -514,6 +553,11 @@ for (const f of reg.byType('feat')) {
   });
   if (discover(at(4)).read.size === 0) continue;
   sweep(`feat ${uidOf(refOf(f))}`, FEAT_LEVELS, at);
+  sweep(`feat ${uidOf(refOf(f))} on a Wizard`, FEAT_LEVELS, (n) => ({
+    edition,
+    classes: [{ ref: wizardOf(edition), levels: n }],
+    feat: refOf(f),
+  }));
   const multi = (n: number): Shape => ({
     edition,
     classes: [
@@ -549,10 +593,46 @@ for (const sr of reg.byType('subrace')) {
   sweep(`subrace ${uidOf(refOf(sr))} of ${uidOf(refOf(race))}`, RACE_LEVELS, at);
 }
 
+// Each moved spend key on its own, in each seeded state: proves a key no build
+// reads, and a price no build's sheet shows.
+const seedDifferences: string[] = [];
+let seeded = 0;
+for (const [id, { part, key }] of moved) {
+  if (part !== 'spend') continue;
+  const onAction = onActionOf(builtInRuleIn(shipped, 'spend', [key])?.links ?? []);
+  for (const [state, seed] of Object.entries(SPEND_SEEDS)) {
+    const linked = (): string => {
+      const col = new Collector(newCharacterDoc('rules-probe', 'Rules probe', DATA_TAG), ctx);
+      const own: EffectOrigin = { label: 'Feature', uid: 'feature|probe', type: 'class' };
+      seed((e) => col.add(e), own, onAction);
+      linkSpend(col, [key], 'Feature', own);
+      return JSON.stringify(col.effects);
+    };
+    codeRowsOn();
+    const a = linked();
+    dataRowsOn();
+    const b = linked();
+    seeded++;
+    if (a !== b) seedDifferences.push(`${id} [${state}]`);
+  }
+}
+
 codeRowsOn();
-const unproved = [...moved.keys()].filter((k) => !proved.has(k)).sort();
+const unproved = [...moved.keys()]
+  .filter((k) => !proved.has(k) && !k.startsWith(idOf('spend', '')))
+  .sort();
+const unbuilt = [...moved.keys()]
+  .filter((k) => !proved.has(k) && k.startsWith(idOf('spend', '')))
+  .sort();
 console.log(
   `moved rows: ${moved.size}; builds compared: ${compared}; differences: ${differences.length}`,
+);
+console.log(
+  `spend keys linked alone: ${seeded / Object.keys(SPEND_SEEDS).length} in ${Object.keys(SPEND_SEEDS).length} states; differences: ${seedDifferences.length}`,
+);
+for (const d of seedDifferences.slice(0, 40)) console.log(`  differs alone: ${d}`);
+console.log(
+  `spend keys read by no build, proved alone: ${unbuilt.length}${unbuilt.length > 0 ? `: ${unbuilt.join('; ')}` : ''}`,
 );
 for (const d of differences.slice(0, 40)) console.log(`  differs: ${d}`);
 for (const [k, n] of [...differing].sort()) {
@@ -565,4 +645,4 @@ console.log(`fewest builds: ${fewest.map(([k, n]) => `${k} ${n}`).join('; ')}`);
 console.log(
   `read by no build: ${unproved.length}${unproved.length > 0 ? `: ${unproved.join('; ')}` : ''}`,
 );
-if (differences.length > 0 || unproved.length > 0) process.exit(1);
+if (differences.length > 0 || seedDifferences.length > 0 || unproved.length > 0) process.exit(1);

@@ -948,7 +948,7 @@ describe('pools, dice and DCs only class prose states', () => {
       ['Paladin', 'channel-divinity-paladin'],
     ] as const) {
       const linked = run(`${name.toLowerCase()}|${cls.toLowerCase()}`, col(cls, 7));
-      expect(linkSpend(linked, `${name}|${cls}|TCE`, name, origin)).toBe(true);
+      expect(linkSpend(linked, [`${name}|${cls}|TCE`], name, origin)).toBe(true);
       expect(linked.effects).toContainEqual(
         expect.objectContaining({
           kind: 'action',

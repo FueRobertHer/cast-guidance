@@ -16,9 +16,19 @@
  * using the feature costs nothing. Those paid in spell slots or Hit Point Dice, and
  * every cost in them, are `SLOT_LINKS` rows.
  */
+import type { StoredSpendLink } from '../castGuidance';
+import { spellPoolKey } from '../effects/additionalSpells';
 import type { Collector } from '../effects/base';
-import type { ActionBuyBack, ActionCost, ActionEconomy, EffectOrigin } from '../types';
-import { linkSlotCost } from './slotLinks';
+import { builtInRowsFor, type SpendLinkRow } from '../effects/mechanics';
+import {
+  type ActionBuyBack,
+  type ActionCost,
+  type ActionEconomy,
+  type EffectOrigin,
+  HIT_DIE_COST,
+  SLOT_COST,
+} from '../types';
+import { linkSlotCost, SLOT_LINKS, slotLinkOf } from './slotLinks';
 
 type Amount = ActionCost['amount'];
 
@@ -37,8 +47,8 @@ interface SpendRow {
 interface Restores {
   /**
    * The use, when it does not share the action's name: a spell the feature's
-   * own subclass or class grants, by the name its pool is keyed by
-   * (`additionalSpells`). The key is built from the subclass the sheet walks,
+   * own subclass or class grants, by its name (`spellPoolKey` keys its pool as
+   * `additionalSpells` does). The key is built from the subclass the sheet walks,
    * so a renamed copy of the subclass finds its own pool.
    */
   ownSpell?: string;
@@ -85,9 +95,10 @@ function pool(
 }
 
 export const SPEND_LINKS: Readonly<Record<string, SpendLink>> = {
+  // Keys moved to `src/rules/cast-guidance/spend.json` (rule pack port 3b) are
+  // read there, and are in neither table.
   // Written under its 2024 name; `costOnSheet` finds a 2014 monk's ki.
   ...pool('focus', {
-    'flurry of blows|monk|phb': 1,
     'patient defense|monk|phb': 1,
     'step of the wind|monk|phb': 1,
     'deflect missiles|monk|phb': paid(),
@@ -100,7 +111,6 @@ export const SPEND_LINKS: Readonly<Record<string, SpendLink>> = {
     'patient defense|monk|xphb': paid(),
     'step of the wind|monk|xphb': paid(),
     'deflect attacks|monk|xphb': paid(),
-    'stunning strike|monk|xphb': 1,
     'disciplined survivor|monk|xphb': rider(),
     'superior defense|monk|xphb': rider(3),
     'ascendant aspect|way of the ascendant dragon|ftd': rider(),
@@ -180,8 +190,6 @@ export const SPEND_LINKS: Readonly<Record<string, SpendLink>> = {
     'extended spell|xphb': rider(),
     'heightened spell|phb': rider(3),
     'heightened spell|xphb': rider(2),
-    'quickened spell|phb': rider(2),
-    'quickened spell|xphb': rider(2),
     'seeking spell|tce': rider(2),
     'seeking spell|xphb': rider(),
     'subtle spell|phb': rider(),
@@ -195,8 +203,6 @@ export const SPEND_LINKS: Readonly<Record<string, SpendLink>> = {
     'lunar phenomenon|lunar sorcery|dsotdq': restore(5, {
       uses: { key: 'lunar-phenomenon', max: 3, resetOn: 'long' },
     }),
-    'warping implosion|aberrant mind|tce': restore(5),
-    'warping implosion|aberrant sorcery|xphb': restore(5),
     'trance of order|clockwork soul|tce': restore(5),
     'trance of order|clockwork sorcery|xphb': restore(5),
     'clockwork cavalcade|clockwork soul|tce': restore(7),
@@ -346,9 +352,6 @@ export const SPEND_LINKS: Readonly<Record<string, SpendLink>> = {
     'psi-powered leap|psi warrior|xphb': restore(1),
     'bulwark of force|psi warrior|tce': restore(1),
     'bulwark of force|psi warrior|xphb': restore(1),
-    // The chip is the bonus attack, and the use is the granted spell's.
-    'telekinetic master|psi warrior|tce': restore(1, { ownSpell: 'telekinesis' }),
-    'telekinetic master|psi warrior|xphb': restore(1, { ownSpell: 'telekinesis' }),
   }),
   ...pool('soulknife-dice', {
     'psi-bolstered knack|soulknife|tce': rider(),
@@ -387,13 +390,11 @@ export const SPEND_LINKS: Readonly<Record<string, SpendLink>> = {
   ...pool('wild-shape', {
     'wild companion|druid|tce': on('action'),
     'wild companion|druid|xphb': paid('action'),
-    'combat wild shape|circle of the moon|phb': paid(),
     'elemental wild shape|circle of the moon|phb': rider(2),
     'symbiotic entity|circle of spores|tce': on('action'),
     'starry form|circle of stars|tce': 1,
     'summon wildfire spirit|circle of wildfire|tce': on('action'),
     "land's aid|circle of the land|xphb": on('action'),
-    "nature's sanctuary|circle of the land|xphb": on('action'),
     'wrath of the sea|circle of the sea|xphb': 1,
     'oceanic gift|circle of the sea|xphb': rider('varies'),
     'starry form|circle of the stars|xphb': 1,
@@ -411,7 +412,6 @@ export const SPEND_LINKS: Readonly<Record<string, SpendLink>> = {
     'intimidating presence|path of the berserker|xphb': restore(1),
     'zealous presence|path of the zealot|xphb': restore(1),
     'echo of the elements|path of the elements|wow': on('action'),
-    'totems|shaman|wow': restore(1, { onAction: 'Primal Knowledge Totem' }),
   }),
   ...pool('second-wind', {
     'tactical mind|fighter|xphb': rider(),
@@ -430,13 +430,35 @@ export const SPEND_LINKS: Readonly<Record<string, SpendLink>> = {
   }),
 };
 
+/** Whether either code table still has a row under a lowercased key. */
+const inCode = (key: string): boolean =>
+  Object.hasOwn(SPEND_LINKS, key) || Object.hasOwn(SLOT_LINKS, key);
+
 /**
  * Hang a feature's costs on the action it already emitted, or add one for a feature
- * that spends with no action row of its own: its pool's from this table, then a
- * spell slot's or Hit Point Die's from `SLOT_LINKS`. Runs after the curated entry or
- * the scan, so a table row reaches both. Says whether either table has a row for `key`.
+ * that spends with no action row of its own. Runs after the curated entry or the
+ * scan, so a row reaches both. The built-in `spend` row under the first of `keys`
+ * with one gives its links in order; while rows move out of code, a code row under
+ * an earlier key still comes first (`builtInRowsFor`), and then the first key with
+ * a row in either code table gives its pool's price, then its slot's or Hit Point
+ * Die's. Says whether a row was found.
  */
 export function linkSpend(
+  col: Collector,
+  keys: readonly string[],
+  label: string,
+  origin: EffectOrigin,
+): boolean {
+  const rows = builtInRowsFor(col, 'spend', keys, inCode);
+  if (rows !== undefined) {
+    for (const row of rows) for (const link of row.links ?? []) linkPrice(col, link, label, origin);
+    return true;
+  }
+  return keys.some((key) => linkCodeRows(col, key, label, origin));
+}
+
+/** Both code tables' rows under one key: the pool's price, then the slot's or die's. */
+export function linkCodeRows(
   col: Collector,
   key: string,
   label: string,
@@ -445,6 +467,96 @@ export function linkSpend(
   const pool = linkPool(col, key, label, origin);
   const slot = linkSlotCost(col, key, label, origin);
   return pool || slot;
+}
+
+/**
+ * One built-in link on the feature's action (`StoredSpendLink`). A pool's price
+ * replaces the one the action has, as it runs first under a key; a spell slot's
+ * or a Hit Point Die's runs after it, so it fills only an empty one: a cost goes
+ * on an action with none (else on an action of its own), a buy-back on one with
+ * none, and a buy-back for another feature's action adds nothing without it.
+ */
+export function linkPrice(
+  col: Collector,
+  link: SpendLinkRow,
+  label: string,
+  origin: EffectOrigin,
+): void {
+  if ('cost' in link) {
+    const fills = link.cost.resource === SLOT_COST || link.cost.resource === HIT_DIE_COST;
+    const cost = structuredClone(link.cost);
+    const { economy, note } = link;
+    const own =
+      link.label === undefined
+        ? col.effects.find((e) => e.kind === 'action' && e.origin === origin)
+        : undefined;
+    if (own?.kind === 'action' && !(fills && own.cost !== undefined)) {
+      own.cost = cost;
+      if (economy !== undefined) own.economy = economy;
+      if (note !== undefined && own.note === undefined) own.note = note;
+      return;
+    }
+    col.add({
+      kind: 'action',
+      economy: economy ?? 'none',
+      label: link.label ?? label,
+      cost,
+      origin,
+      ...(note !== undefined ? { note } : {}),
+    });
+    return;
+  }
+  const fills = link.buyBack.resource === SLOT_COST;
+  const { onAction, ownSpell, uses } = link;
+  if (uses !== undefined) col.add({ kind: 'resource', label, ...uses, origin });
+  // Keyed as `additionalSpells` keys a granted spell's pool: by the origin's uid
+  // and the spell's name, so "Telekinesis" finds the pool as "telekinesis" does.
+  const buyBack: ActionBuyBack = {
+    ...structuredClone(link.buyBack),
+    ...(ownSpell !== undefined ? { own: spellPoolKey(origin.uid, [ownSpell]) } : {}),
+  };
+  const target = col.effects.find(
+    (e) =>
+      e.kind === 'action' &&
+      !(fills && e.buyBack !== undefined) &&
+      (onAction !== undefined ? e.label === onAction : e.origin === origin),
+  );
+  if (target?.kind === 'action') target.buyBack = buyBack;
+  else if (!(fills && onAction !== undefined)) {
+    col.add({ kind: 'action', economy: 'none', label: onAction ?? label, buyBack, origin });
+  }
+}
+
+/**
+ * A key's code rows as a `spend` row's links: the pool's, then the slot's or
+ * die's. What a row moved into `src/rules/cast-guidance/spend.json` says, and
+ * what the tests hold the built-in links to while both tables have rows.
+ */
+export function codeLinksOf(key: string): StoredSpendLink[] {
+  const links: StoredSpendLink[] = [];
+  const row = SPEND_LINKS[key];
+  if (row?.restores !== undefined) {
+    const { ownSpell, onAction, uses } = row.restores;
+    links.push({
+      buyBack: { resource: row.resource, amount: row.amount },
+      ...(onAction !== undefined ? { onAction } : {}),
+      ...(ownSpell !== undefined ? { ownSpell } : {}),
+      ...(uses !== undefined ? { uses } : {}),
+    });
+  } else if (row !== undefined) {
+    links.push({
+      cost: {
+        resource: row.resource,
+        amount: row.amount,
+        ...(row.optional === true ? { optional: true } : {}),
+        ...(row.ownUseToo === true ? { ownUseToo: true } : {}),
+      },
+      ...(row.economy !== undefined ? { economy: row.economy } : {}),
+    });
+  }
+  const slot = slotLinkOf(key);
+  if (slot !== undefined) links.push(slot);
+  return links;
 }
 
 function linkPool(col: Collector, key: string, label: string, origin: EffectOrigin): boolean {
@@ -485,7 +597,7 @@ function linkBuyBack(
 ): void {
   if (uses !== undefined) col.add({ kind: 'resource', label, ...uses, origin });
   // Keyed as `additionalSpells` keys a granted spell's pool: by the origin's uid.
-  const own = ownSpell !== undefined ? `spell:${origin.uid}:${ownSpell}` : undefined;
+  const own = ownSpell !== undefined ? spellPoolKey(origin.uid, [ownSpell]) : undefined;
   const buyBack: ActionBuyBack = { resource, amount, ...(own !== undefined ? { own } : {}) };
   const target = col.effects.find(
     (e) =>

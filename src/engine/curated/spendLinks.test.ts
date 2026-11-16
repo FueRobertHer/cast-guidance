@@ -1,13 +1,99 @@
 import { describe, expect, it } from 'vitest';
+import { onActionOf, SPEND_SEEDS } from '../../../tests-fixtures/spendSeeds';
+import { BUILT_IN_RULE_SETS } from '../../../tests-fixtures/testWorld';
 import { SPEND_POOLS, SPEND_SKIPPED } from '../../data5e/audit/spendScope';
+import { RULE_SET_TYPE } from '../castGuidance';
 import { Collector } from '../effects/base';
-import { type EffectOrigin, type EngineContext, newCharacterDoc } from '../types';
-import { linkSpend, SPEND_LINKS } from './spendLinks';
+import { readRuleSet, type SpendLinkRow } from '../effects/mechanics';
+import {
+  type EffectOrigin,
+  type EngineContext,
+  HIT_DIE_COST,
+  newCharacterDoc,
+  SLOT_COST,
+} from '../types';
+import { SLOT_LINKS } from './slotLinks';
+import { codeLinksOf, linkCodeRows, linkPrice, linkSpend, SPEND_LINKS } from './spendLinks';
 
-const ctx: EngineContext = { get: () => undefined, byType: () => [] };
+// As every registry holds them: the rows moved out of the link tables.
+const ctx: EngineContext = {
+  get: () => undefined,
+  byType: (type) => (type === RULE_SET_TYPE ? BUILT_IN_RULE_SETS : []),
+};
 const origin: EffectOrigin = { label: 'Feature', uid: 'x', type: 'class' };
 const collector = () => new Collector(newCharacterDoc('c', 'H', 't'), ctx);
 const rows = Object.entries(SPEND_LINKS);
+
+/**
+ * Every key's prices: its shipped spend row's links where the row moved there,
+ * else its code rows' (`codeLinksOf`), so a rule a code row is held to still
+ * holds once the row moves.
+ */
+const PRICES: ReadonlyMap<string, readonly SpendLinkRow[]> = (() => {
+  const prices = new Map<string, readonly SpendLinkRow[]>();
+  for (const set of BUILT_IN_RULE_SETS) {
+    for (const row of readRuleSet(set).rows) {
+      if (row.part === 'spend') for (const key of row.keys) prices.set(key, row.links ?? []);
+    }
+  }
+  for (const key of [...Object.keys(SPEND_LINKS), ...Object.keys(SLOT_LINKS)]) {
+    if (!prices.has(key)) prices.set(key, codeLinksOf(key));
+  }
+  return prices;
+})();
+const LINKS = [...PRICES].flatMap(([key, links]) => links.map((link) => [key, link] as const));
+const COSTS = LINKS.flatMap(([key, link]) => ('cost' in link ? [[key, link] as const] : []));
+const resourceOf = (link: SpendLinkRow) =>
+  'cost' in link ? link.cost.resource : link.buyBack.resource;
+
+describe('every price, in code or a shipped spend row', () => {
+  it('has one for every key', () => {
+    expect([...PRICES].filter(([, links]) => links.length === 0)).toEqual([]);
+  });
+
+  it('spends a whole positive number, or leaves it to the player', () => {
+    for (const [key, link] of LINKS) {
+      const amount = 'cost' in link ? link.cost.amount : link.buyBack.amount;
+      if (amount === 'varies') continue;
+      expect(Number.isInteger(amount) && amount > 0, key).toBe(true);
+    }
+  });
+
+  it('only pays for more on a use that does something for free', () => {
+    // A rider has no turn to mark, so its free base use would be a button that does nothing.
+    for (const [key, link] of COSTS) {
+      if (link.cost.optional !== true) continue;
+      expect(link.economy, key).not.toBe('none');
+      expect(link.cost.amount, key).not.toBe('varies');
+    }
+  });
+
+  it('asks for a slot level the slot table has', () => {
+    for (const [key, link] of LINKS) {
+      const min = 'cost' in link ? link.cost.minLevel : link.buyBack.minLevel;
+      if (min === undefined) continue;
+      expect(Number.isInteger(min) && min >= 2 && min <= 9, key).toBe(true);
+    }
+  });
+
+  it('rolls dice only for a slot, and heals only with a die', () => {
+    for (const [key, { cost }] of COSTS) {
+      if (cost.slotDice !== undefined) expect(cost.resource, key).toBe(SLOT_COST);
+      if (cost.hitDieHeals !== undefined) expect(cost.resource, key).toBe(HIT_DIE_COST);
+      if (cost.resource === HIT_DIE_COST) expect(cost.hitDieHeals, key).toBeDefined();
+    }
+  });
+
+  it('never both links and skips a feature for one pool', () => {
+    // A feature can name several: Twinned Spell spends Sorcery Points and names a slot's level.
+    const both = SPEND_POOLS.flatMap((pool) =>
+      Object.keys(SPEND_SKIPPED[pool.id] ?? {}).filter((key) =>
+        (PRICES.get(key) ?? []).some((link) => pool.resources.includes(resourceOf(link))),
+      ),
+    );
+    expect(both).toEqual([]);
+  });
+});
 
 describe('SPEND_LINKS', () => {
   it('keys every row by lowercase name and printing', () => {
@@ -15,33 +101,6 @@ describe('SPEND_LINKS', () => {
       expect(key, key).toBe(key.toLowerCase());
       expect(key.split('|').length, key).toBeGreaterThanOrEqual(2);
     }
-  });
-
-  it('spends a whole positive number, or leaves it to the player', () => {
-    for (const [key, link] of rows) {
-      if (link.amount === 'varies') continue;
-      expect(Number.isInteger(link.amount) && link.amount > 0, key).toBe(true);
-    }
-  });
-
-  it('only pays for more on a use that does something for free', () => {
-    // A rider has no turn to mark, so its free base use would be a button that does nothing.
-    for (const [key, link] of rows) {
-      if (link.optional !== true) continue;
-      expect(link.economy, key).not.toBe('none');
-      expect(link.amount, key).not.toBe('varies');
-    }
-  });
-
-  it('never both links and skips a feature for one pool', () => {
-    // A feature can name several: Twinned Spell spends Sorcery Points and names a slot's level.
-    const both = SPEND_POOLS.flatMap((pool) =>
-      Object.keys(SPEND_SKIPPED[pool.id] ?? {}).filter((key) => {
-        const link = SPEND_LINKS[key];
-        return link !== undefined && pool.resources.includes(link.resource);
-      }),
-    );
-    expect(both).toEqual([]);
   });
 
   it('gives its reasons to pools that exist', () => {
@@ -74,7 +133,13 @@ describe('SPEND_LINKS', () => {
   });
 
   it('covers the cases that spent nothing', () => {
-    const pool = (key: string) => SPEND_LINKS[key]?.resource;
+    // Wherever the key's row is, in the table or the shipped rule set.
+    const pool = (key: string) => {
+      const col = collector();
+      linkSpend(col, [key], 'Feature', origin);
+      const action = col.effects.find((e) => e.kind === 'action');
+      return action?.kind === 'action' ? action.cost?.resource : undefined;
+    };
     expect(pool('cutting words|college of lore|phb')).toBe('bardic-inspiration');
     expect(pool('cutting words|college of lore|xphb')).toBe('bardic-inspiration');
     expect(pool('flurry of blows|monk|xphb')).toBe('focus');
@@ -89,7 +154,7 @@ describe('linkSpend', () => {
   it('hangs the cost on the action the feature already emitted', () => {
     const col = collector();
     col.add({ kind: 'action', economy: 'bonus', label: 'Flurry of Blows', origin });
-    linkSpend(col, 'Flurry of Blows|Monk|PHB', 'Flurry of Blows', origin);
+    linkSpend(col, ['Flurry of Blows|Monk|PHB'], 'Flurry of Blows', origin);
     expect(col.effects).toEqual([
       {
         kind: 'action',
@@ -103,7 +168,7 @@ describe('linkSpend', () => {
 
   it('adds an action for a feature that has none, taking no slot unless the row gives one', () => {
     const col = collector();
-    linkSpend(col, 'trip attack|phb', 'Trip Attack', origin);
+    linkSpend(col, ['trip attack|phb'], 'Trip Attack', origin);
     expect(col.effects).toEqual([
       {
         kind: 'action',
@@ -114,14 +179,14 @@ describe('linkSpend', () => {
       },
     ]);
     const paid = collector();
-    linkSpend(paid, "commander's strike|phb", "Commander's Strike", origin);
+    linkSpend(paid, ["commander's strike|phb"], "Commander's Strike", origin);
     expect(paid.effects[0]).toMatchObject({ economy: 'bonus' });
   });
 
   it('says when the base use is free', () => {
     const col = collector();
     col.add({ kind: 'action', economy: 'bonus', label: 'Patient Defense', origin });
-    linkSpend(col, 'patient defense|monk|xphb', 'Patient Defense', origin);
+    linkSpend(col, ['patient defense|monk|xphb'], 'Patient Defense', origin);
     expect(col.effects[0]).toMatchObject({
       cost: { resource: 'focus', amount: 1, optional: true },
     });
@@ -130,7 +195,7 @@ describe('linkSpend', () => {
   it('takes the slot the row gives over the one the scanner read', () => {
     const col = collector();
     col.add({ kind: 'action', economy: 'bonus', label: "Nature's Sanctuary", origin });
-    linkSpend(col, "nature's sanctuary|circle of the land|xphb", "Nature's Sanctuary", origin);
+    linkSpend(col, ["nature's sanctuary|circle of the land|xphb"], "Nature's Sanctuary", origin);
     expect(col.effects[0]).toMatchObject({ economy: 'action' });
   });
 
@@ -138,7 +203,7 @@ describe('linkSpend', () => {
     const col = collector();
     const other: EffectOrigin = { ...origin, label: 'Other' };
     col.add({ kind: 'action', economy: 'bonus', label: 'Other', origin: other });
-    linkSpend(col, 'trip attack|phb', 'Trip Attack', origin);
+    linkSpend(col, ['trip attack|phb'], 'Trip Attack', origin);
     expect(col.effects[0]).not.toHaveProperty('cost');
     expect(col.effects).toHaveLength(2);
   });
@@ -150,7 +215,7 @@ describe('linkSpend', () => {
     it('hangs on the action the feature emitted, with no cost and the same slot', () => {
       const col = collector();
       col.add({ kind: 'action', economy: 'bonus', label: 'Psi-Powered Leap', origin });
-      linkSpend(col, 'psi-powered leap|psi warrior|xphb', 'Psi-Powered Leap', origin);
+      linkSpend(col, ['psi-powered leap|psi warrior|xphb'], 'Psi-Powered Leap', origin);
       expect(col.effects).toEqual([
         {
           kind: 'action',
@@ -164,7 +229,7 @@ describe('linkSpend', () => {
 
     it('adds a chip that takes no slot for a feature with no action', () => {
       const col = collector();
-      linkSpend(col, 'rend mind|soulknife|xphb', 'Rend Mind', origin);
+      linkSpend(col, ['rend mind|soulknife|xphb'], 'Rend Mind', origin);
       expect(col.effects).toEqual([
         {
           kind: 'action',
@@ -180,7 +245,7 @@ describe('linkSpend', () => {
       const col = collector();
       const psi: EffectOrigin = { label: 'Psi Warrior', uid: 'psi warrior|tce', type: 'subclass' };
       col.add({ kind: 'action', economy: 'bonus', label: 'Telekinetic Master', origin: psi });
-      linkSpend(col, 'telekinetic master|psi warrior|tce', 'Telekinetic Master', psi);
+      linkSpend(col, ['telekinetic master|psi warrior|tce'], 'Telekinetic Master', psi);
       expect(buyBackOf(col, 'Telekinetic Master')).toMatchObject({
         buyBack: {
           resource: 'psi-warrior-dice',
@@ -194,7 +259,7 @@ describe('linkSpend', () => {
       const col = collector();
       const other: EffectOrigin = { ...origin, label: 'Innate Sorcery' };
       col.add({ kind: 'action', economy: 'bonus', label: 'Innate Sorcery', origin: other });
-      linkSpend(col, 'sorcery incarnate|sorcerer|xphb', 'Sorcery Incarnate', origin);
+      linkSpend(col, ['sorcery incarnate|sorcerer|xphb'], 'Sorcery Incarnate', origin);
       expect(col.effects).toHaveLength(1);
       expect(buyBackOf(col, 'Innate Sorcery')).toMatchObject({
         buyBack: { resource: 'sorcery-points', amount: 2 },
@@ -206,7 +271,7 @@ describe('linkSpend', () => {
       col.add({ kind: 'action', economy: 'bonus', label: 'Aspect of the Wyrm', origin });
       linkSpend(
         col,
-        'aspect of the wyrm|way of the ascendant dragon|ftd',
+        ['aspect of the wyrm|way of the ascendant dragon|ftd'],
         'Aspect of the Wyrm',
         origin,
       );
@@ -223,7 +288,66 @@ describe('linkSpend', () => {
 
   it('does nothing for a feature outside the table', () => {
     const col = collector();
-    linkSpend(col, 'nothing like it|tst', 'Nothing', origin);
+    linkSpend(col, ['nothing like it|tst'], 'Nothing', origin);
     expect(col.effects).toEqual([]);
+  });
+});
+
+describe('a built-in spend row stands in for the code rows of its key (rule pack port 3b)', () => {
+  const keys = [...new Set([...Object.keys(SPEND_LINKS), ...Object.keys(SLOT_LINKS)])].sort();
+  // Every code row, as the links a moved row would hold, read as the app reads its files.
+  const read = readRuleSet(
+    JSON.parse(
+      JSON.stringify({
+        type: RULE_SET_TYPE,
+        v: 1,
+        name: 'Every link',
+        rows: keys.map((key) => ({ part: 'spend', keys: [key], links: codeLinksOf(key) })),
+      }),
+    ),
+  );
+  const linksOf = new Map(read.rows.map((r) => [r.keys[0], r.links ?? []]));
+
+  it('reads every code row as links', () => {
+    expect(read.problems).toEqual([]);
+    expect(read.rows).toHaveLength(keys.length);
+    // 288 pool rows and 52 slot rows left in code, one key in both (Divine Reaper).
+    expect(keys).toHaveLength(288 + 52 - 1);
+  });
+
+  it('pays with a pool in SPEND_LINKS and with a slot or a die in SLOT_LINKS alone', () => {
+    // How a link applies turns on how its price is paid (`linkPrice`).
+    const slotOrDie = (r: string) => r === 'spell-slot' || r === 'hit-die';
+    expect(
+      Object.keys(SPEND_LINKS).filter((k) => slotOrDie(SPEND_LINKS[k]?.resource ?? '')),
+    ).toEqual([]);
+    expect(
+      Object.entries(SLOT_LINKS).filter(([, row]) =>
+        row.kind === 'spend' ? !slotOrDie(row.cost.resource) : false,
+      ),
+    ).toEqual([]);
+  });
+
+  it('puts the same effects on the sheet as the code rows, field for field', () => {
+    const differ: string[] = [];
+    for (const key of keys) {
+      const links = linksOf.get(key) ?? [];
+      const onAction = onActionOf(links);
+      for (const [state, seed] of Object.entries(SPEND_SEEDS)) {
+        const run = (link: (col: Collector, own: EffectOrigin) => void) => {
+          const col = collector();
+          const own: EffectOrigin = { label: 'Feature', uid: 'feature|tst', type: 'class' };
+          seed((e) => col.add(e), own, onAction);
+          link(col, own);
+          return JSON.stringify(col.effects);
+        };
+        const code = run((col, own) => linkCodeRows(col, key, 'Feature', own));
+        const data = run((col, own) => {
+          for (const link of links) linkPrice(col, link, 'Feature', own);
+        });
+        if (code !== data) differ.push(`${key} [${state}]`);
+      }
+    }
+    expect(differ).toEqual([]);
   });
 });

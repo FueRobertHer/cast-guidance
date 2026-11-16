@@ -61,6 +61,12 @@ const FIGHTER_FEATURES = [
   gain('Fighter Subclass|Fighter|XPHB|3'),
 ];
 
+const SORCERER_FEATURES = [
+  'Innate Sorcery|Sorcerer|XPHB|1',
+  'Font of Magic|Sorcerer|XPHB|2',
+  'Sorcery Incarnate|Sorcerer|XPHB|7',
+];
+
 // Where each subclass's features live: [class, class source, short name, printing].
 const BATTLE_MASTER = ['Fighter', 'XPHB', 'Battle Master', 'XPHB'] as const;
 const CHAMPION = ['Fighter', 'XPHB', 'Champion', 'XPHB'] as const;
@@ -158,6 +164,19 @@ const WORLD: Record<string, DataEntity[]> = {
       classFeatures: ["Monk's Focus|Monk|XPHB|2", gain('Monk Subclass|Monk|XPHB|3')],
     },
     {
+      name: 'Sorcerer',
+      source: 'XPHB',
+      hd: { number: 1, faces: 6 },
+      classFeatures: SORCERER_FEATURES,
+    },
+    {
+      name: 'Evoker',
+      source: 'WoW',
+      reskinOf: ['Sorcerer|XPHB'],
+      hd: { number: 1, faces: 6 },
+      classFeatures: SORCERER_FEATURES,
+    },
+    {
       name: 'Priest',
       source: 'WoW',
       reskinOf: ['Cleric|XPHB'],
@@ -189,6 +208,16 @@ const WORLD: Record<string, DataEntity[]> = {
     classFeature('Monk Subclass', 'Monk', 'XPHB', 3),
     classFeature('Channel Divinity', 'Cleric', 'XPHB', 2),
     classFeature('Cleric Subclass', 'Cleric', 'XPHB', 3),
+    // Innate Sorcery's action stands for the one the prose scan reads.
+    {
+      ...classFeature('Innate Sorcery', 'Sorcerer', 'XPHB', 1),
+      castGuidance: {
+        v: 1,
+        effects: [{ kind: 'action', economy: 'bonus', label: 'Innate Sorcery' }],
+      },
+    },
+    classFeature('Font of Magic', 'Sorcerer', 'XPHB', 2),
+    classFeature('Sorcery Incarnate', 'Sorcerer', 'XPHB', 7),
   ],
   subclass: [
     // The WoW copies of 2024 subclasses keep the 2024 features' refs.
@@ -450,6 +479,53 @@ describe('Shaman Totems', () => {
     expect(action(sheet, 'Primal Knowledge Totem')).toMatchObject({
       economy: 'bonus',
       buyBack: { resource: 'rage', amount: 1 },
+    });
+  });
+});
+
+describe('Evoker Sorcery Incarnate', () => {
+  const SORCERER = { name: 'Sorcerer', source: 'XPHB' };
+  const buyBack = (sheet: DerivedSheet) => action(sheet, 'Innate Sorcery')?.buyBack;
+
+  it("buys Innate Sorcery back with sorcery points, read as the Sorcerer's feature", () => {
+    // Its spend link is keyed `sorcery incarnate|sorcerer|xphb`; the Evoker
+    // reaches it through the class it reskins.
+    for (const cls of [SORCERER, wow('Evoker')]) {
+      expect(buyBack(derive(build(cls, 7)))).toEqual({ resource: 'sorcery-points', amount: 2 });
+      expect(buyBack(derive(build(cls, 6)))).toBeUndefined();
+    }
+  });
+
+  it('reads a built-in spend row under that key the same way', () => {
+    const withRow: EngineContext = {
+      ...ctx,
+      byType: (type) =>
+        type === RULE_SET_TYPE
+          ? [
+              ...BUILT_IN_RULE_SETS,
+              {
+                type: RULE_SET_TYPE,
+                v: 1,
+                name: 'A later set',
+                rows: [
+                  {
+                    part: 'spend',
+                    keys: ['sorcery incarnate|sorcerer|xphb'],
+                    links: [
+                      {
+                        buyBack: { resource: 'sorcery-points', amount: 3 },
+                        onAction: 'Innate Sorcery',
+                      },
+                    ],
+                  },
+                ],
+              },
+            ]
+          : ctx.byType(type),
+    };
+    expect(buyBack(deriveSheet(build(wow('Evoker'), 7), withRow))).toEqual({
+      resource: 'sorcery-points',
+      amount: 3,
     });
   });
 });

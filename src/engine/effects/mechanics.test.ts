@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { makeTestContext } from '../../../tests-fixtures/testWorld';
+import { BUILT_IN_RULE_SETS, makeTestContext } from '../../../tests-fixtures/testWorld';
 import { CAST_GUIDANCE_LIMITS, RULE_PACK_TYPE } from '../castGuidance';
 import { deriveSheet } from '../derive';
 import { Formula } from '../formula';
@@ -14,10 +14,12 @@ import {
 import { Collector } from './base';
 import {
   basedOn,
+  builtInRuleIn,
   entryKeys,
   mechanicsOf,
   officialOf,
   readMechanics,
+  readRuleSet,
   readStoredEffects,
 } from './mechanics';
 
@@ -2101,19 +2103,26 @@ describe("an action's price (rule pack port 3a)", () => {
   });
 
   it('reads every price the spend and slot links give, as they give it', async () => {
-    const { linkSpend, SPEND_LINKS } = await import('../curated/spendLinks');
+    const { codeLinksOf, linkSpend, SPEND_LINKS } = await import('../curated/spendLinks');
     const { SLOT_LINKS } = await import('../curated/slotLinks');
+    const shipped = BUILT_IN_RULE_SETS.flatMap((set) =>
+      readRuleSet(set).rows.flatMap((r) => (r.part === 'spend' ? r.keys : [])),
+    );
     const linked: EffectOrigin = { label: 'Feature', uid: 'feature|hb', type: 'class' };
     const other: EffectOrigin = { label: 'Other', uid: 'other|hb', type: 'class' };
     let prices = 0;
-    for (const key of new Set([...Object.keys(SPEND_LINKS), ...Object.keys(SLOT_LINKS)])) {
+    const keys = new Set([...Object.keys(SPEND_LINKS), ...Object.keys(SLOT_LINKS), ...shipped]);
+    for (const key of keys) {
       const col = new Collector(character(), world({}));
-      // A buy-back for another feature's use lands only on that feature's chip.
-      const row = SLOT_LINKS[key];
-      if (row?.kind === 'restore' && row.pool !== undefined) {
-        col.add({ kind: 'action', economy: 'bonus', label: row.pool.onAction, origin: other });
+      // A slot's buy-back for another feature's use lands only on that feature's chip.
+      const links = builtInRuleIn(BUILT_IN_RULE_SETS, 'spend', [key])?.links ?? codeLinksOf(key);
+      const onAction = links.find(
+        (l) => 'buyBack' in l && l.buyBack.resource === 'spell-slot' && l.onAction !== undefined,
+      );
+      if (onAction !== undefined && 'onAction' in onAction && onAction.onAction !== undefined) {
+        col.add({ kind: 'action', economy: 'bonus', label: onAction.onAction, origin: other });
       }
-      linkSpend(col, key, 'Feature', linked);
+      linkSpend(col, [key], 'Feature', linked);
       for (const e of col.effects) {
         if (e.kind !== 'action' || (e.cost === undefined && e.buyBack === undefined)) continue;
         const r = read(e.cost, e.buyBack);
@@ -2128,7 +2137,8 @@ describe("an action's price (rule pack port 3a)", () => {
         prices += (e.cost !== undefined ? 1 : 0) + (e.buyBack !== undefined ? 1 : 0);
       }
     }
-    // Every row of both tables: 299 spend links and 57 slot links.
+    // Every row of both tables and of the shipped spend rows: 299 pool prices and
+    // 57 slot or Hit Point Die prices.
     expect(prices).toBe(299 + 57);
   });
 
@@ -2255,7 +2265,7 @@ describe('what a review found', () => {
       target: 'flurry',
       inherited: () => {
         col.add({ kind: 'action', label: 'Flurry of Blows', economy: 'none', origin });
-        linkSpend(col, 'flurry of blows|monk|phb', 'Flurry of Blows', origin);
+        linkSpend(col, ['flurry of blows|monk|phb'], 'Flurry of Blows', origin);
       },
     });
     const costs = col.effects.map((e) => (e.kind === 'action' ? [e.label, e.cost?.resource] : []));
