@@ -2009,10 +2009,16 @@ export function mechanicsOf(col: Collector, s: MechanicsSubject): void {
   for (const add of patches?.add ?? [])
     emit(col, add.effects, { ...s.origin, pack: add.pack }, level, s.className);
   const self = mine?.readable === true ? mine : undefined;
-  if (patches?.replace !== undefined) return unpriced(col, s, self, patches);
+  if (patches?.replace !== undefined) {
+    unpriced(col, s, self, patches);
+    return;
+  }
 
   if (self !== undefined) emit(col, self.effects, { ...s.origin }, level, s.className);
-  if (self?.replace === true) return unpriced(col, s, self, patches);
+  if (self?.replace === true) {
+    unpriced(col, s, self, patches);
+    return;
+  }
   const from = col.effects.length;
   // The built-in curated row is inherited, as the `CURATED` row it stands in
   // for: after `from`, so the entry's `drop` reaches it, and with the subject's
