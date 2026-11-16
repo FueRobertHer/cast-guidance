@@ -781,7 +781,10 @@ function readSpendLinks(raw: unknown): { links: SpendLinkRow[]; problems: string
  * flat bonus or advantage. A bonus is added once the d20 shows, so it is always
  * `after`. Advantage is claimed before the d20, so it waits on no failure, and a
  * use given back on a roll that still failed (`spentOnSuccess`) needs one.
+ * Inspiration pays alone: no reaction beside it, and no pool's die to add.
  */
+const INSPIRATION_ALONE = '"inspiration" is the whole price: "reaction" is not true beside it';
+
 const rollPaid: Build = (o, r) => {
   const on = req(o, r, 'on', rollFilter);
   const adds = {
@@ -809,6 +812,12 @@ const rollPaid: Build = (o, r) => {
       '"spentOnSuccess" gives the use back on a roll that still failed: "ifFailed" is true',
     );
   }
+  if ('poolDie' in adds && 'inspiration' in rest) {
+    throw new Bad(
+      '"poolDie" adds the die of the pool that pays, and Inspiration has none: leave out "inspiration"',
+    );
+  }
+  if ('inspiration' in rest && rest.reaction === true) throw new Bad(INSPIRATION_ALONE);
   return { on, ...adds, ...('bonus' in adds ? { after: true } : {}), ...rest };
 };
 
@@ -817,7 +826,8 @@ const rollPaid: Build = (o, r) => {
  * in place of the d20 (`to`), or a floor at an ability's score
  * (`floorScore`). One made as the d20 lands (`auto`) costs nothing, waits on
  * nothing and never makes the roll worse: the lower die of advantage, a 1, a
- * number set or a floor. The prompt offers a lower die and a floor only so.
+ * number set or a floor. The prompt offers a lower die and a floor only so. A
+ * number set or a floor adds no bonus, and a free one is not paid with Inspiration.
  */
 const rollReroll: Build = (o, r) => {
   const out: Record<string, unknown> = {
@@ -841,6 +851,9 @@ const rollReroll: Build = (o, r) => {
   if (sets && (out.die !== undefined || out.atMost !== undefined)) {
     throw new Bad('"to" and "floorScore" reroll nothing: leave out "die" and "atMost"');
   }
+  if (sets && out.bonus !== undefined) {
+    throw new Bad('a number set or a floor adds no "bonus": leave it out');
+  }
   if ((out.atMost !== undefined) !== (out.die === 'one')) {
     throw new Bad('"die": "one" rerolls a die showing "atMost" or less, and "atMost" needs it');
   }
@@ -857,6 +870,10 @@ const rollReroll: Build = (o, r) => {
       );
     }
   }
+  if (out.free === true && 'inspiration' in out) {
+    throw new Bad('"free" pays nothing: leave out "inspiration"');
+  }
+  if ('inspiration' in out && out.reaction === true) throw new Bad(INSPIRATION_ALONE);
   return out;
 };
 
@@ -1708,9 +1725,9 @@ export function builtInRowsFor(
 }
 
 /**
- * Emit built-in rows where the code table they stand in for runs (`STANDING`,
- * the roll tables): each row with no level, or at `featureLevel`, with `origin`
- * itself. `classLevel` is what their formulas read as the class's level; the
+ * Emit built-in rows where the code they stand in for ran (`STANDING`, and the
+ * roll parts that were `ROLL_ADVANTAGES` and `ROLL_EXTRAS`): each row with no
+ * level, or at `featureLevel`, with `origin` itself. `classLevel` is what their formulas read as the class's level; the
  * character's level when absent, as `mechanicsOf` reads it. `className` is the
  * class that gives them (`MechanicsSubject.className`).
  */

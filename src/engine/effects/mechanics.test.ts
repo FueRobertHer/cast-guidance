@@ -2417,6 +2417,9 @@ describe("a feature's paid extras and rerolls (rule pack port 3e)", () => {
       { kind: 'rollPaid', on: SAVES, bonus: -1 },
       { kind: 'rollPaid', on: SAVES, dice: '1d4', reaction: 'yes' },
       { kind: 'rollPaid', dice: '1d4' },
+      // Inspiration pays alone, and has no die of its own.
+      { kind: 'rollPaid', on: SAVES, poolDie: true, inspiration: true },
+      { kind: 'rollPaid', on: SAVES, dice: '1d4', inspiration: true, reaction: true },
     );
     expect(r.effects).toEqual([]);
     expect(r.problems).toEqual([
@@ -2429,7 +2432,16 @@ describe("a feature's paid extras and rerolls (rule pack port 3e)", () => {
       'effect 7 (rollPaid): "bonus" is 0 or more',
       'effect 8 (rollPaid): "reaction" is true or false',
       'effect 9 (rollPaid): "on" is missing',
+      'effect 10 (rollPaid): "poolDie" adds the die of the pool that pays, and Inspiration has none: leave out "inspiration"',
+      'effect 11 (rollPaid): "inspiration" is the whole price: "reaction" is not true beside it',
     ]);
+    // Inspiration with a die, and beside a reaction never taken, are read.
+    const ok = read(
+      { kind: 'rollPaid', on: SAVES, dice: '1d4', inspiration: true, reaction: false },
+      { kind: 'rollReroll', on: SAVES, inspiration: true, reaction: false },
+    );
+    expect(ok.problems).toEqual([]);
+    expect(ok.effects).toHaveLength(2);
   });
 
   it('reads a reroll, a number set and a floor, with a bonus by level and a state it holds in', () => {
@@ -2511,6 +2523,10 @@ describe("a feature's paid extras and rerolls (rule pack port 3e)", () => {
       { kind: 'rollReroll', on: SAVES, to: 1 },
       { kind: 'rollReroll', on: SAVES, die: 'one', atMost: 20 },
       { kind: 'rollReroll', on: SAVES, die: 'twice' },
+      { kind: 'rollReroll', on: SAVES, to: 10, bonus: 3 },
+      { kind: 'rollReroll', on: SAVES, floorScore: 'str', ...auto, bonus: { f: 'prof' } },
+      { kind: 'rollReroll', on: SAVES, free: true, inspiration: true },
+      { kind: 'rollReroll', on: SAVES, inspiration: true, reaction: true },
     );
     expect(r.effects).toEqual([]);
     const worse = '"auto" never makes the roll worse: a 1, the lower die, a number set or a floor';
@@ -2532,6 +2548,10 @@ describe("a feature's paid extras and rerolls (rule pack port 3e)", () => {
       '"to" is a whole number from 2 to 20',
       '"atMost" is a whole number from 1 to 19',
       '"die" is one of all, one, low, extra',
+      'a number set or a floor adds no "bonus": leave it out',
+      'a number set or a floor adds no "bonus": leave it out',
+      '"free" pays nothing: leave out "inspiration"',
+      '"inspiration" is the whole price: "reaction" is not true beside it',
     ]);
   });
 
