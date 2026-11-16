@@ -145,6 +145,20 @@ describe("renaming a feature's pool", () => {
     ]);
   });
 
+  it('keeps the same rename through a letter that leaves its key as it is', () => {
+    const guidance = feature(
+      { v: 1, effects: [POOL, ...spenders('ki', 'Flurry'), ...spenders('glow', 'Flare')] },
+      [KI as StoredEffect],
+    );
+    // "Ki " is keyed ki too, so the key stays on the class's for two letters.
+    for (const value of ['K', 'Ki', 'Ki ', 'Ki P', 'Ki Points']) name(value);
+    expect(guidance().effects).toEqual([
+      { ...POOL, key: 'ki-points', label: 'Ki Points' },
+      ...spenders('ki', 'Flurry'),
+      ...spenders('ki-points', 'Flare'),
+    ]);
+  });
+
   it('moves the spenders of each pool renamed in turn', () => {
     const sparks = { ...POOL, key: 'sparks', label: 'Sparks' };
     const guidance = feature({
@@ -205,16 +219,16 @@ describe("renaming an item's pool", () => {
       key: 'glow',
       resourceKey: 'glow',
     };
-    // Nor a price on a card that is not an action, the renamed pool's own among them.
-    const priced = { cost: { resource: 'glow', amount: 1 } };
-    const note = { kind: 'note', text: 'It glows.', ...priced };
-    const effects = anItem([{ ...POOL, ...priced }, stray, note]);
+    // Nor a price on a card that is not an action.
+    const note = { kind: 'note', text: 'It glows.', cost: { resource: 'glow', amount: 1 } };
+    const effects = anItem([POOL, stray, note]);
     name('Ember');
-    expect(effects()).toEqual([{ ...POOL, ...priced, key: 'ember', label: 'Ember' }, stray, note]);
+    expect(effects()).toEqual([{ ...POOL, key: 'ember', label: 'Ember' }, stray, note]);
   });
 
   it('keeps twins typed in turn one pool', () => {
-    const now = { ...POOL, edition: '2024' };
+    // A price a file gives the pool itself is no action's, and stays put.
+    const now = { ...POOL, edition: '2024', cost: { resource: 'glow', amount: 1 } };
     const then = { ...POOL, edition: '2014', max: 2 };
     const effects = anItem([now, then, ...spenders('glow', 'Flare')]);
     // A letter typed in one twin's name, the next in the other's.
