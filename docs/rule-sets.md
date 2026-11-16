@@ -281,6 +281,18 @@ Three stored fields came in with the roll parts, and a fourth after them, for ru
   So `"death"` takes no `abilities`, and with `"concentration"` any `abilities`
   list `con`.
 
+A paid extra (`rollPaid`, 3e) names one of `dice`, `poolDie`, `bonus` or
+`advantage`. A bonus is added once the d20 shows (`after`), advantage is claimed
+before it, so it waits on no failure (`ifFailed`), and a use given back on a
+roll that still failed (`spentOnSuccess`) needs `ifFailed`. A reroll
+(`rollReroll`, 3e) rerolls a `die` (`one` with `atMost`), or sets the d20 (`to`)
+or a floor (`floorScore`), which take no die and no `bonus`. One made as the d20
+lands (`auto`) is `free`, waits on nothing and never makes the roll worse: a 1,
+the lower die of advantage, a number set or a floor, and a floor and the lower
+die are made only so. Inspiration pays alone: never beside a reaction, a pool's
+die or `free`. Each refusal is one the roll prompt would otherwise drop or
+misread.
+
 The reader refuses a filter that could reach no roll, and `when` with
 disadvantage. A pack written before these fields, when the reader passed over
 them, now loses such an effect, with the problem shown.
