@@ -47,8 +47,8 @@ interface SpendRow {
 interface Restores {
   /**
    * The use, when it does not share the action's name: a spell the feature's
-   * own subclass or class grants, by the name its pool is keyed by
-   * (`additionalSpells`). The key is built from the subclass the sheet walks,
+   * own subclass or class grants, by its name (`spellPoolKey` keys its pool as
+   * `additionalSpells` does). The key is built from the subclass the sheet walks,
    * so a renamed copy of the subclass finds its own pool.
    */
   ownSpell?: string;
@@ -597,7 +597,7 @@ function linkBuyBack(
 ): void {
   if (uses !== undefined) col.add({ kind: 'resource', label, ...uses, origin });
   // Keyed as `additionalSpells` keys a granted spell's pool: by the origin's uid.
-  const own = ownSpell !== undefined ? `spell:${origin.uid}:${ownSpell}` : undefined;
+  const own = ownSpell !== undefined ? spellPoolKey(origin.uid, [ownSpell]) : undefined;
   const buyBack: ActionBuyBack = { resource, amount, ...(own !== undefined ? { own } : {}) };
   const target = col.effects.find(
     (e) =>
