@@ -1,5 +1,4 @@
 import { describe, expect, it } from 'vitest';
-import { onActionOf, SPEND_SEEDS } from '../../../tests-fixtures/spendSeeds';
 import { BUILT_IN_RULE_SETS } from '../../../tests-fixtures/testWorld';
 import { SPEND_POOLS, SPEND_SKIPPED } from '../../data5e/audit/spendScope';
 import { RULE_SET_TYPE } from '../castGuidance';
@@ -12,10 +11,9 @@ import {
   newCharacterDoc,
   SLOT_COST,
 } from '../types';
-import { SLOT_LINKS } from './slotLinks';
-import { codeLinksOf, linkCodeRows, linkPrice, linkSpend, SPEND_LINKS } from './spendLinks';
+import { linkSpend } from './spendLinks';
 
-// As every registry holds them: the rows moved out of the link tables.
+// As every registry holds them: the built-in rule sets, with every price.
 const ctx: EngineContext = {
   get: () => undefined,
   byType: (type) => (type === RULE_SET_TYPE ? BUILT_IN_RULE_SETS : []),
@@ -23,20 +21,13 @@ const ctx: EngineContext = {
 const origin: EffectOrigin = { label: 'Feature', uid: 'x', type: 'class' };
 const collector = () => new Collector(newCharacterDoc('c', 'H', 't'), ctx);
 
-/**
- * Every key's prices: its shipped spend row's links where the row moved there,
- * else its code rows' (`codeLinksOf`), so a rule a code row is held to still
- * holds once the row moves.
- */
+/** Every key's prices: its shipped spend row's links. */
 const PRICES: ReadonlyMap<string, readonly SpendLinkRow[]> = (() => {
   const prices = new Map<string, readonly SpendLinkRow[]>();
   for (const set of BUILT_IN_RULE_SETS) {
     for (const row of readRuleSet(set).rows) {
       if (row.part === 'spend') for (const key of row.keys) prices.set(key, row.links ?? []);
     }
-  }
-  for (const key of [...Object.keys(SPEND_LINKS), ...Object.keys(SLOT_LINKS)]) {
-    if (!prices.has(key)) prices.set(key, codeLinksOf(key));
   }
   return prices;
 })();
@@ -45,7 +36,7 @@ const COSTS = LINKS.flatMap(([key, link]) => ('cost' in link ? [[key, link] as c
 const resourceOf = (link: SpendLinkRow) =>
   'cost' in link ? link.cost.resource : link.buyBack.resource;
 
-describe('every price, in code or a shipped spend row', () => {
+describe('every price in a shipped spend row', () => {
   it('has one for every key', () => {
     expect([...PRICES].filter(([, links]) => links.length === 0)).toEqual([]);
   });
@@ -295,64 +286,5 @@ describe('linkSpend', () => {
     const col = collector();
     linkSpend(col, ['nothing like it|tst'], 'Nothing', origin);
     expect(col.effects).toEqual([]);
-  });
-});
-
-describe('a built-in spend row stands in for the code rows of its key (rule pack port 3b)', () => {
-  const keys = [...new Set([...Object.keys(SPEND_LINKS), ...Object.keys(SLOT_LINKS)])].sort();
-  // Every code row, as the links a moved row would hold, read as the app reads its files.
-  const read = readRuleSet(
-    JSON.parse(
-      JSON.stringify({
-        type: RULE_SET_TYPE,
-        v: 1,
-        name: 'Every link',
-        rows: keys.map((key) => ({ part: 'spend', keys: [key], links: codeLinksOf(key) })),
-      }),
-    ),
-  );
-  const linksOf = new Map(read.rows.map((r) => [r.keys[0], r.links ?? []]));
-
-  it('reads every code row as links', () => {
-    expect(read.problems).toEqual([]);
-    expect(read.rows).toHaveLength(keys.length);
-    // 1 pool row and 52 slot rows left in code, one key in both (Divine Reaper).
-    expect(keys).toHaveLength(1 + 52 - 1);
-  });
-
-  it('pays with a pool in SPEND_LINKS and with a slot or a die in SLOT_LINKS alone', () => {
-    // How a link applies turns on how its price is paid (`linkPrice`).
-    const slotOrDie = (r: string) => r === 'spell-slot' || r === 'hit-die';
-    expect(
-      Object.keys(SPEND_LINKS).filter((k) => slotOrDie(SPEND_LINKS[k]?.resource ?? '')),
-    ).toEqual([]);
-    expect(
-      Object.entries(SLOT_LINKS).filter(([, row]) =>
-        row.kind === 'spend' ? !slotOrDie(row.cost.resource) : false,
-      ),
-    ).toEqual([]);
-  });
-
-  it('puts the same effects on the sheet as the code rows, field for field', () => {
-    const differ: string[] = [];
-    for (const key of keys) {
-      const links = linksOf.get(key) ?? [];
-      const onAction = onActionOf(links);
-      for (const [state, seed] of Object.entries(SPEND_SEEDS)) {
-        const run = (link: (col: Collector, own: EffectOrigin) => void) => {
-          const col = collector();
-          const own: EffectOrigin = { label: 'Feature', uid: 'feature|tst', type: 'class' };
-          seed((e) => col.add(e), own, onAction);
-          link(col, own);
-          return JSON.stringify(col.effects);
-        };
-        const code = run((col, own) => linkCodeRows(col, key, 'Feature', own));
-        const data = run((col, own) => {
-          for (const link of links) linkPrice(col, link, 'Feature', own);
-        });
-        if (code !== data) differ.push(`${key} [${state}]`);
-      }
-    }
-    expect(differ).toEqual([]);
   });
 });

@@ -7,8 +7,8 @@ parts: `curated`, which stands in for `CURATED`
 `STANDING` (`src/engine/curated/standingEffects.ts`); `rollAdvantage`, which
 holds what was the advantage table, `ROLL_ADVANTAGES`; `rollExtra`, which
 stands in for `ROLL_EXTRAS` (`src/engine/curated/rollExtras.ts`); and `spend`,
-which stands in for the spend links, `SPEND_LINKS` and `SLOT_LINKS`
-(`src/engine/curated/spendLinks.ts`, `slotLinks.ts`). The files live in
+which holds what were the spend links, `SPEND_LINKS` and `SLOT_LINKS`
+(`linkSpend` in `src/engine/curated/spendLinks.ts` reads it). The files live in
 `src/rules/`, one a part. (Source of truth: `readRuleSet` and
 `mechanicsOf` in `src/engine/effects/mechanics.ts`, `src/data5e/builtInRules.ts`.)
 
@@ -82,7 +82,10 @@ on another feature's action (Totems), one for a spell the feature gives
 (Telekinetic Master), a Pact Magic slot with dice (Eldritch Smite), a slot
 buy-back with a level (Illusory Self), a Hit Point Die (2024 Durable), and a
 pool's price beside a slot's labelled chip (2014 Combat Wild Shape, whose key
-both tables held). Keys whose links are the same share a row.
+both tables held). Keys whose links are the same share a row. 3c moved every
+other pool price but Divine Reaper's (287 keys), and 3d the spell slot and Hit
+Point Die prices with Divine Reaper (52 keys), so `spend.json` holds all 354
+keys, in 115 rows, and both link tables are gone.
 
 ## A file
 
@@ -210,8 +213,7 @@ level count for them.
 
 A `spend` row is found under a class or subclass feature's, a feat's or an
 optional feature's roll keys, in the same order; traits have none. The first
-key with a row wins, and a key either link table still has stops the walk
-there, so a code row under an earlier key is still the one read.
+key with a row wins.
 
 ## Where a row sits
 
@@ -309,7 +311,7 @@ Renaming a pool moves every price that names it, and a pool never takes
 ## Spend rows
 
 A `spend` row prices the action of the feature it is found for, as the link
-tables did (rule pack port 3b, `linkPrice` in `spendLinks.ts`). Its `links` run
+tables did (rule pack port 3b to 3d, `linkPrice` in `spendLinks.ts`). Its `links` run
 in order, each a price as an action takes it ("An action's price", above):
 
 - **`cost`**, with `economy`, `label` and `note`. A pool's cost goes on the
@@ -340,10 +342,10 @@ its class, is missed, and the link adds its own action or nothing as above.
 A player's file prices an action itself (an action's `cost` and `buyBack`);
 spend rows are the app's.
 
-Every pool price but Divine Reaper's is a row in `spend.json` (3b and 3c).
-`SPEND_LINKS` keeps that one, since a key leaves both code tables at once and
-its slot buy-back is still in `SLOT_LINKS` (3d). JSON holds no comments, so the reasons
-the table gave beside its rows are kept here:
+Every price is a row in `spend.json`: the pool prices since 3b and 3c, the
+spell slot and Hit Point Die prices and Divine Reaper's since 3d, so no spend
+link is left in code. JSON holds no comments, so the reasons the tables gave
+beside their rows are kept here:
 
 - Monk prices name `focus`, the 2024 pool; `costOnSheet` finds a 2014 monk's
   ki (`SAME_POOL`).
@@ -387,17 +389,14 @@ equal to what the loader loads.
 
 Add it under `src/rules/`, list it in `FILES` in `builtInRules.ts` and in
 `BUILT_IN_RULE_SETS`; the tests fail on a file not listed. They also fail on a row the reader leaves anything
-out of, and on a key its part's code table (`CURATED`, `STANDING`,
-`ROLL_EXTRAS`, `SPEND_LINKS` or `SLOT_LINKS`) still has (the row would never be
-the one read, or the code row would be dead).
+out of, and on a key its part's code table (`CURATED`, `STANDING` or
+`ROLL_EXTRAS`) still has (the row would never be the one read, or the code row
+would be dead).
 
 ## Moving a row out of code
 
-1. Write the row with the effects the code row adds, in the code's order: spend
-   links find the first action of an origin. A spend row's links are what
-   `codeLinksOf` gives for its key: the pool's link, then the slot's or the
-   die's. A test holds `codeLinksOf` to the code rows for every key the tables
-   still have.
+1. Write the row with the effects the code row adds, in the code's order: a
+   spend link, for one, finds the first action of an origin.
 2. With the code row still in place, run `scripts/rules-probe.ts` (below). It
    must find no difference and no row that no build reads. (Until step 3 the
    tests fail on the key both tables hold.)
@@ -409,11 +408,12 @@ the one read, or the code row would be dead).
    instead (`emitRow` in `curatedEffects.test.ts`, `emit` in
    `standingEffects.test.ts`, `emitRolls` in `rollRows.test.ts`); a test
    context or registry holds `BUILT_IN_RULE_SETS`, as every registry does.
-6. For a spend row, the roll prompt's prices must not change either
+6. For a row the roll prompt prices (a spend row, a paid extra or a reroll),
+   the roll prompt's prices must not change either
    (`scripts/roll-price-census.ts`, below), and the census must be able to see
-   the move: run it once with the moved rows linking nothing, and when that
-   changes nothing, its zero proves nothing for those keys (no paid extra is
-   priced as their actions), so the probe's per-key check is the proof.
+   the move: run it once with the moved rows doing nothing, and when that
+   changes nothing, its zero proves nothing for those keys (for a spend row, no
+   paid extra is priced as its action), so the probe is the proof.
 
 The stored effect format is the one rule packs use, so a row that needs a field
 the format lacks widens the format for players too: `dcAbility: "strOrDex"` (a
@@ -551,7 +551,7 @@ this script copied in when the base has none). `compare` names the builds that
 changed, field by field, and with `--expect-zero` exits 1 when any did.
 
 `snapshot --coverage <file>` also writes, for each code table (`CURATED`,
-`STANDING`, `ROLL_EXTRAS`, `SPEND_LINKS`, `SLOT_LINKS`) and the built-in rows
+`STANDING`, `ROLL_EXTRAS`) and the built-in rows
 (a spend row's links), the keys no build read. A row read is not a row that added something (a code row for one
 feature level is read at every level and adds at one; a built-in row at one
 level, named with `@` and the level, is read only where it adds), but a row never read is
@@ -560,18 +560,17 @@ proved another way, before the code row goes.
 
 `scripts/rules-probe.ts` is that proof. It runs while a row is in both places
 (a built-in row whose key its part's code table, `CURATED`, `STANDING` or
-`ROLL_EXTRAS`, still has, or either link table for a `spend` row) and derives
+`ROLL_EXTRAS`, still has) and derives
 each build that reads the row twice in one process, once with the code row and
 once with the data row, comparing every sheet field and the actions and pools
 the build collected, since the sheet drops a price the character cannot pay (a
 pool or slots it lacks). On the code side a row drops only its moved keys, so a
 key that shares the row and moved earlier, with no code row left, still reads
 it; a key new to a row, with no code row, reads it both ways and is never
-compared, so `rules-diff` against the base is what shows it. Each moved spend
-key is also linked alone, both ways, in each state a feature may leave its
-actions in (`SPEND_SEEDS` in
-`tests-fixtures/spendSeeds.ts`), which proves a key no build reads; the summary
-lists those. Its builds go wider than
+compared, so `rules-diff` against the base is what shows it. Until 3d it also
+linked each moved spend key alone, both ways, in each state a feature may
+leave its actions in, which proved a key no build reads; that check went with
+the link tables. Its builds go wider than
 `rules-diff`'s. Each class and subclass that reads a moved row is built at
 every level from 1 to 20 in four states: plain and raging at 1 hit point, each
 with five ability arrays (every score 14, 8, 3 or 20, and a mixed one), and in
@@ -598,9 +597,8 @@ bun --tsconfig-override=tsconfig.app.json scripts/rules-probe.ts --release <cach
 A full run takes about 35 minutes (about 50 for the 287 spend keys of 3c);
 `--only <text>` probes only the moved keys
 that hold the text, in a minute or two, and may be given more than once (a
-mutant of several rows in one run). It exits 1 when a sheet differs, a spend
-key linked alone differs, or a moved row other than a spend row is read by no
-build. A build that throws the same way both times compared no sheet, so it
+mutant of several rows in one run). It exits 1 when a sheet differs or a moved
+row is read by no build. A build that throws the same way both times compared no sheet, so it
 counts for no row, and the summary says how many did.
 
 `scripts/roll-price-census.ts` records what the roll prompt offers for every
@@ -609,7 +607,7 @@ takes, on about 3,300 builds: every class and subclass at 20 in both rules
 versions and with the optional class features, each later option of each
 feature pick, every optional feature in up to two hosts, every feat on a
 Fighter 4 and a Wizard 20, and every race and subrace. A paid extra is priced
-as its feature's action, whose cost a spend link often sets, and the price is
+as its feature's action, whose cost a spend row often sets, and the price is
 worked out in the prompt, not on the sheet. It sees a spend row only through a
 paid extra priced as that row's action, with no use spent, so a buy-back, and
 a slot or Hit Point Die price (which the prompt never offers), never shows: the

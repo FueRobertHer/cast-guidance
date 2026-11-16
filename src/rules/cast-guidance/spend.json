@@ -33,6 +33,26 @@
     },
     {
       "part": "spend",
+      "keys": ["adept of the white robes|dsotdq"],
+      "links": [
+        {
+          "cost": {
+            "resource": "spell-slot",
+            "amount": 1,
+            "slotDice": {
+              "die": 6,
+              "base": 0,
+              "plain": true,
+              "plus": "your spellcasting modifier"
+            }
+          },
+          "economy": "reaction",
+          "note": "less damage to you or a creature within 30 feet"
+        }
+      ]
+    },
+    {
+      "part": "spend",
       "keys": [
         "agile strikes|college of dance|xphb",
         "defensive flourish|college of swords|xge",
@@ -80,6 +100,52 @@
             "amount": 1
           },
           "economy": "none"
+        }
+      ]
+    },
+    {
+      "part": "spend",
+      "keys": ["ancient might|hollow warden|rhw", "frozen haunt|winter walker|frhof"],
+      "links": [
+        {
+          "buyBack": {
+            "resource": "spell-slot",
+            "amount": 1,
+            "minLevel": 4
+          }
+        }
+      ]
+    },
+    {
+      "part": "spend",
+      "keys": [
+        "animating performance|college of creation|tce",
+        "distant transposition|conjurer|au",
+        "drake's breath|drakewarden|ftd",
+        "event horizon|graviturgy magic|egw",
+        "mantle of majesty|college of glamour|xphb"
+      ],
+      "links": [
+        {
+          "buyBack": {
+            "resource": "spell-slot",
+            "amount": 1,
+            "minLevel": 3
+          }
+        }
+      ]
+    },
+    {
+      "part": "spend",
+      "keys": ["arcane ward|abjurer|xphb"],
+      "links": [
+        {
+          "cost": {
+            "resource": "spell-slot",
+            "amount": 1
+          },
+          "economy": "bonus",
+          "note": "the ward regains 2 a slot level"
         }
       ]
     },
@@ -144,6 +210,28 @@
             "key": "aspect-of-the-wyrm",
             "max": 1,
             "resetOn": "long"
+          }
+        }
+      ]
+    },
+    {
+      "part": "spend",
+      "keys": [
+        "avenging angel|oath of vengeance|xphb",
+        "elder champion|oath of the ancients|xphb",
+        "holy nimbus|oath of devotion|xphb",
+        "living legend|oath of glory|tce",
+        "living legend|oath of glory|xphb",
+        "mortal bulwark|oath of the watchers|tce",
+        "noble scion|oath of the noble genies|frhof",
+        "splintered summons|conjurer|au"
+      ],
+      "links": [
+        {
+          "buyBack": {
+            "resource": "spell-slot",
+            "amount": 1,
+            "minLevel": 5
           }
         }
       ]
@@ -215,6 +303,23 @@
     },
     {
       "part": "spend",
+      "keys": [
+        "beguiling defenses|archfey patron|xphb",
+        "clairvoyant combatant|great old one patron|xphb",
+        "hurl through hell|fiend patron|xphb"
+      ],
+      "links": [
+        {
+          "buyBack": {
+            "resource": "spell-slot",
+            "amount": 1,
+            "pactOnly": true
+          }
+        }
+      ]
+    },
+    {
+      "part": "spend",
       "keys": ["beguiling magic|college of glamour|xphb"],
       "links": [
         {
@@ -246,6 +351,21 @@
             "resource": "sorcery-points",
             "amount": 2
           }
+        }
+      ]
+    },
+    {
+      "part": "spend",
+      "keys": ["bloodlust|abh"],
+      "links": [
+        {
+          "cost": {
+            "resource": "hit-die",
+            "amount": 1,
+            "hitDieHeals": "rollPlusCon",
+            "ownUseToo": true
+          },
+          "economy": "none"
         }
       ]
     },
@@ -630,6 +750,58 @@
     },
     {
       "part": "spend",
+      "keys": ["divine foreknowledge|knowledge domain|frhof"],
+      "links": [
+        {
+          "buyBack": {
+            "resource": "spell-slot",
+            "amount": 1,
+            "minLevel": 6
+          }
+        }
+      ]
+    },
+    {
+      "part": "spend",
+      "keys": ["divine reaper|grave domain|rhw"],
+      "links": [
+        {
+          "cost": {
+            "resource": "channel-divinity",
+            "amount": 1
+          },
+          "economy": "none"
+        },
+        {
+          "buyBack": {
+            "resource": "spell-slot",
+            "amount": 1,
+            "minLevel": 6
+          }
+        }
+      ]
+    },
+    {
+      "part": "spend",
+      "keys": ["divine smite|paladin|phb"],
+      "links": [
+        {
+          "cost": {
+            "resource": "spell-slot",
+            "amount": 1,
+            "slotDice": {
+              "die": 8,
+              "base": 1,
+              "maxDice": 5
+            }
+          },
+          "economy": "none",
+          "note": "1d8 more against an undead or fiend"
+        }
+      ]
+    },
+    {
+      "part": "spend",
       "keys": [
         "divine spark|cleric|xphb",
         "mind magic|knowledge domain|frhof",
@@ -699,6 +871,26 @@
     },
     {
       "part": "spend",
+      "keys": [
+        "drake companion|drakewarden|ftd",
+        "eldritch cannon|artillerist|efa",
+        "eldritch cannon|artillerist|tce",
+        "eyes of night|twilight domain|tce",
+        "manifest mind|order of scribes|tce",
+        "reanimated companion|reanimator|rhw",
+        "universal speech|college of eloquence|tce"
+      ],
+      "links": [
+        {
+          "buyBack": {
+            "resource": "spell-slot",
+            "amount": 1
+          }
+        }
+      ]
+    },
+    {
+      "part": "spend",
       "keys": ["drunkard's luck|way of the drunken master|xge"],
       "links": [
         {
@@ -721,6 +913,21 @@
             "hitDieHeals": "roll"
           },
           "economy": "bonus"
+        }
+      ]
+    },
+    {
+      "part": "spend",
+      "keys": ["dwarven fortitude|xge", "lifedrinker|xphb"],
+      "links": [
+        {
+          "cost": {
+            "resource": "hit-die",
+            "amount": 1,
+            "hitDieHeals": "rollPlusCon",
+            "hitDieAtLeast": 1
+          },
+          "economy": "none"
         }
       ]
     },
@@ -862,6 +1069,20 @@
     },
     {
       "part": "spend",
+      "keys": ["experimental elixir|alchemist|efa", "experimental elixir|alchemist|tce"],
+      "links": [
+        {
+          "cost": {
+            "resource": "spell-slot",
+            "amount": 1
+          },
+          "economy": "action",
+          "label": "Create Experimental Elixir"
+        }
+      ]
+    },
+    {
+      "part": "spend",
       "keys": ["eyes of the dark|shadow magic|xge"],
       "links": [
         {
@@ -897,6 +1118,50 @@
             "amount": 4
           },
           "economy": "action"
+        }
+      ]
+    },
+    {
+      "part": "spend",
+      "keys": ["flexible casting|sorcerer|phb"],
+      "links": [
+        {
+          "cost": {
+            "resource": "spell-slot",
+            "amount": 1,
+            "slotRefills": "sorcery-points"
+          },
+          "economy": "bonus",
+          "label": "Slot to Sorcery Points"
+        }
+      ]
+    },
+    {
+      "part": "spend",
+      "keys": ["font of inspiration|bard|xphb"],
+      "links": [
+        {
+          "buyBack": {
+            "resource": "spell-slot",
+            "amount": 1,
+            "own": "bardic-inspiration"
+          },
+          "onAction": "Bardic Inspiration"
+        }
+      ]
+    },
+    {
+      "part": "spend",
+      "keys": ["font of magic|sorcerer|xphb"],
+      "links": [
+        {
+          "cost": {
+            "resource": "spell-slot",
+            "amount": 1,
+            "slotRefills": "sorcery-points"
+          },
+          "economy": "none",
+          "label": "Slot to Sorcery Points"
         }
       ]
     },
@@ -999,7 +1264,12 @@
     },
     {
       "part": "spend",
-      "keys": ["illusory self|illusionist|xphb"],
+      "keys": [
+        "illusory self|illusionist|xphb",
+        "moonlight step|circle of the moon|xphb",
+        "performance of creation|college of creation|tce",
+        "strixhaven mascot|scc"
+      ],
       "links": [
         {
           "buyBack": {
@@ -1070,6 +1340,21 @@
     },
     {
       "part": "spend",
+      "keys": ["light bringer|abh"],
+      "links": [
+        {
+          "cost": {
+            "resource": "hit-die",
+            "amount": 1,
+            "hitDieHeals": "roll",
+            "ownUseToo": true
+          },
+          "economy": "bonus"
+        }
+      ]
+    },
+    {
+      "part": "spend",
       "keys": ["lunar phenomenon|lunar sorcery|dsotdq"],
       "links": [
         {
@@ -1114,6 +1399,21 @@
     },
     {
       "part": "spend",
+      "keys": ["mystic focus|warrior of the mystic arts|au"],
+      "links": [
+        {
+          "cost": {
+            "resource": "spell-slot",
+            "amount": 1,
+            "slotRefills": "focus"
+          },
+          "economy": "none",
+          "label": "Slot to Focus Points"
+        }
+      ]
+    },
+    {
+      "part": "spend",
       "keys": ["oceanic gift|circle of the sea|xphb"],
       "links": [
         {
@@ -1122,6 +1422,34 @@
             "amount": "varies"
           },
           "economy": "none"
+        }
+      ]
+    },
+    {
+      "part": "spend",
+      "keys": ["primal companion|beast master|tce", "primal companion|beast master|xphb"],
+      "links": [
+        {
+          "cost": {
+            "resource": "spell-slot",
+            "amount": 1
+          },
+          "economy": "action",
+          "label": "Revive Primal Companion"
+        }
+      ]
+    },
+    {
+      "part": "spend",
+      "keys": ["primeval awareness|ranger|phb"],
+      "links": [
+        {
+          "cost": {
+            "resource": "spell-slot",
+            "amount": 1
+          },
+          "economy": "action",
+          "note": "1 minute a slot level"
         }
       ]
     },
@@ -1270,6 +1598,34 @@
     },
     {
       "part": "spend",
+      "keys": ["song of defense|bladesinger|frhof"],
+      "links": [
+        {
+          "cost": {
+            "resource": "spell-slot",
+            "amount": 1
+          },
+          "economy": "reaction",
+          "note": "5 less damage a slot level, while your Bladesong is active"
+        }
+      ]
+    },
+    {
+      "part": "spend",
+      "keys": ["song of defense|bladesinging|tce"],
+      "links": [
+        {
+          "cost": {
+            "resource": "spell-slot",
+            "amount": 1
+          },
+          "economy": "reaction",
+          "note": "5 less damage a slot level"
+        }
+      ]
+    },
+    {
+      "part": "spend",
       "keys": ["sorcery incarnate|sorcerer|xphb"],
       "links": [
         {
@@ -1307,6 +1663,20 @@
             "resource": "wild-shape",
             "amount": 1
           }
+        }
+      ]
+    },
+    {
+      "part": "spend",
+      "keys": ["steel defender|battle smith|efa", "steel defender|battle smith|tce"],
+      "links": [
+        {
+          "cost": {
+            "resource": "spell-slot",
+            "amount": 1
+          },
+          "economy": "action",
+          "label": "Revive Steel Defender"
         }
       ]
     },
@@ -1414,6 +1784,21 @@
     },
     {
       "part": "spend",
+      "keys": ["vestige recovery|vestige patron|au"],
+      "links": [
+        {
+          "cost": {
+            "resource": "spell-slot",
+            "amount": 1,
+            "pactOnly": true,
+            "ownUseToo": true
+          },
+          "economy": "reaction"
+        }
+      ]
+    },
+    {
+      "part": "spend",
       "keys": ["war god's blessing|war domain|xphb"],
       "links": [
         {
@@ -1436,6 +1821,20 @@
             "optional": true
           },
           "economy": "action"
+        }
+      ]
+    },
+    {
+      "part": "spend",
+      "keys": ["wild resurgence|druid|xphb"],
+      "links": [
+        {
+          "buyBack": {
+            "resource": "spell-slot",
+            "amount": 1,
+            "own": "wild-shape"
+          },
+          "onAction": "Wild Shape"
         }
       ]
     }

@@ -19,8 +19,6 @@
  * Relative imports only: `scripts/data-judge.ts` loads this under plain Bun.
  */
 import { RULE_SET_TYPE } from '../../engine/castGuidance';
-import { SLOT_LINKS } from '../../engine/curated/slotLinks';
-import { SPEND_LINKS } from '../../engine/curated/spendLinks';
 import { builtInRuleIn } from '../../engine/effects/mechanics';
 import { chipPhrase } from '../../engine/effects/proseScan';
 import { HIT_DIE_COST, SLOT_COST } from '../../engine/types';
@@ -213,8 +211,8 @@ const SLOT_OR_POOL = 'a slot or a use of another pool pays for it, which no chip
 
 /**
  * Features that name a pool and are no cost on an action, per pool. Each was read,
- * so what the report still lists stays worth reading. Spell slots and Hit Point
- * Dice are `SLOT_LINKS` rows, read on the same terms (data function pass item 10).
+ * so what the report still lists stays worth reading. Spell slot and Hit Point
+ * Die prices are spend rows too, read on the same terms (data function pass item 10).
  */
 export const SPEND_SKIPPED: Readonly<Record<string, Readonly<Record<string, string>>>> = {
   focus: {
@@ -391,22 +389,10 @@ function proposal(state: string, answers: Answers): string {
 
 type RuleSets = ReturnType<ByType['byType']>;
 
-/**
- * What a key's prices are paid with: its built-in `spend` row's links, which the
- * sheet reads first, else its code rows' (`linkSpend`). A key moves out of both
- * code tables at once, so it is in one place or the other.
- */
+/** What a key's prices are paid with: its built-in `spend` row's links (`linkSpend`). */
 function paidWith(key: string, ruleSets: RuleSets): string[] {
   const row = builtInRuleIn(ruleSets, 'spend', [key]);
-  if (row !== undefined) {
-    return (row.links ?? []).map((l) => ('cost' in l ? l.cost.resource : l.buyBack.resource));
-  }
-  const link = SPEND_LINKS[key];
-  const slot = SLOT_LINKS[key];
-  return [
-    ...(link !== undefined ? [link.resource] : []),
-    ...(slot === undefined ? [] : [slot.kind === 'restore' ? SLOT_COST : slot.cost.resource]),
-  ];
+  return (row?.links ?? []).map((l) => ('cost' in l ? l.cost.resource : l.buyBack.resource));
 }
 
 /** A link or a reason counts for its own pool: a feature can name several. */
