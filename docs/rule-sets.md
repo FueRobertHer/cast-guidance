@@ -334,7 +334,10 @@ base use, which slots and how the die heals, and "Buys back a use with" a pool
 or a slot, with "Restores" for the use it gives back (at first the pool the
 action spends). A slot's dice, the points it gives back and `ownUseToo` are
 kept as a file writes them, and a value no box offers shows as written.
-Renaming a pool moves every price that names it, and a pool never takes
+Renaming a pool moves every price that names it as the rename starts (and a
+spell cast with its uses, and the same pool for the other rules version), so a
+pool whose key passes through another's while its name is typed (`ki` on the
+way to "Kindle") leaves what spends that one alone. A pool never takes
 `spell-slot` or `hit-die` as its key.
 
 ## Spend rows
