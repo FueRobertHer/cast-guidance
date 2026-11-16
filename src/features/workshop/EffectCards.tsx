@@ -6,7 +6,7 @@
  * reader the sheet uses, so a card that would not count says why, here.
  */
 import { CircleAlert, Plus, X } from 'lucide-react';
-import { useId, useMemo, useState } from 'react';
+import { useId, useState } from 'react';
 import {
   EFFECT_EDITIONS,
   isRecord,
@@ -23,7 +23,6 @@ import { askChoice } from '@/ui/dialogs';
 import { fieldClass } from '@/ui/TextField';
 import type { EditorProps } from './editorTypes';
 import { ABILITY_WORDS, Field, Section, Select } from './fields';
-import { pricedAlone } from './paidPrice';
 
 type Eff = StoredEffect;
 type Options = ReadonlyArray<readonly [string, string]>;
@@ -313,8 +312,6 @@ const FREE_WITH: Options = [
   ['free', 'Nothing'],
   ['auto', 'Nothing, as the d20 lands'],
 ];
-/** Choices that pay with the entry's own action or pool. */
-const PAYS_WITH_USE = new Set(['use', 'useReaction', 'noReaction']);
 
 /** What an automatic one waits on, which it leaves out. */
 const WAITS = ['ifFailed', 'when', 'reaction', 'inspiration'];
@@ -1697,7 +1694,6 @@ function Card({
   pools,
   spells,
   inPlay,
-  unpaid,
   readOnly,
   onChange,
   onRemove,
@@ -1708,8 +1704,6 @@ function Card({
   pools: readonly Eff[];
   spells: readonly SpellOption[];
   inPlay: boolean;
-  /** A paid extra or a reroll paid with its use that nothing in the entry pays for. */
-  unpaid: boolean;
   readOnly: boolean;
   onChange: (next: Eff, renamedKey?: [string, string]) => void;
   onRemove: () => void;
@@ -1875,13 +1869,6 @@ function Card({
           )}
         </div>
       )}
-      {unpaid && (
-        <p className="pr-2 text-caption text-ink-muted">
-          Nothing here pays for it, so the roll prompt never offers it. It is paid with this entry's
-          Action, which has to spend uses or take the reaction, or with no Action, with its Uses per
-          rest named for it or its only one.
-        </p>
-      )}
       {state !== '' && readOnly && (
         <span className="text-caption text-ink-muted">{word(STATES, state)}</span>
       )}
@@ -1932,12 +1919,9 @@ export function EffectCards({
   spells,
   hide,
   resources,
-  name,
   inPlay = false,
 }: {
   effects: unknown;
-  /** The entry's name: the roll prompt pays for its paid extras by it first. */
-  name?: string;
   onChange: (next: Eff[]) => void;
   readOnly: boolean;
   /**
@@ -1962,27 +1946,6 @@ export function EffectCards({
       .filter((p) => p.startsWith(`effect ${i + 1}:`) || p.startsWith(`effect ${i + 1} (`))
       .map((p) => p.replace(/^effect \d+( \([^)]*\))?: /, ''));
   const add = (spec: KindSpec) => onChange([...list, spec.make()]);
-  // The paid extras and rerolls, by place, that the roll prompt would find no price for:
-  // none on a copy that keeps what it inherits, whose own price is not here to see.
-  const unpaid = useMemo(() => {
-    const out = new Set<number>();
-    if (inherits !== undefined && replace !== true) return out;
-    list.forEach((e, i) => {
-      if (e.kind !== 'rollPaid' && e.kind !== 'rollReroll') return;
-      if (!PAYS_WITH_USE.has(paidWithOf(e))) return;
-      const reaction = typeof e.reaction === 'boolean' ? e.reaction : undefined;
-      const edition = editionOf(e);
-      if (
-        !pricedAlone(name ?? '', list, reaction, {
-          kept: resources,
-          ...(edition !== undefined ? { edition } : {}),
-        })
-      ) {
-        out.add(i);
-      }
-    });
-    return out;
-  }, [list, name, resources, inherits, replace]);
   const more = async () => {
     const id = await askChoice({
       title: 'What does it do?',
@@ -2020,7 +1983,6 @@ export function EffectCards({
             spells={spells ?? []}
             problems={problemsOf(i)}
             inPlay={inPlay}
-            unpaid={unpaid.has(i)}
             readOnly={readOnly}
             onRemove={() => onChange(list.filter((_, j) => j !== i))}
             onChange={(next, renamed) =>
@@ -2096,7 +2058,6 @@ export function EntryEffects({
     <Section title="What it does on the sheet">
       <EffectCards
         effects={g.effects}
-        name={typeof draft.name === 'string' ? draft.name : ''}
         readOnly={readOnly}
         inherits={original !== undefined ? String(original.name) : undefined}
         replace={g.replace === true}

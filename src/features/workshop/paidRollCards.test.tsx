@@ -8,7 +8,6 @@ import { useState } from 'react';
 import { MemoryRouter } from 'react-router';
 import { afterEach, describe, expect, it } from 'vitest';
 import { EntityRegistry } from '@/data5e/normalize';
-import type { StoredEffect } from '@/engine/castGuidance';
 import { deriveSheet } from '@/engine/derive';
 import { readStoredEffects } from '@/engine/effects/mechanics';
 import { rollEffects } from '@/engine/playRules';
@@ -16,10 +15,9 @@ import { type DataEntity, type EngineContext, newCharacterDoc } from '@/engine/t
 import { pricedRollEffects } from '@/features/sheet/rollPrice';
 import rollExtras from '@/rules/cast-guidance/roll-extras.json';
 import { makeTestContext } from '../../../tests-fixtures/testWorld';
-import { EffectCards, moreKinds } from './EffectCards';
+import { moreKinds } from './EffectCards';
 import { editor as feat } from './editors/FeatEditor';
 import type { Json } from './editorTypes';
-import { pricedAlone } from './paidPrice';
 
 afterEach(cleanup);
 
@@ -261,17 +259,6 @@ describe('the Paid extra card', () => {
     expect(choices('Paid extra: Paid with')).not.toContain('inspiration');
     pick('Paid extra: Ability', 'str');
     expect(effects()[1]).toEqual({ ...poolDie, on: { rolls: ['attack'], abilities: ['str'] } });
-  });
-
-  it('says what pays for it while the entry has nothing to pay with', () => {
-    const text = /Nothing here pays for it/;
-    withCards([PAID]);
-    expect(screen.getByText(text)).toBeTruthy();
-    pick('Paid extra: Paid with', 'inspiration');
-    expect(screen.queryByText(text)).toBeNull();
-    cleanup();
-    withCards([POOL, PAID]);
-    expect(screen.queryByText(text)).toBeNull();
   });
 
   it('stores only what the reader takes and the prompt offers, whatever the boxes say', () => {
@@ -516,181 +503,25 @@ describe('a shipped paid extra or reroll on a card', () => {
   });
 });
 
-/**
- * A character (a Warrior 4 unless `classes` says) with the feat Gift, its
- * effects as the cards left them, and other feats beside it (a pool kept
- * elsewhere, as a class keeps one).
- */
-function sheetWith(
-  effects: Json[],
-  others: Record<string, Json[]> = {},
-  classes: Array<[string, number]> = [['Warrior', 4]],
-) {
+/** A Warrior 4 with the feat Gift, its effects as the cards left them. */
+function sheetWith(effects: Json[]) {
   const base = makeTestContext();
-  const feats: DataEntity[] = [['Gift', effects] as const, ...Object.entries(others)].map(
-    ([name, list]) => ({ name, source: 'HB', entries: [], castGuidance: { v: 1, effects: list } }),
-  );
-  const featOf = (name: string) =>
-    feats.find((f) => String(f.name).toLowerCase() === name.toLowerCase());
+  const gift: DataEntity = {
+    name: 'Gift',
+    source: 'HB',
+    entries: [],
+    castGuidance: { v: 1, effects },
+  };
   const ctx: EngineContext = {
     get: (type, name, source) =>
-      (type === 'feat' ? featOf(name) : undefined) ?? base.get(type, name, source),
-    byType: (type) => [...base.byType(type), ...(type === 'feat' ? feats : [])],
+      type === 'feat' && name.toLowerCase() === 'gift' ? gift : base.get(type, name, source),
+    byType: (type) => [...base.byType(type), ...(type === 'feat' ? [gift] : [])],
   };
   const doc = newCharacterDoc('c', 'Hero', 't');
-  doc.classes = classes.map(([name, levels]) => ({ ref: { name, source: 'TST' }, levels, hp: [] }));
-  doc.feats = feats.map((f, i) => ({
-    ref: { name: String(f.name), source: 'HB' },
-    instanceId: `f${i}`,
-  }));
+  doc.classes = [{ ref: { name: 'Warrior', source: 'TST' }, levels: 4, hp: [] }];
+  doc.feats = [{ ref: { name: 'Gift', source: 'HB' }, instanceId: 'f0' }];
   return { sheet: deriveSheet(doc, ctx), play: doc.play };
 }
-
-describe('the price caption', () => {
-  const CAPTION = /Nothing here pays for it/;
-  const CHARGES = { kind: 'resource', key: 'charges', label: 'Charges', max: 2, reset: 'long' };
-  const SPARKS = { kind: 'resource', key: 'sparks', label: 'Sparks', max: 2, reset: 'long' };
-  const zap = (more: Json = {}) => ({ kind: 'action', economy: 'action', label: 'Zap', ...more });
-  const BEFORE = { kind: 'rollPaid', on: { rolls: ['check'] }, dice: '1d4' };
-  const ON_SAVES = { kind: 'rollReroll', on: { rolls: ['save'] } };
-  /** Each entry: what Gift gives beside the card, and a pool kept elsewhere. */
-  const SHAPES: Array<[string, Json[], Json[]?]> = [
-    ['nothing', []],
-    ['a pool named for it', [POOL]],
-    ['one pool of another name', [CHARGES]],
-    ['two pools, neither named for it', [CHARGES, SPARKS]],
-    ['two pools, one named for it', [CHARGES, POOL]],
-    ['a pool and an action that costs nothing', [CHARGES, zap()]],
-    ['an action that costs nothing', [zap()]],
-    ['a bonus action that costs nothing', [zap({ economy: 'bonus' })]],
-    ['a reaction that costs nothing', [zap({ economy: 'reaction' })]],
-    [
-      'an action spending a pool',
-      [CHARGES, SPARKS, zap({ cost: { resource: 'sparks', amount: 1 } })],
-    ],
-    [
-      'an action spending varies',
-      [CHARGES, zap({ cost: { resource: 'charges', amount: 'varies' } })],
-    ],
-    [
-      'an action spending a pool, optional',
-      [CHARGES, zap({ cost: { resource: 'charges', amount: 1, optional: true } })],
-    ],
-    ['an action spending a slot', [zap({ cost: { resource: 'spell-slot', amount: 1 } })]],
-    [
-      'an action spending a 2nd level pact slot',
-      [zap({ cost: { resource: 'spell-slot', amount: 1, pactOnly: true, minLevel: 2 } })],
-    ],
-    ['an action spending a Hit Point Die', [zap({ cost: { resource: 'hit-die', amount: 1 } })]],
-    ['an action named for it, sharing its pool', [POOL, zap({ label: 'Gift' })]],
-    ['only a pool kept elsewhere', [], [CHARGES]],
-    [
-      'an action spending a pool kept elsewhere',
-      [zap({ cost: { resource: 'charges', amount: 1 } })],
-      [CHARGES],
-    ],
-  ];
-  const PRICES: Array<[string, Json]> = [
-    ['its use', {}],
-    ['its use and your reaction', { reaction: true }],
-    ['its use, never your reaction', { reaction: false }],
-  ];
-
-  it('shows exactly when the roll prompt finds no price for it', () => {
-    const wrong: string[] = [];
-    for (const [shape, list, elsewhere = []] of SHAPES) {
-      for (const [price, fields] of PRICES) {
-        for (const card of [
-          { ...BEFORE, ...fields },
-          { ...ON_SAVES, ...fields },
-        ]) {
-          // A character who can pay any cost: a slot or a die is never added to a roll.
-          const { sheet, play } = sheetWith(
-            [...list, card],
-            elsewhere.length > 0 ? { Store: elsewhere } : {},
-            [
-              ['Sorcerer', 17],
-              ['Pactcaster', 3],
-            ],
-          );
-          const priced = pricedRollEffects(
-            rollEffects(
-              sheet,
-              card.kind === 'rollPaid'
-                ? { kind: 'check', ability: 'str' }
-                : { kind: 'save', ability: 'con' },
-            ),
-            sheet,
-            play,
-          );
-          const offered =
-            (card.kind === 'rollPaid' ? priced.offers : (priced.rerollOffers ?? [])).length > 0;
-          render(
-            <EffectCards
-              name="Gift"
-              effects={[...list, card]}
-              resources={elsewhere as StoredEffect[]}
-              readOnly={false}
-              onChange={() => {}}
-            />,
-          );
-          const shown = screen.queryByText(CAPTION) !== null;
-          if (shown === offered)
-            wrong.push(
-              `${shape}, ${price}, ${String(card.kind)}: offered ${offered}, caption ${shown}`,
-            );
-          cleanup();
-        }
-      }
-    }
-    expect(wrong, wrong.join('\n')).toEqual([]);
-  });
-
-  it('prices a pool by what it costs, not by how many uses one character has', () => {
-    const byScore = { ...CHARGES, max: { f: 'mod.int' } };
-    expect(pricedAlone('Gift', [byScore, BEFORE], undefined)).toBe(true);
-    expect(pricedAlone('Gift', [BEFORE], undefined)).toBe(false);
-  });
-
-  it('prices under the rules version the card counts under', () => {
-    const only = (edition: string) => ({ ...CHARGES, edition });
-    for (const edition of ['2014', '2024'] as const) {
-      expect(
-        pricedAlone('Gift', [only(edition), { ...BEFORE, edition }], undefined, { edition }),
-      ).toBe(true);
-      render(
-        <EffectCards
-          name="Gift"
-          effects={[only(edition), { ...BEFORE, edition }]}
-          readOnly={false}
-          onChange={() => {}}
-        />,
-      );
-      expect(screen.queryByText(CAPTION)).toBeNull();
-      cleanup();
-    }
-  });
-
-  it('stays silent on a copy that keeps what it inherits, and speaks once it starts from nothing', () => {
-    const at = (replace: boolean) => {
-      render(
-        <EffectCards
-          name="Gift"
-          effects={[BEFORE]}
-          inherits="Gift"
-          replace={replace}
-          readOnly={false}
-          onChange={() => {}}
-        />,
-      );
-      const shown = screen.queryByText(CAPTION) !== null;
-      cleanup();
-      return shown;
-    };
-    expect(at(false)).toBe(false);
-    expect(at(true)).toBe(true);
-  });
-});
 
 describe('a feat the cards write, on a sheet', () => {
   it('is offered priced as a use of its pool, and not once the pool is spent', () => {
