@@ -275,7 +275,8 @@ describe('the price card', () => {
       expect(shapes.some((a) => costOf(a)?.resource === resource)).toBe(true);
     }
     expect(shapes.some((a) => a.buyBack !== undefined)).toBe(true);
-  });
+    // About 5 seconds alone; a loaded machine slows a 400-step render walk several times over.
+  }, 60_000);
 });
 
 describe('amendWords', () => {
