@@ -82,8 +82,12 @@ const TAKES_ABILITY = new Set(['attack', 'save', 'check', 'proficient']);
  */
 const PAID_ROLL_KINDS = ROLL_KINDS.filter(([k]) => k !== 'death' && k !== 'concentration');
 
-/** Initiative has no failure to turn into a success: the prompt never offers one that waits on it. */
-const onInitiative = (e: Eff) => rollKindOf(e.on) === 'initiative';
+/**
+ * Initiative has no failure to turn into a success: the prompt never offers one
+ * that waits on it. A filter naming initiative reaches nothing else, whatever
+ * else it narrows.
+ */
+const onInitiative = (e: Eff) => isRecord(e.on) && e.on.initiative === true;
 
 /**
  * A paid extra or a reroll the author has just put on initiative: one offered

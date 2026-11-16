@@ -235,6 +235,17 @@ describe('the Paid extra card', () => {
     pick('Paid extra: Dice', '1d6');
     expect(kept()[1]).toEqual({ ...failed, dice: '1d6' });
     cleanup();
+    // One the On box shows as written is on initiative all the same.
+    const narrowed = {
+      kind: 'rollReroll',
+      on: { rolls: ['check'], initiative: true, abilities: ['dex'] },
+    };
+    withCards([POOL, narrowed]);
+    expect(choices('Reroll: Offered')).toEqual(['']);
+    cleanup();
+    withCards([POOL, { ...PAID, ifFailed: undefined, on: narrowed.on }]);
+    expect(choices('Paid extra: Offered')).toEqual(['before', 'after']);
+    cleanup();
     const reroll = withCards([POOL, REROLL]);
     pick('Reroll: On', 'initiative');
     expect(reroll()[1]).toEqual({ kind: 'rollReroll', on: { rolls: ['check'], initiative: true } });
