@@ -92,6 +92,8 @@ export function FeatureEditor({
             onChange={(effects) =>
               setGuidance({ effects: effects.length > 0 ? effects : undefined })
             }
+            amend={g.amend}
+            onAmend={(amend) => setGuidance({ amend: amend.length > 0 ? amend : undefined })}
           />
         </div>
       )}

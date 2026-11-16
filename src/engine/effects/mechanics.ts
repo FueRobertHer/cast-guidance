@@ -12,6 +12,10 @@
  *    links; an item's magic fields. A built-in rule set's row (`RULE_SET_TYPE`)
  *    under the subject's `ruleKeys` is its curated row, in place of `CURATED`.
  *
+ * Last, what layer 3 gave takes the player's prices (`amend`): the entry's own,
+ * then each pack patch's, on inherited actions only, so never on an action the
+ * entry's author or a pack wrote.
+ *
  * Data without `castGuidance`, and a character no pack applies to, reaches only
  * layer 3, exactly as the call sites did before this seam.
  *
@@ -21,6 +25,7 @@
  * as a sheet warning, and that effect does not count; nothing here throws.
  */
 import {
+  type AmendedAmount,
   clip,
   EARLY_KINDS,
   EFFECT_EDITIONS,
@@ -260,6 +265,8 @@ export interface ReadMechanics {
   readable: boolean;
   effects: readonly EffectTemplate[];
   drop: readonly DropRule[];
+  /** Prices it puts on the actions it inherits, in order. */
+  amend: readonly AmendRule[];
   /** "Start from nothing": it inherits no curated row, prose scan or spend link. */
   replace: boolean;
   /** The official entry it copies, whose curated row and spend links it inherits. */
@@ -655,11 +662,12 @@ const slotDice: Field = (v, r, key) => {
 // A cost's fields come out in the order the link tables wrote them, before rule
 // pack port 3b to 3d moved every price into `spend.json`, so the moves changed
 // no sheet. A buy-back's keep 3a's order (`own` before the slot fields).
+const costAmount: Field = (x, r, k) => (x === 'varies' ? x : int(0, 999)(x, r, k));
 const actionCost: Field = (v, r, key) =>
   paidWith(
     record({
       resource: [text(), true],
-      amount: [(x, rr, k) => (x === 'varies' ? x : int(0, 999)(x, rr, k)), true],
+      amount: [costAmount, true],
       optional: [flag],
       minLevel: [int(1, 9)],
       pactOnly: [flag],
@@ -711,6 +719,58 @@ const action: Build = (o, r) => ({
   ...opt(o, r, 'regains', record({ resource: [text(), true], amount: [int(0, 999), true] })),
   ...opt(o, r, 'spendsNoUse', flag),
 });
+
+/** A player's price on an inherited action (`StoredAmend`), read. */
+export interface AmendRule {
+  /** The action's name as the sheet shows it, in any case. Absent: its first inherited action. */
+  label?: string;
+  cost?: ActionCost | AmendedAmount;
+  buyBack?: ActionBuyBack;
+}
+
+/** A `cost` with no `resource`: how many of what the action spends now. */
+const amendedAmount = record({ amount: [costAmount, true] });
+
+function readAmend(raw: unknown): AmendRule {
+  if (!isRecord(raw)) throw new Bad('is not a price');
+  const cost = own(raw, 'cost');
+  const keeps = isRecord(cost) && !Object.hasOwn(cost, 'resource');
+  const extra = keeps ? Object.keys(cost).find((k) => k !== 'amount') : undefined;
+  if (extra !== undefined) {
+    throw new Bad(`"cost" with no "resource" changes only "amount", not "${clip(extra)}"`);
+  }
+  const r: Reading = { kind: 'action', slots: [] };
+  const read = record({
+    label: [text()],
+    cost: [keeps ? amendedAmount : actionCost],
+    buyBack: [actionBuyBack],
+  })(raw, r, 'amend') as AmendRule;
+  if (read.cost === undefined && read.buyBack === undefined) {
+    throw new Bad('changes a "cost" or a "buyBack"');
+  }
+  return read;
+}
+
+/** An entry's or a patch's `amend`, each read on its own: a bad one is a problem and is left out. */
+function readAmends(raw: unknown, problems: string[]): AmendRule[] {
+  if (raw === undefined) return [];
+  if (!Array.isArray(raw)) {
+    problems.push('"amend" is not a list');
+    return [];
+  }
+  if (raw.length > L.amendsPerEntry)
+    problems.push(`only the first ${L.amendsPerEntry} of "amend" count`);
+  const out: AmendRule[] = [];
+  raw.slice(0, L.amendsPerEntry).forEach((x, i) => {
+    try {
+      out.push(readAmend(x));
+    } catch (err) {
+      if (!(err instanceof Bad)) throw err;
+      problems.push(`amend ${i + 1}: ${err.message}`);
+    }
+  });
+  return out;
+}
 
 /** One price a built-in `spend` row puts on a feature's action, read (`StoredSpendLink`). */
 export type SpendLinkRow =
@@ -1261,6 +1321,7 @@ const UNREADABLE = (problem: string): ReadMechanics => ({
   readable: false,
   effects: [],
   drop: [],
+  amend: [],
   replace: false,
   problems: [problem],
 });
@@ -1280,6 +1341,7 @@ export function readMechanics(raw: unknown): ReadMechanics {
   } else {
     const { effects, problems } = readStoredEffects(own(raw, 'effects'));
     const drop = readDrops(own(raw, 'drop'), problems);
+    const amend = readAmends(own(raw, 'amend'), problems);
     const replace = own(raw, 'replace');
     if (replace !== undefined && typeof replace !== 'boolean')
       problems.push('"replace" is true or false');
@@ -1290,6 +1352,7 @@ export function readMechanics(raw: unknown): ReadMechanics {
       readable: true,
       effects,
       drop,
+      amend,
       replace: replace === true,
       ...(basedOn !== undefined ? { basedOn } : {}),
       problems,
@@ -1352,12 +1415,19 @@ interface PackChange {
 interface PackPatches {
   replace?: PackChange;
   add: PackChange[];
+  /** Prices on what the entry inherits, in the player's order of packs. */
+  amend: Array<{ pack: string; rules: readonly AmendRule[] }>;
 }
 
 /** A pack's patches, read: each target lowercased, and what does not count. */
 export interface ReadPack {
   name: string;
-  patches: Array<{ target: string; replace?: EffectTemplate[]; add?: EffectTemplate[] }>;
+  patches: Array<{
+    target: string;
+    replace?: EffectTemplate[];
+    add?: EffectTemplate[];
+    amend?: AmendRule[];
+  }>;
   problems: string[];
 }
 
@@ -1403,16 +1473,25 @@ function readPackOnce(entry: DataEntity): ReadPack {
     const rawReplace = own(p as Record<string, unknown>, 'effects');
     const replace = readStoredEffects(rawReplace);
     const add = readStoredEffects(own(p as Record<string, unknown>, 'add'), 'add');
-    for (const problem of [...replace.problems, ...add.problems])
+    const amendProblems: string[] = [];
+    const amend = readAmends(own(p as Record<string, unknown>, 'amend'), amendProblems);
+    for (const problem of [...replace.problems, ...add.problems, ...amendProblems])
       read.problems.push(`${where}: ${problem}`);
     // An empty list replaces the entry's mechanics with nothing, on purpose; a
     // list none of which can be read replaces nothing, so the entry keeps its own.
     const replaces =
       Array.isArray(rawReplace) && (rawReplace.length === 0 || replace.effects.length > 0);
+    // A replacement inherits nothing, so there is no action for a price to land on.
+    if (replaces && amend.length > 0) {
+      read.problems.push(
+        `${where}: "amend" changes nothing beside "effects", which inherit nothing`,
+      );
+    }
     read.patches.push({
       target: target.trim().toLowerCase(),
       ...(replaces ? { replace: replace.effects } : {}),
       ...(add.effects.length > 0 ? { add: add.effects } : {}),
+      ...(amend.length > 0 && !replaces ? { amend } : {}),
     });
   });
   return read;
@@ -1440,11 +1519,12 @@ function patchesFor(col: Collector): Map<string, PackPatches> {
     const pack = readPack(entry);
     for (const problem of pack.problems) col.warn(`${pack.name}: ${problem}`);
     for (const patch of pack.patches) {
-      const slot = index.get(patch.target) ?? { add: [] };
+      const slot = index.get(patch.target) ?? { add: [], amend: [] };
       index.set(patch.target, slot);
       // A later pack's replacement wins over an earlier one's.
       if (patch.replace !== undefined) slot.replace = { pack: pack.name, effects: patch.replace };
       if (patch.add !== undefined) slot.add.push({ pack: pack.name, effects: patch.add });
+      if (patch.amend !== undefined) slot.amend.push({ pack: pack.name, rules: patch.amend });
     }
   }
   return index;
@@ -1935,13 +2015,61 @@ export function mechanicsOf(col: Collector, s: MechanicsSubject): void {
     s.ruleKeys === undefined ? undefined : builtInRuleFor(col, 'curated', s.ruleKeys, s.inCode);
   if (row !== undefined) emit(col, row.effects, s.origin, level, s.className, true);
   s.inherited?.(row === undefined ? undefined : { scan: row.scan });
-  if (self === undefined || self.drop.length === 0) return;
-  for (let i = col.effects.length - 1; i >= from; i--) {
+  if (self !== undefined && self.drop.length > 0) {
+    for (let i = col.effects.length - 1; i >= from; i--) {
+      const e = col.effects[i] as EffectInput;
+      const label = labelOf(e);
+      const dropped = self.drop.some(
+        (d) => d.kind === e.kind && (d.label === undefined || d.label.toLowerCase() === label),
+      );
+      if (dropped) col.effects.splice(i, 1);
+    }
+  }
+  // What is left of what it inherits takes the player's prices: the entry's
+  // own, then each pack's in the player's order, so a later one wins.
+  for (const rule of self?.amend ?? []) amendInherited(col, from, rule, s.label);
+  for (const { pack, rules } of patches?.amend ?? [])
+    for (const rule of rules) amendInherited(col, from, rule, `${pack}: ${s.label}`);
+}
+
+/** Actions whose buy-back a player set (`amend`), which a later feature's link leaves alone. */
+const PLAYER_BUY_BACK = new WeakSet<object>();
+
+/** Whether a player's `amend` set this action's buy-back. */
+export function playerBuyBack(e: object): boolean {
+  return PLAYER_BUY_BACK.has(e);
+}
+
+/**
+ * One player's price on the actions an entry inherits: those collected from
+ * `from` on, so never an action its author or a pack wrote, which come before.
+ * Without a label, its first; with one, each of that name. Says so on the
+ * sheet when there is none, or when a new amount has no pool's uses to count.
+ */
+function amendInherited(col: Collector, from: number, rule: AmendRule, who: string): void {
+  const name = rule.label?.toLowerCase();
+  let found = false;
+  for (let i = from; i < col.effects.length; i++) {
     const e = col.effects[i] as EffectInput;
-    const label = labelOf(e);
-    const dropped = self.drop.some(
-      (d) => d.kind === e.kind && (d.label === undefined || d.label.toLowerCase() === label),
-    );
-    if (dropped) col.effects.splice(i, 1);
+    if (e.kind !== 'action' || (name !== undefined && labelOf(e) !== name)) continue;
+    found = true;
+    const cost = rule.cost;
+    if (cost !== undefined && 'resource' in cost) e.cost = structuredClone(cost);
+    else if (cost !== undefined) {
+      const now = e.cost;
+      if (now !== undefined && now.resource !== SLOT_COST && now.resource !== HIT_DIE_COST)
+        e.cost = { ...now, amount: cost.amount };
+      else
+        col.warn(`${who}: "amend" sets how many it spends, and ${e.label} spends no pool's uses`);
+    }
+    if (rule.buyBack !== undefined) {
+      e.buyBack = structuredClone(rule.buyBack);
+      PLAYER_BUY_BACK.add(e);
+    }
+    if (name === undefined) break;
+  }
+  if (!found) {
+    const named = rule.label === undefined ? '' : ` named "${rule.label}"`;
+    col.warn(`${who}: "amend" finds no action it inherits${named}`);
   }
 }

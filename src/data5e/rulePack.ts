@@ -157,6 +157,12 @@ export function packRefusals(guidance: Record<string, unknown>): string[] {
         );
       }
     }
+    const amend = isRecord(p) ? own(p, 'amend') : undefined;
+    if (Array.isArray(amend) && amend.length > L.amendsPerEntry) {
+      reasons.add(
+        `change ${i + 1} has ${n(amend.length)} prices; one change has at most ${L.amendsPerEntry}`,
+      );
+    }
   });
   list('moments').forEach((m, i) => {
     const outcomes = isRecord(m) ? own(m, 'do') : undefined;

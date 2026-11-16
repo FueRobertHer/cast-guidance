@@ -18,7 +18,7 @@
  */
 import { spellPoolKey } from '../effects/additionalSpells';
 import type { Collector } from '../effects/base';
-import { builtInRowsFor, type SpendLinkRow } from '../effects/mechanics';
+import { builtInRowsFor, playerBuyBack, type SpendLinkRow } from '../effects/mechanics';
 import { type ActionBuyBack, type EffectOrigin, HIT_DIE_COST, SLOT_COST } from '../types';
 
 /**
@@ -87,8 +87,10 @@ function linkPrice(col: Collector, link: SpendLinkRow, label: string, origin: Ef
       !(fills && e.buyBack !== undefined) &&
       (onAction !== undefined ? e.label === onAction : e.origin === origin),
   );
-  if (target?.kind === 'action') target.buyBack = buyBack;
-  else if (!(fills && onAction !== undefined)) {
+  // A player's own price (`amend`) on another feature's action stands.
+  if (target?.kind === 'action') {
+    if (!playerBuyBack(target)) target.buyBack = buyBack;
+  } else if (!(fills && onAction !== undefined)) {
     col.add({ kind: 'action', economy: 'none', label: onAction ?? label, buyBack, origin });
   }
 }

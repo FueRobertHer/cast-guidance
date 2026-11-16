@@ -417,6 +417,25 @@ describe('SpeciesEditor', () => {
     });
   });
 
+  it('saves a price on what a changed trait inherits (rule pack port 3g)', () => {
+    const draft = mount(species, structuredClone(dwarf), dwarf);
+    segment('Stonecunning', 'Change');
+    press('Change its price');
+    fireEvent.change(screen.getByLabelText('Price: How many'), { target: { value: '2' } });
+    const items = ((save(draft(), dwarf)._copy as Json)._mod as { entries: Json[] }).entries;
+    expect(items).toEqual([
+      expect.objectContaining({
+        replace: 'Stonecunning',
+        items: [
+          expect.objectContaining({
+            // Unrenamed, it is found by its own name, so it needs no basedOn.
+            castGuidance: { v: 1, amend: [{ cost: { amount: 2 } }] },
+          }),
+        ],
+      }),
+    ]);
+  });
+
   it('changes the walking speed and keeps the others', () => {
     expect(withWalkSpeed({ walk: 30, fly: 30 }, 35)).toEqual({ walk: 35, fly: 30 });
     expect(withWalkSpeed({ walk: 30, fly: 30 }, undefined)).toEqual({ fly: 30 });

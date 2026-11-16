@@ -324,4 +324,37 @@ describe('what a pack holds', () => {
     expect(review?.changes.map((c) => c.key)).toEqual([targetWords(target)]);
     expect(review?.moments.map((m) => m.value)).toEqual([`Says "${said}"`]);
   });
+
+  it("says which inherited actions' prices it changes, and none beside a replacement", () => {
+    const price = { resource: 'focus', amount: 2 };
+    const review = packReview({
+      _meta: {
+        sources: [{ json: 'Prices' }],
+        castGuidance: {
+          v: 1,
+          patches: [
+            { target: 'Flurry of Blows|Monk', amend: [{ cost: { amount: 2 } }] },
+            {
+              target: 'Rage|Barbarian',
+              add: [{ kind: 'cue', text: 'Roar' }],
+              amend: [
+                { label: 'Rage', cost: price },
+                { label: 'Rage', buyBack: price },
+                { label: 'Reckless Attack', cost: price },
+              ],
+            },
+            { target: 'Alert|PHB', effects: [], amend: [{ cost: price }] },
+          ],
+        },
+      },
+    });
+    expect(review?.changes.map((c) => c.value)).toEqual([
+      'Changes the price of its action',
+      'Gains 1 effect, and changes the price of Rage and Reckless Attack',
+      'Does nothing now',
+    ]);
+    expect(review?.problems).toEqual([
+      'patch 3 (Alert|PHB): "amend" changes nothing beside "effects", which inherit nothing',
+    ]);
+  });
 });

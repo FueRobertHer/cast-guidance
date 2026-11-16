@@ -915,6 +915,17 @@ function changeWords(p: Record<string, unknown>): string {
       parts.length === 0 ? `Gains ${plural(add.length, 'effect')}` : `gains ${add.length} more`,
     );
   }
+  // What the engine reads of it: beside a replacement, a price changes nothing.
+  const amend = Array.isArray(replace) ? [] : listOf(p, 'amend').filter(isRecord);
+  if (amend.length > 0) {
+    const names = [
+      ...new Set(
+        amend.map((a) => (text(own(a, 'label')) === '' ? 'its action' : text(own(a, 'label')))),
+      ),
+    ];
+    const what = `the price of ${names.join(' and ')}`;
+    parts.push(parts.length === 0 ? `Changes ${what}` : `changes ${what}`);
+  }
   return parts.length === 0 ? 'Changes nothing' : parts.join(', and ');
 }
 

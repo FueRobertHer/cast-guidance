@@ -51,7 +51,7 @@ const NOT_WRITTEN = new Set([
 ]);
 
 /** Guidance keys an entry keeps from its draft; `basedOn` and its fingerprint are worked out. */
-const OWN_GUIDANCE = ['effects', 'drop', 'replace', 'moments'] as const;
+const OWN_GUIDANCE = ['effects', 'drop', 'amend', 'replace', 'moments'] as const;
 
 /** JSON with its keys sorted, so two equal values always print the same. */
 function stable(v: unknown): string {
@@ -292,8 +292,9 @@ export function changeCount(original: Json, draft: Json): number {
     const many = op.mode === 'removeArr' ? op.names : op.mode === 'appendArr' ? op.items : [op];
     n += Array.isArray(many) ? many.length : 1;
   }
-  // What the player said about the sheet: effects, drops, leaving the original's
-  // mechanics out, moments. Each that differs is one change.
+  // What the player said about the sheet: effects, drops, prices on what it
+  // inherits, leaving the original's mechanics out, moments. Each that differs
+  // is one change.
   const said = (e: Json, key: string) => {
     const g = own(e, 'castGuidance');
     const v = isRecord(g) ? own(g, key) : undefined;

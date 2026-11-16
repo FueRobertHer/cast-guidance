@@ -36,6 +36,8 @@ export const CAST_GUIDANCE_LIMITS = {
   effectsPerEntry: 64,
   /** Drops one entry may carry. */
   dropsPerEntry: 64,
+  /** Prices one entry or one patch may put on what it inherits (`amend`). */
+  amendsPerEntry: 64,
   /** What one moment does (`do`). */
   outcomesPerMoment: 64,
   patchesPerPack: 500,
@@ -215,14 +217,35 @@ export interface StoredDrop {
 }
 
 /**
+ * A new price for an action an entry inherits (rule pack port 3g), never for one
+ * its author wrote: its first inherited action, or with `label` each inherited
+ * action of exactly that name, as the sheet names it. `cost` replaces what using
+ * it spends; a `cost` with no `resource` changes only how many it spends of what
+ * it spends now (Flurry of Blows at 2, ki or Focus). `buyBack` replaces what buys
+ * a use back.
+ */
+export interface StoredAmend {
+  label?: string;
+  cost?: ActionCost | AmendedAmount;
+  buyBack?: ActionBuyBack;
+}
+
+/** A `cost` that keeps what the action spends and changes how many. */
+export interface AmendedAmount {
+  amount: number | 'varies';
+}
+
+/**
  * An entry's own `castGuidance`. `effects` add to what the entry inherits (the
  * curated row for its key or for `basedOn`, else the prose scan); `drop` leaves
- * inherited ones out; `replace: true` inherits nothing ("Start from nothing").
+ * inherited ones out; `amend` prices inherited actions; `replace: true` inherits
+ * nothing ("Start from nothing").
  */
 export interface StoredEntryGuidance {
   v: number;
   effects?: StoredEffect[];
   drop?: StoredDrop[];
+  amend?: StoredAmend[];
   replace?: boolean;
   /** The official entry this one was copied from, `name|source`. */
   basedOn?: string;
@@ -377,13 +400,16 @@ export const RULE_PACK_TYPE = 'rulePack';
  * A change to an existing entry's mechanics, by key: `name|source` for most
  * entries, `feature|class` or `feature|subclass` for a class or subclass
  * feature (`Rage|Barbarian`), `trait|species` for a species trait. `effects`
- * replaces the entry's mechanics; `add` adds to them. Two adds both count; of
- * two replacements, the pack later in the player's order wins.
+ * replaces the entry's mechanics; `add` adds to them; `amend` prices the actions
+ * it inherits, after the entry's own `amend`. Two adds both count; of two
+ * replacements, or two prices on one action, the pack later in the player's
+ * order wins.
  */
 export interface StoredPatch {
   target: string;
   effects?: StoredEffect[];
   add?: StoredEffect[];
+  amend?: StoredAmend[];
 }
 
 /**

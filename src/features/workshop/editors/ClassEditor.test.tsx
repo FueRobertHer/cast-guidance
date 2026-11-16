@@ -6,7 +6,11 @@ import { cleanup, fireEvent, render, screen, within } from '@testing-library/rea
 import { useState } from 'react';
 import { MemoryRouter } from 'react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { engineContextFor } from '@/data5e/engineAdapter';
 import { type EntityRegistry, mergeHomebrew, normalizeDataset } from '@/data5e/normalize';
+import { deriveSheet } from '@/engine/derive';
+import { newCharacterDoc } from '@/engine/types';
+import { BUILT_IN_RULE_SETS } from '../../../../tests-fixtures/testWorld';
 import { readStored } from '../copyWriter';
 import { EDITORS, type Json } from '../editorTypes';
 import {
@@ -979,5 +983,32 @@ describe('the class editor on screen', () => {
     fireEvent.change(back, { target: { value: 'short' } });
     const [pool] = (draft().castGuidance as { effects: Json[] }).effects;
     expect(pool).toMatchObject({ reset: 'short', label: embers.label });
+  });
+});
+
+describe('a price on what a class feature inherits (rule pack port 3g)', () => {
+  /** Flurry of Blows on a level 2 Lantern, the Monk copy, with this guidance on it. */
+  function flurryCost(castGuidance?: Json) {
+    const { registry, cls } = book();
+    registry.setRuleSets(BUILT_IN_RULE_SETS, false);
+    const flurry = nodeOf(registry, cls, 'Flurry of Blows');
+    const changed = castGuidance === undefined ? {} : { ...flurry.base, castGuidance };
+    loaded(
+      registry,
+      save(registry, cls, castGuidance === undefined ? {} : { changed: { [flurry.ref]: changed } }),
+    );
+    const doc = newCharacterDoc('c', 'Hero', 't');
+    doc.classes = [
+      { ref: { name: 'Lantern', source: 'MyHomebrew' }, levels: 2, hp: ['avg', 'avg'] },
+    ];
+    const sheet = deriveSheet(doc, engineContextFor(registry, {}));
+    return sheet.actions.filter((a) => a.label === 'Flurry of Blows').map((a) => a.cost);
+  }
+
+  it("reaches the sheet through Save, on the price the app's spend row gave it", () => {
+    expect(flurryCost()).toEqual([{ resource: 'focus', amount: 1 }]);
+    expect(flurryCost({ v: 1, amend: [{ cost: { amount: 2 } }] })).toEqual([
+      { resource: 'focus', amount: 2 },
+    ]);
   });
 });

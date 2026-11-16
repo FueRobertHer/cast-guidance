@@ -255,7 +255,8 @@ prompt names the trait.
 
 A spend row runs where the spend links ran, last, with the same origin object.
 An entry's `drop` reaches the chips it adds, and an entry that replaces what it
-inherits leaves it out.
+inherits leaves it out. A player's `amend` (below) runs after both, so it
+reprices a chip a row priced or added.
 
 ## Roll fields
 
@@ -368,7 +369,51 @@ part: an action it adds takes the copy's own name (roll prices look an action
 up by its source's name first), but a target renamed in a copy, or named for
 its class, is missed, and the link adds its own action or nothing as above.
 A player's file prices an action itself (an action's `cost` and `buyBack`);
-spend rows are the app's.
+spend rows are the app's. To reprice an action an entry inherits, a player
+writes an `amend` instead.
+
+## A player's price on an inherited action
+
+`amend` (rule pack port 3g) changes the price of an action an entry inherits,
+such as an official feature's scanned chip, without rewriting the entry: "Flurry of
+Blows costs 2 Focus". It is a list on an entry's own `castGuidance` (a Workshop
+copy) and on a rule pack's patch, next to `effects` and `add`:
+
+```json
+{ "target": "Flurry of Blows|Monk", "amend": [{ "cost": { "amount": 2 } }] }
+```
+
+Each item takes `label`, `cost` and `buyBack`, with a `cost` or a `buyBack` or
+both:
+
+- Without `label` it prices the first action the entry inherits, where a spend
+  row puts its price. With one it prices each inherited action of exactly that
+  name in any case, as the sheet shows it (after the class naming, "Channel
+  Divinity (Paladin)").
+- `cost` replaces what using it spends, as an action's `cost` reads ("An
+  action's price", above). A `cost` with no `resource` takes `amount` alone and
+  changes how many it spends of what it spends now, so it works without knowing
+  the pool's key (ki or Focus). On an action that spends a spell slot, a Hit
+  Point Die or nothing, that changes nothing, and the sheet says so.
+- `buyBack` replaces what buys a use back. Another feature's spend row that
+  buys a use of this action back (`onAction`, Totems on the Primal Knowledge
+  Totem) leaves a buy-back a player set alone.
+
+It runs last for the entry: after what it inherits (the curated row or the
+scan, then its standing, roll and spend rows) and after its `drop`, the entry's
+own `amend` first, then each pack's in the player's order, so the later price
+wins. It reaches only what the entry inherits, never an action its author wrote
+or a pack's `effects` or `add` gave. An entry that replaces what it inherits
+(`replace: true`, or a pack's `effects`) has nothing for it to price; a patch with
+both `effects` and `amend` says so. An `amend` that finds no action says so on
+the sheet. It reaches what `drop` reaches: class and subclass features, feats,
+optional features and species traits. Items add their charges after it, and
+backgrounds price nothing themselves.
+
+The Workshop's "Change its price" card makes one on a copy that still does what
+the original does: Action (empty for its first), then the Action card's price
+boxes, where an empty box keeps what the action has and "What it spends now"
+changes how many.
 
 Every price is a row in `spend.json`: the pool prices since 3b and 3c, the
 spell slot and Hit Point Die prices and Divine Reaper's since 3d, so no spend
