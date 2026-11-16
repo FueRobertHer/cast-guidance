@@ -16,10 +16,10 @@ import { pricedRollEffects } from '@/features/sheet/rollPrice';
 import { makeTestContext } from '../../../tests-fixtures/testWorld';
 import { changeCount, resolveStored, writeEntry } from './copyWriter';
 import { amendWords } from './EffectCards';
-import { FeatureEditor } from './FeatureRow';
 import { editor as feat } from './editors/FeatEditor';
 import { editor as item } from './editors/ItemEditor';
 import type { Json } from './editorTypes';
+import { FeatureEditor } from './FeatureRow';
 
 afterEach(cleanup);
 
