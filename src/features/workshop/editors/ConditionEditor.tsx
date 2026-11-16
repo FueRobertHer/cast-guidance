@@ -76,7 +76,7 @@ function ConditionBody({ draft, change, original, readOnly }: EditorProps) {
             </div>
           </div>
         )}
-        <EffectCards effects={effects} readOnly={readOnly} onChange={setEffects} />
+        <EffectCards effects={effects} readOnly={readOnly} onChange={setEffects} inPlay />
         {problems.length > 0 && (
           <ul className="flex flex-col gap-1" aria-label="What does not count on a condition">
             {problems.map((p) => (

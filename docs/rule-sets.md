@@ -356,17 +356,25 @@ app does not know, plays 2014, as the sheet reads it everywhere. Second Wind's a
 differ by version this way, and Lay on Hands' action; a 2014 Fighter under 2024
 rules has the 2024 uses, as the code gave. An effect in play (a condition, a
 moment's effect, a spell's on a target) holds under the rules of the sheet it is
-on, so one naming an edition is a problem there and does not count. The
-Workshop shows a file's edition as a "Rules" box only while it is set; "Either
-rules" takes it away. A pool given once for each version under one key is one
-pool there: an action lists it once to spend, and renaming one renames both.
+on, so one naming an edition is a problem there and does not count. Every
+Workshop card has a "Rules" box ("Either rules" takes the version away), but a
+card in play (a condition's, a spell's on its target) shows it only while a file
+sets one, to take it away. A value that is not a version shows as written, so
+"Either rules" can take it away too. A pool given once for each version under
+one key is one pool there: an action lists it once to spend, and renaming one
+renames both. The class editor's pools have the same box, and a pool of one
+version gets an "Add its 2024 rules version" button (or 2014) that copies it
+under its key, unless a pool of that version already has its key or its name:
+two halves of one pool, each its own column in the class table ("Vigil (2014
+rules)"), named and renamed as one. Two pools there may share a name only when
+they count under different versions.
 
 A pool takes `"ownClass": true` too: the sheet names it for the class that
 gives it, after its words by level, "Channel Divinity (Paladin)", so the
 Paladin's and the Cleric's pools of one name show apart. With no class giving
 it, it has its own name alone (the code named a Paladin's pool for the
 character's Paladin, or "Paladin"). The Workshop's line for the pool says it is
-named for the class.
+named for the class, and its "Class in the name" box sets it.
 
 An action takes `"ownClass": true` as well, so an action sharing such a pool's
 name still spends a use of it. A pool or an action may instead take
@@ -381,7 +389,8 @@ of the 2014 Paladin beside a Cleric has its own name there. No reskin in the dat
 has the feature (each reskins a 2024 class). A Paladin, a copy of it and a Cleric
 keep the first class's pool, as any two pools of one key do, so the copy's action
 finds no pool of its name and spends only Channel Divinity. The Workshop's lines
-say which.
+say which, and a pool's or an action's "Class in the name" box picks its own name
+alone, the class that gives it, or the class beside the classes typed in.
 
 ## Checking a change on real data
 

@@ -38,7 +38,7 @@ import { Link, useNavigate } from 'react-router';
 import { plainEntryText } from '@/data5e/entries/plainText';
 import type { EntityRegistry } from '@/data5e/normalize';
 import { ownCasterLevel, PACT_SLOTS, STANDARD_SLOTS } from '@/engine/calc/slots';
-import { isRecord, own, type StoredEffect } from '@/engine/castGuidance';
+import { EFFECT_EDITIONS, isRecord, own, type StoredEffect } from '@/engine/castGuidance';
 import { SKILLS } from '@/engine/types';
 import { Button } from '@/ui/Button';
 import { askConfirm } from '@/ui/dialogs';
@@ -47,7 +47,7 @@ import { listClass } from '@/ui/surfaces';
 import { fieldClass } from '@/ui/TextField';
 import type { TableColumn } from '../ClassTable';
 import { basedOnKey, changeCount, copiedFrom, readStored, same, writeEntry } from '../copyWriter';
-import { BY_LEVEL, firstWords, isByLevel } from '../EffectCards';
+import { BY_LEVEL, editionBox, editionOf, firstWords, isByLevel } from '../EffectCards';
 import type { EditorProps, EditorSpec, Json, WriteContext, Written } from '../editorTypes';
 import { FeatureRow, type FeatureStatus } from '../FeatureRow';
 import { ABILITY_WORDS, ChipPicks, Field, Kept, NumberField, Section, Select } from '../fields';
@@ -378,11 +378,22 @@ export function setFrom(values: readonly number[], level: number, v: number): nu
 
 const poolValues = (p: StoredEffect) => byLevelValues(own(p.max as Json, 'byLevel'));
 
+/**
+ * A pool's name as the table and its boxes show it: with the rules version it
+ * counts under alone (`edition`), so a pool given once for each version shows
+ * as two columns, "Channel Divinity (2014 rules)" and "(2024 rules)".
+ */
+function poolName(p: StoredEffect, label: unknown = p.label || 'Pool'): string {
+  const name = firstWords(label);
+  const edition = editionOf(p);
+  return edition === undefined ? name : `${name} (${edition} rules)`;
+}
+
 /** The column Save adds to the class table for the pools. */
 function poolGroup(pools: readonly StoredEffect[]): Json {
   const values = pools.map(poolValues);
   return {
-    colLabels: pools.map((p) => firstWords(p.label ?? 'Pool')),
+    colLabels: pools.map((p) => poolName(p, p.label ?? 'Pool')),
     rows: LEVELS.map((_, i) => values.map((v) => v[i] ?? 0)),
   };
 }
@@ -903,9 +914,18 @@ function check(draft: Json, at?: Omit<WriteContext, 'draft'>): string | undefine
   }
   if (typeof draft.casterProgression === 'string' && typeof draft.spellcastingAbility !== 'string')
     return 'Pick the ability it casts its spells with.';
-  const pools = poolsOf(draft).map((p) => lower(firstWords(p.label ?? '').trim()));
-  if (pools.some((p) => p === '')) return 'Every pool needs a name.';
-  if (new Set(pools).size !== pools.length) return 'Two pools have the same name.';
+  const pools = poolsOf(draft);
+  const poolNames = pools.map((p) => lower(firstWords(p.label ?? '').trim()));
+  if (poolNames.some((p) => p === '')) return 'Every pool needs a name.';
+  // Two pools may share a name when they count under different rules versions
+  // (`edition`): one pool given once for each.
+  for (const version of EFFECT_EDITIONS) {
+    const live = poolNames.filter((_, i) => {
+      const edition = pools[i]?.edition;
+      return edition === undefined || edition === version;
+    });
+    if (new Set(live).size !== live.length) return 'Two pools have the same name.';
+  }
   return undefined;
 }
 
@@ -1193,6 +1213,34 @@ function Pools({ draft, change, readOnly }: Pick<EditorProps, 'draft' | 'change'
   };
   const edit = (p: StoredEffect, patch: Json) =>
     set(all.map((e) => (e === p ? ({ ...e, ...patch } as StoredEffect) : e)));
+  // A pool given once for each rules version is one pool: one name for both.
+  const rename = (p: StoredEffect, label: string) =>
+    set(all.map((e) => (e.kind === 'resource' && e.key === p.key ? { ...e, label } : e)));
+  const setEdition = (p: StoredEffect, edition: string) => {
+    const { edition: _, ...rest } = p;
+    set(
+      all.map((e) =>
+        e === p ? ((edition === '' ? rest : { ...rest, edition }) as StoredEffect) : e,
+      ),
+    );
+  };
+  /**
+   * The rules version a pool of one version alone has no half for yet, if any.
+   * A pool of that version under its key or its name is its half.
+   */
+  const missingHalf = (p: StoredEffect) => {
+    const edition = editionOf(p);
+    const other = EFFECT_EDITIONS.find((v) => v !== edition);
+    const name = lower(firstWords(p.label ?? '').trim());
+    const half = (x: StoredEffect) =>
+      x.edition === other && (x.key === p.key || lower(firstWords(x.label ?? '').trim()) === name);
+    return edition === undefined || pools.some(half) ? undefined : other;
+  };
+  // The other version's half: the same pool, its numbers then set in the table.
+  const addHalf = (p: StoredEffect, edition: string) => {
+    const at = all.indexOf(p);
+    set([...all.slice(0, at + 1), { ...p, edition } as StoredEffect, ...all.slice(at + 1)]);
+  };
   const add = () => {
     const keys = new Set(all.map((e) => String(e.key)));
     let n = 1;
@@ -1216,44 +1264,75 @@ function Pools({ draft, change, readOnly }: Pick<EditorProps, 'draft' | 'change'
       </p>
       {pools.length > 0 && (
         <ul aria-label="Pools" className={listClass}>
-          {pools.map((p) => (
-            <li key={String(p.key)} className="flex flex-col gap-3 px-4 py-3">
-              <div className="flex items-end gap-2">
-                <div className="min-w-0 flex-1">
-                  <Field label="Pool name">
-                    <input
-                      value={isByLevel(p.label) ? '' : String(p.label ?? '')}
-                      placeholder={isByLevel(p.label) ? BY_LEVEL : undefined}
+          {pools.map((p, i) => {
+            const half = missingHalf(p);
+            return (
+              // A pool given once for each rules version shares its key with its other half.
+              // biome-ignore lint/suspicious/noArrayIndexKey: see above
+              <li key={i} className="flex flex-col gap-3 px-4 py-3">
+                <div className="flex items-end gap-2">
+                  <div className="min-w-0 flex-1">
+                    <Field label="Pool name">
+                      <input
+                        value={isByLevel(p.label) ? '' : String(p.label ?? '')}
+                        placeholder={isByLevel(p.label) ? BY_LEVEL : undefined}
+                        disabled={readOnly}
+                        onChange={(e) => rename(p, e.target.value)}
+                        className={fieldClass}
+                      />
+                    </Field>
+                  </div>
+                  {!readOnly && (
+                    <button
+                      type="button"
+                      aria-label={`Remove ${poolName(p, p.label || 'pool')}`}
+                      onClick={() => set(all.filter((e) => e !== p))}
+                      className="tap rounded-full text-ink-muted hover:bg-surface-raised hover:text-ink"
+                    >
+                      <X size={18} aria-hidden />
+                    </button>
+                  )}
+                </div>
+                <div className="flex flex-col gap-3">
+                  <Field label={`${poolName(p)}: back on`}>
+                    <Select
+                      value={isByLevel(p.reset) ? '' : p.reset === 'short' ? 'short' : 'long'}
                       disabled={readOnly}
-                      onChange={(e) => edit(p, { label: e.target.value })}
-                      className={fieldClass}
-                    />
+                      onChange={(e) => edit(p, { reset: e.target.value })}
+                    >
+                      {isByLevel(p.reset) && <option value="">{BY_LEVEL}</option>}
+                      <option value="short">A short or long rest</option>
+                      <option value="long">A long rest</option>
+                    </Select>
+                  </Field>
+                  <Field label={`${poolName(p)}: rules`}>
+                    <Select
+                      value={editionBox(p).value}
+                      disabled={readOnly}
+                      onChange={(e) => setEdition(p, e.target.value)}
+                    >
+                      {editionBox(p).options.map(([v, text]) => (
+                        <option key={v} value={v}>
+                          {text}
+                        </option>
+                      ))}
+                    </Select>
                   </Field>
                 </div>
-                {!readOnly && (
-                  <button
-                    type="button"
-                    aria-label={`Remove ${firstWords(p.label || 'pool')}`}
-                    onClick={() => set(all.filter((e) => e !== p))}
-                    className="tap rounded-full text-ink-muted hover:bg-surface-raised hover:text-ink"
+                {!readOnly && half !== undefined && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="self-start"
+                    onClick={() => addHalf(p, half)}
                   >
-                    <X size={18} aria-hidden />
-                  </button>
+                    <Plus size={16} aria-hidden />
+                    Add its {half} rules version
+                  </Button>
                 )}
-              </div>
-              <Field label={`${firstWords(p.label || 'Pool')}: back on`}>
-                <Select
-                  value={isByLevel(p.reset) ? '' : p.reset === 'short' ? 'short' : 'long'}
-                  disabled={readOnly}
-                  onChange={(e) => edit(p, { reset: e.target.value })}
-                >
-                  {isByLevel(p.reset) && <option value="">{BY_LEVEL}</option>}
-                  <option value="short">A short or long rest</option>
-                  <option value="long">A long rest</option>
-                </Select>
-              </Field>
-            </li>
-          ))}
+              </li>
+            );
+          })}
         </ul>
       )}
       {!readOnly && (
@@ -1270,11 +1349,12 @@ function Pools({ draft, change, readOnly }: Pick<EditorProps, 'draft' | 'change'
 function columnsOf(draft: Json, change: EditorProps['change']): TableColumn[] {
   const cols: TableColumn[] = [];
   const all = effectsOf(draft);
-  for (const p of all.filter(isPool)) {
+  // Its place too: both halves of a pool can be set to one version.
+  for (const [i, p] of all.filter(isPool).entries()) {
     const values = poolValues(p);
     cols.push({
-      key: `pool:${String(p.key)}`,
-      label: firstWords(p.label || 'Pool'),
+      key: `pool:${i}:${String(p.key)}`,
+      label: poolName(p),
       values: values.map(String),
       set: (level, v) => {
         const max = { byLevel: asByLevel(setFrom(values, level, v)) };

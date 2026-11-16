@@ -1017,6 +1017,7 @@ function Cards({ draft, change, readOnly }: EditorProps) {
           <EffectCards
             effects={effects}
             readOnly={readOnly}
+            inPlay
             onChange={(next) =>
               set({
                 castGuidance: guidanceWith(draft.castGuidance, {
