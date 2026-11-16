@@ -2105,23 +2105,25 @@ export function EffectCards({
   // What follows a pool being renamed: what names it as its name starts to
   // change, kept while it changes. On the way to Kindle its key is ki for a
   // moment, and what spends the class's Ki (or a pool of the entry's own named
-  // Ki) stays put. It is the same rename while nothing else has changed since
-  // the last step, so each place kept names the key the last step gave it. The
-  // pool's own card is one of them, so its twin for the other rules version,
-  // typed in next, takes it along.
-  const following = useRef<{ key: string; was: string; at: Set<string> }>(undefined);
+  // Ki) stays put. It is the same rename while the card typed in is one that
+  // follows it (the pool's own card, or its twin for the other rules version)
+  // and nothing else has changed since the last step, so each place kept names
+  // the key the last step gave it. A pool typed in after another took its key
+  // starts a rename of its own, which takes along what names that key.
+  const following = useRef<{ was: string; at: Set<string> }>(undefined);
   /**
    * Where `x` names `from`, as `place` and the field: a pool's key (the same
    * pool for the other rules version, `edition`), the uses a spell is cast
-   * with, an action's cost (and the points a slot gives back), what buys a use
-   * back and the use it gives back.
+   * with, and on an action or a price on what a copy inherits (`priced`), its
+   * cost (and the points a slot gives back), what buys a use back and the use
+   * it gives back.
    */
-  const naming = (x: Eff, place: string, from: string): string[] => [
+  const naming = (x: Eff, place: string, from: string, priced = x.kind === 'action'): string[] => [
     ...(x.kind === 'resource' && x.key === from ? [`${place} key`] : []),
     ...(x.kind === 'grantSpell' && x.resourceKey === from ? [`${place} resourceKey`] : []),
     ...PRICE_KEYS.flatMap(([key, fields]) => {
       const price = x[key];
-      return isRecord(price)
+      return priced && isRecord(price)
         ? fields.filter((f) => price[f] === from).map((f) => `${place} ${key} ${f}`)
         : [];
     }),
@@ -2129,7 +2131,8 @@ export function EffectCards({
   /**
    * The cards, with card `i` now `next`, and the prices on what it inherits,
    * after its pool's key changed `from` `to`: what follows it is named `to`.
-   * The prices are given only when they are shown here and there are some.
+   * The prices are given only to a host that takes them (`onAmend`), when
+   * there are some.
    */
   const follow = (
     i: number,
@@ -2138,11 +2141,13 @@ export function EffectCards({
   ): [Eff[], Eff[] | undefined] => {
     const last = following.current;
     const at =
-      last !== undefined && last.key === from && last.was === JSON.stringify([list, amends])
+      last !== undefined &&
+      last.at.has(`effect ${i} key`) &&
+      last.was === JSON.stringify([list, amends])
         ? last.at
         : new Set([
             ...list.flatMap((x, j) => naming(x, `effect ${j}`, from)),
-            ...amends.flatMap((a, k) => naming(a, `amend ${k}`, from)),
+            ...amends.flatMap((a, k) => naming(a, `amend ${k}`, from, true)),
           ]);
     const renamed = (x: Eff, place: string): Eff => ({
       ...x,
@@ -2160,7 +2165,7 @@ export function EffectCards({
       onAmend === undefined || amends.length === 0
         ? undefined
         : amends.map((a, k) => renamed(a, `amend ${k}`));
-    following.current = { key: to, was: JSON.stringify([effects, amended ?? amends]), at };
+    following.current = { was: JSON.stringify([effects, amended ?? amends]), at };
     return [effects, amended];
   };
   const add = (spec: KindSpec) => onChange([...list, spec.make()]);

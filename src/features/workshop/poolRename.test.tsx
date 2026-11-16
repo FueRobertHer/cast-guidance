@@ -183,7 +183,20 @@ describe("renaming an item's pool", () => {
     ]);
   });
 
-  it("moves no pool's key or spell's uses a file gives another card, nor its name", () => {
+  it('renames a pool named for another as one with it, with what spends them', () => {
+    const uses = { ...POOL, key: 'uses', label: 'Uses' };
+    const effects = anItem([KI, ...spenders('ki', 'Flurry'), uses]);
+    // A new pool named Ki is the same pool as Ki, so renaming Ki next moves it all.
+    name('Ki', 1);
+    name('Ki Points', 0);
+    expect(effects()).toEqual([
+      { ...KI, key: 'ki-points', label: 'Ki Points' },
+      ...spenders('ki-points', 'Flurry'),
+      { ...uses, key: 'ki-points', label: 'Ki Points' },
+    ]);
+  });
+
+  it("moves no pool's key, spell's uses or price a file gives another card, nor its name", () => {
     // Fields no action has: only a pool has a key, and only a spell the uses it is cast with.
     const stray = {
       kind: 'action',
@@ -192,9 +205,12 @@ describe("renaming an item's pool", () => {
       key: 'glow',
       resourceKey: 'glow',
     };
-    const effects = anItem([POOL, stray]);
+    // Nor a price on a card that is not an action, the renamed pool's own among them.
+    const priced = { cost: { resource: 'glow', amount: 1 } };
+    const note = { kind: 'note', text: 'It glows.', ...priced };
+    const effects = anItem([{ ...POOL, ...priced }, stray, note]);
     name('Ember');
-    expect(effects()).toEqual([{ ...POOL, key: 'ember', label: 'Ember' }, stray]);
+    expect(effects()).toEqual([{ ...POOL, ...priced, key: 'ember', label: 'Ember' }, stray, note]);
   });
 
   it('keeps twins typed in turn one pool', () => {
