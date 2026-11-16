@@ -647,8 +647,10 @@ const slotDice: Field = (v, r, key) => {
  * slot (`"spell-slot"`, of the level the player picks as they pay), or a Hit
  * Point Die (`"hit-die"`, which heals as it is spent).
  */
-// A price's fields come out in the order the code tables write them
+// A cost's fields come out in the order the code tables write them
 // (`SPEND_LINKS`, `SLOT_LINKS`), so a row moved out of them gives the same sheet.
+// A buy-back's keep 3a's order (`own` before the slot fields), which differs
+// from `SLOT_LINKS` only for a buy-back with both, and no code row has both.
 const actionCost: Field = (v, r, key) =>
   paidWith(
     record({
@@ -755,6 +757,9 @@ function readSpendLinks(raw: unknown): { links: SpendLinkRow[]; problems: string
   const links: SpendLinkRow[] = [];
   const problems: string[] = [];
   raw = Array.isArray(raw) ? raw : [];
+  if ((raw as unknown[]).length > L.effectsPerEntry) {
+    problems.push(`only the first ${L.effectsPerEntry} of "links" count`);
+  }
   (raw as unknown[]).slice(0, L.effectsPerEntry).forEach((x, i) => {
     try {
       links.push(readSpendLink(x));

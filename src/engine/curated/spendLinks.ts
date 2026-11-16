@@ -17,6 +17,7 @@
  * every cost in them, are `SLOT_LINKS` rows.
  */
 import type { StoredSpendLink } from '../castGuidance';
+import { spellPoolKey } from '../effects/additionalSpells';
 import type { Collector } from '../effects/base';
 import { builtInRowsFor, type SpendLinkRow } from '../effects/mechanics';
 import {
@@ -508,10 +509,11 @@ export function linkPrice(
   const fills = link.buyBack.resource === SLOT_COST;
   const { onAction, ownSpell, uses } = link;
   if (uses !== undefined) col.add({ kind: 'resource', label, ...uses, origin });
-  // Keyed as `additionalSpells` keys a granted spell's pool: by the origin's uid.
+  // Keyed as `additionalSpells` keys a granted spell's pool: by the origin's uid
+  // and the spell's name, so "Telekinesis" finds the pool as "telekinesis" does.
   const buyBack: ActionBuyBack = {
     ...structuredClone(link.buyBack),
-    ...(ownSpell !== undefined ? { own: `spell:${origin.uid}:${ownSpell}` } : {}),
+    ...(ownSpell !== undefined ? { own: spellPoolKey(origin.uid, [ownSpell]) } : {}),
   };
   const target = col.effects.find(
     (e) =>

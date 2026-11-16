@@ -38,6 +38,14 @@ const slugName = (s: string) =>
     .replaceAll(/^-|-$/g, '');
 
 /**
+ * The key of the pool a feature's granted spells share, or one spell's own:
+ * the origin's uid and each spell's name, lowercased and hyphenated. A spend
+ * row's `ownSpell` finds the pool by it, so a name written either way matches.
+ */
+export const spellPoolKey = (uid: string, names: readonly string[]): string =>
+  `spell:${uid}:${names.map(slugName).join('+')}`;
+
+/**
  * Read one spell ref. 5etools appends a cast-level hint ("hellish rebuke#2",
  * "guidance#c"), and in its own data the hint comes after the source:
  * "thaumaturgy|xphb#c" is the XPHB Thaumaturgy. The hint is cut from every
@@ -444,7 +452,10 @@ function grantSpellEntry(
       // The data writes a few short rest pools as daily, so its rest can be overruled.
       const resetOn = refillsOnShortRest(origin, pool) ? 'short' : group.limit.resetOn;
       const per = resetOn === 'long' ? 'day' : 'rest';
-      const key = `spell:${origin.uid}:${pool.map((s) => slugName(s.name)).join('+')}`;
+      const key = spellPoolKey(
+        origin.uid,
+        pool.map((s) => s.name),
+      );
       col.add({
         kind: 'resource',
         key,

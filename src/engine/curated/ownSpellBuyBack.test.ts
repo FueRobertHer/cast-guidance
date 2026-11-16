@@ -98,18 +98,20 @@ const WORLD: Record<string, DataEntity[]> = {
   ],
 };
 
-const ctx: EngineContext = {
+/** The world, with the rule sets every registry holds and any `later` ones after them. */
+const worldWith = (later: DataEntity[] = []): EngineContext => ({
   get: (type, name, source) =>
     (WORLD[type] ?? []).find(
       (e) =>
         String(e.name).toLowerCase() === name.toLowerCase() &&
         (source === undefined || String(e.source).toLowerCase() === source.toLowerCase()),
     ),
-  // The rule sets every registry holds: Psionic Power's dice are a row of them.
-  byType: (type) => (type === RULE_SET_TYPE ? BUILT_IN_RULE_SETS : (WORLD[type] ?? [])),
-};
+  // Psionic Power's dice and Telekinetic Master's buy-back are rows of the built-in sets.
+  byType: (type) =>
+    type === RULE_SET_TYPE ? [...BUILT_IN_RULE_SETS, ...later] : (WORLD[type] ?? []),
+});
 
-function sheetAt18(source: Printing, subclass: EntityRef) {
+function sheetAt18(source: Printing, subclass: EntityRef, ctx = worldWith()) {
   const doc = newCharacterDoc('p', 'Psi', 't');
   doc.rulesVersion = PRINTINGS[source].rules;
   doc.classes = [
@@ -145,5 +147,29 @@ describe("Telekinetic Master's buy-back", () => {
     expect(sheet.resources.map((r) => r.key)).toEqual(
       expect.arrayContaining(['psi-warrior-dice', own]),
     );
+  });
+
+  it('finds the pool by the spell as a rule set names it, in any case', () => {
+    // A later set's row stands in for the shipped one, naming the spell as a
+    // player would; the pool is keyed by the name lowercased and hyphenated.
+    const named = {
+      type: RULE_SET_TYPE,
+      v: 1,
+      name: 'Named spell',
+      rows: [
+        {
+          part: 'spend',
+          keys: ['telekinetic master|psi warrior|tce'],
+          links: [
+            { buyBack: { resource: 'psi-warrior-dice', amount: 1 }, ownSpell: 'Telekinesis' },
+          ],
+        },
+      ],
+    } as DataEntity;
+    const own = 'spell:psi warrior|tce:telekinesis';
+    const sheet = sheetAt18('TCE', { name: 'Psi Warrior', source: 'TCE' }, worldWith([named]));
+    const master = sheet.actions.find((a) => a.label === 'Telekinetic Master');
+    expect(master?.buyBack).toEqual({ resource: 'psi-warrior-dice', amount: 1, own });
+    expect(sheet.resources.map((r) => r.key)).toContain(own);
   });
 });

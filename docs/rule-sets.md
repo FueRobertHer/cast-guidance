@@ -153,7 +153,8 @@ both tables held). Keys whose links are the same share a row.
   still count.
 - **`links`** (`spend` rows, in place of `effects`, at least one): the prices
   the row puts on the feature's action, in order ("Spend rows", below). A link
-  the reader cannot read leaves the row out.
+  the reader cannot read is a problem and is left out, and the row keeps the
+  rest, still standing in for its keys, as a row keeps the effects it can read.
 - A row the reader cannot read is left out, and the rest still count. What it
   left out goes to the console once, not the sheet: the files are the app's, so
   a problem in one is a bug its tests catch, not something a player can fix.
@@ -323,7 +324,8 @@ in order, each a price as an action takes it ("An action's price", above):
   buy-back passes over an action that has one already. With no such action, a
   pool's buy-back adds an action of its own, named `onAction` or as the feature;
   a slot's adds one only without `onAction`. `ownSpell` gives back a cast of
-  that spell the feature grants (`own` becomes its pool's key), so a link takes
+  that spell the feature grants, by its name in any case (`own` becomes its
+  pool's key, which lowercases and hyphenates the name), so a link takes
   `ownSpell` or `buyBack.own`, not both. `uses` (`key`, `max`, `resetOn`) adds a
   pool named for the feature first.
 
@@ -389,7 +391,10 @@ the one read, or the code row would be dead).
    `standingEffects.test.ts`, `emitRolls` in `rollRows.test.ts`); a test
    context or registry holds `BUILT_IN_RULE_SETS`, as every registry does.
 6. For a spend row, the roll prompt's prices must not change either
-   (`scripts/roll-price-census.ts`, below).
+   (`scripts/roll-price-census.ts`, below), and the census must be able to see
+   the move: run it once with the moved rows linking nothing, and when that
+   changes nothing, its zero proves nothing for those keys (no paid extra is
+   priced as their actions), so the probe's per-key check is the proof.
 
 The stored effect format is the one rule packs use, so a row that needs a field
 the format lacks widens the format for players too: `dcAbility: "strOrDex"` (a
@@ -581,8 +586,12 @@ versions and with the optional class features, each later option of each
 feature pick, every optional feature in up to two hosts, every feat on a
 Fighter 4 and a Wizard 20, and every race and subrace. A paid extra is priced
 as its feature's action, whose cost a spend link often sets, and the price is
-worked out in the prompt, not on the sheet. A move of spend rows must change
-none, taken as `rules-diff` takes its snapshots:
+worked out in the prompt, not on the sheet. It sees a spend row only through a
+paid extra priced as that row's action, with no use spent, so a buy-back, and
+a slot or Hit Point Die price (which the prompt never offers), never shows: the
+15 keys of 3b changed nothing when they linked nothing, while every link
+linking nothing changes 729 riders. A move of spend rows must change none,
+taken as `rules-diff` takes its snapshots:
 
 ```bash
 bun --tsconfig-override=tsconfig.app.json scripts/roll-price-census.ts snapshot --release <cache.json> --out before.json

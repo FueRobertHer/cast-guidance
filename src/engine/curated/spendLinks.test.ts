@@ -4,8 +4,14 @@ import { BUILT_IN_RULE_SETS } from '../../../tests-fixtures/testWorld';
 import { SPEND_POOLS, SPEND_SKIPPED } from '../../data5e/audit/spendScope';
 import { RULE_SET_TYPE } from '../castGuidance';
 import { Collector } from '../effects/base';
-import { readRuleSet } from '../effects/mechanics';
-import { type EffectOrigin, type EngineContext, newCharacterDoc } from '../types';
+import { readRuleSet, type SpendLinkRow } from '../effects/mechanics';
+import {
+  type EffectOrigin,
+  type EngineContext,
+  HIT_DIE_COST,
+  newCharacterDoc,
+  SLOT_COST,
+} from '../types';
 import { SLOT_LINKS } from './slotLinks';
 import { codeLinksOf, linkCodeRows, linkPrice, linkSpend, SPEND_LINKS } from './spendLinks';
 
@@ -18,39 +24,83 @@ const origin: EffectOrigin = { label: 'Feature', uid: 'x', type: 'class' };
 const collector = () => new Collector(newCharacterDoc('c', 'H', 't'), ctx);
 const rows = Object.entries(SPEND_LINKS);
 
-describe('SPEND_LINKS', () => {
-  it('keys every row by lowercase name and printing', () => {
-    for (const [key] of rows) {
-      expect(key, key).toBe(key.toLowerCase());
-      expect(key.split('|').length, key).toBeGreaterThanOrEqual(2);
+/**
+ * Every key's prices: its shipped spend row's links where the row moved there,
+ * else its code rows' (`codeLinksOf`), so a rule a code row is held to still
+ * holds once the row moves.
+ */
+const PRICES: ReadonlyMap<string, readonly SpendLinkRow[]> = (() => {
+  const prices = new Map<string, readonly SpendLinkRow[]>();
+  for (const set of BUILT_IN_RULE_SETS) {
+    for (const row of readRuleSet(set).rows) {
+      if (row.part === 'spend') for (const key of row.keys) prices.set(key, row.links ?? []);
     }
+  }
+  for (const key of [...Object.keys(SPEND_LINKS), ...Object.keys(SLOT_LINKS)]) {
+    if (!prices.has(key)) prices.set(key, codeLinksOf(key));
+  }
+  return prices;
+})();
+const LINKS = [...PRICES].flatMap(([key, links]) => links.map((link) => [key, link] as const));
+const COSTS = LINKS.flatMap(([key, link]) => ('cost' in link ? [[key, link] as const] : []));
+const resourceOf = (link: SpendLinkRow) =>
+  'cost' in link ? link.cost.resource : link.buyBack.resource;
+
+describe('every price, in code or a shipped spend row', () => {
+  it('has one for every key', () => {
+    expect([...PRICES].filter(([, links]) => links.length === 0)).toEqual([]);
   });
 
   it('spends a whole positive number, or leaves it to the player', () => {
-    for (const [key, link] of rows) {
-      if (link.amount === 'varies') continue;
-      expect(Number.isInteger(link.amount) && link.amount > 0, key).toBe(true);
+    for (const [key, link] of LINKS) {
+      const amount = 'cost' in link ? link.cost.amount : link.buyBack.amount;
+      if (amount === 'varies') continue;
+      expect(Number.isInteger(amount) && amount > 0, key).toBe(true);
     }
   });
 
   it('only pays for more on a use that does something for free', () => {
     // A rider has no turn to mark, so its free base use would be a button that does nothing.
-    for (const [key, link] of rows) {
-      if (link.optional !== true) continue;
+    for (const [key, link] of COSTS) {
+      if (link.cost.optional !== true) continue;
       expect(link.economy, key).not.toBe('none');
-      expect(link.amount, key).not.toBe('varies');
+      expect(link.cost.amount, key).not.toBe('varies');
+    }
+  });
+
+  it('asks for a slot level the slot table has', () => {
+    for (const [key, link] of LINKS) {
+      const min = 'cost' in link ? link.cost.minLevel : link.buyBack.minLevel;
+      if (min === undefined) continue;
+      expect(Number.isInteger(min) && min >= 2 && min <= 9, key).toBe(true);
+    }
+  });
+
+  it('rolls dice only for a slot, and heals only with a die', () => {
+    for (const [key, { cost }] of COSTS) {
+      if (cost.slotDice !== undefined) expect(cost.resource, key).toBe(SLOT_COST);
+      if (cost.hitDieHeals !== undefined) expect(cost.resource, key).toBe(HIT_DIE_COST);
+      if (cost.resource === HIT_DIE_COST) expect(cost.hitDieHeals, key).toBeDefined();
     }
   });
 
   it('never both links and skips a feature for one pool', () => {
     // A feature can name several: Twinned Spell spends Sorcery Points and names a slot's level.
     const both = SPEND_POOLS.flatMap((pool) =>
-      Object.keys(SPEND_SKIPPED[pool.id] ?? {}).filter((key) => {
-        const link = SPEND_LINKS[key];
-        return link !== undefined && pool.resources.includes(link.resource);
-      }),
+      Object.keys(SPEND_SKIPPED[pool.id] ?? {}).filter((key) =>
+        (PRICES.get(key) ?? []).some((link) => pool.resources.includes(resourceOf(link))),
+      ),
     );
     expect(both).toEqual([]);
+  });
+});
+
+describe('SPEND_LINKS', () => {
+  it('keys every row by lowercase name and printing', () => {
+    for (const [key] of rows) {
+      expect(key, key).toBe(key.toLowerCase());
+      expect(key.split('|').length, key).toBeGreaterThanOrEqual(2);
+    }
   });
 
   it('gives its reasons to pools that exist', () => {

@@ -512,7 +512,10 @@ export type StoredSpendLink =
       buyBack: ActionBuyBack;
       /** The action it shows on, by name, when that is another feature's (Totems). */
       onAction?: string;
-      /** The use it gives back: a spell the feature's class or subclass grants, by name. */
+      /**
+       * The use it gives back: a spell the feature's class or subclass grants,
+       * by name ("Telekinesis" or "telekinesis", as its pool is keyed either way).
+       */
       ownSpell?: string;
       /** Its uses, when the feature has no pool counting them: named for the feature. */
       uses?: { key: string; max: number; resetOn: 'short' | 'long' };

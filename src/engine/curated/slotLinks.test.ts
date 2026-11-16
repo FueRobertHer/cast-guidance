@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import { BUILT_IN_RULE_SETS, makeTestContext } from '../../../tests-fixtures/testWorld';
-import { SPEND_POOLS, SPEND_SKIPPED } from '../../data5e/audit/spendScope';
 import { RULE_SET_TYPE } from '../castGuidance';
 import { deriveSheet } from '../derive';
 import { Collector } from '../effects/base';
@@ -35,35 +34,8 @@ describe('SLOT_LINKS', () => {
     }
   });
 
-  it('asks for a slot level the slot table has', () => {
-    for (const [key, row] of rows) {
-      const min = row.kind === 'restore' ? row.price.minLevel : row.cost.minLevel;
-      if (min === undefined) continue;
-      expect(Number.isInteger(min) && min >= 2 && min <= 9, key).toBe(true);
-    }
-  });
-
-  it('never both links and skips a feature for the slot or Hit Point Die pool', () => {
-    for (const id of ['slots', 'hitdice']) {
-      const pool = SPEND_POOLS.find((p) => p.id === id);
-      const both = Object.keys(SPEND_SKIPPED[id] ?? {}).filter((key) => {
-        const row = SLOT_LINKS[key];
-        if (row === undefined) return false;
-        const resource = row.kind === 'restore' ? SLOT_COST : row.cost.resource;
-        return pool?.resources.includes(resource) === true;
-      });
-      expect(both, id).toEqual([]);
-    }
-  });
-
-  it('rolls dice only for a slot, and heals only with a die', () => {
-    for (const [key, row] of rows) {
-      if (row.kind !== 'spend') continue;
-      if (row.cost.slotDice !== undefined) expect(row.cost.resource, key).toBe(SLOT_COST);
-      if (row.cost.hitDieHeals !== undefined) expect(row.cost.resource, key).toBe(HIT_DIE_COST);
-      if (row.cost.resource === HIT_DIE_COST) expect(row.cost.hitDieHeals, key).toBeDefined();
-    }
-  });
+  // A slot level, dice and healing, and SPEND_SKIPPED, are checked for every
+  // price in `spendLinks.test.ts`, the shipped rule set's with the code's.
 
   it('rolls a 2014 smite as the rules say at each slot level', () => {
     const smite = SLOT_LINKS['divine smite|paladin|phb'];

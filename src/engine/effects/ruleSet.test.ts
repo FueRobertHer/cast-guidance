@@ -1,6 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { BUILT_IN_RULE_SETS, makeTestContext } from '../../../tests-fixtures/testWorld';
-import { RULE_PACK_TYPE, RULE_SET_LIMITS, RULE_SET_TYPE } from '../castGuidance';
+import {
+  CAST_GUIDANCE_LIMITS,
+  RULE_PACK_TYPE,
+  RULE_SET_LIMITS,
+  RULE_SET_TYPE,
+} from '../castGuidance';
 import { SLOT_LINKS } from '../curated/slotLinks';
 import { linkCodeRows, linkSpend, SPEND_LINKS } from '../curated/spendLinks';
 import { deriveSheet } from '../derive';
@@ -887,6 +892,13 @@ describe('spend rows (rule pack port 3b)', () => {
       // A row whose every link is refused still takes its key.
       ...['c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'p'].map((k) => ['spend', [k], [], []]),
     ]);
+  });
+
+  it('read the first links up to the limit, and say the rest do not count', () => {
+    const { effectsPerEntry: most } = CAST_GUIDANCE_LIMITS;
+    const read = readRuleSet(ruleSet([spend(['a'], Array(most + 1).fill({ cost }))]));
+    expect(read.problems).toEqual([`row 1 (a): only the first ${most} of "links" count`]);
+    expect(read.rows[0]?.links).toHaveLength(most);
   });
 
   it('price the action before the code tables, unless a code row is under an earlier key', () => {
