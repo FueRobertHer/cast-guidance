@@ -159,6 +159,18 @@ describe("renaming a feature's pool", () => {
     ]);
   });
 
+  it('keeps the same rename for a pool a file gives no key, which its name gives one', () => {
+    const { key: _, ...keyless } = POOL;
+    const guidance = feature({ v: 1, effects: [keyless, ...spenders('ki', 'Flurry')] }, [
+      KI as StoredEffect,
+    ]);
+    for (const value of ['Ki', 'Ki ', 'Ki P', 'Ki Points']) name(value);
+    expect(guidance().effects).toEqual([
+      { ...keyless, key: 'ki-points', label: 'Ki Points' },
+      ...spenders('ki', 'Flurry'),
+    ]);
+  });
+
   it('moves the spenders of each pool renamed in turn', () => {
     const sparks = { ...POOL, key: 'sparks', label: 'Sparks' };
     const guidance = feature({
@@ -199,7 +211,7 @@ describe("renaming an item's pool", () => {
 
   it('renames a pool named for another as one with it, with what spends them', () => {
     const uses = { ...POOL, key: 'uses', label: 'Uses' };
-    const effects = anItem([KI, ...spenders('ki', 'Flurry'), uses]);
+    const effects = anItem([KI, ...spenders('ki', 'Flurry'), uses, ...spenders('uses', 'Flare')]);
     // A new pool named Ki is the same pool as Ki, so renaming Ki next moves it all.
     name('Ki', 1);
     name('Ki Points', 0);
@@ -207,6 +219,7 @@ describe("renaming an item's pool", () => {
       { ...KI, key: 'ki-points', label: 'Ki Points' },
       ...spenders('ki-points', 'Flurry'),
       { ...uses, key: 'ki-points', label: 'Ki Points' },
+      ...spenders('ki-points', 'Flare'),
     ]);
   });
 

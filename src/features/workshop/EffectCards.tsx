@@ -2106,10 +2106,11 @@ export function EffectCards({
   // change, kept while it changes. On the way to Kindle its key is ki for a
   // moment, and what spends the class's Ki (or a pool of the entry's own named
   // Ki) stays put. It is the same rename while the card typed in is one that
-  // follows it (the pool's own card, or its twin for the other rules version)
-  // and nothing else has changed since the last step, so each place kept names
-  // the key the last step gave it. A pool typed in after another took its key
-  // starts a rename of its own, which takes along what names that key.
+  // follows it (the pool's own card, keyed or not, or a pool that shared its
+  // key when the rename began, its twin for the other rules version among
+  // them) and nothing else has changed since the last step, so each place kept
+  // names the key the last step gave it. A pool typed in after another took
+  // its key starts a rename of its own, which takes along what names that key.
   const following = useRef<{ was: string; at: Set<string> }>(undefined);
   /**
    * Where `x` names `from`, as `place` and the field: a pool's key (the same
@@ -2144,6 +2145,8 @@ export function EffectCards({
       last?.at.has(`effect ${i} key`) === true && last.was === JSON.stringify([list, amends])
         ? last.at
         : new Set([
+            // A pool a file gives no key (or a number) names none, but is the one renamed.
+            `effect ${i} key`,
             ...list.flatMap((x, j) => naming(x, `effect ${j}`, from)),
             ...amends.flatMap((a, k) => naming(a, `amend ${k}`, from, true)),
           ]);
