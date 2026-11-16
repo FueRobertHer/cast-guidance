@@ -1965,6 +1965,249 @@ describe('while states (H10)', () => {
 
 // ---------------------------------------------------------------------------
 
+describe("an action's price (rule pack port 3a)", () => {
+  const read = (cost?: unknown, buyBack?: unknown) =>
+    readStoredEffects(
+      [
+        {
+          kind: 'action',
+          economy: 'none',
+          label: 'Smite',
+          ...(cost !== undefined ? { cost } : {}),
+          ...(buyBack !== undefined ? { buyBack } : {}),
+        },
+      ],
+      'effects',
+      true,
+    );
+
+  it('reads a cost paid with a spell slot or a Hit Point Die, and a buy-back', () => {
+    const slot = {
+      resource: 'spell-slot',
+      amount: 1,
+      minLevel: 2,
+      pactOnly: true,
+      slotDice: { die: 8, base: 1, maxDice: 5, heals: true, plus: 'your Charisma modifier' },
+      slotRefills: 'points',
+    };
+    const back = { resource: 'spell-slot', amount: 1, own: 'embers', minLevel: 3, pactOnly: true };
+    const die = {
+      resource: 'hit-die',
+      amount: 1,
+      ownUseToo: true,
+      hitDieHeals: 'rollPlusCon',
+      hitDieAtLeast: 1,
+    };
+    const pool = { resource: 'focus', amount: 'varies', optional: true };
+    for (const [cost, buyBack] of [
+      [slot, back],
+      [die, undefined],
+      [pool, { resource: 'focus', amount: 2 }],
+      [{ ...slot, slotDice: { die: 6, base: 0, plain: true } }, undefined],
+    ]) {
+      const r = read(cost, buyBack);
+      expect(r.problems).toEqual([]);
+      expect(r.effects[0]?.effect).toEqual({
+        kind: 'action',
+        economy: 'none',
+        label: 'Smite',
+        cost,
+        ...(buyBack !== undefined ? { buyBack } : {}),
+      });
+    }
+  });
+
+  it('says why a price does not count, field by field', () => {
+    const slot = { resource: 'spell-slot', amount: 1 };
+    const cases: Array<[unknown, unknown, string]> = [
+      [
+        { resource: 'focus', amount: 1, minLevel: 2 },
+        undefined,
+        '"cost.minLevel" is for a price paid with a spell slot',
+      ],
+      [
+        { resource: 'hit-die', amount: 1, pactOnly: true },
+        undefined,
+        '"cost.pactOnly" is for a price paid with a spell slot',
+      ],
+      [
+        { resource: 'focus', amount: 1, slotDice: { die: 8, base: 1 } },
+        undefined,
+        '"cost.slotDice" is for a price paid with a spell slot',
+      ],
+      [
+        { resource: 'focus', amount: 1, slotRefills: 'focus' },
+        undefined,
+        '"cost.slotRefills" is for a price paid with a spell slot',
+      ],
+      [
+        { ...slot, hitDieHeals: 'roll' },
+        undefined,
+        '"cost.hitDieHeals" is for a price paid with a Hit Point Die',
+      ],
+      [
+        { resource: 'focus', amount: 1, hitDieAtLeast: 1 },
+        undefined,
+        '"cost.hitDieAtLeast" is for a price paid with a Hit Point Die',
+      ],
+      [
+        { ...slot, slotDice: { die: 8, base: 1, heals: true, plain: true } },
+        undefined,
+        '"cost.slotDice.plain" or "heals", not both',
+      ],
+      [
+        { ...slot, slotDice: { die: 1, base: 1 } },
+        undefined,
+        '"cost.slotDice.die" is a whole number from 2 to 100',
+      ],
+      [{ ...slot, slotDice: { die: 8 } }, undefined, '"cost.slotDice.base" is missing'],
+      [{ ...slot, minLevel: 10 }, undefined, '"cost.minLevel" is a whole number from 1 to 9'],
+      [
+        { resource: 'hit-die', amount: 1, hitDieHeals: 'all' },
+        undefined,
+        '"cost.hitDieHeals" is one of roll, rollPlusCon',
+      ],
+      [
+        undefined,
+        { resource: 'hit-die', amount: 1 },
+        '"buyBack.resource" is a pool or a spell slot',
+      ],
+      [
+        undefined,
+        { resource: 'focus', amount: 0 },
+        '"buyBack.amount" is a whole number from 1 to 999',
+      ],
+      [
+        undefined,
+        { resource: 'focus', amount: 'varies' },
+        '"buyBack.amount" is a whole number from 1 to 999',
+      ],
+      [
+        undefined,
+        { resource: 'focus', amount: 1, pactOnly: true },
+        '"buyBack.pactOnly" is for a price paid with a spell slot',
+      ],
+      [
+        undefined,
+        { ...slot, slotDice: { die: 8, base: 1 } },
+        '"buyBack.slotDice" is not a field this kind reads',
+      ],
+    ];
+    for (const [cost, buyBack, why] of cases) {
+      expect(read(cost, buyBack).problems, why).toEqual([`effect 1 (action): ${why}`]);
+    }
+    // A false flag is the same as none, so it is never in the wrong place.
+    expect(read({ resource: 'focus', amount: 1, pactOnly: false }).problems).toEqual([]);
+  });
+
+  it('reads every price the spend and slot links give, as they give it', async () => {
+    const { linkSpend, SPEND_LINKS } = await import('../curated/spendLinks');
+    const { SLOT_LINKS } = await import('../curated/slotLinks');
+    const linked: EffectOrigin = { label: 'Feature', uid: 'feature|hb', type: 'class' };
+    const other: EffectOrigin = { label: 'Other', uid: 'other|hb', type: 'class' };
+    let prices = 0;
+    for (const key of new Set([...Object.keys(SPEND_LINKS), ...Object.keys(SLOT_LINKS)])) {
+      const col = new Collector(character(), world({}));
+      // A buy-back for another feature's use lands only on that feature's chip.
+      const row = SLOT_LINKS[key];
+      if (row?.kind === 'restore' && row.pool !== undefined) {
+        col.add({ kind: 'action', economy: 'bonus', label: row.pool.onAction, origin: other });
+      }
+      linkSpend(col, key, 'Feature', linked);
+      for (const e of col.effects) {
+        if (e.kind !== 'action' || (e.cost === undefined && e.buyBack === undefined)) continue;
+        const r = read(e.cost, e.buyBack);
+        expect(r.problems, key).toEqual([]);
+        expect(r.effects[0]?.effect, key).toEqual({
+          kind: 'action',
+          economy: 'none',
+          label: 'Smite',
+          ...(e.cost !== undefined ? { cost: e.cost } : {}),
+          ...(e.buyBack !== undefined ? { buyBack: e.buyBack } : {}),
+        });
+        prices += (e.cost !== undefined ? 1 : 0) + (e.buyBack !== undefined ? 1 : 0);
+      }
+    }
+    // Every row of both tables: 299 spend links and 57 slot links.
+    expect(prices).toBe(299 + 57);
+  });
+
+  it("puts a homebrew action's price on the sheet: a slot with dice, a Hit Point Die, buy-backs", () => {
+    const lamp = feat('Ember Lamp', {
+      effects: [
+        { kind: 'resource', key: 'embers', label: 'Embers', max: 2, reset: 'long' },
+        {
+          kind: 'action',
+          economy: 'bonus',
+          label: 'Searing Smite',
+          cost: {
+            resource: 'spell-slot',
+            amount: 1,
+            minLevel: 2,
+            slotDice: { die: 8, base: 1, maxDice: 5 },
+          },
+        },
+        {
+          kind: 'action',
+          economy: 'none',
+          label: 'Second Breath',
+          cost: { resource: 'hit-die', amount: 1, hitDieHeals: 'rollPlusCon', hitDieAtLeast: 1 },
+        },
+        // Shares the pool's name, so it gives back a use of Embers.
+        {
+          kind: 'action',
+          economy: 'action',
+          label: 'Embers',
+          buyBack: { resource: 'spell-slot', amount: 1 },
+        },
+        {
+          kind: 'action',
+          economy: 'action',
+          label: 'Kindle',
+          buyBack: { resource: 'spell-slot', amount: 1, minLevel: 3, own: 'embers' },
+        },
+      ],
+    });
+    const mage = (levels: number) =>
+      character((d) => {
+        d.classes = [
+          { ref: { name: 'Mage', source: 'TST' }, levels, hp: Array(levels).fill('avg') },
+        ];
+        d.feats = [{ ref: { name: 'Ember Lamp', source: 'HB' }, instanceId: 'f0' }];
+      });
+    const price = (levels: number, label: string) => {
+      const a = deriveSheet(mage(levels), world({ feat: [lamp] })).actions.find(
+        (x) => x.label === label,
+      );
+      return a === undefined ? 'no chip' : { cost: a.cost, buyBack: a.buyBack };
+    };
+    expect(price(5, 'Searing Smite')).toEqual({
+      cost: {
+        resource: 'spell-slot',
+        amount: 1,
+        minLevel: 2,
+        slotDice: { die: 8, base: 1, maxDice: 5 },
+      },
+      buyBack: undefined,
+    });
+    expect(price(5, 'Second Breath')).toEqual({
+      cost: { resource: 'hit-die', amount: 1, hitDieHeals: 'rollPlusCon', hitDieAtLeast: 1 },
+      buyBack: undefined,
+    });
+    expect(price(5, 'Embers')).toEqual({
+      cost: undefined,
+      buyBack: { resource: 'spell-slot', amount: 1 },
+    });
+    expect(price(5, 'Kindle')).toEqual({
+      cost: undefined,
+      buyBack: { resource: 'spell-slot', amount: 1, minLevel: 3, own: 'embers' },
+    });
+    // A Mage 1 has no slot of level 2 or 3, so neither price is offered.
+    expect(price(1, 'Searing Smite')).toEqual({ cost: undefined, buyBack: undefined });
+    expect(price(1, 'Kindle')).toEqual({ cost: undefined, buyBack: undefined });
+  });
+});
+
 describe('what a review found', () => {
   it('reads a kind no string can be made of without throwing', () => {
     const raw = JSON.parse(

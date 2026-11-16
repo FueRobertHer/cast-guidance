@@ -45,8 +45,10 @@ import {
   type EffectOrigin,
   type EntityRef,
   type FormulaField,
+  HIT_DIE_COST,
   refUid,
   SKILLS,
+  SLOT_COST,
   type WhileState,
 } from '../types';
 import { countedSpells } from './additionalSpells';
@@ -603,6 +605,78 @@ const classNaming: Build = (o, r) => {
   return { ...always, ...beside };
 };
 
+/**
+ * The fields that hold only for one way of paying: a spell slot's
+ * (`"resource": "spell-slot"`), or a Hit Point Die's (`"hit-die"`).
+ */
+const PAID_WITH: ReadonlyArray<readonly [string, readonly string[], string]> = [
+  [SLOT_COST, ['minLevel', 'pactOnly', 'slotDice', 'slotRefills'], 'a spell slot'],
+  [HIT_DIE_COST, ['hitDieHeals', 'hitDieAtLeast'], 'a Hit Point Die'],
+];
+
+function paidWith(out: Record<string, unknown>): Record<string, unknown> {
+  for (const [resource, fields, words] of PAID_WITH) {
+    const wrong = out.resource === resource ? undefined : fields.find((k) => k in out);
+    if (wrong !== undefined) throw new Bad(`"${wrong}" is for a price paid with ${words}`);
+  }
+  return out;
+}
+
+/**
+ * A slot cost's dice by the slot's level (`SlotDice`): `base` plus one a slot
+ * level, of `die`, up to `maxDice` (Divine Smite: 1, d8, 5).
+ */
+const slotDice: Field = (v, r, key) => {
+  const out = record({
+    die: [int(2, 100), true],
+    base: [int(0, 20), true],
+    maxDice: [int(1, 40)],
+    heals: [flag],
+    plain: [flag],
+    plus: [text()],
+  })(v, r, key) as Record<string, unknown>;
+  if (out.heals === true && out.plain === true) throw new Bad('"plain" or "heals", not both');
+  return out;
+};
+
+/**
+ * What using an action spends (`ActionCost`): a pool's uses by its key, a spell
+ * slot (`"spell-slot"`, of the level the player picks as they pay), or a Hit
+ * Point Die (`"hit-die"`, which heals as it is spent).
+ */
+const actionCost: Field = (v, r, key) =>
+  paidWith(
+    record({
+      resource: [text(), true],
+      amount: [(x, rr, k) => (x === 'varies' ? x : int(0, 999)(x, rr, k)), true],
+      optional: [flag],
+      ownUseToo: [flag],
+      minLevel: [int(1, 9)],
+      pactOnly: [flag],
+      slotDice: [slotDice],
+      slotRefills: [text()],
+      hitDieHeals: [oneOf('roll', 'rollPlusCon')],
+      hitDieAtLeast: [int(1, 99)],
+    })(v, r, key) as Record<string, unknown>,
+  );
+
+/**
+ * What buys a use of an action back once none are left (`ActionBuyBack`): a
+ * pool's uses or a spell slot. `own` names the use it gives back, when that use
+ * does not share the action's name.
+ */
+const actionBuyBack: Field = (v, r, key) => {
+  const out = record({
+    resource: [text(), true],
+    amount: [int(1, 999), true],
+    own: [text()],
+    minLevel: [int(1, 9)],
+    pactOnly: [flag],
+  })(v, r, key) as Record<string, unknown>;
+  if (out.resource === HIT_DIE_COST) throw new Bad('"resource" is a pool or a spell slot');
+  return paidWith(out);
+};
+
 const action: Build = (o, r) => ({
   economy: req(o, r, 'economy', oneOf('action', 'bonus', 'reaction', 'none')),
   label: req(o, r, 'label', byLevelWords(text(), { needed: true })),
@@ -621,17 +695,8 @@ const action: Build = (o, r) => ({
       dcAbility: [oneOf(...ABILITY_LIST, 'strOrDex', 'spell')],
     }),
   ),
-  ...opt(
-    o,
-    r,
-    'cost',
-    record({
-      resource: [text(), true],
-      amount: [(v, rr, k) => (v === 'varies' ? v : int(0, 999)(v, rr, k)), true],
-      optional: [flag],
-      ownUseToo: [flag],
-    }),
-  ),
+  ...opt(o, r, 'cost', actionCost),
+  ...opt(o, r, 'buyBack', actionBuyBack),
   ...opt(o, r, 'regains', record({ resource: [text(), true], amount: [int(0, 999), true] })),
   ...opt(o, r, 'spendsNoUse', flag),
 });

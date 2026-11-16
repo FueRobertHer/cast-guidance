@@ -236,6 +236,39 @@ The reader refuses a filter that could reach no roll, and `when` with
 disadvantage. A pack written before these fields, when the reader passed over
 them, now loses such an effect, with the problem shown.
 
+## An action's price
+
+An `action` takes every price the engine has (rule pack port 3a), ahead of the
+spend and slot links moving out of code. Its `cost` is what using it spends:
+
+- a pool's uses, by the pool's key, `amount` a whole number or `"varies"` (the
+  player's call, so nothing spends by itself); `optional` makes the base use
+  free and the pool pay for more (2024 Patient Defense); `ownUseToo` spends a
+  use of the pool sharing the action's name as well (Hand of Ultimate Mercy);
+- a spell slot, `"resource": "spell-slot"`, which the player picks by level as
+  they pay: `minLevel` (the lowest level that pays), `pactOnly` (only a Pact
+  Magic slot), `slotDice` (dice by the slot's level: `base` plus one a level,
+  of `die`, up to `maxDice`, with `heals` or `plain` when the roll is not
+  damage, and `plus` for what the line under it adds) and `slotRefills` (the
+  pool that gets as many points back as the slot's level, Font of Magic);
+- a Hit Point Die, `"resource": "hit-die"`, which heals as it is spent:
+  `hitDieHeals` `"roll"` (the default) or `"rollPlusCon"`, and `hitDieAtLeast`.
+
+Its `buyBack` is what buys a use back once none are left: a pool's uses
+(`amount` 1 or more) or a spell slot (with `minLevel` and `pactOnly`), and
+`own`, the key of the use it gives back when that use does not share the
+action's name. A field for one way of paying on another is refused, by name
+("`cost.minLevel` is for a price paid with a spell slot"). The sheet offers a
+price only when the character can pay it: a pool it has (under either name, ki
+or Focus), a slot of the level, or a Hit Point Die.
+
+The Workshop's Action card sets most of this: "Takes" offers no action (a
+rider), "Spends" a pool, a spell slot or a Hit Point Die, with how many, a free
+base use, which slots and how the die heals, and "Buys back a use with" a pool
+or a slot. A slot's dice, the points it gives back, `ownUseToo` and a
+buy-back's `own` are kept as a file writes them, and a value no box offers
+shows as written. Renaming a pool moves every price that names it.
+
 ## Loading
 
 Each file is a dynamic `import()` listed in `src/data5e/builtInRules.ts`, so the
