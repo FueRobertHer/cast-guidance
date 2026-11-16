@@ -775,6 +775,8 @@ function readSpendLinks(raw: unknown): { links: SpendLinkRow[]; problems: string
   return { links, problems };
 }
 
+const INSPIRATION_ALONE = '"inspiration" is the whole price: "reaction" is not true beside it';
+
 /**
  * What a feature of the character's own adds to a roll, paid as its Use is
  * (`PaidRoll`): one of a die (`dice`), the paying pool's own die (`poolDie`), a
@@ -783,8 +785,6 @@ function readSpendLinks(raw: unknown): { links: SpendLinkRow[]; problems: string
  * use given back on a roll that still failed (`spentOnSuccess`) needs one.
  * Inspiration pays alone: no reaction beside it, and no pool's die to add.
  */
-const INSPIRATION_ALONE = '"inspiration" is the whole price: "reaction" is not true beside it';
-
 const rollPaid: Build = (o, r) => {
   const on = req(o, r, 'on', rollFilter);
   const adds = {
@@ -827,7 +827,7 @@ const rollPaid: Build = (o, r) => {
  * (`floorScore`). One made as the d20 lands (`auto`) costs nothing, waits on
  * nothing and never makes the roll worse: the lower die of advantage, a 1, a
  * number set or a floor. The prompt offers a lower die and a floor only so. A
- * number set or a floor adds no bonus, and a free one is not paid with Inspiration.
+ * number set or a floor adds no bonus, and a free reroll is not paid with Inspiration.
  */
 const rollReroll: Build = (o, r) => {
   const out: Record<string, unknown> = {
@@ -1727,9 +1727,10 @@ export function builtInRowsFor(
 /**
  * Emit built-in rows where the code they stand in for ran (`STANDING`, and the
  * roll parts that were `ROLL_ADVANTAGES` and `ROLL_EXTRAS`): each row with no
- * level, or at `featureLevel`, with `origin` itself. `classLevel` is what their formulas read as the class's level; the
- * character's level when absent, as `mechanicsOf` reads it. `className` is the
- * class that gives them (`MechanicsSubject.className`).
+ * level, or at `featureLevel`, with `origin` itself. `classLevel` is what their
+ * formulas read as the class's level; the character's level when absent, as
+ * `mechanicsOf` reads it. `className` is the class that gives them
+ * (`MechanicsSubject.className`).
  */
 export function emitRuleRows(
   col: Collector,

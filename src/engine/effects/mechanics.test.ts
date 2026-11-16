@@ -2517,6 +2517,8 @@ describe("a feature's paid extras and rerolls (rule pack port 3e)", () => {
       { kind: 'rollReroll', on: SAVES, to: 10, ...auto, ifFailed: true },
       { kind: 'rollReroll', on: SAVES, to: 10, ...auto, when: 'Only at night' },
       { kind: 'rollReroll', on: SAVES, to: 10, ...auto, reaction: false },
+      // Free as well, but what an automatic one waits on is named first.
+      { kind: 'rollReroll', on: SAVES, to: 10, ...auto, inspiration: true },
       { kind: 'rollReroll', on: SAVES, ...auto },
       { kind: 'rollReroll', on: SAVES, die: 'one', atMost: 9, ...auto },
       { kind: 'rollReroll', on: SAVES, die: 'extra', ...auto },
@@ -2542,6 +2544,7 @@ describe("a feature's paid extras and rerolls (rule pack port 3e)", () => {
       '"auto" waits on nothing: leave out "ifFailed"',
       '"auto" waits on nothing: leave out "when"',
       '"auto" waits on nothing: leave out "reaction"',
+      '"auto" waits on nothing: leave out "inspiration"',
       worse,
       worse,
       worse,
