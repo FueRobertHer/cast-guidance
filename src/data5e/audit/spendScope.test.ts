@@ -237,4 +237,21 @@ describe('spendReport', () => {
     expect(spendCounts(smite, file)).toMatchObject({ linked: 1, unlinked: 0 });
     expect(spendReport(smite, file)).toContain('# slots: 1 answered, 0 not asked, 1 linked.');
   });
+
+  it('counts a row still in a code table as linked in its own pool', () => {
+    // Its slot price is a `SLOT_LINKS` row until rule pack port 3d.
+    const file = emptyJudgments();
+    const feats = [
+      option('Adept of the White Robes', 'DSotDQ', 'You can expend a spell slot to ward yourself.'),
+    ];
+    const adept = {
+      byType: (t: string) =>
+        t === 'feat' ? feats : t === RULE_SET_TYPE ? BUILT_IN_RULE_SETS : ([] as Entity[]),
+      get: () => undefined,
+    };
+    const subject = proseSubjects(adept)[0];
+    if (subject === undefined) throw new Error('no subject');
+    saveAnswers(file, 'slots', subject, { [SPENDS]: 0.95 });
+    expect(spendCounts(adept, file)).toMatchObject({ linked: 1, unlinked: 0 });
+  });
 });

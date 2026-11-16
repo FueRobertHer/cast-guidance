@@ -340,9 +340,9 @@ its class, is missed, and the link adds its own action or nothing as above.
 A player's file prices an action itself (an action's `cost` and `buyBack`);
 spend rows are the app's.
 
-Every pool price is a row in `spend.json` (3b and 3c). `SPEND_LINKS` keeps
-Divine Reaper alone, since a key leaves both code tables at once and its slot
-buy-back is still in `SLOT_LINKS` (3d). JSON holds no comments, so the reasons
+Every pool price but Divine Reaper's is a row in `spend.json` (3b and 3c).
+`SPEND_LINKS` keeps that one, since a key leaves both code tables at once and
+its slot buy-back is still in `SLOT_LINKS` (3d). JSON holds no comments, so the reasons
 the table gave beside its rows are kept here:
 
 - Monk prices name `focus`, the 2024 pool; `costOnSheet` finds a 2014 monk's
@@ -563,11 +563,13 @@ proved another way, before the code row goes.
 `ROLL_EXTRAS`, still has, or either link table for a `spend` row) and derives
 each build that reads the row twice in one process, once with the code row and
 once with the data row, comparing every sheet field and the actions and pools
-(on the code side a row drops only its moved keys, so a key that shares the row
-and moved earlier, with no code row left, still reads it)
 the build collected, since the sheet drops a price the character cannot pay (a
-pool or slots it lacks). Each moved spend key is also linked alone, both ways,
-in each state a feature may leave its actions in (`SPEND_SEEDS` in
+pool or slots it lacks). On the code side a row drops only its moved keys, so a
+key that shares the row and moved earlier, with no code row left, still reads
+it; a key new to a row, with no code row, reads it both ways and is never
+compared, so `rules-diff` against the base is what shows it. Each moved spend
+key is also linked alone, both ways, in each state a feature may leave its
+actions in (`SPEND_SEEDS` in
 `tests-fixtures/spendSeeds.ts`), which proves a key no build reads; the summary
 lists those. Its builds go wider than
 `rules-diff`'s. Each class and subclass that reads a moved row is built at
