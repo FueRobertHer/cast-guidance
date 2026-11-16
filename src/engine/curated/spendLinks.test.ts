@@ -288,3 +288,80 @@ describe('linkSpend', () => {
     expect(col.effects).toEqual([]);
   });
 });
+
+describe('how a link prices the actions a feature left (`linkPrice`)', () => {
+  // One invented row under `feature|hb`, linked on the actions the feature
+  // emitted, so each rule shows on its own, whatever the shipped rows hold.
+  const linked = (links: unknown[], ...actions: Array<Record<string, unknown>>) => {
+    const set = {
+      type: RULE_SET_TYPE,
+      v: 1,
+      name: 'Links',
+      rows: [{ part: 'spend', keys: ['feature|hb'], links }],
+    };
+    const rowCtx: EngineContext = {
+      get: () => undefined,
+      byType: (type) => (type === RULE_SET_TYPE ? [set] : []),
+    };
+    const col = new Collector(newCharacterDoc('c', 'H', 't'), rowCtx);
+    for (const a of actions)
+      col.add({ kind: 'action', economy: 'bonus', label: 'Feature', origin, ...a });
+    linkSpend(col, ['feature|hb'], 'Feature', origin);
+    return col.effects.map((e) => (e.kind === 'action' ? { ...e, origin: undefined } : e));
+  };
+  const focus = { resource: 'focus', amount: 1 };
+  const slot = { resource: SLOT_COST, amount: 1 };
+  const die = { resource: HIT_DIE_COST, amount: 1, hitDieHeals: 'roll' };
+  const action = (fields: Record<string, unknown> = {}) => ({
+    kind: 'action',
+    economy: 'bonus',
+    label: 'Feature',
+    origin: undefined,
+    ...fields,
+  });
+
+  it("replaces the cost on the feature's action with a pool's", () => {
+    expect(linked([{ cost: { resource: 'ki', amount: 2 } }], { cost: focus })).toEqual([
+      action({ cost: { resource: 'ki', amount: 2 } }),
+    ]);
+  });
+
+  it('leaves an action that has a cost to a slot or a die, which add an action of their own', () => {
+    for (const cost of [slot, die]) {
+      expect(linked([{ cost }], { cost: focus }), cost.resource).toEqual([
+        action({ cost: focus }),
+        action({ economy: 'none', cost }),
+      ]);
+      expect(linked([{ cost }], {}), cost.resource).toEqual([action({ cost })]);
+    }
+  });
+
+  it("adds a chip of its own for a link with a label, leaving the feature's action alone", () => {
+    expect(linked([{ cost: focus, label: 'Quick' }], {})).toEqual([
+      action(),
+      action({ economy: 'none', label: 'Quick', cost: focus }),
+    ]);
+  });
+
+  it('sets a note only on an action with none', () => {
+    expect(linked([{ cost: focus, note: 'Row' }], { note: 'Own' })).toEqual([
+      action({ cost: focus, note: 'Own' }),
+    ]);
+    expect(linked([{ cost: focus, note: 'Row' }], {})).toEqual([
+      action({ cost: focus, note: 'Row' }),
+    ]);
+  });
+
+  it("puts a slot's buy-back past an action that has one, and a pool's over it", () => {
+    const back = { buyBack: { resource: 'focus', amount: 1 } };
+    const bySlot = { buyBack: { resource: SLOT_COST, amount: 1, minLevel: 3 } };
+    expect(linked([bySlot], back, { label: 'Second' })).toEqual([
+      action(back),
+      action({ label: 'Second', ...bySlot }),
+    ]);
+    expect(linked([bySlot], back)).toEqual([action(back), action({ economy: 'none', ...bySlot })]);
+    expect(linked([{ buyBack: { resource: 'ki', amount: 2 } }], back)).toEqual([
+      action({ buyBack: { resource: 'ki', amount: 2 } }),
+    ]);
+  });
+});

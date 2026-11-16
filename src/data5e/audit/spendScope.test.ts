@@ -237,4 +237,20 @@ describe('spendReport', () => {
     expect(spendCounts(smite, file)).toMatchObject({ linked: 1, unlinked: 0 });
     expect(spendReport(smite, file)).toContain('# slots: 1 answered, 0 not asked, 1 linked.');
   });
+
+  it('counts a row that only buys a use back as linked in the pool it buys with', () => {
+    const file = emptyJudgments();
+    const feats = [
+      option('Strixhaven Mascot', 'SCC', 'You can expend a spell slot to use it again.'),
+    ];
+    const mascot = {
+      byType: (t: string) =>
+        t === 'feat' ? feats : t === RULE_SET_TYPE ? BUILT_IN_RULE_SETS : ([] as Entity[]),
+      get: () => undefined,
+    };
+    const subject = proseSubjects(mascot)[0];
+    if (subject === undefined) throw new Error('no subject');
+    saveAnswers(file, 'slots', subject, { [SPENDS]: 0.95 });
+    expect(spendCounts(mascot, file)).toMatchObject({ linked: 1, unlinked: 0 });
+  });
 });
