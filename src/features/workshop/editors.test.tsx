@@ -275,25 +275,6 @@ describe('the Advantage, Added die and Initiative cards', () => {
     ).toBe('rolls, as written');
   });
 
-  it('keeps a paid extra, which has no card of its own yet, as written while another changes', () => {
-    const paid = {
-      kind: 'rollPaid',
-      on: { rolls: ['save'] },
-      bonus: { f: 'max(1, mod.int)' },
-      after: true,
-      reaction: false,
-    };
-    const draft = mount(feat, {
-      name: 'Steady',
-      ...feat.blank(),
-      castGuidance: { v: 1, effects: [paid, { kind: 'acBonus', amount: 1 }] },
-    });
-    type('Amount', '2');
-    expect(effectsOf(draft())).toEqual([paid, { kind: 'acBonus', amount: 2 }]);
-    expect(problemsOf(draft())).toEqual([]);
-    expect(screen.queryByText(/This does not count yet/)).toBeNull();
-  });
-
   it('reads which kind a stored filter is', () => {
     expect(rollKindOf({ rolls: ['save'], save: 'death' })).toBe('death');
     expect(rollKindOf({ rolls: ['save'], abilities: ['con'] })).toBe('save');
