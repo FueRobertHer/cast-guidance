@@ -15,6 +15,7 @@ vi.mock('@/data5e/hooks', () => ({
 }));
 vi.mock('@/ui/dialogs', () => ({ askChoice: () => Promise.resolve(choice.current) }));
 
+import { EffectCards } from './EffectCards';
 import {
   CHARGES,
   editor as item,
@@ -357,6 +358,8 @@ describe('SpellEditor', () => {
     ]);
     press('Armor Class');
     expect(draft().castGuidance).toEqual({ v: 1, effects: [{ kind: 'acBonus', amount: 1 }] });
+    // On the target it holds under the rules of the sheet it is on: no rules version.
+    expect(screen.queryByLabelText('Armor Class: Rules')).toBeNull();
     expect(within(preview()).getByText('C')).toBeTruthy();
   });
 });
@@ -577,10 +580,14 @@ describe('ItemEditor', () => {
     expect(
       screen.getByText('Embers (name of the class that gives it): 2 uses, back on a long rest'),
     ).toBeTruthy();
-    const rules = screen.getByLabelText('Uses per rest: Rules') as HTMLSelectElement;
-    expect(rules.selectedOptions[0]?.textContent).toBe('2024 rules only');
-    // No card adds one, so an effect without it has no box.
-    expect(screen.queryByLabelText('Armor Class: Rules')).toBeNull();
+    const rules = (label: string) =>
+      (screen.getByLabelText(label) as HTMLSelectElement).selectedOptions[0]?.textContent;
+    expect(rules('Uses per rest: Rules')).toBe('2024 rules only');
+    expect(rules('Uses per rest: Class in the name')).toBe('Always');
+    // Every card offers one, either rules until one is picked.
+    expect(rules('Armor Class: Rules')).toBe('Either rules');
+    type('Armor Class: Rules', '2014');
+    expect(effects()[1]).toEqual({ kind: 'acBonus', amount: 1, edition: '2014' });
     // Renaming the pool keeps both.
     type('Uses per rest: Name', 'Sparks');
     expect(effects()[0]).toMatchObject({ label: 'Sparks', edition: '2024', ownClass: true });
@@ -589,8 +596,192 @@ describe('ItemEditor', () => {
     expect(readStoredEffects(effects()).problems).toEqual([]);
     type('Uses per rest: Rules', '');
     expect(effects()[0]).not.toHaveProperty('edition');
-    expect(screen.queryByLabelText('Uses per rest: Rules')).toBeNull();
+    expect(rules('Uses per rest: Rules')).toBe('Either rules');
     expect(readStoredEffects(effects()).problems).toEqual([]);
+  });
+
+  it('names a pool or an action for its class, always or beside the classes typed', () => {
+    const draft = mount(item, {
+      name: 'Ember Lamp',
+      type: 'OTH',
+      entries: [],
+      castGuidance: {
+        v: 1,
+        effects: [
+          { kind: 'resource', key: 'embers', label: 'Embers', max: 2, reset: 'long' },
+          { kind: 'action', economy: 'bonus', label: 'Kindle' },
+          { kind: 'acBonus', amount: 1 },
+        ],
+      },
+    });
+    const effects = () => (draft().castGuidance as Json).effects as Json[];
+    const naming = (label: string) =>
+      (screen.getByLabelText(label) as HTMLSelectElement).selectedOptions[0]?.textContent;
+    expect(naming('Uses per rest: Class in the name')).toBe('Never');
+    // Only a pool and an action have a name the sheet can add the class to.
+    expect(screen.queryByLabelText('Armor Class: Class in the name')).toBeNull();
+    type('Uses per rest: Class in the name', 'own');
+    expect(effects()[0]).toMatchObject({ ownClass: true });
+    expect(
+      screen.getByText('Embers (name of the class that gives it): 2 uses, back on a long rest'),
+    ).toBeTruthy();
+    // Beside: no class yet is a problem the card says in words.
+    type('Uses per rest: Class in the name', 'beside');
+    expect(effects()[0]).not.toHaveProperty('ownClass');
+    expect(effects()[0]).toMatchObject({ ownClassBeside: [] });
+    expect(screen.getByText(/name a class it stands beside/)).toBeTruthy();
+    // A comma typed stays, for the next name.
+    type('Uses per rest: Beside which classes', 'Paladin,');
+    expect(effects()[0]).toMatchObject({ ownClassBeside: ['Paladin'] });
+    expect(
+      (screen.getByLabelText('Uses per rest: Beside which classes') as HTMLInputElement).value,
+    ).toBe('Paladin,');
+    type('Uses per rest: Beside which classes', 'Paladin, cleric ');
+    expect(effects()[0]).toMatchObject({ ownClassBeside: ['Paladin', 'cleric'] });
+    expect(readStoredEffects(effects()).problems).toEqual([]);
+    expect(screen.queryByText(/name a class it stands beside/)).toBeNull();
+    type('Uses per rest: Class in the name', '');
+    expect(effects()[0]).toEqual({
+      kind: 'resource',
+      key: 'embers',
+      label: 'Embers',
+      max: 2,
+      reset: 'long',
+    });
+    // An action too, so it can share an "ownClass" pool's name.
+    type('Action: Class in the name', 'own');
+    expect(effects()[1]).toEqual({
+      kind: 'action',
+      economy: 'bonus',
+      label: 'Kindle',
+      ownClass: true,
+    });
+    expect(screen.getByText('Bonus action: Kindle (name of the class that gives it)')).toBeTruthy();
+    expect(readStoredEffects(effects()).problems).toEqual([]);
+  });
+
+  it('shows the classes a pool is named beside after the card above it goes', () => {
+    mount(item, {
+      name: 'Ember Lamp',
+      type: 'OTH',
+      entries: [],
+      castGuidance: {
+        v: 1,
+        effects: [
+          {
+            kind: 'resource',
+            key: 'a',
+            label: 'A',
+            ownClassBeside: ['Cleric'],
+            max: 1,
+            reset: 'long',
+          },
+          {
+            kind: 'resource',
+            key: 'b',
+            label: 'B',
+            ownClassBeside: ['Paladin'],
+            max: 1,
+            reset: 'long',
+          },
+        ],
+      },
+    });
+    fireEvent.click(screen.getAllByRole('button', { name: /^Remove/ })[0] as HTMLElement);
+    expect(
+      (screen.getByLabelText('Uses per rest: Beside which classes') as HTMLInputElement).value,
+    ).toBe('Paladin');
+  });
+
+  it('says in its own words a list of classes too long to stand beside', () => {
+    const many = Array.from({ length: 13 }, (_, i) => `Class ${i}`);
+    mount(item, {
+      name: 'Ember Lamp',
+      type: 'OTH',
+      entries: [],
+      castGuidance: {
+        v: 1,
+        effects: [
+          { kind: 'resource', key: 'a', label: 'A', ownClassBeside: many, max: 1, reset: 'long' },
+        ],
+      },
+    });
+    expect(screen.queryByText(/name a class it stands beside/)).toBeNull();
+    expect(screen.getByText(/"ownClassBeside" lists at most 12/)).toBeTruthy();
+  });
+
+  it('takes away a rules version a file gives that is not one, in play or not', () => {
+    for (const inPlay of [false, true]) {
+      const changed: unknown[][] = [];
+      render(
+        <EffectCards
+          effects={[
+            { kind: 'acBonus', amount: 1, edition: '2015' },
+            { kind: 'acBonus', amount: 2, edition: 2014 },
+          ]}
+          readOnly={false}
+          inPlay={inPlay}
+          onChange={(next) => changed.push(next)}
+        />,
+      );
+      const boxes = screen.getAllByLabelText('Armor Class: Rules') as HTMLSelectElement[];
+      expect(boxes).toHaveLength(2);
+      for (const box of boxes) fireEvent.change(box, { target: { value: '' } });
+      expect(changed).toEqual([
+        [
+          { kind: 'acBonus', amount: 1 },
+          { kind: 'acBonus', amount: 2, edition: 2014 },
+        ],
+        [
+          { kind: 'acBonus', amount: 1, edition: '2015' },
+          { kind: 'acBonus', amount: 2 },
+        ],
+      ]);
+      cleanup();
+    }
+  });
+
+  it('lists a pool given for each rules version once to spend, kept on the card or elsewhere', () => {
+    const half = (edition: '2014' | '2024') => ({
+      kind: 'resource',
+      edition,
+      key: 'vigil',
+      label: 'Vigil',
+      max: { byLevel: { '1': 2 } },
+      reset: 'long',
+    });
+    render(
+      <EffectCards
+        effects={[{ kind: 'action', economy: 'bonus', label: 'Watch' }]}
+        resources={[half('2014'), half('2024')]}
+        readOnly={false}
+        onChange={() => undefined}
+      />,
+    );
+    const spends = screen.getByLabelText('Action: Spends') as HTMLSelectElement;
+    expect([...spends.options].map((o) => o.textContent)).toEqual(['Nothing', '1 use of Vigil']);
+  });
+
+  it('offers no rules version on an effect in play, but shows one a file gives to take it away', () => {
+    const changed: unknown[][] = [];
+    render(
+      <EffectCards
+        effects={[
+          { kind: 'acBonus', amount: 1 },
+          { kind: 'acBonus', amount: 2, edition: '2024' },
+        ]}
+        readOnly={false}
+        inPlay
+        onChange={(next) => changed.push(next)}
+      />,
+    );
+    const boxes = screen.getAllByLabelText('Armor Class: Rules') as HTMLSelectElement[];
+    expect(boxes).toHaveLength(1);
+    fireEvent.change(boxes[0] as HTMLSelectElement, { target: { value: '' } });
+    expect(changed.at(-1)).toEqual([
+      { kind: 'acBonus', amount: 1 },
+      { kind: 'acBonus', amount: 2 },
+    ]);
   });
 
   it('says a pool and an action are named for their class beside a class a file lists', () => {
@@ -670,6 +861,8 @@ describe('ItemEditor', () => {
       'sparks',
       'sparks',
     ]);
+    // Its name too, under either version.
+    expect(effects().map((e) => e.label)).toEqual(['Sparks', 'Sparks', 'Flare']);
     expect(readStoredEffects(effects()).problems).toEqual([]);
   });
 

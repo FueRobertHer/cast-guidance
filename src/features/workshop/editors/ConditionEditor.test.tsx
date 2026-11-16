@@ -55,6 +55,8 @@ describe('ConditionEditor', () => {
   it('makes a new condition whose effects a character in it counts', () => {
     const draft = mount({ name: 'Dazed', ...editor.blank() });
     press('Armor Class');
+    // It holds under the rules of the sheet it is on: no card offers a version.
+    expect(screen.queryByLabelText('Armor Class: Rules')).toBeNull();
     const saved = writeEntry({ draft: draft(), source: 'MyHomebrew', mode: 'changes' });
     expect(saved).toEqual({
       name: 'Dazed',

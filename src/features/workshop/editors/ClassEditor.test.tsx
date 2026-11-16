@@ -5,7 +5,7 @@
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { useState } from 'react';
 import { MemoryRouter } from 'react-router';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { type EntityRegistry, mergeHomebrew, normalizeDataset } from '@/data5e/normalize';
 import { readStored } from '../copyWriter';
 import { EDITORS, type Json } from '../editorTypes';
@@ -540,6 +540,29 @@ describe('pools', () => {
     );
   });
 
+  it('heads the columns of a pool given for each rules version with its version', () => {
+    const { registry, cls } = book();
+    const half = (edition: string, max: number) => ({
+      kind: 'resource',
+      edition,
+      key: 'vigil',
+      label: 'Vigil',
+      max: { byLevel: { '1': max } },
+      reset: 'long',
+    });
+    const written = save(registry, cls, {}, 'changes', {
+      castGuidance: { v: 1, effects: [half('2014', 1), half('2024', 2)] },
+    });
+    const { entry } = readStored(structuredClone(written.entry), cls);
+    expect((entry.classTableGroups as Json[]).at(-1)).toEqual({
+      colLabels: ['Vigil (2014 rules)', 'Vigil (2024 rules)'],
+      rows: Array.from({ length: 20 }, () => [1, 2]),
+    });
+    expect(openClass(entry, { original: cls, registry }).classTableGroups).toEqual(
+      cls.classTableGroups,
+    );
+  });
+
   it('heads the column of a pool named by level with its first level’s name', () => {
     const { registry, cls } = book();
     const embers = {
@@ -669,6 +692,17 @@ describe('summarize and check', () => {
     const pools = (...effects: Json[]) => check({ name: 'L', castGuidance: { v: 1, effects } });
     expect(pools(byLevel('e', 'Embers'), byLevel('s', 'Sparks'))).toBeUndefined();
     expect(pools(byLevel('e', 'Embers'), pool('embers'))).toBe('Two pools have the same name.');
+    // One name for two pools that count under different rules versions, as one pool's halves.
+    const of = (key: string, edition?: string) => ({
+      ...pool('Vigil'),
+      key,
+      ...(edition === undefined ? {} : { edition }),
+    });
+    expect(pools(of('v', '2014'), of('v', '2024'))).toBeUndefined();
+    expect(pools(of('v', '2014'), of('w', '2024'))).toBeUndefined();
+    expect(pools(of('v', '2014'), of('v', '2014'))).toBe('Two pools have the same name.');
+    expect(pools(of('v', '2014'), of('v'))).toBe('Two pools have the same name.');
+    expect(pools(of('v', '2024'), of('w'))).toBe('Two pools have the same name.');
   });
 
   it('asks for names Save would write twice, a book feature it has to write among them', () => {
@@ -792,6 +826,138 @@ describe('the class editor on screen', () => {
     fireEvent.change(screen.getByLabelText('Vigil at level 5'), { target: { value: '3' } });
     const [pool] = (draft().castGuidance as { effects: Json[] }).effects;
     expect(pool).toMatchObject({ label: 'Vigil', max: { byLevel: { '1': 2, '5': 3 } } });
+  });
+
+  it('splits a pool by rules version into two halves of one pool, each its own column', async () => {
+    const { registry, cls } = book();
+    const draft = mount(registry, cls);
+    const check = () => (editor.check ?? (() => undefined))(draft());
+    const pools = () => (draft().castGuidance as { effects: Json[] }).effects;
+    fireEvent.click(await screen.findByRole('button', { name: 'Add a pool' }));
+    fireEvent.change(screen.getByLabelText('Pool name'), { target: { value: 'Vigil' } });
+    const rules = screen.getByLabelText('Vigil: rules') as HTMLSelectElement;
+    expect(rules.selectedOptions[0]?.textContent).toBe('Either rules');
+    // A pool of either rules has no other half to add.
+    expect(screen.queryByRole('button', { name: /rules version$/ })).toBeNull();
+    fireEvent.change(rules, { target: { value: '2014' } });
+    // Another pool after it: the new half goes beside its other half, not last.
+    fireEvent.click(screen.getByRole('button', { name: 'Add a pool' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Add its 2024 rules version' }));
+    const other = {
+      kind: 'resource',
+      key: 'pool-2',
+      label: 'Pool 2',
+      max: { byLevel: { '1': 2 } },
+      reset: 'long',
+    };
+    expect(pools()).toEqual([
+      {
+        kind: 'resource',
+        key: 'pool-1',
+        label: 'Vigil',
+        max: { byLevel: { '1': 2 } },
+        reset: 'long',
+        edition: '2014',
+      },
+      {
+        kind: 'resource',
+        key: 'pool-1',
+        label: 'Vigil',
+        max: { byLevel: { '1': 2 } },
+        reset: 'long',
+        edition: '2024',
+      },
+      other,
+    ]);
+    expect(screen.queryByRole('button', { name: /rules version$/ })).toBeNull();
+    expect(check()).toBeUndefined();
+    // Each half its own column in the table.
+    fireEvent.click(await screen.findByRole('button', { name: /^Level 5,/ }));
+    fireEvent.change(screen.getByLabelText('Vigil (2024 rules) at level 5'), {
+      target: { value: '3' },
+    });
+    expect(pools().map((p) => p.max)).toEqual([
+      { byLevel: { '1': 2 } },
+      { byLevel: { '1': 2, '5': 3 } },
+      other.max,
+    ]);
+    // Renaming one renames both, so they stay one pool.
+    const [first] = screen.getAllByLabelText('Pool name');
+    fireEvent.change(first as HTMLElement, { target: { value: 'Watch' } });
+    expect(pools().map((p) => p.label)).toEqual(['Watch', 'Watch', 'Pool 2']);
+    fireEvent.change(screen.getByLabelText('Watch (2014 rules): back on'), {
+      target: { value: 'short' },
+    });
+    expect(pools().map((p) => p.reset)).toEqual(['short', 'long', 'long']);
+    // Both counting under one version is two pools of one name.
+    fireEvent.change(screen.getByLabelText('Watch (2024 rules): rules'), { target: { value: '' } });
+    expect(pools()[1]).not.toHaveProperty('edition');
+    expect(check()).toBe('Two pools have the same name.');
+    fireEvent.click(screen.getByRole('button', { name: 'Remove Watch (2014 rules)' }));
+    expect(pools().map((p) => p.label)).toEqual(['Watch', 'Pool 2']);
+    expect(check()).toBeUndefined();
+  });
+
+  it('takes a pool of one name under each rules version from a file as its two halves', async () => {
+    const { registry, cls } = book();
+    const vigil = (key: string, edition: unknown) => ({
+      kind: 'resource',
+      key,
+      label: 'Vigil',
+      max: { byLevel: { '1': 2 } },
+      reset: 'long',
+      edition,
+    });
+    const draft = mount(registry, {
+      ...cls,
+      castGuidance: { v: 1, effects: [vigil('vigil', '2014'), vigil('watch', '2024')] },
+    });
+    await screen.findByLabelText('Vigil (2014 rules): rules');
+    expect((editor.check ?? (() => undefined))(draft())).toBeUndefined();
+    // Each already has its other half, under another key.
+    expect(screen.queryByRole('button', { name: /rules version$/ })).toBeNull();
+  });
+
+  it('keeps both halves of a pool their own columns when both are set to one rules version', async () => {
+    const { registry, cls } = book();
+    const vigil = (edition: string) => ({
+      kind: 'resource',
+      key: 'vigil',
+      label: 'Vigil',
+      max: { byLevel: { '1': 2 } },
+      reset: 'long',
+      edition,
+    });
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const draft = mount(registry, {
+      ...cls,
+      castGuidance: { v: 1, effects: [vigil('2014'), vigil('2024')] },
+    });
+    fireEvent.change(await screen.findByLabelText('Vigil (2024 rules): rules'), {
+      target: { value: '2014' },
+    });
+    expect((editor.check ?? (() => undefined))(draft())).toBe('Two pools have the same name.');
+    const keyErrors = errors.mock.calls.filter((c) => c.some((a) => /same key/.test(String(a))));
+    errors.mockRestore();
+    expect(keyErrors).toEqual([]);
+  });
+
+  it('shows a rules version a file gives a pool that is not one, to take it away', async () => {
+    const { registry, cls } = book();
+    const vigil = {
+      kind: 'resource',
+      key: 'vigil',
+      label: 'Vigil',
+      max: { byLevel: { '1': 2 } },
+      reset: 'long',
+      edition: '2015',
+    };
+    const draft = mount(registry, { ...cls, castGuidance: { v: 1, effects: [vigil] } });
+    const rules = (await screen.findByLabelText('Vigil: rules')) as HTMLSelectElement;
+    expect(rules.selectedOptions[0]?.textContent).toBe('2015 (not a rules version)');
+    fireEvent.change(rules, { target: { value: '' } });
+    const [pool] = (draft().castGuidance as { effects: Json[] }).effects;
+    expect(pool).not.toHaveProperty('edition');
   });
 
   it('shows a pool a file names and rests by level by its first level, and replaces it when changed', async () => {

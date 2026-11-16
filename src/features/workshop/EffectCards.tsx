@@ -87,17 +87,51 @@ const STATES: Options = [
 ];
 
 /**
- * The rules version an effect counts under alone (`edition`). A file may say
- * one; no card adds it, so its box shows only while it is set, and "Either
- * rules" takes it away.
+ * The rules version an effect counts under alone (`edition`), as a card's (and
+ * a class's pool's) "Rules" box offers it. "Either rules" takes it away.
  */
 const EDITIONS: Options = [
+  ['', 'Either rules'],
   ['2014', '2014 rules only'],
   ['2024', '2024 rules only'],
-  ['', 'Either rules'],
 ];
-const editionOf = (e: Eff) =>
+export const editionOf = (e: Eff) =>
   EFFECT_EDITIONS.find((v) => v === e.edition) as (typeof EFFECT_EDITIONS)[number] | undefined;
+
+/** The Rules box's choice for an `edition` a file gives that is not a rules version. */
+const AS_WRITTEN = 'as written';
+
+/**
+ * A Rules box's value and choices. An `edition` a file gives that is not a
+ * rules version shows as written, so "Either rules" is a change that takes it away.
+ */
+export function editionBox(e: Eff): { value: string; options: Options } {
+  const edition = editionOf(e);
+  if (edition !== undefined || e.edition === undefined)
+    return { value: edition ?? '', options: EDITIONS };
+  const raw = typeof e.edition === 'string' ? e.edition : JSON.stringify(e.edition);
+  return {
+    value: AS_WRITTEN,
+    options: [...EDITIONS, [AS_WRITTEN, `${raw} (not a rules version)`]],
+  };
+}
+
+/**
+ * Whether a pool's or an action's name says the class that gives it: never,
+ * always (`ownClass`), or only beside another class it lists (`ownClassBeside`).
+ */
+const NAMINGS: Options = [
+  ['', 'Never'],
+  ['own', 'Always'],
+  ['beside', 'Beside a class'],
+];
+
+/** Class names as a box holds them, "Paladin, Cleric", as a list. */
+const classList = (text: string): string[] =>
+  text
+    .split(',')
+    .map((s) => s.trim())
+    .filter((s) => s !== '');
 
 const word = (options: Options, v: unknown) => options.find(([k]) => k === v)?.[1] ?? String(v);
 
@@ -790,12 +824,80 @@ function stored(f: FieldSpec, text: string): unknown {
   return /^-?\d+$/.test(t) ? Number(t) : { f: t };
 }
 
+/**
+ * A pool's or an action's "Class in the name" box, and the classes it names
+ * when the name says the class only beside another (`ownClassBeside`).
+ */
+function NamingFields({
+  effect,
+  title,
+  onChange,
+}: {
+  effect: Eff;
+  title: string;
+  onChange: (next: Eff) => void;
+}) {
+  const beside = Array.isArray(effect.ownClassBeside) ? effect.ownClassBeside.map(String) : [];
+  const naming =
+    effect.ownClass === true ? 'own' : Array.isArray(effect.ownClassBeside) ? 'beside' : '';
+  // The words as typed, so a comma can start the next name. Cards are their
+  // place in the list, so this one can be handed another card's classes (the
+  // one above it removed): then those are shown, not what was typed.
+  const [held, setTyped] = useState(beside.join(', '));
+  const typed = classList(held).join('\n') === beside.join('\n') ? held : beside.join(', ');
+  const without = (): Eff => {
+    const { ownClass: _, ownClassBeside: _beside, ...rest } = effect;
+    return rest as Eff;
+  };
+  return (
+    <>
+      <Field label="Class in the name">
+        <Select
+          aria-label={`${title}: Class in the name`}
+          value={naming}
+          onChange={(e) => {
+            const v = e.target.value;
+            onChange(
+              v === 'own'
+                ? { ...without(), ownClass: true }
+                : v === 'beside'
+                  ? { ...without(), ownClassBeside: classList(typed) }
+                  : without(),
+            );
+          }}
+        >
+          {NAMINGS.map(([v, text]) => (
+            <option key={v} value={v}>
+              {text}
+            </option>
+          ))}
+        </Select>
+      </Field>
+      {naming === 'beside' && (
+        <Field label="Beside which classes">
+          <input
+            aria-label={`${title}: Beside which classes`}
+            value={typed}
+            placeholder="Paladin, Cleric"
+            onChange={(e) => {
+              setTyped(e.target.value);
+              onChange({ ...without(), ownClassBeside: classList(e.target.value) });
+            }}
+            className={fieldClass}
+          />
+        </Field>
+      )}
+    </>
+  );
+}
+
 function Card({
   effect,
   problems,
   list,
   pools,
   spells,
+  inPlay,
   readOnly,
   onChange,
   onRemove,
@@ -805,20 +907,18 @@ function Card({
   list: readonly Eff[];
   pools: readonly Eff[];
   spells: readonly SpellOption[];
+  inPlay: boolean;
   readOnly: boolean;
   onChange: (next: Eff, renamedKey?: [string, string]) => void;
   onRemove: () => void;
 }) {
   const spec = specOf(effect);
   const title = spec?.add ?? effect.kind;
-  // One of each key: a pool given once for each rules version (`edition`) is one pool.
-  const own = list.filter(
-    (x, i) =>
-      x.kind === 'resource' &&
-      typeof x.key === 'string' &&
-      list.findIndex((y) => y.kind === 'resource' && y.key === x.key) === i,
+  // One of each key: a pool given once for each rules version (`edition`) is one
+  // pool, the card's own or one kept elsewhere (a class's).
+  const resources = [...list.filter((x) => x.kind === 'resource'), ...pools].filter(
+    (x, i, all) => typeof x.key === 'string' && all.findIndex((y) => y.key === x.key) === i,
   );
-  const resources = [...own, ...pools.filter((p) => !own.some((x) => x.key === p.key))];
   const state = typeof effect.while === 'string' ? effect.while : '';
   const edition = editionOf(effect);
   const set = (f: FieldSpec, text: string) => {
@@ -940,21 +1040,23 @@ function Card({
               </Select>
             </Field>
           )}
-          {edition !== undefined && (
+          {(effect.kind === 'resource' || effect.kind === 'action') && (
+            <NamingFields effect={effect} title={title} onChange={onChange} />
+          )}
+          {/* An effect in play holds under the sheet's rules: its box shows only
+              while a file sets one, to take it away. */}
+          {(!inPlay || effect.edition !== undefined) && (
             <Field label="Rules">
               <Select
                 aria-label={`${title}: Rules`}
-                value={edition}
+                value={editionBox(effect).value}
                 onChange={(e) => {
                   const { edition: _, ...rest } = effect;
-                  onChange(
-                    e.target.value === ''
-                      ? (rest as Eff)
-                      : { ...rest, edition: e.target.value as typeof edition },
-                  );
+                  const v = e.target.value;
+                  onChange(v === '' ? (rest as Eff) : { ...rest, edition: v as typeof edition });
                 }}
               >
-                {EDITIONS.map(([v, text]) => (
+                {editionBox(effect).options.map(([v, text]) => (
                   <option key={v} value={v}>
                     {text}
                   </option>
@@ -979,7 +1081,9 @@ function Card({
           This does not count yet:{' '}
           {effect.kind === 'grantSpell' && p.startsWith('"spell"')
             ? 'pick a spell from the list'
-            : p}
+            : p === '"ownClassBeside" is a list'
+              ? 'name a class it stands beside'
+              : p}
         </p>
       ))}
     </div>
@@ -1001,10 +1105,16 @@ export function EffectCards({
   spells,
   hide,
   resources,
+  inPlay = false,
 }: {
   effects: unknown;
   onChange: (next: Eff[]) => void;
   readOnly: boolean;
+  /**
+   * The effects are in play (a condition's, a spell's on its target): they hold
+   * under the sheet's rules, so no card offers a rules version.
+   */
+  inPlay?: boolean;
   inherits?: string;
   replace?: boolean;
   onReplace?: (replace: boolean) => void;
@@ -1060,6 +1170,7 @@ export function EffectCards({
             pools={resources ?? []}
             spells={spells ?? []}
             problems={problemsOf(i)}
+            inPlay={inPlay}
             readOnly={readOnly}
             onRemove={() => onChange(list.filter((_, j) => j !== i))}
             onChange={(next, renamed) =>
@@ -1071,7 +1182,7 @@ export function EffectCards({
                   // a spell cast with them, and the same pool given for the
                   // other rules version (`edition`), which stays one pool.
                   if (x.kind === 'resource' && x.key === renamed[0])
-                    return { ...x, key: renamed[1] };
+                    return { ...x, key: renamed[1], label: next.label };
                   const cost = x.cost as { resource?: unknown } | undefined;
                   if (x.kind === 'action' && cost?.resource === renamed[0])
                     return { ...x, cost: { ...cost, resource: renamed[1] } };
