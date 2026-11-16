@@ -13,7 +13,15 @@
  * object, and keeps to the limits below: an imported file is hostile until
  * read.
  */
-import type { Ability, EffectDuration, EffectInput, RollFilter } from './types';
+import type {
+  Ability,
+  ActionBuyBack,
+  ActionCost,
+  ActionEconomy,
+  EffectDuration,
+  EffectInput,
+  RollFilter,
+} from './types';
 
 /** The version this build writes. It reads every version it ever shipped. */
 export const CAST_GUIDANCE_VERSION = 1;
@@ -436,9 +444,18 @@ export const RULE_SET_TYPE = 'ruleSet';
  * prose scan or curated row reads. `rollAdvantage` and `rollExtra` are what a
  * feature adds to the character's own d20 tests (the advantage table that was
  * `ROLL_ADVANTAGES`, and `ROLL_EXTRAS`), found under the roll keys, which name
- * the book: `brave|phb`, `feral instinct|barbarian|phb`.
+ * the book: `brave|phb`, `feral instinct|barbarian|phb`. `spend` is what a
+ * feature's action costs or buys a use back with (`SPEND_LINKS` and
+ * `SLOT_LINKS`), found under the roll keys: a row's `links` price the action the
+ * feature emitted, or add one.
  */
-export const RULE_SET_PARTS = ['curated', 'standing', 'rollAdvantage', 'rollExtra'] as const;
+export const RULE_SET_PARTS = [
+  'curated',
+  'standing',
+  'rollAdvantage',
+  'rollExtra',
+  'spend',
+] as const;
 
 /** Whether a built-in row turns the prose scan off for its entry, or runs beside it. */
 export const RULE_SET_SCANS = ['replace', 'keep'] as const;
@@ -467,8 +484,39 @@ export interface StoredRuleRow {
    * at 3, 6 and 14). Absent: at every level.
    */
   level?: number;
-  effects: StoredEffect[];
+  /** Every part but `spend`. */
+  effects?: StoredEffect[];
+  /** `spend` rows only: the prices it puts on the feature's actions, in order. */
+  links?: StoredSpendLink[];
 }
+
+/**
+ * One price a `spend` row puts on a feature's action (`SPEND_LINKS`,
+ * `SLOT_LINKS`). What it does turns on how the price is paid: a pool's price
+ * replaces the one the action has, while a spell slot's or a Hit Point Die's
+ * fills only an empty one, as it runs after a pool's under one key.
+ */
+export type StoredSpendLink =
+  | {
+      /** What using it spends, on the first action of the feature, or a new one. */
+      cost: ActionCost;
+      /** The slice of the turn it takes: given when the action is new, or the scan says another. */
+      economy?: ActionEconomy;
+      /** Its own new action, by this name, rather than the feature's (Combat Wild Shape's healing). */
+      label?: string;
+      /** The action's note, when it has none. */
+      note?: string;
+    }
+  | {
+      /** What buys a use back once none are left. */
+      buyBack: ActionBuyBack;
+      /** The action it shows on, by name, when that is another feature's (Totems). */
+      onAction?: string;
+      /** The use it gives back: a spell the feature's class or subclass grants, by name. */
+      ownSpell?: string;
+      /** Its uses, when the feature has no pool counting them: named for the feature. */
+      uses?: { key: string; max: number; resetOn: 'short' | 'long' };
+    };
 
 /** A built-in rule set file. */
 export interface StoredRuleSet {

@@ -90,7 +90,7 @@ describe('linkSpend with a slot or Hit Point Die row', () => {
   it('hangs a slot cost on the action the feature emitted', () => {
     const col = collector();
     col.add({ kind: 'action', economy: 'reaction', label: 'Song of Defense', origin });
-    linkSpend(col, 'song of defense|bladesinging|tce', 'Song of Defense', origin);
+    linkSpend(col, ['song of defense|bladesinging|tce'], 'Song of Defense', origin);
     expect(col.effects).toEqual([
       {
         kind: 'action',
@@ -105,7 +105,7 @@ describe('linkSpend with a slot or Hit Point Die row', () => {
 
   it('adds a rider for a smite, which has no action of its own', () => {
     const col = collector();
-    expect(linkSpend(col, 'divine smite|paladin|phb', 'Divine Smite', origin)).toBe(true);
+    expect(linkSpend(col, ['divine smite|paladin|phb'], 'Divine Smite', origin)).toBe(true);
     expect(col.effects).toEqual([
       {
         kind: 'action',
@@ -125,7 +125,7 @@ describe('linkSpend with a slot or Hit Point Die row', () => {
   it("keeps a pool's cost on its chip and gives the slot's its own (Combat Wild Shape)", () => {
     const col = collector();
     col.add({ kind: 'action', economy: 'bonus', label: 'Combat Wild Shape', origin });
-    linkSpend(col, 'combat wild shape|circle of the moon|phb', 'Combat Wild Shape', origin);
+    linkSpend(col, ['combat wild shape|circle of the moon|phb'], 'Combat Wild Shape', origin);
     expect(actionNamed(col, 'Combat Wild Shape')).toMatchObject({
       cost: { resource: 'wild-shape', amount: 1, optional: true },
     });
@@ -139,7 +139,7 @@ describe('linkSpend with a slot or Hit Point Die row', () => {
   it("buys back the feature's own use with a slot of the level it names", () => {
     const col = collector();
     col.add({ kind: 'action', economy: 'bonus', label: 'Holy Nimbus', origin });
-    linkSpend(col, 'holy nimbus|oath of devotion|xphb', 'Holy Nimbus', origin);
+    linkSpend(col, ['holy nimbus|oath of devotion|xphb'], 'Holy Nimbus', origin);
     expect(actionNamed(col, 'Holy Nimbus')).toMatchObject({
       buyBack: { resource: SLOT_COST, amount: 1, minLevel: 5 },
     });
@@ -148,7 +148,7 @@ describe('linkSpend with a slot or Hit Point Die row', () => {
 
   it('keeps a pool cost and adds a slot buy-back on the same chip (Divine Reaper)', () => {
     const col = collector();
-    linkSpend(col, 'divine reaper|grave domain|rhw', 'Divine Reaper', origin);
+    linkSpend(col, ['divine reaper|grave domain|rhw'], 'Divine Reaper', origin);
     expect(actionNamed(col, 'Divine Reaper')).toMatchObject({
       cost: { resource: 'channel-divinity', amount: 1 },
       buyBack: { resource: SLOT_COST, amount: 1, minLevel: 6 },
@@ -159,25 +159,25 @@ describe('linkSpend with a slot or Hit Point Die row', () => {
     const col = collector();
     const bardic: EffectOrigin = { ...origin, label: 'Bardic Inspiration' };
     col.add({ kind: 'action', economy: 'bonus', label: 'Bardic Inspiration', origin: bardic });
-    linkSpend(col, 'font of inspiration|bard|xphb', 'Font of Inspiration', origin);
+    linkSpend(col, ['font of inspiration|bard|xphb'], 'Font of Inspiration', origin);
     expect(col.effects).toHaveLength(1);
     expect(actionNamed(col, 'Bardic Inspiration')).toMatchObject({
       buyBack: { resource: SLOT_COST, amount: 1, own: 'bardic-inspiration' },
     });
     const alone = collector();
-    linkSpend(alone, 'font of inspiration|bard|xphb', 'Font of Inspiration', origin);
+    linkSpend(alone, ['font of inspiration|bard|xphb'], 'Font of Inspiration', origin);
     expect(alone.effects).toEqual([]);
   });
 
   it('spends a Hit Point Die, with a use of the feature where it counts them', () => {
     const col = collector();
     col.add({ kind: 'action', economy: 'bonus', label: 'Light Bringer', origin });
-    linkSpend(col, 'light bringer|abh', 'Light Bringer', origin);
+    linkSpend(col, ['light bringer|abh'], 'Light Bringer', origin);
     expect(actionNamed(col, 'Light Bringer')).toMatchObject({
       cost: { resource: HIT_DIE_COST, amount: 1, hitDieHeals: 'roll', ownUseToo: true },
     });
     const dwarf = collector();
-    linkSpend(dwarf, 'dwarven fortitude|xge', 'Dwarven Fortitude', origin);
+    linkSpend(dwarf, ['dwarven fortitude|xge'], 'Dwarven Fortitude', origin);
     expect(dwarf.effects).toEqual([
       {
         kind: 'action',

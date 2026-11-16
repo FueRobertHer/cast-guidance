@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { SPEND_POOLS, SPEND_SKIPPED } from '../../data5e/audit/spendScope';
+import { RULE_SET_TYPE } from '../castGuidance';
 import { Collector } from '../effects/base';
-import { type EffectOrigin, type EngineContext, newCharacterDoc } from '../types';
-import { linkSpend, SPEND_LINKS } from './spendLinks';
+import { readRuleSet } from '../effects/mechanics';
+import { type EffectInput, type EffectOrigin, type EngineContext, newCharacterDoc } from '../types';
+import { SLOT_LINKS } from './slotLinks';
+import { codeLinksOf, linkCodeRows, linkPrice, linkSpend, SPEND_LINKS } from './spendLinks';
 
 const ctx: EngineContext = { get: () => undefined, byType: () => [] };
 const origin: EffectOrigin = { label: 'Feature', uid: 'x', type: 'class' };
@@ -89,7 +92,7 @@ describe('linkSpend', () => {
   it('hangs the cost on the action the feature already emitted', () => {
     const col = collector();
     col.add({ kind: 'action', economy: 'bonus', label: 'Flurry of Blows', origin });
-    linkSpend(col, 'Flurry of Blows|Monk|PHB', 'Flurry of Blows', origin);
+    linkSpend(col, ['Flurry of Blows|Monk|PHB'], 'Flurry of Blows', origin);
     expect(col.effects).toEqual([
       {
         kind: 'action',
@@ -103,7 +106,7 @@ describe('linkSpend', () => {
 
   it('adds an action for a feature that has none, taking no slot unless the row gives one', () => {
     const col = collector();
-    linkSpend(col, 'trip attack|phb', 'Trip Attack', origin);
+    linkSpend(col, ['trip attack|phb'], 'Trip Attack', origin);
     expect(col.effects).toEqual([
       {
         kind: 'action',
@@ -114,14 +117,14 @@ describe('linkSpend', () => {
       },
     ]);
     const paid = collector();
-    linkSpend(paid, "commander's strike|phb", "Commander's Strike", origin);
+    linkSpend(paid, ["commander's strike|phb"], "Commander's Strike", origin);
     expect(paid.effects[0]).toMatchObject({ economy: 'bonus' });
   });
 
   it('says when the base use is free', () => {
     const col = collector();
     col.add({ kind: 'action', economy: 'bonus', label: 'Patient Defense', origin });
-    linkSpend(col, 'patient defense|monk|xphb', 'Patient Defense', origin);
+    linkSpend(col, ['patient defense|monk|xphb'], 'Patient Defense', origin);
     expect(col.effects[0]).toMatchObject({
       cost: { resource: 'focus', amount: 1, optional: true },
     });
@@ -130,7 +133,7 @@ describe('linkSpend', () => {
   it('takes the slot the row gives over the one the scanner read', () => {
     const col = collector();
     col.add({ kind: 'action', economy: 'bonus', label: "Nature's Sanctuary", origin });
-    linkSpend(col, "nature's sanctuary|circle of the land|xphb", "Nature's Sanctuary", origin);
+    linkSpend(col, ["nature's sanctuary|circle of the land|xphb"], "Nature's Sanctuary", origin);
     expect(col.effects[0]).toMatchObject({ economy: 'action' });
   });
 
@@ -138,7 +141,7 @@ describe('linkSpend', () => {
     const col = collector();
     const other: EffectOrigin = { ...origin, label: 'Other' };
     col.add({ kind: 'action', economy: 'bonus', label: 'Other', origin: other });
-    linkSpend(col, 'trip attack|phb', 'Trip Attack', origin);
+    linkSpend(col, ['trip attack|phb'], 'Trip Attack', origin);
     expect(col.effects[0]).not.toHaveProperty('cost');
     expect(col.effects).toHaveLength(2);
   });
@@ -150,7 +153,7 @@ describe('linkSpend', () => {
     it('hangs on the action the feature emitted, with no cost and the same slot', () => {
       const col = collector();
       col.add({ kind: 'action', economy: 'bonus', label: 'Psi-Powered Leap', origin });
-      linkSpend(col, 'psi-powered leap|psi warrior|xphb', 'Psi-Powered Leap', origin);
+      linkSpend(col, ['psi-powered leap|psi warrior|xphb'], 'Psi-Powered Leap', origin);
       expect(col.effects).toEqual([
         {
           kind: 'action',
@@ -164,7 +167,7 @@ describe('linkSpend', () => {
 
     it('adds a chip that takes no slot for a feature with no action', () => {
       const col = collector();
-      linkSpend(col, 'rend mind|soulknife|xphb', 'Rend Mind', origin);
+      linkSpend(col, ['rend mind|soulknife|xphb'], 'Rend Mind', origin);
       expect(col.effects).toEqual([
         {
           kind: 'action',
@@ -180,7 +183,7 @@ describe('linkSpend', () => {
       const col = collector();
       const psi: EffectOrigin = { label: 'Psi Warrior', uid: 'psi warrior|tce', type: 'subclass' };
       col.add({ kind: 'action', economy: 'bonus', label: 'Telekinetic Master', origin: psi });
-      linkSpend(col, 'telekinetic master|psi warrior|tce', 'Telekinetic Master', psi);
+      linkSpend(col, ['telekinetic master|psi warrior|tce'], 'Telekinetic Master', psi);
       expect(buyBackOf(col, 'Telekinetic Master')).toMatchObject({
         buyBack: {
           resource: 'psi-warrior-dice',
@@ -194,7 +197,7 @@ describe('linkSpend', () => {
       const col = collector();
       const other: EffectOrigin = { ...origin, label: 'Innate Sorcery' };
       col.add({ kind: 'action', economy: 'bonus', label: 'Innate Sorcery', origin: other });
-      linkSpend(col, 'sorcery incarnate|sorcerer|xphb', 'Sorcery Incarnate', origin);
+      linkSpend(col, ['sorcery incarnate|sorcerer|xphb'], 'Sorcery Incarnate', origin);
       expect(col.effects).toHaveLength(1);
       expect(buyBackOf(col, 'Innate Sorcery')).toMatchObject({
         buyBack: { resource: 'sorcery-points', amount: 2 },
@@ -206,7 +209,7 @@ describe('linkSpend', () => {
       col.add({ kind: 'action', economy: 'bonus', label: 'Aspect of the Wyrm', origin });
       linkSpend(
         col,
-        'aspect of the wyrm|way of the ascendant dragon|ftd',
+        ['aspect of the wyrm|way of the ascendant dragon|ftd'],
         'Aspect of the Wyrm',
         origin,
       );
@@ -223,7 +226,96 @@ describe('linkSpend', () => {
 
   it('does nothing for a feature outside the table', () => {
     const col = collector();
-    linkSpend(col, 'nothing like it|tst', 'Nothing', origin);
+    linkSpend(col, ['nothing like it|tst'], 'Nothing', origin);
     expect(col.effects).toEqual([]);
+  });
+});
+
+describe('a built-in spend row stands in for the code rows of its key (rule pack port 3b)', () => {
+  const keys = [...new Set([...Object.keys(SPEND_LINKS), ...Object.keys(SLOT_LINKS)])].sort();
+  // Every code row, as the links a moved row would hold, read as the app reads its files.
+  const read = readRuleSet(
+    JSON.parse(
+      JSON.stringify({
+        type: RULE_SET_TYPE,
+        v: 1,
+        name: 'Every link',
+        rows: keys.map((key) => ({ part: 'spend', keys: [key], links: codeLinksOf(key) })),
+      }),
+    ),
+  );
+  const linksOf = new Map(read.rows.map((r) => [r.keys[0], r.links ?? []]));
+
+  /** What a feature may have emitted before its links run: by its own origin, or another's. */
+  type Seed = (add: (e: EffectInput) => void, own: EffectOrigin, onAction: string) => void;
+  const other: EffectOrigin = { label: 'Another', uid: 'another', type: 'class' };
+  const pool = { resource: 'other-pool', amount: 2 };
+  const SEEDS: Record<string, Seed> = {
+    'no action': () => {},
+    'an action': (add, own) =>
+      add({ kind: 'action', economy: 'bonus', label: 'Feature', origin: own }),
+    'an action with a cost': (add, own) =>
+      add({ kind: 'action', economy: 'bonus', label: 'Feature', cost: pool, origin: own }),
+    'an action with a buy-back': (add, own) =>
+      add({ kind: 'action', economy: 'bonus', label: 'Feature', buyBack: pool, origin: own }),
+    'an action with a note': (add, own) =>
+      add({ kind: 'action', economy: 'bonus', label: 'Feature', note: 'A note.', origin: own }),
+    'two actions': (add, own) => {
+      add({ kind: 'action', economy: 'reaction', label: 'Feature', origin: own });
+      add({ kind: 'action', economy: 'bonus', label: 'Feature Two', cost: pool, origin: own });
+    },
+    "another feature's action it names": (add, _own, onAction) =>
+      add({ kind: 'action', economy: 'bonus', label: onAction, origin: other }),
+    "another feature's action it names, with a buy-back": (add, _own, onAction) =>
+      add({ kind: 'action', economy: 'bonus', label: onAction, buyBack: pool, origin: other }),
+    both: (add, own, onAction) => {
+      add({ kind: 'action', economy: 'action', label: onAction, origin: other });
+      add({ kind: 'action', economy: 'bonus', label: 'Feature', cost: pool, origin: own });
+    },
+  };
+
+  it('reads every code row as links', () => {
+    expect(read.problems).toEqual([]);
+    expect(read.rows).toHaveLength(keys.length);
+    // 299 pool rows and 57 slot rows, two keys in both.
+    expect(keys).toHaveLength(299 + 57 - 2);
+  });
+
+  it('pays with a pool in SPEND_LINKS and with a slot or a die in SLOT_LINKS alone', () => {
+    // How a link applies turns on how its price is paid (`linkPrice`).
+    const slotOrDie = (r: string) => r === 'spell-slot' || r === 'hit-die';
+    expect(
+      Object.keys(SPEND_LINKS).filter((k) => slotOrDie(SPEND_LINKS[k]?.resource ?? '')),
+    ).toEqual([]);
+    expect(
+      Object.entries(SLOT_LINKS).filter(([, row]) =>
+        row.kind === 'spend' ? !slotOrDie(row.cost.resource) : false,
+      ),
+    ).toEqual([]);
+  });
+
+  it('puts the same effects on the sheet as the code rows, field for field', () => {
+    const differ: string[] = [];
+    for (const key of keys) {
+      const links = linksOf.get(key) ?? [];
+      const onAction =
+        links.flatMap((l) => ('buyBack' in l && l.onAction !== undefined ? [l.onAction] : []))[0] ??
+        'Another Feature';
+      for (const [state, seed] of Object.entries(SEEDS)) {
+        const run = (link: (col: Collector, own: EffectOrigin) => void) => {
+          const col = collector();
+          const own: EffectOrigin = { label: 'Feature', uid: 'feature|tst', type: 'class' };
+          seed((e) => col.add(e), own, onAction);
+          link(col, own);
+          return JSON.stringify(col.effects);
+        };
+        const code = run((col, own) => linkCodeRows(col, key, 'Feature', own));
+        const data = run((col, own) => {
+          for (const link of links) linkPrice(col, link, 'Feature', own);
+        });
+        if (code !== data) differ.push(`${key} [${state}]`);
+      }
+    }
+    expect(differ).toEqual([]);
   });
 });

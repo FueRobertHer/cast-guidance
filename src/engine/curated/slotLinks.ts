@@ -8,6 +8,7 @@
  * features `name|class|source`, subclass features `name|subclass|source`, feats and
  * optional features `name|source`, all lowercase.
  */
+import type { StoredSpendLink } from '../castGuidance';
 import type { Collector } from '../effects/base';
 import {
   type ActionBuyBack,
@@ -207,6 +208,30 @@ export const SLOT_LINKS: Readonly<Record<string, SlotRow>> = {
   'lifedrinker|xphb': hitDie('none', 'rollPlusCon', { atLeast: 1 }),
   'bloodlust|abh': hitDie('none', 'rollPlusCon', { ownUseToo: true }),
 };
+
+/** A key's row as a `spend` row's link (`codeLinksOf`). */
+export function slotLinkOf(key: string): StoredSpendLink | undefined {
+  const row = SLOT_LINKS[key];
+  if (row === undefined) return undefined;
+  if (row.kind === 'restore') {
+    const { pool, price } = row;
+    return {
+      buyBack: {
+        resource: SLOT_COST,
+        amount: 1,
+        ...price,
+        ...(pool !== undefined ? { own: pool.key } : {}),
+      },
+      ...(pool !== undefined ? { onAction: pool.onAction } : {}),
+    };
+  }
+  return {
+    cost: row.cost,
+    ...(row.economy !== undefined ? { economy: row.economy } : {}),
+    ...(row.label !== undefined ? { label: row.label } : {}),
+    ...(row.note !== undefined ? { note: row.note } : {}),
+  };
+}
 
 /**
  * Hang a slot or Hit Point Die cost on the feature's chip, or a buy-back on the

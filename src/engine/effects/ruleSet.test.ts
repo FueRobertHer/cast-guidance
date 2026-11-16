@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { makeTestContext } from '../../../tests-fixtures/testWorld';
 import { RULE_PACK_TYPE, RULE_SET_LIMITS, RULE_SET_TYPE } from '../castGuidance';
+import { linkSpend } from '../curated/spendLinks';
 import { deriveSheet } from '../derive';
 import {
   type CharacterDoc,
@@ -800,5 +801,121 @@ describe('built-in rules and the sheet', () => {
     expect(deriveSheet(character(), world({})).warnings).not.toContain(
       expect.stringContaining('built-in rules'),
     );
+  });
+});
+
+describe('spend rows (rule pack port 3b)', () => {
+  const spend = (keys: unknown[], links: unknown[], extra: Record<string, unknown> = {}) => ({
+    part: 'spend',
+    keys,
+    links,
+    ...extra,
+  });
+  const cost = { resource: 'focus', amount: 1 };
+  const back = { resource: 'focus', amount: 2 };
+
+  it('read their links in order, and refuse a link or row that says more than one can', () => {
+    const read = readRuleSet(
+      ruleSet([
+        spend(['Flurry of Blows|Monk|PHB'], [{ cost }]),
+        spend(
+          ['a'],
+          [
+            { cost, economy: 'bonus', label: 'Its own', note: 'Says so.' },
+            {
+              buyBack: { resource: 'spell-slot', amount: 1, minLevel: 2, own: 'p' },
+              onAction: 'X',
+            },
+          ],
+        ),
+        spend(
+          ['b'],
+          [{ buyBack: back, ownSpell: 'Mage Hand', uses: { key: 'b', max: 1, resetOn: 'long' } }],
+        ),
+        spend(['c'], [{ cost, extra: 1 }]),
+        spend(['d'], [{ cost, buyBack: back }]),
+        spend(['e'], [{ economy: 'bonus' }]),
+        spend(['f'], [{ buyBack: { ...back, own: 'p' }, ownSpell: 'Mage Hand' }]),
+        spend(['g'], [{ buyBack: back, economy: 'bonus' }]),
+        spend(['h'], [{ buyBack: back, label: 'Its own' }]),
+        spend(['i'], [{ buyBack: back, note: 'Says so.' }]),
+        spend(['j'], [{ cost, onAction: 'X' }]),
+        spend(['k'], [{ cost, ownSpell: 'Mage Hand' }]),
+        spend(['l'], [{ cost, uses: { key: 'l', max: 1, resetOn: 'long' } }]),
+        spend(['m'], []),
+        spend(['n'], [{ cost }], { level: 3 }),
+        spend(['o'], [{ cost }], { effects: [] }),
+        spend(['p'], [{ cost: { ...cost, minLevel: 2 } }]),
+        spend(['flurry of blows|monk|phb'], [{ cost }]),
+      ]),
+    );
+    expect(read.problems).toEqual([
+      'row 4 (c): link 1: "extra" is not a field this kind reads',
+      'row 5 (d): link 1: has a "cost" or a "buyBack", one of them',
+      'row 6 (e): link 1: has a "cost" or a "buyBack", one of them',
+      'row 7 (f): link 1: "buyBack.own" or "ownSpell", not both',
+      'row 8 (g): link 1: "economy" is not a field this kind reads',
+      'row 9 (h): link 1: "label" is not a field this kind reads',
+      'row 10 (i): link 1: "note" is not a field this kind reads',
+      'row 11 (j): link 1: "onAction" is not a field this kind reads',
+      'row 12 (k): link 1: "ownSpell" is not a field this kind reads',
+      'row 13 (l): link 1: "uses" is not a field this kind reads',
+      'row 14 (m): "links" lists the prices it puts on the action',
+      'row 15: "level" is not a field a spend row has',
+      'row 16: "effects" is not a field a spend row has',
+      'row 17 (p): link 1: "cost.minLevel" is for a price paid with a spell slot',
+      'row 18: "flurry of blows|monk|phb" is already a row',
+    ]);
+    expect(read.rows.map((r) => [r.part, r.keys, r.effects, r.links])).toEqual([
+      ['spend', ['flurry of blows|monk|phb'], [], [{ cost }]],
+      [
+        'spend',
+        ['a'],
+        [],
+        [
+          { cost, economy: 'bonus', label: 'Its own', note: 'Says so.' },
+          { buyBack: { resource: 'spell-slot', amount: 1, minLevel: 2, own: 'p' }, onAction: 'X' },
+        ],
+      ],
+      [
+        'spend',
+        ['b'],
+        [],
+        [{ buyBack: back, ownSpell: 'Mage Hand', uses: { key: 'b', max: 1, resetOn: 'long' } }],
+      ],
+      // A row whose every link is refused still takes its key.
+      ...['c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'p'].map((k) => ['spend', [k], [], []]),
+    ]);
+  });
+
+  it('price the action before the code tables, unless a code row is under an earlier key', () => {
+    const ctx = withRules(
+      ruleSet([
+        spend(['flurry of blows|monk|phb'], [{ cost: { resource: 'focus', amount: 3 } }]),
+        spend(['lantern|hb'], [{ cost: { resource: 'focus', amount: 4 } }]),
+      ]),
+    );
+    const costOf = (keys: string[]) => {
+      const col = new Collector(character(), ctx);
+      const found = linkSpend(col, keys, 'Lantern', origin);
+      const action = col.effects.find((e) => e.kind === 'action');
+      return [found, action?.kind === 'action' ? action.cost : undefined];
+    };
+    // A built-in row stands in for the code row under its own key.
+    expect(costOf(['flurry of blows|monk|phb'])).toEqual([true, { resource: 'focus', amount: 3 }]);
+    expect(costOf(['lantern|hb', 'patient defense|monk|phb'])).toEqual([
+      true,
+      { resource: 'focus', amount: 4 },
+    ]);
+    // A code row under an earlier key still comes first, in either code table.
+    expect(costOf(['patient defense|monk|phb', 'lantern|hb'])).toEqual([
+      true,
+      { resource: 'focus', amount: 1 },
+    ]);
+    expect(costOf(['durable|xphb', 'lantern|hb'])).toEqual([
+      true,
+      { resource: 'hit-die', amount: 1, hitDieHeals: 'roll' },
+    ]);
+    expect(costOf(['no such|hb'])).toEqual([false, undefined]);
   });
 });

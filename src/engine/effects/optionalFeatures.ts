@@ -186,7 +186,7 @@ export function readOptionalFeatures(
               ) {
                 emitRollExtras(col, uids, ofOrigin, level);
               }
-              uids.some((key) => linkSpend(col, key, str(of.name) ?? uid, ofOrigin));
+              linkSpend(col, uids, str(of.name) ?? uid, ofOrigin);
             },
           });
         }

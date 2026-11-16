@@ -383,11 +383,7 @@ function collectFeatureWithNested(
       ) {
         emitRollExtras(col, rollKeys, featureOrigin, level, walk.classLevel);
       }
-      names.some((n) =>
-        labels.some((label) =>
-          sources.some((source) => linkSpend(col, `${n}|${label}|${source}`, name, featureOrigin)),
-        ),
-      );
+      linkSpend(col, rollKeys, name, featureOrigin);
     },
   });
   const identity = featureIdentity(feature);

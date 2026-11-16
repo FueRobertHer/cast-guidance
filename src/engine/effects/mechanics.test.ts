@@ -2113,7 +2113,7 @@ describe("an action's price (rule pack port 3a)", () => {
       if (row?.kind === 'restore' && row.pool !== undefined) {
         col.add({ kind: 'action', economy: 'bonus', label: row.pool.onAction, origin: other });
       }
-      linkSpend(col, key, 'Feature', linked);
+      linkSpend(col, [key], 'Feature', linked);
       for (const e of col.effects) {
         if (e.kind !== 'action' || (e.cost === undefined && e.buyBack === undefined)) continue;
         const r = read(e.cost, e.buyBack);
@@ -2255,7 +2255,7 @@ describe('what a review found', () => {
       target: 'flurry',
       inherited: () => {
         col.add({ kind: 'action', label: 'Flurry of Blows', economy: 'none', origin });
-        linkSpend(col, 'flurry of blows|monk|phb', 'Flurry of Blows', origin);
+        linkSpend(col, ['flurry of blows|monk|phb'], 'Flurry of Blows', origin);
       },
     });
     const costs = col.effects.map((e) => (e.kind === 'action' ? [e.label, e.cost?.resource] : []));

@@ -8,6 +8,7 @@ import type { DataEntity, EngineContext } from '@/engine/types';
 import curatedRules from '@/rules/cast-guidance/curated.json';
 import rollAdvantageRules from '@/rules/cast-guidance/roll-advantages.json';
 import rollExtraRules from '@/rules/cast-guidance/roll-extras.json';
+import spendRules from '@/rules/cast-guidance/spend.json';
 import standingRules from '@/rules/cast-guidance/standing.json';
 
 /**
@@ -19,6 +20,7 @@ export const BUILT_IN_RULE_SETS: DataEntity[] = [
   standingRules as DataEntity,
   rollAdvantageRules as DataEntity,
   rollExtraRules as DataEntity,
+  spendRules as DataEntity,
 ];
 
 const race: DataEntity[] = [

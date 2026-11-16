@@ -40,6 +40,9 @@ import { type Formula, readAmount } from '../formula';
 import { SPELL_SCHOOLS } from '../spellQuery';
 import {
   ACTIVE_PART_KINDS,
+  type ActionBuyBack,
+  type ActionCost,
+  type ActionEconomy,
   type DataEntity,
   type EffectInput,
   type EffectOrigin,
@@ -644,19 +647,21 @@ const slotDice: Field = (v, r, key) => {
  * slot (`"spell-slot"`, of the level the player picks as they pay), or a Hit
  * Point Die (`"hit-die"`, which heals as it is spent).
  */
+// A price's fields come out in the order the code tables write them
+// (`SPEND_LINKS`, `SLOT_LINKS`), so a row moved out of them gives the same sheet.
 const actionCost: Field = (v, r, key) =>
   paidWith(
     record({
       resource: [text(), true],
       amount: [(x, rr, k) => (x === 'varies' ? x : int(0, 999)(x, rr, k)), true],
       optional: [flag],
-      ownUseToo: [flag],
       minLevel: [int(1, 9)],
       pactOnly: [flag],
       slotDice: [slotDice],
       slotRefills: [text()],
       hitDieHeals: [oneOf('roll', 'rollPlusCon')],
       hitDieAtLeast: [int(1, 99)],
+      ownUseToo: [flag],
     })(v, r, key) as Record<string, unknown>,
   );
 
@@ -700,6 +705,66 @@ const action: Build = (o, r) => ({
   ...opt(o, r, 'regains', record({ resource: [text(), true], amount: [int(0, 999), true] })),
   ...opt(o, r, 'spendsNoUse', flag),
 });
+
+/** One price a built-in `spend` row puts on a feature's action, read (`StoredSpendLink`). */
+export type SpendLinkRow =
+  | { cost: ActionCost; economy?: ActionEconomy; label?: string; note?: string }
+  | {
+      buyBack: ActionBuyBack;
+      onAction?: string;
+      ownSpell?: string;
+      uses?: { key: string; max: number; resetOn: 'short' | 'long' };
+    };
+
+const costLink = record({
+  cost: [actionCost, true],
+  economy: [oneOf('action', 'bonus', 'reaction', 'none')],
+  label: [text()],
+  note: [text(L.textLength)],
+});
+const buyBackLink = record({
+  buyBack: [actionBuyBack, true],
+  onAction: [text()],
+  ownSpell: [text()],
+  uses: [
+    record({
+      key: [text(), true],
+      max: [int(1, 99), true],
+      resetOn: [oneOf('short', 'long'), true],
+    }),
+  ],
+});
+
+/** One link, read strictly as the app's own files are: a field it does not read is a problem. */
+function readSpendLink(raw: unknown): SpendLinkRow {
+  if (!isRecord(raw)) throw new Bad('is not a price');
+  if (Object.hasOwn(raw, 'cost') === Object.hasOwn(raw, 'buyBack')) {
+    throw new Bad('has a "cost" or a "buyBack", one of them');
+  }
+  const r: Reading = { kind: 'action', slots: [], seen: new Map() };
+  const read = (Object.hasOwn(raw, 'cost') ? costLink : buyBackLink)(raw, r, 'link');
+  const link = read as Record<string, unknown>;
+  if (link.ownSpell !== undefined && isRecord(link.buyBack) && link.buyBack.own !== undefined) {
+    throw new Bad('"buyBack.own" or "ownSpell", not both');
+  }
+  return link as SpendLinkRow;
+}
+
+/** A `spend` row's links, each read on its own: a bad one is a problem and is left out. */
+function readSpendLinks(raw: unknown): { links: SpendLinkRow[]; problems: string[] } {
+  const links: SpendLinkRow[] = [];
+  const problems: string[] = [];
+  raw = Array.isArray(raw) ? raw : [];
+  (raw as unknown[]).slice(0, L.effectsPerEntry).forEach((x, i) => {
+    try {
+      links.push(readSpendLink(x));
+    } catch (err) {
+      if (!(err instanceof Bad)) throw err;
+      problems.push(`link ${i + 1}: ${err.message}`);
+    }
+  });
+  return { links, problems };
+}
 
 /**
  * Version 1's kinds: the engine's `EffectInput` kinds, each field read on its
@@ -1286,7 +1351,10 @@ export interface RuleRow {
   scan: RuleScan;
   /** Every part but `curated`: the feature level it counts at alone. */
   level?: number;
+  /** Every part but `spend`; a `spend` row emits none. */
   effects: readonly EffectTemplate[];
+  /** `spend` rows only: the prices it puts on the feature's actions, in order. */
+  links?: readonly SpendLinkRow[];
 }
 
 /** A built-in rule set (`RULE_SET_TYPE` entry), read. */
@@ -1324,6 +1392,7 @@ const ROW_FIELDS: Record<RulePart, ReadonlySet<string>> = {
   standing: LEVEL_ROW,
   rollAdvantage: LEVEL_ROW,
   rollExtra: LEVEL_ROW,
+  spend: new Set(['part', 'keys', 'links']),
 };
 
 const isFeatureLevel = (v: unknown): v is number =>
@@ -1414,6 +1483,18 @@ function readRuleSetOnce(raw: Record<string, unknown>): ReadRuleSet {
     }
     if (keys.length === 0) return;
     const at = `${where} (${clip(keys[0])})`;
+    if (part === 'spend') {
+      const raw = own(row, 'links');
+      if (!Array.isArray(raw) || raw.length === 0) {
+        read.problems.push(`${at}: "links" lists the prices it puts on the action`);
+        return;
+      }
+      for (const key of keys) inPart.add(slot(key));
+      const { links, problems } = readSpendLinks(raw);
+      for (const problem of problems) read.problems.push(`${at}: ${problem}`);
+      read.rows.push({ part, keys, scan, effects: [], links });
+      return;
+    }
     if (!Array.isArray(own(row, 'effects'))) {
       read.problems.push(`${at}: "effects" is not a list`);
       return;
