@@ -291,7 +291,9 @@ lands (`auto`) is `free`, waits on nothing and never makes the roll worse: a 1,
 the lower die of advantage, a number set or a floor, and a floor and the lower
 die are made only so. Inspiration pays alone: never beside a reaction, a pool's
 die or `free`. Each refusal is one the roll prompt would otherwise drop or
-misread.
+misread. The Workshop's Paid extra and Reroll cards (3f) write only what these
+rules take: a box that would break one is not offered, and a choice that would
+(a reroll of every die made as the d20 lands) takes the field away.
 
 The reader refuses a filter that could reach no roll, and `when` with
 disadvantage. A pack written before these fields, when the reader passed over

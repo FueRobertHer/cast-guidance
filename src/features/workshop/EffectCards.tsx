@@ -74,6 +74,12 @@ const ROLL_KINDS: ReadonlyArray<readonly [string, RollFilter]> = [
 ];
 /** The kinds an ability narrows: a death save has none, and the others name theirs. */
 const TAKES_ABILITY = new Set(['attack', 'save', 'check', 'proficient']);
+/**
+ * The rolls a Paid extra or Reroll card can name. A death save and a
+ * concentration save are settled on the spot, with nothing offered after, so a
+ * file's filter for one shows as written.
+ */
+const PAID_ROLL_KINDS = ROLL_KINDS.filter(([k]) => k !== 'death' && k !== 'concentration');
 const SCOPE: Options = [
   ['all', 'All'],
   ['melee', 'Melee'],
@@ -245,6 +251,200 @@ export function rollKindOf(on: unknown): string | undefined {
     abilities.every(known)
     ? kind
     : undefined;
+}
+
+/** The effect with these fields taken away. */
+const omit = (e: Eff, keys: readonly string[]): Eff =>
+  Object.fromEntries(Object.entries(e).filter(([k]) => !keys.includes(k))) as Eff;
+
+/** A bonus as a line reads it: `+2`, `+(max(1, mod.int))`, or by level. */
+function bonusWords(v: unknown): string {
+  if (typeof v === 'number') return signed(v);
+  if (isRecord(v) && 'f' in v) return `+(${String(v.f)})`;
+  return '+a number by level';
+}
+
+/**
+ * What pays for a paid extra or a reroll, as its "Paid with" box holds it: the
+ * use of the entry's action or pool (with the reaction, or never one), a reaction
+ * alone, Inspiration, nothing, or nothing as the d20 lands (`auto`).
+ */
+function paidWithOf(e: Eff): string {
+  if (e.auto === true) return 'auto';
+  if (e.inspiration === true) return 'inspiration';
+  if (e.free === true) return e.reaction === true ? 'reaction' : 'free';
+  if (e.reaction === true) return 'useReaction';
+  if (e.reaction === false) return 'noReaction';
+  return 'use';
+}
+
+/** The "Paid with" choices both cards have; a reroll adds what costs nothing. */
+const PAID_WITH: Options = [
+  ['use', 'Its use'],
+  ['useReaction', 'Its use and your reaction'],
+  ['noReaction', 'Its use, never your reaction'],
+  ['inspiration', 'Inspiration'],
+];
+const FREE_WITH: Options = [
+  ['reaction', 'Your reaction alone'],
+  ['free', 'Nothing'],
+  ['auto', 'Nothing, as the d20 lands'],
+];
+/** Choices that pay with the entry's own action or pool. */
+const PAYS_WITH_USE = new Set(['use', 'useReaction', 'noReaction']);
+
+/** What an automatic one waits on, which it leaves out. */
+const WAITS = ['ifFailed', 'when', 'reaction', 'inspiration'];
+
+function withPaidWith(e: Eff, v: string): Eff {
+  const rest = omit(e, ['auto', 'free', 'reaction', 'inspiration']);
+  if (v === 'useReaction') return { ...rest, reaction: true };
+  if (v === 'noReaction') return { ...rest, reaction: false };
+  if (v === 'inspiration') return { ...rest, inspiration: true };
+  if (v === 'reaction') return { ...rest, free: true, reaction: true };
+  if (v === 'free') return { ...rest, free: true };
+  if (v === 'auto') return omit({ ...rest, auto: true, free: true }, WAITS);
+  return rest;
+}
+
+function priceLine(e: Eff): string {
+  const words: Readonly<Record<string, string>> = {
+    auto: ', as the d20 lands',
+    inspiration: ', paid with Inspiration',
+    reaction: ', paid with your reaction',
+    free: ', free',
+    useReaction: ', paid with its use and your reaction',
+    noReaction: ', paid with its use, never your reaction',
+  };
+  return words[paidWithOf(e)] ?? ', paid with its use';
+}
+
+const whenLine = (e: Eff) =>
+  typeof e.when === 'string' && e.when.trim() !== '' ? `. ${e.when.trim()}` : '';
+
+/** What a paid extra adds, as its "Adds" box holds it. */
+const addsOf = (e: Eff) =>
+  e.poolDie === true
+    ? 'poolDie'
+    : e.advantage === true
+      ? 'advantage'
+      : e.bonus !== undefined
+        ? 'bonus'
+        : 'dice';
+
+/** When the prompt offers a paid extra: a bonus is always added once the d20 shows. */
+const timingOf = (e: Eff) =>
+  e.ifFailed === true ? 'failed' : e.after === true || e.bonus !== undefined ? 'after' : 'before';
+
+/**
+ * A paid extra that adds something else. Advantage is claimed before the d20,
+ * so it waits on nothing; a bonus is added after it.
+ */
+function withAdds(e: Eff, v: string): Eff {
+  const rest = omit(e, ['dice', 'poolDie', 'bonus', 'advantage']);
+  if (v === 'advantage') {
+    return omit({ ...rest, advantage: true }, ['after', 'ifFailed', 'spentOnSuccess']);
+  }
+  if (v === 'bonus')
+    return { ...rest, bonus: 1, ...(rest.ifFailed === true ? {} : { after: true }) };
+  if (v === 'poolDie') return { ...rest, poolDie: true };
+  return { ...rest, dice: '1d4' };
+}
+
+function withTiming(e: Eff, v: string): Eff {
+  const rest = omit(e, ['after', 'ifFailed', 'spentOnSuccess']);
+  if (v === 'after') return { ...rest, after: true };
+  if (v === 'failed') return { ...rest, ifFailed: true };
+  return rest;
+}
+
+function paidLine(e: Eff): string {
+  const adds = addsOf(e);
+  const what =
+    adds === 'poolDie'
+      ? `+the paying pool's die to ${rollWords(e)}`
+      : adds === 'advantage'
+        ? `Advantage on ${rollWords(e)}`
+        : adds === 'bonus'
+          ? `${bonusWords(e.bonus)} to ${rollWords(e)}`
+          : `+${String(e.dice)} to ${rollWords(e)}`;
+  const time = timingOf(e);
+  const at =
+    time === 'failed' ? ', after a failed roll' : time === 'after' ? ', after the roll' : '';
+  const back = e.spentOnSuccess === true ? ' (the use comes back if it still fails)' : '';
+  return `${what}${at}${priceLine(e)}${back}${whenLine(e)}`;
+}
+
+/** What a reroll does, as its "Does" box holds it. */
+const rerollOf = (e: Eff) =>
+  e.floorScore !== undefined
+    ? 'floor'
+    : e.to !== undefined
+      ? 'to'
+      : e.die === 'one' || e.die === 'low' || e.die === 'extra'
+        ? e.die
+        : 'all';
+
+const REROLLS: Options = [
+  ['all', 'Rerolls the d20'],
+  ['one', 'Rerolls a low die'],
+  ['extra', 'Rolls one d20 more, keeping the best'],
+  ['low', 'Rerolls the lower die of advantage'],
+  ['to', 'Counts the d20 as at least a number'],
+  ['floor', 'Counts the total as at least a score'],
+];
+
+/** What may be made as the d20 lands: it never makes the roll worse. */
+const autoable = (e: Eff) =>
+  e.to !== undefined ||
+  e.floorScore !== undefined ||
+  e.die === 'low' ||
+  (e.die === 'one' && e.atMost === 1);
+/** What the prompt makes only as the d20 lands. */
+const onlyAuto = (e: Eff) => e.floorScore !== undefined || e.die === 'low';
+
+/**
+ * A reroll as the reader takes it: one made only as the d20 lands is so, and
+ * one that could make the roll worse is not, paid with its use instead.
+ */
+function settled(e: Eff): Eff {
+  if (onlyAuto(e)) return omit({ ...e, auto: true, free: true }, WAITS);
+  if (e.auto === true && !autoable(e)) return omit(e, ['auto', 'free']);
+  return e;
+}
+
+/** A reroll that does something else. A number set or a floor adds no bonus. */
+function withReroll(e: Eff, v: string): Eff {
+  const rest = omit(e, ['die', 'atMost', 'to', 'floorScore']);
+  const base = v === 'to' || v === 'floor' ? omit(rest, ['bonus']) : rest;
+  const next: Eff =
+    v === 'one'
+      ? { ...base, die: 'one', atMost: 1 }
+      : v === 'low' || v === 'extra'
+        ? { ...base, die: v }
+        : v === 'to'
+          ? { ...base, to: 10 }
+          : v === 'floor'
+            ? { ...base, floorScore: 'str' }
+            : base;
+  return settled(next);
+}
+
+function rerollLine(e: Eff): string {
+  const on = rollWords(e);
+  const what: Readonly<Record<string, string>> = {
+    one:
+      e.atMost === 1
+        ? `Reroll a 1 on ${on}`
+        : `Reroll a die showing ${String(e.atMost)} or less on ${on}`,
+    extra: `Roll one d20 more on ${on}, keeping the best`,
+    low: `Reroll the lower die of advantage on ${on}`,
+    to: `The d20 counts as at least ${String(e.to)} on ${on}`,
+    floor: `A total under your ${word(ABILITY, e.floorScore)} score counts as the score on ${on}`,
+  };
+  const bonus = e.bonus !== undefined ? `, adding ${bonusWords(e.bonus)}` : '';
+  const failed = e.ifFailed === true ? ', after a failed roll' : '';
+  return `${what[rerollOf(e)] ?? `Reroll the d20 on ${on}`}${bonus}${failed}${priceLine(e)}${whenLine(e)}`;
 }
 
 const KINDS: readonly KindSpec[] = [
@@ -439,6 +639,20 @@ const KINDS: readonly KindSpec[] = [
     line: (e) => `+${String(e.dice)} to ${rollWords(e)}`,
   },
   {
+    kinds: ['rollPaid'],
+    add: 'Paid extra',
+    make: () => ({ kind: 'rollPaid', on: { rolls: ['check'] }, dice: '1d4', ifFailed: true }),
+    fields: [],
+    line: paidLine,
+  },
+  {
+    kinds: ['rollReroll'],
+    add: 'Reroll',
+    make: () => ({ kind: 'rollReroll', on: { rolls: ['save'] }, ifFailed: true }),
+    fields: [],
+    line: rerollLine,
+  },
+  {
     kinds: ['attackBonus'],
     is: (e) => e.attack === 'spell',
     add: 'Spell attacks',
@@ -561,10 +775,43 @@ const STATEFUL = new Set([
   'conditionImmune',
   'rollAdvantage',
   'rollDie',
+  'rollPaid',
+  'rollReroll',
   'attackBonus',
   'damageBonus',
 ]);
 const EARLY = new Set(['maxHpBonus']);
+
+/**
+ * A When box's value and choices. A state a file gives that the box has no
+ * choice for (at 0 hit points, while an effect lasts) shows as written, so
+ * "Always" is a change that takes it away.
+ */
+function stateBox(e: Eff): { value: string; options: Options } {
+  const options = STATES.filter(([v]) => !(v === 'bloodied' && EARLY.has(e.kind)));
+  if (e.while === undefined) return { value: '', options };
+  if (typeof e.while === 'string' && options.some(([v]) => v === e.while)) {
+    return { value: e.while, options };
+  }
+  const states = Array.isArray(e.while) ? e.while : [e.while];
+  const said = states.map(stateWords).join(' and ');
+  return { value: AS_WRITTEN, options: [...options, [AS_WRITTEN, `${said}, as written`]] };
+}
+
+/** One stored state in words: "while Rage lasts", "while at 0 hit points". */
+function stateWords(s: unknown): string {
+  if (s === 'zeroHp') return 'While at 0 hit points';
+  if (typeof s === 'string') return word(STATES, s);
+  if (typeof s === 'object' && s !== null) {
+    const { effect, condition } = s as Record<string, unknown>;
+    if (typeof effect === 'string') return `While ${effect} lasts`;
+    if (typeof condition === 'string') return `While ${condition}`;
+  }
+  return JSON.stringify(s);
+}
+
+/** Kinds that never go in play: a condition's or a spell's card does not offer them. */
+const NOT_IN_PLAY = new Set(['rollPaid', 'rollReroll']);
 
 const ECONOMY_WORDS: Readonly<Record<string, string>> = {
   action: 'Action',
@@ -942,14 +1189,18 @@ function GrantFields({
 function RollFields({
   effect,
   title,
+  kinds = ROLL_KINDS,
   onChange,
 }: {
   effect: Eff;
   title: string;
+  /** The kinds its On box offers; another a file gives shows as written. */
+  kinds?: typeof ROLL_KINDS;
   onChange: (next: Eff) => void;
 }) {
   const on = isRecord(effect.on) ? effect.on : {};
-  const kind = rollKindOf(on);
+  const found = rollKindOf(on);
+  const kind = kinds.some(([v]) => v === found) ? found : undefined;
   const abilities = Array.isArray(on.abilities) ? on.abilities.map(String) : [];
   const several = abilities.map((a) => word(ABILITY, a)).join(' or ');
   const setKind = (k: string) => {
@@ -972,7 +1223,7 @@ function RollFields({
           onChange={(e) => setKind(e.target.value)}
         >
           {kind === undefined && <option value="">{rollWords(effect)}, as written</option>}
-          {ROLL_KINDS.map(([v, f]) => (
+          {kinds.map(([v, f]) => (
             <option key={v} value={v}>
               {rollsWords(f)}
             </option>
@@ -1013,10 +1264,12 @@ const claims = (on: unknown) => !(isRecord(on) && on.save === 'concentration');
 function ClaimField({
   effect,
   title,
+  placeholder = 'Only against being Frightened',
   onChange,
 }: {
   effect: Eff;
   title: string;
+  placeholder?: string;
   onChange: (next: Eff) => void;
 }) {
   if (effect.mode === 'dis' || !claims(effect.on)) return null;
@@ -1026,7 +1279,7 @@ function ClaimField({
         <input
           aria-label={`${title}: Only when`}
           value={typeof effect.when === 'string' ? effect.when : ''}
-          placeholder="Only against being Frightened"
+          placeholder={placeholder}
           onChange={(e) => {
             const { when: _, ...rest } = effect;
             onChange(e.target.value.trim() === '' ? rest : { ...rest, when: e.target.value });
@@ -1035,6 +1288,267 @@ function ClaimField({
         />
       </Field>
     </div>
+  );
+}
+
+/**
+ * A box of choices on a card, named "Card: Label" for a screen reader. A value
+ * a file may give that is none of the choices needs one of its own (`offering`).
+ */
+function Box({
+  title,
+  label,
+  value,
+  options,
+  onPick,
+}: {
+  title: string;
+  label: string;
+  value: string;
+  options: Options;
+  onPick: (v: string) => void;
+}) {
+  return (
+    <Field label={label}>
+      <Select
+        aria-label={`${title}: ${label}`}
+        value={value}
+        onChange={(e) => onPick(e.target.value)}
+      >
+        {options.map(([v, text]) => (
+          <option key={v} value={v}>
+            {text}
+          </option>
+        ))}
+      </Select>
+    </Field>
+  );
+}
+
+const BONUS: FieldSpec = { key: 'bonus', label: 'Bonus', type: 'amount' };
+
+/** A bonus: a whole number or a formula. A level table a file gives is kept until one is typed. */
+function BonusField({
+  effect,
+  title,
+  label,
+  optional = false,
+  onChange,
+}: {
+  effect: Eff;
+  title: string;
+  label: string;
+  /** Emptied, it takes the bonus away. */
+  optional?: boolean;
+  onChange: (next: Eff) => void;
+}) {
+  return (
+    <Field label={label}>
+      <input
+        aria-label={`${title}: ${label}`}
+        value={shown(effect, BONUS)}
+        placeholder={isByLevel(effect.bonus) ? BY_LEVEL : undefined}
+        onChange={(e) => {
+          const t = e.target.value;
+          onChange(
+            optional && t.trim() === ''
+              ? omit(effect, ['bonus'])
+              : { ...effect, bonus: stored(BONUS, t) },
+          );
+        }}
+        className={fieldClass}
+      />
+    </Field>
+  );
+}
+
+const ADDS: Options = [
+  ['dice', 'A die'],
+  ['bonus', 'A bonus'],
+  ['advantage', 'Advantage'],
+];
+const TIMES: Options = [
+  ['before', 'Before the roll'],
+  ['after', 'After the roll'],
+  ['failed', 'After a failed roll'],
+];
+const STILL_FAILS: Options = [
+  ['', 'The use is spent'],
+  ['back', 'The use comes back'],
+];
+const OFFERED: Options = [
+  ['', 'After any roll'],
+  ['failed', 'After a failed roll'],
+];
+const AT_MOST: Options = Array.from({ length: 19 }, (_, i) => [String(i + 1), String(i + 1)]);
+const AT_LEAST: Options = Array.from({ length: 19 }, (_, i) => [String(i + 2), String(i + 2)]);
+const isNumber = (x: unknown) => typeof x === 'number';
+
+/** A "Paid with" box: a price a file gives that its choices lack shows as written. */
+function paidWithBox(e: Eff, options: Options): { value: string; options: Options } {
+  const value = paidWithOf(e);
+  return { value, options: offering(options, value, word([...PAID_WITH, ...FREE_WITH], value)) };
+}
+
+/**
+ * A paid extra's own controls: what it adds (a die or a bonus, or advantage,
+ * which is claimed before the d20), when the prompt offers it, whether the use
+ * comes back on a roll that still fails, and what pays for it. The paying
+ * pool's own die (`poolDie`) needs a die on the pool, which no card sets, so
+ * it is kept as written.
+ */
+function PaidFields({
+  effect,
+  title,
+  onChange,
+}: {
+  effect: Eff;
+  title: string;
+  onChange: (next: Eff) => void;
+}) {
+  const adds = addsOf(effect);
+  const time = timingOf(effect);
+  // Inspiration has no die of its own to add.
+  const pays = adds === 'poolDie' ? PAID_WITH.filter(([v]) => v !== 'inspiration') : PAID_WITH;
+  const paid = paidWithBox(effect, pays);
+  return (
+    <>
+      <Box
+        title={title}
+        label="Adds"
+        value={adds}
+        options={offering(ADDS, adds, "The paying pool's die, as written")}
+        onPick={(v) => onChange(withAdds(effect, v))}
+      />
+      {adds === 'dice' && (
+        <Field label="Dice">
+          <input
+            aria-label={`${title}: Dice`}
+            value={typeof effect.dice === 'string' ? effect.dice : ''}
+            onChange={(e) => onChange({ ...effect, dice: e.target.value })}
+            className={fieldClass}
+          />
+        </Field>
+      )}
+      {adds === 'bonus' && (
+        <BonusField effect={effect} title={title} label="Bonus" onChange={onChange} />
+      )}
+      {adds !== 'advantage' && (
+        <Box
+          title={title}
+          label="Offered"
+          value={time}
+          options={adds === 'bonus' ? TIMES.filter(([v]) => v !== 'before') : TIMES}
+          onPick={(v) => onChange(withTiming(effect, v))}
+        />
+      )}
+      {time === 'failed' && (
+        <Box
+          title={title}
+          label="If it still fails"
+          value={effect.spentOnSuccess === true ? 'back' : ''}
+          options={STILL_FAILS}
+          onPick={(v) =>
+            onChange(
+              v === 'back' ? { ...effect, spentOnSuccess: true } : omit(effect, ['spentOnSuccess']),
+            )
+          }
+        />
+      )}
+      <Box
+        title={title}
+        label="Paid with"
+        {...paid}
+        onPick={(v) => onChange(withPaidWith(effect, v))}
+      />
+    </>
+  );
+}
+
+/**
+ * A reroll's own controls: what it does (a reroll, one d20 more, a number set
+ * or a floor), its number or score, what pays for it, whether it waits on a
+ * failed roll, and a bonus on the new roll. One made as the d20 lands costs
+ * nothing and waits on nothing; the lower die and a floor are made only so.
+ */
+function RerollFields({
+  effect,
+  title,
+  onChange,
+}: {
+  effect: Eff;
+  title: string;
+  onChange: (next: Eff) => void;
+}) {
+  const does = rerollOf(effect);
+  const pays = [...PAID_WITH, ...FREE_WITH.filter(([v]) => v !== 'auto' || autoable(effect))];
+  const number = (v: unknown, options: Options) => {
+    const value = held(v, isNumber);
+    return { value, options: offering(options, value, value) };
+  };
+  return (
+    <>
+      <Box
+        title={title}
+        label="Does"
+        value={does}
+        options={REROLLS}
+        onPick={(v) => onChange(withReroll(effect, v))}
+      />
+      {does === 'one' && (
+        <Box
+          title={title}
+          label="Showing at most"
+          {...number(effect.atMost, AT_MOST)}
+          onPick={(v) => onChange(settled({ ...effect, atMost: Number(v) }))}
+        />
+      )}
+      {does === 'to' && (
+        <Box
+          title={title}
+          label="At least"
+          {...number(effect.to, AT_LEAST)}
+          onPick={(v) => onChange({ ...effect, to: Number(v) })}
+        />
+      )}
+      {does === 'floor' && (
+        <Box
+          title={title}
+          label="Score"
+          value={String(effect.floorScore)}
+          options={offering(ABILITY, String(effect.floorScore), String(effect.floorScore))}
+          onPick={(v) => onChange({ ...effect, floorScore: v })}
+        />
+      )}
+      {!onlyAuto(effect) && (
+        <Box
+          title={title}
+          label="Paid with"
+          {...paidWithBox(effect, pays)}
+          onPick={(v) => onChange(withPaidWith(effect, v))}
+        />
+      )}
+      {effect.auto !== true && (
+        <Box
+          title={title}
+          label="Offered"
+          value={effect.ifFailed === true ? 'failed' : ''}
+          options={OFFERED}
+          onPick={(v) =>
+            onChange(v === 'failed' ? { ...effect, ifFailed: true } : omit(effect, ['ifFailed']))
+          }
+        />
+      )}
+      {does !== 'to' && does !== 'floor' && (
+        <BonusField
+          effect={effect}
+          title={title}
+          label="Adds to the new roll"
+          optional
+          onChange={onChange}
+        />
+      )}
+    </>
   );
 }
 
@@ -1145,6 +1659,7 @@ function Card({
   pools,
   spells,
   inPlay,
+  paysHere,
   readOnly,
   onChange,
   onRemove,
@@ -1155,12 +1670,15 @@ function Card({
   pools: readonly Eff[];
   spells: readonly SpellOption[];
   inPlay: boolean;
+  /** The entry has an action or a pool a paid extra may be paid with, or inherits them. */
+  paysHere: boolean;
   readOnly: boolean;
   onChange: (next: Eff, renamedKey?: [string, string]) => void;
   onRemove: () => void;
 }) {
   const spec = specOf(effect);
   const title = spec?.add ?? effect.kind;
+  const paidRoll = effect.kind === 'rollPaid' || effect.kind === 'rollReroll';
   // One of each key: a pool given once for each rules version (`edition`) is one
   // pool, the card's own or one kept elsewhere (a class's).
   const resources = [...list.filter((x) => x.kind === 'resource'), ...pools].filter(
@@ -1232,6 +1750,15 @@ function Card({
           {(effect.kind === 'rollAdvantage' || effect.kind === 'rollDie') && (
             <RollFields effect={effect} title={title} onChange={onChange} />
           )}
+          {paidRoll && (
+            <RollFields effect={effect} title={title} kinds={PAID_ROLL_KINDS} onChange={onChange} />
+          )}
+          {effect.kind === 'rollPaid' && (
+            <PaidFields effect={effect} title={title} onChange={onChange} />
+          )}
+          {effect.kind === 'rollReroll' && (
+            <RerollFields effect={effect} title={title} onChange={onChange} />
+          )}
           {effect.kind === 'grantSpell' && (
             <GrantFields
               effect={effect}
@@ -1247,7 +1774,7 @@ function Card({
             <Field label="When">
               <Select
                 aria-label={`${title}: When`}
-                value={state}
+                value={stateBox(effect).value}
                 onChange={(e) => {
                   const { while: _, ...rest } = effect;
                   onChange(
@@ -1257,13 +1784,11 @@ function Card({
                   );
                 }}
               >
-                {STATES.filter(([v]) => !(v === 'bloodied' && EARLY.has(effect.kind))).map(
-                  ([v, text]) => (
-                    <option key={v} value={v}>
-                      {text}
-                    </option>
-                  ),
-                )}
+                {stateBox(effect).options.map(([v, text]) => (
+                  <option key={v} value={v}>
+                    {text}
+                  </option>
+                ))}
               </Select>
             </Field>
           )}
@@ -1294,7 +1819,21 @@ function Card({
           {effect.kind === 'rollAdvantage' && (
             <ClaimField effect={effect} title={title} onChange={onChange} />
           )}
+          {/* One made as the d20 lands waits on nothing, so it holds always. */}
+          {paidRoll && effect.auto !== true && (
+            <ClaimField
+              effect={effect}
+              title={title}
+              placeholder="Only on your own turn"
+              onChange={onChange}
+            />
+          )}
         </div>
+      )}
+      {paidRoll && !paysHere && PAYS_WITH_USE.has(paidWithOf(effect)) && (
+        <p className="pr-2 text-caption text-ink-muted">
+          The roll prompt offers it while this entry has an Action or Uses per rest to pay with.
+        </p>
       )}
       {state !== '' && readOnly && (
         <span className="text-caption text-ink-muted">{word(STATES, state)}</span>
@@ -1315,6 +1854,20 @@ function Card({
       ))}
     </div>
   );
+}
+
+/**
+ * What More offers, by the names the add list gives: the kinds past the first
+ * chips, with Cast a spell only where spells can be named, and in play only
+ * what an effect in play may do.
+ */
+export function moreKinds({ inPlay, spells }: { inPlay: boolean; spells: boolean }): string[] {
+  return KINDS.filter(
+    (k) =>
+      !FIRST.includes(k.add) &&
+      (spells || k.add !== 'Cast a spell') &&
+      !(inPlay && k.kinds.some((kind) => NOT_IN_PLAY.has(kind))),
+  ).map((k) => k.add);
 }
 
 /**
@@ -1359,14 +1912,17 @@ export function EffectCards({
       .filter((p) => p.startsWith(`effect ${i + 1}:`) || p.startsWith(`effect ${i + 1} (`))
       .map((p) => p.replace(/^effect \d+( \([^)]*\))?: /, ''));
   const add = (spec: KindSpec) => onChange([...list, spec.make()]);
+  // What pays for a paid extra: an action or a pool of the entry's own, or one it inherits.
+  const paysHere =
+    inherits !== undefined ||
+    (resources ?? []).length > 0 ||
+    list.some((x) => x.kind === 'action' || x.kind === 'resource');
   const more = async () => {
     const id = await askChoice({
       title: 'What does it do?',
-      options: KINDS.filter(
-        (k) => !FIRST.includes(k.add) && (spells !== undefined || k.add !== 'Cast a spell'),
-      ).map((k) => ({
-        id: k.add,
-        label: k.add,
+      options: moreKinds({ inPlay, spells: spells !== undefined }).map((add) => ({
+        id: add,
+        label: add,
       })),
     });
     const spec = KINDS.find((k) => k.add === id);
@@ -1398,6 +1954,7 @@ export function EffectCards({
             spells={spells ?? []}
             problems={problemsOf(i)}
             inPlay={inPlay}
+            paysHere={paysHere}
             readOnly={readOnly}
             onRemove={() => onChange(list.filter((_, j) => j !== i))}
             onChange={(next, renamed) =>
