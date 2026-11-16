@@ -202,6 +202,8 @@ export const FORMULA_FIELDS: Readonly<Partial<Record<EffectInput['kind'], readon
   sense: ['range'],
   tempHpEachTurn: ['amount'],
   critRange: ['min'],
+  rollPaid: ['bonus'],
+  rollReroll: ['bonus'],
   resource: ['max', 'min', 'regainOnShort'],
   resourceRegain: ['amount'],
 };

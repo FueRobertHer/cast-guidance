@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { makeTestContext } from '../../tests-fixtures/testWorld';
-import { countingEffects, countsAs, readActiveEffects } from './activeEffects';
+import { countingEffects, countsAs, readActiveEffects, storedInPlay } from './activeEffects';
 import { deriveSheet } from './derive';
 import {
   type ActiveEffect,
@@ -336,6 +336,28 @@ describe('readActiveEffects', () => {
       { minutes: 1, endsWhen: 'unconscious' },
       { minutes: 10, endsWhen: 'incapacitated' },
       { minutes: 10 },
+    ]);
+  });
+});
+
+describe('storedInPlay', () => {
+  it("refuses a feature's paid extra and reroll, which the stored reader takes but never put in play", () => {
+    const on = { rolls: ['save'] };
+    const read = storedInPlay([
+      { kind: 'rollPaid', on, dice: '1d4' },
+      { kind: 'rollReroll', on, ifFailed: true },
+      { kind: 'rollReroll', on, ifFailed: true, while: 'bloodied' },
+    ]);
+    expect(read.parts).toEqual([]);
+    const kinds =
+      'an effect in play changes only numbers and rolls, not proficiencies, uses or actions';
+    expect(read.problems).toEqual([
+      { place: 1, why: kinds },
+      { place: 2, why: kinds },
+      {
+        place: 3,
+        why: 'an effect in play does what it does for as long as it lasts, with no "When" of its own',
+      },
     ]);
   });
 });
