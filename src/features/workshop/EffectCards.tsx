@@ -911,22 +911,16 @@ const PRICE_KEYS = [
   ['buyBack', ['resource', 'own']],
 ] as const;
 
-/** A price's fields that name the renamed pool (those `follows` keeps), named for its new key. */
+/** A price's fields that follow the renamed pool (`follows`), named for its new key. */
 function renamedIn(
   key: 'cost' | 'buyBack',
   v: unknown,
-  fields: readonly string[],
-  [from, to]: readonly [string, string],
-  follows: (field: string) => boolean = () => true,
+  to: string,
+  follows: (field: string) => boolean,
 ): Record<string, Price> {
   if (!isRecord(v)) return {};
   return {
-    [key]: Object.fromEntries(
-      Object.entries(v).map(([k, x]) => [
-        k,
-        fields.includes(k) && x === from && follows(k) ? to : x,
-      ]),
-    ),
+    [key]: Object.fromEntries(Object.entries(v).map(([k, x]) => [k, follows(k) ? to : x])),
   };
 }
 
@@ -2108,37 +2102,72 @@ export function EffectCards({
     problems
       .filter((p) => p.startsWith(`effect ${i + 1}:`) || p.startsWith(`effect ${i + 1} (`))
       .map((p) => p.replace(/^effect \d+( \([^)]*\))?: /, ''));
-  // Which prices on what it inherits follow a pool being renamed: those naming
-  // it as its name starts to change, kept while it changes. On the way to
-  // Kindle its key is ki for a moment, and a price on the class's Ki stays put.
-  // It is the same rename while nothing else has changed since the last step.
-  const following = useRef<{ key: string; was: string; at: Set<string> }>(undefined);
-  const follow = ([from, to]: readonly [string, string], effects: Eff[]): Eff[] => {
+  // What follows a pool being renamed: what names it as its name starts to
+  // change, kept while it changes. On the way to Kindle its key is ki for a
+  // moment, and what spends the class's Ki (or a pool of the entry's own named
+  // Ki) stays put. It is the same rename while the card typed in is one that
+  // follows it (the pool's own card, keyed or not, or a pool that shared its
+  // key when the rename began, its twin for the other rules version among
+  // them) and nothing else has changed since the last step, so each place kept
+  // names the key the last step gave it. A pool typed in after another took
+  // its key starts a rename of its own, which takes along what names that key.
+  const following = useRef<{ was: string; at: Set<string> }>(undefined);
+  /**
+   * Where `x` names `from`, as `place` and the field: a pool's key (the same
+   * pool for the other rules version, `edition`), the uses a spell is cast
+   * with, and on an action or a price on what a copy inherits (`priced`), its
+   * cost (and the points a slot gives back), what buys a use back and the use
+   * it gives back.
+   */
+  const naming = (x: Eff, place: string, from: string, priced = x.kind === 'action'): string[] => [
+    ...(x.kind === 'resource' && x.key === from ? [`${place} key`] : []),
+    ...(x.kind === 'grantSpell' && x.resourceKey === from ? [`${place} resourceKey`] : []),
+    ...PRICE_KEYS.flatMap(([key, fields]) => {
+      const price = x[key];
+      return priced && isRecord(price)
+        ? fields.filter((f) => price[f] === from).map((f) => `${place} ${key} ${f}`)
+        : [];
+    }),
+  ];
+  /**
+   * The cards, with card `i` now `next`, and the prices on what it inherits,
+   * after its pool's key changed `from` `to`: what follows it is named `to`.
+   * The prices are given only to a host that takes them (`onAmend`), when
+   * there are some.
+   */
+  const follow = (
+    i: number,
+    next: Eff,
+    [from, to]: readonly [string, string],
+  ): [Eff[], Eff[] | undefined] => {
     const last = following.current;
     const at =
-      last !== undefined && last.key === from && last.was === JSON.stringify([list, amends])
+      last?.at.has(`effect ${i} key`) === true && last.was === JSON.stringify([list, amends])
         ? last.at
-        : new Set(
-            amends.flatMap((a, i) =>
-              PRICE_KEYS.flatMap(([key, fields]) => {
-                const price = a[key];
-                return isRecord(price)
-                  ? fields.filter((f) => price[f] === from).map((f) => `${i} ${key} ${f}`)
-                  : [];
-              }),
-            ),
-          );
-    const next = amends.map((a, i) => ({
-      ...a,
+        : new Set([
+            // A pool a file gives no key (or a number) names none, but is the one renamed.
+            `effect ${i} key`,
+            ...list.flatMap((x, j) => naming(x, `effect ${j}`, from)),
+            ...amends.flatMap((a, k) => naming(a, `amend ${k}`, from, true)),
+          ]);
+    const renamed = (x: Eff, place: string): Eff => ({
+      ...x,
+      ...(at.has(`${place} key`) ? { key: to, label: next.label } : {}),
+      ...(at.has(`${place} resourceKey`) ? { resourceKey: to } : {}),
       ...Object.assign(
         {},
-        ...PRICE_KEYS.map(([key, fields]) =>
-          renamedIn(key, a[key], fields, [from, to], (f) => at.has(`${i} ${key} ${f}`)),
+        ...PRICE_KEYS.map(([key]) =>
+          renamedIn(key, x[key], to, (f) => at.has(`${place} ${key} ${f}`)),
         ),
       ),
-    }));
-    following.current = { key: to, was: JSON.stringify([effects, next]), at };
-    return next;
+    });
+    const effects = list.map((x, j) => (j === i ? next : renamed(x, `effect ${j}`)));
+    const amended =
+      onAmend === undefined || amends.length === 0
+        ? undefined
+        : amends.map((a, k) => renamed(a, `amend ${k}`));
+    following.current = { was: JSON.stringify([effects, amended ?? amends]), at };
+    return [effects, amended];
   };
   const add = (spec: KindSpec) => onChange([...list, spec.make()]);
   const more = async () => {
@@ -2191,35 +2220,11 @@ export function EffectCards({
             inPlay={inPlay}
             readOnly={readOnly}
             onRemove={() => onChange(list.filter((_, j) => j !== i))}
-            onChange={(next, renamed) => {
-              const effects = list.map((x, j) => {
-                if (j === i) return next;
-                if (renamed === undefined) return x;
-                // What spends the renamed uses follows it: an action's cost
-                // (and the points a slot gives back), what buys a use back and
-                // the use it gives back, a spell cast with them, and the same
-                // pool given for the other rules version (`edition`), which
-                // stays one pool.
-                if (x.kind === 'resource' && x.key === renamed[0])
-                  return { ...x, key: renamed[1], label: next.label };
-                if (x.kind === 'action' && (x.cost !== undefined || x.buyBack !== undefined))
-                  return {
-                    ...x,
-                    ...renamedIn('cost', x.cost, ['resource', 'slotRefills'], renamed),
-                    ...renamedIn('buyBack', x.buyBack, ['resource', 'own'], renamed),
-                  };
-                if (x.kind === 'grantSpell' && x.resourceKey === renamed[0])
-                  return { ...x, resourceKey: renamed[1] };
-                return x;
-              });
-              onChange(
-                effects,
-                // A price on what the copy inherits that spends the pool follows it too.
-                renamed === undefined || onAmend === undefined || amends.length === 0
-                  ? undefined
-                  : follow(renamed, effects),
-              );
-            }}
+            onChange={(next, renamed) =>
+              renamed === undefined
+                ? onChange(list.map((x, j) => (j === i ? next : x)))
+                : onChange(...follow(i, next, renamed))
+            }
           />
         ),
       )}

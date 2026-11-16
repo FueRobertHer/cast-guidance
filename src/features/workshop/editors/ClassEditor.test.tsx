@@ -744,11 +744,12 @@ function edits3(registry: EntityRegistry, cls: Json): FeatureEdits {
 }
 
 describe('the class editor on screen', () => {
-  function mount(registry: EntityRegistry, cls: Json) {
+  function mount(registry: EntityRegistry, cls: Json, edits: Partial<FeatureEdits> = {}) {
     const start: Json = {
       ...openClass(structuredClone(cls), { original: cls, registry }),
       name: 'Lantern',
     };
+    start._features = { ...editsOf(start), ...edits };
     let latest = start;
     function Harness() {
       const [draft, setDraft] = useState<Json>(start);
@@ -983,6 +984,38 @@ describe('the class editor on screen', () => {
     fireEvent.change(back, { target: { value: 'short' } });
     const [pool] = (draft().castGuidance as { effects: Json[] }).effects;
     expect(pool).toMatchObject({ reset: 'short', label: embers.label });
+  });
+
+  it("moves only what spends a feature's own pool while its name is typed through the class's pool's key", async () => {
+    const { registry, cls } = book();
+    const ki = { kind: 'resource', key: 'ki', label: 'Ki', max: 2, reset: 'short' };
+    const glow = { kind: 'resource', key: 'glow', label: 'Glow', max: 3, reset: 'long' };
+    const on = (resource: string, label: string): Json => ({
+      kind: 'action',
+      economy: 'bonus',
+      label,
+      cost: { resource, amount: 1 },
+    });
+    const flurry = nodeOf(registry, cls, 'Flurry of Blows');
+    const castGuidance = { v: 1, effects: [glow, on('ki', 'Step'), on('glow', 'Flare')] };
+    const draft = mount(
+      registry,
+      { ...cls, castGuidance: { v: 1, effects: [ki] } },
+      { changed: { [flurry.ref]: { ...flurry.base, castGuidance } } },
+    );
+    fireEvent.click(await screen.findByRole('button', { name: /^Level 2,/ }));
+    const header = screen.getByRole('button', { name: /^Flurry of Blows/ });
+    if (header.getAttribute('aria-expanded') !== 'true') fireEvent.click(header);
+    // Typed a letter at a time in the class editor, its key is the class pool's between Ki and Kin.
+    for (const value of ['K', 'Ki', 'Kin', 'Kindle']) {
+      fireEvent.change(screen.getByLabelText('Uses per rest: Name'), { target: { value } });
+    }
+    const changed = editsOf(draft()).changed[flurry.ref] as Json;
+    expect((changed.castGuidance as Json).effects).toEqual([
+      { ...glow, key: 'kindle', label: 'Kindle' },
+      on('ki', 'Step'),
+      on('kindle', 'Flare'),
+    ]);
   });
 });
 
