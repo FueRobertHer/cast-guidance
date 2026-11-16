@@ -8,9 +8,9 @@
  * answers and read row by row against the features: a person decides what is
  * there, and `bun run data:judge -- --report spend` lists what is not. Prices
  * paid in spell slots or Hit Point Dice were read from each feature's own text
- * (data function pass item 10), since paying one means choosing a slot's level
- * or a die's size as you pay, which the roll prompt asks. These are facts of the
- * game rules, fine to commit.
+ * (data function pass item 10); paying one means choosing a slot's level or a
+ * die's size, which the roll prompt asks. These are facts of the game rules,
+ * fine to commit.
  *
  * Keys name the printing, because the printings disagree (Heightened Spell costs 3
  * in 2014 and 2 in 2024): class features `name|class|source`, subclass features

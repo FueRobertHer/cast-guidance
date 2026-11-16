@@ -129,7 +129,7 @@ describe('spend keys and reasons', () => {
   });
 
   it('covers the cases that spent nothing', () => {
-    // Wherever the key's row is, in the table or the shipped rule set.
+    // Linked as the sheet links them, through the shipped rows.
     const pool = (key: string) => {
       const col = collector();
       linkSpend(col, [key], 'Feature', origin);
@@ -362,6 +362,29 @@ describe('how a link prices the actions a feature left (`linkPrice`)', () => {
     expect(linked([bySlot], back)).toEqual([action(back), action({ economy: 'none', ...bySlot })]);
     expect(linked([{ buyBack: { resource: 'ki', amount: 2 } }], back)).toEqual([
       action({ buyBack: { resource: 'ki', amount: 2 } }),
+    ]);
+  });
+
+  it('prices the first of two actions the feature emitted', () => {
+    const ki = { resource: 'ki', amount: 2 };
+    expect(linked([{ cost: ki }], {}, { label: 'Second', cost: focus })).toEqual([
+      action({ cost: ki }),
+      action({ label: 'Second', cost: focus }),
+    ]);
+    expect(linked([{ buyBack: ki }], {}, { label: 'Second' })).toEqual([
+      action({ buyBack: ki }),
+      action({ label: 'Second' }),
+    ]);
+  });
+
+  it("puts a slot's buy-back for another action past one that has a buy-back, adding nothing", () => {
+    const back = { buyBack: { resource: 'focus', amount: 1 } };
+    const bySlot = { buyBack: { resource: SLOT_COST, amount: 1 }, onAction: 'Other' };
+    expect(linked([bySlot], { label: 'Other', ...back })).toEqual([
+      action({ label: 'Other', ...back }),
+    ]);
+    expect(linked([bySlot], { label: 'Other' })).toEqual([
+      action({ label: 'Other', buyBack: bySlot.buyBack }),
     ]);
   });
 });

@@ -451,7 +451,7 @@ export function spendCounts(registry: ByType, file: JudgmentFile): SpendCounts {
 export function spendReport(registry: ByType, file: JudgmentFile): string {
   const out = [
     `# spend: which pool each feature spends. ${YES_MEANS}`,
-    `Rows live in src/rules/cast-guidance/spend.json and src/engine/curated/spendLinks.ts, reasons in SPEND_SKIPPED.`,
+    `Rows live in src/rules/cast-guidance/spend.json, reasons in SPEND_SKIPPED.`,
     '',
   ];
   for (const { pool, rows, unasked, ruleSets } of poolRows(registry, file)) {
