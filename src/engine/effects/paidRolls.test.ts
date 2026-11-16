@@ -313,6 +313,21 @@ describe('paid extras and rerolls on a derived sheet', () => {
         ],
       },
       {
+        // Under the trait's book key, the second a trait is looked up by.
+        part: 'rollExtra',
+        keys: ['test hound|tst'],
+        effects: [
+          {
+            kind: 'rollReroll',
+            on: { rolls: ['check'], abilities: ['cha'] },
+            die: 'one',
+            atMost: 1,
+            auto: true,
+            free: true,
+          },
+        ],
+      },
+      {
         part: 'rollExtra',
         keys: ['grit|warrior|tst'],
         effects: [
@@ -341,7 +356,15 @@ describe('paid extras and rerolls on a derived sheet', () => {
       {
         part: 'rollExtra',
         keys: ['archery|phb'],
-        effects: [{ kind: 'rollPaid', on: { rolls: ['attack'] }, advantage: true }],
+        effects: [
+          { kind: 'rollPaid', on: { rolls: ['attack'] }, advantage: true },
+          {
+            kind: 'rollReroll',
+            on: { rolls: ['attack'] },
+            ifFailed: true,
+            bonus: { f: 'classLevel' },
+          },
+        ],
       },
     ],
   };
@@ -390,6 +413,31 @@ describe('paid extras and rerolls on a derived sheet', () => {
   it("reads a class feature's reroll with its bonus at the class's level", () => {
     expect(rollEffects(sheet(), { kind: 'save', ability: 'con' }).rerolls).toEqual([
       { source: 'Grit', ifFailed: true, bonus: 5 },
+    ]);
+  });
+
+  it("reads a class feature's and its option's bonus at the class's level beside another class", () => {
+    const doc = newCharacterDoc('c', 'H', 't');
+    doc.classes = [
+      { ref: { name: 'Warrior', source: 'TST' }, levels: 5, hp: [] },
+      { ref: { name: 'Monk', source: 'TST' }, levels: 3, hp: [] },
+    ];
+    const id = deriveSheet(doc, ctx).pending.find((p) => p.label === 'Combat Stance')?.id;
+    expect(id).toBeDefined();
+    doc.choices[id ?? ''] = ['archery|phb'];
+    const s = deriveSheet(doc, ctx);
+    // Warrior 5, not the character's 8.
+    expect(rollEffects(s, { kind: 'save', ability: 'con' }).rerolls).toEqual([
+      { source: 'Grit', ifFailed: true, bonus: 5 },
+    ]);
+    expect(rollEffects(s, { kind: 'attack' }).rerolls).toEqual([
+      { source: 'Combat Stance: Archery', ifFailed: true, bonus: 5 },
+    ]);
+  });
+
+  it("reads a trait's row under the trait's book key", () => {
+    expect(rollEffects(sheet(), { kind: 'check', ability: 'cha' }).rerolls).toEqual([
+      { source: 'Test Hound', die: 'one', atMost: 1, auto: true, free: true },
     ]);
   });
 

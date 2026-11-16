@@ -127,6 +127,13 @@ const WORLD: Record<string, DataEntity[]> = {
       entries: PROSE,
       printingOf: ['Unbroken Air|PHB'],
     },
+    {
+      name: 'Precision Attack',
+      source: BOOK,
+      featureType: ['FS:F'],
+      entries: PROSE,
+      printingOf: ['Precision Attack|XPHB'],
+    },
     { name: 'Open Secret', source: 'TEST', featureType: ['EI'], entries: PROSE },
     {
       name: 'Late Secret',
@@ -179,6 +186,12 @@ describe('a copy of an official entry reads its rows', () => {
     // A homebrew feat of the same name that names no printing gets nothing.
     const own = derive(build(FIGHTER, 1, [{ name: 'Lucky', source: 'TEST' }]));
     expect(pool(own, 'luck')).toBeUndefined();
+    // Its reroll, the 2014 Lucky's extra d20, is the official feat's too.
+    const rerolls = (s: DerivedSheet) => s.rollRiders.filter((r) => r.kind === 'reroll');
+    expect(rerolls(copy)).toEqual([
+      { kind: 'reroll', on: { rolls: ['attack', 'check', 'save'] }, die: 'extra', origin: 'Lucky' },
+    ]);
+    expect(rerolls(own)).toEqual([]);
   });
 
   it("offers a copied feat the official feat's prose pick, and lets it repeat", () => {
@@ -195,6 +208,17 @@ describe('a copy of an official entry reads its rows', () => {
       build(FIGHTER, 1, [], { [pick]: ['superior technique|fctashascauldronofeverything'] }),
     );
     expect(pool(sheet, 'superiority-dice')?.max).toBe(1);
+  });
+
+  it("gives a copied optional feature the official option's paid extra", () => {
+    const pick = 'class:fighter|test:optfeature:FS:F';
+    const sheet = derive(
+      build(FIGHTER, 1, [], { [pick]: [`precision attack|${BOOK.toLowerCase()}`] }),
+    );
+    const origin = 'Fighting Style: Precision Attack';
+    expect(sheet.rollRiders.filter((r) => r.origin === origin)).toEqual([
+      { kind: 'paid', on: { rolls: ['attack'] }, poolDie: true, ifFailed: true, origin },
+    ]);
   });
 
   it("hangs the official feature's spend link on a copied class feature", () => {
