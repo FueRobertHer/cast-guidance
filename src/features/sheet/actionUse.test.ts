@@ -1,5 +1,15 @@
 import { describe, expect, it } from 'vitest';
-import { type DerivedResource, type DerivedSheet, HIT_DIE_COST, SLOT_COST } from '@/engine/types';
+import { deriveSheet } from '@/engine/derive';
+import {
+  type DataEntity,
+  type DerivedResource,
+  type DerivedSheet,
+  type EngineContext,
+  HIT_DIE_COST,
+  newCharacterDoc,
+  SLOT_COST,
+} from '@/engine/types';
+import { makeTestContext } from '../../../tests-fixtures/testWorld';
 import { actionUse, applyRestore } from './actionUse';
 
 type SheetAction = DerivedSheet['actions'][number];
@@ -396,5 +406,59 @@ describe('a cost or buy-back paid with a spell slot or Hit Point Die', () => {
     expect(applyRestore(entries, restore)).toBe(true);
     expect(entries).toEqual([{ key: 'own', used: 1 }]);
     expect(applyRestore(entries, restore)).toBe(false);
+  });
+});
+
+describe("a homebrew action's buy-back, as the Workshop's Action card writes it", () => {
+  const flare = (buyBack: Record<string, unknown>) => {
+    const lamp: DataEntity = {
+      name: 'Ember Lamp',
+      source: 'HB',
+      entries: ['Ember Lamp does something.'],
+      castGuidance: {
+        v: 1,
+        effects: [
+          { kind: 'resource', key: 'embers', label: 'Embers', max: 2, reset: 'long' },
+          {
+            kind: 'action',
+            economy: 'action',
+            label: 'Flare',
+            cost: { resource: 'embers', amount: 1 },
+            buyBack,
+          },
+        ],
+      },
+    };
+    const base = makeTestContext();
+    const ctx: EngineContext = {
+      get: (type, name, source) =>
+        type === 'feat' && name === 'Ember Lamp' ? lamp : base.get(type, name, source),
+      byType: (type) => [...base.byType(type), ...(type === 'feat' ? [lamp] : [])],
+    };
+    const d = newCharacterDoc('hero', 'Hero', 'test');
+    d.classes = [{ ref: { name: 'Mage', source: 'TST' }, levels: 5, hp: Array(5).fill('avg') }];
+    d.feats = [{ ref: { name: 'Ember Lamp', source: 'HB' }, instanceId: 'f0' }];
+    const sheet = deriveSheet(d, ctx);
+    const chip = sheet.actions.find((a) => a.label === 'Flare');
+    if (chip === undefined) throw new Error('no Flare chip');
+    // Both embers spent, two level 3+ slots left to pay with.
+    return actionUse(chip, sheet.resources, (key) => (key === 'embers' ? 2 : 0), {
+      slotsLeft: () => 2,
+      hitDiceLeft: 0,
+    });
+  };
+  const slot = { resource: SLOT_COST, amount: 1, minLevel: 3 };
+
+  it('gives back a use of the pool it names, under the key the sheet derives', () => {
+    expect(flare({ ...slot, own: 'embers' }).restore).toMatchObject({
+      label: 'Embers',
+      own: { key: 'embers', max: 2 },
+      slot: { minLevel: 3 },
+      disabled: false,
+    });
+  });
+
+  it("gives back nothing when it names no pool and none shares the action's name", () => {
+    expect(flare(slot).restore).toBeUndefined();
   });
 });
