@@ -86,10 +86,10 @@ describe('the paid extras and rerolls in the built-in rows', () => {
     for (const { key, effect } of paidRows) {
       if (effect.when === undefined) continue;
       expect(effect.when, key).toMatch(/^Only /);
-      expect(effect.when, key).not.toMatch(/[–—.]$/);
+      expect(effect.when, key).not.toMatch(/[\u2013\u2014.]$/);
     }
     for (const { key, effect } of rerollRows) {
-      if (effect.when !== undefined) expect(effect.when, key).not.toMatch(/[–—.]$/);
+      if (effect.when !== undefined) expect(effect.when, key).not.toMatch(/[\u2013\u2014.]$/);
     }
   });
 
