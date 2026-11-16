@@ -956,7 +956,7 @@ function withSlotPrice(p: Price, value: string): Price {
   return value === '' ? rest : { ...rest, minLevel: Number(value) };
 }
 
-/** Spends "What it spends now": a price's new amount alone (`AmendedAmount`). */
+/** Spends "Same pool": a price's new amount alone (`AmendedAmount`). */
 const KEEPS = ':now';
 
 /** A `cost` with no `resource`: how many of what an inherited action spends now. */
@@ -969,7 +969,7 @@ const keptOf = (v: unknown): Price | undefined =>
  * (`buyBack`), and the use it gives back. What no box here shows (a slot's
  * dice, the points it gives back, a use of its own too) is kept as written.
  * On a price for an inherited action (`amend`), an empty box keeps what it has
- * (`unset`), and Spends offers a new amount of what it spends now (`keeps`).
+ * (`unset`), and Spends offers a new amount of the pool it spends now (`keeps`).
  */
 function PriceFields({
   effect,
@@ -994,7 +994,7 @@ function PriceFields({
     const value = hitDie && kept !== undefined ? KEEPS : p === undefined ? '' : String(p.resource);
     const options: Options = [
       ['', unset],
-      ...(hitDie && keeps ? ([[KEEPS, 'What it spends now']] as const) : []),
+      ...(hitDie && keeps ? ([[KEEPS, 'Same pool']] as const) : []),
       ...pools,
       [SLOT_COST, 'A spell slot'],
       ...(hitDie ? ([[HIT_DIE_COST, 'A Hit Point Die']] as const) : []),
@@ -1924,7 +1924,7 @@ export function amendWords(a: Eff): string {
   const more =
     kept === undefined
       ? priceWords(a)
-      : `, spends ${n === 'varies' ? 'as many as you choose' : String(n)} of what it spends now${priceWords({ ...a, cost: undefined })}`;
+      : `, spends ${n === 'varies' ? 'as many uses as you choose' : `${String(n)} ${n === 1 ? 'use' : 'uses'}`} of its pool${priceWords({ ...a, cost: undefined })}`;
   return `${named === '' ? 'Its first action' : named}${more === '' ? ', as it is' : more}`;
 }
 

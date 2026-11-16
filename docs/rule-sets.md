@@ -392,9 +392,10 @@ both:
   Divinity (Paladin)").
 - `cost` replaces what using it spends, as an action's `cost` reads ("An
   action's price", above). A `cost` with no `resource` takes `amount` alone and
-  changes how many it spends of what it spends now, so it works without knowing
-  the pool's key (ki or Focus). On an action that spends a spell slot, a Hit
-  Point Die or nothing, that changes nothing, and the sheet says so.
+  changes how many uses it spends of the pool it spends now, so it works
+  without knowing the pool's key (ki or Focus). On an action that spends a
+  spell slot, a Hit Point Die or nothing, that changes nothing, and the sheet
+  says so.
 - `buyBack` replaces what buys a use back. Another feature's spend row that
   buys a use of this action back (`onAction`, Totems on the Primal Knowledge
   Totem) leaves a buy-back a player set alone.
@@ -412,8 +413,8 @@ backgrounds price nothing themselves.
 
 The Workshop's "Change its price" card makes one on a copy that still does what
 the original does: Action (empty for its first), then the Action card's price
-boxes, where an empty box keeps what the action has and "What it spends now"
-changes how many.
+boxes, where an empty box keeps what the action has and "Same pool" changes
+how many uses of its pool it spends.
 
 Every price is a row in `spend.json`: the pool prices since 3b and 3c, the
 spell slot and Hit Point Die prices and Divine Reaper's since 3d, so no spend

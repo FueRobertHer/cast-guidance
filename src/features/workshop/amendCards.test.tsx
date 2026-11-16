@@ -124,7 +124,7 @@ describe('the price card', () => {
     expect(box('Price: Spends').value).toBe(':now');
     pick('Price: How many', '2');
     expect(amend()).toEqual([{ cost: { amount: 2 } }]);
-    expect(screen.getByText('Its first action, spends 2 of what it spends now')).toBeTruthy();
+    expect(screen.getByText('Its first action, spends 2 uses of its pool')).toBeTruthy();
     expect(problems(amend())).toEqual([]);
     expect(misshown()).toEqual([]);
   });
@@ -167,7 +167,7 @@ describe('the price card', () => {
     expect(box('Price: Restores').value).toBe('');
     expect(
       screen.getByText(
-        'Its first action, spends 2 of what it spends now, buys a use back with 1 use of glow',
+        'Its first action, spends 2 uses of its pool, buys a use back with 1 use of glow',
       ),
     ).toBeTruthy();
   });
@@ -235,7 +235,7 @@ describe('the price card', () => {
 describe('amendWords', () => {
   it('words each price', () => {
     expect(amendWords({ cost: { amount: 'varies' } } as never)).toBe(
-      'Its first action, spends as many as you choose of what it spends now',
+      'Its first action, spends as many uses as you choose of its pool',
     );
     expect(
       amendWords({
