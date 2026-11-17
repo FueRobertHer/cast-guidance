@@ -1203,6 +1203,15 @@ function listed(names: readonly string[]): string {
   return `${names.slice(0, 4).join(', ')}${more}`;
 }
 
+/**
+ * Whether a feature's book is a homebrew one, whose `<modifier>` tags are its
+ * mechanics: no official book, and no free rules text (the SRD's Monk is the
+ * official one, its tags what its curated rows already give).
+ */
+function homebrewBook(where: Placement): boolean {
+  return where.officialBook === undefined && where.book?.reference !== true;
+}
+
 /** The reason for features' `<modifier>` tags whose meaning is not plain (`Name: tag`). */
 function modifiersKept(kept: readonly string[]): string {
   return `its features' modifiers whose meaning is not plain (${listed(kept)}) are kept as text`;
@@ -1496,7 +1505,7 @@ function convertSubclass(pick: Pick, from: SubclassFrom, bound: ClassBinding): F
     const citation = citationEntry(where);
     if (citation !== undefined) entries.push(citation);
     entity.entries = entries;
-    if (el !== undefined && !variant && where.officialBook === undefined) {
+    if (el !== undefined && !variant && homebrewBook(where)) {
       for (const raw of applyFeatureModifiers(entity, el, plainText(text.entries))) {
         keptModifiers.push(`${fname}: ${raw}`);
       }
@@ -1532,7 +1541,8 @@ function convertSubclass(pick: Pick, from: SubclassFrom, bound: ClassBinding): F
       continue;
     }
     fixed.push({ name: refName(f.name), level: f.level, entries: text.entries });
-    add(refName(f.name), f.level, opened, false, f.el);
+    // A printing of an official subclass has its tags from its own data.
+    add(refName(f.name), f.level, opened, false, subPrinting === undefined ? f.el : undefined);
   }
   if (keptModifiers.length > 0) reasons.push(modifiersKept(keptModifiers));
   parts.sort((a, b) => Number(a.entity.level) - Number(b.entity.level));
@@ -2002,7 +2012,8 @@ export function convertClass(el: XmlElement, ctx: Fc5Context): Fc5Result {
       entity: featureEntity(fname, of, f.level, text, where),
       placement: where,
     };
-    if (where.officialBook === undefined) {
+    // A printing of an official class has its tags from its own data.
+    if (printing === undefined && homebrewBook(where)) {
       const kept = applyFeatureModifiers(part.entity, f.el, plainText(text.entries));
       if (kept.length > 0)
         keptOf.set(

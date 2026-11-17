@@ -198,6 +198,17 @@ describe('modifiers on the sheet', () => {
     expect(fast).toBeDefined();
     expect(fast).not.toHaveProperty('castGuidance');
     expect(JSON.stringify(report.notes)).not.toContain('speed +10');
+    // A free rules text's Monk is the official one, which spreads its speed
+    // across later features (Empowered Strikes' +5) its curated rows count.
+    const srd = (text: string) => `${text}\nSource: System Reference Document 5.2.1 p. 49`;
+    const monk = convert(`<class><name>Monk [5.5e]</name><hd>8</hd>
+      <autolevel level="1">${feature('Martial Arts', srd('You strike.'))}</autolevel>
+      <autolevel level="2">${feature('Unarmored Movement', srd("Your speed increases by 10 feet while you aren't wearing armor or wielding a Shield."), mod('bonus', 'speed +10'))}</autolevel>
+      <autolevel level="6">${feature('Empowered Strikes', srd('Your strikes deal Force damage.'), mod('bonus', 'speed +5'))}</autolevel>
+    </class>`);
+    const monkFeatures = monk.json.classFeature as Record<string, unknown>[];
+    expect(monkFeatures.map((f) => f.name)).toContain('Empowered Strikes');
+    expect(monkFeatures.some((f) => 'castGuidance' in f)).toBe(false);
   });
 
   it("reads a homebrew subclass's on an official class, never an official subclass's", () => {
