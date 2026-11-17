@@ -159,6 +159,7 @@ describe('modifiers on the sheet', () => {
         ${feature('Swift Feet', 'Your speed increases by 10 feet.', mod('bonus', 'speed +10'))}
         ${feature('Holy Shield', 'You gain a +2 bonus to your AC.', mod('bonus', 'ac +2'))}
         ${feature('Quick Hands', 'You add your proficiency bonus to your initiative.', mod('bonus', 'initiative +%0'))}
+        ${feature('Alert Mind', 'You gain a +1 bonus to initiative.', mod('bonus', 'initiative +1'))}
         ${feature('Mighty', 'Your Strength score increases by 2, to a maximum of 22.', mod('ability score', 'strength +2'))}
         ${feature('Bold', 'You are proficient in Persuasion.', mod('skill', 'persuasion +%0'))}
       </autolevel></class>`);
@@ -175,9 +176,11 @@ describe('modifiers on the sheet', () => {
     ];
     const sheet = deriveSheet(doc, engineContextFor(reg));
     expect(sheet.speedWalk.value).toBe(40);
-    // 10, Dexterity's 2, Holy Shield's 2: its words and its tag are one bonus.
+    // 10, Dexterity's 2, Holy Shield's 2.
     expect(sheet.ac.value).toBe(14);
-    expect(sheet.initiative.value).toBe(4);
+    // Dexterity's 2, the proficiency bonus, and Alert Mind's 1, whose words the
+    // prose scan reads too: its words and its tag are one bonus.
+    expect(sheet.initiative.value).toBe(5);
     expect(sheet.abilities.str.value).toBe(22);
     expect(sheet.warnings).toEqual([]);
     expect(report.notes.find((n) => n.kind === 'class')?.reasons.join(' ')).toContain(
