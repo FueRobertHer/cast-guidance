@@ -925,18 +925,19 @@ describe('pools, dice and DCs only class prose states', () => {
       'signature-spells-fireball Fireball 1 short',
       'signature-spells-counterspell Counterspell 1 short',
     ]);
-    const grants = picked.effects.flatMap((e) =>
-      e.kind === 'grantSpell'
-        ? [
-            `${e.spell.name} ${e.usage} ${e.ability} ${e.resourceKey ?? '-'}${e.slotsOnly ? ' slots' : ''}`,
-          ]
-        : [],
-    );
-    expect(grants).toEqual([
-      'fireball prepared int - slots',
-      'fireball 1/rest int signature-spells-fireball',
-      'counterspell prepared int - slots',
-      'counterspell 1/rest int signature-spells-counterspell',
+    const grants = (c: Collector) =>
+      c.effects.flatMap((e) =>
+        e.kind === 'grantSpell'
+          ? [
+              `${e.spell.name}|${e.spell.source} ${e.usage} ${e.ability} ${e.resourceKey ?? '-'}${e.slotsOnly ? ' slots' : ''}`,
+            ]
+          : [],
+      );
+    expect(grants(picked)).toEqual([
+      'fireball|xphb prepared int - slots',
+      'fireball|xphb 1/rest int signature-spells-fireball',
+      'counterspell|xphb prepared int - slots',
+      'counterspell|xphb 1/rest int signature-spells-counterspell',
     ]);
     // A pick as the picker stores it keeps its own capitals.
     const named = col('Wizard', 20);
@@ -944,6 +945,13 @@ describe('pools, dice and DCs only class prose states', () => {
     expect(pools(run('signature spells|wizard', named, wizard))).toEqual([
       "signature-spells-leomund-s-tiny-hut Leomund's Tiny Hut 1 short",
       'signature-spells-fireball Fireball 1 short',
+    ]);
+    // Each grant names the spell as it was saved, its book too.
+    expect(grants(named)).toEqual([
+      "Leomund's Tiny Hut|PHB prepared int - slots",
+      "Leomund's Tiny Hut|PHB 1/rest int signature-spells-leomund-s-tiny-hut",
+      'Fireball|PHB prepared int - slots',
+      'Fireball|PHB 1/rest int signature-spells-fireball',
     ]);
   });
 
