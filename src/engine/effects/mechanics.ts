@@ -1783,7 +1783,7 @@ export function entryKeys(e: DataEntity | undefined, uid: string): string[] {
  * alone, the row for every printing. The printings are the feature's own
  * (`printing`, the official one's for a copy), then that of the class or
  * subclass whose uid is `uid`, so a 2014 subclass under a 2024 class reads its
- * own, as `CURATED` rows test the printing in code.
+ * own, as the `STANDING` rows left in code test the printing.
  */
 export function printingKeys(keys: readonly string[], printing: string, uid: string): string[] {
   const at = uid.lastIndexOf('|');

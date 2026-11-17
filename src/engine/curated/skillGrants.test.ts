@@ -9,6 +9,7 @@ import { pruneChoicesFor } from '../../lib/pruneChoices';
 import { RULE_SET_TYPE } from '../castGuidance';
 import { deriveSheet } from '../derive';
 import { Collector } from '../effects/base';
+import { emitBuiltInRows } from '../effects/mechanics';
 import {
   type CharacterDoc,
   type DataEntity,
@@ -17,7 +18,6 @@ import {
   type EntityRef,
   newCharacterDoc,
 } from '../types';
-import { emitCuratedEffects } from './curatedEffects';
 
 const PROSE = ['Placeholder text.'];
 
@@ -329,7 +329,9 @@ describe('Royal Envoy', () => {
     const col = new Collector(newCharacterDoc('c', 'H', 't'), ctx);
     const origin = { label: 'Royal Envoy', uid: 'x|y', type: 'subclass' } as const;
     col.add({ kind: 'skillProf', skill: 'persuasion', level: 1, origin });
-    emitCuratedEffects(col, 'royal envoy|purple dragon knight (banneret)', origin);
+    expect(
+      emitBuiltInRows(col, 'curated', ['royal envoy|purple dragon knight (banneret)'], origin),
+    ).toBe(true);
     expect(col.pending.map((p) => p.id)).toEqual(['subclass:x|y:skill:royal envoy']);
   });
 });

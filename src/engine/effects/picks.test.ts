@@ -321,6 +321,11 @@ describe('asking a stored pick', () => {
     expect(asked.col.pending[0]).toMatchObject({ label: 'Lantern: saving throw' });
     expect(asked.col.pending[0]?.options).toEqual([{ id: 'int', label: 'INT' }]);
     expect(ask([pick], { held: [save('wis'), save('cha'), save('int')] }).col.pending).toEqual([]);
+    // With no `from`, every ability it lacks (Unfettered Mind's row).
+    const any = ask([{ ...pick, from: undefined, inPlaceOf: ['int'] }], {
+      held: [save('int'), save('wis')],
+    });
+    expect(any.col.pending[0]?.options.map((o) => o.id)).toEqual(['str', 'dex', 'con', 'cha']);
   });
 
   it('names damage types, gives each option its own effects, and counts by level or column', () => {

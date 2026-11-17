@@ -12,7 +12,7 @@ which holds what were the spend links, `SPEND_LINKS` and `SLOT_LINKS`
 `src/rules/`, one a part. (Source of truth: `readRuleSet` and
 `mechanicsOf` in `src/engine/effects/mechanics.ts`, `src/data5e/builtInRules.ts`.)
 
-198 rows have moved so far (`src/rules/cast-guidance/curated.json`). Four came
+210 rows have moved so far (`src/rules/cast-guidance/curated.json`). Four came
 first, one for each kind of call site, to prove the routes: Stunning Strike (a
 class feature), Lucky (PHB, a feat), Disarming Attack (PHB, an optional
 feature) and Warforged's Integrated Protection (a species trait). The other 111
@@ -65,17 +65,27 @@ Acolyte of Nature, Acolyte of Strength, Bonus Proficiencies, Implement of Peace
 and Student of Arcana (Arcana and the Cleric's list), the College of Lore's
 Bonus Proficiencies, Primal Lore, Awakened Talent, Hermit's Study, Genie's
 Splendor and Enchanting Conversationalist, whose skill takes the bonus too.
-198 rows in all. The 21 keys left in `CURATED` are picks still to move (phase
-4) and engine calls.
+Twelve more, under 12 keys, give a skill or tool, or a pick of another in its
+place when the character has it already (rule pack port 4c): Royal Envoy
+(Persuasion doubled either way), Arcane Archer Lore (its AU printing grants
+Arcana and Nature, each held one a skill from the giving class's list), the
+artificer subclasses' Tool Proficiency and Tools of the Trade (the Armorer's
+with heavy armor, the Artillerist's with martial ranged weapons, the
+Cartographer's two tools), the Reanimator's Skill Set and the Warrior of Mystic
+Brews' Bonus Proficiencies (Performance, or a skill from the giving class's
+list). 210 rows in all. The 10 keys left in `CURATED` are picks still to move
+(phase 4) and engine calls.
 
-65 `standing` rows have moved (`src/rules/cast-guidance/standing.json`): every
+68 `standing` rows have moved (`src/rules/cast-guidance/standing.json`): every
 `STANDING` row the format held before phase 4, the defenses, senses and speeds a
 subclass or optional feature adds beside what its prose scan reads, eight of
 them split by printing (Avatar of Battle, Aura of Warding, Aura of Devotion,
 Second-Story Work, whose 2014 row adds nothing), and Bestial Soul, a pick of
-three options (4a), and Tiger, two skills at level 6 (4b). The 12 left in
-`STANDING` need a pick still to move or what the character has already
-(darkvision that grows, a save it may have, the branch or cantrip it picked).
+three options (4a), Tiger, two skills at level 6 (4b), and Unfettered Mind,
+Elegant Courtier and Iron Mind, a save or, when the character has it already, a
+pick of one it lacks (4c). The 9 left in `STANDING` need a pick still to move or
+what the character has already (darkvision that grows, the branch or cantrip it
+picked).
 
 Every advantage row has moved, under 181 keys (`src/rules/cast-guidance/roll-advantages.json`):
 advantage on the character's own d20 tests that a feature, feat, optional
