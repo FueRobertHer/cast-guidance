@@ -746,6 +746,27 @@ describe("convertClass another book's optional features", () => {
         ${level(8, feature('Martial Versatility', tce('You may replace a style.'), opt))}`),
       );
       expect(lines(result)).toEqual([['Martial Versatility', 4, 'You may replace a style.']]);
+      // The namesake of a fixed feature at its level is left out, with its reason.
+      const style = converted(ranger(level(2, feature('Fighting Style', tce('A style.'), opt))));
+      expect(lines(style)).toEqual([]);
+      expect(style.reasons.join(' ')).toContain('Fighting Style');
+    });
+
+    it('words a capital clause as 5etools does, and lifts none it cannot place', () => {
+      const result = converted(
+        ranger(
+          level(
+            1,
+            `${feature('Favored Foe (Replaces the Favored Enemy feature)', tce('You mark a foe.'), opt)}${feature('Deft Explorer (İİ, replaces the Natural Explorer feature)', tce('Canny.'), opt)}`,
+          ),
+        ),
+      );
+      expect(lines(result)).toEqual([
+        ['Favored Foe', 1, 'This feature replaces the Favored Enemy feature.'],
+      ]);
+      expect(result.reasons.join(' ')).toContain(
+        'Deft Explorer (İİ, replaces the Natural Explorer feature)',
+      );
     });
 
     it('leaves a list, a group, its own book and a homebrew class as they were', () => {
@@ -818,6 +839,11 @@ describe("convertClass another book's optional features", () => {
         'Beast Call (Beast Master, replaces the Bestial Fury feature)',
         "A call.\nSource: Ember's Grimoire p. 3",
         opt,
+      )}${feature(
+        // Two features, which the engine pairs with neither.
+        "Wild Bond (Beast Master, replaces the Ranger's Companion and Bestial Fury features)",
+        tce('A wild bond.'),
+        opt,
       )}`;
       const lifted = "This feature replaces the Ranger's Companion feature.";
       const cases: [string, string][] = [
@@ -845,22 +871,28 @@ describe("convertClass another book's optional features", () => {
           ['Beast Master', false, 'Beasts.'],
           ['Primal Companion', true, first],
           ["Ranger's Companion", false, 'A beast.'],
+          [
+            'Wild Bond',
+            false,
+            "This feature replaces the Ranger's Companion and Bestial Fury features.",
+          ],
         ]);
         expect(result.reasons).toEqual([]);
       }
     });
 
-    it('reads nothing of a subclass variant, which makes no caster', () => {
+    it('reads nothing of a subclass variant, which makes no caster and gives no spell', () => {
       const rows = Array.from({ length: 20 }, (_, i) =>
         level(i + 1, `<slots optional="YES">2,${i < 2 ? '0,0' : '2,0'}</slots>`),
       ).join('');
       const result = converted(
         ranger(
-          `${rows}${level(3, `${feature('Ranger Archetype: Beast Master', phb('Beasts.'), opt)}${feature("Ranger's Companion (Beast Master)", phb('A beast.'), opt)}${feature("Spellcasting (Beast Master, replaces the Ranger's Companion feature)", tce('You cast spells.'), opt)}`)}`,
+          `${rows}${level(3, `${feature('Ranger Archetype: Beast Master', phb('Beasts.'), opt)}${feature("Ranger's Companion (Beast Master)", phb('A beast.'), opt)}${feature("Spellcasting (Beast Master, replaces the Ranger's Companion feature)", tce("You cast spells. You always have the hunter's mark spell prepared."), opt)}`)}`,
         ),
       );
       const master = result.subclasses?.({ className: 'Ranger', classSource: CLASS })[0];
       expect(master?.entity.casterProgression).toBeUndefined();
+      expect(master?.entity.additionalSpells).toBeUndefined();
       expect(master?.parts?.some((p) => p.entity.isClassFeatureVariant === true)).toBe(true);
     });
   });

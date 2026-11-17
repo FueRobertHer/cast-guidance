@@ -848,10 +848,13 @@ function liftReplaces(name: string): { name: string; replaces?: string } {
   const g = lastGroup(name);
   if (g === undefined) return { name };
   const lower = g.inner.toLowerCase();
-  if (lower.startsWith(REPLACES)) return { name: g.base, replaces: g.inner };
+  // Worded as 5etools words it, `Replaces the` or not.
+  const clause = (from: number) => REPLACES + g.inner.slice(from + REPLACES.length);
+  if (lower.startsWith(REPLACES)) return { name: g.base, replaces: clause(0) };
   const at = lower.indexOf(`, ${REPLACES}`);
-  if (at <= 0) return { name };
-  return { name: `${g.base} (${g.inner.slice(0, at).trim()})`, replaces: g.inner.slice(at + 2) };
+  // Where lowercasing moved the letters (`İ`), a place in one is none in the other.
+  if (at <= 0 || lower.length !== g.inner.length) return { name };
+  return { name: `${g.base} (${g.inner.slice(0, at).trim()})`, replaces: clause(at + 2) };
 }
 
 const REPLACES = 'replaces the ';
@@ -867,7 +870,14 @@ function opensWithReplaces(entries: readonly Entry[]): boolean {
   if (first === undefined) return false;
   const lower = first.trimStart().toLowerCase();
   const rest = lower.startsWith('this feature ') ? lower.slice('this feature '.length) : lower;
-  return rest.startsWith(REPLACES) && rest.includes(' feature');
+  if (!rest.startsWith(REPLACES)) return false;
+  // One feature, as the engine reads it (`feature\b`): not "X and Y features".
+  const word = ' feature';
+  for (let at = rest.indexOf(word, REPLACES.length + 1); at >= 0; at = rest.indexOf(word, at + 1)) {
+    const next = rest.charAt(at + word.length);
+    if (next === '' || !/\w/.test(next)) return true;
+  }
+  return false;
 }
 
 /**
@@ -1512,7 +1522,9 @@ function convertSubclass(pick: Pick, from: SubclassFrom, bound: ClassBinding): F
   // The spells its features give: a domain's, oath's or circle's table, a
   // patron's expanded list, a spell or cantrip one names.
   const spells = readFeatureSpells(
-    parts.map((p) => ({ level: Number(p.entity.level), entries: p.entity.entries as Entry[] })),
+    parts
+      .filter((p) => p.entity.isClassFeatureVariant !== true)
+      .map((p) => ({ level: Number(p.entity.level), entries: p.entity.entries as Entry[] })),
     { tables: true, index: from.ctx.spells },
   );
   if (spells.blocks !== undefined) sub.additionalSpells = spells.blocks;
@@ -1797,8 +1809,14 @@ function optionalVariants(
     const improves = base !== undefined && given.names.has(base.toLowerCase());
     const name = improves ? `${base} Improvement` : c.name;
     const key = name.toLowerCase();
-    if ((!improves && given.names.has(key)) || given.seen.has(`${key}|${c.level}`)) continue;
-    given.seen.add(`${key}|${c.level}`);
+    const place = `${key}|${c.level}`;
+    // The namesake of a feature the class has at that level is left out, as before.
+    if (given.seen.has(place) && !given.names.has(key)) {
+      others.push(c);
+      continue;
+    }
+    if ((!improves && given.names.has(key)) || given.seen.has(place)) continue;
+    given.seen.add(place);
     given.names.add(key);
     const levels = improves ? undefined : later.get(key);
     const body = levels === undefined ? text : withoutLaterBenefits(text, levels);
