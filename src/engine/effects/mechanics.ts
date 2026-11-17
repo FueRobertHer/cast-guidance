@@ -61,9 +61,24 @@ import {
 } from '../types';
 import { countedSpells } from './additionalSpells';
 import type { Collector } from './base';
+import {
+  askPick,
+  CODE_PICK_IDS,
+  DAMAGE_TYPES,
+  IN_PLACE_ASKS,
+  PICK_ASKS,
+  type PickAsk,
+  type PickCount,
+  type PickFill,
+  type PickGives,
+  type PickOption,
+  type PickRule,
+} from './picks';
 import { printingOf, reskinOf } from './reskin';
 
 type Kind = EffectInput['kind'];
+/** A stored effect's kind: the engine's, or a pick (`picks.ts`), which asks before it gives. */
+type StoredKind = Kind | 'pick';
 
 /**
  * Words a stored effect gives by class level (`byLevelWords`): the effect's
@@ -79,8 +94,10 @@ export interface LevelWords {
 
 /** One stored effect, read: the engine's fields, its formulas and its states. */
 export interface EffectTemplate {
-  /** The effect without `origin`, which the collector adds. */
-  effect: Readonly<Record<string, unknown>> & { kind: Kind };
+  /** The effect without `origin`, which the collector adds. A pick's is its kind, id and ask. */
+  effect: Readonly<Record<string, unknown>> & { kind: StoredKind };
+  /** A pick, read: asked where the effect would be added, its answers' effects added then. */
+  pick?: PickRule<EffectTemplate>;
   formulas?: ReadonlyArray<{ field: FormulaField; formula: Formula }>;
   /** Its words by class level; the effect holds the first row's until it is emitted. */
   byLevel?: readonly LevelWords[];
@@ -251,7 +268,11 @@ export const inPlayRefusal = (t: EffectTemplate, holder: string): string | undef
     ? `${holder} takes a plain number, not "profBonus"`
     : t.edition !== undefined
       ? `${holder} holds under either rules version, with no "edition" of its own`
-      : undefined;
+      : t.pick !== undefined
+        ? `${holder} asks nothing: a pick is made as the character is built`
+        : t.effect.kind === 'sense' && t.effect.orMore !== undefined
+          ? `${holder} takes a plain range, with no "orMore"`
+          : undefined;
 
 /** An inherited effect an entry leaves out: of this kind, and this label when given. */
 export interface DropRule {
@@ -284,6 +305,8 @@ class Bad extends Error {}
 
 interface Reading {
   kind: Kind;
+  /** The app's own rule sets: they may write what a player's file may not (`weaponProfFilter`). */
+  builtIn?: true;
   slots: Array<{ field: FormulaField; formula: Formula }>;
   /** Words by class level, filled when the effect is emitted (`byLevelWords`). */
   words?: LevelWords[];
@@ -400,6 +423,18 @@ const DICE = /^\d{0,3}d\d{1,3}(\s*[+-]\s*(\d{0,3}d\d{1,3}|\d{1,4}))*$/;
 const dice: Field = (v) => {
   const s = typeof v === 'string' ? v.trim() : '';
   if (s.length > 40 || !DICE.test(s)) throw new Bad('is dice, like 1d6 or 2d8 + 2');
+  return s;
+};
+
+/**
+ * The data's weapon filter words, as attacks and the weapon options read them:
+ * clauses `key=value;value` joined by `|` ("type=martial weapon|property=!heavy").
+ */
+const weaponFilter: Field = (v) => {
+  const s = typeof v === 'string' ? v.trim() : '';
+  if (s.length > 120 || !/^[a-z]+=[^|=]+(\|[a-z]+=[^|=]+)*$/i.test(s)) {
+    throw new Bad('is filter words, like "type=martial weapon|property=light"');
+  }
   return s;
 };
 
@@ -1079,7 +1114,22 @@ const KINDS = new Map<Kind, Build>([
   ],
   ['checkBonus', checkBonus],
   ['passivePerceptionBonus', amountOnly],
-  ['sense', (o, r) => ({ sense: req(o, r, 'sense', text()), range: req(o, r, 'range', amount) })],
+  [
+    'sense',
+    (o, r) => {
+      const out = { sense: req(o, r, 'sense', text()), range: req(o, r, 'range', amount) };
+      // "orMore": that much more than the same sense held so far, else `range` (`moreSense`).
+      const more = opt(o, r, 'orMore', int(1, 300));
+      const from = opt(o, r, 'orMoreFrom', oneOf('race'));
+      if (from.orMoreFrom !== undefined && more.orMore === undefined) {
+        throw new Bad('"orMoreFrom" goes with "orMore"');
+      }
+      if (more.orMore !== undefined && r.slots.length > 0) {
+        throw new Bad('"orMore" needs a plain "range", not a formula');
+      }
+      return { ...out, ...more, ...from };
+    },
+  ],
   ['resist', defense],
   ['immune', defense],
   ['vulnerable', (o, r) => ({ damageType: req(o, r, 'damageType', text()) })],
@@ -1183,10 +1233,20 @@ const KINDS = new Map<Kind, Build>([
         ...ofOwnClass,
         ...opt(o, r, 'usage', byLevelWords(text())),
         ...opt(o, r, 'resourceKey', text()),
+        ...opt(o, r, 'slotsOnly', flag),
       };
     },
   ],
   ['note', (o, r) => ({ text: req(o, r, 'text', text(L.textLength)) })],
+  ['weaponMastery', named],
+  [
+    'weaponProfFilter',
+    (o, r) => {
+      // The data's own filter words, which a player's file has no reason to write.
+      if (r.builtIn !== true) throw new Bad("is read in the app's own rule sets only");
+      return { filter: req(o, r, 'filter', weaponFilter) };
+    },
+  ],
 ]);
 
 /**
@@ -1238,12 +1298,294 @@ const readWhile: Field = (raw, r) => {
   return states.map((s) => readState(s, r));
 };
 
-function readEffect(raw: unknown, strict: boolean): EffectTemplate {
+/** How a list of stored effects is read: strictly, as the app's own, or as what a pick gives. */
+interface HowRead {
+  strict: boolean;
+  builtIn: boolean;
+  /** What a pick gives: no pick of its own. */
+  inPick: boolean;
+}
+
+/** `{pick}` and the rest filled into stored words, `{picks}` standing alone as the list of them. */
+function filled(v: unknown, f: PickFill): unknown {
+  if (typeof v === 'string') {
+    if (v === '{picks}' && f.picks !== undefined) return [...f.picks];
+    return v
+      .replaceAll('{pick.slug}', f.slug ?? f.pick)
+      .replaceAll('{pick.title}', f.title ?? f.pick)
+      .replaceAll('{pick}', f.pick);
+  }
+  if (Array.isArray(v)) return v.map((x) => filled(x, f));
+  if (isRecord(v)) return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, filled(x, f)]));
+  return v;
+}
+
+/** A spell a pick's stored effects are checked with, as a spell answer fills them. */
+const SAMPLE_SPELL: PickFill = {
+  pick: 'Fire Bolt|XPHB',
+  slug: 'fire-bolt',
+  title: 'Fire Bolt',
+  picks: ['fire bolt'],
+};
+
+/** An answer of each ask, to check a pick's stored effects read with one filled in. */
+function sampleFills(ask: PickAsk): PickFill[] {
+  switch (ask) {
+    case 'skill':
+      return [{ pick: 'Athletics' }];
+    case 'tool':
+      return [{ pick: "Smith's Tools" }];
+    case 'weapon':
+    case 'weaponMastery':
+      return [{ pick: 'longsword' }];
+    case 'save':
+      return [{ pick: 'str' }];
+    case 'damage':
+      return [{ pick: 'fire' }];
+    case 'option':
+      return [{ pick: 'option' }];
+    case 'spell':
+      return [SAMPLE_SPELL];
+  }
+}
+
+/**
+ * A pick's stored effects (`gives`, `givesAll`), checked with each sample
+ * filled in, and read again with each answer. Answers repeat across derives,
+ * so each fill is read once.
+ */
+function pickGives(
+  raw: unknown,
+  name: string,
+  samples: readonly PickFill[],
+  how: HowRead,
+): PickGives<EffectTemplate> {
+  const inner: HowRead = { ...how, inPick: true };
+  for (const sample of samples) {
+    const read = readStoredEffects(filled(raw, sample), name, inner);
+    const [problem] = read.problems;
+    if (problem !== undefined) throw new Bad(`"${name}": ${problem}`);
+  }
+  const seen = new Map<string, { effects: EffectTemplate[]; problems: string[] }>();
+  return (f) => {
+    const key = JSON.stringify(f);
+    const hit = seen.get(key);
+    if (hit !== undefined) return hit;
+    const read = readStoredEffects(filled(raw, f), name, inner);
+    seen.set(key, read);
+    return read;
+  };
+}
+
+/** A pick's count: a number, a level table of numbers, or a class table's column. */
+const pickCount: Field = (v, r, key) => {
+  if (typeof v === 'number') return int(1, 20)(v, r, key);
+  if (!isRecord(v)) throw new Bad('is a number, a level table or a table column');
+  if (own(v, 'byLevel') !== undefined) {
+    onlyKnown(v, r, (k) => k === 'byLevel', 'a level table');
+    const table = own(v, 'byLevel');
+    if (!isRecord(table) || Object.keys(table).length === 0) {
+      throw new Bad('byLevel needs at least one level');
+    }
+    if (Object.keys(table).length > L.byLevelRows) {
+      throw new Bad(`byLevel has at most ${L.byLevelRows} levels`);
+    }
+    const rows = Object.entries(table).map(([level, n]): readonly [number, number] => {
+      if (!/^\d{1,2}$/.test(level)) throw new Bad(`byLevel: "${clip(level)}" is not a level`);
+      return [Number(level), int(0, 20)(n, r, key) as number];
+    });
+    return { byLevel: rows.sort((x, y) => x[0] - y[0]) };
+  }
+  onlyKnown(v, r, (k) => k === 'tableColumn' || k === 'else', 'a table column');
+  return {
+    tableColumn: req(v, r, 'tableColumn', text()),
+    else: req(v, r, 'else', int(1, 20)),
+  };
+};
+
+const pickId =
+  (builtIn: boolean): Field =>
+  (v) => {
+    // The ids the code rows asked under stay as they were, so saved answers read.
+    if (builtIn && typeof v === 'string' && CODE_PICK_IDS.has(v)) return v;
+    if (typeof v !== 'string' || !/^[a-z0-9](?:[a-z0-9-]{0,38}[a-z0-9])?$/.test(v)) {
+      throw new Bad(
+        'is a short name of lowercase letters, digits and hyphens, like "favoured-tool"',
+      );
+    }
+    return `pick-${v}`;
+  };
+
+/** What a pick's `from` lists, by what it asks: spelled as its answers are. */
+function fromOf(ask: PickAsk): Field {
+  switch (ask) {
+    case 'skill':
+      return list(skill, 40);
+    case 'save':
+      return list(ability, 6);
+    case 'damage':
+      return list(oneOf(...DAMAGE_TYPES), 13);
+    default:
+      return list(text(), 40);
+  }
+}
+
+/** Fields only some asks read, and the asks that read them. */
+const PICK_ONLY: ReadonlyArray<readonly [string, readonly PickAsk[]]> = [
+  ['classSkills', ['skill']],
+  ['orLanguage', ['skill']],
+  ['options', ['option']],
+  ['melee', ['weaponMastery']],
+  ['proficient', ['weaponMastery']],
+  ['weapons', ['weapon']],
+  ['spells', ['spell']],
+  ['inPlaceOf', [...IN_PLACE_ASKS]],
+];
+
+/**
+ * A stored pick (`picks.ts`): the prompt it asks and what each answer gives,
+ * checked once with a sample answer filled in. A pick gives no pick, and holds
+ * no `while`, since it is asked as the character is built.
+ */
+function readPick(raw: Record<string, unknown>, how: HowRead): EffectTemplate {
+  if (how.inPick) throw new Bad('a pick gives no pick of its own');
+  const r: Reading = { kind: 'note', slots: [], ...(how.strict ? { seen: new Map() } : {}) };
+  const ask = req(raw, r, 'ask', oneOf(...PICK_ASKS)) as PickAsk;
+  for (const [key, asks] of PICK_ONLY) {
+    if (own(raw, key) !== undefined && !asks.includes(ask)) {
+      throw new Bad(`"${key}" goes with a pick that asks for ${asks.join(' or ')}`);
+    }
+  }
+  const id = req(raw, r, 'id', pickId(how.builtIn)) as string;
+  const count = (opt(raw, r, 'count', pickCount).count ?? 1) as PickCount;
+  const label = opt(raw, r, 'label', text()).label as string | undefined;
+  const from = opt(raw, r, 'from', fromOf(ask)).from as string[] | undefined;
+  const flags = {
+    ...opt(raw, r, 'classSkills', flag),
+    ...opt(raw, r, 'orLanguage', flag),
+    ...opt(raw, r, 'afterBuild', flag),
+    ...opt(raw, r, 'melee', flag),
+    ...opt(raw, r, 'proficient', flag),
+  } as Pick<
+    PickRule<EffectTemplate>,
+    'classSkills' | 'orLanguage' | 'afterBuild' | 'melee' | 'proficient'
+  >;
+  const weapons = opt(
+    raw,
+    r,
+    'weapons',
+    record({ filter: [weaponFilter, true], without: [list(text(), 10)] }),
+  ).weapons as PickRule<EffectTemplate>['weapons'];
+  const spells = opt(
+    raw,
+    r,
+    'spells',
+    record({ levels: [list(int(0, 9), 10), true], classes: [list(text(), 10)] }),
+  ).spells as PickRule<EffectTemplate>['spells'];
+  if (ask === 'spell' && spells === undefined) throw new Bad('"spells" is missing');
+  let options: PickOption<EffectTemplate>[] | undefined;
+  if (ask === 'option') {
+    mark(raw, r, 'options');
+    const rawOptions = own(raw, 'options');
+    if (!Array.isArray(rawOptions) || rawOptions.length === 0) {
+      throw new Bad('"options" lists what it offers');
+    }
+    if (rawOptions.length > 20) throw new Bad('"options" lists at most 20');
+    options = rawOptions.map((o, i) => {
+      if (!isRecord(o)) throw new Bad(`"options": option ${i + 1} is not an option`);
+      onlyKnown(o, r, (k) => k === 'id' || k === 'label' || k === 'gives', 'an option');
+      const optionId = field(own(o, 'id'), r, `options.${i + 1}.id`, text(40)) as string;
+      if (rawOptions.slice(0, i).some((p) => isRecord(p) && own(p, 'id') === optionId)) {
+        throw new Bad(`"options": "${clip(optionId)}" is offered twice`);
+      }
+      const optionLabel = field(own(o, 'label'), r, `options.${i + 1}.label`, text()) as string;
+      const rawGives = own(o, 'gives');
+      const gives =
+        rawGives === undefined
+          ? undefined
+          : pickGives(
+              rawGives,
+              `options.${i + 1}.gives`,
+              [{ pick: optionId }],
+              how,
+            )({
+              pick: optionId,
+            }).effects;
+      return { id: optionId, label: optionLabel, ...(gives === undefined ? {} : { gives }) };
+    });
+  }
+  let inPlaceOf: string[] | undefined;
+  if (own(raw, 'inPlaceOf') !== undefined) {
+    inPlaceOf = req(raw, r, 'inPlaceOf', fromOf(ask)) as string[];
+  }
+  mark(raw, r, 'gives');
+  mark(raw, r, 'givesAll');
+  mark(raw, r, 'always');
+  const samples: PickFill[] = [
+    ...(ask === 'option' ? (options ?? []).map((o) => ({ pick: o.id })) : sampleFills(ask)),
+    ...(inPlaceOf ?? []).map((pick) => ({ pick })),
+  ];
+  const gives =
+    own(raw, 'gives') === undefined
+      ? undefined
+      : pickGives(own(raw, 'gives'), 'gives', samples, how);
+  const givesAll =
+    own(raw, 'givesAll') === undefined
+      ? undefined
+      : pickGives(
+          own(raw, 'givesAll'),
+          'givesAll',
+          samples.map((s) => ({ ...s, picks: s.picks ?? [s.pick] })),
+          how,
+        );
+  let always: EffectTemplate[] | undefined;
+  if (own(raw, 'always') !== undefined) {
+    if (inPlaceOf === undefined) throw new Bad('"always" goes with "inPlaceOf"');
+    always = [
+      ...pickGives(own(raw, 'always'), 'always', [{ pick: '' }], how)({ pick: '' }).effects,
+    ];
+  }
+  if (gives === undefined && givesAll === undefined && options?.some((o) => o.gives) !== true) {
+    if (ask !== 'option') throw new Bad('"gives" says what each pick gives');
+  }
+  if (own(raw, 'while') !== undefined) {
+    throw new Bad('is asked as the character is built, so it holds no "while"');
+  }
+  const edition = opt(raw, r, 'edition', oneOf(...EFFECT_EDITIONS)) as {
+    edition?: (typeof EFFECT_EDITIONS)[number];
+  };
+  const read = r.seen?.get(raw);
+  onlyKnown(raw, r, (k) => k === 'kind' || read?.has(k) === true, 'a pick');
+  const rule: PickRule<EffectTemplate> = {
+    id,
+    ask,
+    count,
+    ...(label === undefined ? {} : { label }),
+    ...(from === undefined ? {} : { from }),
+    ...flags,
+    ...(weapons === undefined ? {} : { weapons }),
+    ...(spells === undefined ? {} : { spells }),
+    ...(options === undefined ? {} : { options }),
+    ...(inPlaceOf === undefined ? {} : { inPlaceOf }),
+    ...(gives === undefined ? {} : { gives }),
+    ...(givesAll === undefined ? {} : { givesAll }),
+    ...(always === undefined ? {} : { always }),
+  };
+  return { effect: { kind: 'pick', id, ask }, pick: rule, ...edition };
+}
+
+function readEffect(raw: unknown, how: HowRead): EffectTemplate {
   if (!isRecord(raw)) throw new Bad('is not an effect');
   const kind = own(raw, 'kind');
+  if (kind === 'pick') return readPick(raw, how);
   const build = typeof kind === 'string' ? KINDS.get(kind as Kind) : undefined;
   if (build === undefined) throw new Bad(`has no kind "${clip(kind)}"`);
-  const r: Reading = { kind: kind as Kind, slots: [], ...(strict ? { seen: new Map() } : {}) };
+  const r: Reading = {
+    kind: kind as Kind,
+    slots: [],
+    ...(how.strict ? { seen: new Map() } : {}),
+    ...(how.builtIn ? { builtIn: true as const } : {}),
+  };
   const effect = { kind: kind as Kind, ...build(raw, r) };
   const states = opt(raw, r, 'while', readWhile) as { while?: WhileState[] };
   const edition = opt(raw, r, 'edition', oneOf(...EFFECT_EDITIONS)) as {
@@ -1269,8 +1611,12 @@ function readEffect(raw: unknown, strict: boolean): EffectTemplate {
 export function readStoredEffects(
   raw: unknown,
   name = 'effects',
-  strict = false,
+  strictOrHow: boolean | HowRead = false,
 ): { effects: EffectTemplate[]; problems: string[] } {
+  const how: HowRead =
+    typeof strictOrHow === 'boolean'
+      ? { strict: strictOrHow, builtIn: false, inPick: false }
+      : strictOrHow;
   const effects: EffectTemplate[] = [];
   const problems: string[] = [];
   if (raw === undefined) return { effects, problems };
@@ -1278,9 +1624,17 @@ export function readStoredEffects(
   if (raw.length > L.effectsPerEntry) {
     problems.push(`only the first ${L.effectsPerEntry} of "${name}" count`);
   }
+  // Two picks under one id would share one answer, each applying it.
+  const pickIds = new Set<string>();
   raw.slice(0, L.effectsPerEntry).forEach((x, i) => {
     try {
-      effects.push(readEffect(x, strict));
+      const t = readEffect(x, how);
+      if (t.pick !== undefined) {
+        if (pickIds.has(t.pick.id))
+          throw new Bad(`asks "${clip(t.pick.id)}" again: give each pick its own "id"`);
+        pickIds.add(t.pick.id);
+      }
+      effects.push(t);
     } catch (err) {
       if (!(err instanceof Bad)) throw err;
       const kind =
@@ -1705,7 +2059,11 @@ function readRuleSetOnce(raw: Record<string, unknown>): ReadRuleSet {
     }
     // Only a row that counts takes its keys, so a later one may still have them.
     for (const key of keys) inPart.add(slot(key));
-    const { effects, problems } = readStoredEffects(own(row, 'effects'), 'effects', true);
+    const { effects, problems } = readStoredEffects(own(row, 'effects'), 'effects', {
+      strict: true,
+      builtIn: true,
+      inPick: false,
+    });
     for (const problem of problems) read.problems.push(`${at}: ${problem}`);
     read.rows.push({
       part,
@@ -1952,6 +2310,13 @@ function emit(
   const cls = ownClassOf(col, live, className);
   const counted = countedByClass(live, cls);
   for (const t of live) {
+    if (t.pick !== undefined) {
+      // Asked here, in the order the effects are written; its answers' effects follow.
+      const emitGiven = (given: readonly EffectTemplate[]) =>
+        emit(col, given, origin, classLevel, className, builtIn);
+      askPick(col, t.pick, { origin, classLevel, className, emit: emitGiven }, basedOn);
+      continue;
+    }
     if (counted.has(t)) continue;
     const named = forClass(namedFor(t, origin.label), cls);
     if (named === undefined) continue;
@@ -1968,8 +2333,30 @@ function emit(
       }));
     }
     if (t.while !== undefined) e.while = t.while;
+    if (e.kind === 'sense') moreSense(col, e);
     col.add(e);
   }
+}
+
+/**
+ * A sense that is `orMore` than the same sense held so far (Umbral Sight:
+ * darkvision 60, or 60 more than you have), from any origin or, with
+ * `orMoreFrom`, from the species alone. The fields go; the range stays.
+ */
+function moreSense(col: Collector, e: Extract<EffectInput, { kind: 'sense' }>): void {
+  const stored = e as unknown as Record<string, unknown>;
+  const more = stored.orMore;
+  const from = stored.orMoreFrom;
+  delete stored.orMore;
+  delete stored.orMoreFrom;
+  if (typeof more !== 'number') return;
+  let had = 0;
+  for (const x of col.effects) {
+    if (x.kind !== 'sense' || x.sense.toLowerCase() !== e.sense.toLowerCase()) continue;
+    if (from !== undefined && x.origin.type !== from) continue;
+    had = Math.max(had, x.range);
+  }
+  if (had > 0) e.range = had + more;
 }
 
 /** Each derive's entries whose `castGuidance` holds moments, once each, first visit kept. */

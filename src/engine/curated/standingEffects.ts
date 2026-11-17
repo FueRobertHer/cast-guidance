@@ -178,27 +178,7 @@ export const STANDING: Record<string, StandingFn> = {
   // need a pick, a test of the printing, or what the character has already.
 
   // --- Barbarian -------------------------------------------------------------
-  // Chosen at each rest; the jump is a check, not a speed.
-  'bestial soul|path of the beast': (col, origin) =>
-    col.choice(
-      {
-        id: `${origin.type}:${origin.uid}:bestial-soul`,
-        origin,
-        kind: 'generic',
-        label: 'Bestial Soul',
-        count: 1,
-        options: [
-          { id: 'swim', label: 'Swimming speed' },
-          { id: 'climb', label: 'Climbing speed' },
-          { id: 'jump', label: 'Longer jumps' },
-        ],
-      },
-      ([mode]) => {
-        if (mode === 'swim' || mode === 'climb') {
-          col.add({ kind: 'moveSpeed', mode, speed: 'walk', origin });
-        }
-      },
-    ),
+  // Bestial Soul, a pick, is data too.
   // Aspect of the Beast's Tiger (SCAG); its Totem Spirit and Totemic Attunement
   // keep what the scan reads (the level 14 bonus action attack).
   'tiger|path of the totem warrior': atLevel(

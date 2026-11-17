@@ -888,6 +888,46 @@
       "part": "standing",
       "keys": ["second-story work|thief"],
       "effects": []
+    },
+    {
+      "part": "standing",
+      "keys": ["bestial soul|path of the beast"],
+      "effects": [
+        {
+          "kind": "pick",
+          "id": "bestial-soul",
+          "ask": "option",
+          "label": "Bestial Soul",
+          "options": [
+            {
+              "id": "swim",
+              "label": "Swimming speed",
+              "gives": [
+                {
+                  "kind": "moveSpeed",
+                  "mode": "swim",
+                  "speed": "walk"
+                }
+              ]
+            },
+            {
+              "id": "climb",
+              "label": "Climbing speed",
+              "gives": [
+                {
+                  "kind": "moveSpeed",
+                  "mode": "climb",
+                  "speed": "walk"
+                }
+              ]
+            },
+            {
+              "id": "jump",
+              "label": "Longer jumps"
+            }
+          ]
+        }
+      ]
     }
   ]
 }

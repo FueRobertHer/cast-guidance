@@ -25,6 +25,12 @@
  * feature and race that reads one is built across levels in the four states; a
  * feat on a Fighter and again on a Wizard, whose slots a feat's slot price needs.
  *
+ * A pick answers as `rules-diff.ts`'s do: a spell pick with the spells its
+ * query fits, and with `--answers last` every prompt with its last usable
+ * options. A subclass that reads a moved row is built again at every level
+ * with what an "in place of" pick names held: under a background giving those
+ * skills and tools, and after a first level of Wizard (INT and WIS saves).
+ *
  * It sees one entity at a time (a class alone, a feat or race on a bare
  * Fighter or Wizard), so a row that only differs beside another entity's row
  * (two proficiency bonuses on initiative that count once) needs its own test.
@@ -56,8 +62,10 @@ import { STANDING } from '../src/engine/curated/standingEffects';
 import { deriveSheet } from '../src/engine/derive';
 import { Collector } from '../src/engine/effects/base';
 import { type RulePart, readRuleSet } from '../src/engine/effects/mechanics';
+import { spellFitsQuery } from '../src/engine/spellQuery';
 import {
   type CharacterDoc,
+  type ChoicePrompt,
   type DerivedSheet,
   type EffectInput,
   type EngineContext,
@@ -67,12 +75,19 @@ import {
 import { fetchRelease } from './data-release';
 
 const { values } = parseArgs({
-  options: { release: { type: 'string' }, only: { type: 'string', multiple: true } },
+  options: {
+    release: { type: 'string' },
+    only: { type: 'string', multiple: true },
+    answers: { type: 'string', default: 'first' },
+  },
 });
-if (values.release === undefined) {
-  console.error('Usage: rules-probe.ts --release <release.json> [--only <text>]...');
+if (values.release === undefined || (values.answers !== 'first' && values.answers !== 'last')) {
+  console.error(
+    'Usage: rules-probe.ts --release <release.json> [--only <text>]... [--answers first|last]',
+  );
   process.exit(1);
 }
+const LAST = values.answers === 'last';
 
 const str = (v: unknown): string => (typeof v === 'string' ? v : '');
 const refOf = (e: Entity): EntityRef => ({ name: str(e.name), source: str(e.source) });
@@ -95,6 +110,35 @@ const reg = normalizeDataset(await releaseFiles(values.release));
 await withBuiltInRules(reg);
 if (reg.ruleSetsFailed) throw new Error('The built-in rule sets did not load.');
 const ctx: EngineContext = engineContextFor(reg, {});
+
+/** What the "in place of" picks name, held: a background no other build takes. */
+const PAST: EntityRef = { name: 'Rules Probe Past', source: 'RULESPROBE' };
+reg.addAll('background', [
+  {
+    ...PAST,
+    skillProficiencies: [{ persuasion: true, performance: true, arcana: true, nature: true }],
+    toolProficiencies: [
+      {
+        "smith's tools": true,
+        "alchemist's supplies": true,
+        "woodcarver's tools": true,
+        'herbalism kit': true,
+        "calligrapher's supplies": true,
+        "cartographer's tools": true,
+      },
+    ],
+  } as Entity,
+]);
+
+/** Every spell a spell prompt's query fits, by `name|source`, sorted: its answers. */
+const spells = reg.byType('spell');
+const spellsFor = (p: ChoicePrompt): string[] =>
+  p.spellQuery === undefined
+    ? []
+    : spells
+        .filter((s) => spellFitsQuery(s, p.spellQuery as never))
+        .map((s) => uidOf(refOf(s)))
+        .sort();
 
 // ------------------------------------------------------------ the two configs
 
@@ -269,6 +313,7 @@ interface Shape {
   feat?: EntityRef;
   race?: EntityRef;
   subrace?: EntityRef;
+  background?: EntityRef;
   choices?: Record<string, string[]>;
   /** The table's optional class features on (`CharacterDoc.optionalClassFeatures`). */
   optional?: boolean;
@@ -282,6 +327,7 @@ function docOf(shape: Shape, array: string, state: State): CharacterDoc {
   if (shape.feat !== undefined) doc.feats = [{ ref: shape.feat, instanceId: 'rules-probe' }];
   if (shape.race !== undefined) doc.race = shape.race;
   if (shape.subrace !== undefined) doc.subrace = shape.subrace;
+  if (shape.background !== undefined) doc.background = shape.background;
   doc.choices = structuredClone(shape.choices ?? {});
   if (shape.optional === true) doc.optionalClassFeatures = true;
   if (state === 'on') {
@@ -307,21 +353,28 @@ interface FeaturePick {
   options: string[];
 }
 
-/** As `rules-diff.ts` does: answer every open prompt with its first usable options. */
+/**
+ * As `rules-diff.ts` does: answer every open prompt with its first usable
+ * options (its last, with `--answers last`), a spell pick with fitting spells.
+ */
 function settle(doc: CharacterDoc, picks: FeaturePick[] = []): DerivedSheet {
   collectors = new Set();
   let sheet = deriveSheet(doc, ctx);
   for (let round = 0; round < 6; round++) {
     let changed = false;
     for (const p of sheet.pending) {
-      if (doc.choices[p.id] !== undefined || p.options.length === 0) continue;
+      if (doc.choices[p.id] !== undefined) continue;
       const usable = p.options.filter((o) => o.disabled === undefined);
-      const pool = usable.length > 0 ? usable : p.options;
+      const pool =
+        p.options.length > 0
+          ? (usable.length > 0 ? usable : p.options).map((o) => o.id)
+          : spellsFor(p);
+      if (pool.length === 0) continue;
       const n = Math.max(1, Math.min(p.count, pool.length));
       if (p.kind === 'feature' && usable.length > n) {
         picks.push({ id: p.id, count: n, options: usable.map((o) => o.id) });
       }
-      doc.choices[p.id] = pool.slice(0, n).map((o) => o.id);
+      doc.choices[p.id] = LAST ? pool.slice(-n) : pool.slice(0, n);
       changed = true;
     }
     if (!changed) break;
@@ -474,6 +527,18 @@ for (const cls of classes) {
         shape.choices !== undefined ? ` | ${JSON.stringify(shape.choices)}` : ''
       }`;
     for (const shape of shapes) sweep(labelOf(shape), ALL_LEVELS, at(shape));
+    // What an "in place of" pick names, held, where the subclass reads a row.
+    if (subRef !== undefined && shapes.length > 0) {
+      const held: Shape = { ...base, background: PAST };
+      sweep(`${id} [held]`, ALL_LEVELS, at(held));
+      sweep(`${id} after Wizard 1`, ALL_LEVELS.slice(0, 19), (n) => ({
+        ...base,
+        classes: [
+          { ref: wizardOf(edition), levels: 1 },
+          { ref, subclass: subRef, levels: n },
+        ],
+      }));
+    }
     // The class's level is not the character's: three levels of another class after
     // it, in the first shape that reads a row (the class as printed, else a pick)
     // and in each kept for the optional class features, whose rows no other reads.
