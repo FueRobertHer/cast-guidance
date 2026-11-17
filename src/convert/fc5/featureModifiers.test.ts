@@ -72,6 +72,8 @@ describe('readFeatureModifiers', () => {
       'speed',
       'speed +1000',
       'melee damage +1',
+      'speed +%0',
+      'initiative -%0',
     ];
     const got = read(
       [
@@ -84,6 +86,8 @@ describe('readFeatureModifiers', () => {
         mod('bonus', kept[6] ?? ''),
         mod('bonus', kept[7] ?? ''),
         mod('bonus', kept[8] ?? ''),
+        mod('bonus', kept[9] ?? ''),
+        mod('bonus', kept[10] ?? ''),
       ].join(''),
     );
     expect(got.effects).toEqual([]);
@@ -95,6 +99,9 @@ describe('readFeatureModifiers', () => {
     expect(
       read(speed, "Your speed increases while you aren't wearing heavy armor.").effects,
     ).toEqual([{ kind: 'speedBonus', amount: 10, unless: 'heavyArmor' }]);
+    expect(read(speed, 'Unless You Are Wearing Heavy Armor.').effects).toEqual([
+      { kind: 'speedBonus', amount: 10, unless: 'heavyArmor' },
+    ]);
     expect(
       read(speed, 'While you are not wearing armor or wielding a shield, your speed increases.')
         .effects,
@@ -217,7 +224,7 @@ describe('modifiers on the sheet', () => {
   it("reads a homebrew subclass's on an official class, never an official subclass's", () => {
     const phb = (text: string) => `${text}\nSource: Player's Handbook p. 54`;
     const dance = (text: string) => `${text}\nSource: The Griffon's Saddlebag: Book One p. 157`;
-    const { json } = convert(`<class><name>Bard</name><hd>8</hd>
+    const { json, report } = convert(`<class><name>Bard</name><hd>8</hd>
       <autolevel level="1">${feature('Bardic Inspiration', phb('You inspire.'))}${feature('Spellcasting', phb('You cast.'))}</autolevel>
       <autolevel level="2">${feature('Jack of All Trades', phb('You know a bit.'))}</autolevel>
       <autolevel level="3">
@@ -225,7 +232,7 @@ describe('modifiers on the sheet', () => {
         ${feature('Bard College: College of Lore', phb('Lore.'), '', opt)}
         ${feature('Cutting Words (College of Lore)', phb('Your speed increases by 10 feet.'), mod('bonus', 'speed +10'), opt)}
         ${feature('Bard College: College of Dance', dance('Dance.'), '', opt)}
-        ${feature('Fast Movement (College of Dance)', dance('Your walking speed increases by 10 feet.'), mod('bonus', 'speed +10'), opt)}
+        ${feature('Fast Movement (College of Dance)', dance('Your walking speed increases by 10 feet, and you gain proficiency in Acrobatics.'), mod('bonus', 'speed +10') + mod('skill', 'acrobatics +%0'), opt)}
       </autolevel></class>`);
     const features = json.subclassFeature as Record<string, unknown>[];
     const of = (name: string) => features.find((f) => f.name === name);
@@ -236,5 +243,12 @@ describe('modifiers on the sheet', () => {
     });
     expect(of('Cutting Words')).toBeDefined();
     expect(of('Cutting Words')).not.toHaveProperty('castGuidance');
+    const reasons = (name: string) =>
+      report.notes
+        .filter((n) => n.kind === 'subclass' && n.name.includes(name))
+        .flatMap((n) => n.reasons)
+        .join(' ');
+    expect(reasons('College of Dance')).toContain('Fast Movement: acrobatics +%0');
+    expect(reasons('College of Lore')).not.toContain('speed +10');
   });
 });

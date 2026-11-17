@@ -240,8 +240,9 @@ too, and its subclass casters' when the class casts nothing itself, as the
 Fighter's is the Eldritch Knight's), one that counts an option list is read as
 above, and any other is reported.
 
-A class or subclass feature of a homebrew book (or of a class or subclass with
-no official book) has its `<modifier>` tags as effects in its `castGuidance`:
+A feature of a homebrew class or subclass (one no official book or free rules
+text prints, as a homebrew college of the Player's Handbook's Bard) has its
+`<modifier>` tags as effects in its `castGuidance`:
 `speed` a walking speed bonus (out of heavy armor, or of armor and shields,
 when its text says so), `ac`, `spell attack`, `spell dc`, weapon, melee and
 ranged `attacks`, `initiative` (`+%0` as the proficiency bonus), and an
@@ -251,8 +252,9 @@ gives is dropped from what the feature inherits, so its text's own reading
 is not plain are kept as text with a reason: skills and saves at `+%0` (which
 Fight Club writes for proficiency and for expertise alike), `hp`, passive
 scores, and a speed or AC whose text names armor no field holds. An official
-book's feature is left alone, its curated row or text giving what the tags
-would; class options are not read yet.
+class's or subclass's features (the free rules text's too) are left alone,
+their curated rows or text giving what the tags would; class options are not
+read yet.
 
 The class's start notes (`Starting Barbarian`, `Multiclass Barbarian`,
 `Becoming a Barbarian as a Multiclass Character`) give 5etools
