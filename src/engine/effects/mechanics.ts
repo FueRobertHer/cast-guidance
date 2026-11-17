@@ -430,6 +430,21 @@ const dice: Field = (v) => {
  * The data's weapon filter words, as attacks and the weapon options read them:
  * clauses `key=value;value` joined by `|` ("type=martial weapon|property=!heavy").
  */
+/**
+ * A weapon pick's base weapons: `type=` and the kinds it offers, any of them
+ * (`weaponFilterOptions` reads that clause alone).
+ */
+const weaponTypes: Field = (v) => {
+  const s = typeof v === 'string' ? v.trim().toLowerCase() : '';
+  const kind = '(simple|martial|melee|ranged) weapon';
+  if (!new RegExp(`^type=${kind}(;${kind})*$`).test(s)) {
+    throw new Bad(
+      'is "type=" and simple, martial, melee or ranged weapon, like "type=melee weapon"',
+    );
+  }
+  return s;
+};
+
 const weaponFilter: Field = (v) => {
   const s = typeof v === 'string' ? v.trim() : '';
   if (s.length > 120 || !/^[a-z]+=[^|=]+(\|[a-z]+=[^|=]+)*$/i.test(s)) {
@@ -1310,10 +1325,11 @@ interface HowRead {
 function filled(v: unknown, f: PickFill): unknown {
   if (typeof v === 'string') {
     if (v === '{picks}' && f.picks !== undefined) return [...f.picks];
+    // Functions, so a `$` in an answer is the answer's, not a replacement pattern.
     return v
-      .replaceAll('{pick.slug}', f.slug ?? f.pick)
-      .replaceAll('{pick.title}', f.title ?? f.pick)
-      .replaceAll('{pick}', f.pick);
+      .replaceAll('{pick.slug}', () => f.slug ?? f.pick)
+      .replaceAll('{pick.title}', () => f.title ?? f.pick)
+      .replaceAll('{pick}', () => f.pick);
   }
   if (Array.isArray(v)) return v.map((x) => filled(x, f));
   if (isRecord(v)) return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, filled(x, f)]));
@@ -1440,6 +1456,7 @@ const PICK_ONLY: ReadonlyArray<readonly [string, readonly PickAsk[]]> = [
   ['weapons', ['weapon']],
   ['spells', ['spell']],
   ['inPlaceOf', [...IN_PLACE_ASKS]],
+  ['from', ['skill', 'tool', 'weapon', 'save', 'damage']],
 ];
 
 /**
@@ -1474,8 +1491,11 @@ function readPick(raw: Record<string, unknown>, how: HowRead): EffectTemplate {
     raw,
     r,
     'weapons',
-    record({ filter: [weaponFilter, true], without: [list(text(), 10)] }),
+    record({ filter: [weaponTypes, true], without: [list(text(), 10)] }),
   ).weapons as PickRule<EffectTemplate>['weapons'];
+  if (ask === 'weapon' && (weapons === undefined) === (from === undefined)) {
+    throw new Bad('a weapon pick names its weapons in "from" or "weapons", one of them');
+  }
   const spells = opt(
     raw,
     r,
@@ -1495,7 +1515,10 @@ function readPick(raw: Record<string, unknown>, how: HowRead): EffectTemplate {
       if (!isRecord(o)) throw new Bad(`"options": option ${i + 1} is not an option`);
       onlyKnown(o, r, (k) => k === 'id' || k === 'label' || k === 'gives', 'an option');
       const optionId = field(own(o, 'id'), r, `options.${i + 1}.id`, text(40)) as string;
-      if (rawOptions.slice(0, i).some((p) => isRecord(p) && own(p, 'id') === optionId)) {
+      // Saved answers match without case, so two ids that differ only in case are one.
+      const same = (p: unknown) =>
+        isRecord(p) && String(own(p, 'id')).trim().toLowerCase() === optionId.toLowerCase();
+      if (rawOptions.slice(0, i).some(same)) {
         throw new Bad(`"options": "${clip(optionId)}" is offered twice`);
       }
       const optionLabel = field(own(o, 'label'), r, `options.${i + 1}.label`, text()) as string;
@@ -1525,10 +1548,16 @@ function readPick(raw: Record<string, unknown>, how: HowRead): EffectTemplate {
     ...(ask === 'option' ? (options ?? []).map((o) => ({ pick: o.id })) : sampleFills(ask)),
     ...(inPlaceOf ?? []).map((pick) => ({ pick })),
   ];
+  // `{picks}` is filled in what the picks give together alone.
   const gives =
     own(raw, 'gives') === undefined
       ? undefined
-      : pickGives(own(raw, 'gives'), 'gives', samples, how);
+      : pickGives(
+          own(raw, 'gives'),
+          'gives',
+          samples.map(({ picks: _, ...s }) => s),
+          how,
+        );
   const givesAll =
     own(raw, 'givesAll') === undefined
       ? undefined
@@ -1624,15 +1653,17 @@ export function readStoredEffects(
   if (raw.length > L.effectsPerEntry) {
     problems.push(`only the first ${L.effectsPerEntry} of "${name}" count`);
   }
-  // Two picks under one id would share one answer, each applying it.
-  const pickIds = new Set<string>();
+  // Two picks under one id would share one answer, each applying it: unless each
+  // counts under its own rules version, so only one is ever asked.
+  const pickIds = new Map<string, Array<string | undefined>>();
   raw.slice(0, L.effectsPerEntry).forEach((x, i) => {
     try {
       const t = readEffect(x, how);
       if (t.pick !== undefined) {
-        if (pickIds.has(t.pick.id))
+        const editions = pickIds.get(t.pick.id) ?? [];
+        if (editions.some((ed) => ed === undefined || t.edition === undefined || ed === t.edition))
           throw new Bad(`asks "${clip(t.pick.id)}" again: give each pick its own "id"`);
-        pickIds.add(t.pick.id);
+        pickIds.set(t.pick.id, [...editions, t.edition]);
       }
       effects.push(t);
     } catch (err) {
@@ -2278,6 +2309,12 @@ export interface MechanicsSubject {
    */
   inCode?: (key: string) => boolean;
   /**
+   * What a `pick-` pick's id starts with in place of `<origin type>:<origin
+   * uid>`: a feat's instance (`feat:<uid>:<instance>`), so each copy of a
+   * repeatable feat asks its own, and removing a feat clears its answers.
+   */
+  pickBase?: string;
+  /**
    * Layer 3: what it inherits, which the call site knows how to collect.
    * `builtIn` is the built-in curated row found for `ruleKeys`, already
    * emitted: the call site then skips `CURATED`, and its prose scan when the row
@@ -2301,6 +2338,7 @@ function emit(
   classLevel: number,
   className: string | undefined,
   builtIn = false,
+  pickBase?: string,
 ): void {
   // An effect of one rules version alone counts as though it were not there under
   // the other. A character with none, or one this app does not know, plays 2014,
@@ -2313,8 +2351,19 @@ function emit(
     if (t.pick !== undefined) {
       // Asked here, in the order the effects are written; its answers' effects follow.
       const emitGiven = (given: readonly EffectTemplate[]) =>
-        emit(col, given, origin, classLevel, className, builtIn);
-      askPick(col, t.pick, { origin, classLevel, className, emit: emitGiven }, basedOn);
+        emit(col, given, origin, classLevel, className, builtIn, pickBase);
+      askPick(
+        col,
+        t.pick,
+        {
+          origin,
+          classLevel,
+          className,
+          emit: emitGiven,
+          ...(pickBase === undefined ? {} : { base: pickBase }),
+        },
+        basedOn,
+      );
       continue;
     }
     if (counted.has(t)) continue;
@@ -2391,17 +2440,21 @@ export function mechanicsOf(col: Collector, s: MechanicsSubject): void {
       { ...s.origin, pack: patches.replace.pack },
       level,
       s.className,
+      false,
+      s.pickBase,
     );
   }
   for (const add of patches?.add ?? [])
-    emit(col, add.effects, { ...s.origin, pack: add.pack }, level, s.className);
+    emit(col, add.effects, { ...s.origin, pack: add.pack }, level, s.className, false, s.pickBase);
   const self = mine?.readable === true ? mine : undefined;
   if (patches?.replace !== undefined) {
     unpriced(col, s, self, patches);
     return;
   }
 
-  if (self !== undefined) emit(col, self.effects, { ...s.origin }, level, s.className);
+  if (self !== undefined) {
+    emit(col, self.effects, { ...s.origin }, level, s.className, false, s.pickBase);
+  }
   if (self?.replace === true) {
     unpriced(col, s, self, patches);
     return;
@@ -2412,7 +2465,7 @@ export function mechanicsOf(col: Collector, s: MechanicsSubject): void {
   // own origin, which spend links find its action by.
   const row =
     s.ruleKeys === undefined ? undefined : builtInRuleFor(col, 'curated', s.ruleKeys, s.inCode);
-  if (row !== undefined) emit(col, row.effects, s.origin, level, s.className, true);
+  if (row !== undefined) emit(col, row.effects, s.origin, level, s.className, true, s.pickBase);
   s.inherited?.(row === undefined ? undefined : { scan: row.scan });
   if (self !== undefined && self.drop.length > 0) {
     for (let i = col.effects.length - 1; i >= from; i--) {

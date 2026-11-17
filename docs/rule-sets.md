@@ -288,9 +288,13 @@ in `mechanics.ts`, `askPick` in `src/engine/effects/picks.ts`):
   prompt's id (`ancestor`, `branch`, `cantrip`), whose one answer would then
   apply twice. A built-in row writes the code row's own id after the origin,
   `skill:{feature}` (the entry's name, lowercased) or a fixed word
-  (`CODE_PICK_IDS`), so the answers characters saved keep reading. An entry's
-  effects asking one id twice are refused; a pick asked twice under one id in
-  one build (a pack's patch and the entry's own effects) asks once and warns.
+  (`CODE_PICK_IDS`), so the answers characters saved keep reading. A feat's
+  `pick-` ids file under its copy (`feat:<uid>:<instance>:pick-<id>`), so each
+  copy of a repeatable feat asks its own and removing the feat clears its
+  answers. An entry's effects asking one id twice are refused, unless each
+  counts under its own rules version (`edition`); a pick asked twice under one
+  id in one build (a pack's patch and the entry's own effects) asks once and
+  warns.
 - **`ask`** sets the prompt and its options:
   - `skill`: every skill, or `from`. `classSkills: true` adds the skill list of
     the class that gives the feature (as a level table reads that class's
@@ -300,8 +304,10 @@ in `mechanics.ts`, `askPick` in `src/engine/effects/picks.ts`):
     (`"artisan's tools"`, `"gaming set"`). A tool held so far is offered greyed
     out ("You already have Smith's Tools"), and an answer is given by the name
     the sheet shows.
-  - `weapon`: the base weapons `weapons.filter` finds (filter words,
-    `type=melee weapon`), less those with a property in `weapons.without`.
+  - `weapon`: the weapons `from` names, or the base weapons of any kind
+    `weapons.filter` names (`type=` and `simple`, `martial`, `melee` or
+    `ranged weapon`, joined with `;`), less those with a property in
+    `weapons.without`; one of `from` and `weapons`.
   - `weaponMastery`: weapon masteries; `melee: true` for melee weapons alone,
     `proficient: true` for those the character is proficient with.
   - `save`: the abilities, or `from`, less the saves held so far (ids
@@ -319,8 +325,10 @@ in `mechanics.ts`, `askPick` in `src/engine/effects/picks.ts`):
 - **`gives`**: the effects each answer gives, with `{pick}` filled in (a
   spell's `name|source`, and `{pick.slug}` and `{pick.title}` for its name as a
   key and as a title). **`givesAll`** is given once for all the answers, where a
-  whole value `"{picks}"` is the list of them (spells by name, lowercased:
-  Agonizing Blast's one bonus). The reader checks `gives` with an answer of the
+  whole value `"{picks}"` is the list of them (spells by name, lowercased,
+  tools by the names the sheet shows: Agonizing Blast's one bonus); `{picks}`
+  means nothing in `gives`. A `$` in a name or an answer is kept as written.
+  The reader checks `gives` with an answer of the
   ask filled in, and with each option's id and each `inPlaceOf` name; an answer
   that still does not read (a homebrew spell whose name is too long for a key)
   is a warning on the sheet, and that effect is left out.
@@ -334,7 +342,9 @@ in `mechanics.ts`, `askPick` in `src/engine/effects/picks.ts`):
 
 A pick is refused in play (a condition, a spell cast or a buff: no one is
 building a character there), inside another pick's `gives`, with `while`, and
-with a field its `ask` does not read. A pick's prompt shows on the creator step
+with a field its `ask` does not read (`from` on an `option`, `weaponMastery` or
+`spell` pick). Option ids that differ only in case are one, as saved answers
+match without case. A pick's prompt shows on the creator step
 its origin routes to, as every prompt does.
 
 Four more terms came with picks, for the rows that move with them:
@@ -344,7 +354,10 @@ filter is not a word a player writes), `grantSpell`'s `slotsOnly` (a spell cast
 with slots alone, never free), and a `sense`'s `orMore`: the best range of that
 sense held so far (any origin's, or a race's alone with `orMoreFrom: "race"`)
 plus `orMore`, or `range` when none is, which takes a plain range and is refused
-in play.
+in play. What is held so far is what came before it in the build (a later
+feat's or item's sense does not count), and a held range written as a formula
+counts as none, since a formula's number is known only once the sheet is
+folded.
 
 ## Roll fields
 

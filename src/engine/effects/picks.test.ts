@@ -7,12 +7,15 @@ import { RULE_SET_TYPE } from '../castGuidance';
 import {
   ABILITIES,
   type CharacterDoc,
+  type DataEntity,
   type EffectInput,
   type EffectOrigin,
+  type EngineContext,
   newCharacterDoc,
   SKILLS,
 } from '../types';
 import { Collector } from './base';
+import { collectFeatEntity } from './feat';
 import { emitRuleRows, inPlayRefusal, readRuleSet, readStoredEffects } from './mechanics';
 import { DAMAGE_TYPES, type PickFill, spellFill } from './picks';
 import { toolOptions } from './readers';
@@ -52,9 +55,10 @@ function ask(
     at?: EffectOrigin;
     classLevel?: number;
     className?: string;
+    ctx?: EngineContext;
   } = {},
 ) {
-  const col = new Collector(opts.doc ?? character(), makeTestContext());
+  const col = new Collector(opts.doc ?? character(), opts.ctx ?? makeTestContext());
   for (const e of opts.held ?? []) col.add(e);
   const before = col.effects.length;
   emitRuleRows(
@@ -80,6 +84,9 @@ describe('reading a stored pick', () => {
     const read = one({ kind: 'pick', id: 'favoured-tool', ask: 'tool', gives: [TOOL] });
     expect(read.problems).toEqual([]);
     expect(read.effects[0]?.pick?.id).toBe('pick-favoured-tool');
+    // A code row's fixed word is a player's slug like any other, never the engine's id.
+    const ancestor = one({ kind: 'pick', id: 'ancestor', ask: 'damage', gives: [] });
+    expect(ancestor.effects[0]?.pick?.id).toBe('pick-ancestor');
     // A player's file cannot write a code row's id, which could share an engine answer.
     expect(
       one({ kind: 'pick', id: 'skill:{feature}', ask: 'skill', gives: [SKILL] }).problems[0],
@@ -338,6 +345,19 @@ describe('asking a stored pick', () => {
       gives: [SKILL],
     };
     expect(ask([column], { at: classOrigin }).col.pending[0]?.count).toBe(3);
+    // The column of the giving class's table, at its level (the Warrior is 4).
+    const base = makeTestContext();
+    const withTable: EngineContext = {
+      ...base,
+      get: (type, name, source) => {
+        const e = base.get(type, name, source);
+        if (type !== 'class' || name !== 'Warrior' || e === undefined) return e;
+        const rows = [['2'], ['2'], ['3'], ['4'], ['4']];
+        return { ...e, classTableGroups: [{ colLabels: ['Old Lore Count'], rows }] };
+      },
+    };
+    const lore = { ...column, count: { tableColumn: 'old lore', else: 3 } };
+    expect(ask([lore], { at: classOrigin, ctx: withTable }).col.pending[0]?.count).toBe(4);
   });
 
   it("offers the giving class's skill list, and languages beside skills", () => {
@@ -431,6 +451,8 @@ describe('asking a stored pick', () => {
     emitRuleRows(col, builtIn([late]), origin);
     expect(col.pending).toEqual([]);
     expect(col.afterAll).toHaveLength(1);
+    for (const fn of col.afterAll) fn();
+    expect(col.pending.map((p) => p.id)).toEqual(['feat:lantern|hb:pick-x']);
     // A pack's patch and the entry's own effects can each ask "x" on one origin.
     const twice = new Collector(character(), makeTestContext());
     const own = readStoredEffects([{ kind: 'pick', id: 'x', ask: 'skill', gives: [SKILL] }]);
@@ -461,6 +483,186 @@ describe('asking a stored pick', () => {
     const added = ask([fromRace], { held: [fromClass] }).added[0];
     expect(range(added)).toBe(60);
     expect(added).not.toHaveProperty('orMore');
+  });
+});
+
+describe('a pick a player writes', () => {
+  const one = (x: unknown) => readStoredEffects([x]);
+
+  it('shares an id across rules versions, where only one is ever asked', () => {
+    const by = (edition?: string) => ({
+      kind: 'pick',
+      id: 'x',
+      ask: 'skill',
+      gives: [SKILL],
+      ...(edition === undefined ? {} : { edition }),
+    });
+    expect(readStoredEffects([by('2014'), by('2024')]).problems).toEqual([]);
+    expect(readStoredEffects([by('2014'), by('2014')]).problems[0]).toMatch(/again/);
+    expect(readStoredEffects([by(), by('2024')]).problems[0]).toMatch(/again/);
+  });
+
+  it('asks each copy of a repeatable feat its own pick, under that copy', () => {
+    const boon: DataEntity = {
+      name: 'Boon',
+      source: 'HB',
+      repeatable: true,
+      castGuidance: {
+        v: 1,
+        effects: [
+          {
+            kind: 'pick',
+            id: 'dmg',
+            ask: 'damage',
+            gives: [{ kind: 'resist', damageType: '{pick}' }],
+          },
+        ],
+      },
+    };
+    const doc = character((d) => {
+      d.choices['feat:boon|hb:a:pick-dmg'] = ['fire'];
+      d.choices['feat:boon|hb:b:pick-dmg'] = ['cold'];
+    });
+    const col = new Collector(doc, makeTestContext());
+    collectFeatEntity(col, boon, 'boon|hb', 'a');
+    collectFeatEntity(col, boon, 'boon|hb', 'b');
+    expect(col.warnings).toEqual([]);
+    const resists = col.effects.flatMap((e) => (e.kind === 'resist' ? [e.damageType] : []));
+    expect(resists).toEqual(['fire', 'cold']);
+  });
+
+  it('names its weapons one way, with filter words the pick reads', () => {
+    const weapon = (more: Record<string, unknown>) =>
+      one({
+        kind: 'pick',
+        id: 'x',
+        ask: 'weapon',
+        gives: [{ kind: 'weaponProf', name: '{pick}' }],
+        ...more,
+      });
+    expect(weapon({}).problems[0]).toMatch(/in "from" or "weapons", one of them/);
+    expect(
+      weapon({ from: ['whip'], weapons: { filter: 'type=melee weapon' } }).problems[0],
+    ).toMatch(/one of them/);
+    expect(weapon({ weapons: { filter: 'type=martial weapon;ranged weapon' } }).problems).toEqual(
+      [],
+    );
+    for (const filter of ['foo=bar', 'type=melee weapon|property=light', 'type=foo weapon']) {
+      expect(weapon({ weapons: { filter } }).problems[0], filter).toMatch(/"type=" and simple/);
+    }
+  });
+
+  it('refuses a "from" its ask does not read', () => {
+    const asks = [
+      { ask: 'option', options: [{ id: 'a', label: 'A' }] },
+      { ask: 'weaponMastery', gives: [{ kind: 'weaponMastery', name: '{pick}' }] },
+      { ask: 'spell', spells: { levels: [0] }, gives: [] },
+    ];
+    for (const a of asks) {
+      expect(one({ kind: 'pick', id: 'x', from: ['a'], ...a }).problems[0], a.ask).toMatch(
+        /"from" goes with/,
+      );
+    }
+  });
+
+  it('gives a homebrew skill as a skill, and a language as spoken', () => {
+    const pick = {
+      kind: 'pick',
+      id: 'x',
+      ask: 'skill',
+      from: ['Cooking'],
+      orLanguage: true,
+      gives: [SKILL],
+    };
+    const cooked = ask([pick], {
+      doc: character((d) => {
+        d.choices['feat:lantern|hb:pick-x'] = ['Cooking'];
+      }),
+    });
+    expect(cooked.added).toMatchObject([{ kind: 'skillProf', skill: 'Cooking' }]);
+  });
+
+  it('takes two option ids that differ in case as one', () => {
+    const options = [
+      { id: 'Swim', label: 'Swim' },
+      { id: 'swim', label: 'Climb' },
+    ];
+    expect(one({ kind: 'pick', id: 'x', ask: 'option', options }).problems[0]).toMatch(
+      /"swim" is offered twice/,
+    );
+  });
+
+  it('keeps a "$" in a name or an answer as it is written', () => {
+    const glory: EffectOrigin = { label: 'Gold $& Glory', uid: 'glory|hb', type: 'feat' };
+    const pick = {
+      kind: 'pick',
+      id: 'skill:{feature}',
+      ask: 'skill',
+      label: '{feature}',
+      gives: [SKILL],
+    };
+    const asked = ask([pick], { at: glory });
+    expect(asked.col.pending[0]).toMatchObject({
+      id: 'feat:glory|hb:skill:gold $& glory',
+      label: 'Gold $& Glory',
+    });
+    const spell = {
+      kind: 'pick',
+      id: 'x',
+      ask: 'spell',
+      spells: { levels: [1] },
+      gives: [{ kind: 'note', text: 'Cast {pick.title}' }],
+    };
+    const paid = ask([spell], {
+      doc: character((d) => {
+        d.choices['feat:lantern|hb:pick-x'] = ['Pay$$ Up|HB'];
+      }),
+    });
+    expect(paid.added).toMatchObject([{ kind: 'note', text: 'Cast Pay$$ Up' }]);
+  });
+
+  it('fills "{picks}" only in what the picks give together, and a tool by the name the sheet shows', () => {
+    const inGives = {
+      kind: 'pick',
+      id: 'x',
+      ask: 'spell',
+      spells: { levels: [0] },
+      gives: [{ kind: 'spellDamageBonus', amount: 1, spells: '{picks}' }],
+    };
+    expect(one(inGives).problems[0]).toMatch(/"gives": effect 1 \(spellDamageBonus\)/);
+    const tools = {
+      kind: 'pick',
+      id: 'x',
+      ask: 'tool',
+      from: ["artisan's tools"],
+      gives: [TOOL],
+      givesAll: [{ kind: 'note', text: 'With {pick}' }],
+    };
+    const asked = ask([tools]);
+    const id = asked.col.pending[0]?.options.find((o) => o.label === "Smith's Tools")?.id ?? '';
+    const answered = ask([tools], {
+      doc: character((d) => {
+        d.choices['feat:lantern|hb:pick-x'] = [id];
+      }),
+    });
+    expect(answered.added.at(-1)).toMatchObject({ kind: 'note', text: "With Smith's Tools" });
+  });
+
+  it("offers a skill once when it is in both the list and the class's", () => {
+    const pick = {
+      kind: 'pick',
+      id: 'x',
+      ask: 'skill',
+      from: ['Athletics'],
+      classSkills: true,
+      gives: [SKILL],
+    };
+    const asked = ask([pick], { at: classOrigin, className: 'Warrior' });
+    expect(asked.col.pending[0]?.options.map((o) => o.id)).toEqual([
+      'Athletics',
+      'Intimidation',
+      'Survival',
+    ]);
   });
 });
 

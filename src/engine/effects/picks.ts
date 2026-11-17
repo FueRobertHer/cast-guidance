@@ -14,7 +14,6 @@ import {
   type EffectOrigin,
   type EntityRef,
   refUid,
-  SKILLS,
 } from '../types';
 import { parseSpellRef, savedPicks } from './additionalSpells';
 import { asEntityArray, type Collector } from './base';
@@ -159,6 +158,8 @@ export interface PickAt<T> {
   /** The class that gives it (`MechanicsSubject.className`): whose skill list `classSkills` reads. */
   className?: string;
   emit: (effects: readonly T[]) => void;
+  /** What a `pick-` id starts with in place of the origin's (`MechanicsSubject.pickBase`). */
+  base?: string;
 }
 
 /**
@@ -243,7 +244,7 @@ function holds(col: Collector, ask: PickAsk, name: string): boolean {
 
 const capitalized = (t: string) => `${t[0]?.toUpperCase() ?? ''}${t.slice(1)}`;
 
-/** One-handed melee weapons and the like: the base items that have none of `without`'s properties. */
+/** The base items with any of `without`'s properties, by lowercased name: what a weapon pick leaves out. */
 function withoutProperties(col: Collector, without: readonly string[]): Set<string> {
   const codes = new Set(without.map((w) => w.toUpperCase()));
   return new Set(
@@ -262,7 +263,8 @@ function withoutProperties(col: Collector, without: readonly string[]): Set<stri
   );
 }
 
-const SKILL_NAMES: ReadonlySet<string> = new Set(SKILLS.map((s) => s.name));
+/** What a skill-or-language pick offers beside its skills: a language picked is spoken. */
+const LANGUAGE_IDS: ReadonlySet<string> = new Set(LANGUAGE_OPTIONS.map((o) => o.id.toLowerCase()));
 
 /** The prompt's options, and its kind, as the code rows built them. */
 function optionsOf<T>(
@@ -275,12 +277,14 @@ function optionsOf<T>(
   const from = rule.from ?? [];
   switch (rule.ask) {
     case 'skill': {
+      // A skill in `from` and the class's list is offered once.
+      const seen = new Set<string>();
       const list = [
         ...from,
         ...(rule.classSkills === true && at.className !== undefined
           ? classSkillList(col, at.className, copyOf)
           : []),
-      ];
+      ].filter((s) => !seen.has(s.toLowerCase()) && seen.add(s.toLowerCase()) !== undefined);
       const languages = rule.orLanguage === true ? markKnownLanguages(col, LANGUAGE_OPTIONS) : [];
       return { kind: 'skill', options: [...skillOptions(list), ...languages] };
     }
@@ -299,12 +303,10 @@ function optionsOf<T>(
         rule.weapons === undefined
           ? weaponOptions(col.ctx)(from)
           : weaponOptions(col.ctx)(undefined, rule.weapons.filter);
+      const without = rule.weapons?.without;
+      const left = without === undefined ? undefined : withoutProperties(col, without);
       const out =
-        rule.weapons?.without === undefined
-          ? options
-          : options.filter(
-              (o) => !withoutProperties(col, rule.weapons?.without ?? []).has(o.id.toLowerCase()),
-            );
+        left === undefined ? options : options.filter((o) => !left.has(o.id.toLowerCase()));
       return { kind: 'generic', options: out };
     }
     case 'weaponMastery': {
@@ -417,7 +419,11 @@ function ask<T>(
     count = held.length;
   }
   if (count < 1) return;
-  const id = `${origin.type}:${origin.uid}:${rule.id.replace('{feature}', origin.label.toLowerCase())}`;
+  // A `pick-` id files under the entry's instance where it has one (a feat's).
+  const base =
+    at.base !== undefined && rule.id.startsWith('pick-') ? at.base : `${origin.type}:${origin.uid}`;
+  // Functions, so a `$` in a name is the name's, not a replacement pattern.
+  const id = `${base}:${rule.id.replace('{feature}', () => origin.label.toLowerCase())}`;
   if (rule.id.startsWith('pick-')) {
     const asked = ASKED.get(col) ?? new Set<string>();
     ASKED.set(col, asked);
@@ -433,8 +439,8 @@ function ask<T>(
   // A save pick with nothing left to pick asks nothing, as the code rows did.
   if (rule.ask === 'save' && options.length === 0) return;
   const label = (rule.label ?? defaultLabel(rule.ask, count, origin.label))
-    .replace('{feature}', origin.label)
-    .replace('{held}', held.join(' and '));
+    .replace('{feature}', () => origin.label)
+    .replace('{held}', () => held.join(' and '));
   col.choice(
     {
       id,
@@ -447,8 +453,14 @@ function ask<T>(
     },
     (selected) => {
       const names: string[] = [];
+      // What `{picks}` lists: each answer as its pick fills `{pick}` (a tool by its name).
+      const values: string[] = [];
       for (const pick of selected) {
-        if (rule.ask === 'skill' && rule.orLanguage === true && !SKILL_NAMES.has(pick)) {
+        if (
+          rule.ask === 'skill' &&
+          rule.orLanguage === true &&
+          LANGUAGE_IDS.has(pick.toLowerCase())
+        ) {
           // A language picked in a skill's place is spoken, whatever the pick gives.
           col.add({ kind: 'language', name: pick, origin });
           continue;
@@ -467,6 +479,7 @@ function ask<T>(
           const gives = rule.options?.find((o) => o.id === pick)?.gives;
           if (gives !== undefined) at.emit(gives);
         }
+        values.push(value);
         fill(rule.gives, { pick: value });
       }
       if (
@@ -474,10 +487,9 @@ function ask<T>(
         selected.length > 0 &&
         (rule.ask !== 'spell' || names.length > 0)
       ) {
-        fill(rule.givesAll, {
-          pick: selected[0] ?? '',
-          picks: rule.ask === 'spell' ? names : selected,
-        });
+        // `{pick}` is the first answer as `gives` has it: a spell's `name|source`.
+        const first = rule.ask === 'spell' ? selected[0] : values[0];
+        fill(rule.givesAll, { pick: first ?? '', picks: rule.ask === 'spell' ? names : values });
       }
     },
   );
