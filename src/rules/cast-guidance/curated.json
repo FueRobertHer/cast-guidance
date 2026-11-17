@@ -3452,6 +3452,281 @@
           ]
         }
       ]
+    },
+    {
+      "part": "curated",
+      "keys": ["royal envoy|purple dragon knight (banneret)"],
+      "effects": [
+        {
+          "kind": "pick",
+          "id": "skill:{feature}",
+          "ask": "skill",
+          "label": "Skill in place of {held}",
+          "from": ["Animal Handling", "Insight", "Intimidation", "Performance"],
+          "inPlaceOf": ["Persuasion"],
+          "always": [
+            {
+              "kind": "skillProf",
+              "skill": "Persuasion",
+              "level": 2
+            }
+          ],
+          "gives": [
+            {
+              "kind": "skillProf",
+              "skill": "{pick}",
+              "level": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["arcane archer lore|arcane archer"],
+      "effects": [
+        {
+          "kind": "pick",
+          "id": "skill:{feature}",
+          "ask": "skill",
+          "from": ["Arcana", "Nature"],
+          "gives": [
+            {
+              "kind": "skillProf",
+              "skill": "{pick}",
+              "level": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["arcane archer lore|arcane archer|au"],
+      "effects": [
+        {
+          "kind": "pick",
+          "id": "skill:{feature}",
+          "ask": "skill",
+          "label": "Skill in place of {held}",
+          "inPlaceOf": ["Arcana", "Nature"],
+          "classSkills": true,
+          "gives": [
+            {
+              "kind": "skillProf",
+              "skill": "{pick}",
+              "level": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["tool proficiency|battle smith"],
+      "effects": [
+        {
+          "kind": "pick",
+          "id": "tool:{feature}",
+          "ask": "tool",
+          "label": "Tool in place of {held}",
+          "from": ["artisan's tools"],
+          "inPlaceOf": ["Smith's Tools"],
+          "gives": [
+            {
+              "kind": "toolProf",
+              "name": "{pick}"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["tool proficiency|alchemist"],
+      "effects": [
+        {
+          "kind": "pick",
+          "id": "tool:{feature}",
+          "ask": "tool",
+          "label": "Tool in place of {held}",
+          "from": ["artisan's tools"],
+          "inPlaceOf": ["Alchemist's Supplies"],
+          "gives": [
+            {
+              "kind": "toolProf",
+              "name": "{pick}"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["tool proficiency|artillerist"],
+      "effects": [
+        {
+          "kind": "pick",
+          "id": "tool:{feature}",
+          "ask": "tool",
+          "label": "Tool in place of {held}",
+          "from": ["artisan's tools"],
+          "inPlaceOf": ["Woodcarver's Tools"],
+          "gives": [
+            {
+              "kind": "toolProf",
+              "name": "{pick}"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["tools of the trade|armorer"],
+      "effects": [
+        {
+          "kind": "armorProf",
+          "name": "heavy"
+        },
+        {
+          "kind": "pick",
+          "id": "tool:{feature}",
+          "ask": "tool",
+          "label": "Tool in place of {held}",
+          "from": ["artisan's tools"],
+          "inPlaceOf": ["Smith's Tools"],
+          "gives": [
+            {
+              "kind": "toolProf",
+              "name": "{pick}"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["tools of the trade|battle smith"],
+      "effects": [
+        {
+          "kind": "pick",
+          "id": "tool:{feature}",
+          "ask": "tool",
+          "label": "Tool in place of {held}",
+          "from": ["artisan's tools"],
+          "inPlaceOf": ["Smith's Tools"],
+          "gives": [
+            {
+              "kind": "toolProf",
+              "name": "{pick}"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["tools of the trade|artillerist"],
+      "effects": [
+        {
+          "kind": "weaponProf",
+          "name": "Martial Ranged weapons"
+        },
+        {
+          "kind": "weaponProfFilter",
+          "filter": "type=martial weapon|type=ranged weapon"
+        },
+        {
+          "kind": "pick",
+          "id": "tool:{feature}",
+          "ask": "tool",
+          "label": "Tool in place of {held}",
+          "from": ["artisan's tools"],
+          "inPlaceOf": ["Woodcarver's Tools"],
+          "gives": [
+            {
+              "kind": "toolProf",
+              "name": "{pick}"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["tools of the trade|cartographer"],
+      "effects": [
+        {
+          "kind": "pick",
+          "id": "tool:{feature}",
+          "ask": "tool",
+          "label": "Tool in place of {held}",
+          "from": ["artisan's tools"],
+          "inPlaceOf": ["Calligrapher's Supplies", "Cartographer's Tools"],
+          "gives": [
+            {
+              "kind": "toolProf",
+              "name": "{pick}"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["reanimator's skill set|reanimator"],
+      "effects": [
+        {
+          "kind": "pick",
+          "id": "tool:{feature}",
+          "ask": "tool",
+          "label": "Tool in place of {held}",
+          "from": ["artisan's tools"],
+          "inPlaceOf": ["Alchemist's Supplies"],
+          "gives": [
+            {
+              "kind": "toolProf",
+              "name": "{pick}"
+            }
+          ]
+        },
+        {
+          "kind": "resource",
+          "key": "reanimator-s-skill-set",
+          "label": "Reanimator's Skill Set",
+          "max": {
+            "f": "mod.int"
+          },
+          "min": 1,
+          "reset": "long"
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["bonus proficiencies|warrior of mystic brews"],
+      "effects": [
+        {
+          "kind": "toolProf",
+          "name": "Brewer's Supplies"
+        },
+        {
+          "kind": "pick",
+          "id": "skill:{feature}",
+          "ask": "skill",
+          "label": "Skill in place of {held}",
+          "inPlaceOf": ["Performance"],
+          "classSkills": true,
+          "gives": [
+            {
+              "kind": "skillProf",
+              "skill": "{pick}",
+              "level": 1
+            }
+          ]
+        }
+      ]
     }
   ]
 }

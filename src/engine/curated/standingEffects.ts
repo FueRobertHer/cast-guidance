@@ -1,6 +1,6 @@
 /**
- * Standing defenses, senses, speeds and save proficiencies that subclass features
- * and optional features state only in prose. Unlike a curated row (`CURATED`), a
+ * Standing defenses, senses and speeds that subclass features and optional
+ * features state only in prose. Unlike a curated row (`CURATED`), a
  * row here adds to what the prose scan reads from the same feature: the scan keeps
  * its actions and pools (Wind Soul's flight for others, Guarded Mind's die), and
  * this adds the resistance or speed the scan does not read. Keys as in `CURATED`:
@@ -10,7 +10,7 @@
  * of one name (Storm Herald's Desert at 3, 6 and 14).
  */
 import type { Collector } from '../effects/base';
-import { ABILITIES, type Ability, type EffectOrigin, type WhileState } from '../types';
+import type { EffectOrigin, WhileState } from '../types';
 
 type StandingFn = (
   col: Collector,
@@ -102,41 +102,6 @@ const darkvisionOrMore =
     col.add({ kind: 'sense', sense: 'darkvision', range: had > 0 ? had + more : range, origin });
   };
 
-const hasSave = (col: Collector, ability: Ability) =>
-  col.effects.some((e) => e.kind === 'saveProf' && e.ability === ability);
-
-/**
- * Proficiency in `ability` saves, or, when the character has it already, a pick
- * among `instead` (every ability it lacks when `instead` is empty).
- */
-const saveOrPick =
-  (ability: Ability, instead: readonly Ability[] = []): StandingFn =>
-  (col, origin) => {
-    if (!hasSave(col, ability)) {
-      col.add({ kind: 'saveProf', ability, origin });
-      return;
-    }
-    const options = (instead.length > 0 ? instead : ABILITIES).filter((a) => !hasSave(col, a));
-    if (options.length === 0) return;
-    col.choice(
-      {
-        id: `${origin.type}:${origin.uid}:save:${origin.label.toLowerCase()}`,
-        origin,
-        kind: 'generic',
-        label: `${origin.label}: saving throw`,
-        count: 1,
-        options: options.map((a) => ({ id: a, label: a.toUpperCase() })),
-      },
-      (selected) => {
-        for (const a of selected) {
-          if ((ABILITIES as readonly string[]).includes(a)) {
-            col.add({ kind: 'saveProf', ability: a as Ability, origin });
-          }
-        }
-      },
-    );
-  };
-
 /** A pick of one damage type among `types`, resisted while it stands. */
 const resistPick =
   (slug: string, label: string, types: readonly string[], note?: string): StandingFn =>
@@ -168,6 +133,8 @@ export const STANDING: Record<string, StandingFn> = {
   // `src/rules/cast-guidance/standing.json`: more of each section below, and all
   // of the Artificer's, Sorcerer's, Wizard's, WoW's and optional features'. These
   // need a pick, a test of the printing, or what the character has already.
+  // Unfettered Mind, Elegant Courtier (its Persuasion bonus a curated row) and Iron
+  // Mind, a save or a pick of one the character lacks, are data too (4c).
 
   // --- Barbarian -------------------------------------------------------------
   // Bestial Soul and Aspect of the Beast's Tiger (SCAG, at level 6 alone), picks,
@@ -195,9 +162,6 @@ export const STANDING: Record<string, StandingFn> = {
       },
     ),
 
-  // --- Cleric ----------------------------------------------------------------
-  'unfettered mind|knowledge domain': saveOrPick('int'),
-
   // --- Druid -----------------------------------------------------------------
   "nature's ward|circle of the land": (col, origin, from, level) => {
     if (printed2024(origin, from)) {
@@ -221,10 +185,6 @@ export const STANDING: Record<string, StandingFn> = {
     });
   },
 
-  // --- Fighter ---------------------------------------------------------------
-  // Its Persuasion bonus is a curated row.
-  'elegant courtier|samurai': saveOrPick('wis', ['int', 'cha']),
-
   // --- Monk ------------------------------------------------------------------
   'darkvision|warrior of shadow': darkvisionOrMore(60, 60),
 
@@ -243,7 +203,6 @@ export const STANDING: Record<string, StandingFn> = {
     printed2024(origin, from)
       ? darkvisionOrMore(60, 60)(col, origin, from, level)
       : darkvisionOrMore(60, 30, true)(col, origin, from, level),
-  'iron mind|gloom stalker': saveOrPick('wis', ['int', 'cha']),
 
   // --- Rogue -----------------------------------------------------------------
   // The god chosen is the cantrip picked from its row of the table.

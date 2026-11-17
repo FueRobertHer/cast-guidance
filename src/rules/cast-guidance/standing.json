@@ -949,6 +949,62 @@
           ]
         }
       ]
+    },
+    {
+      "part": "standing",
+      "keys": ["unfettered mind|knowledge domain"],
+      "effects": [
+        {
+          "kind": "pick",
+          "id": "save:{feature}",
+          "ask": "save",
+          "inPlaceOf": ["int"],
+          "gives": [
+            {
+              "kind": "saveProf",
+              "ability": "{pick}"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "part": "standing",
+      "keys": ["elegant courtier|samurai"],
+      "effects": [
+        {
+          "kind": "pick",
+          "id": "save:{feature}",
+          "ask": "save",
+          "from": ["int", "cha"],
+          "inPlaceOf": ["wis"],
+          "gives": [
+            {
+              "kind": "saveProf",
+              "ability": "{pick}"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "part": "standing",
+      "keys": ["iron mind|gloom stalker"],
+      "effects": [
+        {
+          "kind": "pick",
+          "id": "save:{feature}",
+          "ask": "save",
+          "from": ["int", "cha"],
+          "inPlaceOf": ["wis"],
+          "gives": [
+            {
+              "kind": "saveProf",
+              "ability": "{pick}"
+            }
+          ]
+        }
+      ]
     }
   ]
 }
