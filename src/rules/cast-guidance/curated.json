@@ -3869,6 +3869,77 @@
           ]
         }
       ]
+    },
+    {
+      "part": "curated",
+      "keys": ["weapon mastery|barbarian"],
+      "effects": [
+        {
+          "kind": "pick",
+          "id": "weapon-mastery",
+          "ask": "weaponMastery",
+          "label": "Weapon Mastery",
+          "count": {
+            "tableColumn": "Weapon Mastery",
+            "else": 2
+          },
+          "melee": true,
+          "afterBuild": true,
+          "gives": [
+            {
+              "kind": "weaponMastery",
+              "name": "{pick}"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["weapon mastery|fighter"],
+      "effects": [
+        {
+          "kind": "pick",
+          "id": "weapon-mastery",
+          "ask": "weaponMastery",
+          "label": "Weapon Mastery",
+          "count": {
+            "tableColumn": "Weapon Mastery",
+            "else": 2
+          },
+          "afterBuild": true,
+          "gives": [
+            {
+              "kind": "weaponMastery",
+              "name": "{pick}"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["weapon mastery|paladin", "weapon mastery|ranger", "weapon mastery|rogue"],
+      "effects": [
+        {
+          "kind": "pick",
+          "id": "weapon-mastery",
+          "ask": "weaponMastery",
+          "label": "Weapon Mastery",
+          "count": {
+            "tableColumn": "Weapon Mastery",
+            "else": 2
+          },
+          "proficient": true,
+          "afterBuild": true,
+          "gives": [
+            {
+              "kind": "weaponMastery",
+              "name": "{pick}"
+            }
+          ]
+        }
+      ]
     }
   ]
 }
