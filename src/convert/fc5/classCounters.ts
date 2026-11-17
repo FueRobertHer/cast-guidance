@@ -19,6 +19,7 @@
  */
 import { CAST_GUIDANCE_LIMITS, CAST_GUIDANCE_VERSION } from '../../engine/castGuidance';
 import { childText, type XmlElement } from '../xml';
+import { addGuidance } from './featureModifiers';
 
 /** The highest level a class has. */
 const MAX_LEVEL = 20;
@@ -284,5 +285,5 @@ export function counterPools(counters: Iterable<FileCounter>): CounterPools {
  * twice.
  */
 export function dropOwnUses(feature: Record<string, unknown>): void {
-  feature.castGuidance = { v: CAST_GUIDANCE_VERSION, drop: [{ kind: 'resource' }] };
+  addGuidance(feature, { drop: ['resource'] });
 }

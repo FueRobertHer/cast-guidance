@@ -240,6 +240,20 @@ too, and its subclass casters' when the class casts nothing itself, as the
 Fighter's is the Eldritch Knight's), one that counts an option list is read as
 above, and any other is reported.
 
+A class or subclass feature of a homebrew book (or of a class or subclass with
+no official book) has its `<modifier>` tags as effects in its `castGuidance`:
+`speed` a walking speed bonus (out of heavy armor, or of armor and shields,
+when its text says so), `ac`, `spell attack`, `spell dc`, weapon, melee and
+ranged `attacks`, `initiative` (`+%0` as the proficiency bonus), and an
+`ability score` (past 20 as far as its text's "maximum" says). Each kind it
+gives is dropped from what the feature inherits, so its text's own reading
+(Holy Shield's "+2 bonus to your AC") does not count twice. Tags whose meaning
+is not plain are kept as text with a reason: skills and saves at `+%0` (which
+Fight Club writes for proficiency and for expertise alike), `hp`, passive
+scores, and a speed or AC whose text names armor no field holds. An official
+book's feature is left alone, its curated row or text giving what the tags
+would; class options are not read yet.
+
 The class's start notes (`Starting Barbarian`, `Multiclass Barbarian`,
 `Becoming a Barbarian as a Multiclass Character`) give 5etools
 `multiclassing`: the ability score minimum (`Strength 13 or Dexterity 13` as
@@ -308,7 +322,7 @@ it came from:
 {
   "_meta": {
     "sources": [{ "json": "FCSpells", "abbreviation": "FCSpells", "full": "spells (Fight Club 5e)" }],
-    "convertedFrom": { "format": "fc5-compendium", "converterVersion": 17, "fileName": "spells.xml" }
+    "convertedFrom": { "format": "fc5-compendium", "converterVersion": 18, "fileName": "spells.xml" }
   },
   "spell": [ /* … */ ]
 }
