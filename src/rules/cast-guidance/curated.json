@@ -2910,6 +2910,548 @@
           ]
         }
       ]
+    },
+    {
+      "part": "curated",
+      "keys": ["bonus proficiencies|expert sidekick"],
+      "effects": [
+        {
+          "kind": "armorProf",
+          "name": "light"
+        },
+        {
+          "kind": "pick",
+          "id": "skill:{feature}",
+          "ask": "skill",
+          "count": 5,
+          "gives": [
+            {
+              "kind": "skillProf",
+              "skill": "{pick}",
+              "level": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["bonus proficiencies|spellcaster sidekick"],
+      "effects": [
+        {
+          "kind": "armorProf",
+          "name": "light"
+        },
+        {
+          "kind": "pick",
+          "id": "skill:{feature}",
+          "ask": "skill",
+          "count": 2,
+          "from": [
+            "Arcana",
+            "History",
+            "Insight",
+            "Investigation",
+            "Medicine",
+            "Performance",
+            "Persuasion",
+            "Religion"
+          ],
+          "gives": [
+            {
+              "kind": "skillProf",
+              "skill": "{pick}",
+              "level": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["bonus proficiencies|warrior sidekick"],
+      "effects": [
+        {
+          "kind": "armorProf",
+          "name": "light"
+        },
+        {
+          "kind": "armorProf",
+          "name": "medium"
+        },
+        {
+          "kind": "armorProf",
+          "name": "heavy"
+        },
+        {
+          "kind": "pick",
+          "id": "skill:{feature}",
+          "ask": "skill",
+          "count": 2,
+          "from": [
+            "Acrobatics",
+            "Animal Handling",
+            "Athletics",
+            "Intimidation",
+            "Nature",
+            "Perception",
+            "Survival"
+          ],
+          "gives": [
+            {
+              "kind": "skillProf",
+              "skill": "{pick}",
+              "level": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["otherworldly glamour|fey wanderer"],
+      "effects": [
+        {
+          "kind": "checkBonus",
+          "ability": "cha",
+          "amount": {
+            "f": "max(1, mod.wis)"
+          }
+        },
+        {
+          "kind": "pick",
+          "id": "skill:{feature}",
+          "ask": "skill",
+          "from": ["Deception", "Performance", "Persuasion"],
+          "gives": [
+            {
+              "kind": "skillProf",
+              "skill": "{pick}",
+              "level": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": [
+        "blessings of knowledge|knowledge domain",
+        "blessings of knowledge|knowledge domain (psa)"
+      ],
+      "effects": [
+        {
+          "kind": "pick",
+          "id": "skill:{feature}",
+          "ask": "skill",
+          "count": 2,
+          "label": "Skills with expertise",
+          "from": ["Arcana", "History", "Nature", "Religion"],
+          "gives": [
+            {
+              "kind": "skillProf",
+              "skill": "{pick}",
+              "level": 1
+            },
+            {
+              "kind": "skillProf",
+              "skill": "{pick}",
+              "level": 2
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["blessings of knowledge|knowledge domain|frhof"],
+      "effects": [
+        {
+          "kind": "pick",
+          "id": "tool:{feature}",
+          "ask": "tool",
+          "from": ["artisan's tools"],
+          "gives": [
+            {
+              "kind": "toolProf",
+              "name": "{pick}"
+            }
+          ]
+        },
+        {
+          "kind": "pick",
+          "id": "skill:{feature}",
+          "ask": "skill",
+          "count": 2,
+          "label": "Skills with expertise",
+          "from": ["Arcana", "History", "Nature", "Religion"],
+          "gives": [
+            {
+              "kind": "skillProf",
+              "skill": "{pick}",
+              "level": 1
+            },
+            {
+              "kind": "skillProf",
+              "skill": "{pick}",
+              "level": 2
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["bonus proficiency|samurai"],
+      "effects": [
+        {
+          "kind": "pick",
+          "id": "skill:{feature}",
+          "ask": "skill",
+          "label": "Skill or language",
+          "from": ["History", "Insight", "Performance", "Persuasion"],
+          "orLanguage": true,
+          "gives": [
+            {
+              "kind": "skillProf",
+              "skill": "{pick}",
+              "level": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["knightly envoy|banneret"],
+      "effects": [
+        {
+          "kind": "pick",
+          "id": "skill:{feature}",
+          "ask": "skill",
+          "from": ["Insight", "Intimidation", "Persuasion", "Performance"],
+          "gives": [
+            {
+              "kind": "skillProf",
+              "skill": "{pick}",
+              "level": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["student of war|battle master"],
+      "effects": [
+        {
+          "kind": "pick",
+          "id": "tool:{feature}",
+          "ask": "tool",
+          "from": ["artisan's tools"],
+          "gives": [
+            {
+              "kind": "toolProf",
+              "name": "{pick}"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["student of war|battle master|xphb"],
+      "effects": [
+        {
+          "kind": "pick",
+          "id": "tool:{feature}",
+          "ask": "tool",
+          "from": ["artisan's tools"],
+          "gives": [
+            {
+              "kind": "toolProf",
+              "name": "{pick}"
+            }
+          ]
+        },
+        {
+          "kind": "pick",
+          "id": "skill:{feature}",
+          "ask": "skill",
+          "classSkills": true,
+          "gives": [
+            {
+              "kind": "skillProf",
+              "skill": "{pick}",
+              "level": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["path of the kensei|way of the kensei"],
+      "effects": [
+        {
+          "kind": "pick",
+          "id": "tool:{feature}",
+          "ask": "tool",
+          "from": ["calligrapher's supplies", "painter's supplies"],
+          "gives": [
+            {
+              "kind": "toolProf",
+              "name": "{pick}"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["acolyte of nature|nature domain"],
+      "effects": [
+        {
+          "kind": "pick",
+          "id": "skill:{feature}",
+          "ask": "skill",
+          "from": ["Animal Handling", "Nature", "Survival"],
+          "gives": [
+            {
+              "kind": "skillProf",
+              "skill": "{pick}",
+              "level": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["acolyte of strength|strength domain (psa)"],
+      "effects": [
+        {
+          "kind": "pick",
+          "id": "skill:{feature}",
+          "ask": "skill",
+          "from": ["Animal Handling", "Athletics", "Nature", "Survival"],
+          "gives": [
+            {
+              "kind": "skillProf",
+              "skill": "{pick}",
+              "level": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["bonus proficiencies|order domain"],
+      "effects": [
+        {
+          "kind": "armorProf",
+          "name": "heavy"
+        },
+        {
+          "kind": "pick",
+          "id": "skill:{feature}",
+          "ask": "skill",
+          "from": ["Intimidation", "Persuasion"],
+          "gives": [
+            {
+              "kind": "skillProf",
+              "skill": "{pick}",
+              "level": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["implement of peace|peace domain"],
+      "effects": [
+        {
+          "kind": "pick",
+          "id": "skill:{feature}",
+          "ask": "skill",
+          "from": ["Insight", "Performance", "Persuasion"],
+          "gives": [
+            {
+              "kind": "skillProf",
+              "skill": "{pick}",
+              "level": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["student of arcana|arcana domain"],
+      "effects": [
+        {
+          "kind": "pick",
+          "id": "skill:{feature}",
+          "ask": "skill",
+          "from": ["Arcana"],
+          "classSkills": true,
+          "gives": [
+            {
+              "kind": "skillProf",
+              "skill": "{pick}",
+              "level": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["bonus proficiencies|college of lore"],
+      "effects": [
+        {
+          "kind": "pick",
+          "id": "skill:{feature}",
+          "ask": "skill",
+          "count": 3,
+          "gives": [
+            {
+              "kind": "skillProf",
+              "skill": "{pick}",
+              "level": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["primal lore|college of the moon"],
+      "effects": [
+        {
+          "kind": "pick",
+          "id": "skill:{feature}",
+          "ask": "skill",
+          "from": ["Animal Handling", "Insight", "Medicine", "Nature", "Perception", "Survival"],
+          "gives": [
+            {
+              "kind": "skillProf",
+              "skill": "{pick}",
+              "level": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["awakened talent|order of the awakened"],
+      "effects": [
+        {
+          "kind": "pick",
+          "id": "skill:{feature}",
+          "ask": "skill",
+          "count": 2,
+          "from": [
+            "Animal Handling",
+            "Deception",
+            "Insight",
+            "Intimidation",
+            "Investigation",
+            "Perception",
+            "Persuasion"
+          ],
+          "gives": [
+            {
+              "kind": "skillProf",
+              "skill": "{pick}",
+              "level": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["hermit's study|order of the wu jen"],
+      "effects": [
+        {
+          "kind": "pick",
+          "id": "skill:{feature}",
+          "ask": "skill",
+          "count": 2,
+          "from": [
+            "Animal Handling",
+            "Arcana",
+            "History",
+            "Insight",
+            "Medicine",
+            "Nature",
+            "Perception",
+            "Religion",
+            "Survival"
+          ],
+          "gives": [
+            {
+              "kind": "skillProf",
+              "skill": "{pick}",
+              "level": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["genie's splendor|oath of the noble genies"],
+      "effects": [
+        {
+          "kind": "acFormula",
+          "base": 10,
+          "addAbilities": ["dex", "cha"]
+        },
+        {
+          "kind": "pick",
+          "id": "skill:{feature}",
+          "ask": "skill",
+          "from": ["Acrobatics", "Intimidation", "Performance", "Persuasion"],
+          "gives": [
+            {
+              "kind": "skillProf",
+              "skill": "{pick}",
+              "level": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["enchanting conversationalist|enchanter"],
+      "effects": [
+        {
+          "kind": "pick",
+          "id": "skill:{feature}",
+          "ask": "skill",
+          "from": ["Deception", "Intimidation", "Persuasion"],
+          "gives": [
+            {
+              "kind": "skillProf",
+              "skill": "{pick}",
+              "level": 1
+            },
+            {
+              "kind": "checkBonus",
+              "skills": ["{pick}"],
+              "amount": {
+                "f": "max(1, mod.int)"
+              }
+            }
+          ]
+        }
+      ]
     }
   ]
 }

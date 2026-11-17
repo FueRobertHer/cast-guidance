@@ -418,7 +418,7 @@ describe('features that add to checks and initiative', () => {
       { kind: 'checkBonus', skills: ['Arcana', 'Nature'], amount: 'max(1, mod.wis)' },
     ]);
     expect(emit('otherworldly glamour|fey wanderer')).toEqual([
-      { kind: 'checkBonus', ability: 'cha', amount: 'abilityModMin1:wis' },
+      { kind: 'checkBonus', ability: 'cha', amount: 'max(1, mod.wis)' },
     ]);
     expect(emit('elegant courtier|samurai')).toEqual([
       { kind: 'checkBonus', skills: ['Persuasion'], amount: 'mod.wis' },

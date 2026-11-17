@@ -11,7 +11,6 @@
  */
 import type { Collector } from '../effects/base';
 import { ABILITIES, type Ability, type EffectOrigin, type WhileState } from '../types';
-import { skillPick } from './curatedEffects';
 
 type StandingFn = (
   col: Collector,
@@ -160,13 +159,6 @@ function branchOf(col: Collector, origin: EffectOrigin): string | undefined {
   return Array.isArray(picked) ? picked[0]?.toLowerCase() : undefined;
 }
 
-/** A row for the option feature gained at `at` alone (Storm Soul's Desert, not Storm Aura's). */
-const atLevel =
-  (at: number, fn: StandingFn): StandingFn =>
-  (col, origin, from, level) => {
-    if (level === at) fn(col, origin, from, level);
-  };
-
 /** A paladin's own place in its aura: while conscious (2014), not while incapacitated (2024). */
 const auraNote = (origin: EffectOrigin, from?: string) =>
   printed2024(origin, from) ? 'not while incapacitated' : 'while conscious';
@@ -178,13 +170,8 @@ export const STANDING: Record<string, StandingFn> = {
   // need a pick, a test of the printing, or what the character has already.
 
   // --- Barbarian -------------------------------------------------------------
-  // Bestial Soul, a pick, is data too.
-  // Aspect of the Beast's Tiger (SCAG); its Totem Spirit and Totemic Attunement
-  // keep what the scan reads (the level 14 bonus action attack).
-  'tiger|path of the totem warrior': atLevel(
-    6,
-    skillPick(2, ['Athletics', 'Acrobatics', 'Stealth', 'Survival']),
-  ),
+  // Bestial Soul and Aspect of the Beast's Tiger (SCAG, at level 6 alone), picks,
+  // are data too.
   'aspect of the wilds|path of the wild heart': (col, origin) =>
     col.choice(
       {

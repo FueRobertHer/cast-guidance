@@ -928,6 +928,27 @@
           ]
         }
       ]
+    },
+    {
+      "part": "standing",
+      "keys": ["tiger|path of the totem warrior"],
+      "level": 6,
+      "effects": [
+        {
+          "kind": "pick",
+          "id": "skill:{feature}",
+          "ask": "skill",
+          "count": 2,
+          "from": ["Athletics", "Acrobatics", "Stealth", "Survival"],
+          "gives": [
+            {
+              "kind": "skillProf",
+              "skill": "{pick}",
+              "level": 1
+            }
+          ]
+        }
+      ]
     }
   ]
 }
