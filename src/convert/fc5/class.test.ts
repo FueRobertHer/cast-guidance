@@ -737,6 +737,14 @@ describe("convertClass another book's optional features", () => {
       expect(lines(result)).toEqual([]);
       expect(result.reasons.join(' ')).toContain('Primal Gift: Fang');
       expect(result.reasons.join(' ')).toContain('Wild Step');
+      // A homebrew book's, on a printing (the 5e compendium's Improved Extra Attack).
+      const hb = converted(
+        ranger(
+          level(5, feature('Improved Extra Attack', "Twice.\nSource: Ember's Grimoire p. 3", opt)),
+        ),
+      );
+      expect(lines(hb)).toEqual([]);
+      expect(hb.reasons.join(' ')).toContain('Improved Extra Attack');
       const homebrew = converted(`<name>Ember Knight</name><hd>10</hd>
         ${level(1, `${feature('Ember Strike', 'You strike.')}${feature('Ember Ward', 'You ward.')}${feature('Favored Foe (replaces the Ember Strike feature)', tce('You mark a foe.'), opt)}`)}`);
       expect(lines(homebrew)).toEqual([]);
@@ -780,14 +788,20 @@ describe("convertClass another book's optional features", () => {
         tce("This feature replaces the Ranger's Companion feature.\nA primal beast."),
         opt,
       );
-      const plain = feature('Beast Lore (Beast Master)', tce('You know beasts.'), opt);
+      // Another book's that replaces nothing, and the subclass's own book's that does.
+      const plain = `${feature('Beast Lore (Beast Master)', tce('You know beasts.'), opt)}${feature(
+        'Beast Bond (Beast Master, replaces the Share Spells feature)',
+        phb('A bond.'),
+        opt,
+      )}`;
       const lifted = "This feature replaces the Ranger's Companion feature.";
-      for (const [body, first] of [
+      const cases: [string, string][] = [
         [`${pick}${companion}${primal}${plain}`, lifted],
         [`${primal}${plain}${companion}${pick}`, lifted],
         [`${pick}${stated}${companion}${plain}`, "Replaces the Ranger's Companion feature."],
         [`${pick}${companion}${worded}${plain}`, lifted],
-      ]) {
+      ];
+      for (const [body, first] of cases) {
         const result = converted(ranger(level(3, body)));
         const master = result.subclasses?.({ className: 'Ranger', classSource: CLASS })[0];
         expect(
@@ -799,6 +813,8 @@ describe("convertClass another book's optional features", () => {
             ])
             .sort((a, b) => String(a[0]).localeCompare(String(b[0]))),
         ).toEqual([
+          // Its clause kept, as the variants' are.
+          ['Beast Bond', false, 'This feature replaces the Share Spells feature.'],
           ['Beast Lore', false, 'You know beasts.'],
           ['Beast Master', false, 'Beasts.'],
           ['Primal Companion', true, first],
@@ -806,6 +822,20 @@ describe("convertClass another book's optional features", () => {
         ]);
         expect(result.reasons).toEqual([]);
       }
+    });
+
+    it('reads nothing of a subclass variant, which makes no caster', () => {
+      const rows = Array.from({ length: 20 }, (_, i) =>
+        level(i + 1, `<slots optional="YES">2,${i < 2 ? '0,0' : '2,0'}</slots>`),
+      ).join('');
+      const result = converted(
+        ranger(
+          `${rows}${level(3, `${feature('Ranger Archetype: Beast Master', phb('Beasts.'), opt)}${feature("Ranger's Companion (Beast Master)", phb('A beast.'), opt)}${feature("Spellcasting (Beast Master, replaces the Ranger's Companion feature)", tce('You cast spells.'), opt)}`)}`,
+        ),
+      );
+      const master = result.subclasses?.({ className: 'Ranger', classSource: CLASS })[0];
+      expect(master?.entity.casterProgression).toBeUndefined();
+      expect(master?.parts?.some((p) => p.entity.isClassFeatureVariant === true)).toBe(true);
     });
   });
 });

@@ -1427,19 +1427,19 @@ function convertSubclass(pick: Pick, from: SubclassFrom, bound: ClassBinding): F
   const parts: Fc5Part[] = [];
   const read: { name: string; entries: Entry[] }[] = [];
   const seen = new Set<string>();
-  /** Adds a feature; a variant (`replaces` its line) is no part of the subclass as printed, so nothing reads it. */
+  /** Adds a feature; a variant is no part of the subclass as printed, so nothing reads it. */
   const add = (
     fname: string,
     level: number,
     text: { entries: Entry[]; sourceLine?: string },
-    variant?: { replaces?: string },
+    variant = false,
   ) => {
     const key = `${fname.toLowerCase()}|${level}`;
-    if (seen.has(key)) return false;
+    if (seen.has(key)) return;
     seen.add(key);
     const where =
       text.sourceLine === undefined ? placement : from.ctx.place(text.sourceLine, edition);
-    if (variant === undefined) read.push({ name: fname, entries: text.entries });
+    if (!variant) read.push({ name: fname, entries: text.entries });
     const entity: Record<string, unknown> = { name: fname };
     placeEntity(entity, where);
     entity.className = bound.className;
@@ -1447,16 +1447,12 @@ function convertSubclass(pick: Pick, from: SubclassFrom, bound: ClassBinding): F
     entity.subclassShortName = name;
     entity.subclassSource = subclassSource;
     entity.level = level;
-    if (variant !== undefined) entity.isClassFeatureVariant = true;
-    const entries: Entry[] =
-      variant?.replaces === undefined
-        ? [...text.entries]
-        : [replacesLine(variant.replaces), ...text.entries];
+    if (variant) entity.isClassFeatureVariant = true;
+    const entries: Entry[] = [...text.entries];
     const citation = citationEntry(where);
     if (citation !== undefined) entries.push(citation);
     entity.entries = entries;
     parts.push({ kind: 'subclassFeature', entity, placement: where });
-    return true;
   };
   add(name, pick.level, { entries: pickText.entries });
   // A printing of an official subclass: a feature another official book gives
@@ -1473,20 +1469,21 @@ function convertSubclass(pick: Pick, from: SubclassFrom, bound: ClassBinding): F
       continue;
     }
     const text = readText(childTexts(f.el, 'text'));
+    // The clause its name held opens its text, as 5etools has it.
+    const opened =
+      f.replaces === undefined
+        ? text
+        : { ...text, entries: [replacesLine(f.replaces), ...text.entries] };
     const book =
       subBook === undefined || text.sourceLine === undefined
         ? undefined
         : from.ctx.place(text.sourceLine, edition).officialBook;
-    if (
-      book !== undefined &&
-      book !== subBook &&
-      (f.replaces !== undefined || opensWithReplaces(text.entries))
-    ) {
-      add(refName(f.name), f.level, text, f.replaces === undefined ? {} : { replaces: f.replaces });
+    if (book !== undefined && book !== subBook && opensWithReplaces(opened.entries)) {
+      add(refName(f.name), f.level, opened, true);
       continue;
     }
     fixed.push({ name: refName(f.name), level: f.level, entries: text.entries });
-    add(refName(f.name), f.level, text);
+    add(refName(f.name), f.level, opened);
   }
   parts.sort((a, b) => Number(a.entity.level) - Number(b.entity.level));
   // The spells its features give: a domain's, oath's or circle's table, a
