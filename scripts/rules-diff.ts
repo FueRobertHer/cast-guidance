@@ -611,6 +611,20 @@ async function snapshot(): Promise<void> {
   }
   console.log(`built-in rules: ${rules}`);
   console.log(`${Object.keys(snap).length} builds snapshotted to ${values.out}`);
+  // The held builds must open what they are there for, or a zero change says nothing of them.
+  const opening = (prefix: string, words: string) =>
+    Object.entries(snap).filter(
+      ([id, f]) => id.startsWith(prefix) && (f.prompts ?? '').includes(words),
+    ).length;
+  const inPlace = opening('held ', ' in place of ');
+  const savePicks = opening('saves ', 'saving throw');
+  console.log(
+    `held builds with an "in place of" pick: ${inPlace}; saves builds with a save pick: ${savePicks}`,
+  );
+  if (inPlace === 0 || savePicks === 0) {
+    console.error('A held build opened no pick: the held state holds nothing.');
+    process.exit(1);
+  }
 }
 
 const [command, ...rest] = positionals;
