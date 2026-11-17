@@ -1026,6 +1026,125 @@
           ]
         }
       ]
+    },
+    {
+      "part": "standing",
+      "keys": ["aspect of the wilds|path of the wild heart"],
+      "effects": [
+        {
+          "kind": "pick",
+          "id": "aspect-of-the-wilds",
+          "ask": "option",
+          "label": "Aspect of the Wilds",
+          "options": [
+            {
+              "id": "owl",
+              "label": "Owl (darkvision)",
+              "gives": [
+                {
+                  "kind": "sense",
+                  "sense": "darkvision",
+                  "range": 60,
+                  "orMore": 60
+                }
+              ]
+            },
+            {
+              "id": "panther",
+              "label": "Panther (climb speed)",
+              "gives": [
+                {
+                  "kind": "moveSpeed",
+                  "mode": "climb",
+                  "speed": "walk"
+                }
+              ]
+            },
+            {
+              "id": "salmon",
+              "label": "Salmon (swim speed)",
+              "gives": [
+                {
+                  "kind": "moveSpeed",
+                  "mode": "swim",
+                  "speed": "walk"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "part": "standing",
+      "keys": ["aura of elemental shielding|oath of the noble genies"],
+      "effects": [
+        {
+          "kind": "pick",
+          "id": "elemental-shielding",
+          "ask": "damage",
+          "label": "Aura of Elemental Shielding",
+          "from": ["acid", "cold", "fire", "lightning", "thunder"],
+          "gives": [
+            {
+              "kind": "resist",
+              "damageType": "{pick}",
+              "note": "not while incapacitated"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "part": "standing",
+      "keys": ["fiendish resilience|the fiend"],
+      "effects": [
+        {
+          "kind": "pick",
+          "id": "fiendish-resilience",
+          "ask": "damage",
+          "label": "Fiendish Resilience",
+          "gives": [
+            {
+              "kind": "resist",
+              "damageType": "{pick}",
+              "note": "not from magical or silver weapons"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "part": "standing",
+      "keys": ["fiendish resilience|fiend patron"],
+      "effects": [
+        {
+          "kind": "pick",
+          "id": "fiendish-resilience",
+          "ask": "damage",
+          "label": "Fiendish Resilience",
+          "from": [
+            "acid",
+            "bludgeoning",
+            "cold",
+            "fire",
+            "lightning",
+            "necrotic",
+            "piercing",
+            "poison",
+            "psychic",
+            "radiant",
+            "slashing",
+            "thunder"
+          ],
+          "gives": [
+            {
+              "kind": "resist",
+              "damageType": "{pick}"
+            }
+          ]
+        }
+      ]
     }
   ]
 }

@@ -19,22 +19,6 @@ type StandingFn = (
   level: number,
 ) => void;
 
-const DAMAGE_TYPES = [
-  'acid',
-  'bludgeoning',
-  'cold',
-  'fire',
-  'force',
-  'lightning',
-  'necrotic',
-  'piercing',
-  'poison',
-  'psychic',
-  'radiant',
-  'slashing',
-  'thunder',
-] as const;
-
 /** The 2024 printing of a feature whose subclass shares its name with the 2014 one. */
 const printed2024 = (origin: EffectOrigin, from?: string) =>
   origin.uid.endsWith('|xphb') || from === 'xphb';
@@ -74,11 +58,6 @@ const conditionImmunities =
     }
   };
 
-const swim =
-  (speed: number | 'walk'): StandingFn =>
-  (col, origin) =>
-    col.add({ kind: 'moveSpeed', mode: 'swim', speed, origin });
-
 /** The longest darkvision collected so far (the race's is in by now), from `from` alone if given. */
 function darkvisionSoFar(col: Collector, from?: EffectOrigin['type']): number {
   let best = 0;
@@ -102,65 +81,22 @@ const darkvisionOrMore =
     col.add({ kind: 'sense', sense: 'darkvision', range: had > 0 ? had + more : range, origin });
   };
 
-/** A pick of one damage type among `types`, resisted while it stands. */
-const resistPick =
-  (slug: string, label: string, types: readonly string[], note?: string): StandingFn =>
-  (col, origin) =>
-    col.choice(
-      {
-        id: `${origin.type}:${origin.uid}:${slug}`,
-        origin,
-        kind: 'generic',
-        label,
-        count: 1,
-        options: types.map((t) => ({ id: t, label: `${t[0]?.toUpperCase() ?? ''}${t.slice(1)}` })),
-      },
-      (selected) => resists(selected, note)(col, origin, undefined, 0),
-    );
-
 /** The subclass branch picked (a Genie's kind, a 2024 Land druid's land), lowercased. */
 function branchOf(col: Collector, origin: EffectOrigin): string | undefined {
   const picked = col.doc.choices[`${origin.type}:${origin.uid}:branch`];
   return Array.isArray(picked) ? picked[0]?.toLowerCase() : undefined;
 }
 
-/** A paladin's own place in its aura: while conscious (2014), not while incapacitated (2024). */
-const auraNote = (origin: EffectOrigin, from?: string) =>
-  printed2024(origin, from) ? 'not while incapacitated' : 'while conscious';
-
 export const STANDING: Record<string, StandingFn> = {
   // Every row the stored format holds is data, in
   // `src/rules/cast-guidance/standing.json`: more of each section below, and all
   // of the Artificer's, Sorcerer's, Wizard's, WoW's and optional features'. These
-  // need a pick, a test of the printing, or what the character has already.
-  // Unfettered Mind, Elegant Courtier (its Persuasion bonus a curated row) and Iron
-  // Mind, a save or a pick of one the character lacks, are data too (4c).
-
-  // --- Barbarian -------------------------------------------------------------
-  // Bestial Soul and Aspect of the Beast's Tiger (SCAG, at level 6 alone), picks,
-  // are data too.
-  'aspect of the wilds|path of the wild heart': (col, origin) =>
-    col.choice(
-      {
-        id: `${origin.type}:${origin.uid}:aspect-of-the-wilds`,
-        origin,
-        kind: 'generic',
-        label: 'Aspect of the Wilds',
-        count: 1,
-        options: [
-          { id: 'owl', label: 'Owl (darkvision)' },
-          { id: 'panther', label: 'Panther (climb speed)' },
-          { id: 'salmon', label: 'Salmon (swim speed)' },
-        ],
-      },
-      (selected) => {
-        if (selected.includes('owl')) darkvisionOrMore(60, 60)(col, origin, undefined, 0);
-        if (selected.includes('panther')) {
-          col.add({ kind: 'moveSpeed', mode: 'climb', speed: 'walk', origin });
-        }
-        if (selected.includes('salmon')) swim('walk')(col, origin, undefined, 0);
-      },
-    ),
+  // need a test of the printing, the subclass branch picked, or what the character
+  // has already. The picks are data too: Bestial Soul and Tiger (4a, 4b); Unfettered
+  // Mind, Elegant Courtier (its Persuasion bonus a curated row) and Iron Mind, a
+  // save or a pick of one the character lacks (4c); and a named option or a damage
+  // type (4d): Aspect of the Wilds, Aura of Elemental Shielding and both Fiendish
+  // Resiliences.
 
   // --- Druid -----------------------------------------------------------------
   "nature's ward|circle of the land": (col, origin, from, level) => {
@@ -188,16 +124,6 @@ export const STANDING: Record<string, StandingFn> = {
   // --- Monk ------------------------------------------------------------------
   'darkvision|warrior of shadow': darkvisionOrMore(60, 60),
 
-  // --- Paladin ---------------------------------------------------------------
-  // The paladin is always inside its own aura, while it holds.
-  'aura of elemental shielding|oath of the noble genies': (col, origin, from, level) =>
-    resistPick(
-      'elemental-shielding',
-      'Aura of Elemental Shielding',
-      ['acid', 'cold', 'fire', 'lightning', 'thunder'],
-      auraNote(origin, 'xphb'),
-    )(col, origin, from, level),
-
   // --- Ranger ----------------------------------------------------------------
   'umbral sight|gloom stalker': (col, origin, from, level) =>
     printed2024(origin, from)
@@ -224,17 +150,6 @@ export const STANDING: Record<string, StandingFn> = {
   },
 
   // --- Warlock ---------------------------------------------------------------
-  'fiendish resilience|the fiend': resistPick(
-    'fiendish-resilience',
-    'Fiendish Resilience',
-    DAMAGE_TYPES,
-    'not from magical or silver weapons',
-  ),
-  'fiendish resilience|fiend patron': resistPick(
-    'fiendish-resilience',
-    'Fiendish Resilience',
-    DAMAGE_TYPES.filter((t) => t !== 'force'),
-  ),
   'elemental gift|the genie': (col, origin, from, level) => {
     const kind = branchOf(col, origin);
     const type = { dao: 'bludgeoning', djinni: 'thunder', efreeti: 'fire', marid: 'cold' }[

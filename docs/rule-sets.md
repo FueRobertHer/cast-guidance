@@ -12,7 +12,7 @@ which holds what were the spend links, `SPEND_LINKS` and `SLOT_LINKS`
 `src/rules/`, one a part. (Source of truth: `readRuleSet` and
 `mechanicsOf` in `src/engine/effects/mechanics.ts`, `src/data5e/builtInRules.ts`.)
 
-210 rows have moved so far (`src/rules/cast-guidance/curated.json`). Four came
+212 rows have moved so far (`src/rules/cast-guidance/curated.json`). Four came
 first, one for each kind of call site, to prove the routes: Stunning Strike (a
 class feature), Lucky (PHB, a feat), Disarming Attack (PHB, an optional
 feature) and Warforged's Integrated Protection (a species trait). The other 111
@@ -75,22 +75,28 @@ artificer subclasses' Tool Proficiency and Tools of the Trade (the Armorer's
 with heavy armor, the Artillerist's with martial ranged weapons, the
 Cartographer's two tools), the Reanimator's Skill Set and the Warrior of Mystic
 Brews' Bonus Proficiencies (Performance, or a skill from the giving class's
-list). 210 rows in all. The 10 keys left in `CURATED` are picks still to move
-(phase 4) and engine calls.
+list). Two more ask a named option or a damage type (rule pack port 4d): the
+2014 Dragon Ancestor, a dragon (`ancestor`, which the 2014 Elemental Affinity
+reads) and Draconic, and the 2024 Elemental Affinity, a type of five resisted.
+212 rows in all. The 8 keys left in `CURATED` are picks still to move (phase 4) and engine
+calls.
 
-68 `standing` rows have moved (`src/rules/cast-guidance/standing.json`): every
+72 `standing` rows have moved (`src/rules/cast-guidance/standing.json`): every
 `STANDING` row the format held before phase 4, the defenses, senses and speeds a
 subclass or optional feature adds beside what its prose scan reads, eight of
 them split by printing (Avatar of Battle, Aura of Warding, Aura of Devotion,
 Second-Story Work, whose 2014 row adds nothing), and Bestial Soul, a pick of
 three options (4a), Tiger, two skills at level 6 (4b), and Unfettered Mind,
 Elegant Courtier and Iron Mind, a save or, when the character has it already, a
-pick of one it lacks (4c). The 9 left in `STANDING` need a pick still to move or
-what the character has already (darkvision that grows, the branch or cantrip it
-picked). One more `standing` row is new rather than moved: Tasha's Roving, the
-2014 Ranger's level 6 Deft Explorer Improvement (5 more feet of walking speed, and a
-climbing and a swimming speed equal to it), a `level` row because the level 10
-improvement has the same name and keys.
+pick of one it lacks (4c), and four picks of a named option or a damage type
+(4d): Aspect of the Wilds (the owl's darkvision 60 feet, or 60 more than the
+character has), Aura of Elemental Shielding and both Fiendish Resiliences, a
+damage type resisted. The 5
+left in `STANDING` need what the character has already (darkvision that grows,
+the branch or cantrip it picked). One more `standing` row is new rather than
+moved: Tasha's Roving, the 2014 Ranger's level 6 Deft Explorer Improvement (5
+more feet of walking speed, and a climbing and a swimming speed equal to it), a
+`level` row because the level 10 improvement has the same name and keys.
 
 Every advantage row has moved, under 181 keys (`src/rules/cast-guidance/roll-advantages.json`):
 advantage on the character's own d20 tests that a feature, feat, optional
