@@ -1005,25 +1005,39 @@ function toSubclasses(
   elOf: ReadonlyMap<Fc5Part, XmlElement>,
   picks: readonly Pick[],
   bookOf: (el: XmlElement) => string | undefined,
-): Fc5Part[] {
-  const byKey = new Map<string, Pick[]>();
+): Set<Fc5Part> {
+  // Each name's picks, and by the book each cites.
+  const byKey = new Map<string, { first: Pick; byBook: Map<string, Pick> }>();
   for (const p of picks) {
     const key = pickKey(p.written);
-    byKey.set(key, [...(byKey.get(key) ?? []), p]);
+    const same = byKey.get(key) ?? { first: p, byBook: new Map<string, Pick>() };
+    if (p.book !== undefined && !same.byBook.has(p.book)) same.byBook.set(p.book, p);
+    byKey.set(key, same);
   }
-  const moved: Fc5Part[] = [];
+  const moved = new Set<Fc5Part>();
   for (const part of features) {
     const el = elOf.get(part);
     const g = lastGroup(String(part.entity.name));
     const same = g === undefined ? undefined : byKey.get(pickKey(g.inner));
     if (el === undefined || g === undefined || same === undefined) continue;
-    const book = same.length > 1 ? bookOf(el) : undefined;
-    const pick = same.find((p) => book !== undefined && p.book === book) ?? same[0];
-    if (pick === undefined) continue;
+    const book = same.byBook.size > 1 ? bookOf(el) : undefined;
+    const pick = (book === undefined ? undefined : same.byBook.get(book)) ?? same.first;
     pick.features.push({ name: g.base, level: Number(part.entity.level), el });
-    moved.push(part);
+    moved.add(part);
   }
   return moved;
+}
+
+/** Keep the items `keep` is true of, in place, in one pass. */
+function keepOnly<T>(list: T[], keep: (item: T) => boolean): void {
+  let at = 0;
+  for (const item of list) {
+    if (keep(item)) {
+      list[at] = item;
+      at += 1;
+    }
+  }
+  list.length = at;
 }
 
 /** What a subclass is built from, beside its pick: the class's own parts it shares. */
@@ -1787,14 +1801,13 @@ export function convertClass(el: XmlElement, ctx: Fc5Context): Fc5Result {
   );
   // Before anything else reads the class's features: a subclass's that the
   // file gives as the class's own.
-  for (const part of toSubclasses(features, elOf, split.picks, (el) =>
+  const moved = toSubclasses(features, elOf, split.picks, (el) =>
     bookOf(el, ctx, identity.edition),
-  )) {
-    features.splice(features.indexOf(part), 1);
-    const at = read.findIndex(
-      (f) => f.name === part.entity.name && f.level === Number(part.entity.level),
-    );
-    if (at >= 0) read.splice(at, 1);
+  );
+  if (moved.size > 0) {
+    const keys = new Set([...moved].map((p) => `${p.entity.name}|${p.entity.level}`));
+    keepOnly(features, (p) => !moved.has(p));
+    keepOnly(read, (f) => !keys.has(`${f.name}|${f.level}`));
   }
   let picksAt: Fc5Part | undefined;
   if (split.label !== undefined) {
