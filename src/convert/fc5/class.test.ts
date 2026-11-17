@@ -788,10 +788,15 @@ describe("convertClass another book's optional features", () => {
         tce("This feature replaces the Ranger's Companion feature.\nA primal beast."),
         opt,
       );
-      // Another book's that replaces nothing, and the subclass's own book's that does.
+      // Another book's that replaces nothing, and the subclass's own book's and
+      // a homebrew book's that do.
       const plain = `${feature('Beast Lore (Beast Master)', tce('You know beasts.'), opt)}${feature(
         'Beast Bond (Beast Master, replaces the Share Spells feature)',
         phb('A bond.'),
+        opt,
+      )}${feature(
+        'Beast Call (Beast Master, replaces the Bestial Fury feature)',
+        "A call.\nSource: Ember's Grimoire p. 3",
         opt,
       )}`;
       const lifted = "This feature replaces the Ranger's Companion feature.";
@@ -815,6 +820,7 @@ describe("convertClass another book's optional features", () => {
         ).toEqual([
           // Its clause kept, as the variants' are.
           ['Beast Bond', false, 'This feature replaces the Share Spells feature.'],
+          ['Beast Call', false, 'This feature replaces the Bestial Fury feature.'],
           ['Beast Lore', false, 'You know beasts.'],
           ['Beast Master', false, 'Beasts.'],
           ['Primal Companion', true, first],
