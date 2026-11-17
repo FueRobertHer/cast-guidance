@@ -207,6 +207,26 @@ describe('reading a stored pick', () => {
 });
 
 describe('asking a stored pick', () => {
+  it('names a pick with no label by what it asks and how many, as the code rows did', () => {
+    const label = (what: string, count: number) =>
+      ask([
+        {
+          kind: 'pick',
+          id: `${what}:{feature}`,
+          ask: what,
+          count,
+          ...(what === 'weapon' ? { from: ['longsword'] } : {}),
+          gives: [],
+        },
+      ]).col.pending[0]?.label;
+    expect(label('skill', 1)).toBe('Skill proficiency');
+    expect(label('skill', 2)).toBe('Skill proficiencies');
+    expect(label('tool', 1)).toBe('Tool proficiency');
+    expect(label('tool', 2)).toBe('Tool proficiencies');
+    expect(label('weapon', 1)).toBe('Weapon proficiency');
+    expect(label('weapon', 2)).toBe('Weapon proficiencies');
+  });
+
   it("asks under the code rows' id and gives what the answer fills", () => {
     const pick = {
       kind: 'pick',

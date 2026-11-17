@@ -110,10 +110,10 @@ describe('standing rows', () => {
       ],
     ]);
     expect(asked(14)).toEqual([]);
-    const doc = newCharacterDoc('c', 'H', 't');
-    doc.choices['subclass:path of the totem warrior|phb:skill:tiger'] = ['Stealth', 'Survival'];
-    const col = new Collector(doc, empty);
-    emitStandingEffects(col, 'tiger|path of the totem warrior', tiger, undefined, 6);
+    const col = emit('tiger|path of the totem warrior', tiger, {
+      level: 6,
+      choices: { 'subclass:path of the totem warrior|phb:skill:tiger': ['Stealth', 'Survival'] },
+    });
     expect(of(col, 'skillProf').map((e) => [e.skill, e.level])).toEqual([
       ['Stealth', 1],
       ['Survival', 1],
