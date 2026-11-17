@@ -16,7 +16,6 @@ import {
   skillOptions,
   toolOptions,
   weaponMasteryOptions,
-  weaponOptions,
 } from '../effects/readers';
 import { reskinOf } from '../effects/reskin';
 import {
@@ -185,42 +184,6 @@ const toolsOrAnother =
     }
   };
 
-/** Bladesinging (TCE): one kind of one-handed melee weapon, from the base items. */
-const oneHandedMeleePick: CuratedFn = (col, origin) => {
-  const twoHanded = new Set(
-    col.ctx
-      .byType('baseitem')
-      .filter((e) =>
-        (Array.isArray(e.property) ? e.property : []).some(
-          (p) => String(typeof p === 'string' ? p : (p as DataEntity).uid).split('|')[0] === '2H',
-        ),
-      )
-      .map((e) => String(e.name).toLowerCase()),
-  );
-  col.choice(
-    {
-      id: `${origin.type}:${origin.uid}:weapon:${origin.label.toLowerCase()}`,
-      origin,
-      kind: 'generic',
-      label: 'Weapon proficiency',
-      count: 1,
-      options: weaponOptions(col.ctx)(undefined, 'type=melee weapon').filter(
-        (o) => !twoHanded.has(o.id.toLowerCase()),
-      ),
-    },
-    (selected) => {
-      for (const name of selected) col.add({ kind: 'weaponProf', name, origin });
-    },
-  );
-};
-
-/** Fixed grants of plain proficiency. Having a skill already asks for nothing in its place. */
-const skills =
-  (...names: string[]): CuratedFn =>
-  (col, origin) => {
-    for (const skill of names) proficient(col, skill, origin);
-  };
-
 /** A pick of `count` plain proficiencies, among `from` or every skill. */
 export const skillPick =
   (count: number, from: readonly string[] = []): CuratedFn =>
@@ -242,10 +205,6 @@ function classEntry(col: Collector, className: string) {
   return (
     col.doc.classes.find((c) => c.ref.name.toLowerCase() === name) ?? by(reskinOf) ?? by(basedOn)
   );
-}
-
-function classLevel(col: Collector, className: string): number {
-  return classEntry(col, className)?.levels ?? 0;
 }
 
 /**
@@ -469,11 +428,7 @@ export const CURATED: Record<string, CuratedFn> = {
   // pool and chip named for their class beside the other class (`ownClassBeside`).
   // The scan read one pool for both spells, and nothing in the 2024 printing.
   'signature spells|wizard': signatureSpells,
-  // TCE's optional feature (under the 2014 class) picks again at barbarian 10.
-  'primal knowledge|barbarian': (col, origin, from) => {
-    const count = printedIn(origin, 'phb', from) && classLevel(col, 'Barbarian') >= 10 ? 2 : 1;
-    featureSkillPick(col, origin, count, classSkillList(col, 'Barbarian'));
-  },
+  // Primal Knowledge, a pick, is data too.
   // The sidekick classes' saving throw stays in the card, and so do the weapons,
   // shields and tools that depend on the creature's stat block.
   'bonus proficiencies|expert sidekick': kit({ armor: ['light'] }, skillPick(5)),
@@ -555,13 +510,9 @@ export const CURATED: Record<string, CuratedFn> = {
       );
     }
   },
-  'bonus proficiency|cavalier': skillOrLanguage([
-    'Animal Handling',
-    'History',
-    'Insight',
-    'Performance',
-    'Persuasion',
-  ]),
+  // The Cavalier's Bonus Proficiency, Master of Intrigue, the Alchemist's Tools
+  // of the Trade and both Training in War and Song are picks in
+  // `src/rules/cast-guidance/curated.json`.
   'bonus proficiency|samurai': skillOrLanguage(['History', 'Insight', 'Performance', 'Persuasion']),
   'knightly envoy|banneret': skillPick(1, ['Insight', 'Intimidation', 'Persuasion', 'Performance']),
   // An artisan's tool in both printings; 2024 adds a skill.
@@ -571,17 +522,12 @@ export const CURATED: Record<string, CuratedFn> = {
       featureSkillPick(col, origin, 1, classSkillList(col, 'Fighter'));
     }
   },
-  'master of intrigue|mastermind': kit(
-    { tools: ['Disguise Kit', 'Forgery Kit'] },
-    toolPick(1, ['gaming set']),
-  ),
   // The artificer subclasses (TCE and EFA share each subclass name).
   'tool proficiency|battle smith': toolsOrAnother("Smith's Tools"),
   'tool proficiency|alchemist': toolsOrAnother("Alchemist's Supplies"),
   'tool proficiency|artillerist': toolsOrAnother("Woodcarver's Tools"),
   'tools of the trade|armorer': kit({ armor: ['heavy'] }, toolsOrAnother("Smith's Tools")),
   'tools of the trade|battle smith': toolsOrAnother("Smith's Tools"),
-  'tools of the trade|alchemist': toolsOrAnother("Alchemist's Supplies", 'Herbalism Kit'),
   'tools of the trade|artillerist': kit(
     { filter: ['Martial Ranged weapons', 'type=martial weapon|type=ranged weapon'] },
     toolsOrAnother("Woodcarver's Tools"),
@@ -725,20 +671,6 @@ export const CURATED: Record<string, CuratedFn> = {
   "genie's splendor|oath of the noble genies": all(
     unarmored(10, 'dex', 'cha'),
     skillPick(1, ['Acrobatics', 'Intimidation', 'Performance', 'Persuasion']),
-  ),
-  'training in war and song (bladesinging)|bladesinging': kit(
-    { armor: ['light'] },
-    skills('Performance'),
-    oneHandedMeleePick,
-  ),
-  'training in war and song|bladesinger': kit(
-    {
-      filter: [
-        'Melee Martial weapons without Two-Handed or Heavy',
-        'type=martial weapon|type=melee weapon|property=!two-handed;!heavy',
-      ],
-    },
-    skillPick(1, ['Acrobatics', 'Athletics', 'Performance', 'Persuasion']),
   ),
   // The skill picked also takes the bonus.
   'enchanting conversationalist|enchanter': (col, origin) => {

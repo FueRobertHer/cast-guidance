@@ -2742,6 +2742,174 @@
           "ownClassBeside": ["Cleric"]
         }
       ]
+    },
+    {
+      "part": "curated",
+      "keys": ["primal knowledge|barbarian|phb"],
+      "effects": [
+        {
+          "kind": "pick",
+          "id": "skill:{feature}",
+          "ask": "skill",
+          "classSkills": true,
+          "count": {
+            "byLevel": {
+              "1": 1,
+              "10": 2
+            }
+          },
+          "gives": [
+            {
+              "kind": "skillProf",
+              "skill": "{pick}",
+              "level": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["primal knowledge|barbarian"],
+      "effects": [
+        {
+          "kind": "pick",
+          "id": "skill:{feature}",
+          "ask": "skill",
+          "classSkills": true,
+          "gives": [
+            {
+              "kind": "skillProf",
+              "skill": "{pick}",
+              "level": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["bonus proficiency|cavalier"],
+      "effects": [
+        {
+          "kind": "pick",
+          "id": "skill:{feature}",
+          "ask": "skill",
+          "orLanguage": true,
+          "from": ["Animal Handling", "History", "Insight", "Performance", "Persuasion"],
+          "label": "Skill or language",
+          "gives": [
+            {
+              "kind": "skillProf",
+              "skill": "{pick}",
+              "level": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["master of intrigue|mastermind"],
+      "effects": [
+        {
+          "kind": "toolProf",
+          "name": "Disguise Kit"
+        },
+        {
+          "kind": "toolProf",
+          "name": "Forgery Kit"
+        },
+        {
+          "kind": "pick",
+          "id": "tool:{feature}",
+          "ask": "tool",
+          "from": ["gaming set"],
+          "gives": [
+            {
+              "kind": "toolProf",
+              "name": "{pick}"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["training in war and song (bladesinging)|bladesinging"],
+      "effects": [
+        {
+          "kind": "armorProf",
+          "name": "light"
+        },
+        {
+          "kind": "skillProf",
+          "skill": "Performance",
+          "level": 1
+        },
+        {
+          "kind": "pick",
+          "id": "weapon:{feature}",
+          "ask": "weapon",
+          "weapons": {
+            "filter": "type=melee weapon",
+            "without": ["2H"]
+          },
+          "gives": [
+            {
+              "kind": "weaponProf",
+              "name": "{pick}"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["training in war and song|bladesinger"],
+      "effects": [
+        {
+          "kind": "weaponProf",
+          "name": "Melee Martial weapons without Two-Handed or Heavy"
+        },
+        {
+          "kind": "weaponProfFilter",
+          "filter": "type=martial weapon|type=melee weapon|property=!two-handed;!heavy"
+        },
+        {
+          "kind": "pick",
+          "id": "skill:{feature}",
+          "ask": "skill",
+          "from": ["Acrobatics", "Athletics", "Performance", "Persuasion"],
+          "gives": [
+            {
+              "kind": "skillProf",
+              "skill": "{pick}",
+              "level": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["tools of the trade|alchemist"],
+      "effects": [
+        {
+          "kind": "pick",
+          "id": "tool:{feature}",
+          "ask": "tool",
+          "label": "Tool in place of {held}",
+          "from": ["artisan's tools"],
+          "inPlaceOf": ["Alchemist's Supplies", "Herbalism Kit"],
+          "gives": [
+            {
+              "kind": "toolProf",
+              "name": "{pick}"
+            }
+          ]
+        }
+      ]
     }
   ]
 }

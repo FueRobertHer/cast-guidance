@@ -25,6 +25,21 @@
  * each later usable option of each feature pick (ids hold `| <pick> = <option>`),
  * since a build takes the first.
  *
+ * A spell pick has no options to take: it is answered with the spells its
+ * query fits (by level, school and the like, not by class list), sorted by
+ * `name|source`. Each subclass is built again where an "in place of" pick
+ * opens, at levels 3, 7 and 20: with a background giving the skills and tools
+ * those picks name (`held`), and under a first level of Wizard, whose saves
+ * (INT, WIS) they name (`saves`).
+ *
+ * `--answers last` answers each prompt with its last usable options instead of
+ * its first, so a pick's other end is on a sheet too; snapshot both ways.
+ *
+ * Beside the hashes, `prompts` holds each build's prompts in words (id, count,
+ * label; open ones marked), so `compare` can show which ids moved. With the
+ * `choices` hash, a build whose sheet and choices match on both trees reads
+ * the first tree's saved answers on the second: no answer is lost.
+ *
  * `--coverage <file>` writes, for each code table (`CURATED`, `STANDING`) and
  * the built-in rows, the keys no
  * build read: a move of one of those rows must be proved some other way. It wraps the tables in place to
@@ -41,8 +56,10 @@ import { engineContextFor } from '../src/data5e/engineAdapter';
 import { type EntityRegistry, normalizeDataset } from '../src/data5e/normalize';
 import { editionOf } from '../src/data5e/rulesVersion';
 import { deriveSheet } from '../src/engine/derive';
+import { spellFitsQuery } from '../src/engine/spellQuery';
 import {
   type CharacterDoc,
+  type ChoicePrompt,
   type DerivedSheet,
   type EngineContext,
   type EntityRef,
@@ -61,9 +78,19 @@ const { values, positionals } = parseArgs({
     dump: { type: 'string' },
     'dump-dir': { type: 'string' },
     coverage: { type: 'string' },
+    answers: { type: 'string', default: 'first' },
     'expect-zero': { type: 'boolean', default: false },
   },
 });
+
+if (values.answers !== 'first' && values.answers !== 'last') {
+  console.error('--answers is "first" or "last".');
+  process.exit(1);
+}
+const LAST = values.answers === 'last';
+
+/** Fields kept in words, not hashed, so `compare` can show what changed. */
+const PLAIN = new Set(['prompts']);
 
 const str = (v: unknown): string => (typeof v === 'string' ? v : '');
 const refOf = (e: Entity): EntityRef => ({ name: str(e.name), source: str(e.source) });
@@ -101,6 +128,15 @@ function compare(aPath: string, bPath: string): number {
   for (const id of onlyB.slice(0, 20)) console.log(`  only second: ${id}`);
   for (const [field, ids] of [...byField].sort((x, y) => y[1].length - x[1].length)) {
     console.log(`  ${field}: ${ids.length} builds, e.g. ${ids.slice(0, 5).join('; ')}`);
+    if (!PLAIN.has(field)) continue;
+    // The lines one tree has and the other lacks, for the first few builds.
+    for (const id of ids.slice(0, 3)) {
+      const linesA = new Set((a[id]?.[field] ?? '').split('\n'));
+      const linesB = new Set((b[id]?.[field] ?? '').split('\n'));
+      console.log(`    ${id}`);
+      for (const l of linesA) if (!linesB.has(l)) console.log(`      - ${l}`);
+      for (const l of linesB) if (!linesA.has(l)) console.log(`      + ${l}`);
+    }
   }
   return changed.size + onlyA.length + onlyB.length;
 }
@@ -235,22 +271,33 @@ interface FeaturePick {
 }
 
 /**
- * Answer every open prompt with its first usable options, a few rounds deep.
- * The feature picks it answered go into `picks`, for the branch builds.
+ * Answer every open prompt with its first usable options (its last, with
+ * `--answers last`), a few rounds deep; a spell pick with the spells its query
+ * fits (`spellsFor`). The feature picks it answered go into `picks`, for the
+ * branch builds.
  */
-function settle(doc: CharacterDoc, ctx: EngineContext, picks: FeaturePick[] = []): DerivedSheet {
+function settle(
+  doc: CharacterDoc,
+  ctx: EngineContext,
+  spellsFor: (p: ChoicePrompt) => string[],
+  picks: FeaturePick[] = [],
+): DerivedSheet {
   let sheet = deriveSheet(doc, ctx);
   for (let round = 0; round < 6; round++) {
     let changed = false;
     for (const p of sheet.pending) {
-      if (doc.choices[p.id] !== undefined || p.options.length === 0) continue;
+      if (doc.choices[p.id] !== undefined) continue;
       const usable = p.options.filter((o) => o.disabled === undefined);
-      const pool = usable.length > 0 ? usable : p.options;
+      const pool =
+        p.options.length > 0
+          ? (usable.length > 0 ? usable : p.options).map((o) => o.id)
+          : spellsFor(p);
+      if (pool.length === 0) continue;
       const n = Math.max(1, Math.min(p.count, pool.length));
       if (p.kind === 'feature' && usable.length > n) {
         picks.push({ id: p.id, count: n, options: usable.map((o) => o.id) });
       }
-      doc.choices[p.id] = pool.slice(0, n).map((o) => o.id);
+      doc.choices[p.id] = LAST ? pool.slice(-n) : pool.slice(0, n);
       changed = true;
     }
     if (!changed) break;
@@ -271,6 +318,14 @@ async function snapshot(): Promise<void> {
   const snap: Snapshot = {};
   const dump = values.dump;
   const dumpDir = values['dump-dir'] ?? path.dirname(values.out);
+  const spells = reg.byType('spell');
+  const spellsFor = (p: ChoicePrompt): string[] =>
+    p.spellQuery === undefined
+      ? []
+      : spells
+          .filter((s) => spellFitsQuery(s, p.spellQuery as never))
+          .map((s) => uidOf(refOf(s)))
+          .sort();
 
   /** One build, settled and hashed; the feature picks it answered. */
   const one = (
@@ -282,7 +337,7 @@ async function snapshot(): Promise<void> {
     const picks: FeaturePick[] = [];
     let sheet: DerivedSheet;
     try {
-      sheet = settle(doc, ctx, picks);
+      sheet = settle(doc, ctx, spellsFor, picks);
     } catch (err) {
       snap[id] = { throws: hash(String(err)) };
       return [];
@@ -290,6 +345,12 @@ async function snapshot(): Promise<void> {
     const fields: Record<string, string> = {};
     for (const [k, v] of Object.entries(sheet)) fields[k] = hash(v);
     fields.choices = hash(doc.choices);
+    fields.prompts = [
+      ...sheet.pending.map((p) => `open ${p.id} x${p.count} ${p.label}`),
+      ...sheet.resolvedChoices.map(({ prompt: p }) => `${p.id} x${p.count} ${p.label}`),
+    ]
+      .sort()
+      .join('\n');
     snap[id] = fields;
     if (dump !== undefined && id.includes(dump)) {
       mkdirSync(dumpDir, { recursive: true });
@@ -492,6 +553,52 @@ async function snapshot(): Promise<void> {
     record(`multi ${parts.map((p) => p.join(' ')).join(' / ')} ${edition}`, doc);
   }
 
+  // What the "in place of" picks name, held: they open only then. Added last, so
+  // no other build has it.
+  const past = { name: 'Rules Diff Past', source: 'RULESDIFF' };
+  reg.addAll('background', [
+    {
+      ...past,
+      skillProficiencies: [{ persuasion: true, performance: true, arcana: true, nature: true }],
+      toolProficiencies: [
+        {
+          "smith's tools": true,
+          "alchemist's supplies": true,
+          "woodcarver's tools": true,
+          'herbalism kit': true,
+          "calligrapher's supplies": true,
+          "cartographer's tools": true,
+        },
+      ],
+    } as Entity,
+  ]);
+  const wizard = (edition: '2014' | '2024') => ({
+    ref: { name: 'Wizard', source: edition === '2024' ? 'XPHB' : 'PHB' },
+    levels: 1,
+    hp: [],
+  });
+  for (const sub of subclasses) {
+    const cls = classes.find(
+      (c) =>
+        str(c.name).toLowerCase() === str(sub.className).toLowerCase() &&
+        str(c.source).toLowerCase() === str(sub.classSource).toLowerCase(),
+    );
+    if (cls === undefined) continue;
+    const ref = refOf(cls);
+    const subRef = refOf(sub);
+    const edition = editionOf(cls);
+    for (const level of [3, 7, 20]) {
+      const at = `${uidOf(ref)} / ${uidOf(subRef)} @${level} ${edition}`;
+      const held = baseDoc(edition);
+      held.background = past;
+      held.classes = [{ ref, subclass: subRef, levels: level, hp: [] }];
+      record(`held ${at}`, held);
+      const saves = baseDoc(edition);
+      saves.classes = [wizard(edition), { ref, subclass: subRef, levels: level, hp: [] }];
+      record(`saves ${at}`, saves);
+    }
+  }
+
   writeFileSync(values.out, JSON.stringify(snap));
   if (coverage !== undefined && values.coverage !== undefined) {
     const report: Record<string, { keys: number; unread: string[] }> = {};
@@ -504,6 +611,20 @@ async function snapshot(): Promise<void> {
   }
   console.log(`built-in rules: ${rules}`);
   console.log(`${Object.keys(snap).length} builds snapshotted to ${values.out}`);
+  // The held builds must open what they are there for, or a zero change says nothing of them.
+  const opening = (prefix: string, words: string) =>
+    Object.entries(snap).filter(
+      ([id, f]) => id.startsWith(prefix) && (f.prompts ?? '').includes(words),
+    ).length;
+  const inPlace = opening('held ', ' in place of ');
+  const savePicks = opening('saves ', 'saving throw');
+  console.log(
+    `held builds with an "in place of" pick: ${inPlace}; saves builds with a save pick: ${savePicks}`,
+  );
+  if (inPlace === 0 || savePicks === 0) {
+    console.error('A held build opened no pick: the held state holds nothing.');
+    process.exit(1);
+  }
 }
 
 const [command, ...rest] = positionals;

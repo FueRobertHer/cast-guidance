@@ -177,6 +177,7 @@ export function collectFeatEntity(
     target: uid,
     ruleKeys: uids,
     inCode: hasCuratedRow,
+    pickBase: idBase,
     inherited: (builtIn) => {
       const curated =
         builtIn !== undefined

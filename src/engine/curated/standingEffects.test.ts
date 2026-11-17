@@ -25,8 +25,14 @@ const sub = (uid: string, label = 'Feature'): EffectOrigin => ({ label, uid, typ
  * built-in rule set's (`src/rules/cast-guidance/standing.json`) once it moved,
  * under the key for its printing first (`from`, then the origin's uid's).
  */
-function emit(key: string, origin: EffectOrigin, opts: { from?: string; level?: number } = {}) {
-  const col = new Collector(newCharacterDoc('c', 'H', 't'), empty);
+function emit(
+  key: string,
+  origin: EffectOrigin,
+  opts: { from?: string; level?: number; choices?: Record<string, string[]> } = {},
+) {
+  const doc = newCharacterDoc('c', 'H', 't');
+  doc.choices = { ...opts.choices };
+  const col = new Collector(doc, empty);
   const level = opts.level ?? 20;
   if (emitStandingEffects(col, key, origin, opts.from, level)) return col;
   const keys = printingKeys([key], opts.from ?? '', origin.uid);
@@ -210,11 +216,11 @@ describe('standing rows', () => {
 
   it('gives the speed Bestial Soul picks, and none for the jump', () => {
     const speeds = (pick?: string) => {
-      const doc = newCharacterDoc('c', 'H', 't');
       const uid = 'path of the beast|tce';
-      if (pick !== undefined) doc.choices[`subclass:${uid}:bestial-soul`] = [pick];
-      const col = new Collector(doc, empty);
-      emitStandingEffects(col, 'bestial soul|path of the beast', sub(uid), undefined, 6);
+      const col = emit('bestial soul|path of the beast', sub(uid), {
+        level: 6,
+        choices: pick === undefined ? {} : { [`subclass:${uid}:bestial-soul`]: [pick] },
+      });
       return { modes: of(col, 'moveSpeed').map((e) => e.mode), open: col.pending.length };
     };
     expect(speeds()).toEqual({ modes: [], open: 1 });

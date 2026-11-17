@@ -12,7 +12,7 @@ which holds what were the spend links, `SPEND_LINKS` and `SLOT_LINKS`
 `src/rules/`, one a part. (Source of truth: `readRuleSet` and
 `mechanicsOf` in `src/engine/effects/mechanics.ts`, `src/data5e/builtInRules.ts`.)
 
-169 rows have moved so far (`src/rules/cast-guidance/curated.json`). Four came
+176 rows have moved so far (`src/rules/cast-guidance/curated.json`). Four came
 first, one for each kind of call site, to prove the routes: Stunning Strike (a
 class feature), Lucky (PHB, a feat), Disarming Attack (PHB, an optional
 feature) and Warforged's Integrated Protection (a species trait). The other 111
@@ -50,17 +50,23 @@ some of their effects under one rules version alone (rule pack port 2g): Second
 Wind, the Cleric's and the Paladin's Channel Divinity, the Paladin's named for
 the class that gives it, and Lay on Hands. Two more name a pool and its action
 for the class that gives them only when the character also has the other class
-(rule pack port 2h): the Cleric's and the Paladin's Harness Divine Power. The
-rows left in `CURATED` need something the format lacks: a pick or an engine
-call.
+(rule pack port 2h): the Cleric's and the Paladin's Harness Divine Power.
+Seven more ask a pick ("Picks", below; rule pack port 4a), one of each kind of
+pick a class asks: Primal Knowledge by printing (the Barbarian's skill list),
+the Cavalier's Bonus Proficiency (a skill or a language), Master of Intrigue (a
+gaming set), both Training in War and Song (a melee weapon; the 2024 one a skill
+and weapons by filter) and the Alchemist's Tools of the Trade (a tool in place
+of one held). The 42 rows left in `CURATED` are picks still to move (phase 4)
+and engine calls.
 
-63 `standing` rows have moved (`src/rules/cast-guidance/standing.json`): every
-`STANDING` row the format holds, the defenses, senses and speeds a subclass or
-optional feature adds beside what its prose scan reads, eight of them split by
-printing (Avatar of Battle, Aura of Warding, Aura of Devotion, Second-Story
-Work, whose 2014 row adds nothing). The 14 left in `STANDING` need a pick (Bestial Soul,
-Fiendish Resilience) or what the character has already (darkvision that grows,
-a save it may have, the branch or cantrip it picked).
+64 `standing` rows have moved (`src/rules/cast-guidance/standing.json`): every
+`STANDING` row the format held before phase 4, the defenses, senses and speeds a
+subclass or optional feature adds beside what its prose scan reads, eight of
+them split by printing (Avatar of Battle, Aura of Warding, Aura of Devotion,
+Second-Story Work, whose 2014 row adds nothing), and Bestial Soul, a pick of
+three options (4a). The 13 left in `STANDING` need a pick still to move or what
+the character has already (darkvision that grows, a save it may have, the
+branch or cantrip it picked).
 
 Every advantage row has moved, under 181 keys (`src/rules/cast-guidance/roll-advantages.json`):
 advantage on the character's own d20 tests that a feature, feat, optional
@@ -257,6 +263,101 @@ A spend row runs where the spend links ran, last, with the same origin object.
 An entry's `drop` reaches the chips it adds, and an entry that replaces what it
 inherits leaves it out. A player's `amend` (below) runs after both, so it
 reprices a chip a row priced or added.
+
+## Picks
+
+A `pick` effect asks the player something as the character is built, and gives
+effects by the answer (rule pack port phase 4). Built-in rows and a player's
+rule pack or homebrew entry write it the same way (source of truth: `readPick`
+in `mechanics.ts`, `askPick` in `src/engine/effects/picks.ts`):
+
+```jsonc
+{
+  "kind": "pick",
+  "id": "favoured-tool",
+  "ask": "tool",
+  "from": ["artisan's tools"],
+  "gives": [{ "kind": "toolProf", "name": "{pick}" }]
+}
+```
+
+- **`id`** is the prompt's id after its origin (`<origin type>:<origin uid>:`),
+  which the character's saved answer is filed under. A player's file writes a
+  short name (lowercase letters, digits and hyphens, at most 40), filed as
+  `pick-<id>`: renaming a copy keeps its answers, and no pick shares an engine
+  prompt's id (`ancestor`, `branch`, `cantrip`), whose one answer would then
+  apply twice. A built-in row writes the code row's own id after the origin,
+  `skill:{feature}` (the entry's name, lowercased) or a fixed word
+  (`CODE_PICK_IDS`), so the answers characters saved keep reading. A feat's
+  `pick-` ids file under its copy (`feat:<uid>:<instance>:pick-<id>`), so each
+  copy of a repeatable feat asks its own and removing the feat clears its
+  answers. An entry's effects asking one id twice are refused, unless each
+  counts under its own rules version (`edition`); a pick asked twice under one
+  id in one build (a pack's patch and the entry's own effects) asks once and
+  warns.
+- **`ask`** sets the prompt and its options:
+  - `skill`: every skill, or `from`. `classSkills: true` adds the skill list of
+    the class that gives the feature (as a level table reads that class's
+    level), and `orLanguage: true` offers languages too: a language picked is
+    spoken, whatever `gives` says.
+  - `tool`: every tool, or `from`, where a group stands for its tools
+    (`"artisan's tools"`, `"gaming set"`). A tool held so far is offered greyed
+    out ("You already have Smith's Tools"), and an answer is given by the name
+    the sheet shows.
+  - `weapon`: the weapons `from` names, or the base weapons of any kind
+    `weapons.filter` names (`type=` and `simple`, `martial`, `melee` or
+    `ranged weapon`, joined with `;`), less those with a property in
+    `weapons.without`; one of `from` and `weapons`.
+  - `weaponMastery`: weapon masteries; `melee: true` for melee weapons alone,
+    `proficient: true` for those the character is proficient with.
+  - `save`: the abilities, or `from`, less the saves held so far (ids
+    lowercase, labels capitals). With none left it asks nothing.
+  - `damage`: the 13 damage types, or `from`.
+  - `option`: `options`, at most 20, each `{ "id", "label", "gives" }`: what
+    an option gives is its own, given as it is picked.
+  - `spell`: the spells `spells` finds (`levels`, `classes`); an answer is a
+    spell's `name|source`.
+- **`count`**: a number (1 when absent), `{ "byLevel": { "1": 1, "10": 2 } }`
+  by the level of the class that gives it, or
+  `{ "tableColumn": "Weapon Mastery", "else": 2 }` from its class table.
+- **`label`**: the prompt's words, with `{feature}` (the entry's name) and
+  `{held}`; each ask has its own words when absent.
+- **`gives`**: the effects each answer gives, with `{pick}` filled in (a
+  spell's `name|source`, and `{pick.slug}` and `{pick.title}` for its name as a
+  key and as a title). **`givesAll`** is given once for all the answers, where a
+  whole value `"{picks}"` is the list of them (spells by name, lowercased,
+  tools by the names the sheet shows: Agonizing Blast's one bonus); `{picks}`
+  means nothing in `gives`. A `$` in a name or an answer is kept as written.
+  The reader checks `gives` with an answer of the
+  ask filled in, and with each option's id and each `inPlaceOf` name; an answer
+  that still does not read (a homebrew spell whose name is too long for a key)
+  is a warning on the sheet, and that effect is left out.
+- **`inPlaceOf`** (`skill`, `tool`, `save`): names. Each not held so far is
+  given as an answer would be; each held turns into one pick of the options
+  (the count is how many are held), and `{held}` names them. **`always`**,
+  with it alone, is given either way, after those and before the pick (Royal
+  Envoy's expertise in Persuasion).
+- **`afterBuild: true`**: asked once the whole build is in, since its options
+  read all of it (Weapon Mastery, which reads every proficiency).
+
+A pick is refused in play (a condition, a spell cast or a buff: no one is
+building a character there), inside another pick's `gives`, with `while`, and
+with a field its `ask` does not read (`from` on an `option`, `weaponMastery` or
+`spell` pick). Option ids that differ only in case are one, as saved answers
+match without case. A pick's prompt shows on the creator step
+its origin routes to, as every prompt does.
+
+Four more terms came with picks, for the rows that move with them:
+`weaponMastery` (a mastery by weapon name), `weaponProfFilter` (proficiency
+with the weapons filter words find; the app's own rule sets only, as the
+filter is not a word a player writes), `grantSpell`'s `slotsOnly` (a spell cast
+with slots alone, never free), and a `sense`'s `orMore`: the best range of that
+sense held so far (any origin's, or a race's alone with `orMoreFrom: "race"`)
+plus `orMore`, or `range` when none is, which takes a plain range and is refused
+in play. What is held so far is what came before it in the build (a later
+feat's or item's sense does not count), and a held range written as a formula
+counts as none, since a formula's number is known only once the sheet is
+folded.
 
 ## Roll fields
 
@@ -605,10 +706,10 @@ alone, the class that gives it, or the class beside the classes typed in.
 
 ## Checking a change on real data
 
-`scripts/rules-diff.ts` derives about 8,600 builds over the pinned release
+`scripts/rules-diff.ts` derives about 10,800 builds over the pinned release
 (every class and subclass across levels in both editions, every feat, race,
 background, optional feature and magic item, and some multiclasses) and
-records a hash of each sheet field, about 26,000 sheets in all, in about two
+records a hash of each sheet field, about 32,500 sheets in all, in about six
 minutes. It makes each build three times: with every
 ability 14; with every ability 8 (ids ending `[8s]`), where a minimum such as
 `max(1, mod.cha)` shows; and raging at 1 hit point (`[on]`), since an effect
@@ -617,6 +718,21 @@ one would change nothing. Since a build answers each pick with its first
 option, a class build at level 20 in its own edition is also made once for each
 later option of each feature pick that is not greyed out (Totem Spirit's Elk,
 ids holding `| <pick> = <option>`).
+
+Picks need more (rule pack port 4a). A spell pick has no options to take, so
+it is answered with the spells its query fits, sorted by `name|source` (by
+level and school, not by class list). An "in place of" pick opens only on what
+is held, so each subclass is built again at levels 3, 7 and 20 with a
+background giving the skills and tools those picks name (ids starting
+`held`), and after a first level of Wizard, whose saves (INT, WIS) they name
+(`saves`). `--answers last` answers every prompt with its last usable options
+instead, so take both snapshots both ways. Beside the hashes, `prompts` keeps
+each build's prompts in words (id, count, label, open ones marked), and
+`compare` prints the lines one side lacks, so a moved id shows by name. With
+`choices` hashed too, a build whose sheet and choices match on both trees
+reads the base tree's saved answers on the new one unchanged: no saved answer
+is lost or asked again.
+
 Moving rows out of code must change none:
 
 ```bash
@@ -663,7 +779,10 @@ and again on a Wizard, whose slots a slot price needs. So it also catches
 what the reader rewrites as it reads (a `false` flag read as absent, a list's
 repeats dropped, a skill's case), level table thresholds at levels
 `rules-diff` does not build, and a gear condition (`unless`, a ranged or melee
-scope, `weaponsOnly`) that differs.
+scope, `weaponsOnly`) that differs. It answers picks as `rules-diff` does
+(spells by query, `--answers last`), and builds each subclass that reads a
+moved row again at every level with the "in place of" names held, under a
+background and after a first level of Wizard.
 
 It sees one entity at a time: a class alone, a feat or a race on a bare
 Fighter or Wizard. A row that differs only beside another entity's row is beyond it, so
@@ -698,4 +817,24 @@ taken as `rules-diff` takes its snapshots:
 ```bash
 bun --tsconfig-override=tsconfig.app.json scripts/roll-price-census.ts snapshot --release <cache.json> --out before.json
 bun --tsconfig-override=tsconfig.app.json scripts/roll-price-census.ts compare before.json after.json --expect-zero
+```
+
+`scripts/pick-census.ts` checks a pick row against its code row for every
+answer, where `rules-diff` and the probe see only the first and last. It
+catches each code row where real builds call it (every class and subclass at
+levels 3, 6, 10, 14 and 20 in its edition, settled), and runs it again beside
+the stored row on two fresh collectors holding what the build held so far,
+three times: as it was, and with some and with all of what the "in place of"
+rows name held. Each prompt must match (id, kind, label, count, options and
+their greyed-out reasons, spell query), as must the effects added before it,
+the effects of every single answer (every option, every spell the query fits)
+and the warnings. A row of one level no build reaches (Tiger) runs at that
+level alone. `--rows <file>` checks drafted rows before a move (`{ "rows":
+[...] }`, as a rule set writes them); without it, the shipped rows whose code
+row is still in the tree, with those rows hidden so the builds reach the code.
+It exits 1 on a difference, on a row no build reaches, and when it checked no
+"in place of" prompt, spell answer or level row that the rows have.
+
+```bash
+bun --tsconfig-override=tsconfig.app.json scripts/pick-census.ts --release <cache.json> [--rows <file>] [--only <text>]...
 ```
