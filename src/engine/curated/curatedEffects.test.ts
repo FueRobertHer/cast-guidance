@@ -904,13 +904,23 @@ describe('pools, dice and DCs only class prose states', () => {
       expect.objectContaining({
         id: 'class:wizard|xphb:signature',
         kind: 'spell',
+        label: 'Signature Spells: two level 3 Wizard spells from your spellbook',
         count: 2,
-        spellQuery: expect.objectContaining({ levels: [3], classes: ['Wizard'] }),
+        spellQuery: { levels: [3], classes: ['Wizard'], schools: [], ritual: false, attacks: [] },
       }),
     ]);
     const picked = col('Wizard', 20);
     picked.doc.choices['class:wizard|xphb:signature'] = ['fireball|xphb', 'counterspell|xphb'];
     run('signature spells|wizard', picked, wizard);
+    // Each spell's pool, then its two grants, spell by spell.
+    expect(picked.effects.map((e) => e.kind)).toEqual([
+      'resource',
+      'grantSpell',
+      'grantSpell',
+      'resource',
+      'grantSpell',
+      'grantSpell',
+    ]);
     expect(pools(picked)).toEqual([
       'signature-spells-fireball Fireball 1 short',
       'signature-spells-counterspell Counterspell 1 short',
@@ -1198,6 +1208,7 @@ describe('always-on riders', () => {
       expect.objectContaining({
         id: 'class:agonizing blast|xphb:cantrip',
         kind: 'spell',
+        label: 'Agonizing Blast: a Warlock cantrip that deals damage',
         count: 1,
         spellQuery: { levels: [0], classes: ['Warlock'], schools: [], ritual: false, attacks: [] },
       }),
