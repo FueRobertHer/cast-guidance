@@ -91,11 +91,12 @@ export const STANDING: Record<string, StandingFn> = {
   // Every row the stored format holds is data, in
   // `src/rules/cast-guidance/standing.json`: more of each section below, and all
   // of the Artificer's, Sorcerer's, Wizard's, WoW's and optional features'. These
-  // need a pick, a test of the printing, or what the character has already.
-  // Unfettered Mind, Elegant Courtier (its Persuasion bonus a curated row) and Iron
-  // Mind, a save or a pick of one the character lacks, are data too (4c), and so are
-  // the picks of a named option (4d): Bestial Soul and Tiger (4a, 4b), Aspect of the
-  // Wilds, Aura of Elemental Shielding and both Fiendish Resiliences.
+  // need a test of the printing, the subclass branch picked, or what the character
+  // has already. The picks are data too: Bestial Soul and Tiger (4a, 4b); Unfettered
+  // Mind, Elegant Courtier (its Persuasion bonus a curated row) and Iron Mind, a
+  // save or a pick of one the character lacks (4c); and a named option or a damage
+  // type (4d): Aspect of the Wilds, Aura of Elemental Shielding and both Fiendish
+  // Resiliences.
 
   // --- Druid -----------------------------------------------------------------
   "nature's ward|circle of the land": (col, origin, from, level) => {

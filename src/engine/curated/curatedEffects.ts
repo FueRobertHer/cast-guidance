@@ -198,8 +198,9 @@ export const CURATED: Record<string, CuratedFn> = {
   // Archer Lore, the artificer subclasses' tools, the Reanimator's Skill Set and
   // the Warrior of Mystic Brews' Bonus Proficiencies.
   // The 2014 Dragon Ancestor (a dragon, `ancestor`, and Draconic) and the 2024
-  // Elemental Affinity (a type of five, resisted) are picks of a named option in
-  // the data too (4d). Its doubled proficiency with dragons stays in the card.
+  // Elemental Affinity (a type of five, resisted) are picks in the data too (4d),
+  // of a named option and of a damage type. The Dragon Ancestor's doubled
+  // proficiency with dragons stays in the card.
   // The 2014 Elemental Affinity, by the Dragon Ancestor's type: a sorcery point
   // (its spend link) for an hour's resistance, and a Charisma rider on spells.
   'elemental affinity|draconic bloodline': (col, origin) => {

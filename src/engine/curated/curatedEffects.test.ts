@@ -12,6 +12,7 @@ import {
   newCharacterDoc,
 } from '../types';
 import { emitCuratedEffects } from './curatedEffects';
+import { DRAGONS, dragonOptions } from './draconicAncestry';
 import { linkSpend } from './spendLinks';
 
 // No data but the rule sets every registry holds: the rows moved out of `CURATED`.
@@ -622,6 +623,11 @@ describe('the Draconic sorcerer’s dragon', () => {
     expect(c.pending.map((p) => [p.id, p.label, p.options.length])).toEqual([
       ['subclass:draconic bloodline|phb:ancestor', 'Dragon Ancestor', 10],
     ]);
+    // The row's dragons are the ancestry table's, which the 2014 Elemental Affinity
+    // reads: an id the table lacks would name no type there.
+    expect(c.pending[0]?.options.map((o) => [o.id, o.label])).toEqual(
+      dragonOptions(DRAGONS).map((o) => [o.id, o.label]),
+    );
   });
 
   it('names the ancestor’s type on the 2014 Elemental Affinity chip', () => {

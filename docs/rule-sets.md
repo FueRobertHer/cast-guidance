@@ -73,10 +73,10 @@ artificer subclasses' Tool Proficiency and Tools of the Trade (the Armorer's
 with heavy armor, the Artillerist's with martial ranged weapons, the
 Cartographer's two tools), the Reanimator's Skill Set and the Warrior of Mystic
 Brews' Bonus Proficiencies (Performance, or a skill from the giving class's
-list). Two more ask a named option (rule pack port 4d): the 2014 Dragon
-Ancestor, a dragon (`ancestor`, which the 2014 Elemental Affinity reads) and
-Draconic, and the 2024 Elemental Affinity, a type of five resisted. 212 rows in
-all. The 8 keys left in `CURATED` are picks still to move (phase 4) and engine
+list). Two more ask a named option or a damage type (rule pack port 4d): the
+2014 Dragon Ancestor, a dragon (`ancestor`, which the 2014 Elemental Affinity
+reads) and Draconic, and the 2024 Elemental Affinity, a type of five resisted.
+212 rows in all. The 8 keys left in `CURATED` are picks still to move (phase 4) and engine
 calls.
 
 72 `standing` rows have moved (`src/rules/cast-guidance/standing.json`): every
@@ -86,9 +86,10 @@ them split by printing (Avatar of Battle, Aura of Warding, Aura of Devotion,
 Second-Story Work, whose 2014 row adds nothing), and Bestial Soul, a pick of
 three options (4a), Tiger, two skills at level 6 (4b), and Unfettered Mind,
 Elegant Courtier and Iron Mind, a save or, when the character has it already, a
-pick of one it lacks (4c), and four picks of a named option (4d): Aspect of the
-Wilds (the owl's darkvision 60 feet, or 60 more than the character has), Aura of
-Elemental Shielding and both Fiendish Resiliences, a damage type resisted. The 5
+pick of one it lacks (4c), and four picks of a named option or a damage type
+(4d): Aspect of the Wilds (the owl's darkvision 60 feet, or 60 more than the
+character has), Aura of Elemental Shielding and both Fiendish Resiliences, a
+damage type resisted. The 5
 left in `STANDING` need what the character has already (darkvision that grows,
 the branch or cantrip it picked).
 
