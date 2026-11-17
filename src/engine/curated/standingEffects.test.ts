@@ -196,17 +196,11 @@ describe('standing rows', () => {
   });
 
   it("keeps the aura's note on a picked resistance", () => {
-    const doc = newCharacterDoc('c', 'H', 't');
     const uid = 'oath of the noble genies|xphb';
-    doc.choices[`subclass:${uid}:elemental-shielding`] = ['fire'];
-    const col = new Collector(doc, empty);
-    emitStandingEffects(
-      col,
-      'aura of elemental shielding|oath of the noble genies',
-      sub(uid),
-      undefined,
-      7,
-    );
+    const col = emit('aura of elemental shielding|oath of the noble genies', sub(uid), {
+      level: 7,
+      choices: { [`subclass:${uid}:elemental-shielding`]: ['fire'] },
+    });
     expect(of(col, 'resist').map((e) => [e.damageType, e.note])).toEqual([
       ['fire', 'not while incapacitated'],
     ]);
@@ -234,6 +228,51 @@ describe('standing rows', () => {
     expect(speeds('swim')).toEqual({ modes: ['swim'], open: 0 });
     expect(speeds('climb')).toEqual({ modes: ['climb'], open: 0 });
     expect(speeds('jump')).toEqual({ modes: [], open: 0 });
+  });
+
+  it("gives the owl's darkvision, or 60 feet more on darkvision had, and the other speeds", () => {
+    const uid = 'path of the wild heart|xphb';
+    const aspect = (pick?: string, had?: number) => {
+      const col = emit(
+        'aspect of the wilds|path of the wild heart',
+        sub(uid, 'Aspect of the Wilds'),
+        {
+          level: 6,
+          choices: pick === undefined ? {} : { [`subclass:${uid}:aspect-of-the-wilds`]: [pick] },
+          before: (c) => {
+            if (had !== undefined)
+              c.add({
+                kind: 'sense',
+                sense: 'Darkvision',
+                range: had,
+                origin: { label: 'Elf', uid: 'elf|phb', type: 'race' },
+              });
+          },
+        },
+      );
+      return {
+        darkvision: of(col, 'sense')
+          .filter((e) => e.origin.uid === uid)
+          .map((e) => e.range),
+        speeds: of(col, 'moveSpeed').map((e) => [e.mode, e.speed]),
+        open: col.pending.map((p) => [p.id, p.label, p.options.map((o) => o.label)]),
+      };
+    };
+    expect(aspect().open).toEqual([
+      [
+        `subclass:${uid}:aspect-of-the-wilds`,
+        'Aspect of the Wilds',
+        ['Owl (darkvision)', 'Panther (climb speed)', 'Salmon (swim speed)'],
+      ],
+    ]);
+    expect(aspect('owl')).toEqual({ darkvision: [60], speeds: [], open: [] });
+    expect(aspect('owl', 60)).toEqual({ darkvision: [120], speeds: [], open: [] });
+    expect(aspect('panther', 60)).toEqual({
+      darkvision: [],
+      speeds: [['climb', 'walk']],
+      open: [],
+    });
+    expect(aspect('salmon')).toEqual({ darkvision: [], speeds: [['swim', 'walk']], open: [] });
   });
 
   it("resists the type of the god whose cantrip Dread Allegiance's subclass picked", () => {

@@ -612,7 +612,7 @@ describe('the Draconic sorcerer’s dragon', () => {
     type: 'subclass',
   };
   const run = (key: string, c: Collector, o: EffectOrigin) => {
-    expect(emitCuratedEffects(c, key, o)).toBe(true);
+    expect(emitRow(c, key, o)).toBe(true);
     return c;
   };
 

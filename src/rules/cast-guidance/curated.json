@@ -3727,6 +3727,83 @@
           ]
         }
       ]
+    },
+    {
+      "part": "curated",
+      "keys": ["dragon ancestor|draconic bloodline"],
+      "effects": [
+        {
+          "kind": "language",
+          "name": "Draconic"
+        },
+        {
+          "kind": "pick",
+          "id": "ancestor",
+          "ask": "option",
+          "label": "Dragon Ancestor",
+          "options": [
+            {
+              "id": "black",
+              "label": "Black (acid)"
+            },
+            {
+              "id": "blue",
+              "label": "Blue (lightning)"
+            },
+            {
+              "id": "brass",
+              "label": "Brass (fire)"
+            },
+            {
+              "id": "bronze",
+              "label": "Bronze (lightning)"
+            },
+            {
+              "id": "copper",
+              "label": "Copper (acid)"
+            },
+            {
+              "id": "gold",
+              "label": "Gold (fire)"
+            },
+            {
+              "id": "green",
+              "label": "Green (poison)"
+            },
+            {
+              "id": "red",
+              "label": "Red (fire)"
+            },
+            {
+              "id": "silver",
+              "label": "Silver (cold)"
+            },
+            {
+              "id": "white",
+              "label": "White (cold)"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["elemental affinity|draconic sorcery"],
+      "effects": [
+        {
+          "kind": "pick",
+          "id": "affinity",
+          "ask": "damage",
+          "label": "Elemental Affinity",
+          "from": ["acid", "cold", "fire", "lightning", "poison"],
+          "gives": [
+            {
+              "kind": "resist",
+              "damageType": "{pick}"
+            }
+          ]
+        }
+      ]
     }
   ]
 }

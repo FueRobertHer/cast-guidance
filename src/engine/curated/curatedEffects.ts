@@ -11,7 +11,7 @@ import { parseSpellRef, savedPicks } from '../effects/additionalSpells';
 import { asEntityArray, type Collector } from '../effects/base';
 import { weaponMasteryOptions } from '../effects/readers';
 import { type EffectOrigin, refUid } from '../types';
-import { DRACONIC_ANCESTRY, DRAGONS, dragonOptions } from './draconicAncestry';
+import { DRACONIC_ANCESTRY } from './draconicAncestry';
 
 /**
  * `from` is the printing of the feature itself, lowercase, where it can differ from
@@ -72,7 +72,10 @@ const weaponMastery =
       );
     });
 
-/** The 2014 Draconic Bloodline's dragon, beside the subclass's other picks. */
+/**
+ * The 2014 Draconic Bloodline's dragon, beside the subclass's other picks: asked
+ * by the Dragon Ancestor's row in the data, read here by its Elemental Affinity.
+ */
 const dragonAncestorId = (origin: EffectOrigin) => `${origin.type}:${origin.uid}:ancestor`;
 
 /**
@@ -194,22 +197,9 @@ export const CURATED: Record<string, CuratedFn> = {
   // or, held already, a pick of another in their place (4c): Royal Envoy, Arcane
   // Archer Lore, the artificer subclasses' tools, the Reanimator's Skill Set and
   // the Warrior of Mystic Brews' Bonus Proficiencies.
-  // The 2014 Dragon Ancestor: a dragon whose damage type later features use,
-  // and Draconic. Its doubled proficiency with dragons stays in the card.
-  'dragon ancestor|draconic bloodline': (col, origin) => {
-    col.add({ kind: 'language', name: 'Draconic', origin });
-    col.choice(
-      {
-        id: dragonAncestorId(origin),
-        origin,
-        kind: 'generic',
-        label: 'Dragon Ancestor',
-        count: 1,
-        options: dragonOptions(DRAGONS),
-      },
-      () => {},
-    );
-  },
+  // The 2014 Dragon Ancestor (a dragon, `ancestor`, and Draconic) and the 2024
+  // Elemental Affinity (a type of five, resisted) are picks of a named option in
+  // the data too (4d). Its doubled proficiency with dragons stays in the card.
   // The 2014 Elemental Affinity, by the Dragon Ancestor's type: a sorcery point
   // (its spend link) for an hour's resistance, and a Charisma rider on spells.
   'elemental affinity|draconic bloodline': (col, origin) => {
@@ -227,25 +217,6 @@ export const CURATED: Record<string, CuratedFn> = {
         : {}),
       origin,
     });
-  },
-  // The 2024 Elemental Affinity: a type of the five, resisted for good.
-  'elemental affinity|draconic sorcery': (col, origin) => {
-    col.choice(
-      {
-        id: `${origin.type}:${origin.uid}:affinity`,
-        origin,
-        kind: 'generic',
-        label: 'Elemental Affinity',
-        count: 1,
-        options: ['acid', 'cold', 'fire', 'lightning', 'poison'].map((t) => ({
-          id: t,
-          label: `${t[0]?.toUpperCase() ?? ''}${t.slice(1)}`,
-        })),
-      },
-      (selected) => {
-        for (const damageType of selected) col.add({ kind: 'resist', damageType, origin });
-      },
-    );
   },
 
   // --- Racial traits (keyed `trait:<traitName>`) ---------------------------
