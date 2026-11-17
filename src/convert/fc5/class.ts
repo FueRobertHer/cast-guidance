@@ -1177,7 +1177,8 @@ function optionsReasons(options: HostOptions): string[] {
     );
   }
   if (options.spellsKept.length > 0) {
-    reasons.push(`its options' tables of spells (${listed(options.spellsKept)}) are kept as text`);
+    const names = [...new Set(options.spellsKept)];
+    reasons.push(`its options' tables of spells (${listed(names)}) are kept as text`);
   }
   return reasons;
 }

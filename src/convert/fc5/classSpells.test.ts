@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { readFeatureSpells } from './classSpells';
 import type { SpellIndex } from './spellGrants';
-import type { Entry } from './text';
+import { type Entry, readText } from './text';
 
 /** The dash Fight Club writes between a level and its spells. */
 const DASH = String.fromCharCode(0x2014);
@@ -235,6 +235,81 @@ describe('readFeatureSpells', () => {
       `3rd ${DASH} faerie fire, mage hand`,
     ]);
     expect(got.blocks).toEqual([{ known: { 3: ['mage hand#c', 'faerie fire'] } }]);
+  });
+
+  it('keeps as text a choice missing a table, so no branch of it always applies', () => {
+    const got = read(3, [
+      'You always have the spells listed prepared.',
+      table('Druid Level', [['3', 'blur']], 'Arid Land'),
+      table('Druid Level', [['3', 'fog cloud or sleet storm']], 'Polar Land'),
+    ]);
+    expect(got).toEqual({ unread: true });
+  });
+
+  it("keeps as text a second feature's choice, which would join the first as one pick", () => {
+    const lands = (level: number, a: string, b: string) => ({
+      level,
+      entries: [
+        'You have the spells listed prepared.',
+        table('Druid Level', [[String(level), a]], `${a} Land`),
+        table('Druid Level', [[String(level), b]], `${b} Land`),
+      ],
+    });
+    const got = readFeatureSpells([lands(3, 'blur', 'bane'), lands(6, 'haste', 'slow')], {
+      tables: true,
+    });
+    expect(got).toEqual({
+      blocks: [
+        { name: 'blur Land', prepared: { 3: ['blur'] } },
+        { name: 'bane Land', prepared: { 3: ['bane'] } },
+      ],
+      unread: true,
+    });
+  });
+
+  it('reads no spell from words that only look like a name', () => {
+    for (const text of [
+      'You gain the ability to cast the light cantrip.',
+      'You always have the domain spells prepared.',
+      'Even when you have no spells prepared, you can cast it.',
+      'You always have both spells prepared.',
+      'You can cast it without a slot if you have the hex spell prepared.',
+      'As long as you have the hex spell prepared, you can cast it.',
+    ]) {
+      expect(read(1, [text], false), text).toEqual({ unread: false });
+    }
+  });
+
+  it("passes over a caster's own table of slots", () => {
+    const got = read(3, [
+      'You gain the ability to cast spells.',
+      {
+        type: 'table',
+        colLabels: ['Warlock Level', 'Spell Slots', 'Slot Level'],
+        rows: [['3rd', '2', '2nd']],
+      },
+    ]);
+    expect(got).toEqual({ unread: false });
+  });
+
+  it('reads a cantrip row the text reader took for a lead-in', () => {
+    const { entries } = readText([
+      `The following spells are added to the warlock spell list for you.\nCantrip: light\n1st ${DASH} bless`,
+    ]);
+    expect(read(1, entries).blocks).toEqual([{ expanded: { s0: ['light'], s1: ['bless'] } }]);
+    // A lead-in of prose stays prose, and its sentence is read.
+    const prose = readText([
+      `Cantrips: You learn the light cantrip.\nYou gain oath spells.\n3rd ${DASH} bless`,
+    ]).entries;
+    expect(read(3, prose)).toEqual({
+      blocks: [{ known: { 3: ['light#c'] }, prepared: { 3: ['bless'] } }],
+      unread: false,
+    });
+  });
+
+  it('reads a table after long prose', () => {
+    const got = read(1, [`You gain oath spells. ${'Lore. '.repeat(1500)}`, `3rd ${DASH} bless`]);
+    expect(got.blocks).toEqual([{ prepared: { 3: ['bless'] } }]);
   });
 
   it('reads a cell of a long run of spaces in linear time', () => {

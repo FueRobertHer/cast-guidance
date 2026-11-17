@@ -57,6 +57,9 @@ const LINE = new RegExp(
 /** A table of spells by level is headed by a level: `Cleric Level`, `Level`, `Spell Level`. */
 const LEVEL_HEAD = /^(?:[a-z' ]{1,30} )?levels?$/i;
 const SPELL_HEAD = /\bspells?\b/i;
+const SLOT_HEAD = /\bslots?\b/i;
+/** A lead-in that is a table's cantrip row. */
+const CANTRIP_ROW = /^cantrips?$/i;
 
 /** The words, or a table's caption, that say its spells are always prepared: `Mental Domain Spells`. */
 const PREPARED =
@@ -71,9 +74,11 @@ const LEARNED = /\byou (?:(?:also|thereafter) )?(?:learn|know|gain)\b[^.]{0,80}?
 const NOT_FIRST = new Set([
   'a',
   'additional',
+  'all',
   'an',
   'any',
   'bonus',
+  'both',
   'certain',
   'chosen',
   'each',
@@ -83,6 +88,8 @@ const NOT_FIRST = new Set([
   'its',
   'listed',
   'new',
+  // `even when you have no spells prepared`.
+  'no',
   'one',
   'other',
   'same',
@@ -102,6 +109,8 @@ const NOT_FIRST = new Set([
 /** Words no spell's name holds: a line of prose, not a name (`3rd: you gain proficiency`). */
 const NOT_IN = new Set([
   'can',
+  // `you gain the ability to cast the light cantrip`.
+  'cast',
   'cantrip',
   'cantrips',
   'feature',
@@ -112,6 +121,9 @@ const NOT_IN = new Set([
   'you',
   'your',
 ]);
+
+/** A subclass's word alone, not a spell: `you always have the domain spells prepared`. */
+const GROUP_WORDS = new Set(['circle', 'domain', 'oath', 'patron']);
 
 /**
  * `You always have the Hunter's Mark spell prepared`, `you therefore always
@@ -125,6 +137,8 @@ const LEARNS_CANTRIP =
   /\byou (?:(?:also|thereafter|therefore|now|then) )?(?:learn|know|gain) the ([a-z][a-z' /,-]{0,80}?) (cantrips?)\b/g;
 /** A sentence about having a spell, not one giving it: `If you have the hex spell prepared`. */
 const CONDITION = /^(?:if|when|whenever|unless|while|once)\b/;
+/** The same said just before the words: `you can cast it if you have the hex spell prepared`. */
+const CONDITION_BEFORE = /\b(?:if|when|whenever|unless|while|once|as long as|so long as) ?$/;
 
 /** `{@spell Hex|FCBook}` as its text, and typographic quotes as plain ones. */
 function untag(text: string): string {
@@ -154,6 +168,7 @@ function spellName(raw: string): string | undefined {
   if (name === '' || name.length > 60 || !/^\p{L}[\p{L}' /-]*\p{L}$/u.test(name)) return undefined;
   const words = name.split(' ');
   if (words.length > MAX_WORDS || NOT_FIRST.has(words[0] ?? '')) return undefined;
+  if (words.length === 1 && GROUP_WORDS.has(name)) return undefined;
   return words.some((w) => NOT_IN.has(w)) ? undefined : name;
 }
 
@@ -182,9 +197,7 @@ function readEntries(entries: readonly Entry[]): {
   let run: SpellTable | undefined;
   let lastLine = '';
   const walk = (e: unknown): void => {
-    if (size > MAX_TEXT) return;
     if (typeof e === 'string') {
-      size += e.length;
       const line = e.trim();
       const m = LINE.exec(line);
       if (m !== null) {
@@ -198,7 +211,12 @@ function readEntries(entries: readonly Entry[]): {
       }
       run = undefined;
       lastLine = line;
-      if (line !== '') words.push(untag(line).toLowerCase());
+      // Prose past the first few thousand characters says nothing more of
+      // the tables; lines and tables after it are still read.
+      if (line !== '' && size <= MAX_TEXT) {
+        size += line.length;
+        words.push(untag(line).toLowerCase());
+      }
       return;
     }
     if (Array.isArray(e)) {
@@ -206,15 +224,31 @@ function readEntries(entries: readonly Entry[]): {
       return;
     }
     if (e === null || typeof e !== 'object') return;
-    run = undefined;
     const o = e as Record<string, unknown>;
+    // `Cantrip: light`, which the text reader takes for a lead-in; not
+    // `Cantrips. You learn two cantrips`, which is prose.
+    const lead = typeof o.name === 'string' ? o.name.trim() : '';
+    const inner = Array.isArray(o.entries) ? o.entries : [];
+    const cell = inner.length === 1 && typeof inner[0] === 'string' ? inner[0] : undefined;
+    if (
+      o.type === 'entries' &&
+      CANTRIP_ROW.test(lead) &&
+      cell !== undefined &&
+      cell.length <= 300 &&
+      cell.split(',').every((part) => spellName(part) !== undefined)
+    ) {
+      walk(`${lead}: ${cell}`);
+      return;
+    }
+    run = undefined;
     if (o.type === 'table') {
       const labels = Array.isArray(o.colLabels) ? o.colLabels.map(String) : [];
       const rows = (Array.isArray(o.rows) ? o.rows : []).filter(Array.isArray) as unknown[][];
       const head = labels[0] ?? '';
-      const spellCols = labels.slice(1).filter((l) => SPELL_HEAD.test(l)).length;
-      const named = rows.some((r) => r.slice(1).some((c) => !COUNT_CELL.test(String(c))));
-      if (LEVEL_HEAD.test(head) && spellCols > 0 && named) {
+      // Columns of spells, not a caster's counts (`Spell Slots`, `Spells Known` of numbers).
+      const spellCol = labels.map((l, i) => i > 0 && SPELL_HEAD.test(l) && !SLOT_HEAD.test(l));
+      const named = rows.some((r) => r.some((c, i) => spellCol[i] && !COUNT_CELL.test(String(c))));
+      if (LEVEL_HEAD.test(head) && named) {
         if (labels.length > 2) odd += 1;
         else {
           const caption = typeof o.caption === 'string' ? o.caption.trim() : '';
@@ -354,7 +388,8 @@ export function readFeatureSpells(
     const feature = String(f.level);
     for (const s of sentencesOf(read.words)) {
       for (const m of s.matchAll(ALWAYS_PREPARED)) {
-        if (m[1] === undefined && CONDITION.test(s)) continue;
+        const before = s.slice(Math.max(0, m.index - 20), m.index);
+        if (m[1] === undefined && (CONDITION.test(s) || CONDITION_BEFORE.test(before))) continue;
         for (const n of namesIn(m[2] ?? '', m[3] === 'spells'))
           add((common.prepared ??= {}), feature, n);
       }
@@ -376,13 +411,22 @@ export function readFeatureSpells(
       table: t,
       spells: readTable(t, section, opts.index),
     }));
-    if (readOnes.some((r) => r.spells === undefined)) unread = true;
+    const failed = readOnes.some((r) => r.spells === undefined);
+    if (failed) unread = true;
+    const named = new Set(read.tables.map((t) => t.caption?.toLowerCase()));
+    // Two or more tables, each captioned: a choice among them. One the
+    // engine can offer only whole and only once (a second would join the
+    // first as one pick), so a choice missing a table, or after another, is
+    // left as text.
+    const choice =
+      read.tables.length > 1 && !named.has(undefined) && named.size === read.tables.length;
+    if (choice && (failed || branches.length > 0)) {
+      unread = true;
+      continue;
+    }
     const got = readOnes.flatMap(({ table, spells }) =>
       spells === undefined ? [] : [{ table, spells }],
     );
-    const named = new Set(got.map((r) => r.table.caption?.toLowerCase()));
-    // Two or more tables, each captioned: a choice among them.
-    const choice = got.length > 1 && !named.has(undefined) && named.size === got.length;
     for (const { table, spells } of got) {
       if (choice) {
         branches.push({ name: table.caption ?? '', [section]: spells });

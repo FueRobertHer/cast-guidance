@@ -338,7 +338,7 @@ export function convertOptions(choices: readonly OptionChoice[], host: OptionHos
         index: host.ctx.spells,
       });
       if (spells.blocks !== undefined) entity.additionalSpells = spells.blocks;
-      if (spells.unread) spellsKept.push(named.name);
+      if (spells.unread) spellsKept.push(String(entity.name));
       parts.push({
         kind: 'optionalfeature',
         entity,
