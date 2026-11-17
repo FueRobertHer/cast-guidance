@@ -203,9 +203,8 @@ Improvement and a feature named `Additional ... Spells` (Tasha's
 give nothing, and it stays text). None are marked when as many of the
 class's names as not would be (the class's book, read from its first
 feature where its description names none, being the other one). A homebrew
-class that borrows
-an official feature keeps it. A fixed feature whose name ends in the name of
-a subclass the class offers (one its choices pick and name, as above:
+class that borrows an official feature keeps it. A fixed feature whose name
+ends in the name of a subclass the class offers (one its choices pick and name, as above:
 `Channel Divinity: Fury of the Tides (Oath of the Open Sea)`, where the file
 left `optional="YES"` off) goes to that subclass, at each level it is given,
 not to every member of the class; one the file also lists as the subclass's
