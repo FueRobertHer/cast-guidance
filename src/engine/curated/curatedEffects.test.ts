@@ -1216,7 +1216,8 @@ describe('always-on riders', () => {
     const picked = col();
     picked.doc.choices['class:agonizing blast|xphb:cantrip'] = ['Chill Touch|XPHB'];
     expect(emit('agonizing blast|xphb', 'agonizing blast|xphb', picked)).toEqual([
-      { kind: 'spellDamageBonus', amount: 'abilityMod:cha', spells: ['chill touch'] },
+      // The stored formula, as the 2014 row's: Charisma's modifier on the sheet.
+      { kind: 'spellDamageBonus', amount: 'mod.cha', spells: ['chill touch'] },
     ]);
     expect(picked.pending).toEqual([]);
   });

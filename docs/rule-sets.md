@@ -12,7 +12,7 @@ which holds what were the spend links, `SPEND_LINKS` and `SLOT_LINKS`
 `src/rules/`, one a part. (Source of truth: `readRuleSet` and
 `mechanicsOf` in `src/engine/effects/mechanics.ts`, `src/data5e/builtInRules.ts`.)
 
-212 rows have moved so far (`src/rules/cast-guidance/curated.json`). Four came
+214 rows have moved so far (`src/rules/cast-guidance/curated.json`). Four came
 first, one for each kind of call site, to prove the routes: Stunning Strike (a
 class feature), Lucky (PHB, a feat), Disarming Attack (PHB, an optional
 feature) and Warforged's Integrated Protection (a species trait). The other 111
@@ -78,8 +78,12 @@ Brews' Bonus Proficiencies (Performance, or a skill from the giving class's
 list). Two more ask a named option or a damage type (rule pack port 4d): the
 2014 Dragon Ancestor, a dragon (`ancestor`, which the 2014 Elemental Affinity
 reads) and Draconic, and the 2024 Elemental Affinity, a type of five resisted.
-212 rows in all. The 8 keys left in `CURATED` are picks still to move (phase 4) and engine
-calls.
+Two more are spell picks (4e): the 2024 Agonizing Blast, Charisma on the damage
+of a Warlock cantrip, given once over the picks (`givesAll`, `{picks}`), and
+Signature Spells, two level 3 Wizard spells, each with a pool of one use a short
+rest named from the spell (`{pick.slug}`, `{pick.title}`). 214 rows in all. The 6
+keys left in `CURATED` move later in phase 4: the five Weapon Mastery picks (4f)
+and the 2014 Elemental Affinity, which reads the Dragon Ancestor's pick (4h).
 
 72 `standing` rows have moved (`src/rules/cast-guidance/standing.json`): every
 `STANDING` row the format held before phase 4, the defenses, senses and speeds a
