@@ -594,11 +594,13 @@ describe("convertClass another book's optional features", () => {
   it('reads nothing of a variant into the class', () => {
     const { entity } = converted(`<name>Rogue</name><hd>8</hd>
       ${level(1, `${feature('Sneak Attack', phb('You strike.'))}${feature("Thieves' Cant", phb('You speak.'))}${feature('Weapon Mastery', tce('You use the mastery properties of three kinds of weapons.'))}`)}
+      ${level(2, feature('Cunning Action', phb('You act.')))}
       ${level(3, feature('Expertise', tce('Choose two skills.\n\tAt 10th level, you can choose another two skill proficiencies to gain this benefit.')))}`);
     expect(entity.classFeatures).toEqual([
       `Sneak Attack|Rogue|${CLASS}|1`,
       `Thieves' Cant|Rogue|${CLASS}|1`,
       `Weapon Mastery|Rogue|${CLASS}|1|${TCE}`,
+      `Cunning Action|Rogue|${CLASS}|2`,
       `Expertise|Rogue|${CLASS}|3|${TCE}`,
     ]);
     // Its Weapon Mastery count is not the class's.
