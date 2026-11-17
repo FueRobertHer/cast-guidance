@@ -28,11 +28,18 @@ const sub = (uid: string, label = 'Feature'): EffectOrigin => ({ label, uid, typ
 function emit(
   key: string,
   origin: EffectOrigin,
-  opts: { from?: string; level?: number; choices?: Record<string, string[]> } = {},
+  opts: {
+    from?: string;
+    level?: number;
+    choices?: Record<string, string[]>;
+    /** What the build holds so far, collected before the row. */
+    before?: (col: Collector) => void;
+  } = {},
 ) {
   const doc = newCharacterDoc('c', 'H', 't');
   doc.choices = { ...opts.choices };
   const col = new Collector(doc, empty);
+  opts.before?.(col);
   const level = opts.level ?? 20;
   if (emitStandingEffects(col, key, origin, opts.from, level)) return col;
   const keys = printingKeys([key], opts.from ?? '', origin.uid);
@@ -297,20 +304,21 @@ describe('darkvision that grows on darkvision already had', () => {
 });
 
 describe('a save proficiency, or a pick when it is had already', () => {
-  const withSave = (has: boolean, stored?: string) => {
-    const doc = newCharacterDoc('c', 'H', 't');
-    const origin = sub('gloom stalker|xge', 'Iron Mind');
-    if (stored !== undefined) doc.choices[`subclass:gloom stalker|xge:save:iron mind`] = [stored];
-    const col = new Collector(doc, empty);
-    if (has)
-      col.add({
-        kind: 'saveProf',
-        ability: 'wis',
-        origin: { label: 'Class', uid: 'c', type: 'class' },
-      });
-    emitStandingEffects(col, 'iron mind|gloom stalker', origin, undefined, 7);
-    return col;
-  };
+  const withSave = (has: boolean, stored?: string) =>
+    emit('iron mind|gloom stalker', sub('gloom stalker|xge', 'Iron Mind'), {
+      level: 7,
+      ...(stored !== undefined
+        ? { choices: { 'subclass:gloom stalker|xge:save:iron mind': [stored] } }
+        : {}),
+      before: (col) => {
+        if (has)
+          col.add({
+            kind: 'saveProf',
+            ability: 'wis',
+            origin: { label: 'Class', uid: 'c', type: 'class' },
+          });
+      },
+    });
 
   it('gives Wisdom saves to a character without them', () => {
     const col = withSave(false);
