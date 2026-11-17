@@ -218,8 +218,10 @@ official book is a variant too, named as 5etools names it: the closing
 "replaces the X feature" clause leaves the name and opens the text, as
 5etools has it, so the sheet offers it in place of the feature it replaces. A
 later `Deft Explorer Feature` is `Deft Explorer Improvement`, at each level,
-taken with Deft Explorer; any other repeat is given once, at its first level.
-A choice that names a list (`Label: Name`) or a group stays as it was, and so
+taken with Deft Explorer, and Deft Explorer's own text drops each benefit an
+improvement holds (`Roving (6th Level)`, with the lines after it), as 5etools'
+holds Canny alone; any other repeat is given once, at its first level. A
+choice that names a list (`Label: Name`) or a group stays as it was, and so
 does a 2024 class's, whose other books' choices are a subclass's the file left
 unnamed (Arcana Unleashed's `Curving Shot`). On a printing of an official
 subclass, a feature of another official book that names a feature it

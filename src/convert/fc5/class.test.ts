@@ -710,6 +710,26 @@ describe("convertClass another book's optional features", () => {
       expect(result.reasons).toEqual([]);
     });
 
+    it("drops from a variant's text the benefits its improvements hold, and the lines after each", () => {
+      const deft = 'Deft Explorer (replaces the Natural Explorer feature)';
+      const later = 'Deft Explorer Feature (replaces the Natural Explorer feature)';
+      const result = converted(
+        ranger(`${level(1, feature(deft, tce('You explore.\nCanny (1st Level): Double a skill.\nYou learn two languages.\nRoving (6th Level): You move faster.\nTireless (10th Level): As an action, you gain 1d8 temporary hit points.\nYou shed exhaustion.\nUnending (20th Level): You stay.'), opt))}
+        ${level(6, feature(later, tce('Roving: You move faster.'), opt))}
+        ${level(10, feature(later, tce('Tireless: As an action, you gain 1d8 temporary hit points.'), opt))}
+        ${level(20, feature(later, phb('Unending: You stay.'), opt))}`),
+      );
+      // The class's own book's 20th level is no improvement, so its benefit stays.
+      const first = result.parts?.find((p) => p.entity.name === 'Deft Explorer');
+      expect(first?.entity.entries).toEqual([
+        'This feature replaces the Natural Explorer feature.',
+        'You explore.',
+        { type: 'entries', name: 'Canny (1st Level)', entries: ['Double a skill.'] },
+        'You learn two languages.',
+        { type: 'entries', name: 'Unending (20th Level)', entries: ['You stay.'] },
+      ]);
+    });
+
     it('gives a repeat once, at its first level, whatever its text', () => {
       const result = converted(
         ranger(`${level(4, feature('Martial Versatility', tce('You may replace a style, following.'), opt))}

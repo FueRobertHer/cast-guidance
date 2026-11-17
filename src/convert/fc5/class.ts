@@ -870,6 +870,29 @@ function opensWithReplaces(entries: readonly Entry[]): boolean {
   return rest.startsWith(REPLACES) && rest.includes(' feature');
 }
 
+/**
+ * A variant's text without the benefits its improvements hold: each block
+ * whose name ends in one of their levels (`Roving (6th Level)` of Fight Club's
+ * Deft Explorer, which also gives it at the 6th level), with the lines after
+ * it up to the next block. 5etools' Deft Explorer holds Canny alone.
+ */
+function withoutLaterBenefits(entries: readonly Entry[], levels: ReadonlySet<number>): Entry[] {
+  const kept: Entry[] = [];
+  let dropping = false;
+  for (const e of entries) {
+    if (typeof e !== 'string' && typeof e.name === 'string') {
+      const name = e.name.toLowerCase();
+      const open = name.lastIndexOf('(');
+      dropping =
+        open >= 0 &&
+        name.endsWith(' level)') &&
+        levels.has(Number.parseInt(name.slice(open + 1), 10));
+    }
+    if (!dropping) kept.push(e);
+  }
+  return kept;
+}
+
 /** A subclass the file offers: the feature that picks it and the ones that end in its name. */
 interface Pick {
   label: string;
@@ -1741,6 +1764,7 @@ function optionalVariants(
   if (!trusted || classBook === undefined) return { parts: [], others: [...choices] };
   const parts: Fc5Part[] = [];
   const others: Choice[] = [];
+  const taken: { c: Choice; entries: Entry[]; where: Placement }[] = [];
   for (const c of choices) {
     const lower = c.name.toLowerCase();
     const text = readText(childTexts(c.el, 'text'));
@@ -1757,6 +1781,18 @@ function optionalVariants(
       others.push(c);
       continue;
     }
+    taken.push({ c, entries: text.entries, where });
+  }
+  // The levels each `X Feature` comes at, whose benefits X's own text drops.
+  const later = new Map<string, Set<number>>();
+  for (const { c } of taken) {
+    const lower = c.name.toLowerCase();
+    if (!lower.endsWith(' feature')) continue;
+    const base = lower.slice(0, -' feature'.length);
+    later.set(base, (later.get(base) ?? new Set<number>()).add(c.level));
+  }
+  for (const { c, entries: text, where } of taken) {
+    const lower = c.name.toLowerCase();
     const base = lower.endsWith(' feature') ? c.name.slice(0, -' feature'.length) : undefined;
     const improves = base !== undefined && given.names.has(base.toLowerCase());
     const name = improves ? `${base} Improvement` : c.name;
@@ -1764,10 +1800,10 @@ function optionalVariants(
     if ((!improves && given.names.has(key)) || given.seen.has(`${key}|${c.level}`)) continue;
     given.seen.add(`${key}|${c.level}`);
     given.names.add(key);
+    const levels = improves ? undefined : later.get(key);
+    const body = levels === undefined ? text : withoutLaterBenefits(text, levels);
     const entries =
-      improves || c.replaces === undefined
-        ? text.entries
-        : [replacesLine(c.replaces), ...text.entries];
+      improves || c.replaces === undefined ? body : [replacesLine(c.replaces), ...body];
     parts.push({
       kind: 'classFeature',
       entity: featureEntity(name, of, c.level, { entries }, where, true),
