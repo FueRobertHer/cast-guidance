@@ -240,6 +240,24 @@ too, and its subclass casters' when the class casts nothing itself, as the
 Fighter's is the Eldritch Knight's), one that counts an option list is read as
 above, and any other is reported.
 
+A feature of a homebrew class or subclass (one no official book or free rules
+text prints, as a homebrew college of the Player's Handbook's Bard) has its
+`<modifier>` tags as effects in its `castGuidance` (the subclass's pick is its
+first feature): `speed` a walking speed bonus (out of heavy armor, or of armor
+and shields, when its text says "not wearing" them), `ac`, `spell attack`,
+`spell dc`, weapon, melee and ranged `attacks`, `initiative` (`+%0` as the
+proficiency bonus), and an `ability score` (past 20 as far as its text's
+"maximum" says, a hit point maximum aside). Each kind it gives is dropped from
+what the feature inherits, so its text's own reading (a "+1 bonus to
+initiative" in its words) does not count twice. Tags whose meaning is not
+plain are kept as text with a reason: skills and saves at `+%0` (which Fight
+Club writes for proficiency and for expertise alike), `hp`, passive scores, a
+score its text offers as a choice (the tag is Fight Club's pick), and a speed
+or AC whose text names armor no field holds. An official
+class's or subclass's features (the free rules text's too) are left alone,
+their curated rows or text giving what the tags would; class options are not
+read yet.
+
 The class's start notes (`Starting Barbarian`, `Multiclass Barbarian`,
 `Becoming a Barbarian as a Multiclass Character`) give 5etools
 `multiclassing`: the ability score minimum (`Strength 13 or Dexterity 13` as
@@ -308,7 +326,7 @@ it came from:
 {
   "_meta": {
     "sources": [{ "json": "FCSpells", "abbreviation": "FCSpells", "full": "spells (Fight Club 5e)" }],
-    "convertedFrom": { "format": "fc5-compendium", "converterVersion": 17, "fileName": "spells.xml" }
+    "convertedFrom": { "format": "fc5-compendium", "converterVersion": 18, "fileName": "spells.xml" }
   },
   "spell": [ /* … */ ]
 }

@@ -56,6 +56,7 @@ import {
   printingRef,
   type SubclassBinder,
 } from './context';
+import { applyFeatureModifiers } from './featureModifiers';
 import { spellsKept } from './spellGrants';
 import {
   abilityKey,
@@ -1202,6 +1203,11 @@ function listed(names: readonly string[]): string {
   return `${names.slice(0, 4).join(', ')}${more}`;
 }
 
+/** The reason for features' `<modifier>` tags whose meaning is not plain (`Name: tag`). */
+function modifiersKept(kept: readonly string[]): string {
+  return `its features' modifiers whose meaning is not plain (${listed(kept)}) are kept as text`;
+}
+
 /** A class's counters, by whose they are. */
 interface CounterOwners {
   /** The class's own. */
@@ -1460,12 +1466,17 @@ function convertSubclass(pick: Pick, from: SubclassFrom, bound: ClassBinding): F
   const parts: Fc5Part[] = [];
   const read: { name: string; entries: Entry[] }[] = [];
   const seen = new Set<string>();
-  /** Adds a feature; a variant is no part of the subclass as printed, so nothing reads it. */
+  const keptModifiers: string[] = [];
+  /**
+   * Adds a feature; a variant is no part of the subclass as printed, so nothing
+   * reads it. A homebrew subclass's feature takes its `<modifier>` tags (`el`).
+   */
   const add = (
     fname: string,
     level: number,
     text: { entries: Entry[]; sourceLine?: string },
     variant = false,
+    el?: XmlElement,
   ) => {
     const key = `${fname.toLowerCase()}|${level}`;
     if (seen.has(key)) return;
@@ -1485,13 +1496,21 @@ function convertSubclass(pick: Pick, from: SubclassFrom, bound: ClassBinding): F
     const citation = citationEntry(where);
     if (citation !== undefined) entries.push(citation);
     entity.entries = entries;
+    if (el !== undefined && !variant) {
+      for (const raw of applyFeatureModifiers(entity, el, plainText(text.entries))) {
+        keptModifiers.push(`${fname}: ${raw}`);
+      }
+    }
     parts.push({ kind: 'subclassFeature', entity, placement: where });
   };
-  add(name, pick.level, { entries: pickText.entries });
+  // A printing of an official subclass (the free rules text's too) has its
+  // tags from its own data: its curated rows, found by its name, give them.
+  const subPrinting = printingRef('subclass', sub, placement);
+  const pickEl = subPrinting === undefined ? pick.el : undefined;
+  add(name, pick.level, { entries: pickText.entries }, false, pickEl);
   // A printing of an official subclass: a feature another official book gives
   // in place of one of its own (Tasha's Primal Companion for the Beast
   // Master's Ranger's Companion) is a variant, as 5etools has it.
-  const subPrinting = printingRef('subclass', sub, placement);
   const subBook = subPrinting?.slice(subPrinting.lastIndexOf('|') + 1);
   const choices: Choice[] = [];
   const fixed: { name: string; level: number; entries: Entry[] }[] = [];
@@ -1516,8 +1535,9 @@ function convertSubclass(pick: Pick, from: SubclassFrom, bound: ClassBinding): F
       continue;
     }
     fixed.push({ name: refName(f.name), level: f.level, entries: text.entries });
-    add(refName(f.name), f.level, opened);
+    add(refName(f.name), f.level, opened, false, subPrinting === undefined ? f.el : undefined);
   }
+  if (keptModifiers.length > 0) reasons.push(modifiersKept(keptModifiers));
   parts.sort((a, b) => Number(a.entity.level) - Number(b.entity.level));
   // The spells its features give: a domain's, oath's or circle's table, a
   // patron's expanded list, a spell or cantrip one names.
@@ -1927,6 +1947,8 @@ export function convertClass(el: XmlElement, ctx: Fc5Context): Fc5Result {
   const features: Fc5Part[] = [];
   const read: { name: string; level: number; entries: Entry[] }[] = [];
   const seen = new Set<string>();
+  // Each feature's `<modifier>` tags kept as text, for the reason.
+  const keptOf = new Map<Fc5Part, string[]>();
   const choices: Choice[] = [];
   const startNotes: { name: string; entries: Entry[] }[] = [];
   const laterOnes: { level: number; text: string; where: Placement }[] = [];
@@ -1983,6 +2005,17 @@ export function convertClass(el: XmlElement, ctx: Fc5Context): Fc5Result {
       entity: featureEntity(fname, of, f.level, text, where),
       placement: where,
     };
+    // A printing of an official class (the free rules text's too) has its tags
+    // from its own data: its curated rows, found by its name, give them, and
+    // Fight Club spreads some across other features.
+    if (printing === undefined) {
+      const kept = applyFeatureModifiers(part.entity, f.el, plainText(text.entries));
+      if (kept.length > 0)
+        keptOf.set(
+          part,
+          kept.map((raw) => `${fname}: ${raw}`),
+        );
+    }
     features.push(part);
     elOf.set(part, f.el);
     for (const later of laterExpertise(fname, f.level, text.entries)) {
@@ -2034,6 +2067,9 @@ export function convertClass(el: XmlElement, ctx: Fc5Context): Fc5Result {
     keepOnly(features, (p) => !moved.has(p));
     keepOnly(read, (f) => !keys.has(`${f.name}|${f.level}`));
   }
+  // A feature moved to its subclass says so there.
+  const keptModifiers = features.flatMap((p) => keptOf.get(p) ?? []);
+  if (keptModifiers.length > 0) reasons.push(modifiersKept(keptModifiers));
   // Another book's variants the file stores as choices; the class reads nothing
   // of them. Only a 2014 class's: Tasha's gives no 2024 class any, and there a
   // choice of another book is a subclass's the file left unnamed (Arcana
