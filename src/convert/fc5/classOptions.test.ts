@@ -75,6 +75,25 @@ describe('convertOptions', () => {
     expect(result.rest).toEqual([]);
   });
 
+  it("counts a later feature named for one more option, as Fight Club's 2014 sorcerer has", () => {
+    const result = convertOptions(
+      [choice('Metamagic: Careful Spell', 3), choice('Metamagic: Distant Spell', 3)],
+      host({
+        fixed: [
+          { name: 'Metamagic', level: 3, entries: ['You gain two of the following options.'] },
+          {
+            name: 'Metamagic Option (3rd)',
+            level: 10,
+            entries: ['At 10th level, you learn an additional metamagic option.'],
+          },
+          { name: 'Metamagic Option (4th)', level: 17, entries: ['You learn one more.'] },
+          { name: 'Metamagic Optional Rules (a long aside)', level: 18, entries: ['Learn two.'] },
+        ],
+      }),
+    );
+    expect(result.progression[0]?.progression).toEqual({ '3': 2, '10': 3, '17': 4 });
+  });
+
   it('takes the count from a Known counter over the prose, and marks the counter read', () => {
     const result = convertOptions(
       styles(1, 'Archery', 'Defense'),

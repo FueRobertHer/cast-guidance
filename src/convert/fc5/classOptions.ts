@@ -128,11 +128,11 @@ function picksIn(entries: readonly Entry[]): number {
   return n === null ? 1 : (countWord(n[1] ?? '') ?? 1);
 }
 
-/** A feature named for a label, or a numbered repeat of one (`Metamagic (2nd)`). */
+/** A feature named for a label, or a numbered repeat of one (`Metamagic (2nd)`, `Metamagic Option (3rd)`). */
 function isLabelFeature(name: string, label: string): boolean {
   const n = name.toLowerCase();
   const l = label.toLowerCase();
-  return n === l || (n.startsWith(`${l} (`) && n.endsWith(')') && n.length - l.length <= 12);
+  return n === l || (n.startsWith(l) && /^(?: options?)? \([^()]{1,9}\)$/.test(n.slice(l.length)));
 }
 
 const KNOWN = /^(.{1,60}?) (?:known|options known)$/i;
