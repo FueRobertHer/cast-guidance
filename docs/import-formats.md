@@ -197,13 +197,16 @@ fixed feature whose `Source:` line names another official book is marked
 the optional class features rule, and then as a pick. It is listed once, at
 its first level (Fight Club repeats Martial Versatility at each), and the
 class reads nothing from it: no spells, options, counts or Expertise. A name
-the class's own book cites too stays the class's, and none are marked when as
-many of the class's names as not would be (the class's book, read from its
-first feature where its description names none, being the other one). A
-homebrew class that borrows an official feature keeps it. A fixed feature
-whose name ends in one of the class's own subclasses (`Channel Divinity: Fury
-of the Tides (Oath of the Open Sea)`, where the file left `optional="YES"`
-off) goes to that subclass, not to every member of the class.
+the class's own book cites too stays the class's, as does an Ability Score
+Improvement, and none are marked when as many of the class's names as not
+would be (the class's book, read from its first feature where its
+description names none, being the other one). A homebrew class that borrows
+an official feature keeps it. A fixed feature whose name ends in the name of
+a subclass the class offers (one its choices pick and name, as above:
+`Channel Divinity: Fury of the Tides (Oath of the Open Sea)`, where the file
+left `optional="YES"` off) goes to that subclass, at each level it is given,
+not to every member of the class; one the file also lists as the subclass's
+choice is kept once.
 
 A class's `<counter>`s become its resources (a subclass's, those that name
 it), keyed as the prose scan keys the feature of that name, so the use count

@@ -623,6 +623,43 @@ describe("convertClass another book's optional features", () => {
       ${level(2, feature('Blood Rites', own('Rites.')))}`);
     expect(marked(result).every(([, , v]) => v === false)).toBe(true);
   });
+
+  it('never marks an Ability Score Improvement, whatever book it cites', () => {
+    const asi = (n: number) =>
+      level(n, feature('Ability Score Improvement', tce('Raise.')), ' scoreImprovement="YES"');
+    const { entity, parts } = converted(`<name>Fighter</name><hd>10</hd>
+      ${level(1, `${feature('Second Wind', phb('You heal.'))}${feature('Fighting Style', phb('A style.'))}`)}
+      ${level(2, feature('Action Surge', phb('You surge.')))}
+      ${asi(4)}${asi(6)}${asi(8)}`);
+    expect(entity.classFeatures).toEqual([
+      `Second Wind|Fighter|${CLASS}|1`,
+      `Fighting Style|Fighter|${CLASS}|1`,
+      `Action Surge|Fighter|${CLASS}|2`,
+      `Ability Score Improvement|Fighter|${CLASS}|4|${TCE}`,
+      `Ability Score Improvement|Fighter|${CLASS}|6|${TCE}`,
+      `Ability Score Improvement|Fighter|${CLASS}|8|${TCE}`,
+    ]);
+    expect(parts?.some((p) => p.entity.isClassFeatureVariant === true)).toBe(false);
+  });
+
+  it("marks no subclass's feature, which goes to its subclass at each level", () => {
+    const opt = ' optional="YES"';
+    const result = converted(`<name>Paladin</name><hd>10</hd>
+      ${level(1, `${feature('Divine Sense', phb('You sense.'))}${feature('Lay on Hands', phb('You heal.'))}`)}
+      ${level(2, feature('Divine Smite', phb('You smite.')))}
+      ${level(3, `${feature('Sacred Oath', phb('You swear.'))}${feature('Harness Divine Power', tce('You regain a slot.'))}${feature('Sacred Oath: Oath of Glory', tce('Glory.'), opt)}${feature('Oath Spells (Oath of Glory)', tce('Spells.'), opt)}${feature('Peerless Athlete (Oath of Glory)', tce('You run.'))}`)}
+      ${level(7, feature('Aura of Alacrity (Oath of Glory)', tce('Faster.')))}
+      ${level(18, feature('Aura of Alacrity (Oath of Glory)', tce('Farther.')))}`);
+    expect(marked(result).filter(([, , v]) => v)).toEqual([['Harness Divine Power', 3, true]]);
+    const glory = result.subclasses?.({ className: 'Paladin', classSource: CLASS })[0];
+    expect(glory?.parts?.map((p) => [p.entity.name, p.entity.level])).toEqual([
+      ['Oath of Glory', 3],
+      ['Oath Spells', 3],
+      ['Peerless Athlete', 3],
+      ['Aura of Alacrity', 7],
+      ['Aura of Alacrity', 18],
+    ]);
+  });
 });
 
 describe('subclasses', () => {
@@ -749,6 +786,25 @@ describe('subclasses', () => {
       ['FCAshAlmanac', ['Ash Guard', 'Ash Ward']],
       ['FCCinderCodex', ['Ash Guard', 'Ash Lore', 'Ash Wall']],
     ]);
+  });
+
+  it('keeps a feature of a label once where the file lists it both ways, as a feature', () => {
+    for (const both of [
+      `${feature('Bonus Cantrip: Light (Ash Guard)', 'Light.', opt)}${feature('Bonus Cantrip: Light (Ash Guard)', 'Light.')}`,
+      `${feature('Bonus Cantrip: Light (Ash Guard)', 'Light.')}${feature('Bonus Cantrip: Light (Ash Guard)', 'Light.', opt)}`,
+    ]) {
+      const { subs } = subclassesOf(
+        knight(
+          level(
+            3,
+            `${feature('Ember Path')}${feature('Ember Path: Ash Guard', 'Guards.', opt)}${both}`,
+          ),
+        ),
+      );
+      expect(subs.map((s) => [s.parts?.map((p) => p.entity.name), s.reasons])).toEqual([
+        [['Ash Guard', 'Bonus Cantrip: Light'], []],
+      ]);
+    }
   });
 
   it('keeps a label as options when only one of its choices shares a name with a subclass', () => {

@@ -1014,6 +1014,18 @@ function toSubclasses(
     if (p.book !== undefined && !same.byBook.has(p.book)) same.byBook.set(p.book, p);
     byKey.set(key, same);
   }
+  // What each pick has, by name and level: one the file also lists as an
+  // option of the subclass is not added again (two of a label at a level
+  // would read as a list of options).
+  const has = new Map<Pick, Set<string>>();
+  const hasOf = (pick: Pick) => {
+    let keys = has.get(pick);
+    if (keys === undefined) {
+      keys = new Set(pick.features.map((f) => `${f.name.toLowerCase()}|${f.level}`));
+      has.set(pick, keys);
+    }
+    return keys;
+  };
   const moved = new Set<Fc5Part>();
   for (const part of features) {
     const el = elOf.get(part);
@@ -1022,7 +1034,13 @@ function toSubclasses(
     if (el === undefined || g === undefined || same === undefined) continue;
     const book = same.byBook.size > 1 ? bookOf(el) : undefined;
     const pick = (book === undefined ? undefined : same.byBook.get(book)) ?? same.first;
-    pick.features.push({ name: g.base, level: Number(part.entity.level), el });
+    const level = Number(part.entity.level);
+    const keys = hasOf(pick);
+    const key = `${g.base.toLowerCase()}|${level}`;
+    if (!keys.has(key)) {
+      keys.add(key);
+      pick.features.push({ name: g.base, level, el });
+    }
     moved.add(part);
   }
   return moved;
@@ -1580,9 +1598,11 @@ function elsewhereReason(names: readonly string[]): string {
  * as the class's own, and only their `Source:` line tells them apart, so each
  * becomes a class feature variant, as 5etools has it, which a character takes
  * only under the optional class features rule. A name the class's own book
- * cites too is the class's. None are when as many of the class's names as
- * not would be: the class's book is then the other one (it is read from the
- * first feature where the description names none).
+ * cites too is the class's, and so is an Ability Score Improvement; one that
+ * ends in a subclass's name (`Aura of Alacrity (Oath of Glory)`) is that
+ * subclass's, and neither. None are when as many of the class's names as not
+ * would be: the class's book is then the other one (it is read from the first
+ * feature where the description names none).
  */
 function otherBookNames(
   features: readonly { el: XmlElement; optional: boolean }[],
@@ -1592,11 +1612,21 @@ function otherBookNames(
 ): ReadonlySet<string> {
   const marked = new Set<string>();
   if (classBook === undefined) return marked;
+  // The names the choices could pick a subclass by (`Sacred Oath: Oath of Glory`).
+  const pickNames = new Set<string>();
+  for (const f of features) {
+    if (!f.optional) continue;
+    const written = PICK.exec(featureName(childText(f.el, 'name') ?? ''))?.[2];
+    if (written !== undefined) pickNames.add(pickKey(written.trim()));
+  }
   const own = new Set<string>();
   for (const f of features) {
     if (f.optional) continue;
-    const name = featureName(childText(f.el, 'name') ?? '').toLowerCase();
-    if (name === '') continue;
+    const raw = featureName(childText(f.el, 'name') ?? '');
+    const name = raw.toLowerCase();
+    if (name === '' || name === ASI_NAME.toLowerCase()) continue;
+    const group = lastGroup(raw);
+    if (group !== undefined && pickNames.has(pickKey(group.inner))) continue;
     const line = readText(childTexts(f.el, 'text')).sourceLine;
     const book = line === undefined ? undefined : ctx.place(line, edition).officialBook;
     (book !== undefined && book !== classBook ? marked : own).add(name);
@@ -1735,13 +1765,15 @@ export function convertClass(el: XmlElement, ctx: Fc5Context): Fc5Result {
     }
     const key = `${fname.toLowerCase()}|${f.level}`;
     if (seen.has(key)) continue;
+    // A later variant of a name is left out before it holds its level's place.
+    const variant = variants.has(fname.toLowerCase());
+    if (variant && variantsGiven.has(fname.toLowerCase())) continue;
     seen.add(key);
     const text = readText(childTexts(f.el, 'text'));
     const where =
       text.sourceLine === undefined ? placement : ctx.place(text.sourceLine, identity.edition);
     // A variant is no part of the class as printed, so the class reads nothing of it.
-    if (variants.has(fname.toLowerCase())) {
-      if (variantsGiven.has(fname.toLowerCase())) continue;
+    if (variant) {
       variantsGiven.add(fname.toLowerCase());
       const part: Fc5Part = {
         kind: 'classFeature',
