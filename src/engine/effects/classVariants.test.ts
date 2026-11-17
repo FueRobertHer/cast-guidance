@@ -172,6 +172,47 @@ describe('optional class features, rule on', () => {
     expect(names(sheet)).not.toContain('Deft Explorer Improvement');
   });
 
+  it('gives Deft Explorer’s Roving from Ranger 6: 5 more feet of walking speed, and climbing and swimming at it', () => {
+    const ranger = (levels: number, choices: CharacterDoc['choices'] = {}) =>
+      derive(classVariantDoc(RANGER, levels, { rule: true, choices }));
+    const deft = (levels: number) => ranger(levels, { [DEFT]: ['deft explorer'] });
+    const speeds = (sheet: DerivedSheet) => [
+      sheet.speedWalk.value,
+      ...sheet.otherSpeeds.map((s) => `${s.mode} ${s.value}`),
+    ];
+    expect(speeds(deft(5))).toEqual([30]);
+    const six = deft(6);
+    expect(names(six)).toContain('Deft Explorer Improvement');
+    expect(speeds(six)).toEqual([35, 'climb 35', 'swim 35']);
+    expect(six.speedWalk.parts).toContainEqual({ label: 'Deft Explorer Improvement', amount: 5 });
+    // The level 10 improvement (Tireless) has the same name and adds no speed.
+    const ten = deft(10);
+    expect(names(ten).filter((n) => n === 'Deft Explorer Improvement')).toHaveLength(2);
+    expect(speeds(ten)).toEqual([35, 'climb 35', 'swim 35']);
+    // Unlike the 2024 Roving, heavy armor keeps it.
+    const armored = classVariantDoc(RANGER, 6, {
+      rule: true,
+      choices: { [DEFT]: ['deft explorer'] },
+    });
+    armored.equipment = [
+      {
+        id: 'a',
+        ref: { name: 'Chain Mail', source: 'PHB' },
+        qty: 1,
+        equipped: true,
+        attuned: false,
+      },
+    ];
+    const worn = derive(armored);
+    expect(worn.heavyArmor).toBe('Chain Mail');
+    expect(worn.speedWalk.parts).toContainEqual({ label: 'Deft Explorer Improvement', amount: 5 });
+    // Natural Explorer kept, or the rule off: no Roving.
+    expect(speeds(ranger(10, { [DEFT]: ['natural explorer'] }))).toEqual([30]);
+    expect(
+      speeds(derive(classVariantDoc(RANGER, 10, { choices: { [DEFT]: ['deft explorer'] } }))),
+    ).toEqual([30]);
+  });
+
   it('settles the pick on the printed feature, changing nothing on the sheet', () => {
     const open = derive(classVariantDoc(RANGER, 1, { rule: true }));
     const printed = derive(
