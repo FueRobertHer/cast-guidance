@@ -204,6 +204,16 @@ describe('standing rows', () => {
     expect(of(col, 'resist').map((e) => [e.damageType, e.note])).toEqual([
       ['fire', 'not while incapacitated'],
     ]);
+    const open = emit('aura of elemental shielding|oath of the noble genies', sub(uid), {
+      level: 7,
+    });
+    expect(open.pending.map((p) => [p.id, p.label, p.options.map((o) => o.id)])).toEqual([
+      [
+        `subclass:${uid}:elemental-shielding`,
+        'Aura of Elemental Shielding',
+        ['acid', 'cold', 'fire', 'lightning', 'thunder'],
+      ],
+    ]);
   });
 
   it('names the skills as the data does', () => {
@@ -302,6 +312,18 @@ describe('standing rows', () => {
     };
     expect(options('fiendish resilience|the fiend', 'the fiend|phb')).toEqual([true]);
     expect(options('fiendish resilience|fiend patron', 'fiend patron|xphb')).toEqual([false]);
+    // The 2014 printing's resistance does not reach magical or silver weapons.
+    const resisted = (key: string, uid: string) =>
+      of(
+        emit(key, sub(uid), { choices: { [`subclass:${uid}:fiendish-resilience`]: ['fire'] } }),
+        'resist',
+      ).map((e) => [e.damageType, e.note]);
+    expect(resisted('fiendish resilience|the fiend', 'the fiend|phb')).toEqual([
+      ['fire', 'not from magical or silver weapons'],
+    ]);
+    expect(resisted('fiendish resilience|fiend patron', 'fiend patron|xphb')).toEqual([
+      ['fire', undefined],
+    ]);
   });
 });
 
