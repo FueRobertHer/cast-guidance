@@ -52,6 +52,8 @@ const LISTS: readonly TextList[] = [
 const COUNT = 'an|one|two|three|four|five|six|another|\\d';
 /** `two additional`, `an additional`, `two more`, `another`: more of them at a later level. */
 const MORE = '\\b(?:(an|one|two|three|four|\\d) (?:additional|more)|(another))';
+/** A word between that count and the noun, but not `uses of your Arcane Shot`, which counts uses. */
+const FILLER = "(?!(?:of|uses?|times?)\\b)[\\w'-]{1,20}";
 const NUMBERS: Readonly<Record<string, number>> = {
   an: 1,
   one: 1,
@@ -99,9 +101,9 @@ function patterns(list: TextList): Patterns {
       `\\b(?:learn|gain|know)s? (the [^.,;]{1,40}? and )?(${COUNT})(?: other| of the following)? ${n}\\b`,
       'i',
     ),
-    more: new RegExp(`${MORE}(?: [\\w'-]{1,20}){0,3}? (?:${n}|options?)\\b`, 'i'),
+    more: new RegExp(`${MORE}(?: ${FILLER}){0,3}? (?:${n}|options?)\\b`, 'i'),
     later: new RegExp(
-      `${MORE}(?: (?:[\\w'-]{1,20} ){0,3}?(?:${n}|options?|ones?))?\\b(?: of your choice)?(?: when you(?: reach certain levels)?)? (?:at|reach|in this class:) (?:[A-Z][\\w']{1,20} )?(?:levels? )?(\\d{1,2}(?:st|nd|rd|th)?(?:(?:,? and |, )\\d{1,2}(?:st|nd|rd|th)?){0,9})`,
+      `${MORE}( (?:${FILLER} ){0,3}?(?:${n}|options?|ones?))?\\b(?: of your choice)?(?: when you(?: reach certain levels)?)? (?:at|reach|in this class:) (?:[A-Z][\\w']{1,20} )?(?:levels? )?(\\d{1,2}(?:st|nd|rd|th)?(?:(?:,? and |, )\\d{1,2}(?:st|nd|rd|th)?){0,9})`,
       'gi',
     ),
     column: new RegExp(n, 'i'),
@@ -143,9 +145,13 @@ function fromTable(
             value: Number.parseInt(String(cells[at] ?? ''), 10),
           };
         })
-        .filter((r) => Number.isInteger(r.level) && r.level >= 1 && r.level <= 20)
+        // A row of no number (the `-` some tables print before the first) is no row.
+        .filter(
+          (r) =>
+            Number.isInteger(r.level) && r.level >= 1 && r.level <= 20 && Number.isInteger(r.value),
+        )
         .sort((a, b) => a.level - b.level);
-      if (rows.length < 2 || rows.some((r) => !Number.isInteger(r.value))) continue;
+      if (rows.length < 2) continue;
       for (const r of rows) {
         if (r.value !== last && r.value > 0) out[String(r.level)] = r.value;
         last = r.value;
@@ -204,11 +210,17 @@ function fromProse(
   }
   if (added.length === 0) {
     // Else the first feature's own words for later levels.
-    re.later.lastIndex = 0;
+    // One that names nothing (`two more at Sorcerer level 17`) counts only
+    // straight after one that does, never alone: `one more at 15th level`
+    // could be a superiority die.
+    let end: number | undefined;
     for (const m of first.text.matchAll(re.later)) {
       const n = count(m[1] ?? m[2] ?? '');
       if (n === undefined) continue;
-      for (const level of (m[3] ?? '').match(/\d{1,2}/g) ?? []) {
+      const follows = end !== undefined && /^,? (?:and )?$/.test(first.text.slice(end, m.index));
+      if (m[3] === undefined && !follows) continue;
+      end = m.index + m[0].length;
+      for (const level of (m[4] ?? '').match(/\d{1,2}/g) ?? []) {
         const at = Number(level);
         if (at > first.feature.level && at <= 20) added.push({ level: at, n });
       }
@@ -224,17 +236,25 @@ function fromProse(
 
 /**
  * The official lists this host's features count but its progression does not
- * offer yet, each as a progression entry. `offered` holds the feature types
- * already offered, lowercased.
+ * offer yet, each as a progression entry. A list the progression already
+ * offers, by its feature type or under a name of its own (`Rune`, from the
+ * file's `Rune: Fire Rune` options), is not offered twice.
  */
 export function textLists(
   className: string,
   features: readonly ListFeature[],
-  offered: ReadonlySet<string>,
+  progression: readonly Record<string, unknown>[],
 ): Record<string, unknown>[] {
+  const offered = new Set<string>();
+  for (const p of progression) {
+    for (const t of Array.isArray(p.featureType) ? p.featureType : []) {
+      if (typeof t === 'string') offered.add(t.toLowerCase());
+    }
+  }
   const out: Record<string, unknown>[] = [];
   for (const { list, re } of READY) {
     if (!list.className.test(className) || offered.has(list.featureType.toLowerCase())) continue;
+    if (progression.some((p) => re.noun.test(String(p.name ?? '')))) continue;
     const named = features.filter((f) => re.noun.test(f.name) || re.noun.test(words(f.entries)));
     if (named.length === 0) continue;
     const counts = fromTable(named, re.column) ?? fromProse(named, re);

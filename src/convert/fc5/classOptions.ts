@@ -353,13 +353,7 @@ export function convertOptions(choices: readonly OptionChoice[], host: OptionHos
   }
   linkStoredLists(host, mine, labels, known, knownFor, progression, countersRead);
   // An official list its features count but no option or counter offers: the 2024 Sorcerer's Metamagic.
-  const offered = new Set<string>();
-  for (const p of progression) {
-    for (const t of Array.isArray(p.featureType) ? p.featureType : []) {
-      if (typeof t === 'string') offered.add(t.toLowerCase());
-    }
-  }
-  progression.push(...textLists(host.className, host.fixed, offered));
+  progression.push(...textLists(host.className, host.fixed, progression));
   return {
     progression,
     parts,

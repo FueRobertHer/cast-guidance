@@ -9,8 +9,11 @@ const at = (level: number, name: string, ...lines: string[]): ListFeature => ({
   entries: readText(lines).entries,
 });
 
-const lists = (className: string, features: ListFeature[], offered: string[] = []) =>
-  textLists(className, features, new Set(offered));
+const lists = (
+  className: string,
+  features: ListFeature[],
+  progression: Record<string, unknown>[] = [],
+) => textLists(className, features, progression);
 
 describe('textLists', () => {
   it("reads the 2014 warlock's table, not its prose or its Additional Invocation features as well", () => {
@@ -191,8 +194,69 @@ describe('textLists', () => {
   it("offers a list only to its class, and only when the class's progression does not", () => {
     const maneuvers = [at(3, 'Ember Tactics', 'You learn three maneuvers of your choice.')];
     expect(lists('Ember Knight', maneuvers)).toEqual([]);
-    expect(lists('Fighter', maneuvers, ['mv:b'])).toEqual([]);
+    expect(lists('Fighter', maneuvers, [{ name: 'Maneuvers', featureType: ['MV:B'] }])).toEqual([]);
     expect(lists('Fighter', maneuvers)).toHaveLength(1);
+  });
+
+  it('offers no list the progression already offers under a name of its own', () => {
+    const runes = [at(3, 'Rune Carver (Rune Knight)', 'You learn two runes of your choice.')];
+    expect(
+      lists('Fighter', runes, [{ name: 'Rune', featureType: ['Fighter (Rune Knight): Rune'] }]),
+    ).toEqual([]);
+    const invocations = [at(2, 'Eldritch Invocations', 'You gain two eldritch invocations.')];
+    expect(
+      lists('Warlock', invocations, [
+        { name: 'Invocations', featureType: ['Warlock: Invocations'] },
+      ]),
+    ).toEqual([]);
+    expect(
+      lists('Warlock', invocations, [
+        { name: 'Pact Boon', featureType: ['Warlock: Pact Boon', 'PB'] },
+      ]),
+    ).toHaveLength(1);
+  });
+
+  it('counts no more of something that names nothing, unless it follows a count that does', () => {
+    const features = [
+      at(
+        3,
+        'Combat Superiority (Battle Master)',
+        'Maneuvers: You learn three maneuvers of your choice.',
+        'You learn two additional maneuvers of your choice at 7th, 10th, and 15th level.',
+        'Superiority Dice: You have four superiority dice. You gain another superiority die at 7th level and one more at 15th level.',
+      ),
+    ];
+    expect(lists('Fighter', features)).toEqual([
+      { name: 'Maneuvers', featureType: ['MV:B'], progression: { 3: 3, 7: 5, 10: 7, 15: 9 } },
+    ]);
+  });
+
+  it('reads a table past a row of no number', () => {
+    const features = [
+      at(
+        2,
+        'Eldritch Invocations',
+        'You gain two eldritch invocations of your choice.',
+        '',
+        'Level | Invocations Known',
+        '1 | -',
+        '2 | 2',
+        '5 | 3',
+      ),
+    ];
+    expect(lists('Warlock', features)).toEqual([
+      { name: 'Eldritch Invocations', featureType: ['EI'], progression: { 2: 2, 5: 3 } },
+    ]);
+  });
+
+  it("reads no pick from a later feature's added uses", () => {
+    const features = [
+      at(3, 'Arcane Shot', 'You learn two Arcane Shot options of your choice.'),
+      at(7, 'Improved Arcane Shot', 'You gain two additional uses of your Arcane Shot.'),
+    ];
+    expect(lists('Fighter', features)).toEqual([
+      { name: 'Arcane Shots', featureType: ['AS'], progression: { 3: 2 } },
+    ]);
   });
 
   it('gives nothing for a list it names without a count', () => {
