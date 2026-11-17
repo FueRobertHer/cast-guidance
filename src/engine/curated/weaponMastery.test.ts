@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { makeTestContext } from '../../../tests-fixtures/testWorld';
+import { BUILT_IN_RULE_SETS, makeTestContext } from '../../../tests-fixtures/testWorld';
+import { RULE_SET_TYPE } from '../castGuidance';
 import { deriveSheet } from '../derive';
 import { Collector } from '../effects/base';
+import { mechanicsOf, printingKeys } from '../effects/mechanics';
 import { weaponKindName, weaponMasteryOptions } from '../effects/readers';
 import {
   type CharacterDoc,
@@ -54,8 +56,28 @@ const ctx: EngineContext = {
         String(e.name).toLowerCase() === name.toLowerCase() &&
         (source === undefined || String(e.source).toLowerCase() === source.toLowerCase()),
     ),
-  byType: (type) => (type === 'baseitem' ? weapons : type === 'class' ? classes : []),
+  byType: (type) =>
+    type === 'baseitem'
+      ? weapons
+      : type === 'class'
+        ? classes
+        : type === RULE_SET_TYPE
+          ? BUILT_IN_RULE_SETS
+          : [],
 };
+
+/** The feature's row, wherever it lives while rows move out of code: `CURATED`, else the shipped rule set's. */
+function emitRow(col: Collector, key: string, origin: EffectOrigin): void {
+  if (emitCuratedEffects(col, key, origin)) return;
+  mechanicsOf(col, {
+    entry: {},
+    label: origin.label,
+    origin,
+    target: key,
+    ruleKeys: printingKeys([key], '', origin.uid),
+    inherited: () => {},
+  });
+}
 
 function masteryAt(
   className: string,
@@ -78,7 +100,7 @@ function masteryAt(
   const col = new Collector(doc, ctx);
   for (const name of profs) col.add({ kind: 'weaponProf', name, origin });
   if (opts.filter !== undefined) col.add({ kind: 'weaponProfFilter', filter: opts.filter, origin });
-  emitCuratedEffects(col, `weapon mastery|${className.toLowerCase()}`, origin);
+  emitRow(col, `weapon mastery|${className.toLowerCase()}`, origin);
   // A proficiency the build gains after the feature (a feat at a later level).
   if (opts.later !== undefined) col.add({ kind: 'weaponProf', name: opts.later, origin });
   for (const ask of col.afterAll) ask();
@@ -102,6 +124,25 @@ describe('the 2024 Weapon Mastery', () => {
       'Quickblade',
       'Warblade',
     ]);
+  });
+
+  it('offers a Fighter every kind, melee or ranged, proficient or not', () => {
+    expect(prompt(masteryAt('Fighter', 1))?.options.map((o) => o.id)).toEqual([
+      'Knife',
+      'Quickblade',
+      'Warblade',
+      'Warbow',
+    ]);
+  });
+
+  it('offers a Paladin, a Ranger and a Rogue two of the kinds each is proficient with', () => {
+    // No Weapon Mastery column for any of them (the test world has no Paladin or Ranger).
+    expect(
+      ['Paladin', 'Ranger', 'Rogue'].map((c) => {
+        const p = prompt(masteryAt(c, 1, undefined, ['simple weapons', 'warbow']));
+        return `${c} ${p?.count} ${p?.options.map((o) => o.id).join(', ')}`;
+      }),
+    ).toEqual(['Paladin 2 Knife, Warbow', 'Ranger 2 Knife, Warbow', 'Rogue 2 Knife, Warbow']);
   });
 
   it('offers a Rogue the kinds it is proficient with', () => {
