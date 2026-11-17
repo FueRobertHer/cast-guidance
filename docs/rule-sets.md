@@ -12,7 +12,7 @@ which holds what were the spend links, `SPEND_LINKS` and `SLOT_LINKS`
 `src/rules/`, one a part. (Source of truth: `readRuleSet` and
 `mechanicsOf` in `src/engine/effects/mechanics.ts`, `src/data5e/builtInRules.ts`.)
 
-198 rows have moved so far (`src/rules/cast-guidance/curated.json`). Four came
+210 rows have moved so far (`src/rules/cast-guidance/curated.json`). Four came
 first, one for each kind of call site, to prove the routes: Stunning Strike (a
 class feature), Lucky (PHB, a feat), Disarming Attack (PHB, an optional
 feature) and Warforged's Integrated Protection (a species trait). The other 111

@@ -1,6 +1,6 @@
 /**
- * Standing defenses, senses, speeds and save proficiencies that subclass features
- * and optional features state only in prose. Unlike a curated row (`CURATED`), a
+ * Standing defenses, senses and speeds that subclass features and optional
+ * features state only in prose. Unlike a curated row (`CURATED`), a
  * row here adds to what the prose scan reads from the same feature: the scan keeps
  * its actions and pools (Wind Soul's flight for others, Guarded Mind's die), and
  * this adds the resistance or speed the scan does not read. Keys as in `CURATED`:
