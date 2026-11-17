@@ -99,9 +99,16 @@ describe('readFeatureModifiers', () => {
     expect(
       read(speed, "Your speed increases while you aren't wearing heavy armor.").effects,
     ).toEqual([{ kind: 'speedBonus', amount: 10, unless: 'heavyArmor' }]);
-    expect(read(speed, 'Unless You Are Wearing Heavy Armor.').effects).toEqual([
-      { kind: 'speedBonus', amount: 10, unless: 'heavyArmor' },
-    ]);
+    for (const prose of [
+      'Unless You Are Wearing Heavy Armor.',
+      "Unless you're wearing heavy armor.",
+      'Unless you’re wearing heavy armor.',
+      'While you aren’t wearing heavy armor.',
+    ]) {
+      expect(read(speed, prose).effects).toEqual([
+        { kind: 'speedBonus', amount: 10, unless: 'heavyArmor' },
+      ]);
+    }
     expect(
       read(speed, 'While you are not wearing armor or wielding a shield, your speed increases.')
         .effects,
@@ -115,6 +122,7 @@ describe('readFeatureModifiers', () => {
     // Words that name heavy armor without holding the bonus back by it, or
     // that hold it back by heavy armor or a shield, which no field holds.
     for (const prose of [
+      "While you aren't wearing heavy armor, or while you aren't wearing armor or wielding a shield, it increases.",
       'Your speed increases, and you ignore the speed reduction for wearing heavy armor.',
       'Your speed is not reduced by wearing heavy armor.',
       'While you are wearing heavy armor, your speed increases by 10 feet.',
@@ -145,6 +153,7 @@ describe('readFeatureModifiers', () => {
     expect(max('Your Strength score increases by 4.')).toBeUndefined();
     expect(max('It increases, to a maximum of 18.')).toBeUndefined();
     expect(max('No maximum. Later, 24 of them.')).toBeUndefined();
+    expect(max('No maximum stops it. Later, to a maximum of 24.')).toBe(24);
     expect(
       max(
         'Your hit point maximum increases by 2. Your Strength increases by 4, to a maximum of 22.',

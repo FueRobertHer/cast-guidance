@@ -51,8 +51,7 @@ function parse(raw: string): { what: string; amount: Amount } | undefined {
  */
 function statedMaximum(prose: string): number | undefined {
   for (let at = prose.indexOf('maximum'); at >= 0; at = prose.indexOf('maximum', at + 1)) {
-    const before = prose.slice(Math.max(0, at - 11), at);
-    if (before.endsWith('hit point ') || before.endsWith('hit points ')) continue;
+    if (prose.slice(Math.max(0, at - 10), at) === 'hit point ') continue;
     let digits = '';
     for (let i = at + 'maximum'.length; i < prose.length && i < at + 60; i++) {
       const c = prose[i] ?? '';
@@ -98,14 +97,7 @@ const ABILITY_NAMES = [
  * tag is Fight Club's pick of it, as on a feat.
  */
 function choosesAbility(prose: string): boolean {
-  for (const name of ABILITY_NAMES) {
-    const word = `or ${name}`;
-    for (let at = prose.indexOf(word); at >= 0; at = prose.indexOf(word, at + 1)) {
-      const c = at === 0 ? ' ' : (prose[at - 1] ?? ' ');
-      if (c === ' ' || c === ',') return true;
-    }
-  }
-  return false;
+  return ABILITY_NAMES.some((name) => prose.includes(` or ${name}`));
 }
 
 /** What a feature's words say that its tags' meaning turns on, read once for all its tags. */
