@@ -858,7 +858,7 @@ const REPLACES = 'replaces the ';
 
 /** The line a variant opens with, as 5etools has it, from the clause its name held. */
 function replacesLine(replaces: string): string {
-  return `This feature ${replaces.endsWith('.') ? replaces.slice(0, -1) : replaces}.`;
+  return `This feature ${replaces}.`;
 }
 
 /** Whether a feature's text opens by naming a feature it replaces, as the engine reads a variant's. */

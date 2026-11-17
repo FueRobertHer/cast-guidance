@@ -774,11 +774,19 @@ describe("convertClass another book's optional features", () => {
         tce("Replaces the Ranger's Companion feature.\nA primal beast."),
         opt,
       );
+      // As 5etools words it.
+      const worded = feature(
+        'Primal Companion (Beast Master)',
+        tce("This feature replaces the Ranger's Companion feature.\nA primal beast."),
+        opt,
+      );
       const plain = feature('Beast Lore (Beast Master)', tce('You know beasts.'), opt);
-      for (const body of [
-        `${pick}${companion}${primal}${plain}`,
-        `${primal}${plain}${companion}${pick}`,
-        `${pick}${stated}${companion}${plain}`,
+      const lifted = "This feature replaces the Ranger's Companion feature.";
+      for (const [body, first] of [
+        [`${pick}${companion}${primal}${plain}`, lifted],
+        [`${primal}${plain}${companion}${pick}`, lifted],
+        [`${pick}${stated}${companion}${plain}`, "Replaces the Ranger's Companion feature."],
+        [`${pick}${companion}${worded}${plain}`, lifted],
       ]) {
         const result = converted(ranger(level(3, body)));
         const master = result.subclasses?.({ className: 'Ranger', classSource: CLASS })[0];
@@ -793,13 +801,7 @@ describe("convertClass another book's optional features", () => {
         ).toEqual([
           ['Beast Lore', false, 'You know beasts.'],
           ['Beast Master', false, 'Beasts.'],
-          [
-            'Primal Companion',
-            true,
-            body.includes(', replaces')
-              ? "This feature replaces the Ranger's Companion feature."
-              : "Replaces the Ranger's Companion feature.",
-          ],
+          ['Primal Companion', true, first],
           ["Ranger's Companion", false, 'A beast.'],
         ]);
         expect(result.reasons).toEqual([]);
