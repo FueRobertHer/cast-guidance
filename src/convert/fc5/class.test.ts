@@ -675,6 +675,137 @@ describe("convertClass another book's optional features", () => {
       ['Aura of Alacrity', 18],
     ]);
   });
+
+  describe('stored as choices', () => {
+    const opt = ' optional="YES"';
+    const ranger = (inner: string) => `<name>Ranger</name><hd>10</hd>
+      ${level(1, `${feature('Favored Enemy', phb('You hunt.'))}${feature('Natural Explorer', phb('You explore.'))}`)}
+      ${level(2, feature('Fighting Style', phb('A style.')))}
+      ${level(3, feature('Primeval Awareness', phb('You sense.')))}
+      ${level(10, feature('Hide in Plain Sight', phb('You hide.')))}
+      ${inner}`;
+    const lines = (result: Converted) =>
+      (result.parts ?? [])
+        .filter((p) => p.entity.isClassFeatureVariant === true)
+        .map((p) => [p.entity.name, p.entity.level, (p.entity.entries as unknown[])[0]]);
+
+    it('makes each a variant, named and opened as 5etools has it, with its improvements', () => {
+      const result = converted(
+        ranger(`${level(1, `${feature('Favored Foe (replaces the Favored Enemy feature and works with the Foe Slayer feature)', tce('You mark a foe.'), opt)}${feature('Deft Explorer (replaces the Natural Explorer feature)', tce('Canny.'), opt)}`)}
+        ${level(6, feature('Deft Explorer Feature (replaces the Natural Explorer feature)', tce('Roving.'), opt))}
+        ${level(10, `${feature("Nature's Veil (replaces the Hide in Plain Sight feature)", tce('You vanish.'), opt)}${feature('Deft Explorer Feature (replaces the Natural Explorer feature)', tce('Tireless.'), opt)}`)}`),
+      );
+      expect(lines(result)).toEqual([
+        [
+          'Favored Foe',
+          1,
+          'This feature replaces the Favored Enemy feature and works with the Foe Slayer feature.',
+        ],
+        ['Deft Explorer', 1, 'This feature replaces the Natural Explorer feature.'],
+        ['Deft Explorer Improvement', 6, 'Roving.'],
+        ["Nature's Veil", 10, 'This feature replaces the Hide in Plain Sight feature.'],
+        ['Deft Explorer Improvement', 10, 'Tireless.'],
+      ]);
+      expect(result.entity.classFeatures).toContain(`Favored Foe|Ranger|${CLASS}|1|${TCE}`);
+      expect(result.reasons).toEqual([]);
+    });
+
+    it('gives a repeat once, at its first level, whatever its text', () => {
+      const result = converted(
+        ranger(`${level(4, feature('Martial Versatility', tce('You may replace a style, following.'), opt))}
+        ${level(8, feature('Martial Versatility', tce('You may replace a style, flowing.'), opt))}`),
+      );
+      expect(lines(result)).toEqual([
+        ['Martial Versatility', 4, 'You may replace a style, following.'],
+      ]);
+    });
+
+    it('gives one the class also lists as fixed once', () => {
+      const result = converted(
+        ranger(`${level(4, feature('Martial Versatility', tce('You may replace a style.')))}
+        ${level(8, feature('Martial Versatility', tce('You may replace a style.'), opt))}`),
+      );
+      expect(lines(result)).toEqual([['Martial Versatility', 4, 'You may replace a style.']]);
+    });
+
+    it('leaves a list, a group, its own book and a homebrew class as they were', () => {
+      const result = converted(
+        ranger(
+          `${level(1, `${feature('Primal Gift: Fang', tce('Bite.'), opt)}${feature('Bonus Cantrip (Drakewarden)', tce('A cantrip.'), opt)}${feature('Wild Step', phb('You step.'), opt)}`)}`,
+        ),
+      );
+      expect(lines(result)).toEqual([]);
+      expect(result.reasons.join(' ')).toContain('Primal Gift: Fang');
+      expect(result.reasons.join(' ')).toContain('Wild Step');
+      const homebrew = converted(`<name>Ember Knight</name><hd>10</hd>
+        ${level(1, `${feature('Ember Strike', 'You strike.')}${feature('Ember Ward', 'You ward.')}${feature('Favored Foe (replaces the Ember Strike feature)', tce('You mark a foe.'), opt)}`)}`);
+      expect(lines(homebrew)).toEqual([]);
+      expect(homebrew.reasons.join(' ')).toContain('Favored Foe');
+    });
+
+    it("leaves a 2024 class's choices of another book, a subclass's the file left unnamed", () => {
+      const xphb = (text: string) => `${text}\nSource: Player's Handbook (2024) p. 91`;
+      const au = (text: string) => `${text}\nSource: Arcana Unleashed p. 12`;
+      const result = converted(`<name>Fighter</name><hd>10</hd>
+        ${level(1, `${feature('Fighting Style', xphb('A style.'))}${feature('Second Wind', xphb('You heal.'))}${feature('Weapon Mastery', xphb('Masteries.'))}`)}
+        ${level(7, feature('Curving Shot', au('You redirect a shot.'), opt))}`);
+      expect(result.edition).toBe('2024');
+      expect(lines(result)).toEqual([]);
+      expect(result.reasons.join(' ')).toContain('Curving Shot');
+    });
+
+    it('marks none when the class’s book is not sure', () => {
+      const result = converted(`<name>Ranger</name><hd>10</hd>
+        ${level(1, `${feature('Deft Explorer', tce('Canny.'))}${feature('Favored Enemy', phb('You hunt.'))}${feature('Favored Foe (replaces the Favored Enemy feature)', tce('You mark a foe.'), opt)}`)}`);
+      expect(lines(result)).toEqual([]);
+    });
+
+    it("gives a printed subclass another book's feature in place of its own as a variant, in either file order", () => {
+      const pick = feature('Ranger Archetype: Beast Master', phb('Beasts.'), opt);
+      const companion = feature("Ranger's Companion (Beast Master)", phb('A beast.'), opt);
+      const primal = feature(
+        "Primal Companion (Beast Master, replaces the Ranger's Companion feature)",
+        tce('A primal beast.'),
+        opt,
+      );
+      // The 5e compendium's way: the clause opens the text.
+      const stated = feature(
+        'Primal Companion (Beast Master)',
+        tce("Replaces the Ranger's Companion feature.\nA primal beast."),
+        opt,
+      );
+      const plain = feature('Beast Lore (Beast Master)', tce('You know beasts.'), opt);
+      for (const body of [
+        `${pick}${companion}${primal}${plain}`,
+        `${primal}${plain}${companion}${pick}`,
+        `${pick}${stated}${companion}${plain}`,
+      ]) {
+        const result = converted(ranger(level(3, body)));
+        const master = result.subclasses?.({ className: 'Ranger', classSource: CLASS })[0];
+        expect(
+          master?.parts
+            ?.map((p) => [
+              p.entity.name,
+              p.entity.isClassFeatureVariant === true,
+              (p.entity.entries as unknown[])[0],
+            ])
+            .sort((a, b) => String(a[0]).localeCompare(String(b[0]))),
+        ).toEqual([
+          ['Beast Lore', false, 'You know beasts.'],
+          ['Beast Master', false, 'Beasts.'],
+          [
+            'Primal Companion',
+            true,
+            body.includes(', replaces')
+              ? "This feature replaces the Ranger's Companion feature."
+              : "Replaces the Ranger's Companion feature.",
+          ],
+          ["Ranger's Companion", false, 'A beast.'],
+        ]);
+        expect(result.reasons).toEqual([]);
+      }
+    });
+  });
 });
 
 describe('subclasses', () => {

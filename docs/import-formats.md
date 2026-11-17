@@ -206,10 +206,25 @@ feature where its description names none, being the other one). A homebrew
 class that borrows an official feature keeps it. A fixed feature whose name
 ends in the name of a subclass the class offers (one its choices pick and
 name, as above: `Channel Divinity: Fury of the Tides (Oath of the Open Sea)`,
-where the file
-left `optional="YES"` off) goes to that subclass, at each level it is given,
-not to every member of the class; one the file also lists as the subclass's
-choice is kept once.
+where the file left `optional="YES"` off) goes to that subclass, at each
+level it is given, not to every member of the class; one the file also lists
+as the subclass's choice is kept once.
+
+Other Tasha's optional features are choices (`optional="YES"`) that are no
+list's options: `Favored Foe (replaces the Favored Enemy feature)`, the 5e
+compendium's `Cantrip Versatility`. On a printing of an official 2014 class
+whose book is sure (as above), one whose `Source:` line names another
+official book is a variant too, named as 5etools names it: the closing
+"replaces the X feature" clause leaves the name and opens the text, as
+5etools has it, so the sheet offers it in place of the feature it replaces. A
+later `Deft Explorer Feature` is `Deft Explorer Improvement`, at each level,
+taken with Deft Explorer; any other repeat is given once, at its first level.
+A choice that names a list (`Label: Name`) or a group stays as it was, and so
+does a 2024 class's, whose other books' choices are a subclass's the file left
+unnamed (Arcana Unleashed's `Curving Shot`). On a printing of an official
+subclass, a feature of another official book that names a feature it
+replaces, in its name (`Primal Companion (Beast Master, replaces the Ranger's
+Companion feature)`) or its text's first line, is the subclass's variant.
 
 A class's `<counter>`s become its resources (a subclass's, those that name
 it), keyed as the prose scan keys the feature of that name, so the use count
@@ -291,7 +306,7 @@ it came from:
 {
   "_meta": {
     "sources": [{ "json": "FCSpells", "abbreviation": "FCSpells", "full": "spells (Fight Club 5e)" }],
-    "convertedFrom": { "format": "fc5-compendium", "converterVersion": 16, "fileName": "spells.xml" }
+    "convertedFrom": { "format": "fc5-compendium", "converterVersion": 17, "fileName": "spells.xml" }
   },
   "spell": [ /* … */ ]
 }

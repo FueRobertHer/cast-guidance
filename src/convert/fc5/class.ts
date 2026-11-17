@@ -834,6 +834,40 @@ interface Choice {
   el: XmlElement;
   /** The edition its name marks (`Ember Path: Ash Guard [5.5e]`), which the name drops. */
   edition?: RulesVersion;
+  /** What its name says it replaces (`replaces the Favored Enemy feature`), which the name drops. */
+  replaces?: string;
+}
+
+/**
+ * A name's closing "replaces the X feature" clause, which Fight Club writes in
+ * the name where 5etools opens the text with it: `Favored Foe (replaces the
+ * Favored Enemy feature)`, `Primal Companion (Beast Master, replaces the
+ * Ranger's Companion feature)`. The name without it, and the clause.
+ */
+function liftReplaces(name: string): { name: string; replaces?: string } {
+  const g = lastGroup(name);
+  if (g === undefined) return { name };
+  const lower = g.inner.toLowerCase();
+  if (lower.startsWith(REPLACES)) return { name: g.base, replaces: g.inner };
+  const at = lower.indexOf(`, ${REPLACES}`);
+  if (at <= 0) return { name };
+  return { name: `${g.base} (${g.inner.slice(0, at).trim()})`, replaces: g.inner.slice(at + 2) };
+}
+
+const REPLACES = 'replaces the ';
+
+/** The line a variant opens with, as 5etools has it, from the clause its name held. */
+function replacesLine(replaces: string): string {
+  return `This feature ${replaces.endsWith('.') ? replaces.slice(0, -1) : replaces}.`;
+}
+
+/** Whether a feature's text opens by naming a feature it replaces, as the engine reads a variant's. */
+function opensWithReplaces(entries: readonly Entry[]): boolean {
+  const first = entries.find((e): e is string => typeof e === 'string');
+  if (first === undefined) return false;
+  const lower = first.trimStart().toLowerCase();
+  const rest = lower.startsWith('this feature ') ? lower.slice('this feature '.length) : lower;
+  return rest.startsWith(REPLACES) && rest.includes(' feature');
 }
 
 /** A subclass the file offers: the feature that picks it and the ones that end in its name. */
@@ -972,7 +1006,14 @@ function splitChoices(
       (book === undefined || found === undefined ? undefined : byBook.get(found)?.get(book)) ??
       same?.[0];
     if (g === undefined || pick === undefined) others.push(c);
-    else pick.features.push({ name: g.base, level: c.level, el: c.el });
+    else {
+      pick.features.push({
+        name: g.base,
+        level: c.level,
+        el: c.el,
+        ...(c.replaces !== undefined && { replaces: c.replaces }),
+      });
+    }
   }
   // A pick of a name another pick shares, whose features all went to the
   // other (they cite its book, or none), is a repeat of it, not a subclass of
@@ -1386,13 +1427,19 @@ function convertSubclass(pick: Pick, from: SubclassFrom, bound: ClassBinding): F
   const parts: Fc5Part[] = [];
   const read: { name: string; entries: Entry[] }[] = [];
   const seen = new Set<string>();
-  const add = (fname: string, level: number, text: { entries: Entry[]; sourceLine?: string }) => {
+  /** Adds a feature; a variant (`replaces` its line) is no part of the subclass as printed, so nothing reads it. */
+  const add = (
+    fname: string,
+    level: number,
+    text: { entries: Entry[]; sourceLine?: string },
+    variant?: { replaces?: string },
+  ) => {
     const key = `${fname.toLowerCase()}|${level}`;
-    if (seen.has(key)) return;
+    if (seen.has(key)) return false;
     seen.add(key);
     const where =
       text.sourceLine === undefined ? placement : from.ctx.place(text.sourceLine, edition);
-    read.push({ name: fname, entries: text.entries });
+    if (variant === undefined) read.push({ name: fname, entries: text.entries });
     const entity: Record<string, unknown> = { name: fname };
     placeEntity(entity, where);
     entity.className = bound.className;
@@ -1400,13 +1447,23 @@ function convertSubclass(pick: Pick, from: SubclassFrom, bound: ClassBinding): F
     entity.subclassShortName = name;
     entity.subclassSource = subclassSource;
     entity.level = level;
-    const entries: Entry[] = [...text.entries];
+    if (variant !== undefined) entity.isClassFeatureVariant = true;
+    const entries: Entry[] =
+      variant?.replaces === undefined
+        ? [...text.entries]
+        : [replacesLine(variant.replaces), ...text.entries];
     const citation = citationEntry(where);
     if (citation !== undefined) entries.push(citation);
     entity.entries = entries;
     parts.push({ kind: 'subclassFeature', entity, placement: where });
+    return true;
   };
   add(name, pick.level, { entries: pickText.entries });
+  // A printing of an official subclass: a feature another official book gives
+  // in place of one of its own (Tasha's Primal Companion for the Beast
+  // Master's Ranger's Companion) is a variant, as 5etools has it.
+  const subPrinting = printingRef('subclass', sub, placement);
+  const subBook = subPrinting?.slice(subPrinting.lastIndexOf('|') + 1);
   const choices: Choice[] = [];
   const fixed: { name: string; level: number; entries: Entry[] }[] = [];
   const features = [...pick.features].sort((a, b) => a.level - b.level);
@@ -1416,6 +1473,18 @@ function convertSubclass(pick: Pick, from: SubclassFrom, bound: ClassBinding): F
       continue;
     }
     const text = readText(childTexts(f.el, 'text'));
+    const book =
+      subBook === undefined || text.sourceLine === undefined
+        ? undefined
+        : from.ctx.place(text.sourceLine, edition).officialBook;
+    if (
+      book !== undefined &&
+      book !== subBook &&
+      (f.replaces !== undefined || opensWithReplaces(text.entries))
+    ) {
+      add(refName(f.name), f.level, text, f.replaces === undefined ? {} : { replaces: f.replaces });
+      continue;
+    }
     fixed.push({ name: refName(f.name), level: f.level, entries: text.entries });
     add(refName(f.name), f.level, text);
   }
@@ -1453,7 +1522,7 @@ function convertSubclass(pick: Pick, from: SubclassFrom, bound: ClassBinding): F
   if (options.progression.length > 0) sub.optionalfeatureProgression = options.progression;
 
   // Its counters as pools, unless it prints an official subclass, whose own count.
-  const printing = printingRef('subclass', sub, placement) !== undefined;
+  const printing = subPrinting !== undefined;
   const byOption = optionCounters(counters, options, printing);
   const pools = poolsOf(byOption.own, printing);
   if (pools.castGuidance !== undefined) sub.castGuidance = pools.castGuidance;
@@ -1571,9 +1640,19 @@ export function convertClassAdditions(
 /** A feature as a choice, by the name the class lists it under, with the edition that name marks. */
 function choiceOf(el: XmlElement, level: number): Choice[] {
   const raw = childText(el, 'name') ?? '';
-  const name = featureName(raw);
+  const { name, replaces } = liftReplaces(featureName(raw));
   const edition = splitName(raw).edition;
-  return name === '' ? [] : [{ name, level, el, ...(edition !== undefined && { edition }) }];
+  return name === ''
+    ? []
+    : [
+        {
+          name,
+          level,
+          el,
+          ...(edition !== undefined && { edition }),
+          ...(replaces !== undefined && { replaces }),
+        },
+      ];
 }
 
 /** The book a feature's `Source:` line cites, as its homebrew source. */
@@ -1601,20 +1680,20 @@ function elsewhereReason(names: readonly string[]): string {
  * cites too is the class's, and so is an Ability Score Improvement. So is a
  * feature named `Additional ... Spells` (Tasha's `Additional <Class> Spells`):
  * nothing reads its spells, so as a variant it would be a pick that gives
- * nothing, and it stays text. One that
- * ends in a subclass's name (`Aura of Alacrity (Oath of Glory)`) is that
- * subclass's, and neither. None are when as many of the class's names as not
- * would be: the class's book is then the other one (it is read from the first
- * feature where the description names none).
+ * nothing, and it stays text. One that ends in a subclass's name (`Aura of
+ * Alacrity (Oath of Glory)`) is that subclass's, and neither. None are when as
+ * many of the class's names as not would be: the class's book is then the
+ * other one (it is read from the first feature where the description names
+ * none), and `trusted` is false.
  */
 function otherBookNames(
   features: readonly { el: XmlElement; optional: boolean }[],
   classBook: string | undefined,
   ctx: Fc5Context,
   edition: RulesVersion | undefined,
-): ReadonlySet<string> {
+): { names: ReadonlySet<string>; trusted: boolean } {
   const marked = new Set<string>();
-  if (classBook === undefined) return marked;
+  if (classBook === undefined) return { names: marked, trusted: false };
   // The names the choices could pick a subclass by (`Sacred Oath: Oath of Glory`).
   const pickNames = new Set<string>();
   for (const f of features) {
@@ -1636,7 +1715,69 @@ function otherBookNames(
     (book !== undefined && book !== classBook ? marked : own).add(name);
   }
   for (const name of own) marked.delete(name);
-  return marked.size < own.size ? marked : new Set();
+  const trusted = marked.size < own.size;
+  return { names: trusted ? marked : new Set(), trusted };
+}
+
+/**
+ * A printing's optional features that another official book's variants are:
+ * the ones Fight Club stores as choices where 5etools has class features
+ * (Tasha's `Favored Foe (replaces the Favored Enemy feature)`, the 5e
+ * compendium's `Cantrip Versatility`). Each becomes a class feature variant
+ * named as 5etools names it, opening with the line its name held, so the
+ * engine pairs it with the feature it replaces. A later `X Feature` of a
+ * variant `X` is its improvement (`Deft Explorer Improvement`, taken with
+ * Deft Explorer), at each level; any other repeat is given once, at its first
+ * level (Fight Club's repeats differ by typos). Only when the class's book is
+ * sure (`trusted`), and never a choice that names a list (`Label: Name`) or a
+ * group, which is an option or a subclass's.
+ */
+function optionalVariants(
+  choices: readonly Choice[],
+  classBook: string | undefined,
+  trusted: boolean,
+  given: { names: Set<string>; seen: Set<string> },
+  of: FeatureOf,
+  ctx: Fc5Context,
+  edition: RulesVersion | undefined,
+): { parts: Fc5Part[]; others: Choice[] } {
+  if (!trusted || classBook === undefined) return { parts: [], others: [...choices] };
+  const parts: Fc5Part[] = [];
+  const others: Choice[] = [];
+  for (const c of choices) {
+    const lower = c.name.toLowerCase();
+    const text = readText(childTexts(c.el, 'text'));
+    const where =
+      text.sourceLine === undefined ? undefined : ctx.place(text.sourceLine, c.edition ?? edition);
+    if (
+      where?.officialBook === undefined ||
+      where.officialBook === classBook ||
+      PICK.test(c.name) ||
+      lastGroup(c.name) !== undefined ||
+      lower === ASI_NAME.toLowerCase() ||
+      (lower.startsWith('additional ') && lower.endsWith(' spells'))
+    ) {
+      others.push(c);
+      continue;
+    }
+    const base = lower.endsWith(' feature') ? c.name.slice(0, -' feature'.length) : undefined;
+    const improves = base !== undefined && given.names.has(base.toLowerCase());
+    const name = improves ? `${base} Improvement` : c.name;
+    const key = name.toLowerCase();
+    if ((!improves && given.names.has(key)) || given.seen.has(`${key}|${c.level}`)) continue;
+    given.seen.add(`${key}|${c.level}`);
+    given.names.add(key);
+    const entries =
+      improves || c.replaces === undefined
+        ? text.entries
+        : [replacesLine(c.replaces), ...text.entries];
+    parts.push({
+      kind: 'classFeature',
+      entity: featureEntity(name, of, c.level, { entries }, where, true),
+      placement: where,
+    });
+  }
+  return { parts, others };
 }
 
 /** A class's place, from the first `Source:` line among its description and features. */
@@ -1742,12 +1883,9 @@ export function convertClass(el: XmlElement, ctx: Fc5Context): Fc5Result {
     .map((f, i) => ({ ...f, at: i }))
     .sort((a, b) => a.level - b.level || a.at - b.at);
   const printing = printingRef('class', cls, placement);
-  const variants = otherBookNames(
-    sorted,
-    printing?.slice(printing.lastIndexOf('|') + 1),
-    ctx,
-    identity.edition,
-  );
+  const classBook = printing?.slice(printing.lastIndexOf('|') + 1);
+  const otherBook = otherBookNames(sorted, classBook, ctx, identity.edition);
+  const variants = otherBook.names;
   // A variant once, at its first level, as 5etools has it: Fight Club repeats
   // Martial Versatility at each level it applies.
   const variantsGiven = new Set<string>();
@@ -1845,6 +1983,20 @@ export function convertClass(el: XmlElement, ctx: Fc5Context): Fc5Result {
     keepOnly(features, (p) => !moved.has(p));
     keepOnly(read, (f) => !keys.has(`${f.name}|${f.level}`));
   }
+  // Another book's variants the file stores as choices; the class reads nothing
+  // of them. Only a 2014 class's: Tasha's gives no 2024 class any, and there a
+  // choice of another book is a subclass's the file left unnamed (Arcana
+  // Unleashed's Arcane Archer's Curving Shot).
+  const optional = optionalVariants(
+    split.others,
+    classBook,
+    otherBook.trusted && edition !== '2024',
+    { names: variantsGiven, seen },
+    of,
+    ctx,
+    identity.edition,
+  );
+  features.push(...optional.parts);
   let picksAt: Fc5Part | undefined;
   if (split.label !== undefined) {
     const label = split.label;
@@ -1901,7 +2053,7 @@ export function convertClass(el: XmlElement, ctx: Fc5Context): Fc5Result {
   // Its options: each label's list, offered by the class, or by the one
   // subclass the label names.
   const classOptions = moveToSubclass(
-    split.others,
+    optional.others,
     split.picks,
     new Set(read.map((f) => f.name.toLowerCase())),
   );
