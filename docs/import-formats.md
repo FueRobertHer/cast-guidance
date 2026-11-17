@@ -198,7 +198,8 @@ the optional class features rule, and then as a pick. It is listed once, at
 its first level (Fight Club repeats Martial Versatility at each), and the
 class reads nothing from it: no spells, options, counts or Expertise. A name
 the class's own book cites too stays the class's, as does an Ability Score
-Improvement, and none are marked when as many of the class's names as not
+Improvement and an `Additional <Class> Spells` feature (nothing reads its
+spells, so as a pick it would give nothing; it stays text), and none are marked when as many of the class's names as not
 would be (the class's book, read from its first feature where its
 description names none, being the other one). A homebrew class that borrows
 an official feature keeps it. A fixed feature whose name ends in the name of

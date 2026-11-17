@@ -644,6 +644,22 @@ describe("convertClass another book's optional features", () => {
     expect(parts?.some((p) => p.entity.isClassFeatureVariant === true)).toBe(false);
   });
 
+  it('keeps an Additional Spells feature as text, which nothing reads', () => {
+    const result = converted(`<name>Paladin</name><hd>10</hd>
+      ${level(1, `${feature('Divine Sense', phb('You sense.'))}${feature('Lay on Hands', phb('You heal.'))}`)}
+      ${level(2, `${feature('Fighting Style', phb('A style.'))}${feature('Spellcasting', phb('You cast.'))}${feature('Divine Smite', phb('You smite.'))}${feature('Additional Paladin Spells', tce('You add these spells to your list.'))}${feature('Additional Fighting Style', tce('More styles.'))}`)}
+      ${level(3, feature('Harness Divine Power', tce('You regain a slot.')))}`);
+    expect(
+      marked(result).filter(
+        ([n]) => String(n).startsWith('Additional') || n === 'Harness Divine Power',
+      ),
+    ).toEqual([
+      ['Additional Paladin Spells', 2, false],
+      ['Additional Fighting Style', 2, true],
+      ['Harness Divine Power', 3, true],
+    ]);
+  });
+
   it("marks no subclass's feature, which goes to its subclass at each level", () => {
     const opt = ' optional="YES"';
     const result = converted(`<name>Paladin</name><hd>10</hd>
