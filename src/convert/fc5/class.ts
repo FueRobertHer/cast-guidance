@@ -1598,9 +1598,10 @@ function elsewhereReason(names: readonly string[]): string {
  * as the class's own, and only their `Source:` line tells them apart, so each
  * becomes a class feature variant, as 5etools has it, which a character takes
  * only under the optional class features rule. A name the class's own book
- * cites too is the class's, and so is an Ability Score Improvement. So is an
- * `Additional <Class> Spells` feature: nothing reads its spells, so as a
- * variant it would be a pick that gives nothing, and it stays text. One that
+ * cites too is the class's, and so is an Ability Score Improvement. So is a
+ * feature named `Additional ... Spells` (Tasha's `Additional <Class> Spells`):
+ * nothing reads its spells, so as a variant it would be a pick that gives
+ * nothing, and it stays text. One that
  * ends in a subclass's name (`Aura of Alacrity (Oath of Glory)`) is that
  * subclass's, and neither. None are when as many of the class's names as not
  * would be: the class's book is then the other one (it is read from the first
