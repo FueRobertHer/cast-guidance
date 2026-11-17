@@ -112,6 +112,29 @@ describe('readFeatureModifiers', () => {
     expect(read(mod('bonus', 'ac +1'), 'While you are wearing armor, +1 to AC.').kept).toEqual([
       'ac +1',
     ]);
+    // Words that name heavy armor without holding the bonus back by it, or
+    // that hold it back by heavy armor or a shield, which no field holds.
+    for (const prose of [
+      'Your speed increases, and you ignore the speed reduction for wearing heavy armor.',
+      'Your speed is not reduced by wearing heavy armor.',
+      'While you are wearing heavy armor, your speed increases by 10 feet.',
+      "While you aren't wearing heavy armor or wielding a shield, your speed increases.",
+    ]) {
+      expect(read(speed, prose).kept).toEqual(['speed +10']);
+    }
+  });
+
+  it('keeps a score a choice in its words names, as Fight Club writes its pick', () => {
+    const dex = mod('ability score', 'dexterity +1');
+    expect(read(dex, 'Increase your Strength or Dexterity score by 1.').kept).toEqual([
+      'dexterity +1',
+    ]);
+    expect(read(dex, 'Increase your Strength, Constitution, or Dexterity by 1.').kept).toEqual([
+      'dexterity +1',
+    ]);
+    expect(read(dex, 'Your Dexterity increases by 1, a gift for dexterity.').effects).toEqual([
+      { kind: 'abilityBonus', ability: 'dex', amount: 1 },
+    ]);
   });
 
   it('raises a score past 20 only as far as the words say', () => {
@@ -122,6 +145,14 @@ describe('readFeatureModifiers', () => {
     expect(max('Your Strength score increases by 4.')).toBeUndefined();
     expect(max('It increases, to a maximum of 18.')).toBeUndefined();
     expect(max('No maximum. Later, 24 of them.')).toBeUndefined();
+    expect(
+      max(
+        'Your hit point maximum increases by 2. Your Strength increases by 4, to a maximum of 22.',
+      ),
+    ).toBe(22);
+    expect(max('Your Strength increases by 4. Your hit point maximum increases by 24.')).toBe(
+      undefined,
+    );
   });
 
   it('gives no more effects than the engine counts, keeping the rest', () => {
@@ -229,9 +260,9 @@ describe('modifiers on the sheet', () => {
       <autolevel level="2">${feature('Jack of All Trades', phb('You know a bit.'))}</autolevel>
       <autolevel level="3">
         ${feature('Bard College', phb('You choose a college.'))}
-        ${feature('Bard College: College of Lore', phb('Lore.'), '', opt)}
+        ${feature('Bard College: College of Lore', phb('Lore.'), mod('bonus', 'initiative +1'), opt)}
         ${feature('Cutting Words (College of Lore)', phb('Your speed increases by 10 feet.'), mod('bonus', 'speed +10'), opt)}
-        ${feature('Bard College: College of Dance', dance('Dance.'), '', opt)}
+        ${feature('Bard College: College of Dance', dance('Dance.'), mod('bonus', 'initiative +1'), opt)}
         ${feature('Fast Movement (College of Dance)', dance('Your walking speed increases by 10 feet, and you gain proficiency in Acrobatics.'), mod('bonus', 'speed +10') + mod('skill', 'acrobatics +%0'), opt)}
       </autolevel></class>`);
     const features = json.subclassFeature as Record<string, unknown>[];
@@ -243,6 +274,14 @@ describe('modifiers on the sheet', () => {
     });
     expect(of('Cutting Words')).toBeDefined();
     expect(of('Cutting Words')).not.toHaveProperty('castGuidance');
+    // The pick's own tags are its first feature's.
+    expect(of('College of Dance')?.castGuidance).toEqual({
+      v: 1,
+      effects: [{ kind: 'initiativeBonus', amount: 1 }],
+      drop: [{ kind: 'initiativeBonus' }],
+    });
+    expect(of('College of Lore')).toBeDefined();
+    expect(of('College of Lore')).not.toHaveProperty('castGuidance');
     const reasons = (name: string) =>
       report.notes
         .filter((n) => n.kind === 'subclass' && n.name.includes(name))

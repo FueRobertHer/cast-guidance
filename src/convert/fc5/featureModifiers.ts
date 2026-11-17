@@ -46,30 +46,101 @@ function parse(raw: string): { what: string; amount: Amount } | undefined {
 
 /**
  * The highest a score may go, when the feature's words raise it: "to a maximum
- * of 22", "Your maximum for those scores is now 24".
+ * of 22", "Your maximum for those scores is now 24". A hit point maximum is
+ * no score's.
  */
 function statedMaximum(prose: string): number | undefined {
-  const at = prose.indexOf('maximum');
-  if (at < 0) return undefined;
-  let digits = '';
-  for (let i = at + 'maximum'.length; i < prose.length && i < at + 60; i++) {
-    const c = prose[i] ?? '';
-    if (c >= '0' && c <= '9') digits += c;
-    else if (digits !== '' || c === '.') break;
+  for (let at = prose.indexOf('maximum'); at >= 0; at = prose.indexOf('maximum', at + 1)) {
+    const before = prose.slice(Math.max(0, at - 11), at);
+    if (before.endsWith('hit point ') || before.endsWith('hit points ')) continue;
+    let digits = '';
+    for (let i = at + 'maximum'.length; i < prose.length && i < at + 60; i++) {
+      const c = prose[i] ?? '';
+      if (c >= '0' && c <= '9') digits += c;
+      else if (digits !== '' || c === '.') break;
+    }
+    const n = Number(digits);
+    if (digits !== '' && n > 20 && n <= 30) return n;
   }
-  const n = Number(digits);
-  return digits !== '' && n > 20 && n <= 30 ? n : undefined;
+  return undefined;
+}
+
+/** The words before "wearing" that hold a bonus back while one wears it. */
+const NOT_WEARING = ["n't ", 'n’t ', 'not ', 'unless you are ', "unless you're ", 'unless you’re '];
+
+/**
+ * Whether the words hold a bonus back while one wears what `phrase` names
+ * ("while you aren't wearing heavy armor"): `no` when they never name it, `yes`
+ * when each time they do it is held back, `unclear` otherwise ("your speed is
+ * not reduced by wearing heavy armor").
+ */
+function heldBack(prose: string, phrase: string): 'yes' | 'no' | 'unclear' {
+  let found = false;
+  for (let at = prose.indexOf(phrase); at >= 0; at = prose.indexOf(phrase, at + 1)) {
+    found = true;
+    const before = prose.slice(Math.max(0, at - 16), at);
+    if (!NOT_WEARING.some((w) => before.endsWith(w))) return 'unclear';
+  }
+  return found ? 'yes' : 'no';
+}
+
+const ABILITY_NAMES = [
+  'strength',
+  'dexterity',
+  'constitution',
+  'intelligence',
+  'wisdom',
+  'charisma',
+];
+
+/**
+ * Whether the words offer a choice of scores ("Strength or Dexterity"), whose
+ * tag is Fight Club's pick of it, as on a feat.
+ */
+function choosesAbility(prose: string): boolean {
+  for (const name of ABILITY_NAMES) {
+    const word = `or ${name}`;
+    for (let at = prose.indexOf(word); at >= 0; at = prose.indexOf(word, at + 1)) {
+      const c = at === 0 ? ' ' : (prose[at - 1] ?? ' ');
+      if (c === ' ' || c === ',') return true;
+    }
+  }
+  return false;
+}
+
+/** What a feature's words say that its tags' meaning turns on, read once for all its tags. */
+interface Words {
+  heavyArmor: 'yes' | 'no' | 'unclear';
+  armorOrShield: 'yes' | 'no' | 'unclear';
+  /** "heavy armor or wielding a shield": a condition no field holds. */
+  heavyArmorOrShield: boolean;
+  wearing: boolean;
+  maximum: number | undefined;
+  choosesAbility: boolean;
+}
+
+function wordsOf(prose: string): Words {
+  return {
+    heavyArmor: heldBack(prose, 'wearing heavy armor'),
+    armorOrShield: heldBack(prose, 'wearing armor or wielding a shield'),
+    heavyArmorOrShield: prose.includes('heavy armor or'),
+    wearing: prose.includes('wearing'),
+    maximum: statedMaximum(prose),
+    choosesAbility: choosesAbility(prose),
+  };
 }
 
 /** A walking speed bonus, held back as its words say, or none when they say what no field holds. */
-function speedBonus(amount: number, prose: string): Effect | undefined {
-  if (prose.includes('wearing heavy armor'))
+function speedBonus(amount: number, words: Words): Effect | undefined {
+  if (words.heavyArmorOrShield) return undefined;
+  if (words.heavyArmor === 'yes' && words.armorOrShield === 'no') {
     return { kind: 'speedBonus', amount, unless: 'heavyArmor' };
-  if (prose.includes('wearing armor or wielding a shield')) {
+  }
+  if (words.armorOrShield === 'yes' && words.heavyArmor === 'no') {
     return { kind: 'speedBonus', amount, unless: 'armorOrShield' };
   }
-  // Light armor or none: a condition no field holds.
-  if (prose.includes('wearing')) return undefined;
+  // Light armor or none, or armor that does not hold it back: a condition no field holds.
+  if (words.wearing) return undefined;
   return { kind: 'speedBonus', amount };
 }
 
@@ -89,12 +160,12 @@ function effectOf(
   category: string,
   what: string,
   amount: Amount,
-  prose: string,
+  words: Words,
 ): Effect | undefined {
   if (category === 'ability score') {
     const ability = abilityKey(what.endsWith(' score') ? what.slice(0, -' score'.length) : what);
-    if (ability === undefined || amount === 'prof') return undefined;
-    const max = statedMaximum(prose);
+    if (ability === undefined || amount === 'prof' || words.choosesAbility) return undefined;
+    const max = words.maximum;
     return { kind: 'abilityBonus', ability, amount, ...(max !== undefined && { max }) };
   }
   if (category !== 'bonus') return undefined;
@@ -104,10 +175,10 @@ function effectOf(
       : { kind: 'initiativeBonus', amount };
   }
   if (amount === 'prof') return undefined;
-  if (what === 'speed') return speedBonus(amount, prose);
+  if (what === 'speed') return speedBonus(amount, words);
   if (what === 'ac' || what === 'armor class') {
     // While wearing armor, or none: a condition no field holds.
-    return prose.includes('wearing') ? undefined : { kind: 'acBonus', amount };
+    return words.wearing ? undefined : { kind: 'acBonus', amount };
   }
   if (what === 'spell dc' || what === 'spell save dc') return { kind: 'spellDcBonus', amount };
   const attack = Object.hasOwn(ATTACKS, what) ? ATTACKS[what] : undefined;
@@ -119,15 +190,19 @@ function effectOf(
 export function readFeatureModifiers(el: XmlElement, prose: string): FeatureModifiers {
   const effects: Effect[] = [];
   const kept: string[] = [];
-  const lower = prose.toLowerCase();
-  for (const mod of childElements(el, 'modifier')) {
+  const mods = childElements(el, 'modifier');
+  // Once for every tag, so a feature's cost stays its words' length plus its tags'.
+  const words = mods.length === 0 ? undefined : wordsOf(prose.toLowerCase());
+  for (const mod of mods) {
     // One space between words, as the item reader keeps them.
     const raw = textContent(mod).replace(/\s+/g, ' ').trim();
     if (raw === '') continue;
     const category = (mod.attrs.category ?? 'bonus').trim().toLowerCase();
     const parsed = parse(raw);
     const effect =
-      parsed === undefined ? undefined : effectOf(category, parsed.what, parsed.amount, lower);
+      parsed === undefined || words === undefined
+        ? undefined
+        : effectOf(category, parsed.what, parsed.amount, words);
     if (effect === undefined || effects.length >= CAST_GUIDANCE_LIMITS.effectsPerEntry) {
       kept.push(raw);
     } else effects.push(effect);
@@ -136,8 +211,9 @@ export function readFeatureModifiers(el: XmlElement, prose: string): FeatureModi
 }
 
 /**
- * Add to an entry's `castGuidance`, keeping what it holds: effects of its own,
- * and the kinds it leaves out of what it inherits (`drop`), each kind once.
+ * Add to an entry's `castGuidance`, keeping its effects of its own and the
+ * kinds it leaves out of what it inherits (`drop`), each kind once. The
+ * converter writes no other part of it.
  */
 export function addGuidance(
   entity: Record<string, unknown>,
@@ -157,8 +233,8 @@ export function addGuidance(
 
 /**
  * A feature's tags into its `castGuidance`, each kind given also left out of
- * what the feature inherits, so its prose scan (Holy Shield's "+2 bonus to your
- * AC") does not count it twice. The tags it keeps as text, for the reason.
+ * what the feature inherits, so its prose scan (a "+1 bonus to initiative" in
+ * its words) does not count it twice. The tags it keeps as text, for the reason.
  */
 export function applyFeatureModifiers(
   entity: Record<string, unknown>,

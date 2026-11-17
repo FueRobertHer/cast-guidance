@@ -1469,7 +1469,7 @@ function convertSubclass(pick: Pick, from: SubclassFrom, bound: ClassBinding): F
   const keptModifiers: string[] = [];
   /**
    * Adds a feature; a variant is no part of the subclass as printed, so nothing
-   * reads it. A homebrew book's feature takes its `<modifier>` tags (`el`).
+   * reads it. A homebrew subclass's feature takes its `<modifier>` tags (`el`).
    */
   const add = (
     fname: string,
@@ -1503,11 +1503,14 @@ function convertSubclass(pick: Pick, from: SubclassFrom, bound: ClassBinding): F
     }
     parts.push({ kind: 'subclassFeature', entity, placement: where });
   };
-  add(name, pick.level, { entries: pickText.entries });
+  // A printing of an official subclass (the free rules text's too) has its
+  // tags from its own data: its curated rows, found by its name, give them.
+  const subPrinting = printingRef('subclass', sub, placement);
+  const pickEl = subPrinting === undefined ? pick.el : undefined;
+  add(name, pick.level, { entries: pickText.entries }, false, pickEl);
   // A printing of an official subclass: a feature another official book gives
   // in place of one of its own (Tasha's Primal Companion for the Beast
   // Master's Ranger's Companion) is a variant, as 5etools has it.
-  const subPrinting = printingRef('subclass', sub, placement);
   const subBook = subPrinting?.slice(subPrinting.lastIndexOf('|') + 1);
   const choices: Choice[] = [];
   const fixed: { name: string; level: number; entries: Entry[] }[] = [];
@@ -1532,8 +1535,6 @@ function convertSubclass(pick: Pick, from: SubclassFrom, bound: ClassBinding): F
       continue;
     }
     fixed.push({ name: refName(f.name), level: f.level, entries: text.entries });
-    // A printing of an official subclass (the free rules text's too) has its
-    // tags from its own data: its curated rows, found by its name, give them.
     add(refName(f.name), f.level, opened, false, subPrinting === undefined ? f.el : undefined);
   }
   if (keptModifiers.length > 0) reasons.push(modifiersKept(keptModifiers));
