@@ -21,6 +21,7 @@
 import type { RulesVersion } from '../../data5e/rulesVersion';
 import { childTexts, type XmlElement } from '../xml';
 import { type FileCounter, isSpellsKnown } from './classCounters';
+import { readFeatureSpells } from './classSpells';
 import {
   citationEntry,
   type Fc5Context,
@@ -68,6 +69,8 @@ export interface HostOptions {
   rest: OptionChoice[];
   /** The counters a count was read from, lowercased. */
   countersRead: Set<string>;
+  /** The options whose table of spells is kept as text. */
+  spellsKept: string[];
 }
 
 const PICK = /^([^:]{1,60}): (.{1,120})$/;
@@ -258,6 +261,7 @@ export function convertOptions(choices: readonly OptionChoice[], host: OptionHos
   const progression: Record<string, unknown>[] = [];
   const parts: OptionPart[] = [];
   const countersRead = new Set<string>();
+  const spellsKept: string[] = [];
   const taken = new Set<OptionChoice>();
   const lists: { label: string; options: OptionChoice[]; byName: Map<string, OptionChoice> }[] = [];
   for (const { label, options } of groups.values()) {
@@ -328,6 +332,13 @@ export function convertOptions(choices: readonly OptionChoice[], host: OptionHos
       const citation = citationEntry(placement);
       if (citation !== undefined) entries.push(citation);
       entity.entries = entries;
+      // The spells it gives, by the host's level: a 2014 land's circle spells.
+      const spells = readFeatureSpells([{ level: o.level, entries: text.entries }], {
+        tables: true,
+        index: host.ctx.spells,
+      });
+      if (spells.blocks !== undefined) entity.additionalSpells = spells.blocks;
+      if (spells.unread) spellsKept.push(String(entity.name));
       parts.push({
         kind: 'optionalfeature',
         entity,
@@ -343,5 +354,6 @@ export function convertOptions(choices: readonly OptionChoice[], host: OptionHos
     parts,
     rest: choices.filter((c) => !taken.has(c)),
     countersRead,
+    spellsKept,
   };
 }

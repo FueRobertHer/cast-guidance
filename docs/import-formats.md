@@ -35,7 +35,7 @@ page (an HTML listing or a page that links to the file) is named as one.
 | `<feat>` | `feat` | Category, prerequisite, ability increases, proficiencies and the picks its text offers (skills, tools, languages, weapons, Skilled's skills or tools, expertise), resistances its text states or offers, spells it grants |
 | `<background>` | `background` | `<tools>` and `<languages>`; 2024 trait names (`Ability Scores:`, `Feat:`, `Tool Proficiency:`) become fields; skill and tool lines that pick from a list; a feat of a category picked (`A Dark Gift feat of your choice`); spells it grants, and a guild or college table of spells added to a class's list |
 | `<race>` | `race` | Size, speed (the tags, and a trait's "you have a swimming speed of 30 feet" in any sentence, unless the trait sets terms on it, passes or is an option), ability, darkvision, resistances and condition immunities (tags and text), a resistance picked from a list or the ancestry table, languages, proficiencies and the picks any trait sentence offers, spells it grants |
-| `<class>` | `class`, `classFeature`, `subclass`, `subclassFeature` | Hit die, saving throws, skills to pick, armor, weapons (martial ones of a property as a filter), tools, starting gold, every fixed feature by level as a `classFeature` with an Ability Score Improvement at each `scoreImprovement` level, spellcasting, subclasses, options, counters, multiclass requirements and proficiencies, and starting equipment (see below); a `<class>` with no `<hd>` adds its subclasses to a class of that name |
+| `<class>` | `class`, `classFeature`, `subclass`, `subclassFeature` | Hit die, saving throws, skills to pick, armor, weapons (martial ones of a property as a filter), tools, starting gold, every fixed feature by level as a `classFeature` with an Ability Score Improvement at each `scoreImprovement` level, spellcasting, subclasses, options, counters, multiclass requirements and proficiencies, starting equipment (see below), and the spells its features, its subclasses' and its options' give; a `<class>` with no `<hd>` adds its subclasses to a class of that name |
 | `<monster>` | (left out) | The app does not use creatures |
 
 On items, feats, race traits and background traits, a labeled `<roll>` the
@@ -107,6 +107,29 @@ class is left out like any entry. A `<class>` with no `<hd>` adds its
 subclasses to the class of its name in the file, wherever that is, else to
 the installed or rules class of that name; what else it holds is listed in
 the report.
+
+The spells a subclass's or an option's features give become its
+`additionalSpells` (`src/convert/fc5/classSpells.ts`): a table of spells by
+class level, as lines (`1st`, a dash, `bless, cure wounds`) or a table
+(`Cleric Level | Spells`), and the sentence naming a spell the feature always gives. The
+feature's words, not the table's header, say what the table holds: always
+prepared (a domain's, an oath's, a circle's, a 2024 patron's), learned (a
+ranger's or a sorcerer's), or added to the class's list by spell level (a
+2014 patron's expanded list, under whatever header the file gives it). Two or
+more captioned tables in one feature are a choice, a named block each (the
+2024 Circle of the Land's lands); a choice missing a table it cannot read, or
+a second choice in a later feature, stays as text, since the sheet offers one
+choice and only whole. A cantrip row (`Cantrip: light`) is a cantrip on an
+expanded list. A caster's own table of counts and slots (`Spells Known`,
+`Spell Slots`) is no table of spells. A class's own features give only the
+sentences (`You always have the Hunter's Mark spell prepared`, `you learn the
+light cantrip`), since its tables are its spellcasting and its options. A
+note in a cell (`summon aberration (a spell in chapter 3)`) is no part of the
+name. A table this cannot place (a pick of two in a cell, a Strixhaven mage's
+table by spell level, a table of several columns of spells) stays in the
+text, and the report says so. A cast that spends a use, a ritual or ki, a
+pick from a list, an invocation's spell and Tasha's "Additional <Class>
+Spells" are not read.
 
 A class's or subclass's other choices named `Label: Name`, two or more of a
 label, are its options (`Fighting Style: Archery`, `Metamagic: Careful
@@ -222,7 +245,7 @@ it came from:
 {
   "_meta": {
     "sources": [{ "json": "FCSpells", "abbreviation": "FCSpells", "full": "spells (Fight Club 5e)" }],
-    "convertedFrom": { "format": "fc5-compendium", "converterVersion": 13, "fileName": "spells.xml" }
+    "convertedFrom": { "format": "fc5-compendium", "converterVersion": 14, "fileName": "spells.xml" }
   },
   "spell": [ /* … */ ]
 }

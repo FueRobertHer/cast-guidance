@@ -346,6 +346,9 @@ describe('what an item gives while you wear it', () => {
 describe('a class', () => {
   const cls = (inner: string) =>
     `<compendium><class><name>Ash Mage</name><hd>6</hd><spellAbility>Intelligence</spellAbility>${inner}</class></compendium>`;
+  /** A spell's name of letters alone, distinct for each number: `xa`, `xqr`. */
+  const spellNamed = (i: number) =>
+    `x${i.toString(26).replace(/\d/g, (d) => 'qrstuvwxyz'.charAt(Number(d)))}`;
   const casting = (text: string) =>
     cls(
       `<autolevel level="1"><slots>3,2</slots><feature><name>Spellcasting</name><text>${text}</text></feature></autolevel>`,
@@ -401,6 +404,30 @@ describe('a class', () => {
           (_, i) =>
             `<feature optional="YES"><name>Ash Path: Order of the Ash ${i}</name><text>x</text></feature><feature optional="YES"><name>Ward (Ash ${i})</name><text>x</text></feature>`,
         ).join('')}</autolevel>`,
+      ),
+    ],
+    [
+      'features that each always prepare a spell of their own',
+      cls(
+        `<autolevel level="1">${Array.from({ length: 60_000 }, (_, i) => `<feature><name>F${i}</name><text>You always have the ${spellNamed(i)} spell prepared.</text></feature>`).join('')}</autolevel>`,
+      ),
+    ],
+    [
+      "a subclass's table cell of many spells",
+      cls(
+        `<autolevel level="3"><feature><name>Ash Path</name><text>x</text></feature><feature optional="YES"><name>Ash Path: Oath of Ash</name><text>x</text></feature><feature optional="YES"><name>Oath Spells (Oath of Ash)</name><text>You gain oath spells.\nPaladin Level | Spells\n3rd | ${Array.from({ length: 40_000 }, (_, i) => spellNamed(i)).join(', ')}</text></feature></autolevel>`,
+      ),
+    ],
+    [
+      "a subclass's feature of many captioned runs of spells",
+      cls(
+        `<autolevel level="3"><feature><name>Ash Path</name><text>x</text></feature><feature optional="YES"><name>Ash Path: Oath of Ash</name><text>x</text></feature><feature optional="YES"><name>Oath Spells (Oath of Ash)</name><text>You gain oath spells.\n${Array.from({ length: 100_000 }, (_, i) => `Land ${i}:\n1st ${String.fromCharCode(0x2014)} ${spellNamed(i)}\nLore.`).join('\n')}</text></feature></autolevel>`,
+      ),
+    ],
+    [
+      "a subclass's spell prose of repeated lead-ins",
+      cls(
+        `<autolevel level="3"><feature><name>Ash Path</name><text>x</text></feature><feature optional="YES"><name>Ash Path: Oath of Ash</name><text>x</text></feature><feature optional="YES"><name>Oath Spells (Oath of Ash)</name><text>1st ${String.fromCharCode(0x2014)} bless\n${'you always have the '.repeat(20_000)}${'you learn the '.repeat(20_000)}${'added to the '.repeat(20_000)}${'circle of '.repeat(20_000)}</text></feature></autolevel>`,
       ),
     ],
     [

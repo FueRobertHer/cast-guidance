@@ -905,6 +905,53 @@ describe('subclasses', () => {
       ['Ability Score Improvement', ['Raise or take a feat.']],
     ]);
   });
+
+  describe('spells', () => {
+    const dash = String.fromCharCode(0x2014);
+    const oath = (spells: string, more = '') =>
+      knight(`
+        ${level(3, `${feature('Ember Path')}${feature('Ember Path: Oath of Ash', 'Ash.', opt)}${feature('Oath Spells (Oath of Ash)', `You gain oath spells at the paladin levels listed.\n${spells}`, opt)}`)}
+        ${level(7, feature('Cinder Soul (Oath of Ash)', 'You always have the fireball spell prepared.', opt))}
+        ${more}
+      `);
+
+    it("reads a subclass's spells from its features, each at its level", () => {
+      const { subs } = subclassesOf(oath(`3rd ${dash} burning hands, command`));
+      expect(subs[0]?.entity.additionalSpells).toEqual([
+        { prepared: { 3: ['burning hands', 'command'], 7: ['fireball'] } },
+      ]);
+      expect(subs[0]?.reasons).toEqual([]);
+    });
+
+    it('says a table of spells it cannot read is kept as text', () => {
+      const { subs } = subclassesOf(oath(`3rd ${dash} sanctuary or deathwatch`));
+      expect(subs[0]?.entity.additionalSpells).toEqual([{ prepared: { 7: ['fireball'] } }]);
+      expect(subs[0]?.reasons).toEqual(['some of its spells are kept as text']);
+    });
+
+    it("names the subclass's options whose tables of spells are kept as text", () => {
+      const lands = level(
+        3,
+        `${feature('Circle Spells: Arctic (Oath of Ash)', `You gain these spells.\n3rd ${dash} hold person`, opt)}${feature('Circle Spells: Coast (Oath of Ash)', `You gain these spells.\n3rd ${dash} mirror image or misty step`, opt)}`,
+      );
+      const { subs } = subclassesOf(oath(`3rd ${dash} command`, lands));
+      expect(subs[0]?.options?.map((o) => [o.entity.name, o.entity.additionalSpells])).toEqual([
+        ['Arctic', [{ known: { 3: ['hold person'] } }]],
+        ['Coast', undefined],
+      ]);
+      expect(subs[0]?.reasons).toEqual(["its options' tables of spells (Coast) are kept as text"]);
+    });
+
+    it("reads a spell the class's own features always prepare, but no table of its own", () => {
+      const { result } = subclassesOf(
+        knight(
+          `${level(1, feature('Favored Foe', "You always have the Hunter's Mark spell prepared."))}${level(2, feature('Ember Spells', `You gain domain spells at the levels listed.\n2nd ${dash} bless`))}`,
+        ),
+      );
+      expect(result.entity.additionalSpells).toEqual([{ prepared: { 1: ["hunter's mark"] } }]);
+      expect(result.reasons).toEqual([]);
+    });
+  });
 });
 
 describe('convertClassAdditions', () => {

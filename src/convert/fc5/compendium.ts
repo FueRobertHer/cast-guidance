@@ -99,7 +99,7 @@ import {
 export const FC5_FORMAT = 'fc5-compendium';
 export const FC5_FORMAT_NAME = 'Fight Club 5e';
 /** Bump when the same file would convert differently, so old imports can be told apart. */
-export const FC5_CONVERTER_VERSION = 13;
+export const FC5_CONVERTER_VERSION = 14;
 
 const CONVERTERS: Record<string, (el: XmlElement, ctx: Fc5Context) => Fc5Result> = {
   spell: convertSpell,
@@ -754,6 +754,11 @@ export function fc5Converter(opts: ConvertOptions): Fc5Converter {
     const had = optionsKept.get(optionKey(String(entity.name), placement, edition));
     if (had === undefined) return false;
     if (listed) said.set(had, sameText(entity.entries));
+    // A copy the file stores as a spell, kept first, takes the spells a
+    // class's copy reads from its text.
+    if (listed && had.additionalSpells === undefined && entity.additionalSpells !== undefined) {
+      had.additionalSpells = entity.additionalSpells;
+    }
     const types = [...(had.featureType as string[]), ...((entity.featureType ?? []) as string[])];
     had.featureType = [...new Set(types)];
     const was = had.prerequisite;
