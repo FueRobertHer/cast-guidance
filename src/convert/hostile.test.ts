@@ -3,6 +3,7 @@
 // quadratic path runs past the test timeout rather than through a timing
 // assertion.
 import { describe, expect, it } from 'vitest';
+import { CAST_GUIDANCE_LIMITS } from '../engine/castGuidance';
 import { convertXmlText } from './index';
 import { looksLikeXml } from './sniff';
 
@@ -477,5 +478,16 @@ describe('a class', () => {
         `<feature optional="YES"><name>Martial Archetype: Ash ${i}</name><text>x</text></feature><feature optional="YES"><name>Ward (Ash ${i})</name><text>x</text></feature>`,
     ).join('')}</autolevel></class></compendium>`;
     expect(convert(xml).report.converted.subclass).toBe(20_000);
+  });
+
+  it("reads a class feature's many modifiers beside long words in linear time", () => {
+    const mods = '<modifier category="bonus">speed +5</modifier>'.repeat(20_000);
+    const words = 'You move. '.repeat(200_000);
+    const xml = `<compendium><class><name>Ash Knight</name><hd>10</hd><autolevel level="1"><feature><name>Swift</name><text>${words}</text>${mods}</feature></autolevel></class></compendium>`;
+    const { json } = convert(xml);
+    const swift = (json.classFeature as Record<string, unknown>[])[0];
+    expect((swift?.castGuidance as { effects: unknown[] }).effects).toHaveLength(
+      CAST_GUIDANCE_LIMITS.effectsPerEntry,
+    );
   });
 });
