@@ -991,6 +991,73 @@ function splitChoices(
   return { picks: kept, label, others };
 }
 
+/**
+ * The class's fixed features that are a subclass's: a file may leave
+ * `optional="YES"` off one (`Channel Divinity: Fury of the Tides (Oath of the
+ * Open Sea)`), which would give it to every member of the class. Only a name
+ * that ends in a subclass's own, as written, moves (`Brutal Critical (1 die)`
+ * names none); of two subclasses of that name, it goes to the one whose book
+ * it cites, else the first. Each is added to its subclass's features, and
+ * returned for the class to leave out.
+ */
+function toSubclasses(
+  features: readonly Fc5Part[],
+  elOf: ReadonlyMap<Fc5Part, XmlElement>,
+  picks: readonly Pick[],
+  bookOf: (el: XmlElement) => string | undefined,
+): Set<Fc5Part> {
+  // Each name's picks, and by the book each cites.
+  const byKey = new Map<string, { first: Pick; byBook: Map<string, Pick> }>();
+  for (const p of picks) {
+    const key = pickKey(p.written);
+    const same = byKey.get(key) ?? { first: p, byBook: new Map<string, Pick>() };
+    if (p.book !== undefined && !same.byBook.has(p.book)) same.byBook.set(p.book, p);
+    byKey.set(key, same);
+  }
+  // What each pick has, by name and level: one the file also lists as an
+  // option of the subclass is not added again (two of a label at a level
+  // would read as a list of options).
+  const has = new Map<Pick, Set<string>>();
+  const hasOf = (pick: Pick) => {
+    let keys = has.get(pick);
+    if (keys === undefined) {
+      keys = new Set(pick.features.map((f) => `${f.name.toLowerCase()}|${f.level}`));
+      has.set(pick, keys);
+    }
+    return keys;
+  };
+  const moved = new Set<Fc5Part>();
+  for (const part of features) {
+    const el = elOf.get(part);
+    const g = lastGroup(String(part.entity.name));
+    const same = g === undefined ? undefined : byKey.get(pickKey(g.inner));
+    if (el === undefined || g === undefined || same === undefined) continue;
+    const book = same.byBook.size > 1 ? bookOf(el) : undefined;
+    const pick = (book === undefined ? undefined : same.byBook.get(book)) ?? same.first;
+    const level = Number(part.entity.level);
+    const keys = hasOf(pick);
+    const key = `${g.base.toLowerCase()}|${level}`;
+    if (!keys.has(key)) {
+      keys.add(key);
+      pick.features.push({ name: g.base, level, el });
+    }
+    moved.add(part);
+  }
+  return moved;
+}
+
+/** Keep the items `keep` is true of, in place, in one pass. */
+function keepOnly<T>(list: T[], keep: (item: T) => boolean): void {
+  let at = 0;
+  for (const item of list) {
+    if (keep(item)) {
+      list[at] = item;
+      at += 1;
+    }
+  }
+  list.length = at;
+}
+
 /** What a subclass is built from, beside its pick: the class's own parts it shares. */
 interface SubclassFrom {
   ctx: Fc5Context;
@@ -1524,6 +1591,54 @@ function elsewhereReason(names: readonly string[]): string {
 // The class
 // ---------------------------------------------------------------------------
 
+/**
+ * The names of a printing of an official class's fixed features that are
+ * another official book's optional features, lowercased. Fight Club lists
+ * Tasha's optional class features (`Primal Knowledge`, `Harness Divine Power`)
+ * as the class's own, and only their `Source:` line tells them apart, so each
+ * becomes a class feature variant, as 5etools has it, which a character takes
+ * only under the optional class features rule. A name the class's own book
+ * cites too is the class's, and so is an Ability Score Improvement. So is a
+ * feature named `Additional ... Spells` (Tasha's `Additional <Class> Spells`):
+ * nothing reads its spells, so as a variant it would be a pick that gives
+ * nothing, and it stays text. One that
+ * ends in a subclass's name (`Aura of Alacrity (Oath of Glory)`) is that
+ * subclass's, and neither. None are when as many of the class's names as not
+ * would be: the class's book is then the other one (it is read from the first
+ * feature where the description names none).
+ */
+function otherBookNames(
+  features: readonly { el: XmlElement; optional: boolean }[],
+  classBook: string | undefined,
+  ctx: Fc5Context,
+  edition: RulesVersion | undefined,
+): ReadonlySet<string> {
+  const marked = new Set<string>();
+  if (classBook === undefined) return marked;
+  // The names the choices could pick a subclass by (`Sacred Oath: Oath of Glory`).
+  const pickNames = new Set<string>();
+  for (const f of features) {
+    if (!f.optional) continue;
+    const written = PICK.exec(featureName(childText(f.el, 'name') ?? ''))?.[2];
+    if (written !== undefined) pickNames.add(pickKey(written.trim()));
+  }
+  const own = new Set<string>();
+  for (const f of features) {
+    if (f.optional) continue;
+    const raw = featureName(childText(f.el, 'name') ?? '');
+    const name = raw.toLowerCase();
+    if (name === '' || name === ASI_NAME.toLowerCase()) continue;
+    if (name.startsWith('additional ') && name.endsWith(' spells')) continue;
+    const group = lastGroup(raw);
+    if (group !== undefined && pickNames.has(pickKey(group.inner))) continue;
+    const line = readText(childTexts(f.el, 'text')).sourceLine;
+    const book = line === undefined ? undefined : ctx.place(line, edition).officialBook;
+    (book !== undefined && book !== classBook ? marked : own).add(name);
+  }
+  for (const name of own) marked.delete(name);
+  return marked.size < own.size ? marked : new Set();
+}
+
 /** A class's place, from the first `Source:` line among its description and features. */
 function classSourceLine(el: XmlElement): string | undefined {
   for (const trait of childElements(el, 'trait')) {
@@ -1626,6 +1741,18 @@ export function convertClass(el: XmlElement, ctx: Fc5Context): Fc5Result {
   const sorted = levels.features
     .map((f, i) => ({ ...f, at: i }))
     .sort((a, b) => a.level - b.level || a.at - b.at);
+  const printing = printingRef('class', cls, placement);
+  const variants = otherBookNames(
+    sorted,
+    printing?.slice(printing.lastIndexOf('|') + 1),
+    ctx,
+    identity.edition,
+  );
+  // A variant once, at its first level, as 5etools has it: Fight Club repeats
+  // Martial Versatility at each level it applies.
+  const variantsGiven = new Set<string>();
+  // Each fixed feature's element, for one a subclass turns out to own.
+  const elOf = new Map<Fc5Part, XmlElement>();
   for (const f of sorted) {
     const featureRaw = childText(f.el, 'name') ?? '';
     const fname = featureName(featureRaw);
@@ -1642,16 +1769,33 @@ export function convertClass(el: XmlElement, ctx: Fc5Context): Fc5Result {
     }
     const key = `${fname.toLowerCase()}|${f.level}`;
     if (seen.has(key)) continue;
+    // A later variant of a name is left out before it holds its level's place.
+    const variant = variants.has(fname.toLowerCase());
+    if (variant && variantsGiven.has(fname.toLowerCase())) continue;
     seen.add(key);
     const text = readText(childTexts(f.el, 'text'));
     const where =
       text.sourceLine === undefined ? placement : ctx.place(text.sourceLine, identity.edition);
+    // A variant is no part of the class as printed, so the class reads nothing of it.
+    if (variant) {
+      variantsGiven.add(fname.toLowerCase());
+      const part: Fc5Part = {
+        kind: 'classFeature',
+        entity: featureEntity(fname, of, f.level, text, where, true),
+        placement: where,
+      };
+      features.push(part);
+      elOf.set(part, f.el);
+      continue;
+    }
     read.push({ name: fname, level: f.level, entries: text.entries });
-    features.push({
+    const part: Fc5Part = {
       kind: 'classFeature',
       entity: featureEntity(fname, of, f.level, text, where),
       placement: where,
-    });
+    };
+    features.push(part);
+    elOf.set(part, f.el);
     for (const later of laterExpertise(fname, f.level, text.entries)) {
       laterOnes.push({ ...later, where });
     }
@@ -1691,6 +1835,16 @@ export function convertClass(el: XmlElement, ctx: Fc5Context): Fc5Result {
   const split = splitChoices(choices, new Set(read.map((f) => f.name.toLowerCase())), (pickEl) =>
     bookOf(pickEl, ctx, identity.edition),
   );
+  // Before anything else reads the class's features: a subclass's that the
+  // file gives as the class's own.
+  const moved = toSubclasses(features, elOf, split.picks, (el) =>
+    bookOf(el, ctx, identity.edition),
+  );
+  if (moved.size > 0) {
+    const keys = new Set([...moved].map((p) => `${p.entity.name}|${p.entity.level}`));
+    keepOnly(features, (p) => !moved.has(p));
+    keepOnly(read, (f) => !keys.has(`${f.name}|${f.level}`));
+  }
   let picksAt: Fc5Part | undefined;
   if (split.label !== undefined) {
     const label = split.label;
@@ -1769,9 +1923,8 @@ export function convertClass(el: XmlElement, ctx: Fc5Context): Fc5Result {
     split.picks,
     new Set(read.map((f) => f.name.toLowerCase())),
   );
-  const printing = printingRef('class', cls, placement) !== undefined;
-  const byOption = optionCounters(owners.own, options, printing);
-  const pools = poolsOf(byOption.own, printing);
+  const byOption = optionCounters(owners.own, options, printing !== undefined);
+  const pools = poolsOf(byOption.own, printing !== undefined);
   if (pools.castGuidance !== undefined) cls.castGuidance = pools.castGuidance;
   for (const p of features) {
     if (pools.pools.has(String(p.entity.name).toLowerCase())) dropOwnUses(p.entity);
@@ -1843,12 +1996,14 @@ function featureEntity(
   level: number,
   text: { entries: Entry[] },
   placement: Placement,
+  variant = false,
 ): Record<string, unknown> {
   const feature: Record<string, unknown> = { name };
   placeEntity(feature, placement);
   feature.className = of.className;
   feature.classSource = of.classSource;
   feature.level = level;
+  if (variant) feature.isClassFeatureVariant = true;
   const entries: Entry[] = [...text.entries];
   const citation = citationEntry(placement);
   if (citation !== undefined) entries.push(citation);

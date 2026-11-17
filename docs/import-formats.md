@@ -189,6 +189,28 @@ you can choose another two skill proficiencies`, `At Bard level 9`) gets a
 second Expertise at that level, as 5etools gives it, since the sheet asks for
 two skills at each; a later Expertise the file gives itself is kept instead.
 
+Fight Club lists Tasha's optional class features (`Primal Knowledge`,
+`Harness Divine Power`, `Steady Aim`) among a 2014 class's own, and only
+their `Source:` line tells them apart. On a printing of an official class, a
+fixed feature whose `Source:` line names another official book is marked
+`isClassFeatureVariant`, as 5etools has it, so a character has it only under
+the optional class features rule, and then as a pick. It is listed once, at
+its first level (Fight Club repeats Martial Versatility at each), and the
+class reads nothing from it: no spells, options, counts or Expertise. A name
+the class's own book cites too stays the class's, as do an Ability Score
+Improvement and a feature named `Additional ... Spells` (Tasha's
+`Additional <Class> Spells`: nothing reads its spells, so as a pick it would
+give nothing, and it stays text). None are marked when as many of the
+class's names as not would be (the class's book, read from its first
+feature where its description names none, being the other one). A homebrew
+class that borrows an official feature keeps it. A fixed feature whose name
+ends in the name of a subclass the class offers (one its choices pick and
+name, as above: `Channel Divinity: Fury of the Tides (Oath of the Open Sea)`,
+where the file
+left `optional="YES"` off) goes to that subclass, at each level it is given,
+not to every member of the class; one the file also lists as the subclass's
+choice is kept once.
+
 A class's `<counter>`s become its resources (a subclass's, those that name
 it), keyed as the prose scan keys the feature of that name, so the use count
 shows once: a number by level, `%0` as the proficiency bonus and `%1` to `%6`
@@ -269,7 +291,7 @@ it came from:
 {
   "_meta": {
     "sources": [{ "json": "FCSpells", "abbreviation": "FCSpells", "full": "spells (Fight Club 5e)" }],
-    "convertedFrom": { "format": "fc5-compendium", "converterVersion": 15, "fileName": "spells.xml" }
+    "convertedFrom": { "format": "fc5-compendium", "converterVersion": 16, "fileName": "spells.xml" }
   },
   "spell": [ /* … */ ]
 }
