@@ -451,6 +451,112 @@ describe('convertClass spellcasting', () => {
   });
 });
 
+describe('convertClass picks', () => {
+  const knight = (inner: string) => `<name>Ember Knight</name><hd>10</hd>${inner}`;
+  const column = (counts: Record<number, number>) => {
+    const rows: number[][] = [];
+    let n = 0;
+    for (let l = 1; l <= 20; l += 1) {
+      n = counts[l] ?? n;
+      rows.push([n]);
+    }
+    return { colLabels: ['Weapon Mastery'], rows };
+  };
+
+  it("reads a Weapon Mastery column from the feature's table", () => {
+    const { entity } = converted(
+      knight(
+        level(
+          1,
+          feature(
+            'Level 1: Weapon Mastery',
+            'You use the mastery properties of three kinds of weapons.\n\nWeapon Mastery:\nFighter Level | Weapon Mastery\n1 | 3\n4 | 4\n10 | 5\n16 | 6',
+          ),
+        ),
+      ),
+    );
+    expect(entity.classTableGroups).toEqual([column({ 1: 3, 4: 4, 10: 5, 16: 6 })]);
+  });
+
+  it('reads the counts some files give in a line, after the slot table a caster has', () => {
+    const { entity } =
+      converted(`<name>Ember Knight</name><hd>10</hd><spellAbility>Intelligence</spellAbility>
+      ${fullSlots()}
+      ${level(1, `${feature('Spellcasting', 'You prepare a number of spells equal to your Intelligence modifier + your ember knight level.')}${feature('Weapon Mastery', 'You use the mastery properties of two kinds of weapons. (2 at level 2, 3 at level 4, 4 at level 10)')}`)}`);
+    const groups = entity.classTableGroups as Record<string, unknown>[];
+    expect(groups.map((g) => g.title ?? g.colLabels)).toEqual([
+      'Spell Slots per Spell Level',
+      ['Weapon Mastery'],
+    ]);
+    expect(groups[1]).toEqual(column({ 1: 2, 4: 3, 10: 4 }));
+  });
+
+  it('writes no column for the two kinds the sheet assumes', () => {
+    const { entity } = converted(
+      knight(
+        level(
+          1,
+          feature('Weapon Mastery', 'You use the mastery properties of two kinds of weapons.'),
+        ),
+      ),
+    );
+    expect(entity).not.toHaveProperty('classTableGroups');
+  });
+
+  it('gives Expertise again at the later level its text names, in either wording', () => {
+    const refs = (text: string) =>
+      converted(knight(level(3, feature('Expertise', text)))).entity.classFeatures;
+    expect(
+      refs(
+        'At 3rd level, choose two of your skill proficiencies.\n\tAt 10th level, you can choose another two skill proficiencies to gain this benefit.',
+      ),
+    ).toEqual([`Expertise|Ember Knight|${SOURCE}|3`, `Expertise|Ember Knight|${SOURCE}|10`]);
+    expect(
+      refs(
+        'You gain Expertise in two of your skill proficiencies.\n\tAt Ember Knight level 9, you gain Expertise in two more of your skill proficiencies of your choice.',
+      ),
+    ).toEqual([`Expertise|Ember Knight|${SOURCE}|3`, `Expertise|Ember Knight|${SOURCE}|9`]);
+    expect(refs('Choose two skills.\n\tAt 10th level, your expertise improves.')).toEqual([
+      `Expertise|Ember Knight|${SOURCE}|3`,
+    ]);
+  });
+
+  it('keeps the later Expertise the file gives, wherever it sits in the file', () => {
+    const first = level(
+      3,
+      feature(
+        'Expertise',
+        'Choose two skills.\n\tAt 10th level, you can choose another two skill proficiencies to gain this benefit.',
+      ),
+    );
+    const own = level(10, feature('Expertise', 'Two more skills, your own words.'));
+    for (const body of [first + own, own + first]) {
+      const { entity, parts } = converted(knight(body));
+      expect(entity.classFeatures).toEqual([
+        `Expertise|Ember Knight|${SOURCE}|3`,
+        `Expertise|Ember Knight|${SOURCE}|10`,
+      ]);
+      expect(parts?.find((p) => p.entity.level === 10)?.entity.entries).toEqual([
+        'Two more skills, your own words.',
+      ]);
+    }
+  });
+
+  it('offers an official list its features count, and only one prompt where the file lists its options', () => {
+    const warlock = converted(`<name>Warlock</name><hd>8</hd>
+      ${level(2, feature('Eldritch Invocations', 'At 2nd level, you gain two eldritch invocations of your choice (added as spells in the Eldritch Invocation spell list).\n\nLevel | Invocations Known\n2 | 2\n5 | 3'))}`);
+    expect(warlock.entity.optionalfeatureProgression).toEqual([
+      { name: 'Eldritch Invocations', featureType: ['EI'], progression: { 2: 2, 5: 3 } },
+    ]);
+    const opt = ' optional="YES"';
+    const sorcerer = converted(`<name>Sorcerer</name><hd>6</hd>
+      ${level(3, `${feature('Metamagic', 'You gain two of the following Metamagic options of your choice.')}${feature('Metamagic: Careful Spell', 'Careful.', opt)}${feature('Metamagic: Distant Spell', 'Distant.', opt)}`)}`);
+    expect(sorcerer.entity.optionalfeatureProgression).toEqual([
+      { name: 'Metamagic', featureType: ['Sorcerer: Metamagic', 'MM'], progression: { 3: 2 } },
+    ]);
+  });
+});
+
 describe('subclasses', () => {
   const opt = ' optional="YES"';
   const BOUND: ClassBinding = { className: 'Ember Knight', classSource: SOURCE };

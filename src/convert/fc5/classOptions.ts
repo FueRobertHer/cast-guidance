@@ -16,11 +16,14 @@
  *
  * A label of an official list (Fighting Style, Metamagic, Eldritch
  * Invocations, Pact Boon, Maneuvers) also offers that list, so an option the
- * installed game data has, left out as a duplicate, is still offered.
+ * installed game data has, left out as a duplicate, is still offered. An
+ * official list the features count but the file gives no options or counter
+ * for is offered at the count they state (see `classLists.ts`).
  */
 import type { RulesVersion } from '../../data5e/rulesVersion';
 import { childTexts, type XmlElement } from '../xml';
 import { type FileCounter, isSpellsKnown } from './classCounters';
+import { textLists } from './classLists';
 import { readFeatureSpells } from './classSpells';
 import {
   citationEntry,
@@ -349,6 +352,14 @@ export function convertOptions(choices: readonly OptionChoice[], host: OptionHos
     }
   }
   linkStoredLists(host, mine, labels, known, knownFor, progression, countersRead);
+  // An official list its features count but no option or counter offers: the 2024 Sorcerer's Metamagic.
+  const offered = new Set<string>();
+  for (const p of progression) {
+    for (const t of Array.isArray(p.featureType) ? p.featureType : []) {
+      if (typeof t === 'string') offered.add(t.toLowerCase());
+    }
+  }
+  progression.push(...textLists(host.className, host.fixed, offered));
   return {
     progression,
     parts,

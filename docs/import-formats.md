@@ -35,7 +35,7 @@ page (an HTML listing or a page that links to the file) is named as one.
 | `<feat>` | `feat` | Category, prerequisite, ability increases, proficiencies and the picks its text offers (skills, tools, languages, weapons, Skilled's skills or tools, expertise), resistances its text states or offers, spells it grants |
 | `<background>` | `background` | `<tools>` and `<languages>`; 2024 trait names (`Ability Scores:`, `Feat:`, `Tool Proficiency:`) become fields; skill and tool lines that pick from a list; a feat of a category picked (`A Dark Gift feat of your choice`); spells it grants, and a guild or college table of spells added to a class's list |
 | `<race>` | `race` | Size, speed (the tags, and a trait's "you have a swimming speed of 30 feet" in any sentence, unless the trait sets terms on it, passes or is an option), ability, darkvision, resistances and condition immunities (tags and text), a resistance picked from a list or the ancestry table, languages, proficiencies and the picks any trait sentence offers, spells it grants |
-| `<class>` | `class`, `classFeature`, `subclass`, `subclassFeature` | Hit die, saving throws, skills to pick, armor, weapons (martial ones of a property as a filter), tools, starting gold, every fixed feature by level as a `classFeature` with an Ability Score Improvement at each `scoreImprovement` level, spellcasting, subclasses, options, counters, multiclass requirements and proficiencies, starting equipment (see below), and the spells its features, its subclasses' and its options' give; a `<class>` with no `<hd>` adds its subclasses to a class of that name |
+| `<class>` | `class`, `classFeature`, `subclass`, `subclassFeature` | Hit die, saving throws, skills to pick, armor, weapons (martial ones of a property as a filter), tools, starting gold, every fixed feature by level as a `classFeature` with an Ability Score Improvement at each `scoreImprovement` level, spellcasting, subclasses, options and the official option lists its features count, Weapon Mastery counts, Expertise at each level it comes, counters, multiclass requirements and proficiencies, starting equipment (see below), and the spells its features, its subclasses' and its options' give; a `<class>` with no `<hd>` adds its subclasses to a class of that name |
 | `<monster>` | (left out) | The app does not use creatures |
 
 On items, feats, race traits and background traits, a labeled `<roll>` the
@@ -165,6 +165,30 @@ them (`Tricks Known`; `Hexes Known` counts `Hexes`, not `Grand Hexes`), and
 an official list a counter names (`Eldritch Invocations Known`) is offered
 the same way. A choice that is no label's option is listed in the report.
 
+An official list a class's or subclass's features count, where the file
+gives no options or counter for it, is offered at the count they state
+(`src/convert/fc5/classLists.ts`): a warlock's Eldritch Invocations, a 2024
+sorcerer's Metamagic, the Battle Master's maneuvers, the Arcane Archer's
+Arcane Shots, the Rune Knight's runes, the Way of the Four Elements'
+disciplines, and a homebrew subclass that picks from one of them ("three
+Maneuvers of your choice from those available to the Battle Master"). The
+count comes from one place: a table column named for the list (`Level |
+Invocations Known`), else the feature that first counts them (`you learn
+three maneuvers`) plus either the later features that add more (`Additional
+Maneuvers`) or, where there are none, that feature's own words for later
+levels (`two additional maneuvers of your choice at 7th, 10th, and 15th
+level`, `two more at Sorcerer level 10`). Only a bare count names the list:
+`two burst maneuvers` and `five master runes` are a homebrew class's own.
+
+A Weapon Mastery feature's table (`Fighter Level | Weapon Mastery`), or the
+counts some files give in a line (`2 at level 2, 3 at level 4, 4 at level
+10`), become a `Weapon Mastery` column of `classTableGroups`, which the sheet
+reads for how many kinds to pick; none is written for the two it assumes. An
+Expertise feature whose text gives two more at a later level (`At 10th level,
+you can choose another two skill proficiencies`, `At Bard level 9`) gets a
+second Expertise at that level, as 5etools gives it, since the sheet asks for
+two skills at each; a later Expertise the file gives itself is kept instead.
+
 A class's `<counter>`s become its resources (a subclass's, those that name
 it), keyed as the prose scan keys the feature of that name, so the use count
 shows once: a number by level, `%0` as the proficiency bonus and `%1` to `%6`
@@ -245,7 +269,7 @@ it came from:
 {
   "_meta": {
     "sources": [{ "json": "FCSpells", "abbreviation": "FCSpells", "full": "spells (Fight Club 5e)" }],
-    "convertedFrom": { "format": "fc5-compendium", "converterVersion": 14, "fileName": "spells.xml" }
+    "convertedFrom": { "format": "fc5-compendium", "converterVersion": 15, "fileName": "spells.xml" }
   },
   "spell": [ /* … */ ]
 }
