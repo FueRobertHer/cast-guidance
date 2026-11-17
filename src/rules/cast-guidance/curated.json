@@ -3804,6 +3804,71 @@
           ]
         }
       ]
+    },
+    {
+      "part": "curated",
+      "keys": ["agonizing blast|xphb"],
+      "effects": [
+        {
+          "kind": "pick",
+          "id": "cantrip",
+          "ask": "spell",
+          "label": "Agonizing Blast: a Warlock cantrip that deals damage",
+          "spells": {
+            "levels": [0],
+            "classes": ["Warlock"]
+          },
+          "givesAll": [
+            {
+              "kind": "spellDamageBonus",
+              "amount": {
+                "f": "mod.cha"
+              },
+              "spells": "{picks}"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["signature spells|wizard"],
+      "effects": [
+        {
+          "kind": "pick",
+          "id": "signature",
+          "ask": "spell",
+          "count": 2,
+          "label": "Signature Spells: two level 3 Wizard spells from your spellbook",
+          "spells": {
+            "levels": [3],
+            "classes": ["Wizard"]
+          },
+          "gives": [
+            {
+              "kind": "resource",
+              "key": "signature-spells-{pick.slug}",
+              "label": "{pick.title}",
+              "max": 1,
+              "reset": "short"
+            },
+            {
+              "kind": "grantSpell",
+              "spell": "{pick}",
+              "ability": "int",
+              "usage": "prepared",
+              "slotsOnly": true
+            },
+            {
+              "kind": "grantSpell",
+              "spell": "{pick}",
+              "ability": "int",
+              "usage": "1/rest",
+              "resourceKey": "signature-spells-{pick.slug}"
+            }
+          ]
+        }
+      ]
     }
   ]
 }

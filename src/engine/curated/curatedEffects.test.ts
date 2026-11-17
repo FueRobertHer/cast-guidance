@@ -904,29 +904,40 @@ describe('pools, dice and DCs only class prose states', () => {
       expect.objectContaining({
         id: 'class:wizard|xphb:signature',
         kind: 'spell',
+        label: 'Signature Spells: two level 3 Wizard spells from your spellbook',
         count: 2,
-        spellQuery: expect.objectContaining({ levels: [3], classes: ['Wizard'] }),
+        spellQuery: { levels: [3], classes: ['Wizard'], schools: [], ritual: false, attacks: [] },
       }),
     ]);
     const picked = col('Wizard', 20);
     picked.doc.choices['class:wizard|xphb:signature'] = ['fireball|xphb', 'counterspell|xphb'];
     run('signature spells|wizard', picked, wizard);
+    // Each spell's pool, then its two grants, spell by spell.
+    expect(picked.effects.map((e) => e.kind)).toEqual([
+      'resource',
+      'grantSpell',
+      'grantSpell',
+      'resource',
+      'grantSpell',
+      'grantSpell',
+    ]);
     expect(pools(picked)).toEqual([
       'signature-spells-fireball Fireball 1 short',
       'signature-spells-counterspell Counterspell 1 short',
     ]);
-    const grants = picked.effects.flatMap((e) =>
-      e.kind === 'grantSpell'
-        ? [
-            `${e.spell.name} ${e.usage} ${e.ability} ${e.resourceKey ?? '-'}${e.slotsOnly ? ' slots' : ''}`,
-          ]
-        : [],
-    );
-    expect(grants).toEqual([
-      'fireball prepared int - slots',
-      'fireball 1/rest int signature-spells-fireball',
-      'counterspell prepared int - slots',
-      'counterspell 1/rest int signature-spells-counterspell',
+    const grants = (c: Collector) =>
+      c.effects.flatMap((e) =>
+        e.kind === 'grantSpell'
+          ? [
+              `${e.spell.name}|${e.spell.source} ${e.usage} ${e.ability} ${e.resourceKey ?? '-'}${e.slotsOnly ? ' slots' : ''}`,
+            ]
+          : [],
+      );
+    expect(grants(picked)).toEqual([
+      'fireball|xphb prepared int - slots',
+      'fireball|xphb 1/rest int signature-spells-fireball',
+      'counterspell|xphb prepared int - slots',
+      'counterspell|xphb 1/rest int signature-spells-counterspell',
     ]);
     // A pick as the picker stores it keeps its own capitals.
     const named = col('Wizard', 20);
@@ -934,6 +945,13 @@ describe('pools, dice and DCs only class prose states', () => {
     expect(pools(run('signature spells|wizard', named, wizard))).toEqual([
       "signature-spells-leomund-s-tiny-hut Leomund's Tiny Hut 1 short",
       'signature-spells-fireball Fireball 1 short',
+    ]);
+    // Each grant names the spell as it was saved, its book too.
+    expect(grants(named)).toEqual([
+      "Leomund's Tiny Hut|PHB prepared int - slots",
+      "Leomund's Tiny Hut|PHB 1/rest int signature-spells-leomund-s-tiny-hut",
+      'Fireball|PHB prepared int - slots',
+      'Fireball|PHB 1/rest int signature-spells-fireball',
     ]);
   });
 
@@ -1198,6 +1216,7 @@ describe('always-on riders', () => {
       expect.objectContaining({
         id: 'class:agonizing blast|xphb:cantrip',
         kind: 'spell',
+        label: 'Agonizing Blast: a Warlock cantrip that deals damage',
         count: 1,
         spellQuery: { levels: [0], classes: ['Warlock'], schools: [], ritual: false, attacks: [] },
       }),
@@ -1205,7 +1224,8 @@ describe('always-on riders', () => {
     const picked = col();
     picked.doc.choices['class:agonizing blast|xphb:cantrip'] = ['Chill Touch|XPHB'];
     expect(emit('agonizing blast|xphb', 'agonizing blast|xphb', picked)).toEqual([
-      { kind: 'spellDamageBonus', amount: 'abilityMod:cha', spells: ['chill touch'] },
+      // The stored formula, as the 2014 row's: Charisma's modifier on the sheet.
+      { kind: 'spellDamageBonus', amount: 'mod.cha', spells: ['chill touch'] },
     ]);
     expect(picked.pending).toEqual([]);
   });
