@@ -375,7 +375,8 @@ export const CURATED: Record<string, CuratedFn> = {
 
   // --- Subclass features (keyed by the subclass's full name) ---------------
   // More of this section's rows are data, in `src/rules/cast-guidance/curated.json`,
-  // with every plain pick from a list (rule pack port 4b).
+  // with the plain picks from a list (rule pack port 4b). Arcane Archer Lore's
+  // plain pick stays below with its AU printing, an "in place of" pick (4c).
   // Persuasion is doubled however the fighter came by it, and having it already
   // swaps the proficiency for a plain one in another skill. Only what is collected
   // so far can say so: a later class's pick shows its own "already proficient" cue,

@@ -56,7 +56,7 @@ pick a class asks: Primal Knowledge by printing (the Barbarian's skill list),
 the Cavalier's Bonus Proficiency (a skill or a language), Master of Intrigue (a
 gaming set), both Training in War and Song (a melee weapon; the 2024 one a skill
 and weapons by filter) and the Alchemist's Tools of the Trade (a tool in place
-of one held). Twenty-two more, under 21 keys, are the plain picks from a list
+of one held). Twenty-two more, under 23 keys, are the plain picks from a list
 (rule pack port 4b): the sidekicks' Bonus Proficiencies, Otherworldly Glamour,
 Blessings of Knowledge (its FRHoF printing adds a tool), the Samurai's Bonus
 Proficiency (a skill or a language), Knightly Envoy, Student of War (its 2024
