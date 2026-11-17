@@ -395,6 +395,27 @@
     },
     {
       "part": "standing",
+      "keys": ["deft explorer improvement|ranger"],
+      "level": 6,
+      "effects": [
+        {
+          "kind": "speedBonus",
+          "amount": 5
+        },
+        {
+          "kind": "moveSpeed",
+          "mode": "climb",
+          "speed": "walk"
+        },
+        {
+          "kind": "moveSpeed",
+          "mode": "swim",
+          "speed": "walk"
+        }
+      ]
+    },
+    {
+      "part": "standing",
       "keys": ["frigid explorer|winter walker"],
       "effects": [
         {

@@ -226,7 +226,17 @@ const ranger2024Features: DataEntity[] = [
   }),
 ];
 
+// Heavy armor, for what a feature's speed holds in.
+const CHAIN_MAIL: DataEntity = {
+  name: 'Chain Mail',
+  source: 'PHB',
+  type: 'HA',
+  ac: 16,
+  strength: '13',
+};
+
 const WORLD: Record<string, DataEntity[]> = {
+  baseitem: [CHAIN_MAIL],
   class: [RANGER, CLERIC, RANGER_2024],
   subclass: [BEAST_MASTER, LIFE],
   classFeature: [...rangerFeatures, ...ranger2024Features],

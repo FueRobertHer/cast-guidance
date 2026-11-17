@@ -29,7 +29,9 @@ the two printings of nine class and subclass features that differ between 2014
 and 2024 (rule pack port 2b), each under a key that names its printing
 (`roving|ranger|xphb`) beside the key alone, which every other printing reads.
 A printing that adds nothing has a row with no effects, which still turns the
-prose scan off (2014 Roving and Feral Senses, 2024 Remarkable Athlete).
+prose scan off (Roving in any book but the 2024 one, and 2014 Feral Senses, 2024
+Remarkable Athlete). Tasha's Roving is no feature of that name; its row is a
+`standing` one, below.
 Thirteen more need the level of the class that gives them, in a level table or
 `classLevel` (rule pack port 2c): Unarmored Movement, Action Surge, Ki, Monk's
 Focus, Font of Magic, both Indomitables, Soul Fragments, Portent, and Rage and
@@ -91,7 +93,10 @@ pick of one it lacks (4c), and four picks of a named option or a damage type
 character has), Aura of Elemental Shielding and both Fiendish Resiliences, a
 damage type resisted. The 5
 left in `STANDING` need what the character has already (darkvision that grows,
-the branch or cantrip it picked).
+the branch or cantrip it picked). One more `standing` row is new rather than
+moved: Tasha's Roving, the 2014 Ranger's level 6 Deft Explorer Improvement (5
+more feet of walking speed, and a climbing and a swimming speed equal to it), a
+`level` row because the level 10 improvement has the same name and keys.
 
 Every advantage row has moved, under 181 keys (`src/rules/cast-guidance/roll-advantages.json`):
 advantage on the character's own d20 tests that a feature, feat, optional
