@@ -541,6 +541,75 @@ function tableColumn(entries: readonly unknown[], label: RegExp): number[] | und
   return undefined;
 }
 
+const EXPERTISE = 'Expertise';
+/** `At 10th level`, `At Bard level 9`: a paragraph of a feature that opens at a later level. */
+const AT_LEVEL =
+  /^At (?:(\d{1,2})(?:st|nd|rd|th) level|(?:[A-Za-z'-]{1,20} ){1,3}level (\d{1,2}))\b/;
+/** `another two`, `two more`: the later level gives two more. */
+const TWO_MORE = /\b(?:another two|two more|two additional)\b/i;
+
+/**
+ * The later levels an Expertise feature gives two more at, each with its
+ * paragraph: "At 10th level, you can choose another two skill proficiencies
+ * to gain this benefit."
+ */
+function laterExpertise(
+  name: string,
+  level: number,
+  entries: readonly Entry[],
+): { level: number; text: string }[] {
+  if (name.toLowerCase() !== EXPERTISE.toLowerCase()) return [];
+  const out: { level: number; text: string }[] = [];
+  for (const e of entries) {
+    if (typeof e !== 'string') continue;
+    const text = e.trim();
+    const m = AT_LEVEL.exec(text);
+    const at = m === null ? Number.NaN : Number(m[1] ?? m[2]);
+    if (at > level && at <= MAX_LEVEL && TWO_MORE.test(text)) out.push({ level: at, text });
+  }
+  return out;
+}
+
+/** `the mastery properties of two kinds of weapons`: how many kinds the feature starts with. */
+const MASTERY_KINDS = /\bmastery properties of (one|two|three|four|five|six|\d) kinds\b/i;
+/** `(2 at level 2, 3 at level 4, 4 at level 10)`: the counts by level some files give in a line. */
+const MASTERY_AT = /\b(\d) at level (\d{1,2})\b/g;
+/** The count the sheet assumes when a class's table gives none. */
+const MASTERY_DEFAULT = 2;
+
+/**
+ * A class's Weapon Mastery column, as the 5etools class table gives one: from
+ * the feature's own table (`Fighter Level | Weapon Mastery`), else its words
+ * (`three kinds`, `2 at level 2, 3 at level 4, 4 at level 10`). Undefined
+ * when it always gives the two the sheet assumes.
+ */
+function masteryColumn(
+  read: readonly { name: string; level: number; entries: Entry[] }[],
+): Record<string, unknown> | undefined {
+  const feature = read.find((f) => /^weapon mastery$/i.test(f.name));
+  if (feature === undefined) return undefined;
+  let counts = tableColumn(feature.entries, /^weapon mastery$/i);
+  if (counts === undefined) {
+    const text = plainText(feature.entries).replace(/\s+/g, ' ');
+    const kinds = MASTERY_KINDS.exec(text);
+    const first = kinds === null ? undefined : countWord(kinds[1] ?? '');
+    if (first === undefined) return undefined;
+    const at = new Map<number, number>([[feature.level, first]]);
+    for (const m of text.matchAll(MASTERY_AT)) {
+      const level = Number(m[2]);
+      if (level >= feature.level && level <= MAX_LEVEL) at.set(level, Number(m[1]));
+    }
+    counts = [];
+    let current = 0;
+    for (let level = 1; level <= MAX_LEVEL; level += 1) {
+      current = at.get(level) ?? current;
+      counts.push(current);
+    }
+  }
+  if (counts.every((n) => n === MASTERY_DEFAULT || n === 0)) return undefined;
+  return { colLabels: ['Weapon Mastery'], rows: counts.map((n) => [n]) };
+}
+
 /**
  * "equal to your Wisdom modifier + your cleric level", "your Charisma
  * modifier + half your paladin level, rounded down", "your rogue level
@@ -1553,6 +1622,7 @@ export function convertClass(el: XmlElement, ctx: Fc5Context): Fc5Result {
   const seen = new Set<string>();
   const choices: Choice[] = [];
   const startNotes: { name: string; entries: Entry[] }[] = [];
+  const laterOnes: { level: number; text: string; where: Placement }[] = [];
   const sorted = levels.features
     .map((f, i) => ({ ...f, at: i }))
     .sort((a, b) => a.level - b.level || a.at - b.at);
@@ -1581,6 +1651,22 @@ export function convertClass(el: XmlElement, ctx: Fc5Context): Fc5Result {
       kind: 'classFeature',
       entity: featureEntity(fname, of, f.level, text, where),
       placement: where,
+    });
+    for (const later of laterExpertise(fname, f.level, text.entries)) {
+      laterOnes.push({ ...later, where });
+    }
+  }
+  // Expertise again at the later level its text names, as 5etools gives it,
+  // since the sheet asks for two skills at each Expertise feature; unless the
+  // file has one of its own there.
+  for (const later of laterOnes) {
+    const key = `expertise|${later.level}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    features.push({
+      kind: 'classFeature',
+      entity: featureEntity(EXPERTISE, of, later.level, { entries: [later.text] }, later.where),
+      placement: later.where,
     });
   }
   // An Ability Score Improvement at each level the file marks for one.
@@ -1701,6 +1787,12 @@ export function convertClass(el: XmlElement, ctx: Fc5Context): Fc5Result {
     pools.spellsKnown,
   );
   Object.assign(cls, casting.fields);
+  // Its Weapon Mastery column, after the slot table, which the line above writes.
+  const mastery = masteryColumn(read);
+  if (mastery !== undefined) {
+    const groups = Array.isArray(cls.classTableGroups) ? cls.classTableGroups : [];
+    cls.classTableGroups = [...groups, mastery];
+  }
   reasons.push(...casting.reasons);
   reasons.push(...optionsReasons(options));
   reasons.push(...readStartNotes(startNotes, cls, edition, skills));

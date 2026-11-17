@@ -349,6 +349,8 @@ describe('a class', () => {
   /** A spell's name of letters alone, distinct for each number: `xa`, `xqr`. */
   const spellNamed = (i: number) =>
     `x${i.toString(26).replace(/\d/g, (d) => 'qrstuvwxyz'.charAt(Number(d)))}`;
+  const named = (name: string, inner: string) =>
+    `<compendium><class><name>${name}</name><hd>8</hd>${inner}</class></compendium>`;
   const casting = (text: string) =>
     cls(
       `<autolevel level="1"><slots>3,2</slots><feature><name>Spellcasting</name><text>${text}</text></feature></autolevel>`,
@@ -434,6 +436,34 @@ describe('a class', () => {
       'choices named in nested brackets and colons',
       cls(
         `<autolevel level="3"><feature optional="YES"><name>A${': ('.repeat(50_000)}${')'.repeat(50_000)}</name><text>x</text></feature><feature optional="YES"><name>Ash Path: ${'(x) '.repeat(50_000)}</name><text>x</text></feature><feature optional="YES"><name>Ward (${'word '.repeat(100_000)})</name><text>x</text></feature></autolevel>`,
+      ),
+    ],
+    [
+      "a warlock's invocation count of repeated count words",
+      named(
+        'Warlock',
+        `<autolevel level="2"><feature><name>Eldritch Invocations</name><text>${'you gain the '.repeat(60_000)}you gain two invocations. ${'two additional '.repeat(20_000)}${'two more at Warlock level '.repeat(20_000)}${'another at 5, '.repeat(20_000)}${'when you reach certain levels '.repeat(20_000)}</text></feature></autolevel>`,
+      ),
+    ],
+    [
+      'many features that each add a maneuver',
+      named(
+        'Fighter',
+        `<autolevel level="3"><feature><name>Fighter Path</name><text>x</text></feature><feature optional="YES"><name>Fighter Path: Ash Master</name><text>x</text></feature><feature optional="YES"><name>Ash Superiority (Ash Master)</name><text>You learn three maneuvers.</text></feature></autolevel><autolevel level="7">${Array.from({ length: 30_000 }, (_, i) => `<feature optional="YES"><name>Additional Maneuvers ${i} (Ash Master)</name><text>You learn two additional maneuvers.</text></feature>`).join('')}</autolevel>`,
+      ),
+    ],
+    [
+      'an Expertise of many later paragraphs',
+      named(
+        'Ash Knight',
+        `<autolevel level="1"><feature><name>Expertise</name><text>${'At 10th level, you can choose another two skill proficiencies.\n'.repeat(50_000)}${'At Ash Ash Ash '.repeat(20_000)}level 9, two more</text></feature></autolevel>`,
+      ),
+    ],
+    [
+      'a Weapon Mastery of many counts',
+      named(
+        'Ash Knight',
+        `<autolevel level="1"><feature><name>Weapon Mastery</name><text>${'mastery properties of '.repeat(20_000)}the mastery properties of three kinds ${'2 at level 2, '.repeat(100_000)}</text></feature></autolevel>`,
       ),
     ],
   ])('converts %s in linear time', (_label, xml) => {

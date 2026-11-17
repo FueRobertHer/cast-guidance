@@ -16,11 +16,14 @@
  *
  * A label of an official list (Fighting Style, Metamagic, Eldritch
  * Invocations, Pact Boon, Maneuvers) also offers that list, so an option the
- * installed game data has, left out as a duplicate, is still offered.
+ * installed game data has, left out as a duplicate, is still offered. An
+ * official list the features count but the file gives no options or counter
+ * for is offered at the count they state (see `classLists.ts`).
  */
 import type { RulesVersion } from '../../data5e/rulesVersion';
 import { childTexts, type XmlElement } from '../xml';
 import { type FileCounter, isSpellsKnown } from './classCounters';
+import { textLists } from './classLists';
 import { readFeatureSpells } from './classSpells';
 import {
   citationEntry,
@@ -125,11 +128,11 @@ function picksIn(entries: readonly Entry[]): number {
   return n === null ? 1 : (countWord(n[1] ?? '') ?? 1);
 }
 
-/** A feature named for a label, or a numbered repeat of one (`Metamagic (2nd)`). */
+/** A feature named for a label, or a numbered repeat of one (`Metamagic (2nd)`, `Metamagic Option (3rd)`). */
 function isLabelFeature(name: string, label: string): boolean {
   const n = name.toLowerCase();
   const l = label.toLowerCase();
-  return n === l || (n.startsWith(`${l} (`) && n.endsWith(')') && n.length - l.length <= 12);
+  return n === l || (n.startsWith(l) && /^(?: options?)? \([^()]{1,9}\)$/.test(n.slice(l.length)));
 }
 
 const KNOWN = /^(.{1,60}?) (?:known|options known)$/i;
@@ -349,6 +352,8 @@ export function convertOptions(choices: readonly OptionChoice[], host: OptionHos
     }
   }
   linkStoredLists(host, mine, labels, known, knownFor, progression, countersRead);
+  // An official list its features count but no option or counter offers: the 2024 Sorcerer's Metamagic.
+  progression.push(...textLists(host.className, host.fixed, progression));
   return {
     progression,
     parts,
