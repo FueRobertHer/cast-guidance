@@ -576,6 +576,7 @@ describe("convertClass another book's optional features", () => {
       ${level(3, feature('Primal Knowledge', tce('You gain proficiency in one skill.')))}
       ${level(4, `${feature('Ability Score Improvement', phb('Raise.'))}${feature('Martial Versatility', tce('Replace a style.'))}`)}
       ${level(8, `${feature('Ability Score Improvement', tce('Raise.'))}${feature('Martial Versatility', tce('Replace a style.'))}`)}
+      ${level(9, feature('Rage', tce('You rage longer.')))}
       ${level(10, feature('Primal Knowledge', tce('You gain proficiency in one skill.')))}`);
     expect(result.entity.source).toBe(CLASS);
     expect(marked(result)).toEqual([
@@ -585,8 +586,9 @@ describe("convertClass another book's optional features", () => {
       ['Primal Knowledge', 3, true],
       ['Ability Score Improvement', 4, false],
       ['Martial Versatility', 4, true],
-      // Cited by the class's own book at 4, so the class's.
       ['Ability Score Improvement', 8, false],
+      // Cited by the class's own book at 1, so the class's.
+      ['Rage', 9, false],
     ]);
     expect(result.entity.classFeatures).toContain(`Primal Knowledge|Barbarian|${CLASS}|3|${TCE}`);
   });
