@@ -21,7 +21,8 @@
  * besides, so a slot row the match does not explain still reaches the sheet.
  * How many spells it knows or prepares is read from its spellcasting feature:
  * a table column, a formula ("your Wisdom modifier + your cleric level"), or a
- * spellbook.
+ * spellbook. The spells its features give, and its subclasses' (a domain's
+ * table, a spell always prepared), are read by {@link readFeatureSpells}.
  *
  * A level with `scoreImprovement="YES"` holds an Ability Score Improvement,
  * which the engine finds by that name, so Fight Club's `Ability Score
@@ -41,6 +42,7 @@ import {
   readCounter,
 } from './classCounters';
 import { convertOptions, type HostOptions, type OptionPart } from './classOptions';
+import { readFeatureSpells } from './classSpells';
 import { isMulticlassNote, readEquipment, readMulticlass, readPrimaryAbility } from './classStart';
 import {
   type ClassBinding,
@@ -54,6 +56,7 @@ import {
   printingRef,
   type SubclassBinder,
 } from './context';
+import { spellsKept } from './spellGrants';
 import {
   abilityKey,
   countWord,
@@ -1166,9 +1169,17 @@ function optionCounters(
 
 /** What a class's or subclass's options leave out. */
 function optionsReasons(options: HostOptions): string[] {
-  if (options.rest.length === 0) return [];
-  const names = [...new Set(options.rest.map((c) => c.name))];
-  return [`its optional features that are no list's options (${listed(names)}) are not converted`];
+  const reasons: string[] = [];
+  if (options.rest.length > 0) {
+    const names = [...new Set(options.rest.map((c) => c.name))];
+    reasons.push(
+      `its optional features that are no list's options (${listed(names)}) are not converted`,
+    );
+  }
+  if (options.spellsKept.length > 0) {
+    reasons.push(`its options' tables of spells (${listed(options.spellsKept)}) are kept as text`);
+  }
+  return reasons;
 }
 
 /** No pools: what a printing of an official class or subclass has, since its own mechanics count. */
@@ -1272,6 +1283,14 @@ function convertSubclass(pick: Pick, from: SubclassFrom, bound: ClassBinding): F
     add(refName(f.name), f.level, text);
   }
   parts.sort((a, b) => Number(a.entity.level) - Number(b.entity.level));
+  // The spells its features give: a domain's, oath's or circle's table, a
+  // patron's expanded list, a spell or cantrip one names.
+  const spells = readFeatureSpells(
+    parts.map((p) => ({ level: Number(p.entity.level), entries: p.entity.entries as Entry[] })),
+    { tables: true, index: from.ctx.spells },
+  );
+  if (spells.blocks !== undefined) sub.additionalSpells = spells.blocks;
+  if (spells.unread) reasons.push(spellsKept(spells.blocks !== undefined));
   sub.subclassFeatures = parts.map((p) =>
     subclassFeatureRef(
       String(p.entity.name),
@@ -1631,6 +1650,12 @@ export function convertClass(el: XmlElement, ctx: Fc5Context): Fc5Result {
         : [{ type: 'entries', name: title.trim(), entries: text }];
   });
   if (fluff.length > 0) cls.fluff = { entries: fluff };
+
+  // The spells its own features say it always has prepared (a 2024 Ranger's
+  // Hunter's Mark). Its tables are its spellcasting's and its options', not
+  // spells it is given.
+  const spells = readFeatureSpells(read, { tables: false, index: ctx.spells });
+  if (spells.blocks !== undefined) cls.additionalSpells = spells.blocks;
 
   // Its options: each label's list, offered by the class, or by the one
   // subclass the label names.

@@ -159,6 +159,33 @@ describe('convertOptions', () => {
     ]);
   });
 
+  it("reads an option's spells, and names one whose table of spells it keeps as text", () => {
+    const dash = String.fromCharCode(0x2014);
+    const result = convertOptions(
+      [
+        choice(
+          'Circle Spells: Arctic',
+          3,
+          `These spells are always prepared.\n3rd ${dash} hold person, spike growth\n5th ${dash} sleet storm, slow`,
+        ),
+        choice(
+          'Circle Spells: Coast',
+          3,
+          `You gain these spells.\n3rd ${dash} mirror image or misty step`,
+        ),
+      ],
+      host(),
+    );
+    expect(result.parts.map((p) => [p.entity.name, p.entity.additionalSpells])).toEqual([
+      [
+        'Arctic',
+        [{ prepared: { 3: ['hold person', 'spike growth'], 5: ['sleet storm', 'slow'] } }],
+      ],
+      ['Coast', undefined],
+    ]);
+    expect(result.spellsKept).toEqual(['Coast']);
+  });
+
   describe('lists stored as spells', () => {
     const withLists = (...lists: string[]): Fc5Context => ({
       ...fc5Context(FILE),
@@ -383,6 +410,21 @@ describe('class options in a file', () => {
       });
       expect(list(json, 'optionalfeature').map((o) => [o.name, o.prerequisite])).toEqual([
         ['Ember Lance', [{ level: { level: 5, class: { name: 'Warlock', visible: true } } }]],
+        ['Ash Sight', undefined],
+      ]);
+    }
+  });
+
+  it('gives an option the file stores the spells a class reads from its copy, in either order', () => {
+    const hex =
+      '<spell><name>Hex Sight</name><level>0</level><classes>Eldritch Invocations</classes><text>You see.</text></spell>';
+    const caster = `<class><name>Ember Knight</name><hd>10</hd><autolevel level="2">${f('Eldritch Invocations', 'Learn two.', '')}${f('Eldritch Invocations: Hex Sight', 'You always have the hex spell prepared.')}${f('Eldritch Invocations: Ash Sight', 'S.')}</autolevel></class>`;
+    for (const xml of [`${hex}${caster}`, `${caster}${hex}`]) {
+      const { json } = convertFc5Compendium(parseXml(`<compendium>${xml}</compendium>`), {
+        fileName: FILE,
+      });
+      expect(list(json, 'optionalfeature').map((o) => [o.name, o.additionalSpells])).toEqual([
+        ['Hex Sight', [{ prepared: { 2: ['hex'] } }]],
         ['Ash Sight', undefined],
       ]);
     }
