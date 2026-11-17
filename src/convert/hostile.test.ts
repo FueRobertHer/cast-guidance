@@ -419,6 +419,12 @@ describe('a class', () => {
       ),
     ],
     [
+      "a subclass's feature of many captioned runs of spells",
+      cls(
+        `<autolevel level="3"><feature><name>Ash Path</name><text>x</text></feature><feature optional="YES"><name>Ash Path: Oath of Ash</name><text>x</text></feature><feature optional="YES"><name>Oath Spells (Oath of Ash)</name><text>You gain oath spells.\n${Array.from({ length: 100_000 }, (_, i) => `Land ${i}:\n1st ${String.fromCharCode(0x2014)} ${spellNamed(i)}\nLore.`).join('\n')}</text></feature></autolevel>`,
+      ),
+    ],
+    [
       "a subclass's spell prose of repeated lead-ins",
       cls(
         `<autolevel level="3"><feature><name>Ash Path</name><text>x</text></feature><feature optional="YES"><name>Ash Path: Oath of Ash</name><text>x</text></feature><feature optional="YES"><name>Oath Spells (Oath of Ash)</name><text>1st ${String.fromCharCode(0x2014)} bless\n${'you always have the '.repeat(20_000)}${'you learn the '.repeat(20_000)}${'added to the '.repeat(20_000)}${'circle of '.repeat(20_000)}</text></feature></autolevel>`,

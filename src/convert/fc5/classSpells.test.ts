@@ -297,6 +297,10 @@ describe('readFeatureSpells', () => {
       `The following spells are added to the warlock spell list for you.\nCantrip: light\n1st ${DASH} bless`,
     ]);
     expect(read(1, entries).blocks).toEqual([{ expanded: { s0: ['light'], s1: ['bless'] } }]);
+    // A cantrip row in a table by class level has no class level to go at,
+    // so the table stays as text.
+    const domain = readText([`You gain domain spells.\nCantrip: light\n1st ${DASH} bless`]).entries;
+    expect(read(1, domain)).toEqual({ unread: true });
     // A lead-in of prose stays prose, and its sentence is read.
     const prose = readText([
       `Cantrips: You learn the light cantrip.\nYou gain oath spells.\n3rd ${DASH} bless`,

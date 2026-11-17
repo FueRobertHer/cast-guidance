@@ -12,7 +12,9 @@
  *   not the table's header, which the files get wrong (The Undead's spell
  *   levels under `Warlock Level`). Two or more captioned tables in one
  *   feature are a choice, a named block each (the 2024 Circle of the Land's
- *   lands).
+ *   lands); one missing a table it cannot read, or a second choice, stays as
+ *   text. A cantrip row (`Cantrip: light`) goes at `s0` of an expanded list.
+ *   A caster's own table of counts and slots is no table of spells.
  * - A sentence naming a spell the feature always gives: "You always have
  *   the Hunter's Mark spell prepared", "you learn the light cantrip".
  *

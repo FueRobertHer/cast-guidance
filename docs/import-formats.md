@@ -117,7 +117,11 @@ prepared (a domain's, an oath's, a circle's, a 2024 patron's), learned (a
 ranger's or a sorcerer's), or added to the class's list by spell level (a
 2014 patron's expanded list, under whatever header the file gives it). Two or
 more captioned tables in one feature are a choice, a named block each (the
-2024 Circle of the Land's lands). A class's own features give only the
+2024 Circle of the Land's lands); a choice missing a table it cannot read, or
+a second choice in a later feature, stays as text, since the sheet offers one
+choice and only whole. A cantrip row (`Cantrip: light`) is a cantrip on an
+expanded list. A caster's own table of counts and slots (`Spells Known`,
+`Spell Slots`) is no table of spells. A class's own features give only the
 sentences (`You always have the Hunter's Mark spell prepared`, `you learn the
 light cantrip`), since its tables are its spellcasting and its options. A
 note in a cell (`summon aberration (a spell in chapter 3)`) is no part of the
