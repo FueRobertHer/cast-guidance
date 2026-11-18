@@ -139,7 +139,7 @@ are synthetic entities that only mimic the JSON schema. Homebrew files use the s
 
 Two small pieces of game-related material do ship with the app: the book titles behind
 the source badges (`src/data5e/sourceNames.ts`) and a few dozen hand-coded feature
-mechanics (`src/engine/curated/curatedEffects.ts`). The mirror itself republishes book
+mechanics (`src/rules/cast-guidance/`). The mirror itself republishes book
 text beyond the SRD. How all of this sits with Wizards of the Coast's policies is still
 under review; [`docs/content-notice.md`](docs/content-notice.md) is the draft notice,
 with the options and the open questions.
@@ -152,7 +152,7 @@ Coast. Dungeons & Dragons and D&D are trademarks of Wizards of the Coast LLC.
 
 Cast Guidance's own code is released under the [MIT License](LICENSE). The license
 covers the original code only: not the book titles, names, terms or rules text in
-`sourceNames.ts` and `curatedEffects.ts`, not the game data the app downloads, and not
+`sourceNames.ts` and `src/rules/cast-guidance/`, not the game data the app downloads, and not
 any trademark.
 
 The production build bundles open source packages under their own licenses, listed with

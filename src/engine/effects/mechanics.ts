@@ -10,7 +10,7 @@
  * 3. what it inherits, which each call site knows: the curated row for its key
  *    or for the entry it copies (`basedOn`), else the prose scan, then its spend
  *    links; an item's magic fields. A built-in rule set's row (`RULE_SET_TYPE`)
- *    under the subject's `ruleKeys` is its curated row, in place of `CURATED`.
+ *    under the subject's `ruleKeys` is its curated row.
  *
  * Last, what layer 3 gave takes the player's prices (`amend`): the entry's own,
  * then each pack patch's, on inherited actions only, so never on an action the
@@ -2003,7 +2003,7 @@ export function entryKeys(e: DataEntity | undefined, uid: string): string[] {
  * alone, the row for every printing. The printings are the feature's own
  * (`printing`, the official one's for a copy), then that of the class or
  * subclass whose uid is `uid`, so a 2014 subclass under a 2024 class reads its
- * own, as the `STANDING` rows left in code test the printing.
+ * own.
  */
 export function printingKeys(keys: readonly string[], printing: string, uid: string): string[] {
   const at = uid.lastIndexOf('|');
@@ -2376,20 +2376,15 @@ function buildRuleIndex(sets: readonly DataEntity[]): RuleIndex {
 }
 
 /**
- * The built-in row of `part` found under the first of `keys` that has one, as
- * the part's code table is tried today: the first key with a row wins. While
- * rows are moving out of code, `inCode` says which keys the code table still
- * has a row under, and the walk stops at the first of those, so a built-in row
- * under a later key never takes the place of a code row under an earlier one.
- * For a part whose rows name no level (`curated`).
+ * The built-in row of `part` found under the first of `keys` that has one: the
+ * first key with a row wins. For a part whose rows name no level (`curated`).
  */
 export function builtInRuleFor(
   col: Collector,
   part: RulePart,
   keys: readonly string[],
-  inCode?: (key: string) => boolean,
 ): RuleRow | undefined {
-  return firstRows(ruleIndexFor(col), part, keys, inCode)?.[0];
+  return firstRows(ruleIndexFor(col), part, keys)?.[0];
 }
 
 /**
@@ -2407,22 +2402,21 @@ export function builtInRuleIn(
 /**
  * Every built-in row of `part` under the first of `keys` that has any, at any
  * level, found as `builtInRuleFor` finds one. A key whose rows are all at other
- * levels is still found, as `STANDING` answers for a feature its row skips, so
- * the call site never goes on to a later key.
+ * levels is still found, so a feature its row skips gets none, and the call
+ * site never goes on to a later key.
  */
 export function builtInRowsFor(
   col: Collector,
   part: RulePart,
   keys: readonly string[],
-  inCode?: (key: string) => boolean,
 ): readonly RuleRow[] | undefined {
-  return firstRows(ruleIndexFor(col), part, keys, inCode);
+  return firstRows(ruleIndexFor(col), part, keys);
 }
 
 /**
- * Emit built-in rows where the code they stand in for ran (`STANDING`, and the
- * roll parts that were `ROLL_ADVANTAGES` and `ROLL_EXTRAS`): each row with no
- * level, or at `featureLevel`, with `origin` itself. `classLevel` is what their
+ * Emit built-in rows of a part that adds beside the prose scan (`standing`,
+ * `rollAdvantage`, `rollExtra`): each row with no level, or at `featureLevel`,
+ * with `origin` itself. `classLevel` is what their
  * formulas read as the class's level; the character's level when absent, as
  * `mechanicsOf` reads it. `className` is the class that gives them
  * (`MechanicsSubject.className`).
@@ -2442,20 +2436,17 @@ export function emitRuleRows(
   }
 }
 
-/** Where a call site emits a part's built-in rows: the levels and the code table it still reads. */
+/** Where a call site emits a part's built-in rows: the levels, and the class that gives them. */
 export interface RuleRowsAt {
   featureLevel?: number;
   classLevel?: number;
   /** The class that gives them (`MechanicsSubject.className`). */
   className?: string;
-  /** The keys the part's code table still has a row under (`builtInRowsFor`). */
-  inCode?: (key: string) => boolean;
 }
 
 /**
  * Emit the built-in rows of `part` under the first of `keys` with any
- * (`builtInRowsFor`), as `emitRuleRows` does. Says whether a key had rows, so
- * the call site reads the code table only when none did.
+ * (`builtInRowsFor`), as `emitRuleRows` does. Says whether a key had rows.
  */
 export function emitBuiltInRows(
   col: Collector,
@@ -2464,7 +2455,7 @@ export function emitBuiltInRows(
   origin: EffectOrigin,
   at: RuleRowsAt = {},
 ): boolean {
-  const rows = builtInRowsFor(col, part, keys, at.inCode);
+  const rows = builtInRowsFor(col, part, keys);
   if (rows === undefined) return false;
   emitRuleRows(col, rows, origin, at.featureLevel, at.classLevel, at.className);
   return true;
@@ -2477,15 +2468,12 @@ function firstRows(
   index: RuleIndex,
   part: RulePart,
   keys: readonly string[],
-  inCode?: (key: string) => boolean,
 ): readonly RuleRow[] | undefined {
   const byKey = index.get(part);
   if (byKey === undefined) return undefined;
   for (const k of keys) {
-    const key = k.toLowerCase();
-    const rows = byKey.get(key);
+    const rows = byKey.get(k.toLowerCase());
     if (rows !== undefined) return rows;
-    if (inCode?.(key) === true) return undefined;
   }
   return undefined;
 }
@@ -2518,16 +2506,10 @@ export interface MechanicsSubject {
   className?: string;
   /**
    * The keys its curated row is found under, in the order the call site tries
-   * `CURATED`: a built-in rule set's `curated` row under the first of them that
-   * has one is its curated row (layer 3). Absent: none is looked for.
+   * them: a built-in rule set's `curated` row under the first of them that has
+   * one is its curated row (layer 3). Absent: none is looked for.
    */
   ruleKeys?: readonly string[];
-  /**
-   * Whether the code table the call site reads (`CURATED`) has a row under a
-   * lowercased key: the first of `ruleKeys` with a row in either table wins, as
-   * the call site tried them, so a code row under an earlier key is still read.
-   */
-  inCode?: (key: string) => boolean;
   /**
    * What a `pick-` pick's id starts with in place of `<origin type>:<origin
    * uid>`: a feat's instance (`feat:<uid>:<instance>`), so each copy of a
@@ -2537,8 +2519,8 @@ export interface MechanicsSubject {
   /**
    * Layer 3: what it inherits, which the call site knows how to collect.
    * `builtIn` is the built-in curated row found for `ruleKeys`, already
-   * emitted: the call site then skips `CURATED`, and its prose scan when the row
-   * says `replace`.
+   * emitted: the call site then skips its prose scan when the row says
+   * `replace`.
    */
   inherited?: (builtIn: BuiltInHit | undefined) => void;
 }
@@ -2683,11 +2665,10 @@ export function mechanicsOf(col: Collector, s: MechanicsSubject): void {
     return;
   }
   const from = col.effects.length;
-  // The built-in curated row is inherited, as the `CURATED` row it stands in
-  // for: after `from`, so the entry's `drop` reaches it, and with the subject's
-  // own origin, which spend links find its action by.
-  const row =
-    s.ruleKeys === undefined ? undefined : builtInRuleFor(col, 'curated', s.ruleKeys, s.inCode);
+  // The built-in curated row is inherited: after `from`, so the entry's `drop`
+  // reaches it, and with the subject's own origin, which spend links find its
+  // action by.
+  const row = s.ruleKeys === undefined ? undefined : builtInRuleFor(col, 'curated', s.ruleKeys);
   if (row !== undefined) emit(col, row.effects, s.origin, level, s.className, true, s.pickBase);
   s.inherited?.(row === undefined ? undefined : { scan: row.scan });
   if (self !== undefined && self.drop.length > 0) {

@@ -1,7 +1,7 @@
 /**
- * The rows moved out of `CURATED` into the shipped rule set
+ * The curated rows of the shipped rule set
  * (`src/rules/cast-guidance/curated.json`), end to end through `deriveSheet`, by
- * every route that reached the code row: the official entry, a Workshop copy
+ * every route that reaches a row: the official entry, a Workshop copy
  * (`basedOn`), a converted copy (`printingOf`), and the spend links that find
  * the row's action by its origin. The world is synthetic, in the release's shape.
  */

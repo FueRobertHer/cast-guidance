@@ -2,8 +2,6 @@ import { readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { RULE_SET_TYPE } from '@/engine/castGuidance';
-import { CURATED } from '@/engine/curated/curatedEffects';
-import { STANDING } from '@/engine/curated/standingEffects';
 import { readRuleSet } from '@/engine/effects/mechanics';
 import { BUILT_IN_RULE_SETS } from '../../tests-fixtures/testWorld';
 import { attachBuiltInRules, loadBuiltInRules, withBuiltInRules } from './builtInRules';
@@ -21,15 +19,6 @@ function shippedFiles(dir = RULES_DIR): string[] {
         : [],
   );
 }
-
-/**
- * Whether a code table still has the row a built-in key stands in for: the key,
- * or, for a row of one printing (`roving|ranger|xphb`), the key without it.
- */
-const inTable = (table: Record<string, unknown>, key: string): boolean => {
-  const at = key.lastIndexOf('|');
-  return Object.hasOwn(table, key) || (at > 0 && Object.hasOwn(table, key.slice(0, at)));
-};
 
 describe('the built-in rule sets', () => {
   it('loads every file under src/rules, once', async () => {
@@ -52,21 +41,6 @@ describe('the built-in rule sets', () => {
         problems: [],
       });
     }
-  });
-
-  it('keeps no curated row also in CURATED, which it stands in for', async () => {
-    const keys = (await loadBuiltInRules()).sets.flatMap((set) =>
-      readRuleSet(set).rows.flatMap((r) => (r.part === 'curated' ? r.keys : [])),
-    );
-    expect(keys.filter((k) => inTable(CURATED, k))).toEqual([]);
-  });
-
-  it('keeps no standing row also in STANDING, which it stands in for', async () => {
-    const keys = (await loadBuiltInRules()).sets.flatMap((set) =>
-      readRuleSet(set).rows.flatMap((r) => (r.part === 'standing' ? r.keys : [])),
-    );
-    expect(keys.length).toBeGreaterThan(0);
-    expect(keys.filter((k) => inTable(STANDING, k))).toEqual([]);
   });
 
   it('reach the engine through the registry', async () => {

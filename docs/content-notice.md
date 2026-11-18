@@ -13,7 +13,7 @@ That license covers the code the owner wrote and nothing else. It does not grant
 any right in:
 
 - the book titles in `src/data5e/sourceNames.ts`;
-- the names, terms and rules text in `src/engine/curated/curatedEffects.ts`;
+- the names, terms and rules text in `src/rules/cast-guidance/`;
 - any game content the app downloads at runtime;
 - any trademark, including "Dungeons & Dragons" and "D&D".
 
@@ -67,7 +67,8 @@ decision even though the compendium does not ship:
   (2026-11-08): keep the table, with comments that do not name the dataset.
   Taking titles from the data the user loads, and shipping no table, is a
   possible later change.
-- **Curated mechanics.** `src/engine/curated/curatedEffects.ts` hand-codes the
+- **Curated mechanics.** `src/rules/cast-guidance/` (once
+  `src/engine/curated/curatedEffects.ts`) hand-codes the
   numbers of 46 common features whose values exist only in prose (for example
   Alert's +5 initiative, Lay on Hands as 5 times paladin level, Rage uses by
   level), with short notes that paraphrase what each feature grants. Some refer
@@ -135,7 +136,7 @@ Open on #111 until the owner signs off:
 - [ ] Choose the content approach: Fan Content Policy, SRD only, or the mirror as
       it is (or a combination).
 - [x] Decide whether the shipped book titles (`sourceNames.ts`) and curated
-      mechanics (`curatedEffects.ts`) are acceptable. Both kept for now
+      mechanics (`curatedEffects.ts`, now `src/rules/cast-guidance/`) are acceptable. Both kept for now
       (2026-11-08); see "What does ship with the app".
 - [ ] Settings says "Nothing ships with the app itself" under the game data
       section, but the book titles and curated mechanics do ship. Decide whether

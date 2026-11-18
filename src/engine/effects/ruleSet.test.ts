@@ -293,14 +293,9 @@ describe('standing rows', () => {
     ]);
   });
 
-  const at = (
-    ctx: EngineContext,
-    keys: string[],
-    level: number,
-    inCode?: (k: string) => boolean,
-  ) => {
+  const at = (ctx: EngineContext, keys: string[], level: number) => {
     const col = new Collector(character(), ctx);
-    const rows = builtInRowsFor(col, 'standing', keys, inCode);
+    const rows = builtInRowsFor(col, 'standing', keys);
     if (rows !== undefined) emitRuleRows(col, rows, origin, level, level);
     return { found: rows !== undefined, effects: col.effects };
   };
@@ -345,12 +340,6 @@ describe('standing rows', () => {
     );
     expect(at(ctx, ['desert|storm', 'desert|copy'], 3)).toEqual({ found: true, effects: [] });
     expect(types(at(ctx, ['none', 'desert|copy'], 3).effects)).toEqual(['acid']);
-  });
-
-  it('stop at an earlier key the code table still has a row under', () => {
-    const ctx = withRules(ruleSet([standing(['b'], [resist('fire')])]));
-    expect(at(ctx, ['a', 'b'], 1, (k) => k === 'a')).toEqual({ found: false, effects: [] });
-    expect(types(at(ctx, ['b'], 1, (k) => k === 'b').effects)).toEqual(['fire']);
   });
 
   it('take a later set’s row at the same level, and keep the earlier set’s at others', () => {
@@ -481,7 +470,7 @@ describe('mechanicsOf: a built-in row is the curated row', () => {
     const col = new Collector(character(), withRules(ruleSet([row(['lantern|hb'], [cue('Lit')])])));
     const inherited = subject(col);
     expect(kinds(col)).toEqual(['cue', 'speedBonus']);
-    // The object itself, as `CURATED` rows add it: spend links find actions by it.
+    // The object itself: spend links find actions by it.
     expect(col.effects[0]?.origin).toBe(origin);
     expect(inherited).toHaveBeenCalledWith({ scan: 'replace' });
     expect(col.warnings).toEqual([]);
@@ -525,17 +514,6 @@ describe('mechanicsOf: a built-in row is the curated row', () => {
     subject(col, { ruleKeys: ['none', 'A', 'b'] });
     expect(col.effects[0]).toMatchObject({ kind: 'cue', text: 'A' });
     expect(builtInRuleFor(col, 'curated', ['NONE', 'B'])?.keys).toEqual(['b']);
-  });
-
-  it('stops at an earlier key the code table still has a row under', () => {
-    const ctx = withRules(ruleSet([row(['b'], [cue('B')])]));
-    const inCode = (key: string) => key === 'a';
-    const col = new Collector(character(), ctx);
-    expect(subject(col, { ruleKeys: ['A', 'b'], inCode })).toHaveBeenCalledWith(undefined);
-    expect(kinds(col)).toEqual(['speedBonus']);
-    // Under the same key, the built-in row is the one read.
-    expect(builtInRuleFor(col, 'curated', ['b'], (key) => key === 'b')?.keys).toEqual(['b']);
-    expect(builtInRuleFor(col, 'curated', ['c', 'b'], inCode)?.keys).toEqual(['b']);
   });
 
   it('takes the later set’s row under the same key', () => {
@@ -674,7 +652,7 @@ describe('the call sites read built-in rows', () => {
     expect(sheet.cues).toContainEqual({ tone: 'info', text: 'Monk row', origin: 'Monk' });
   });
 
-  it('reads a CURATED row under an earlier key before a built-in row under a later one', () => {
+  it('reads the shipped row under an earlier key before a later set’s row under a later one', () => {
     // An Alert|PHB that copies Gift|HB: its keys are alert|phb, then gift|hb.
     const alert: DataEntity = {
       name: 'Alert',
@@ -750,7 +728,7 @@ describe('the call sites read built-in rows', () => {
     expect(kept.cues.map((c) => c.text)).toContain('Endure');
   });
 
-  it("an optional feature's row stands in for its CURATED row", () => {
+  it("an optional feature's row is read under its uid, in place of the shipped one", () => {
     const sheetWith = (ctx: EngineContext) => {
       const doc = character();
       const prompt = deriveSheet(doc, ctx).pending.find((p) => p.kind === 'optionalfeature');

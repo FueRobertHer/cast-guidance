@@ -3,14 +3,12 @@
  * maneuvers, fighting styles, metamagic. Both write them the same way in
  * `optionalfeatureProgression`, and a pick works the same from either.
  */
-import { emitCuratedEffects as emitCurated, hasCuratedRow } from '../curated/curatedEffects';
 import { linkSpend } from '../curated/spendLinks';
-import { emitStandingEffects as emitStanding, hasStandingRow } from '../curated/standingEffects';
 import { summarizeEntries } from '../summarize';
 import type { Ability, DataEntity, EffectOrigin } from '../types';
 import { asSlotCasts, collectAdditionalSpells, withoutPoolCosts } from './additionalSpells';
 import { asEntityArray, type Collector, str } from './base';
-import { emitBuiltInRows, entryKeys, mechanicsOf, officialOf } from './mechanics';
+import { emitBuiltInRows, entryKeys, mechanicsOf } from './mechanics';
 import {
   buildPrereqContext,
   meetsPrerequisite,
@@ -146,7 +144,6 @@ export function readOptionalFeatures(
           );
           // A copy of an official option (`officialOf`) reads that option's rows after its own.
           const uids = entryKeys(of, uid.toLowerCase());
-          const printed = officialOf(of)?.source.toLowerCase();
           mechanicsOf(col, {
             entry: of,
             label: ofOrigin.label,
@@ -155,27 +152,16 @@ export function readOptionalFeatures(
             classLevel: level,
             ...(className === undefined ? {} : { className }),
             ruleKeys: uids,
-            inCode: hasCuratedRow,
             inherited: (builtIn) => {
-              const curated =
-                builtIn !== undefined
-                  ? builtIn.scan === 'replace'
-                  : uids.some((key, i) =>
-                      emitCurated(col, key, ofOrigin, i === 0 ? undefined : printed),
-                    );
-              if (!curated) proseScanFeature(col, str(of.name) ?? uid, of.entries, ofOrigin);
+              if (builtIn?.scan !== 'replace') {
+                proseScanFeature(col, str(of.name) ?? uid, of.entries, ofOrigin);
+              }
               const at = {
                 featureLevel: level,
                 classLevel: level,
                 ...(className === undefined ? {} : { className }),
               };
-              if (
-                !emitBuiltInRows(col, 'standing', uids, ofOrigin, { ...at, inCode: hasStandingRow })
-              ) {
-                uids.some((key, i) =>
-                  emitStanding(col, key, ofOrigin, i === 0 ? undefined : printed, level),
-                );
-              }
+              emitBuiltInRows(col, 'standing', uids, ofOrigin, at);
               emitBuiltInRows(col, 'rollAdvantage', uids, ofOrigin, at);
               emitBuiltInRows(col, 'rollExtra', uids, ofOrigin, at);
               linkSpend(col, uids, str(of.name) ?? uid, ofOrigin);

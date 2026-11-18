@@ -1,6 +1,6 @@
 /**
- * Whole-release sheet snapshot, to prove a move of mechanics between code and
- * data changes no sheet (rule pack port; `docs/rule-sets.md`). It derives a
+ * Whole-release sheet snapshot, to prove a change to the engine or to the
+ * built-in rows changes no sheet it should not (`docs/rule-sets.md`). It derives a
  * fixed set of builds on the pinned release and records a hash of every field
  * of every sheet, so two trees can be compared build by build.
  *
@@ -41,10 +41,9 @@
  * `choices` hash, a build whose sheet and choices match on both trees reads
  * the first tree's saved answers on the second: no answer is lost.
  *
- * `--coverage <file>` writes, for each code table (`CURATED`, `STANDING`) and
- * the built-in rows, the keys no
- * build read: a move of one of those rows must be proved some other way. It wraps the tables in place to
- * count, so it changes no sheet.
+ * `--coverage <file>` writes the built-in rows no build read (by part, first
+ * key and level): a change to one of those rows must be proved some other way.
+ * It wraps the rows in place to count, so it changes no sheet.
  */
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -164,44 +163,15 @@ async function withRules(reg: EntityRegistry): Promise<string> {
   return `${reg.byType('ruleSet' as never).length} sets`;
 }
 
-/** The code tables `--coverage` counts: name, module and export. */
-const TABLES: ReadonlyArray<readonly [string, string]> = [
-  ['../src/engine/curated/curatedEffects.ts', 'CURATED'],
-  ['../src/engine/curated/standingEffects.ts', 'STANDING'],
-];
-
 /**
- * Wrap each code table's rows, and each built-in row's effects (a `spend` row's
- * links), so a read of one is counted. A row is a function (called) or a list (read); either way the
- * engine gets what it got before. Returns the keys read and the keys in all.
+ * Wrap each built-in row's effects (a `spend` row's links), so a read of one is
+ * counted; the engine gets what it got before. Returns the keys read and the
+ * keys in all.
  */
 async function instrument(
   reg: EntityRegistry,
 ): Promise<Map<string, { all: string[]; read: Set<string> }>> {
   const out = new Map<string, { all: string[]; read: Set<string> }>();
-  for (const [file, name] of TABLES) {
-    const at = path.resolve(import.meta.dirname, file);
-    if (!existsSync(at)) continue;
-    const table = ((await import(pathToFileURL(at).href)) as Record<string, unknown>)[name];
-    if (typeof table !== 'object' || table === null) continue;
-    const rows = table as Record<string, unknown>;
-    const read = new Set<string>();
-    out.set(name, { all: Object.keys(rows), read });
-    for (const [key, row] of Object.entries(rows)) {
-      rows[key] =
-        typeof row === 'function'
-          ? (...args: unknown[]) => {
-              read.add(key);
-              return (row as (...a: unknown[]) => unknown)(...args);
-            }
-          : new Proxy(row as object, {
-              get(target, prop, receiver) {
-                read.add(key);
-                return Reflect.get(target, prop, receiver);
-              },
-            });
-    }
-  }
   const mechanics = (await import(
     pathToFileURL(path.resolve(import.meta.dirname, '../src/engine/effects/mechanics.ts')).href
   )) as {
@@ -236,7 +206,7 @@ async function instrument(
 const LOW = { str: 8, dex: 8, con: 8, int: 8, wis: 8, cha: 8 };
 
 /**
- * The states the code tables' rows wait on (`while`), on: raging, and bloodied
+ * The states the built-in rows wait on (`while`), on: raging, and bloodied
  * at 1 hit point. An effect that holds only while raging is on no sheet
  * otherwise, so a wrong one would change nothing a build records. A Rage with
  * no parts of its own, so only the rows that wait on it differ.

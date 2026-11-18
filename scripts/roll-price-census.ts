@@ -1,7 +1,7 @@
 /**
  * What the roll prompt offers for each paid die or bonus and each reroll a
- * build's features give, and what paying takes, to prove a move between code
- * and data changes no price (rule pack port phase 3; `docs/rule-sets.md`). A
+ * build's features give, and what paying takes, to prove a change to the engine
+ * or the built-in rows changes no price (`docs/rule-sets.md`). A
  * paid extra is priced as the Use of its feature's action (`pricedRollEffects`),
  * and that action's cost often comes from a spend link (a built-in `spend`
  * row): drop the link and the prompt offers nothing. The price

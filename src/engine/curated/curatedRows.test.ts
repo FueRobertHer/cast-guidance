@@ -11,11 +11,10 @@ import {
   type FormulaSlot,
   newCharacterDoc,
 } from '../types';
-import { emitCuratedEffects } from './curatedEffects';
 import { DRACONIC_ANCESTRY, DRAGONS, dragonOptions } from './draconicAncestry';
 import { linkSpend } from './spendLinks';
 
-// No data but the rule sets every registry holds: the rows moved out of `CURATED`.
+// No data but the rule sets every registry holds: the built-in curated rows.
 const ctx: EngineContext = {
   get: () => undefined,
   byType: (type) => (type === RULE_SET_TYPE ? BUILT_IN_RULE_SETS : []),
@@ -23,13 +22,12 @@ const ctx: EngineContext = {
 const origin: EffectOrigin = { label: 'Feature', uid: 'x', type: 'class' };
 
 /**
- * A curated row, wherever it lives while rows move out of code: `CURATED`, else
- * the shipped rule set's row, emitted as the seam emits it: under the key for
- * its printing first (`from`, then the origin's uid's), as a class walk looks
- * it up, with `className` the class that gives it at `classLevel` (the
- * character's level when absent). False when neither has a row under the key.
- * A moved row's formulas are
- * filled only at fold time: `worked` works them out here as the fold does.
+ * The shipped rule set's curated row, emitted as the seam emits it: under the
+ * key for its printing first (`from`, then the origin's uid's), as a class walk
+ * looks it up, with `className` the class that gives it at `classLevel` (the
+ * character's level when absent). False when no row is under the key. A row's
+ * formulas are filled only at fold time: `worked` works them out here as the
+ * fold does.
  */
 function emitRow(
   c: Collector,
@@ -39,7 +37,6 @@ function emitRow(
   className?: string,
   classLevel?: number,
 ): boolean {
-  if (emitCuratedEffects(c, key, o, from)) return true;
   let builtIn = false;
   mechanicsOf(c, {
     entry: {},
@@ -58,7 +55,7 @@ function emitRow(
 
 /**
  * The effects a collector holds, without their origin, and with each formula a
- * moved row fills at fold time written in the field it fills.
+ * row fills at fold time written in the field it fills.
  */
 function shown(c: Collector) {
   return c.effects.map(({ origin: _, ...e }) => {
@@ -69,7 +66,7 @@ function shown(c: Collector) {
 }
 
 /**
- * The collector with each moved row's formulas worked out in place, as
+ * The collector with each row's formulas worked out in place, as
  * `fillFormulas` in `derive.ts` does at fold time: the class's level each slot
  * carries (the character's here), proficiency +2 and every ability modifier 0.
  * Only an amount may be below zero.
@@ -97,10 +94,10 @@ function col(className?: string, levels = 5) {
   return new Collector(doc, ctx);
 }
 
-describe('emitCuratedEffects', () => {
-  it('returns false and emits nothing for an unknown key', () => {
+describe('curated rows', () => {
+  it('finds no row and emits nothing for an unknown key', () => {
     const c = col();
-    expect(emitCuratedEffects(c, 'nonexistent|zzz', origin)).toBe(false);
+    expect(emitRow(c, 'nonexistent|zzz', origin)).toBe(false);
     expect(c.effects).toEqual([]);
   });
 

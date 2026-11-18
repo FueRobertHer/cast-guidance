@@ -468,10 +468,13 @@ export interface RulePackEntry {
 export const RULE_SET_TYPE = 'ruleSet';
 
 /**
- * The code table each row stands in for. `curated` is `CURATED`: a row there is
- * the entry's curated row, found under the keys that table uses. `standing` is
- * `STANDING`: defenses, senses and speeds a feature adds beside what its
- * prose scan or curated row reads. `rollAdvantage` and `rollExtra` are what a
+ * The part each row belongs to. `curated` is the entry's curated row, found
+ * under its curated keys (`docs/rule-sets.md`): a feat or optional feature by
+ * `name|source`, a class feature by `name|class`, a subclass feature by
+ * `name|subclass full name`, a species trait by `trait:<name>`, a class by
+ * `class:<name|source>`. `standing` is defenses, senses and speeds a feature
+ * adds beside what its prose scan or curated row reads, found under the same
+ * keys. `rollAdvantage` and `rollExtra` are what a
  * feature adds to the character's own d20 tests (the tables that were
  * `ROLL_ADVANTAGES` and `ROLL_EXTRAS`), found under the roll keys, which name
  * the book: `brave|phb`, `feral instinct|barbarian|phb`. `spend` is what a
