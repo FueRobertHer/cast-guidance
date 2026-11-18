@@ -2409,7 +2409,7 @@ const CHARGE_DIE = /^(\d{0,3})d(\d{1,3})$/;
 
 /**
  * Dice a long rest can roll for charges back: a die first, then dice or whole
- * numbers added. Each die has 2 sides or more and a count of 1 or more, which
+ * numbers added. Each die has 2 sides or more and a count of 1 to 100, which
  * the roller needs, and nothing is taken away, so the roll never gives back
  * less than nothing.
  */
@@ -2418,7 +2418,8 @@ function regainDice(s: string): boolean {
   const terms = s.split('+').map((t) => t.trim());
   const die = (t: string) => {
     const m = CHARGE_DIE.exec(t);
-    return m !== null && (m[1] === '' || Number(m[1]) >= 1) && Number(m[2]) >= 2;
+    const count = m === null || m[1] === '' ? 1 : Number(m[1]);
+    return m !== null && count >= 1 && count <= 100 && Number(m[2]) >= 2;
   };
   return die(terms[0] ?? '') && terms.every((t) => die(t) || /^\d{1,4}$/.test(t));
 }

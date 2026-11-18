@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { roll } from '@/dice/roll';
 import itemRules from '@/rules/cast-guidance/items.json';
 import { BUILT_IN_RULE_SETS } from '../../../tests-fixtures/testWorld';
 import { RULE_SET_TYPE } from '../castGuidance';
@@ -128,9 +129,11 @@ describe('a charges row, read', () => {
     spells: [{ spell: 'Shield', cost: 1 }],
   };
 
-  it('takes dice and numbers added, a die first', () => {
-    for (const regain of ['1d6+4', 'd6 + 1d4 + 2', '2d4', '1d20+10']) {
+  it('takes dice and numbers added, a die first, each of them one the roller rolls', () => {
+    const most = '100d999 + 100d999 + 9999';
+    for (const regain of ['1d6+4', 'd6 + 1d4 + 2', '2d4', '1d20+10', 'd2', most]) {
       expect(read({ regain }).rows[0]?.charges?.regain, regain).toBe(regain);
+      expect(roll(regain).total, regain).toBeGreaterThan(0);
     }
   });
 
@@ -155,6 +158,7 @@ describe('a charges row, read', () => {
     ['a die of no sides', { regain: '1d0' }, '"regain" is the dice'],
     ['a die of one side', { regain: '1d1 + 2' }, '"regain" is the dice'],
     ['no dice of a die', { regain: '0d6' }, '"regain" is the dice'],
+    ['more dice than the roller rolls', { regain: '101d6' }, '"regain" is the dice'],
     ['dice taken away', { regain: '1d4 - 9' }, '"regain" is the dice'],
     ['a number alone', { regain: '4' }, '"regain" is the dice'],
     ['a number first', { regain: '4 + 1d6' }, '"regain" is the dice'],
