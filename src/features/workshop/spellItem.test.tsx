@@ -674,6 +674,26 @@ describe('ItemEditor', () => {
     const all = screen.getByLabelText('Regains them') as HTMLSelectElement;
     expect(all.selectedOptions[0]?.text).toBe('All at dawn, as written');
     cleanup();
+    // None in any case, or what is no regain at all, is Never, as the reader takes it.
+    const shown = (regain: unknown) => {
+      mount(item, {
+        name: 'Odd Rod',
+        charges: 3,
+        castGuidance: { v: 1, effects: [{ kind: 'charges', charges: 3, regain }] },
+      });
+      const text = (screen.getByLabelText('Regains them') as HTMLSelectElement).selectedOptions[0]
+        ?.text;
+      cleanup();
+      return text;
+    };
+    expect([shown('None'), shown(''), shown(null), shown({ n: 1 }), shown(2), shown('ALL')]).toEqual([
+      'Never',
+      'Never',
+      'Never',
+      'Never',
+      '2 at dawn, as written',
+      'All at dawn, as written',
+    ]);
     // An empty recharge field is none, as the effect is made: what it says shows.
     const blank = mount(item, {
       name: 'Dusk Rod',
@@ -683,6 +703,13 @@ describe('ItemEditor', () => {
     });
     const dusk = screen.getByLabelText('Regains them') as HTMLSelectElement;
     expect(dusk.selectedOptions[0]?.text).toBe('1d4 at dawn, as written');
+    // No time, so no amount to give; and a new count keeps what it says.
+    expect(screen.queryByLabelText('How many')).toBeNull();
+    type('Charges', '4');
+    expect((blank().castGuidance as Json).effects).toEqual([
+      { kind: 'charges', charges: 4, regain: '1d4' },
+    ]);
+    type('Charges', '3');
     // A time picked in its place keeps how many it says.
     type('Regains them', 'dusk');
     expect(blank()).toMatchObject({ recharge: 'dusk', rechargeAmount: '{@dice 1d4}' });

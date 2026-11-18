@@ -133,13 +133,17 @@ const effectsOf = (draft: Json): StoredEffect[] => {
   return list(g.effects).filter(isRecord) as StoredEffect[];
 };
 
+/** When an item's charges come back, as its `recharge` field says it: an empty one says none. */
+const rechargeIn = (v: unknown): string | undefined =>
+  typeof v === 'string' && v !== '' ? v : undefined;
+
 /**
  * What comes back at dawn, as an item's `charges` effect says it, from the
  * standard fields: none without a recharge, all without an amount, else the
  * number or the dice (words the effect cannot take are kept, and say so).
  */
 export function regainOf(recharge: unknown, amount: unknown): string | number {
-  if (typeof recharge !== 'string' || recharge === '') return 'none';
+  if (rechargeIn(recharge) === undefined) return 'none';
   const words = (rechargeWords(amount) ?? '').replace(/\s+/g, '');
   if (words === '') return 'all';
   return /^\d+$/.test(words) ? Number(words) : words;
@@ -166,7 +170,7 @@ export function withCharges(draft: Json, patch: Json, own?: Json): Json {
   const next = { ...draft, ...fields };
   // What comes back is the fields' once they say it, or are changed. (How
   // many is changed only beside a recharge.)
-  const fresh = had === undefined || 'recharge' in patch || typeof next.recharge === 'string';
+  const fresh = had === undefined || 'recharge' in patch || rechargeIn(next.recharge) !== undefined;
   const kept: Json = { ability: had?.ability, spells: had?.spells, ...own };
   const spells = list(kept.spells);
   const made: StoredEffect | undefined =
@@ -632,11 +636,14 @@ function Charges(props: EditorProps) {
   const n = draft.charges ?? counted?.charges;
   const charges = typeof n === 'number' ? n : undefined;
   // The recharge the fields say; an empty one is none, as `regainOf` reads it.
-  const recharge =
-    typeof draft.recharge === 'string' && draft.recharge !== '' ? draft.recharge : undefined;
+  const recharge = rechargeIn(draft.recharge);
   // What comes back as the effect says it, shown while no recharge field says it.
+  // (A number or words: none, in any case, is no regain, as the reader takes it.)
+  const said = counted?.regain;
   const handRegain =
-    counted?.regain !== undefined && counted.regain !== 'none' ? counted.regain : undefined;
+    typeof said === 'number' || (typeof said === 'string' && said !== '' && !/^none$/i.test(said))
+      ? said
+      : undefined;
   const old = counted === undefined && effects.some(isOldCharges);
   // The effect an empty Charges box (or none at all, 0) took out, and its place,
   // put back whole when a number is typed again: a new number by way of an
@@ -709,7 +716,8 @@ function Charges(props: EditorProps) {
             value={recharge ?? (handRegain !== undefined ? AS_WRITTEN : '')}
             options={RECHARGE}
             shown={
-              recharge ?? `${handRegain === 'all' ? 'All' : String(handRegain)} at dawn, as written`
+              recharge ??
+              `${/^all$/i.test(String(handRegain)) ? 'All' : String(handRegain)} at dawn, as written`
             }
             disabled={readOnly}
             onChange={(v) => {
@@ -725,7 +733,7 @@ function Charges(props: EditorProps) {
             }}
           />
         )}
-        {charges !== undefined && draft.recharge !== undefined && (
+        {charges !== undefined && recharge !== undefined && (
           <TextField
             label="How many"
             value={rechargeWords(draft.rechargeAmount)}
