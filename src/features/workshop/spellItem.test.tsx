@@ -7,7 +7,9 @@ import { MemoryRouter } from 'react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Entity } from '@/data5e/copyMod';
 import { EntityRegistry } from '@/data5e/normalize';
-import { readStoredEffects } from '@/engine/effects/mechanics';
+import { ITEM_CHARGES } from '@/engine/curated/itemCharges';
+import { readOwnEffects, readStoredEffects } from '@/engine/effects/mechanics';
+import { BUILT_IN_RULE_SETS } from '../../../tests-fixtures/testWorld';
 
 const { choice } = vi.hoisted(() => ({ choice: { current: undefined as string | undefined } }));
 vi.mock('@/data5e/hooks', () => ({
@@ -17,10 +19,10 @@ vi.mock('@/ui/dialogs', () => ({ askChoice: () => Promise.resolve(choice.current
 
 import { EffectCards } from './EffectCards';
 import {
-  CHARGES,
   editor as item,
   rechargeValue,
   rechargeWords,
+  regainOf,
   withCharges,
   withProperty,
 } from './editors/ItemEditor';
@@ -43,7 +45,7 @@ import { EDITORS, type EditorSpec, type Json } from './editorTypes';
 afterEach(cleanup);
 
 /** An editor on screen, as the Workshop holds it; returns the draft as it stands. */
-function mount(spec: EditorSpec, start: Json, registry = new EntityRegistry()) {
+function mount(spec: EditorSpec, start: Json, registry = new EntityRegistry(), original?: Json) {
   let latest = start;
   function Harness() {
     const [draft, setDraft] = useState(start);
@@ -54,7 +56,15 @@ function mount(spec: EditorSpec, start: Json, registry = new EntityRegistry()) {
         for (const [k, v] of Object.entries(patch)) if (v === undefined) delete next[k];
         return next;
       });
-    return <spec.Body draft={draft} change={change} registry={registry} readOnly={false} />;
+    return (
+      <spec.Body
+        draft={draft}
+        change={change}
+        registry={registry}
+        original={original}
+        readOnly={false}
+      />
+    );
   }
   render(
     <MemoryRouter>
@@ -365,24 +375,55 @@ describe('SpellEditor', () => {
 });
 
 describe('item fields', () => {
-  it('counts charges on the sheet as a resource, and takes it out with them', () => {
-    const withThree = withCharges({}, 3);
+  it("counts charges on the sheet with the item's charges effect, and takes it out with them", () => {
+    const withThree = withCharges({}, { charges: 3 });
     expect(withThree).toEqual({
       charges: 3,
-      castGuidance: {
-        v: 1,
-        effects: [{ kind: 'resource', key: CHARGES, label: 'Charges', max: 3, reset: 'long' }],
-      },
+      castGuidance: { v: 1, effects: [{ kind: 'charges', charges: 3, regain: 'none' }] },
     });
-    expect(
-      readStoredEffects(withThree.castGuidance && (withThree.castGuidance as Json).effects)
-        .problems,
-    ).toEqual([]);
-    expect(withCharges(withThree, 5).castGuidance).toMatchObject({ effects: [{ max: 5 }] });
-    expect(withCharges(withThree, undefined)).toEqual({
+    const effects = (d: Json) => (d.castGuidance as Json).effects;
+    expect(readOwnEffects(effects(withThree), 'effects').problems).toEqual([]);
+    const dawn = { ...withThree, recharge: 'dawn', rechargeAmount: '{@dice 1d6 + 1}' };
+    expect(effects({ ...dawn, ...withCharges(dawn, { charges: 5 }) })).toEqual([
+      { kind: 'charges', charges: 5, regain: '1d6+1' },
+    ]);
+    // Its spells and ability stay through a change to the fields.
+    const spells = [{ spell: 'Fireball|XPHB', cost: 1, upTo: 5 }];
+    const cast = { ...dawn, ...withCharges(dawn, {}, { spells, ability: 'int' }) };
+    expect(effects({ ...cast, ...withCharges(cast, { recharge: undefined }) })).toEqual([
+      { kind: 'charges', charges: 3, regain: 'none', ability: 'int', spells },
+    ]);
+    expect(withCharges(withThree, { charges: undefined })).toEqual({
       charges: undefined,
       castGuidance: undefined,
     });
+    expect(withCharges(withThree, { charges: 0 }).charges).toBeUndefined();
+  });
+
+  it('begins counting only for charges given an item that had none, or when asked', () => {
+    // An item opened with charges the sheet does not count yet keeps them uncounted.
+    const opened = { charges: 7, recharge: 'dawn' };
+    expect(withCharges(opened, { charges: 6 })).toEqual({ charges: 6 });
+    expect((withCharges(opened, {}, {}).castGuidance as Json).effects).toEqual([
+      { kind: 'charges', charges: 7, regain: 'all' },
+    ]);
+    // One counted the older way, by its own pool, gets its fields alone.
+    const old = {
+      charges: 3,
+      castGuidance: {
+        v: 1,
+        effects: [{ kind: 'resource', key: ITEM_CHARGES, label: 'Charges', max: 3, reset: 'long' }],
+      },
+    };
+    expect(withCharges(old, { charges: 4 }, {})).toEqual({ charges: 4 });
+  });
+
+  it('says what comes back as the effect does, from the standard fields', () => {
+    expect(regainOf(undefined, '{@dice 1d6 + 1}')).toBe('none');
+    expect(regainOf('dawn', undefined)).toBe('all');
+    expect(regainOf('dusk', '{@dice 1d6 + 1}')).toBe('1d6+1');
+    expect(regainOf('dawn', 3)).toBe(3);
+    expect(regainOf('dawn', 'all')).toBe('all');
   });
 
   it('writes a property as the others are written', () => {
@@ -424,37 +465,132 @@ describe('ItemEditor', () => {
     });
   });
 
-  it('casts a spell from the data by spending its charges', async () => {
+  it('counts its charges with the spells they cast, and says what does not count yet', () => {
     const registry = new EntityRegistry();
     registry.addAll('spell', [
       { name: 'Misty Step', source: 'PHB', level: 2 },
     ] as unknown as Entity[]);
     const draft = mount(item, { name: 'Blink Wand', ...item.blank() }, registry);
+    const effects = () => (draft().castGuidance as Json | undefined)?.effects;
     type('Charges', '3');
-    choice.current = 'Cast a spell';
-    press('More');
-    await screen.findByLabelText('Cast a spell: Spell');
-    // Before a spell is picked, the card asks for one in words.
-    expect(screen.getByText('Cast a spell at will')).toBeTruthy();
-    expect(screen.getByText(/pick a spell from the list/)).toBeTruthy();
+    expect(effects()).toEqual([{ kind: 'charges', charges: 3, regain: 'none' }]);
+    type('Regains them', 'dawn');
+    type('How many', '1d6 + 1');
+    expect(draft()).toMatchObject({ recharge: 'dawn', rechargeAmount: '{@dice 1d6 + 1}' });
+    press('Add a spell its charges cast');
+    // Before a spell is picked, the section asks for one in words.
+    expect(screen.getByText(/This does not count yet: .*pick a spell from the list/)).toBeTruthy();
     expect(screen.queryByText(/name\|source/)).toBeNull();
-    type('Cast a spell: Spell', 'misty step');
-    type('Cast a spell: Cast', `use:${CHARGES}`);
-    type('Cast a spell: Attack and DC from', 'int');
-    const effects = (draft().castGuidance as Json).effects as Json[];
-    expect(effects).toEqual([
-      { kind: 'resource', key: CHARGES, label: 'Charges', max: 3, reset: 'long' },
+    type('Charge spell 1', 'misty step');
+    type('Charge spell 1: up to level', '4');
+    type("Its spells' attack and DC from", 'int');
+    expect(effects()).toEqual([
       {
-        kind: 'grantSpell',
-        spell: 'Misty Step|PHB',
-        resourceKey: CHARGES,
-        usage: '1/day',
+        kind: 'charges',
+        charges: 3,
+        regain: '1d6+1',
         ability: 'int',
+        spells: [{ spell: 'Misty Step|PHB', cost: 1, upTo: 4 }],
       },
     ]);
-    expect(readStoredEffects(effects).problems).toEqual([]);
+    expect(readOwnEffects(effects(), 'effects').problems).toEqual([]);
+    expect(screen.queryByText(/This does not count yet/)).toBeNull();
     // The charges show under Charges, not again among the cards.
-    expect(screen.queryByText(/^Charges: 3 uses/)).toBeNull();
+    expect(screen.queryByRole('button', { name: /^Remove charges/ })).toBeNull();
+    type('Charge spell 1: up to level', '');
+    type('Charge spell 1: costs', '2');
+    expect((effects() as Json[])[0]?.spells).toEqual([{ spell: 'Misty Step|PHB', cost: 2 }]);
+    press('Remove charge spell 1');
+    expect((effects() as Json[])[0]).not.toHaveProperty('spells');
+    type('Charges', '');
+    expect(draft()).not.toHaveProperty('castGuidance');
+    expect(screen.queryByText(/The sheet counts them/)).toBeNull();
+  });
+
+  it('lets an action spend its charges once the sheet counts them, and a spell card not', async () => {
+    const draft = mount(item, { name: 'Storm Rod', ...item.blank() });
+    choice.current = 'Action';
+    press('More');
+    const spends = () => screen.getByLabelText('Action: Spends') as HTMLSelectElement;
+    await screen.findByLabelText('Action: Spends');
+    const offered = () => [...spends().options].map((o) => o.textContent);
+    expect(offered()).not.toContain('Its charges');
+    type('Charges', '5');
+    expect(offered()).toContain('Its charges');
+    fireEvent.change(spends(), { target: { value: ITEM_CHARGES } });
+    const effects = (draft().castGuidance as Json).effects as Json[];
+    expect(effects[0]).toMatchObject({ kind: 'charges', charges: 5 });
+    expect(effects[1]).toMatchObject({ kind: 'action', cost: { resource: ITEM_CHARGES } });
+    expect(readOwnEffects(effects, 'effects').problems).toEqual([]);
+    expect(screen.getAllByText(/spends 1 charge\b/).length).toBeGreaterThan(0);
+    // A spell an item casts by its charges is listed under Charges, so a card does not spend them.
+    choice.current = 'Cast a spell';
+    press('More');
+    const cast = (await screen.findByLabelText('Cast a spell: Cast')) as HTMLSelectElement;
+    expect([...cast.options].map((o) => o.value)).toEqual(['', 'prepared']);
+  });
+
+  it('leaves charges counted the older way as they are, and says so', () => {
+    const old: Json = {
+      name: 'Old Wand',
+      type: 'WD',
+      entries: [],
+      charges: 3,
+      castGuidance: {
+        v: 1,
+        effects: [
+          { kind: 'resource', key: ITEM_CHARGES, label: 'Charges', max: 3, reset: 'long' },
+          { kind: 'grantSpell', spell: 'Shield|PHB', resourceKey: ITEM_CHARGES, usage: '1/day' },
+        ],
+      },
+    };
+    const draft = mount(item, structuredClone(old));
+    expect(screen.getByText(/counts these the older way/)).toBeTruthy();
+    // Its pool is a card like any other, there to change or remove.
+    expect(screen.getByLabelText('Uses per rest: Name')).toHaveProperty('value', 'Charges');
+    expect(screen.queryByRole('button', { name: 'Count them on the sheet' })).toBeNull();
+    type('Charges', '4');
+    expect(draft()).toEqual({ ...old, charges: 4 });
+  });
+
+  it('writes out the spells the app prices for a copy of an item it counts', () => {
+    const registry = new EntityRegistry();
+    registry.setRuleSets(BUILT_IN_RULE_SETS);
+    registry.addAll('spell', [
+      { name: 'Fireball', source: 'PHB', level: 3 },
+      { name: 'Fireball', source: 'XPHB', level: 3 },
+    ] as unknown as Entity[]);
+    const original: Json = {
+      name: 'Wand of Fireballs',
+      source: 'XDMG',
+      type: 'WD|XDMG',
+      charges: 7,
+      recharge: 'dawn',
+      rechargeAmount: '{@dice 1d6 + 1}',
+      entries: [],
+    };
+    const draft = mount(item, structuredClone(original), registry, original);
+    expect(screen.getByText(/cast the spells Wand of Fireballs casts/)).toBeTruthy();
+    press('Count them on the sheet');
+    expect((draft().castGuidance as Json).effects).toEqual([
+      {
+        kind: 'charges',
+        charges: 7,
+        regain: '1d6+1',
+        spells: [{ spell: 'Fireball|XPHB', cost: 1, upTo: 5 }],
+      },
+    ]);
+    expect(screen.queryByRole('button', { name: 'Count them on the sheet' })).toBeNull();
+  });
+
+  it('counts the charges of an item the app does not price, with no spells yet', () => {
+    const draft = mount(item, { name: 'Odd Rod', type: 'RD', entries: [], charges: 2 });
+    expect(screen.getByText(/The sheet does not count these yet/)).toBeTruthy();
+    expect(screen.queryByText(/cast the spells/)).toBeNull();
+    press('Count them on the sheet');
+    expect((draft().castGuidance as Json).effects).toEqual([
+      { kind: 'charges', charges: 2, regain: 'none' },
+    ]);
   });
 
   it('keeps the granted spell box while its name is cleared and typed again', () => {

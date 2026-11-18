@@ -13,7 +13,13 @@ import {
   type StoredEffect,
   type StoredState,
 } from '@/engine/castGuidance';
-import { pickGivesProblems, readMechanics, readStoredEffects } from '@/engine/effects/mechanics';
+import { ITEM_CHARGES } from '@/engine/curated/itemCharges';
+import {
+  pickGivesProblems,
+  readMechanics,
+  readOwnEffects,
+  readStoredEffects,
+} from '@/engine/effects/mechanics';
 import type { PickFill } from '@/engine/effects/picks';
 import { HIT_DIE_COST, type RollFilter, SKILLS, SLOT_COST, type SlotPrice } from '@/engine/types';
 import { pickWords } from '@/features/homebrew/pickWords';
@@ -922,6 +928,11 @@ function paidWords(p: Price): string {
   if (p.resource === SLOT_COST) return slotPriceWords(p as SlotPrice);
   if (p.resource === HIT_DIE_COST) return 'a Hit Point Die';
   const n = p.amount;
+  if (p.resource === ITEM_CHARGES) {
+    return n === 'varies'
+      ? 'charges, as many as you choose'
+      : `${String(n)} ${n === 1 ? 'charge' : 'charges'}`;
+  }
   if (n === 'varies') return `uses of ${String(p.resource)}, as many as you choose`;
   return `${String(n)} ${n === 1 ? 'use' : 'uses'} of ${String(p.resource)}`;
 }
@@ -1087,6 +1098,7 @@ function PriceFields({
   onChange,
   unset = 'Nothing',
   keeps = false,
+  charges = false,
 }: {
   effect: Eff;
   title: string;
@@ -1094,17 +1106,24 @@ function PriceFields({
   onChange: (next: Eff) => void;
   unset?: string;
   keeps?: boolean;
+  /** Spends offers the item's charges (`ITEM_CHARGES`), which the sheet spends from the carried copy's pool. */
+  charges?: boolean;
 }) {
   const cost = priceOf(effect.cost);
   const kept = keeps ? keptOf(effect.cost) : undefined;
   const back = priceOf(effect.buyBack);
   const pools: Options = resources.map((r) => [String(r.key), `Uses of ${words(r.label)}`]);
+  const own =
+    charges && !resources.some((r) => r.key === ITEM_CHARGES)
+      ? ([[ITEM_CHARGES, 'Its charges']] as const)
+      : [];
   const payWith = (p: Price | undefined, hitDie: boolean): { value: string; options: Options } => {
     const value = hitDie && kept !== undefined ? KEEPS : p === undefined ? '' : String(p.resource);
     const options: Options = [
       ['', unset],
       ...(hitDie && keeps ? ([[KEEPS, 'Same pool']] as const) : []),
       ...pools,
+      ...(hitDie ? own : []),
       [SLOT_COST, 'A spell slot'],
       ...(hitDie ? ([[HIT_DIE_COST, 'A Hit Point Die']] as const) : []),
     ];
@@ -1833,6 +1852,7 @@ function Card({
   prefix = '',
   picked,
   inPick = false,
+  charges = false,
 }: {
   effect: Eff;
   problems: string[];
@@ -1850,6 +1870,8 @@ function Card({
   picked?: string;
   /** It is one of what a pick gives. */
   inPick?: boolean;
+  /** An action's cost can spend the item's charges (`EffectCards`' `holdsCharges`). */
+  charges?: boolean;
 }) {
   const spec = specOf(effect);
   const name = spec?.add ?? effect.kind;
@@ -1992,7 +2014,13 @@ function Card({
             />
           )}
           {effect.kind === 'action' && (
-            <PriceFields effect={effect} title={title} resources={resources} onChange={onChange} />
+            <PriceFields
+              effect={effect}
+              title={title}
+              resources={resources}
+              charges={charges}
+              onChange={onChange}
+            />
           )}
           {STATEFUL.has(effect.kind) && (
             <Field label="When">
@@ -2229,6 +2257,7 @@ export function EffectCards({
   onReplace,
   spells,
   hide,
+  holdsCharges = false,
   resources,
   inPlay = false,
   amend,
@@ -2260,6 +2289,11 @@ export function EffectCards({
   spells?: readonly SpellOption[];
   /** Effects another control of the editor shows, left out of the cards (an item's charges). */
   hide?: (e: Eff) => boolean;
+  /**
+   * The list is an item's own: its `charges` effect is read with it, not a
+   * problem, and while it holds one an action's cost can spend them.
+   */
+  holdsCharges?: boolean;
   /** Uses kept elsewhere that an action or a spell here can spend too (a class's pools). */
   resources?: readonly Eff[];
   /**
@@ -2276,7 +2310,12 @@ export function EffectCards({
   const list: Eff[] = Array.isArray(effects) ? (effects as Eff[]) : [];
   const amends: Eff[] = Array.isArray(amend) ? (amend as Eff[]) : [];
   const inPick = fills !== undefined;
-  const problems = inPick ? pickGivesProblems(list, fills) : readStoredEffects(list).problems;
+  const problems = inPick
+    ? pickGivesProblems(list, fills)
+    : holdsCharges
+      ? readOwnEffects(list, 'effects').problems
+      : readStoredEffects(list).problems;
+  const charges = holdsCharges && !inPick && list.some((e) => e.kind === 'charges');
   const versions = useContext(EntryVersions);
   const problemsOf = (i: number) =>
     problems
@@ -2412,6 +2451,7 @@ export function EffectCards({
             prefix={prefix}
             picked={picked}
             inPick={inPick}
+            charges={charges}
             onRemove={() => onChange(list.filter((_, j) => j !== i))}
             onChange={(next, renamed) =>
               renamed === undefined
