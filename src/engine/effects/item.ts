@@ -1,16 +1,10 @@
 import { WORN_TAG_KINDS } from '../castGuidance';
-import { itemChargeKey } from '../curated/itemCharges';
+import { itemChargeKey, itemChargesOf, regainRollOf } from '../curated/itemCharges';
 import type { DataEntity, EffectOrigin } from '../types';
 import { refUid } from '../types';
 import { collectAdditionalSpells } from './additionalSpells';
 import { type Collector, str } from './base';
-import {
-  builtInRowsFor,
-  builtInRuleFor,
-  emitRuleRows,
-  mechanicsOf,
-  type RuleRow,
-} from './mechanics';
+import { builtInRowsFor, emitRuleRows, mechanicsOf, type RuleRow } from './mechanics';
 
 export function itemTypeCode(e: DataEntity): string | undefined {
   const t = str(e.type);
@@ -138,21 +132,39 @@ export function collectItems(col: Collector): void {
           readWornTags(col, e, origin);
         },
       });
-      // Charges that cast spells (a built-in `charges` row, under the entry's
-      // ref as the cast prompt finds it): a pool of its own, outside what the
-      // item inherits, which the cast prompt spends and a long rest (dawn)
-      // partly refills.
-      const charged = builtInRuleFor(col, 'charges', [origin.uid])?.charges;
+      // Charges that cast spells (a built-in `charges` row, or the item's own
+      // or a pack's `charges` effect, under the entry's ref as the cast prompt
+      // finds them): a pool of its own, outside what the item inherits, which
+      // the cast prompt spends and a long rest (dawn) refills by its roll.
+      const charged = itemChargesOf(col.ctx, col.doc.id, entry.ref);
       if (charged !== undefined) {
+        const key = itemChargeKey(entry.id);
+        const roll = regainRollOf(charged);
         col.add({
           kind: 'resource',
-          key: itemChargeKey(entry.id),
+          key,
           label: `${origin.label} charges`,
           max: charged.charges,
           resetOn: 'long',
-          regainRoll: charged.regain,
+          ...(roll === undefined ? {} : { regainRoll: roll }),
           origin,
         });
+        // The spells its own or a pack's charges cast are granted, each paid
+        // from this copy's pool by level. Those name their book (`ref`); a
+        // built-in row's name none, as they only price spells the character
+        // casts anyway: some of their items cast at a fixed DC, which a grant
+        // would not show.
+        for (const s of charged.spells) {
+          if (s.ref === undefined) continue;
+          col.add({
+            kind: 'grantSpell',
+            spell: s.ref,
+            usage: 'charges',
+            resourceKey: key,
+            ...(charged.ability === undefined ? {} : { ability: charged.ability }),
+            origin,
+          });
+        }
       }
     }
 

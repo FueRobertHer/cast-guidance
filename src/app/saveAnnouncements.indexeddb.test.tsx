@@ -46,7 +46,10 @@ vi.mock('@/data5e/hooks', () => {
     }),
   };
 });
-vi.mock('@/data5e/engineAdapter', () => ({ engineContextFor: (r: unknown) => r }));
+vi.mock('@/data5e/engineAdapter', () => ({
+  engineContextFor: (r: unknown) => r,
+  entityLookup: (r: unknown) => r,
+}));
 vi.mock('@/features/dice/DiceTray', () => ({ DiceTray: () => null }));
 vi.mock('@/features/sheet/HistoryDrawer', () => ({ HistoryDrawer: () => null }));
 

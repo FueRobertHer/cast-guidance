@@ -205,6 +205,8 @@ describe("a long rest and an item's charges", () => {
     doc.play.resources = [{ key: 'item-charges:s1', used: 9 }];
     const sheet = await renderSheet(doc, { extra: { item: [staff] } });
     expect(screen.queryByRole('button', { name: /^Staff of Healing charges use/ })).toBeNull();
+    // Its 9 spent are kept while it is put away, not over a limit to clear.
+    expect(screen.queryByRole('button', { name: 'Bring within limits' })).toBeNull();
 
     press('Long rest');
     await (await dialog('Long rest')).press('Rest');
@@ -267,5 +269,108 @@ describe('table rules and moments at a rest (Homebrew Workshop phase 4)', () => 
       'Long rest complete: Restored +5 HP · 5 temporary hit points · Dawnwatch',
     );
     expect((await sheet.saved()).play.tempHp).toBe(5);
+  });
+});
+
+/**
+ * A homebrew rod that says its own charges (O1): 7, 1d6 + 1 back at dawn,
+ * Cure Wounds for `cost` a casting, one more a level up to 3rd.
+ */
+const rodOf = (cost = 1, regain: string = '1d6+1'): DataEntity => ({
+  name: 'Rod of Mending',
+  source: 'HB',
+  type: 'RD',
+  rarity: 'rare',
+  reqAttune: true,
+  entries: ['This rod has 7 charges.'],
+  castGuidance: {
+    v: 1,
+    effects: [
+      {
+        kind: 'charges',
+        charges: 7,
+        regain,
+        ability: 'wis',
+        spells: [{ spell: 'Cure Wounds|TST', cost, upTo: 3 }],
+      },
+    ],
+  },
+});
+const rodEntry = (id: string, equipped = true) => ({
+  id,
+  ref: { name: 'Rod of Mending', source: 'HB' },
+  qty: 1,
+  equipped,
+  attuned: true,
+});
+
+describe("a homebrew item's charges put away", () => {
+  const putAway = (used: number) => {
+    const doc = sorcerer();
+    doc.equipment = [rodEntry('r1', false)];
+    doc.play.resources = [{ key: 'item-charges:r1', used }];
+    return doc;
+  };
+
+  it('never calls them over a limit, not even as the Play tab opens', async () => {
+    let flashed = false;
+    // Each node as it was added, so a banner taken away again is still seen.
+    const watch = new MutationObserver((records) => {
+      for (const r of records) {
+        for (const n of r.addedNodes) {
+          if (n.textContent?.includes('Bring within limits')) flashed = true;
+        }
+      }
+    });
+    const sheet = await renderSheet(putAway(6), { extra: { item: [rodOf()] }, path: 'spells' });
+    watch.observe(document.body, { subtree: true, childList: true, characterData: true });
+    try {
+      await sheet.tab('Play');
+      await screen.findByRole('button', { name: 'Long rest' });
+    } finally {
+      watch.disconnect();
+    }
+    expect(flashed).toBe(false);
+  });
+
+  it('keeps them spent, within limits, and rolls their dawn regain on a long rest', async () => {
+    const sheet = await renderSheet(putAway(6), { extra: { item: [rodOf()] } });
+    expect(screen.queryByRole('button', { name: /^Rod of Mending charges use/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Bring within limits' })).toBeNull();
+
+    press('Long rest');
+    await (await dialog('Long rest')).press('Rest');
+
+    // 1d6 + 1 back, 2 to 7, of the 6 spent: rolled, not refilled.
+    const back = Number(/(\d+) Rod of Mending charges/.exec(notice() ?? '')?.[1]);
+    expect(back).toBeGreaterThanOrEqual(2);
+    expect(back).toBeLessThanOrEqual(6);
+    const stillSpent = 6 - back;
+    expect((await sheet.saved()).play.resources).toEqual(
+      stillSpent === 0 ? [] : [{ key: 'item-charges:r1', used: stillSpent }],
+    );
+  });
+
+  it('keeps them spent when the rest of the sheet is brought within limits', async () => {
+    // More level 1 slots spent than a level 5 sorcerer has.
+    const doc = putAway(6);
+    doc.play.slotsSpent[0] = 9;
+    const sheet = await renderSheet(doc, { extra: { item: [rodOf()] } });
+    const alert = screen.getByRole('alert').textContent ?? '';
+    expect(alert).toMatch(/Level 1 spell slots spent: 9/);
+    expect(alert).not.toMatch(/Rod of Mending/);
+
+    press('Bring within limits');
+    const saved = await sheet.saved();
+    expect(saved.play.slotsSpent[0]).toBe(4);
+    expect(saved.play.resources).toEqual([{ key: 'item-charges:r1', used: 6 }]);
+  });
+
+  it('keeps them spent through a long rest when they never come back', async () => {
+    const sheet = await renderSheet(putAway(3), { extra: { item: [rodOf(1, 'none')] } });
+    press('Long rest');
+    await (await dialog('Long rest')).press('Rest');
+    expect(notice()).not.toContain('Rod of Mending');
+    expect((await sheet.saved()).play.resources).toEqual([{ key: 'item-charges:r1', used: 3 }]);
   });
 });

@@ -21,7 +21,7 @@ import { PackProblem } from '@/ui/PackProblem';
 import { cardClass, openListClass } from '@/ui/surfaces';
 import { fieldClass } from '@/ui/TextField';
 import { RemoveAddedSpell } from './AddSpellSheet';
-import { castsByPrompt, type SpellCast } from './castPlan';
+import { grantBadgeTitle, grantLimitWords, grantUsedUp, type SpellCast } from './castPlan';
 import { castingEconomy, isConcentratingOn } from './castResources';
 import { conditionLimits } from './conditionEffects';
 import {
@@ -116,8 +116,8 @@ interface RowContext {
   dcRaisedBy: (block: SpellcastingBlock) => string[];
   /** What lowered it, for its red ring. */
   dcLoweredBy: (block: SpellcastingBlock) => string[];
-  /** The built-in rule sets: what a carried item's charges cast (`SpellCast.ruleSets`). */
-  ruleSets: SpellCast['ruleSets'];
+  /** The registry's lookups: what a carried item's charges cast (`SpellCast.entities`). */
+  entities: SpellCast['entities'];
 }
 
 const hasSpellAttack = (entity: Entity | undefined) =>
@@ -219,7 +219,7 @@ function SlotSpellRow({
     block,
     abilityModifier: sheet.abilities[block.ability].mod,
     attack: attackModifier !== undefined,
-    ruleSets: ctx.ruleSets,
+    entities: ctx.entities,
   };
   const locked =
     block.learnable !== undefined &&
@@ -338,12 +338,12 @@ function InnateSpellRow({
         ? undefined
         : { key: limited.key, label: grant.origin, max: limited.max },
     attack: attackModifier !== undefined,
-    ruleSets: ctx.ruleSets,
+    entities: ctx.entities,
   };
   // Rolling is always allowed, but a spent grant with nothing else to cast it
   // with must not go on marking your action and your concentration.
   const depleted = remaining !== undefined && remaining <= 0;
-  const usedUp = depleted && !castsByPrompt(cast);
+  const usedUp = grantUsedUp(cast, remaining);
   return (
     <SpellRow
       name={name}
@@ -358,14 +358,12 @@ function InnateSpellRow({
           {grant.added && <Badge tone="guide">Outside your class</Badge>}
           {remaining !== undefined && limited !== undefined && (
             <span
-              title={
-                depleted ? 'No uses left until you rest' : `${grant.usage} from ${grant.origin}`
-              }
+              title={grantBadgeTitle(grant.usage, grant.origin, depleted)}
               // Uses left of an innate spell are magic's to spend, so `arcane`;
               // spent, a neutral badge.
               className={`shrink-0 ${badgeClass(depleted ? 'neutral' : 'arcane')}`}
             >
-              {remaining}/{limited.max} per {grant.usage?.split('/')[1]}
+              {remaining}/{limited.max} {grantLimitWords(grant.usage)}
             </span>
           )}
           <VerbalMark entity={entity} noVerbal={ctx.noVerbal} />
@@ -645,7 +643,7 @@ export function YourSpells({
   built?: DerivedSheet | null;
   update: DocUpdater;
 }) {
-  const { registry, ruleSets, spellsMissing, spellPacks, spellsSettling } = useSpellData(
+  const { registry, entities, spellsMissing, spellPacks, spellsSettling } = useSpellData(
     sheet,
     doc,
   );
@@ -703,7 +701,7 @@ export function YourSpells({
     entityOf,
     dcRaisedBy: (block) => saveDcRaisedBy(block, built),
     dcLoweredBy: (block) => saveDcLoweredBy(block, built),
-    ruleSets,
+    entities,
   };
 
   // Always prepared grants cast with a class's slots, so they sit in its list.

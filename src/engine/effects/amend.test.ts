@@ -325,6 +325,42 @@ describe("a pack's amend", () => {
       ]);
     }
   });
+
+  it('prices what an entry inherits beside a list of charges alone, which replaces only an item', () => {
+    const charges = {
+      kind: 'charges',
+      charges: 7,
+      regain: 'all',
+      spells: [{ spell: 'Fireball|XPHB', cost: 1 }],
+    };
+    const wand = pack('Wand', [
+      {
+        target: 'lantern|hb',
+        effects: [charges],
+        amend: [{ label: 'Flurry of Blows', cost: { amount: 2 } }],
+      },
+    ]);
+    const feat = collect(official, [wand]);
+    expect(actions(feat)).toEqual([
+      ['Flurry of Blows', { resource: 'focus', amount: 2 }, null, true],
+      ['Step', null, null, true],
+    ]);
+    expect(feat.warnings).toEqual([
+      'Wand: Lantern: only an item holds charges, so its "charges" effect counts for nothing',
+    ]);
+    const item = new Collector(character(), world({ [RULE_PACK_TYPE]: [wand] }));
+    mechanicsOf(item, {
+      entry: official,
+      label: 'Lantern',
+      origin: { ...origin, type: 'item' },
+      target: 'Lantern|HB',
+      inherited: () => inheritTwo(item),
+    });
+    expect(actions(item)).toEqual([]);
+    expect(item.warnings).toEqual([
+      'Wand: Lantern: "amend" finds no action it inherits: what it inherits is replaced',
+    ]);
+  });
 });
 
 describe("another feature's link on an amended action", () => {

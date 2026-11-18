@@ -14,6 +14,7 @@ import {
   castTiles,
   classEntry,
   concentratingOn,
+  grantedSpell,
   HARNESS_TIMEOUT,
   left,
   pips,
@@ -385,5 +386,135 @@ describe("casting from an item's charges", () => {
       'Level 3 from Staff of Healing, 3 charges',
       'Level 4 from Staff of Healing, 4 charges',
     ]);
+  });
+});
+
+/** Heals 1d8, a die more a slot level. */
+const cureWounds: DataEntity = {
+  name: 'Cure Wounds',
+  source: 'TST',
+  level: 1,
+  school: 'A',
+  time: [{ number: 1, unit: 'action' }],
+  entries: ['A creature you touch regains {@dice 1d8} hit points.'],
+  entriesHigherLevel: [
+    { entries: ['The healing increases by {@scaledice 1d8|1-9|1d8} per slot above 1st.'] },
+  ],
+};
+/**
+ * A homebrew rod that says its own charges (O1): 7, 1d6 + 1 back at dawn,
+ * Cure Wounds for `cost` a casting, one more a level up to 3rd.
+ */
+const rodOf = (cost = 1, regain: string = '1d6+1'): DataEntity => ({
+  name: 'Rod of Mending',
+  source: 'HB',
+  type: 'RD',
+  rarity: 'rare',
+  reqAttune: true,
+  entries: ['This rod has 7 charges.'],
+  castGuidance: {
+    v: 1,
+    effects: [
+      {
+        kind: 'charges',
+        charges: 7,
+        regain,
+        ability: 'wis',
+        spells: [{ spell: 'Cure Wounds|TST', cost, upTo: 3 }],
+      },
+    ],
+  },
+});
+const rodEntry = (id: string, equipped = true) => ({
+  id,
+  ref: { name: 'Rod of Mending', source: 'HB' },
+  qty: 1,
+  equipped,
+  attuned: true,
+});
+
+describe("a homebrew item's own charges", () => {
+  const world = (cost = 1) => ({ extra: { spell: [cureWounds], item: [rodOf(cost)] } });
+  const ROD_TILES = [
+    'Level 1 from Rod of Mending, 1 charge',
+    'Level 2 from Rod of Mending, 2 charges',
+    'Level 3 from Rod of Mending, 3 charges',
+  ];
+  const rodTiles = () => castTiles().filter((t) => t.includes('Rod of Mending'));
+  const mender = (known: boolean, ...ids: string[]) => {
+    const doc = sorcerer();
+    doc.spellcasting = {
+      'sorcerer|tst': { known: known ? [ref('Cure Wounds')] : [], prepared: [] },
+    };
+    doc.equipment = ids.map((id) => rodEntry(id));
+    return doc;
+  };
+
+  it('grants its spell on a row of its own, priced by level from its charges', async () => {
+    const sheet = await renderSheet(mender(false, 'r1'), world());
+    expect(grantedSpell('Cure Wounds')).toEqual({
+      alwaysPrepared: false,
+      uses: '7/7 charges',
+      usesTitle: 'charges from Rod of Mending',
+    });
+
+    press('1d8');
+    expect(castTiles()).toEqual(ROD_TILES);
+    castHeld('Level 2 from Rod of Mending');
+
+    expect(rollLogStore.getState().rolls.map((r) => [r.expr, r.kind])).toEqual([['2d8', 'heal']]);
+    expect(left('Rod of Mending charges use')).toBe(5);
+    expect(grantedSpell('Cure Wounds').uses).toBe('5/7 charges');
+    expect(pressed('Action')).toBe(true);
+    expect((await sheet.history())[0]).toBe('Cast Cure Wounds (L2 from 2 Rod of Mending charges)');
+  });
+
+  it("offers its charges on a class spell's row by level, never as a use", async () => {
+    await renderSheet(mender(true, 'r1'), world());
+    // The class's row comes first, then the rod's own.
+    fireEvent.click(screen.getAllByRole('button', { name: '1d8' })[0] as HTMLElement);
+    expect(castTiles()[0]).toBe('Level 1 slot, 4 left');
+    expect(rodTiles()).toEqual(ROD_TILES);
+  });
+
+  it('casts nothing from its row with too few charges left for any level', async () => {
+    // Two charges a casting, with one left.
+    const doc = mender(false, 'r1');
+    doc.play.resources = [{ key: 'item-charges:r1', used: 6 }];
+    const sheet = await renderSheet(doc, world(2));
+    expect(grantedSpell('Cure Wounds').uses).toBe('1/7 charges');
+
+    press('1d8');
+    expect(castTiles()).toEqual([]);
+    expect(pressed('Action')).toBe(false);
+    expect((await sheet.saved()).play.resources).toEqual([{ key: 'item-charges:r1', used: 6 }]);
+  });
+
+  it('says a cantrip it cannot pay for wants charges, not a rest', async () => {
+    // Spark Flick for 2 charges, with one left.
+    const rod = rodOf();
+    const effects = (rod.castGuidance as { effects: Array<{ spells: unknown[] }> }).effects;
+    if (effects[0] !== undefined) effects[0].spells = [{ spell: 'Spark Flick|TST', cost: 2 }];
+    const doc = mender(false, 'r1');
+    doc.play.resources = [{ key: 'item-charges:r1', used: 6 }];
+    await renderSheet(doc, { extra: { spell: [cureWounds, flick], item: [rod] } });
+    const cast = screen.getAllByRole('button', { name: 'Cast Spark Flick' })[0];
+    expect(cast?.hasAttribute('disabled')).toBe(true);
+    expect(cast?.getAttribute('title')).toBe('Not enough charges left');
+  });
+
+  it('gives two rods two rows, each spending its own charges', async () => {
+    const sheet = await renderSheet(mender(false, 'r1', 'r2'), world());
+    const chips = screen.getAllByRole('button', { name: '1d8' });
+    expect(chips).toHaveLength(2);
+
+    fireEvent.click(chips[1] as HTMLElement);
+    expect(castTiles()).toEqual([
+      'Level 1 from Rod of Mending 2, 1 charge',
+      'Level 2 from Rod of Mending 2, 2 charges',
+      'Level 3 from Rod of Mending 2, 3 charges',
+    ]);
+    castHeld('Level 1 from Rod of Mending 2');
+    expect((await sheet.saved()).play.resources).toEqual([{ key: 'item-charges:r2', used: 1 }]);
   });
 });

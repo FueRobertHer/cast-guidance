@@ -478,3 +478,75 @@ describe("an item's charges on the Spells tab", () => {
     expect(staffTiles()).toEqual(STAFF_TILES);
   });
 });
+
+/** Heals 1d8, a die more a slot level. */
+const cureWounds: DataEntity = {
+  name: 'Cure Wounds',
+  source: 'TST',
+  level: 1,
+  school: 'A',
+  time: [{ number: 1, unit: 'action' }],
+  entries: ['A creature you touch regains {@dice 1d8} hit points.'],
+  entriesHigherLevel: [
+    { entries: ['The healing increases by {@scaledice 1d8|1-9|1d8} per slot above 1st.'] },
+  ],
+};
+/**
+ * A homebrew rod that says its own charges (O1): 7, 1d6 + 1 back at dawn,
+ * Cure Wounds for `cost` a casting, one more a level up to 3rd.
+ */
+const rodOf = (cost = 1, regain: string = '1d6+1'): DataEntity => ({
+  name: 'Rod of Mending',
+  source: 'HB',
+  type: 'RD',
+  rarity: 'rare',
+  reqAttune: true,
+  entries: ['This rod has 7 charges.'],
+  castGuidance: {
+    v: 1,
+    effects: [
+      {
+        kind: 'charges',
+        charges: 7,
+        regain,
+        ability: 'wis',
+        spells: [{ spell: 'Cure Wounds|TST', cost, upTo: 3 }],
+      },
+    ],
+  },
+});
+const rodEntry = (id: string, equipped = true) => ({
+  id,
+  ref: { name: 'Rod of Mending', source: 'HB' },
+  qty: 1,
+  equipped,
+  attuned: true,
+});
+
+describe("a homebrew item's own charges on the Spells tab", () => {
+  it("grants its spell in the innate group, priced by level from that rod's charges", async () => {
+    const doc = sorcerer();
+    doc.spellcasting = { 'sorcerer|tst': { known: [], prepared: [] } };
+    doc.equipment = [rodEntry('r1')];
+    const sheet = await renderSheet(doc, {
+      path: 'spells',
+      extra: { spell: [cureWounds], item: [rodOf()] },
+    });
+
+    const heading = screen.getByRole('heading', { level: 2, name: 'Innate & granted spells' });
+    const group = heading.closest('section');
+    if (group === null) throw new Error('no group');
+    expect(within(group).getByText('7/7 charges').getAttribute('title')).toBe(
+      'charges from Rod of Mending',
+    );
+    fireEvent.click(within(group).getByRole('button', { name: '1d8' }));
+    expect(castTiles()).toEqual([
+      'Level 1 from Rod of Mending, 1 charge',
+      'Level 2 from Rod of Mending, 2 charges',
+      'Level 3 from Rod of Mending, 3 charges',
+    ]);
+    castHeld('Level 3 from Rod of Mending');
+    expect(within(group).getByText('4/7 charges')).toBeTruthy();
+    expect((await sheet.saved()).play.resources).toEqual([{ key: 'item-charges:r1', used: 3 }]);
+  });
+});

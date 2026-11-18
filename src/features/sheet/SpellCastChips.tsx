@@ -13,6 +13,7 @@ import {
   castsByPrompt,
   castWaysKey,
   type SpellCast,
+  usedUpTitle,
 } from './castPlan';
 import type { D20Ask } from './d20Tests';
 
@@ -120,7 +121,7 @@ export function SpellCastChips({
           wear={castWear}
           aria-label={`Cast ${info.name}`}
           disabled={usedUp}
-          title={usedUp ? 'No uses left until you rest' : castTitle}
+          title={usedUp ? usedUpTitle(cast) : castTitle}
           onClick={(event) => {
             if (prompts) {
               castFrom(event.currentTarget, castPlan(cast), undefined, {

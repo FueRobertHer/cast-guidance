@@ -497,7 +497,7 @@ export function playSpell(name: string): { prepared: boolean } {
 
 /**
  * A row under "Innate & granted spells": whether it says "Always prepared",
- * and its uses chip ("1/1 per day") with the chip's tooltip.
+ * and its uses chip ("1/1 per day", an item's "7/7 charges") with the chip's tooltip.
  */
 export function grantedSpell(name: string): {
   alwaysPrepared: boolean;
@@ -513,7 +513,7 @@ export function grantedSpell(name: string): {
     .find((b) => b.querySelector('span')?.textContent === name);
   if (trigger === undefined) throw new Error(`no granted spell named ${name}`);
   const chips = [...trigger.querySelectorAll('span')].slice(1);
-  const uses = chips.find((c) => /per /.test(c.textContent ?? ''));
+  const uses = chips.find((c) => /per |charges$/.test(c.textContent ?? ''));
   return {
     alwaysPrepared: chips.some((c) => c.textContent === 'Always prepared'),
     uses: uses?.textContent ?? undefined,

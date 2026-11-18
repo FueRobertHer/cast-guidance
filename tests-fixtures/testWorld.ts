@@ -784,6 +784,16 @@ const WORLD: Record<string, DataEntity[]> = {
   [RULE_SET_TYPE]: BUILT_IN_RULE_SETS,
 };
 
+/**
+ * Lookups holding these rule sets and nothing else, for what reads an item's
+ * charges outside a derive (`itemChargesOf`).
+ */
+export function ruleSetLookup(
+  sets: DataEntity[] = BUILT_IN_RULE_SETS,
+): Pick<EngineContext, 'get' | 'byType'> {
+  return { get: () => undefined, byType: (type) => (type === RULE_SET_TYPE ? sets : []) };
+}
+
 export function makeTestContext(): EngineContext {
   return {
     get(type, name, source) {

@@ -35,7 +35,13 @@ import {
   type TableRuleChoices,
   type TableRuleId,
 } from '@/engine/castGuidance';
-import { readMechanics, readPack, readStoredEffects } from '@/engine/effects/mechanics';
+import {
+  patchReplaces,
+  readMechanics,
+  readPack,
+  readPatchList,
+  readStoredEffects,
+} from '@/engine/effects/mechanics';
 import { readPackMoments } from '@/engine/moments';
 import { appRulesFor, ruleSources } from '@/engine/rules';
 import type { CharacterDoc, DataEntity } from '@/engine/types';
@@ -913,14 +919,13 @@ function asksWords(list: readonly unknown[]): string[] {
 }
 
 function changeWords(p: Record<string, unknown>): string {
-  const replace = own(p, 'effects');
+  const raw = own(p, 'effects');
   const add = own(p, 'add');
   // What the engine reads of it: a list none of whose effects can be read
   // replaces nothing (its problems say why), and beside a replacement a price
   // changes nothing.
-  const replaces =
-    Array.isArray(replace) &&
-    (replace.length === 0 || readStoredEffects(replace).effects.length > 0);
+  const replaces = patchReplaces(raw, readPatchList(raw, 'effects'));
+  const replace = Array.isArray(raw) ? raw : [];
   const adds = Array.isArray(add) ? add : [];
   // A pick is said by what it asks for, not counted as an effect.
   const effects = (list: readonly unknown[]) => list.filter((e) => !asks(e)).length;

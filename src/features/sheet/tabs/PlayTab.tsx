@@ -80,7 +80,7 @@ import {
   actionUse,
   applyRestore,
 } from '../actionUse';
-import { castsByPrompt, type SpellCast } from '../castPlan';
+import { grantBadgeTitle, grantLimitWords, grantUsedUp, type SpellCast } from '../castPlan';
 import { castingEconomy, isConcentratingOn, type SlotSpent, spendSlot } from '../castResources';
 import { capabilityKey, collectCapabilityCards } from '../combatCapabilities';
 import { conditionLimits } from '../conditionEffects';
@@ -370,7 +370,7 @@ function PendingSpellRow({
 
 export function Component() {
   const { sheet, built: builtSheet, doc, update } = useOutletContext<CharacterSheetState>();
-  const { registry, ruleSets, spellsMissing, spellPacks, spellsSettling } = useSpellData(
+  const { registry, entities, spellsMissing, spellPacks, spellsSettling } = useSpellData(
     sheet,
     doc,
   );
@@ -430,7 +430,7 @@ export function Component() {
       (d) => {
         done = restWith(d.play, sheet, rest, doc.rulesVersion, {
           before: endEffects(d.play, ends, hpNow),
-          idle: idleChargePools(d.equipment, sheet.resources, ruleSets),
+          idle: idleChargePools(d, sheet.resources, entities),
         });
         // A table that heals less on a long rest can leave it short of full.
         full = d.play.currentHp >= hpNow.maxHp + done.change.maxHpChange;
@@ -645,8 +645,18 @@ export function Component() {
   // Exhaustion's halved maximum (2014) is one more such limit. A class whose
   // data has not landed yet derives no slots or pools at all, so there is
   // nothing to compare with: the warning would call every spent slot over a
-  // limit of 0, and its button would wipe them.
-  const overages = sheet.classDataMissing ? [] : detectPlayStateOverages(play, sheet, maxHp.value);
+  // limit of 0, and its button would wipe them. So too a tab just opened,
+  // whose registry lands a moment after the sheet: until then it finds no
+  // put-away item's charges (`idleChargePools`).
+  const overages =
+    sheet.classDataMissing || registry === null
+      ? []
+      : detectPlayStateOverages(
+          play,
+          sheet,
+          idleChargePools(doc, sheet.resources, entities),
+          maxHp.value,
+        );
 
   /**
    * Mark a slice of the action economy used (attacks, casting). `label` names
@@ -995,7 +1005,16 @@ export function Component() {
               would sit under 3:1 on the tint. */}
           <BannerAction
             tone="guide"
-            onClick={() => update((d) => clampPlayStateToMax(d.play, sheet, maxHp.value))}
+            onClick={() =>
+              update((d) =>
+                clampPlayStateToMax(
+                  d.play,
+                  sheet,
+                  idleChargePools(d, sheet.resources, entities),
+                  maxHp.value,
+                ),
+              )
+            }
             className="mt-1 -mb-1.5 -ml-1.5"
           >
             Bring within limits
@@ -2391,7 +2410,7 @@ export function Component() {
                     block: sc,
                     abilityModifier: sheet.abilities[sc.ability].mod,
                     attack: hasAttack,
-                    ruleSets,
+                    entities,
                   };
                   return (
                     <div key={uid} className={`min-h-10 ${ROW}`}>
@@ -2559,9 +2578,9 @@ export function Component() {
                     ? undefined
                     : { key: limited.key, label: g.origin, max: limited.max },
                 attack: hasAttack,
-                ruleSets,
+                entities,
               };
-              const usedUp = depleted && !castsByPrompt(cast);
+              const usedUp = grantUsedUp(cast, remaining);
               return (
                 <div
                   key={`${g.name}|${g.source}|${g.resourceKey ?? ''}|${g.added ? 'added' : ''}`}
@@ -2602,16 +2621,12 @@ export function Component() {
                           )}
                           {remaining !== undefined && limited !== undefined && (
                             <span
-                              title={
-                                depleted
-                                  ? 'No uses left until you rest'
-                                  : `${g.usage} from ${g.origin}`
-                              }
+                              title={grantBadgeTitle(g.usage, g.origin, depleted)}
                               // Uses left of an innate spell are magic's to spend,
                               // so `arcane`; spent, a neutral badge.
                               className={`shrink-0 ${badgeClass(depleted ? 'neutral' : 'arcane')}`}
                             >
-                              {remaining}/{limited.max} per {g.usage?.split('/')[1]}
+                              {remaining}/{limited.max} {grantLimitWords(g.usage)}
                             </span>
                           )}
                         </button>

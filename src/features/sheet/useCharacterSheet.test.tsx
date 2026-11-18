@@ -27,7 +27,10 @@ vi.mock('@/data5e/hooks', () => {
     }),
   };
 });
-vi.mock('@/data5e/engineAdapter', () => ({ engineContextFor: (r: unknown) => r }));
+vi.mock('@/data5e/engineAdapter', () => ({
+  engineContextFor: (r: unknown) => r,
+  entityLookup: (r: unknown) => r,
+}));
 vi.mock('@/stores/characterSession', () => ({
   characterSessionStore: {
     getState: () => ({

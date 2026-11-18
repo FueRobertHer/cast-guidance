@@ -633,7 +633,7 @@ export function castGranted(
   update: DocUpdater,
   hp: HpLimits,
   spell: CastSpellInfo,
-  limit?: { key: string; max: number },
+  limit?: { key: string; max: number; cost?: number },
 ): void {
   update((d) => {
     if (spell.concentration === true) {
@@ -648,9 +648,10 @@ export function castGranted(
     if (limit !== undefined) {
       const entry = d.play.resources.find((r) => r.key === limit.key);
       const used = entry?.used ?? 0;
-      if (used < limit.max) {
-        if (entry !== undefined) entry.used = used + 1;
-        else d.play.resources.push({ key: limit.key, used: 1 });
+      const cost = limit.cost ?? 1;
+      if (used + cost <= limit.max) {
+        if (entry !== undefined) entry.used = used + cost;
+        else d.play.resources.push({ key: limit.key, used: cost });
       }
     }
   }, `Cast ${spell.name}`);

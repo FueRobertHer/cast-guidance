@@ -12,6 +12,7 @@ import {
   type CastContext,
   type CastResource,
   castCost,
+  castGranted,
   castNote,
   castResourceId,
   castResourceLabel,
@@ -132,6 +133,24 @@ describe('availableCastResources (GAME-001 upcast options)', () => {
     for (const o of options) {
       expect(options.find((x) => castResourceId(x) === castResourceId(o))).toBe(o);
     }
+  });
+});
+
+describe('castGranted from a pool', () => {
+  const run = (used: number, cost?: number) => {
+    const doc = { play: emptyPlayState() } as CharacterDoc;
+    doc.play.resources = used > 0 ? [{ key: 'rod', used }] : [];
+    const limit = { key: 'rod', max: 7, ...(cost === undefined ? {} : { cost }) };
+    castGranted((recipe) => recipe(doc), HP, { name: 'X', source: 'y' }, limit);
+    return doc.play.resources;
+  };
+
+  it('spends one use, or what it costs, and nothing it cannot pay', () => {
+    expect(run(0)).toEqual([{ key: 'rod', used: 1 }]);
+    expect(run(0, 2)).toEqual([{ key: 'rod', used: 2 }]);
+    expect(run(5, 2)).toEqual([{ key: 'rod', used: 7 }]);
+    expect(run(6, 2)).toEqual([{ key: 'rod', used: 6 }]);
+    expect(run(7)).toEqual([{ key: 'rod', used: 7 }]);
   });
 });
 

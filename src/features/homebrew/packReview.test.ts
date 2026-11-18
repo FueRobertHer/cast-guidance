@@ -408,4 +408,30 @@ describe('what a pack holds', () => {
       'patch 5 (Lucky|PHB): amend 1: "lable" is not a field an amend reads',
     ]);
   });
+
+  it("says an item's charges replace its own, as the engine reads them", () => {
+    const charges = {
+      kind: 'charges',
+      charges: 7,
+      regain: 'all',
+      spells: [{ spell: 'Fireball|XPHB', cost: 1 }],
+    };
+    const review = packReview({
+      _meta: {
+        sources: [{ json: 'Wands' }],
+        castGuidance: {
+          v: 1,
+          patches: [
+            { target: 'Wand of Fireballs|XDMG', effects: [charges] },
+            { target: 'Wand of Web|XDMG', add: [charges] },
+          ],
+        },
+      },
+    });
+    expect(review?.changes.map((c) => c.value)).toEqual([
+      'Works by 1 effect in place of its own',
+      'Gains 1 effect',
+    ]);
+    expect(review?.problems).toEqual([]);
+  });
 });

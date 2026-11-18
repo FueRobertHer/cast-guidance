@@ -225,7 +225,7 @@ tiefling's Tenser's Floating Disk. The table is gone.
       "part": "charges",
       "keys": ["wand of fireballs|xdmg"],
       "charges": 7,                     // how many it holds
-      "regain": "1d6+1",                // the dice of charges back at dawn
+      "regain": "1d6+1",                // back at dawn: dice, a number, "all" or "none"
       "spells": [{ "spell": "fireball", "cost": 1, "upTo": 5 }]
     },
     {
@@ -271,10 +271,11 @@ tiefling's Tenser's Floating Disk. The table is gone.
   it does not replace, or an effect it cannot read (which would take that
   tag away unseen) is left out, and its keys stay free for a later row.
 - **`charges`, `regain` and `spells`** (`charges` rows, in place of
-  `effects`): how many charges the item holds (1 to 99), the dice that come
-  back at dawn (a die first, then dice or whole numbers added, each die of 2
-  sides or more, so a rest never gives back less than nothing), and the
-  spells they cast ("Charges rows", below). A row with
+  `effects`): how many charges the item holds (1 to 99), what comes back at
+  dawn, and the spells they cast ("Charges rows", below). `regain` is dice (a
+  die first, then dice or whole numbers added, each die of 2 sides or more, so
+  a rest never gives back less than nothing), a whole number from 1 to what
+  the item holds, `"all"`, or `"none"`, never. A row with
   any problem in them is left out, and its keys stay free: a spell missing or
   misread would offer the charges for less, or not at all, unseen.
 - **`spells`** (`spellRest` rows, in place of `effects`): `"every"`, or the
@@ -313,7 +314,8 @@ entity found rather than the ref a character saved, and `charges`, under the
 which the sheet's pool, the cast prompt and the long rest all read alike. The
 two agree for every ref that names its book; starting equipment can write one
 that does not, and then no `charges` row is found. A copy of an item is not
-reached by the official one's rows: its tags and charges are its author's.
+reached by the official one's rows: its tags and charges are its author's
+(its own `charges` effect, "An item's own charges", below).
 
 A `spellRest` row is found under the `type:uid` of the origin granting the
 spells: `feat:fey teleportation|xge`, and for a subrace, whose origin has type
@@ -390,11 +392,47 @@ not always that: Cure Wounds from the staff is a charge a spell level, up to
   a pack's patch that replaces the item's mechanics, or the item's own `drop`,
   leaves it standing. The cast prompt offers the item's tiles at each level it
   can pay for (`itemChargeWays`), and a long rest rolls the dawn regain of an
-  item put away or not attuned too (`idleChargePools`). Both read the row from
-  the registry's rule sets, so the Play and Spells tabs pass them
-  (`SpellCast.ruleSets`).
-- A player's item writes its charges as a resource of its own in its
-  `castGuidance`, spent by a "Cast a spell" card; this part is the app's.
+  item put away or not attuned too (`idleChargePools`), whose spent charges
+  are kept, not over a limit. All of them find the item's charges through
+  `itemChargesOf`, which reads the registry outside a derive, so the Play and
+  Spells tabs pass its lookups (`SpellCast.entities`).
+- A row prices the spells the character casts anyway. It grants none: some of
+  these items cast at a fixed DC, which a grant would not show.
+
+### An item's own charges
+
+A player's item, or a pack's patch of one, says its charges with a `charges`
+effect in its `castGuidance` effects, the row's fields and reader:
+
+```jsonc
+{
+  "kind": "charges",
+  "charges": 7,
+  "regain": "1d6+1",
+  "ability": "wis",                            // optional: what its spells cast with
+  "spells": [{ "spell": "Fireball|XPHB", "cost": 1, "upTo": 5 }]
+}
+```
+
+- **Each spell names its book** (`name|source`), since the item grants it:
+  while the item's magic works, each spell is granted on a row of its own,
+  paid from that copy's pool, priced by level as a row prices it. Without an
+  `ability`, the row shows no attack or DC, as any grant without one.
+- **Which counts.** `itemChargesOf` takes the last that says the item's
+  charges: its built-in row, its own effect, a pack's `add`, a pack's
+  `effects`. A pack whose `effects` replace the item's own replaces its own
+  charges too; the row stands outside what the item inherits, so a
+  replacement that says none leaves the row.
+- **Read apart.** The effect emits nothing; the pool and grants are made from
+  it. It holds no `while` or `edition`, is said once a list, and counts only on
+  an item: in a moment's list, a pick's `gives` or a built-in row it is a
+  problem, and on another kind of entry the sheet says it counts for nothing
+  (so a pack's `effects` of charges alone replace nothing there).
+  An app before it reads it as a kind it does not know, a problem, and the
+  rest of the item still counts.
+- **Old files.** The Workshop wrote an item's charges as a `resource` pool
+  under the key `charges` and a "Cast a spell" card spending it. They are read
+  as they always were: an ordinary pool and grant.
 
 ## Spell rest rows
 
@@ -741,7 +779,10 @@ wins. It reaches only what the entry inherits, never an action its author wrote
 or a pack's `effects` or `add` gave. An entry that replaces what it inherits
 (`replace: true`, or a pack's `effects`) has nothing for it to price, and an
 `amend` that finds no action says so on the sheet; a patch with both `effects`
-and `amend` says so once, as the pack is read. It reaches what `drop` reaches:
+and `amend` says so once, as the pack is read. One whose `effects` are an
+item's charges alone keeps its `amend`, since on another kind of entry they
+replace nothing: the sheet prices that entry, or says on an item that the price
+finds nothing. It reaches what `drop` reaches:
 class and subclass features, feats, optional features and species traits. Items
 add their charges after it, and backgrounds price nothing themselves.
 

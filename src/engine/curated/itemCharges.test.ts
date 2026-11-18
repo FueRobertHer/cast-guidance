@@ -137,6 +137,13 @@ describe('a charges row, read', () => {
     }
   });
 
+  it('takes a whole number back, up to what it holds, and "all" or "none"', () => {
+    expect(read({ regain: 1 }).rows[0]?.charges?.regain).toBe('1');
+    expect(read({ regain: 5 }).rows[0]?.charges?.regain).toBe('5');
+    expect(read({ regain: 'all' }).rows[0]?.charges?.regain).toBe('all');
+    expect(read({ regain: 'none' }).rows[0]?.charges?.regain).toBe('none');
+  });
+
   it('keeps its numbers, its dice trimmed and its spells by name in lower case', () => {
     const set = read({ regain: ' 1d4 + 1 ', spells: [{ spell: ' Shield ', cost: 2, upTo: 3 }] });
     expect(set.problems).toEqual([]);
@@ -153,16 +160,18 @@ describe('a charges row, read', () => {
     ['no charges at all', { charges: 0 }, '"charges" is how many it holds'],
     ['too many charges', { charges: 100 }, '"charges" is how many it holds'],
     ['part of a charge', { charges: 2.5 }, '"charges" is how many it holds'],
-    ['a regain that is not dice', { regain: 'half' }, '"regain" is the dice'],
-    ['no regain', { regain: undefined }, '"regain" is the dice'],
-    ['a die of no sides', { regain: '1d0' }, '"regain" is the dice'],
-    ['a die of one side', { regain: '1d1 + 2' }, '"regain" is the dice'],
-    ['no dice of a die', { regain: '0d6' }, '"regain" is the dice'],
-    ['more dice than the roller rolls', { regain: '101d6' }, '"regain" is the dice'],
-    ['dice taken away', { regain: '1d4 - 9' }, '"regain" is the dice'],
-    ['a number alone', { regain: '4' }, '"regain" is the dice'],
-    ['a number first', { regain: '4 + 1d6' }, '"regain" is the dice'],
-    ['nothing added', { regain: '1d6 +' }, '"regain" is the dice'],
+    ['a regain that is not dice', { regain: 'half' }, '"regain" is what comes back'],
+    ['no regain', { regain: undefined }, '"regain" is what comes back'],
+    ['a die of no sides', { regain: '1d0' }, '"regain" is what comes back'],
+    ['a die of one side', { regain: '1d1 + 2' }, '"regain" is what comes back'],
+    ['no dice of a die', { regain: '0d6' }, '"regain" is what comes back'],
+    ['more dice than the roller rolls', { regain: '101d6' }, '"regain" is what comes back'],
+    ['dice taken away', { regain: '1d4 - 9' }, '"regain" is what comes back'],
+    ['a number in quotes', { regain: '4' }, '"regain" is what comes back'],
+    ['no charges back', { regain: 0 }, '"regain" is what comes back'],
+    ['more back than it holds', { regain: 6 }, '"regain" is what comes back'],
+    ['a number first', { regain: '4 + 1d6' }, '"regain" is what comes back'],
+    ['nothing added', { regain: '1d6 +' }, '"regain" is what comes back'],
     ['no spells', { spells: [] }, '"spells" lists the spells'],
     ['spells that are not a list', { spells: 'shield' }, '"spells" lists the spells'],
     ['a spell that is not one', { spells: ['shield'] }, 'spell 1: is not a spell'],
@@ -196,6 +205,7 @@ describe('a charges row, read', () => {
       'spell 1: "level" is not a field a charged spell has',
     ],
     ['a field a row has not', { level: 3 }, '"level" is not a field a charges row has'],
+    ['an ability', { ability: 'wis' }, '"ability" is not a field a charges row has'],
     ['effects', { effects: [] }, '"effects" is not a field a charges row has'],
   ])('leaves out a row with %s, and its keys stay free', (_, fields, problem) => {
     const set = read(fields, [{ charges: 3 }]);
