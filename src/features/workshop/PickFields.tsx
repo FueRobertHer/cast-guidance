@@ -30,10 +30,10 @@ const ASKS: Options = [
   ['skill', 'A skill'],
   ['tool', 'A tool'],
   ['weapon', 'A weapon'],
-  ['save', 'A saving throw'],
+  ['save', 'A save'],
   ['damage', 'A damage type'],
   ['spell', 'A spell'],
-  ['option', 'One of named options'],
+  ['option', 'An option'],
 ];
 
 /** What each pick of an ask gives, as a new pick (or one turned to the ask) starts. */
@@ -145,7 +145,7 @@ export interface GivesProps {
   /** Its add button's name: "Add to what each pick gives". */
   addLabel: string;
   fills: readonly PickFill[];
-  /** What a pick answers, offered as "The one picked" in the boxes it fits. */
+  /** What a pick answers, offered as "The pick" in the boxes it fits. */
   picked?: string;
   onChange: (next: Eff[]) => void;
 }

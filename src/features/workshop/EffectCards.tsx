@@ -1782,7 +1782,7 @@ function Card({
   onRemove: () => void;
   /** Words before its box names, for a card of what a pick gives: "Each pick gives: ". */
   prefix?: string;
-  /** What the pick it is given by answers (`ask`), offered as "The one picked" where it fits. */
+  /** What the pick it is given by answers (`ask`), offered as "The pick" where it fits. */
   picked?: string;
   /** It is one of what a pick gives. */
   inPick?: boolean;
@@ -1876,9 +1876,7 @@ function Card({
                 >
                   {isByLevel(effect[f.key]) && <option value="">{BY_LEVEL}</option>}
                   {(takesPicked(picked, effect.kind, f.key) ||
-                    shown(effect, f).includes('{pick')) && (
-                    <option value={PICKED}>The one picked</option>
-                  )}
+                    shown(effect, f).includes('{pick')) && <option value={PICKED}>The pick</option>}
                   {f.options.map(([v, text]) => (
                     <option key={v} value={v}>
                       {text}
@@ -2203,7 +2201,7 @@ export function EffectCards({
   prefix?: string;
   addLabel?: string;
   fills?: readonly PickFill[];
-  /** What the pick answers (`ask`), offered as "The one picked" where a box fits it. */
+  /** What the pick answers (`ask`), offered as "The pick" where a box fits it. */
   picked?: string;
 }) {
   const list: Eff[] = Array.isArray(effects) ? (effects as Eff[]) : [];

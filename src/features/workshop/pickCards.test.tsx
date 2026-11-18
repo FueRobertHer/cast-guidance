@@ -246,7 +246,13 @@ describe('the Pick card, each ask', () => {
 
   it('asks for skills from a list, the class’s, or a language, in place of one held', async () => {
     const e = await walk([
-      ['two from a list', () => (chip('From', 'Arcana'), chip('From', 'History'))],
+      [
+        'two from a list',
+        () => {
+          chip('From', 'Arcana');
+          chip('From', 'History');
+        },
+      ],
       ['two of them', () => pick('Pick: How many', '2')],
       ['the class list', () => check("Pick: Or a skill on the class's list")],
       ['a language', () => check('Pick: Or a language')],
@@ -280,7 +286,13 @@ describe('the Pick card, each ask', () => {
 
   it('asks in place of a skill held, and gives it while not held', async () => {
     const e = await walk([
-      ['from', () => (chip('From', 'Insight'), chip('From', 'Performance'))],
+      [
+        'from',
+        () => {
+          chip('From', 'Insight');
+          chip('From', 'Performance');
+        },
+      ],
       ['in place of', () => pick('Pick: In place of, if held already', 'Persuasion')],
     ]);
     expect(
@@ -343,7 +355,13 @@ describe('the Pick card, each ask', () => {
   it('asks for a saving throw from abilities, in place of one held', async () => {
     const e = await walk([
       ['to a save', () => pick('Pick: Asks for', 'save')],
-      ['from', () => (chip('From', 'Strength'), chip('From', 'Dexterity'))],
+      [
+        'from',
+        () => {
+          chip('From', 'Strength');
+          chip('From', 'Dexterity');
+        },
+      ],
       ['in place of', () => chip('In place of', 'Wisdom')],
       ['not in place', () => chip('In place of', 'Wisdom')],
     ]);
@@ -364,7 +382,13 @@ describe('the Pick card, each ask', () => {
   it('asks for a damage type, giving its resistance', async () => {
     const e = await walk([
       ['to damage', () => pick('Pick: Asks for', 'damage')],
-      ['from', () => (chip('From', 'fire'), chip('From', 'cold'))],
+      [
+        'from',
+        () => {
+          chip('From', 'fire');
+          chip('From', 'cold');
+        },
+      ],
     ]);
     expect(e.gives).toEqual([{ kind: 'resist', damageType: '{pick}' }]);
     const answered = collect([e], { [ID]: ['cold'] });
