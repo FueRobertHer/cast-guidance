@@ -633,7 +633,6 @@ const byAnswerWords =
       );
     }
     const entries = Object.entries(table);
-    if (entries.length === 0) throw new Bad('names no answer');
     if (entries.length > L.answerRows) throw new Bad(`names at most ${L.answerRows} answers`);
     const names = new Set<string>();
     const values = entries.map(([answer, words]): readonly [string, string] => {
