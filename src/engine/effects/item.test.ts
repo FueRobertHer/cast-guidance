@@ -200,7 +200,8 @@ describe('collectItems: charges that cast spells', () => {
   });
 
   it("finds the row under the entry's ref, as the cast prompt does, not the item found", () => {
-    // Starting equipment can write a ref with no source; the item is still found by name.
+    // Starting equipment can write a ref with no source. This world finds the item by
+    // name alone, where the registry may not; either way no row is under the ref.
     const { effects } = effectsOf(true, { name: 'Staff of Healing', source: '' });
     expect(effects.filter((e) => e.kind === 'resource')).toEqual([]);
   });

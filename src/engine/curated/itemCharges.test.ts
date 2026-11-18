@@ -128,6 +128,12 @@ describe('a charges row, read', () => {
     spells: [{ spell: 'Shield', cost: 1 }],
   };
 
+  it('takes dice and numbers added, a die first', () => {
+    for (const regain of ['1d6+4', 'd6 + 1d4 + 2', '2d4', '1d20+10']) {
+      expect(read({ regain }).rows[0]?.charges?.regain, regain).toBe(regain);
+    }
+  });
+
   it('keeps its numbers, its dice trimmed and its spells by name in lower case', () => {
     const set = read({ regain: ' 1d4 + 1 ', spells: [{ spell: ' Shield ', cost: 2, upTo: 3 }] });
     expect(set.problems).toEqual([]);
@@ -146,6 +152,13 @@ describe('a charges row, read', () => {
     ['part of a charge', { charges: 2.5 }, '"charges" is how many it holds'],
     ['a regain that is not dice', { regain: 'half' }, '"regain" is the dice'],
     ['no regain', { regain: undefined }, '"regain" is the dice'],
+    ['a die of no sides', { regain: '1d0' }, '"regain" is the dice'],
+    ['a die of one side', { regain: '1d1 + 2' }, '"regain" is the dice'],
+    ['no dice of a die', { regain: '0d6' }, '"regain" is the dice'],
+    ['dice taken away', { regain: '1d4 - 9' }, '"regain" is the dice'],
+    ['a number alone', { regain: '4' }, '"regain" is the dice'],
+    ['a number first', { regain: '4 + 1d6' }, '"regain" is the dice'],
+    ['nothing added', { regain: '1d6 +' }, '"regain" is the dice'],
     ['no spells', { spells: [] }, '"spells" lists the spells'],
     ['spells that are not a list', { spells: 'shield' }, '"spells" lists the spells'],
     ['a spell that is not one', { spells: ['shield'] }, 'spell 1: is not a spell'],

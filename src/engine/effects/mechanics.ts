@@ -2405,6 +2405,23 @@ function readReplaces(
 const CHARGE_SPELL_FIELDS: ReadonlySet<string> = new Set(['spell', 'cost', 'upTo']);
 const isWhole = (v: unknown, min: number, max: number): v is number =>
   typeof v === 'number' && Number.isInteger(v) && v >= min && v <= max;
+const CHARGE_DIE = /^(\d{0,3})d(\d{1,3})$/;
+
+/**
+ * Dice a long rest can roll for charges back: a die first, then dice or whole
+ * numbers added. Each die has 2 sides or more and a count of 1 or more, which
+ * the roller needs, and nothing is taken away, so the roll never gives back
+ * less than nothing.
+ */
+function regainDice(s: string): boolean {
+  if (s.length > 40) return false;
+  const terms = s.split('+').map((t) => t.trim());
+  const die = (t: string) => {
+    const m = CHARGE_DIE.exec(t);
+    return m !== null && (m[1] === '' || Number(m[1]) >= 1) && Number(m[2]) >= 2;
+  };
+  return die(terms[0] ?? '') && terms.every((t) => die(t) || /^\d{1,4}$/.test(t));
+}
 
 /**
  * A `charges` row's numbers and spells. `charges` is absent when anything in
@@ -2419,8 +2436,8 @@ function readCharges(row: Record<string, unknown>): { charges?: ItemCharges; pro
   if (!counted) problems.push(`"charges" is how many it holds, a whole number from 1 to ${most}`);
   const raw = own(row, 'regain');
   const regain = typeof raw === 'string' ? raw.trim() : '';
-  if (regain.length > 40 || !DICE.test(regain)) {
-    problems.push('"regain" is the dice of charges back at dawn, like 1d6+4');
+  if (!regainDice(regain)) {
+    problems.push('"regain" is the dice of charges back at dawn, like 1d6+4, added up');
   }
   const listed = own(row, 'spells');
   const spells: ChargeSpell[] = [];

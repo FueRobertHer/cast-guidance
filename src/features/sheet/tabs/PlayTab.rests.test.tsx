@@ -202,16 +202,16 @@ describe("a long rest and an item's charges", () => {
         attuned: true,
       },
     ];
-    doc.play.resources = [{ key: 'item-charges:s1', used: 3 }];
+    doc.play.resources = [{ key: 'item-charges:s1', used: 9 }];
     const sheet = await renderSheet(doc, { extra: { item: [staff] } });
     expect(screen.queryByRole('button', { name: /^Staff of Healing charges use/ })).toBeNull();
 
     press('Long rest');
     await (await dialog('Long rest')).press('Rest');
 
-    // The roll (1d6 + 4) covers the 3 spent, so all 3 come back.
-    expect(notice()).toContain('3 Staff of Healing charges');
-    expect((await sheet.saved()).play.resources).toEqual([]);
+    // The roll (1d6 + 4, the die at 4) gives back 8 of the 9 spent: rolled, not refilled.
+    expect(notice()).toContain('8 Staff of Healing charges');
+    expect((await sheet.saved()).play.resources).toEqual([{ key: 'item-charges:s1', used: 1 }]);
   });
 });
 

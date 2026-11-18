@@ -258,7 +258,9 @@ row, since a 2024 wand spends at most 3 charges a cast. The table is gone.
   tag away unseen) is left out, and its keys stay free for a later row.
 - **`charges`, `regain` and `spells`** (`charges` rows, in place of
   `effects`): how many charges the item holds (1 to 99), the dice that come
-  back at dawn, and the spells they cast ("Charges rows", below). A row with
+  back at dawn (a die first, then dice or whole numbers added, each die of 2
+  sides or more, so a rest never gives back less than nothing), and the
+  spells they cast ("Charges rows", below). A row with
   any problem in them is left out, and its keys stay free: a spell missing or
   misread would offer the charges for less, or not at all, unseen.
 - A row the reader cannot read is left out, and the rest still count. What it
