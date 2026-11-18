@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
+import { BUILT_IN_RULE_SETS } from '../../../tests-fixtures/testWorld';
 import { calcResources } from '../calc/resources';
+import { RULE_SET_TYPE } from '../castGuidance';
 import type { DataEntity, EffectInput, EngineContext } from '../types';
 import { newCharacterDoc } from '../types';
 import { Collector } from './base';
@@ -151,21 +153,20 @@ describe('collectItems: charges that cast spells', () => {
     type: 'ST|XDMG',
     reqAttune: 'by a Bard, Cleric, or Druid',
   };
-  /** The staff equipped, attuned or not, as entry `s1`. */
-  const effectsOf = (attuned: boolean) => {
+  /**
+   * The staff equipped, attuned or not, as entry `s1`, its ref as written; the
+   * built-in rule sets, or the ones given.
+   */
+  const effectsOf = (
+    attuned: boolean,
+    ref = { name: 'Staff of Healing', source: 'XDMG' },
+    sets: readonly DataEntity[] = BUILT_IN_RULE_SETS,
+  ) => {
     const doc = newCharacterDoc('c', 'H', 't');
-    doc.equipment = [
-      {
-        id: 's1',
-        ref: { name: 'Staff of Healing', source: 'XDMG' },
-        qty: 1,
-        equipped: true,
-        attuned,
-      },
-    ];
+    doc.equipment = [{ id: 's1', ref, qty: 1, equipped: true, attuned }];
     const ctx: EngineContext = {
       get: (type) => (type === 'item' ? staff : undefined),
-      byType: () => [],
+      byType: (type) => (type === RULE_SET_TYPE ? sets : []),
     };
     const col = new Collector(doc, ctx);
     collectItems(col);
@@ -191,5 +192,16 @@ describe('collectItems: charges that cast spells', () => {
 
   it('gives none until it is attuned', () => {
     expect(effectsOf(false).effects.filter((e) => e.kind === 'resource')).toEqual([]);
+  });
+
+  it('gives none without the rule sets, whose row says its charges', () => {
+    const { effects } = effectsOf(true, undefined, []);
+    expect(effects.filter((e) => e.kind === 'resource')).toEqual([]);
+  });
+
+  it("finds the row under the entry's ref, as the cast prompt does, not the item found", () => {
+    // Starting equipment can write a ref with no source; the item is still found by name.
+    const { effects } = effectsOf(true, { name: 'Staff of Healing', source: '' });
+    expect(effects.filter((e) => e.kind === 'resource')).toEqual([]);
   });
 });

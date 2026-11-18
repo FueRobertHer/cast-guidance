@@ -3,10 +3,19 @@
  * many charges each holds, what comes back at dawn, and what each spell costs.
  * The data's `attachedSpells.charges` says only one fixed cost per spell, and
  * not always that: a Staff of Healing's Cure Wounds is one charge a spell
- * level, up to 4th, and the 2024 staff's data lists it as at will. Each row is
- * read from the item's own text. Keyed by the item's `name|source` uid.
+ * level, up to 4th, and the 2024 staff's data lists it as at will. Each is a
+ * built-in `charges` row (`src/rules/cast-guidance/items.json`), read from the
+ * item's own text and found under the `name|source` its equipment entry names
+ * (`refUid(entry.ref)`), as every reader here and the item call site look it up.
  */
-import { type DerivedResource, type EquipmentEntry, refUid } from '../types';
+import { builtInRuleIn, type ItemCharges } from '../effects/mechanics';
+import {
+  type DataEntity,
+  type DerivedResource,
+  type EntityRef,
+  type EquipmentEntry,
+  refUid,
+} from '../types';
 
 export interface ChargeSpell {
   /** The spell, by name in lower case: any printing of it casts from the item. */
@@ -48,6 +57,7 @@ const wand2024 = (spell: string, level: number): ItemChargeRow => ({
   spells: [{ name: spell, cost: 1, upTo: level + 2 }],
 });
 
+/** The table the `charges` rows came from, kept while a test compares the two. */
 export const ITEM_CHARGES: Readonly<Record<string, ItemChargeRow>> = {
   'staff of healing|dmg': STAFF_OF_HEALING,
   'staff of healing|xdmg': STAFF_OF_HEALING,
@@ -58,6 +68,14 @@ export const ITEM_CHARGES: Readonly<Record<string, ItemChargeRow>> = {
   'wand of lightning bolts|dmg': wand2014('lightning bolt'),
   'wand of lightning bolts|xdmg': wand2024('lightning bolt', 3),
 };
+
+/** The charges an item casts spells with, by its equipment entry's ref, from the built-in rows. */
+export function itemChargesIn(
+  ruleSets: readonly DataEntity[],
+  ref: EntityRef,
+): ItemCharges | undefined {
+  return builtInRuleIn(ruleSets, 'charges', [refUid(ref)])?.charges;
+}
 
 /** The pool holding one carried item's charges, by its equipment entry: two staves are two pools. */
 export function itemChargeKey(entryId: string): string {
@@ -72,9 +90,10 @@ export function itemChargeKey(entryId: string): string {
 export function idleChargePools(
   equipment: readonly EquipmentEntry[],
   resources: readonly DerivedResource[],
+  ruleSets: readonly DataEntity[],
 ): DerivedResource[] {
   return equipment.flatMap((entry) => {
-    const row = entry.ref === undefined ? undefined : ITEM_CHARGES[refUid(entry.ref)];
+    const row = entry.ref === undefined ? undefined : itemChargesIn(ruleSets, entry.ref);
     const key = itemChargeKey(entry.id);
     if (entry.ref === undefined || row === undefined || resources.some((r) => r.key === key)) {
       return [];
@@ -98,11 +117,11 @@ export function idleChargePools(
  * charges. Empty when the item does not cast that spell.
  */
 export function chargeCosts(
-  row: ItemChargeRow,
+  row: ItemCharges,
   spellName: string,
   spellLevel: number,
 ): Array<{ level: number; cost: number }> {
-  const spell = row.spells.find((s) => s.name === spellName.trim().toLowerCase());
+  const spell = row.spells.find((s) => s.spell === spellName.trim().toLowerCase());
   if (spell === undefined) return [];
   const out: Array<{ level: number; cost: number }> = [];
   const top = Math.min(9, spell.upTo ?? spellLevel);

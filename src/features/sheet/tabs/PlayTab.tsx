@@ -370,7 +370,10 @@ function PendingSpellRow({
 
 export function Component() {
   const { sheet, built: builtSheet, doc, update } = useOutletContext<CharacterSheetState>();
-  const { registry, spellsMissing, spellPacks, spellsSettling } = useSpellData(sheet, doc);
+  const { registry, ruleSets, spellsMissing, spellPacks, spellsSettling } = useSpellData(
+    sheet,
+    doc,
+  );
   // Keyed by character, so a settling HP line is only ever about the one it
   // was for; leaving the tab or the character drops one still settling.
   const hpKey = `hp:${doc?.id ?? ''}`;
@@ -427,7 +430,7 @@ export function Component() {
       (d) => {
         done = restWith(d.play, sheet, rest, doc.rulesVersion, {
           before: endEffects(d.play, ends, hpNow),
-          idle: idleChargePools(d.equipment, sheet.resources),
+          idle: idleChargePools(d.equipment, sheet.resources, ruleSets),
         });
         // A table that heals less on a long rest can leave it short of full.
         full = d.play.currentHp >= hpNow.maxHp + done.change.maxHpChange;
@@ -2388,6 +2391,7 @@ export function Component() {
                     block: sc,
                     abilityModifier: sheet.abilities[sc.ability].mod,
                     attack: hasAttack,
+                    ruleSets,
                   };
                   return (
                     <div key={uid} className={`min-h-10 ${ROW}`}>
@@ -2555,6 +2559,7 @@ export function Component() {
                     ? undefined
                     : { key: limited.key, label: g.origin, max: limited.max },
                 attack: hasAttack,
+                ruleSets,
               };
               const usedUp = depleted && !castsByPrompt(cast);
               return (

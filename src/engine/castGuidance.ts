@@ -484,7 +484,10 @@ export const RULE_SET_TYPE = 'ruleSet';
  * price the action the feature emitted, or add one. `wornTags` is what wearing
  * an item gives where its data's tags say otherwise (the table that was
  * `ITEM_TAG_FIXES`), found under the item's own `name|source`: the kinds of
- * tag it `replaces`, and its effects in their place.
+ * tag it `replaces`, and its effects in their place. `charges` is the charges a
+ * carried item casts spells with (the table that was `ITEM_CHARGES`), found
+ * under the item's `name|source` as the equipment entry names it: how many it
+ * holds, the dice that come back at dawn, and what each spell costs.
  */
 export const RULE_SET_PARTS = [
   'curated',
@@ -493,6 +496,7 @@ export const RULE_SET_PARTS = [
   'rollExtra',
   'spend',
   'wornTags',
+  'charges',
 ] as const;
 
 /**
@@ -520,6 +524,10 @@ export const RULE_SET_LIMITS = {
   keysPerRow: 16,
   /** The highest feature level a row may name. */
   level: 20,
+  /** The most charges a `charges` row's item holds. */
+  charges: 99,
+  /** The most spells a `charges` row's item casts. */
+  chargeSpells: 20,
 } as const;
 
 /** One row of a built-in rule set. */
@@ -535,7 +543,7 @@ export interface StoredRuleRow {
    * at 3, 6 and 14). Absent: at every level.
    */
   level?: number;
-  /** Every part but `spend`. */
+  /** Every part but `spend` and `charges`. */
   effects?: StoredEffect[];
   /** `spend` rows only: the prices it puts on the feature's actions, in order. */
   links?: StoredSpendLink[];
@@ -545,6 +553,22 @@ export interface StoredRuleRow {
    * instead, often none; the kinds it leaves out are read from the data.
    */
   replaces?: Array<(typeof WORN_TAG_KINDS)[number]>;
+  /** `charges` rows only: how many charges the item holds. */
+  charges?: number;
+  /** `charges` rows only: the charges that come back at dawn, as dice (`1d6+4`). */
+  regain?: string;
+  /** `charges` rows only: the spells its charges cast, and what each costs. */
+  spells?: StoredChargeSpell[];
+}
+
+/** One spell a `charges` row's item casts with its charges. */
+export interface StoredChargeSpell {
+  /** The spell, by name in lower case: any printing of it casts from the item. */
+  spell: string;
+  /** Charges it costs at its own level. */
+  cost: number;
+  /** One more charge for each level above its own, up to this spell level. Absent: its own level only. */
+  upTo?: number;
 }
 
 /**

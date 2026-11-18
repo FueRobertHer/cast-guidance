@@ -1,6 +1,7 @@
 import { useRegistry, useRegistryRefreshing, useTypePacks } from '@/data5e/hooks';
 import type { EntityRegistry } from '@/data5e/normalize';
 import { pickForVersion, type RulesVersion } from '@/data5e/rulesVersion';
+import { RULE_SET_TYPE } from '@/engine/castGuidance';
 import type { CharacterDoc, DerivedSheet } from '@/engine/types';
 
 /**
@@ -39,8 +40,14 @@ export function distinctGrants(grants: DerivedSheet['grantedSpells']) {
   });
 }
 
+/** No registry yet: no rule sets, and one list for every render. */
+const NO_RULE_SETS: readonly never[] = [];
+
 /**
- * The spell files, for a page that lists this character's own spells. Asks for
+ * The spell files, for a page that lists this character's own spells.
+ * `ruleSets` are the registry's built-in rule sets, which say what a carried
+ * item's charges cast (`SpellCast.ruleSets`) and what a long rest gives back
+ * to an item put away (`idleChargePools`). Asks for
  * them only when one is missing: every other page that needs spell files asks
  * for them itself, and this one must not rely on the boot drain having finished.
  * `spellsSettling` says a spell with no entry may yet get one, so its row waits
@@ -63,6 +70,7 @@ export function useSpellData(sheet: DerivedSheet | null, doc: CharacterDoc | nul
   const registryRefreshing = useRegistryRefreshing();
   return {
     registry,
+    ruleSets: registry?.byType(RULE_SET_TYPE) ?? NO_RULE_SETS,
     spellsMissing,
     spellPacks,
     spellsSettling: registry === null || spellPacks.status !== 'ready' || registryRefreshing,

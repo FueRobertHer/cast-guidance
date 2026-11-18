@@ -40,6 +40,7 @@ import {
   RULE_SET_PARTS,
   RULE_SET_SCANS,
   RULE_SET_TYPE,
+  type StoredChargeSpell,
   WORN_TAG_KINDS,
 } from '../castGuidance';
 import { type Formula, readAmount } from '../formula';
@@ -2161,16 +2162,30 @@ export interface RuleRow {
   scan: RuleScan;
   /** Every part but `curated`: the feature level it counts at alone. */
   level?: number;
-  /** Every part but `spend`; a `spend` row emits none. */
+  /** Every part but `spend` and `charges`, whose rows emit none. */
   effects: readonly EffectTemplate[];
   /** `spend` rows only: the prices it puts on the feature's actions, in order. */
   links?: readonly SpendLinkRow[];
   /** `wornTags` rows only: the kinds of the item's data tags its effects stand in for. */
   replaces?: readonly WornTagKind[];
+  /** `charges` rows only: the charges the item casts spells with. */
+  charges?: ItemCharges;
 }
 
 /** A kind of what an item's data tags give while worn (`WORN_TAG_KINDS`). */
 export type WornTagKind = (typeof WORN_TAG_KINDS)[number];
+
+/** A `charges` row, read: what a carried item's charges hold, regain and cast. */
+export interface ItemCharges {
+  charges: number;
+  /** The charges that come back at dawn, as dice. */
+  regain: string;
+  /** Each spell by its name in lower case, once. */
+  spells: readonly ChargeSpell[];
+}
+
+/** One spell an item's charges cast (`StoredChargeSpell`), read. */
+export type ChargeSpell = Readonly<StoredChargeSpell>;
 
 /** A built-in rule set (`RULE_SET_TYPE` entry), read. */
 export interface ReadRuleSet {
@@ -2209,6 +2224,7 @@ const ROW_FIELDS: Record<RulePart, ReadonlySet<string>> = {
   rollExtra: LEVEL_ROW,
   spend: new Set(['part', 'keys', 'links']),
   wornTags: new Set(['part', 'keys', 'replaces', 'effects']),
+  charges: new Set(['part', 'keys', 'charges', 'regain', 'spells']),
 };
 
 const isFeatureLevel = (v: unknown): v is number =>
@@ -2311,6 +2327,16 @@ function readRuleSetOnce(raw: Record<string, unknown>): ReadRuleSet {
       read.rows.push({ part, keys, scan, effects: [], links });
       return;
     }
+    if (part === 'charges') {
+      const held = readCharges(row);
+      for (const problem of held.problems) read.problems.push(`${at}: ${problem}`);
+      // A row that cannot say what each spell costs would price the item's
+      // charges wrong in the cast prompt: it is left out, and its keys stay free.
+      if (held.charges === undefined) return;
+      for (const key of keys) inPart.add(slot(key));
+      read.rows.push({ part, keys, scan, effects: [], charges: held.charges });
+      return;
+    }
     if (!Array.isArray(own(row, 'effects'))) {
       read.problems.push(`${at}: "effects" is not a list`);
       return;
@@ -2374,6 +2400,74 @@ function readReplaces(
   }
   if (effects.length < written) problems.push('an effect it cannot read would take a tag away');
   return problems.length > 0 ? { problems } : { kinds, problems };
+}
+
+const CHARGE_SPELL_FIELDS: ReadonlySet<string> = new Set(['spell', 'cost', 'upTo']);
+const isWhole = (v: unknown, min: number, max: number): v is number =>
+  typeof v === 'number' && Number.isInteger(v) && v >= min && v <= max;
+
+/**
+ * A `charges` row's numbers and spells. `charges` is absent when anything in
+ * it is a problem: a spell left out, or a cost misread, would offer the item's
+ * charges for less, or for nothing, unseen.
+ */
+function readCharges(row: Record<string, unknown>): { charges?: ItemCharges; problems: string[] } {
+  const problems: string[] = [];
+  const most = RULE_SET_LIMITS.charges;
+  const charges = own(row, 'charges');
+  const counted = isWhole(charges, 1, most);
+  if (!counted) problems.push(`"charges" is how many it holds, a whole number from 1 to ${most}`);
+  const raw = own(row, 'regain');
+  const regain = typeof raw === 'string' ? raw.trim() : '';
+  if (regain.length > 40 || !DICE.test(regain)) {
+    problems.push('"regain" is the dice of charges back at dawn, like 1d6+4');
+  }
+  const listed = own(row, 'spells');
+  const spells: ChargeSpell[] = [];
+  if (!Array.isArray(listed) || listed.length === 0) {
+    problems.push('"spells" lists the spells its charges cast');
+  } else if (listed.length > RULE_SET_LIMITS.chargeSpells) {
+    problems.push(`"spells" lists at most ${RULE_SET_LIMITS.chargeSpells} spells`);
+  } else {
+    listed.forEach((x, i) => {
+      const at = `spell ${i + 1}`;
+      if (!isRecord(x)) {
+        problems.push(`${at}: is not a spell its charges cast`);
+        return;
+      }
+      const extra = Object.keys(x).find((k) => !CHARGE_SPELL_FIELDS.has(k));
+      if (extra !== undefined) {
+        problems.push(`${at}: "${clip(extra)}" is not a field a charged spell has`);
+        return;
+      }
+      const named = own(x, 'spell');
+      if (typeof named !== 'string' || named.trim() === '' || named.length > L.targetLength) {
+        problems.push(`${at}: "spell" is the spell's name`);
+        return;
+      }
+      // Lower case, as the cast prompt looks a spell up, before the twice check.
+      const spell = named.trim().toLowerCase();
+      if (spells.some((s) => s.spell === spell)) {
+        problems.push(`${at}: "${clip(spell)}" is named twice`);
+        return;
+      }
+      const cost = own(x, 'cost');
+      if (!isWhole(cost, 1, counted ? charges : most)) {
+        problems.push(
+          `${at}: "cost" is the charges it takes at its own level, 1 to the item's charges`,
+        );
+        return;
+      }
+      const upTo = own(x, 'upTo');
+      if (upTo !== undefined && !isWhole(upTo, 1, 9)) {
+        problems.push(`${at}: "upTo" is a spell level, 1 to 9`);
+        return;
+      }
+      spells.push({ spell, cost, ...(upTo === undefined ? {} : { upTo }) });
+    });
+  }
+  if (problems.length > 0 || !counted) return { problems };
+  return { charges: { charges, regain, spells }, problems };
 }
 
 /** Rows by part, then by key: one row, or a `standing` key's rows at each level. */
