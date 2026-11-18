@@ -351,7 +351,7 @@ function optionsOf<T>(
 }
 
 /** The prompt's words when the pick names none, by what it asks and how many. */
-function defaultLabel(ask: PickAsk, count: number, feature: string): string {
+export function defaultLabel(ask: PickAsk, count: number, feature: string): string {
   const many = count > 1;
   switch (ask) {
     case 'skill':

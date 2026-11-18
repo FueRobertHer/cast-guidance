@@ -1366,6 +1366,22 @@ function sampleFills(ask: PickAsk): PickFill[] {
 }
 
 /**
+ * The answers what a pick gives is checked with: each option's id (else an
+ * answer of the ask), and each name it takes in place of. The reader and the
+ * Workshop's cards check with these alike.
+ */
+export function pickSamples(
+  ask: PickAsk,
+  optionIds: readonly string[],
+  inPlaceOf: readonly string[] = [],
+): PickFill[] {
+  return [
+    ...(ask === 'option' ? optionIds.map((pick) => ({ pick })) : sampleFills(ask)),
+    ...inPlaceOf.map((pick) => ({ pick })),
+  ];
+}
+
+/**
  * A pick's stored effects (`gives`, `givesAll`), checked with each sample
  * filled in, and read again with each answer. Answers repeat across derives,
  * so each fill is read once.
@@ -1391,6 +1407,23 @@ function pickGives(
     seen.set(key, read);
     return read;
   };
+}
+
+/**
+ * The problems what a player's pick gives (`gives`, an option's `gives`) has
+ * with each of these answers filled in, each once: as the pick's reader finds
+ * them, effect by effect, for the Workshop's cards of what a pick gives.
+ */
+export function pickGivesProblems(raw: unknown, fills: readonly PickFill[]): string[] {
+  const how: HowRead = { strict: false, builtIn: false, inPick: true };
+  return [
+    ...new Set(
+      // `{picks}` is filled in what the picks give together alone, as the reader fills it.
+      fills.flatMap(
+        ({ picks: _, ...f }) => readStoredEffects(filled(raw, f), 'gives', how).problems,
+      ),
+    ),
+  ];
 }
 
 /** A pick's count: a number, a level table of numbers, or a class table's column. */
@@ -1544,10 +1577,11 @@ function readPick(raw: Record<string, unknown>, how: HowRead): EffectTemplate {
   mark(raw, r, 'gives');
   mark(raw, r, 'givesAll');
   mark(raw, r, 'always');
-  const samples: PickFill[] = [
-    ...(ask === 'option' ? (options ?? []).map((o) => ({ pick: o.id })) : sampleFills(ask)),
-    ...(inPlaceOf ?? []).map((pick) => ({ pick })),
-  ];
+  const samples = pickSamples(
+    ask,
+    (options ?? []).map((o) => o.id),
+    inPlaceOf,
+  );
   // `{picks}` is filled in what the picks give together alone.
   const gives =
     own(raw, 'gives') === undefined

@@ -396,6 +396,35 @@ feat's or item's sense does not count), and a held range written as a formula
 counts as none, since a formula's number is known only once the sheet is
 folded.
 
+The Workshop's Pick card (4g) writes a pick on any entry whose effects are not
+in play: what it asks for, how many, from what (chips for skills, saving throws
+and damage types, names for tools, weapons of a kind or named, a spell's levels
+and class lists), in place of what is held (a skill, tool or save), the
+prompt's words (the box suggests the sheet's own), and what each pick gives,
+built with the effect cards. There a box that takes the answer (a skill, an
+ability, a damage type) offers "The pick", and a name box takes `{pick}`; a
+card's words say "the one picked". A named option's pick lists its options,
+each with what it gives. A new pick's id is `choice`, else `choice-2` and on,
+one no pick of the entry has or had in a version the editor knows (as it
+opened, each save while it is open, and a copy's original; a class's features
+file their picks under the class, so the whole entry counts), and it never
+changes, since the answers are filed under it. A new option likewise takes an
+id its pick's options never had there, and so do the two a pick turned to
+options starts with. An Id box shows when the reader refuses the id a file
+gives or two picks share one, and stays while it is typed. Turning a pick to
+another ask takes away what only the old ask reads, and turns what it gives too
+while that is still what the old ask started with. What it gives holds no pick,
+pool or action (a pool there would be named for the one picked, which the cards
+that follow a pool's name do not reach): one a file gives is shown as written.
+A pool of the entry renamed is followed into what its picks give (`gives`,
+`givesAll`, `always`, each option's). What no box
+edits is kept and said so: a count by level or by the class table (a number
+typed replaces it), `givesAll`, `always`, a weapon pick's `without`,
+`afterBuild`, and a Weapon Mastery pick, a class's, in words alone, with what
+the reader refuses in what it gives. Its Weapon card gives a weapon proficiency
+by name. A rule pack's review says what each pick a patch adds asks for ("Asks
+for 2 skills from Arcana or History"), and does not count it as an effect.
+
 ## Roll fields
 
 Three stored fields came in with the roll parts, and a fourth after them, for rule packs too:

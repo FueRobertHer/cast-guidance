@@ -47,6 +47,7 @@ import {
 import { EditorShell } from './EditorShell';
 import { EDITORS, type EditorSpec, type Json } from './editorTypes';
 import { Field } from './fields';
+import { EntryPicks } from './pickIds';
 
 const NOTE = 'text-body text-ink-muted';
 const ICON =
@@ -317,6 +318,8 @@ function Editor({
   const lost = subject.lost ?? 0;
   const [draft, setDraft] = useState(subject.draft);
   const [clean, setClean] = useState(subject.draft);
+  // Each version saved while open: a pick saved once may have answers filed under its id.
+  const [saves, setSaves] = useState<Json[]>([]);
   const [mode, setMode] = useState<SaveMode>(subject.mode);
   const [at, setAt] = useState({ fileId: subject.fileId, stored: subject.stored });
   // Each name it is stored under while open, for an editor's own writer.
@@ -388,6 +391,7 @@ function Editor({
       setAt({ fileId: saved.fileId, stored: { name: entry.name, source: entry.source } });
       setStoredAs((s) => [...s, { name: entry.name, source: entry.source }]);
       setClean(draft);
+      setSaves((s) => [...s, draft]);
       notify({ title: `Saved ${entry.name}`, tone: 'good' });
       onSaved(`/workshop/edit/${type}/${keyOf(entry.name, entry.source)}`);
     } catch (err) {
@@ -507,13 +511,16 @@ function Editor({
           className={fieldClass}
         />
       </Field>
-      <Body
-        draft={draft}
-        change={change}
-        original={original}
-        registry={registry}
-        readOnly={readOnly}
-      />
+      {/* A pick added anywhere in the entry takes an id none of its picks has, nor had. */}
+      <EntryPicks draft={draft} before={[subject.draft, ...saves, original]}>
+        <Body
+          draft={draft}
+          change={change}
+          original={original}
+          registry={registry}
+          readOnly={readOnly}
+        />
+      </EntryPicks>
       {failure !== undefined && (
         <p role="alert" className="rounded-control bg-danger-soft px-3 py-2 text-caption">
           {failure}

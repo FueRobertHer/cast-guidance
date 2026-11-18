@@ -6,15 +6,17 @@
  * reader the sheet uses, so a card that would not count says why, here.
  */
 import { CircleAlert, Plus, X } from 'lucide-react';
-import { useId, useRef, useState } from 'react';
+import { useContext, useId, useRef, useState } from 'react';
 import {
   EFFECT_EDITIONS,
   isRecord,
   type StoredEffect,
   type StoredState,
 } from '@/engine/castGuidance';
-import { readMechanics, readStoredEffects } from '@/engine/effects/mechanics';
+import { pickGivesProblems, readMechanics, readStoredEffects } from '@/engine/effects/mechanics';
+import type { PickFill } from '@/engine/effects/picks';
 import { HIT_DIE_COST, type RollFilter, SKILLS, SLOT_COST, type SlotPrice } from '@/engine/types';
+import { pickWords } from '@/features/homebrew/pickWords';
 import { rollsWords } from '@/features/sheet/effectsInPlay';
 import { slotPriceWords } from '@/features/sheet/slotCost';
 import { signed } from '@/lib/signed';
@@ -23,6 +25,8 @@ import { askChoice } from '@/ui/dialogs';
 import { fieldClass } from '@/ui/TextField';
 import type { EditorProps } from './editorTypes';
 import { ABILITY_WORDS, Field, Section, Select } from './fields';
+import { KEPT_ASKS, NEW_PICK, PickFields } from './PickFields';
+import { EntryVersions, freshPickId, pickIdsIn } from './pickIds';
 
 type Eff = StoredEffect;
 type Options = ReadonlyArray<readonly [string, string]>;
@@ -605,6 +609,13 @@ const KINDS: readonly KindSpec[] = [
     line: (e) => `Proficiency with ${String(e.name)}`,
   },
   {
+    kinds: ['weaponProf'],
+    add: 'Weapon',
+    make: () => ({ kind: 'weaponProf', name: 'longsword' }),
+    fields: [{ key: 'name', label: 'Weapon', type: 'text' }],
+    line: (e) => `Proficiency with ${String(e.name)}`,
+  },
+  {
     kinds: ['resist', 'immune', 'vulnerable'],
     add: 'Resistance',
     make: () => ({ kind: 'resist', damageType: 'fire' }),
@@ -768,6 +779,14 @@ const KINDS: readonly KindSpec[] = [
     fields: [{ key: 'text', label: 'What to remember', type: 'text' }],
     line: (e) => String(e.text),
   },
+  {
+    // Its id is set as it is added (`EffectCards`), one the entry's other picks do not have.
+    kinds: ['pick'],
+    add: 'Pick',
+    make: () => NEW_PICK,
+    fields: [],
+    line: pickWords,
+  },
 ];
 
 const KINDS_SENSE: Options = [
@@ -830,8 +849,33 @@ function stateWords(s: unknown): string {
   return JSON.stringify(s);
 }
 
-/** Kinds that never go in play: a condition's or a spell's card does not offer them. */
-const NOT_IN_PLAY = new Set(['rollPaid', 'rollReroll']);
+/**
+ * Kinds that never go in play: a condition's or a spell's card does not offer
+ * them. A pick is asked as the character is built.
+ */
+const NOT_IN_PLAY = new Set(['rollPaid', 'rollReroll', 'pick']);
+
+/**
+ * Kinds what a pick gives is not built with: a pick asks no pick of its own,
+ * and a pool or an action there would be named for the one picked, which the
+ * cards that follow a pool's name cannot reach. One a file gives is shown as written.
+ */
+const NOT_IN_PICK = new Set(['pick', 'resource', 'action']);
+
+/** `{pick}` and its forms in a card's words, said for what each pick gives. */
+const pickedWords = (s: string) =>
+  // A key made around its slug ("sig-{pick.slug}", a pool's) is said whole;
+  // words beside the others stay.
+  s.replaceAll(/[\w-]*\{pick\.slug\}[\w-]*|\{pick(?:\.title)?\}/g, 'the one picked');
+
+/** A stored value standing for the one picked. */
+const PICKED = '{pick}';
+
+/** Whether a dropdown of this kind's field takes the one a pick of `ask` answers. */
+const takesPicked = (ask: string | undefined, kind: string, key: string) =>
+  (ask === 'skill' && kind === 'skillProf' && key === 'skill') ||
+  (ask === 'save' && (kind === 'saveProf' || kind === 'abilityBonus') && key === 'ability') ||
+  (ask === 'damage' && ['resist', 'immune', 'vulnerable'].includes(kind) && key === 'damageType');
 
 const ECONOMY_WORDS: Readonly<Record<string, string>> = {
   action: 'Action',
@@ -903,6 +947,47 @@ function repaid(price: Price | undefined, resource: string): Price {
     ),
   );
   return { ...rest, resource, amount: one || rest.amount === undefined ? 1 : rest.amount };
+}
+
+/**
+ * The lists of what a pick gives, each by its place: "gives", "givesAll",
+ * "always" (given in place of nothing), "options 2 gives".
+ */
+function givenLists(x: Eff): Array<readonly [string, readonly unknown[]]> {
+  if (x.kind !== 'pick') return [];
+  const options = Array.isArray(x.options) ? x.options : [];
+  return [
+    ...(['gives', 'givesAll', 'always'] as const).flatMap((k) =>
+      Array.isArray(x[k]) ? [[k, x[k] as unknown[]] as const] : [],
+    ),
+    ...options.flatMap((o, n) =>
+      isRecord(o) && Array.isArray(o.gives) ? [[`options ${n} gives`, o.gives] as const] : [],
+    ),
+  ];
+}
+
+/** A pick's lists of what it gives (`givenLists`), each effect `g` turned by `turn`. */
+function regiven(
+  x: Eff,
+  turn: (g: unknown, at: string, k: number) => unknown,
+): Partial<Record<'gives' | 'givesAll' | 'always' | 'options', unknown>> {
+  if (x.kind !== 'pick') return {};
+  const each = (list: unknown, at: string) =>
+    Array.isArray(list) ? list.map((g, k) => turn(g, at, k)) : list;
+  return {
+    ...(x.gives === undefined ? {} : { gives: each(x.gives, 'gives') }),
+    ...(x.givesAll === undefined ? {} : { givesAll: each(x.givesAll, 'givesAll') }),
+    ...(x.always === undefined ? {} : { always: each(x.always, 'always') }),
+    ...(Array.isArray(x.options)
+      ? {
+          options: x.options.map((o, n) =>
+            isRecord(o) && o.gives !== undefined
+              ? { ...o, gives: each(o.gives, `options ${n} gives`) }
+              : o,
+          ),
+        }
+      : {}),
+  };
 }
 
 /** A price's fields that name a pool, for its cost and its buy-back. */
@@ -1127,11 +1212,13 @@ const OWN_CLASS = 'ownClass';
 /** A spell grant's own controls: which spell, how it is cast, whose ability sets its numbers. */
 function GrantFields({
   effect,
+  title,
   resources,
   spells,
   onChange,
 }: {
   effect: Eff;
+  title: string;
   resources: readonly Eff[];
   spells: readonly SpellOption[];
   onChange: (next: Eff) => void;
@@ -1168,7 +1255,7 @@ function GrantFields({
     <>
       <Field label="Spell">
         <input
-          aria-label="Cast a spell: Spell"
+          aria-label={`${title}: Spell`}
           list={id}
           value={typed}
           placeholder="Misty Step"
@@ -1186,11 +1273,7 @@ function GrantFields({
         </datalist>
       </Field>
       <Field label="Cast">
-        <Select
-          aria-label="Cast a spell: Cast"
-          value={how}
-          onChange={(e) => setHow(e.target.value)}
-        >
+        <Select aria-label={`${title}: Cast`} value={how} onChange={(e) => setHow(e.target.value)}>
           <option value="">At will</option>
           <option value="prepared">Always prepared</option>
           {resources.map((r) => (
@@ -1202,7 +1285,7 @@ function GrantFields({
       </Field>
       <Field label="Attack and DC from">
         <Select
-          aria-label="Cast a spell: Attack and DC from"
+          aria-label={`${title}: Attack and DC from`}
           value={
             effect.ownClass === true
               ? OWN_CLASS
@@ -1727,25 +1810,48 @@ function Card({
   readOnly,
   onChange,
   onRemove,
+  prefix = '',
+  picked,
+  inPick = false,
 }: {
   effect: Eff;
   problems: string[];
   list: readonly Eff[];
   pools: readonly Eff[];
-  spells: readonly SpellOption[];
+  /** The spells a "Cast a spell" card can name; without them it is not offered. */
+  spells?: readonly SpellOption[];
   inPlay: boolean;
   readOnly: boolean;
   onChange: (next: Eff, renamedKey?: [string, string]) => void;
   onRemove: () => void;
+  /** Words before its box names, for a card of what a pick gives: "Each pick gives: ". */
+  prefix?: string;
+  /** What the pick it is given by answers (`ask`), offered as "The pick" where it fits. */
+  picked?: string;
+  /** It is one of what a pick gives. */
+  inPick?: boolean;
 }) {
   const spec = specOf(effect);
-  const title = spec?.add ?? effect.kind;
+  const name = spec?.add ?? effect.kind;
+  const title = `${prefix}${name}`;
+  // What a pick gives holds no pool or action the boxes could build (`NOT_IN_PICK`).
+  const fixed = inPick && NOT_IN_PICK.has(effect.kind);
+  const editable = !readOnly && !fixed;
+  const line = ((s: string) => (inPick ? pickedWords(s) : s))(spec?.line(effect) ?? effect.kind);
+  // A pick's cards of what it gives say their own problems; the rest are the card's.
+  const own =
+    effect.kind === 'pick' && editable && !KEPT_ASKS.has(String(effect.ask))
+      ? problems.filter((p) => !/^"(gives|options\.\d+\.gives)": effect \d+/.test(p))
+      : problems;
   const paidRoll = effect.kind === 'rollPaid' || effect.kind === 'rollReroll';
   // One of each key: a pool given once for each rules version (`edition`) is one
   // pool, the card's own or one kept elsewhere (a class's).
-  const resources = [...list.filter((x) => x.kind === 'resource'), ...pools].filter(
-    (x, i, all) => typeof x.key === 'string' && all.findIndex((y) => y.key === x.key) === i,
-  );
+  // In what a pick gives, a pool named for the one picked is said so (`pickedWords`).
+  const resources = [...list.filter((x) => x.kind === 'resource'), ...pools]
+    .filter((x, i, all) => typeof x.key === 'string' && all.findIndex((y) => y.key === x.key) === i)
+    .map((x) =>
+      inPick && typeof x.label === 'string' ? { ...x, label: pickedWords(x.label) } : x,
+    );
   const state = typeof effect.while === 'string' ? effect.while : '';
   const edition = editionOf(effect);
   const set = (f: FieldSpec, text: string) => {
@@ -1768,11 +1874,11 @@ function Card({
   return (
     <div className="flex flex-col gap-2 rounded-control bg-surface py-2.5 pr-1 pl-3 ring-1 ring-line ring-inset">
       <div className="flex items-center gap-2">
-        <b className="flex-1 text-caption text-ink-muted">{title}</b>
+        <b className="flex-1 text-caption text-ink-muted">{name}</b>
         {!readOnly && (
           <button
             type="button"
-            aria-label={`Remove ${spec?.line(effect) ?? title}`}
+            aria-label={`Remove ${line}`}
             onClick={onRemove}
             className="tap -my-2 rounded-full text-ink-muted hover:bg-surface-raised hover:text-ink"
           >
@@ -1780,8 +1886,32 @@ function Card({
           </button>
         )}
       </div>
-      <span className="pr-2 text-body-strong">{spec?.line(effect) ?? effect.kind}</span>
-      {spec !== undefined && !readOnly && (
+      <span className="pr-2 text-body-strong">{line}</span>
+      {effect.kind === 'pick' && editable && (
+        <PickFields
+          effect={effect}
+          title={title}
+          problems={problems}
+          onChange={onChange}
+          gives={(p) => (
+            <EffectCards
+              effects={p.effects}
+              readOnly={false}
+              spells={spells}
+              resources={resources}
+              prefix={p.prefix}
+              addLabel={p.addLabel}
+              fills={p.fills}
+              picked={p.picked}
+              onChange={(next) => p.onChange(next)}
+            />
+          )}
+        />
+      )}
+      {fixed && !readOnly && (
+        <span className="pr-2 text-caption text-ink-muted">Kept as written</span>
+      )}
+      {spec !== undefined && editable && (
         <div className="grid grid-cols-2 items-end gap-2 pr-2">
           {spec.fields.map((f) => (
             <Field key={f.key} label={f.label}>
@@ -1792,6 +1922,8 @@ function Card({
                   onChange={(e) => set(f, e.target.value)}
                 >
                   {isByLevel(effect[f.key]) && <option value="">{BY_LEVEL}</option>}
+                  {(takesPicked(picked, effect.kind, f.key) ||
+                    shown(effect, f).includes('{pick')) && <option value={PICKED}>The pick</option>}
                   {f.options.map(([v, text]) => (
                     <option key={v} value={v}>
                       {text}
@@ -1831,8 +1963,9 @@ function Card({
           {effect.kind === 'grantSpell' && (
             <GrantFields
               effect={effect}
+              title={title}
               resources={resources}
-              spells={spells}
+              spells={spells ?? []}
               onChange={onChange}
             />
           )}
@@ -1905,7 +2038,7 @@ function Card({
       {edition !== undefined && readOnly && (
         <span className="text-caption text-ink-muted">{word(EDITIONS, edition)}</span>
       )}
-      {problems.map((p) => (
+      {own.map((p) => (
         <p key={p} className="flex items-start gap-1.5 pr-2 text-caption text-danger">
           <CircleAlert size={14} aria-hidden className="mt-0.5 shrink-0" />
           This does not count yet:{' '}
@@ -2042,10 +2175,19 @@ function AmendCards({
  * chips, with Cast a spell only where spells can be named, and in play only
  * what an effect in play may do.
  */
-export function moreKinds({ inPlay, spells }: { inPlay: boolean; spells: boolean }): string[] {
+export function moreKinds({
+  inPlay,
+  spells,
+  inPick = false,
+}: {
+  inPlay: boolean;
+  spells: boolean;
+  /** For what a pick gives, whose one add button offers every kind it may hold. */
+  inPick?: boolean;
+}): string[] {
   return KINDS.filter(
     (k) =>
-      !FIRST.includes(k.add) &&
+      (inPick ? !k.kinds.some((kind) => NOT_IN_PICK.has(kind)) : !FIRST.includes(k.add)) &&
       (spells || k.add !== 'Cast a spell') &&
       !(inPlay && k.kinds.some((kind) => NOT_IN_PLAY.has(kind))),
   ).map((k) => k.add);
@@ -2069,6 +2211,10 @@ export function EffectCards({
   inPlay = false,
   amend,
   onAmend,
+  prefix,
+  addLabel,
+  fills,
+  picked,
 }: {
   effects: unknown;
   /** The effects, and the prices (`amend`) when renaming a pool moved them too. */
@@ -2094,10 +2240,22 @@ export function EffectCards({
   hide?: (e: Eff) => boolean;
   /** Uses kept elsewhere that an action or a spell here can spend too (a class's pools). */
   resources?: readonly Eff[];
+  /**
+   * The effects are what a pick gives (`gives`): each card's box names start
+   * with `prefix`, its one add button is named `addLabel`, and they are read
+   * as the pick's reader reads them, with each of `fills` filled in.
+   */
+  prefix?: string;
+  addLabel?: string;
+  fills?: readonly PickFill[];
+  /** What the pick answers (`ask`), offered as "The pick" where a box fits it. */
+  picked?: string;
 }) {
   const list: Eff[] = Array.isArray(effects) ? (effects as Eff[]) : [];
   const amends: Eff[] = Array.isArray(amend) ? (amend as Eff[]) : [];
-  const { problems } = readStoredEffects(list);
+  const inPick = fills !== undefined;
+  const problems = inPick ? pickGivesProblems(list, fills) : readStoredEffects(list).problems;
+  const versions = useContext(EntryVersions);
   const problemsOf = (i: number) =>
     problems
       .filter((p) => p.startsWith(`effect ${i + 1}:`) || p.startsWith(`effect ${i + 1} (`))
@@ -2117,9 +2275,12 @@ export function EffectCards({
    * pool for the other rules version, `edition`), the uses a spell is cast
    * with, and on an action or a price on what a copy inherits (`priced`), its
    * cost (and the points a slot gives back), what buys a use back and the use
-   * it gives back.
+   * it gives back. A pick's are those of what it gives, its options' too.
    */
   const naming = (x: Eff, place: string, from: string, priced = x.kind === 'action'): string[] => [
+    ...givenLists(x).flatMap(([at, given]) =>
+      given.flatMap((g, k) => (isRecord(g) ? naming(g as Eff, `${place} ${at} ${k}`, from) : [])),
+    ),
     ...(x.kind === 'resource' && x.key === from ? [`${place} key`] : []),
     ...(x.kind === 'grantSpell' && x.resourceKey === from ? [`${place} resourceKey`] : []),
     ...PRICE_KEYS.flatMap(([key, fields]) => {
@@ -2152,6 +2313,7 @@ export function EffectCards({
           ]);
     const renamed = (x: Eff, place: string): Eff => ({
       ...x,
+      ...regiven(x, (g, at, k) => (isRecord(g) ? renamed(g as Eff, `${place} ${at} ${k}`) : g)),
       ...(at.has(`${place} key`) ? { key: to, label: next.label } : {}),
       ...(at.has(`${place} resourceKey`) ? { resourceKey: to } : {}),
       ...Object.assign(
@@ -2169,11 +2331,17 @@ export function EffectCards({
     following.current = { was: JSON.stringify([effects, amended ?? amends]), at };
     return [effects, amended];
   };
-  const add = (spec: KindSpec) => onChange([...list, spec.make()]);
+  const add = (spec: KindSpec) => {
+    const made = spec.make();
+    // A new pick takes an id none of the entry's picks has, so each is asked.
+    const next =
+      made.kind === 'pick' ? { ...made, id: freshPickId(pickIdsIn([list, ...versions()])) } : made;
+    onChange([...list, next]);
+  };
   const more = async () => {
     const id = await askChoice({
-      title: 'What does it do?',
-      options: moreKinds({ inPlay, spells: spells !== undefined }).map((add) => ({
+      title: inPick ? 'What does each pick give?' : 'What does it do?',
+      options: moreKinds({ inPlay, spells: spells !== undefined, inPick }).map((add) => ({
         id: add,
         label: add,
       })),
@@ -2215,10 +2383,13 @@ export function EffectCards({
             effect={effect}
             list={list}
             pools={resources ?? []}
-            spells={spells ?? []}
+            spells={spells}
             problems={problemsOf(i)}
             inPlay={inPlay}
             readOnly={readOnly}
+            prefix={prefix}
+            picked={picked}
+            inPick={inPick}
             onRemove={() => onChange(list.filter((_, j) => j !== i))}
             onChange={(next, renamed) =>
               renamed === undefined
@@ -2230,10 +2401,20 @@ export function EffectCards({
       )}
       {list.filter((e) => hide?.(e) !== true).length === 0 && (
         <p className="text-caption text-ink-muted">
-          Nothing for the sheet to count yet. Add what it does, and the sheet adds it up.
+          {inPick
+            ? 'Nothing yet.'
+            : 'Nothing for the sheet to count yet. Add what it does, and the sheet adds it up.'}
         </p>
       )}
-      {!readOnly && (
+      {!readOnly && inPick && (
+        <div className="-mx-1.5 flex flex-wrap">
+          <Chip tone="outline" className="px-2.5" aria-label={addLabel} onClick={() => void more()}>
+            <Plus size={14} aria-hidden />
+            Add
+          </Chip>
+        </div>
+      )}
+      {!readOnly && !inPick && (
         <div className="-mx-1.5 flex flex-wrap">
           {KINDS.filter((k) => FIRST.includes(k.add)).map((k) => (
             <Chip key={k.add} tone="outline" className="px-2.5" onClick={() => add(k)}>
