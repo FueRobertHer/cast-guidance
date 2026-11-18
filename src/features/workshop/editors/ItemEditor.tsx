@@ -159,12 +159,9 @@ export function withCharges(draft: Json, patch: Json, own?: Json): Json {
   const begins = own !== undefined || (typeof draft.charges !== 'number' && charges !== undefined);
   if (had === undefined && (!begins || effects.some(isOldCharges))) return fields;
   const next = { ...draft, ...fields };
-  // What comes back is the fields' once they say it, or are changed.
-  const fresh =
-    had === undefined ||
-    'recharge' in patch ||
-    'rechargeAmount' in patch ||
-    typeof next.recharge === 'string';
+  // What comes back is the fields' once they say it, or are changed. (How
+  // many is changed only beside a recharge.)
+  const fresh = had === undefined || 'recharge' in patch || typeof next.recharge === 'string';
   const kept: Json = { ability: had?.ability, spells: had?.spells, ...own };
   const spells = list(kept.spells);
   const made: StoredEffect | undefined =

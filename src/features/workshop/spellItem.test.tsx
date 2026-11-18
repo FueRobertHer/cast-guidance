@@ -612,7 +612,13 @@ describe('ItemEditor', () => {
         effects: [
           { kind: 'charges', charges: 3, regain: 'all' },
           { kind: 'resource', key: ITEM_CHARGES, label: 'Charges', max: 2, reset: 'long' },
-          { kind: 'action', economy: 'bonus', label: 'Jolt', cost: { resource: ITEM_CHARGES } },
+          {
+            kind: 'action',
+            economy: 'bonus',
+            label: 'Jolt',
+            cost: { resource: ITEM_CHARGES },
+            buyBack: { resource: 'spell-slot', amount: 1, own: ITEM_CHARGES },
+          },
         ],
       },
     });
@@ -624,10 +630,26 @@ describe('ItemEditor', () => {
     expect([...back.options].filter((o) => o.value === ITEM_CHARGES).map((o) => o.text)).toEqual([
       'Uses of Charges',
     ]);
+    // The use it gives back goes to the copy's charges too.
+    const restores = screen.getByLabelText('Action: Restores') as HTMLSelectElement;
+    expect(
+      [...restores.options].filter((o) => o.value === ITEM_CHARGES).map((o) => o.text),
+    ).toEqual(['Its charges']);
     // Counted, they are the section's to edit, and only its own words show.
     expect(screen.queryByText(/counts these the older way/)).toBeNull();
     press('Add a spell its charges cast');
     expect(screen.getByLabelText('Charge spell 1')).toBeTruthy();
+  });
+
+  it('shows the count an effect written by hand says, with no charges field', () => {
+    mount(item, {
+      name: 'Hand Rod',
+      type: 'RD',
+      entries: [],
+      castGuidance: { v: 1, effects: [{ kind: 'charges', charges: 3, regain: '1d4' }] },
+    });
+    expect(screen.getByLabelText('Charges')).toHaveProperty('value', '3');
+    expect(screen.getByText(/The sheet counts them/)).toBeTruthy();
   });
 
   it('leaves charges counted the older way as they are, and says so', () => {
