@@ -188,7 +188,9 @@ async function instrument(
         // A row at one level is read only when a feature of that level emits it.
         const key = `${row.part}:${row.keys[0]}${row.level === undefined ? '' : ` @${row.level}`}`;
         all.push(key);
-        const field = row.part === 'spend' ? 'links' : 'effects';
+        // What its call site reads: a spend row's links, a charges row's numbers, or its effects.
+        const field =
+          row.part === 'spend' ? 'links' : row.part === 'charges' ? 'charges' : 'effects';
         const held = row as unknown as Record<string, object>;
         held[field] = new Proxy(held[field] ?? [], {
           get(target, prop, receiver) {
