@@ -305,6 +305,12 @@ describe('a spell rest row, read', () => {
       "spell 1: is the spell's name",
     ],
     ['a spell with no name', { spells: ['shield', ' '] }, "spell 2: is the spell's name"],
+    ['a name longer than a name', { spells: ['x'.repeat(201)] }, "spell 1: is the spell's name"],
+    [
+      'every in a list',
+      { spells: ['misty step', 'Every'] },
+      'spell 2: "every" stands alone, not in a list',
+    ],
     [
       'a spell named twice, in any case',
       { spells: ['Shield', 'shield'] },
@@ -317,5 +323,18 @@ describe('a spell rest row, read', () => {
     expect(set.problems.join('; ')).toContain(problem);
     expect(set.rows).toHaveLength(1);
     expect(set.rows[0]?.shortRest).toEqual({ spells: ['misty step'] });
+  });
+
+  it('takes as many as 20 spells', () => {
+    const spells = Array.from({ length: 20 }, (_, i) => `spell ${i}`);
+    const set = read({ spells });
+    expect(set.problems).toEqual([]);
+    expect(set.rows[0]?.shortRest).toEqual({ spells });
+  });
+
+  it('keeps the first of two rows under one key, and says the second is a row already', () => {
+    const set = read({ spells: ['shield'] }, [{ spells: ['misty step'] }]);
+    expect(set.problems.join('; ')).toContain('"feat:tests|tst" is already a row');
+    expect(set.rows.map((r) => r.shortRest)).toEqual([{ spells: ['shield'] }]);
   });
 });

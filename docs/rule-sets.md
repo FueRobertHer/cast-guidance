@@ -279,9 +279,9 @@ tiefling's Tenser's Floating Disk. The table is gone.
   misread would offer the charges for less, or not at all, unseen.
 - **`spells`** (`spellRest` rows, in place of `effects`): `"every"`, or the
   spells by name whose pools from the origin come back on a short rest ("Spell
-  rest rows", below). A row with no spells, a name that is not one, or a spell
-  named twice is left out, and its keys stay free: a spell misread would leave
-  its pool on a long rest unseen.
+  rest rows", below). A row with no spells, an entry that is not a name,
+  `"every"` inside the list, or a spell named twice is left out, and its keys
+  stay free: a spell misread would leave its pool on a long rest unseen.
 - A row the reader cannot read is left out, and the rest still count. What it
   left out goes to the console once, not the sheet: the files are the app's, so
   a problem in one is a bug its tests catch, not something a player can fix.
@@ -316,8 +316,8 @@ that does not, and then no `charges` row is found. A copy of an item is not
 reached by the official one's rows: its tags and charges are its author's.
 
 A `spellRest` row is found under the `type:uid` of the origin granting the
-spells, as its spell pools are keyed: `feat:fey teleportation|xge`, and for a
-subrace, whose origin has type `race`, `race:mammon|mtf`.
+spells: `feat:fey teleportation|xge`, and for a subrace, whose origin has type
+`race`, `race:mammon|mtf`.
 
 A `standing` row is found under the same keys, in the same order, for a class
 or subclass feature and for an optional feature; feats, traits and class rows

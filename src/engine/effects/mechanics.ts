@@ -2529,8 +2529,11 @@ function readRestSpells(raw: unknown): { spells?: 'every' | string[]; problems: 
       return;
     }
     const spell = named.trim().toLowerCase();
-    if (spells.includes(spell)) problems.push(`spell ${i + 1}: "${clip(spell)}" is named twice`);
-    else spells.push(spell);
+    // `every` in a list would be read as a spell of that name, which no pool has.
+    if (spell === 'every') problems.push(`spell ${i + 1}: "every" stands alone, not in a list`);
+    else if (spells.includes(spell)) {
+      problems.push(`spell ${i + 1}: "${clip(spell)}" is named twice`);
+    } else spells.push(spell);
   });
   return problems.length > 0 ? { problems } : { spells, problems };
 }

@@ -565,7 +565,7 @@ export interface StoredRuleRow {
   regain?: string;
   /**
    * `charges` rows: the spells its charges cast, and what each costs.
-   * `spellRest` rows: the spells, by name in lower case, whose pool from the
+   * `spellRest` rows: the spells, by name in any case, whose pool from the
    * origin comes back on a short rest, or `every` pool the origin grants.
    */
   spells?: StoredChargeSpell[] | string[] | 'every';
