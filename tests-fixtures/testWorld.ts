@@ -6,6 +6,7 @@
 import { RULE_SET_TYPE } from '@/engine/castGuidance';
 import type { DataEntity, EngineContext } from '@/engine/types';
 import curatedRules from '@/rules/cast-guidance/curated.json';
+import itemRules from '@/rules/cast-guidance/items.json';
 import rollAdvantageRules from '@/rules/cast-guidance/roll-advantages.json';
 import rollExtraRules from '@/rules/cast-guidance/roll-extras.json';
 import spendRules from '@/rules/cast-guidance/spend.json';
@@ -21,6 +22,7 @@ export const BUILT_IN_RULE_SETS: DataEntity[] = [
   rollAdvantageRules as DataEntity,
   rollExtraRules as DataEntity,
   spendRules as DataEntity,
+  itemRules as DataEntity,
 ];
 
 const race: DataEntity[] = [

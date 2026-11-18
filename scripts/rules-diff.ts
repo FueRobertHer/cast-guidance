@@ -465,9 +465,16 @@ async function snapshot(): Promise<void> {
     record(`background ${uidOf(refOf(bg))}`, doc);
   }
 
-  // Every magic item, equipped and attuned, on a level 5 Fighter of its edition.
+  // Every magic item, equipped and attuned, on a level 5 Fighter of its edition,
+  // and every mundane one whose tags give something while worn (a balm's
+  // resistance, which a built-in row takes away).
+  const wornTag = (item: Entity) =>
+    ['resist', 'immune', 'vulnerable', 'conditionImmune'].some(
+      (k) => Array.isArray(item[k]) && (item[k] as unknown[]).length > 0,
+    ) || item.bonusSavingThrow !== undefined;
   for (const item of reg.byType('item')) {
-    if (str(item.rarity) === '' || str(item.rarity) === 'none') continue;
+    const mundane = str(item.rarity) === '' || str(item.rarity) === 'none';
+    if (mundane && !wornTag(item)) continue;
     const edition = editionOf(item);
     const doc = baseDoc(edition);
     doc.classes = [fighter(edition, 5)];

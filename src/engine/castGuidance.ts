@@ -481,7 +481,10 @@ export const RULE_SET_TYPE = 'ruleSet';
  * the book: `brave|phb`, `feral instinct|barbarian|phb`. `spend` is what a
  * feature's action costs or buys a use back with (the link tables that were
  * `SPEND_LINKS` and `SLOT_LINKS`), found under the roll keys: a row's `links`
- * price the action the feature emitted, or add one.
+ * price the action the feature emitted, or add one. `wornTags` is what wearing
+ * an item gives where its data's tags say otherwise (the table that was
+ * `ITEM_TAG_FIXES`), found under the item's own `name|source`: the kinds of
+ * tag it `replaces`, and its effects in their place.
  */
 export const RULE_SET_PARTS = [
   'curated',
@@ -489,6 +492,20 @@ export const RULE_SET_PARTS = [
   'rollAdvantage',
   'rollExtra',
   'spend',
+  'wornTags',
+] as const;
+
+/**
+ * The kinds of what an item's data tags give while it is worn, in the order the
+ * item call site reads them, which a `wornTags` row `replaces`: its defenses
+ * (`resist`, `immune`, `vulnerable`, `conditionImmune`) and its save bonus.
+ */
+export const WORN_TAG_KINDS = [
+  'resist',
+  'immune',
+  'vulnerable',
+  'conditionImmune',
+  'saveBonus',
 ] as const;
 
 /** Whether a built-in row turns the prose scan off for its entry, or runs beside it. */
@@ -522,6 +539,12 @@ export interface StoredRuleRow {
   effects?: StoredEffect[];
   /** `spend` rows only: the prices it puts on the feature's actions, in order. */
   links?: StoredSpendLink[];
+  /**
+   * `wornTags` rows only: the kinds of the item's data tags it stands in for
+   * (`WORN_TAG_KINDS`). Its `effects` are what the item gives of those kinds
+   * instead, often none; the kinds it leaves out are read from the data.
+   */
+  replaces?: Array<(typeof WORN_TAG_KINDS)[number]>;
 }
 
 /**

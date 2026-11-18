@@ -2,13 +2,15 @@
 
 A built-in rule set is data the app ships in place of code: rows of effects
 that hold what were the engine's hard-coded mechanics tables, and the tables
-these parts replaced are gone (the rule pack port, below). It holds five parts: `curated`, which holds
+these parts replaced are gone (the rule pack port, below). It holds six parts: `curated`, which holds
 what was `CURATED`; `standing`, which holds what was `STANDING`;
 `rollAdvantage`, which holds what was the advantage table, `ROLL_ADVANTAGES`;
-`rollExtra`, which holds what was `ROLL_EXTRAS`; and `spend`, which holds what
+`rollExtra`, which holds what was `ROLL_EXTRAS`; `spend`, which holds what
 were the spend links, `SPEND_LINKS` and `SLOT_LINKS` (`linkSpend` in
-`src/engine/curated/spendLinks.ts` reads it). The files live in `src/rules/`,
-one a part. (Source of truth: `readRuleSet` and `mechanicsOf` in
+`src/engine/curated/spendLinks.ts` reads it); and `wornTags`, which holds what
+was `ITEM_TAG_FIXES` (`src/rules/cast-guidance/items.json`, read in
+`src/engine/effects/item.ts`). The files live in `src/rules/`, one a part,
+but for `items.json`, which holds the item parts. (Source of truth: `readRuleSet` and `mechanicsOf` in
 `src/engine/effects/mechanics.ts`, `src/data5e/builtInRules.ts`.)
 
 218 rows have moved (`src/rules/cast-guidance/curated.json`), every `CURATED` row. Four came
@@ -149,6 +151,14 @@ other pool price but Divine Reaper's (287 keys), and 3d the spell slot and Hit
 Point Die prices with Divine Reaper (52 keys), so `spend.json` holds all 354
 keys, in 115 rows, and both link tables are gone.
 
+The 24 `ITEM_TAG_FIXES` keys have moved, as 15 `wornTags` rows
+(`src/rules/cast-guidance/items.json`, rule pack port 5a): items whose data
+tags name more than wearing gives, or less. Four give nothing worn (two decks,
+the Moon Card, Muroosa Balm); others drop a defense switched on for a while or
+picked when attuning, take a save bonus that holds only sometimes, or keep it
+to the one ability the text names. Keys whose rows are the same share one, and
+the table is gone.
+
 ## A file
 
 ```jsonc
@@ -159,7 +169,7 @@ keys, in 115 rows, and both link tables are gone.
   "edition": "both",           // "2014", "2024" or "both"; optional
   "rows": [
     {
-      "part": "curated",                // which of the five parts it is
+      "part": "curated",                // which of the six parts it is
       "keys": ["stunning strike|monk"], // the keys it is found under
       "scan": "replace",                // or "keep"; "replace" when absent
       "effects": [ /* the stored effects a rule pack's patch holds */ ]
@@ -188,6 +198,12 @@ keys, in 115 rows, and both link tables are gone.
       "links": [
         { "cost": { "resource": "sorcery-points", "amount": 2 }, "economy": "none" }
       ]
+    },
+    {
+      "part": "wornTags",
+      "keys": ["mace of the black crown (awakened)|egw"],
+      "replaces": ["resist"],           // the kinds of the item's data tags it stands in for
+      "effects": [{ "kind": "resist", "damageType": "poison" }]
     }
   ]
 }
@@ -220,6 +236,11 @@ keys, in 115 rows, and both link tables are gone.
   the row puts on the feature's action, in order ("Spend rows", below). A link
   the reader cannot read is a problem and is left out, and the row keeps the
   rest, still standing in for its keys, as a row keeps the effects it can read.
+- **`replaces`** (`wornTags` rows, at least one): the kinds of tag the row
+  stands in for, of `resist`, `immune`, `vulnerable`, `conditionImmune` and
+  `saveBonus` ("Worn tag rows", below). Its `effects` may only be of those
+  kinds. A row with a kind it does not know, a kind twice, or an effect of a
+  kind it does not replace is left out, and its keys stay free for a later row.
 - A row the reader cannot read is left out, and the rest still count. What it
   left out goes to the console once, not the sheet: the files are the app's, so
   a problem in one is a bug its tests catch, not something a player can fix.
@@ -242,8 +263,11 @@ for a copy), then its class's or subclass's, so a 2014 subclass kept under a
 2024 class reads its own printing's row. A row under the key alone is for every
 printing with no row of its own.
 
-The first key with a row wins, in the order the call site tries them. Items
-have no keys yet, and a subclass has no row of its own.
+The first key with a row wins, in the order the call site tries them. A
+subclass has no row of its own. Items have no curated row: their one part is
+`wornTags`, under the item's own `name|source` (`rod of alertness|dmg`), the
+entity found rather than the ref a character saved. A copy of an item is not
+reached by the official one's row: its tags are its author's to write.
 
 A `standing` row is found under the same keys, in the same order, for a class
 or subclass feature and for an optional feature; feats, traits and class rows
@@ -272,6 +296,29 @@ level count for them.
 A `spend` row is found under a class or subclass feature's, a feat's or an
 optional feature's roll keys, in the same order; traits have none. The first
 key with a row wins.
+
+## Worn tag rows
+
+An item's data tags say what wearing it gives: `resist`, `immune` and
+`vulnerable` damage types, `conditionImmune` conditions, and
+`bonusSavingThrow`. They are written as search filters, so a few name more
+than wearing gives: a deck tagged with what its cards give, a shield with what
+it gives for a minute after a bonus action, every save where the text names
+one. A `wornTags` row says what the item gives instead.
+
+- The item call site reads the tags kind by kind, in the order above. For a
+  kind the row `replaces` it adds the row's effects of that kind, in the row's
+  order, where the tags would be; for every other kind, the tags. So a row
+  changes only the kinds it names, and nothing moves.
+- A row giving nothing of a kind takes that kind away: the "nothing worn" rows
+  replace all five, whatever their data has.
+- A potion's tags count once it is drunk, so a potion reads neither tags nor
+  row while carried. `bonusAc` is not a tag: a row never touches it.
+- The row is part of what the item inherits, read while its magic works
+  (attuned, where it asks) with the item's own origin, as the tags are: a
+  pack's patch that replaces the item's mechanics leaves it out, and the item's
+  own `drop` reaches it. A player's item or copy drops and gives tags with its
+  own `drop` and `effects`; this part is the app's.
 
 ## Where a row sits
 
