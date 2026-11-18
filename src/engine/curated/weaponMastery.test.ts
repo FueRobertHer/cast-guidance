@@ -12,7 +12,6 @@ import {
   type EngineContext,
   newCharacterDoc,
 } from '../types';
-import { emitCuratedEffects } from './curatedEffects';
 
 // Invented classes and weapons, shaped like the 2024 ones: a class table with a
 // Weapon Mastery column, and one without.
@@ -66,9 +65,8 @@ const ctx: EngineContext = {
           : [],
 };
 
-/** The feature's row, wherever it lives while rows move out of code: `CURATED`, else the shipped rule set's. */
+/** The feature's row in the shipped rule set, emitted as a class walk emits it. */
 function emitRow(col: Collector, key: string, origin: EffectOrigin): void {
-  if (emitCuratedEffects(col, key, origin)) return;
   mechanicsOf(col, {
     entry: {},
     label: origin.label,
@@ -185,7 +183,7 @@ describe('the 2024 Weapon Mastery', () => {
     ]);
   });
 
-  it('masters the kinds picked for each class that has the feature', () => {
+  it('masters the kinds picked for the Barbarian, Paladin, Ranger and Rogue too', () => {
     const profs = ['simple weapons', 'warbow'];
     const mastered = (c: string, picks: string[]) => {
       const col = masteryAt(c, 1, picks, profs);
