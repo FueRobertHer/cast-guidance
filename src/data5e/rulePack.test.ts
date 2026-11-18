@@ -122,6 +122,17 @@ describe('a pack past a limit is refused, with the reason', () => {
     label: 'Flare',
     [field]: { byLevel: { '1': 'x', '5': 'x'.repeat(length) } },
   });
+  const byAnswer = (length: number, rows = 2) => ({
+    kind: 'action',
+    economy: 'action',
+    label: 'Flare',
+    note: {
+      byAnswer: 'kind',
+      values: Object.fromEntries(
+        Array.from({ length: rows }, (_, i) => [`a${i}`, i === 0 ? 'x'.repeat(length) : 'x']),
+      ),
+    },
+  });
   it.each([
     [
       'patches',
@@ -239,6 +250,37 @@ describe('a pack past a limit is refused, with the reason', () => {
       { patches: [{ target: 'a|b', add: [byLevel('note', 501)] }] },
       /a text is at most 500 characters/,
     ],
+    [
+      'a note by an answer',
+      { patches: [{ target: 'a|b', add: [byAnswer(501)] }] },
+      /a text is at most 500 characters/,
+    ],
+    [
+      'a table by an answer too long',
+      { patches: [{ target: 'a|b', add: [byAnswer(1, L.answerRows + 1)] }] },
+      new RegExp(`a table by an answer or a spell granted has at most ${L.answerRows} rows`),
+    ],
+    [
+      'a table by a spell granted too long',
+      {
+        patches: [
+          {
+            target: 'a|b',
+            add: [
+              {
+                kind: 'resist',
+                damageType: {
+                  byGrant: Object.fromEntries(
+                    Array.from({ length: L.answerRows + 1 }, (_, i) => [`s${i}`, 'fire']),
+                  ),
+                },
+              },
+            ],
+          },
+        ],
+      },
+      new RegExp(`has at most ${L.answerRows} rows`),
+    ],
   ])('%s', (_, guidance, reason) => {
     const refusals = packRefusals({ v: 1, ...guidance });
     expect(refusals).toHaveLength(1);
@@ -246,7 +288,7 @@ describe('a pack past a limit is refused, with the reason', () => {
   });
 
   it('holds the words of a level table to the field that holds it', () => {
-    const add = [byLevel('label', 100), byLevel('note', 500)];
+    const add = [byLevel('label', 100), byLevel('note', 500), byAnswer(500, L.answerRows)];
     expect(packRefusals({ v: 1, patches: [{ target: 'a|b', add }] })).toEqual([]);
   });
 

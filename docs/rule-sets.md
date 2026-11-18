@@ -12,7 +12,7 @@ which holds what were the spend links, `SPEND_LINKS` and `SLOT_LINKS`
 `src/rules/`, one a part. (Source of truth: `readRuleSet` and
 `mechanicsOf` in `src/engine/effects/mechanics.ts`, `src/data5e/builtInRules.ts`.)
 
-217 rows have moved so far (`src/rules/cast-guidance/curated.json`). Four came
+218 rows have moved (`src/rules/cast-guidance/curated.json`), every `CURATED` row. Four came
 first, one for each kind of call site, to prove the routes: Stunning Strike (a
 class feature), Lucky (PHB, a feat), Disarming Attack (PHB, an optional
 feature) and Warforged's Integrated Protection (a species trait). The other 111
@@ -85,10 +85,11 @@ rest named from the spell (`{pick.slug}`, `{pick.title}`). Three more ask kinds
 of weapon (4f): the 2024 Weapon Mastery of the Barbarian (melee kinds alone),
 the Fighter, and in one row the Paladin, Ranger and Rogue (kinds the character
 is proficient with), as many as the class table's column says, else two,
-asked once the build is in. 217 rows in all. The one key left in `CURATED`, the
-2014 Elemental Affinity, reads the Dragon Ancestor's pick and moves in 4h.
+asked once the build is in. The last (4h) is the 2014 Elemental Affinity, an
+action whose note names the type of the dragon the Dragon Ancestor picked
+(`byAnswer`). No row is left in `CURATED`, which holds only its lookups.
 
-72 `standing` rows have moved (`src/rules/cast-guidance/standing.json`): every
+79 `standing` rows have moved (`src/rules/cast-guidance/standing.json`): every
 `STANDING` row the format held before phase 4, the defenses, senses and speeds a
 subclass or optional feature adds beside what its prose scan reads, eight of
 them split by printing (Avatar of Battle, Aura of Warding, Aura of Devotion,
@@ -98,9 +99,13 @@ Elegant Courtier and Iron Mind, a save or, when the character has it already, a
 pick of one it lacks (4c), and four picks of a named option or a damage type
 (4d): Aspect of the Wilds (the owl's darkvision 60 feet, or 60 more than the
 character has), Aura of Elemental Shielding and both Fiendish Resiliences, a
-damage type resisted. The 5
-left in `STANDING` need what the character has already (darkvision that grows,
-the branch or cantrip it picked). One more `standing` row is new rather than
+damage type resisted. The last seven (4h) need what the character has already:
+Nature's Ward and Umbral Sight split by printing, the Warrior of Shadow's
+Darkvision and Umbral Sight as darkvision or more (`orMore`; the 2014 Umbral
+Sight's 30 more only on a race's, `orMoreFrom`), Elemental Gift and the 2024
+Nature's Ward by the branch picked (`byAnswer`), and Dread Allegiance by the
+god whose cantrip the subclass granted (`byGrant`). No row is left in
+`STANDING`, which holds only its lookups. One more `standing` row is new rather than
 moved: Tasha's Roving, the 2014 Ranger's level 6 Deft Explorer Improvement (5
 more feet of walking speed, and a climbing and a swimming speed equal to it), a
 `level` row because the level 10 improvement has the same name and keys.
@@ -424,6 +429,25 @@ typed replaces it), `givesAll`, `always`, a weapon pick's `without`,
 the reader refuses in what it gives. Its Weapon card gives a weapon proficiency
 by name. A rule pack's review says what each pick a patch adds asks for ("Asks
 for 2 skills from Arcana or History"), and does not count it as an effect.
+
+Two value shapes came with the last rows (4h), for words chosen by another
+answer of the entry. `{ "byAnswer": "<pick id>", "values": { "<answer>":
+"<words>" } }` reads the first answer saved for one of the entry's picks, named
+by that pick's `id` and filed as it is (a repeatable feat's under each copy), so
+a player's file names a pick its own effects ask, and a built-in row may also
+name an engine prompt asked elsewhere: `ancestor`, or `branch`, the spell option
+a class's or subclass's `additionalSpells` asks. `{ "byGrant": { "<spell>":
+"<words>" } }` reads which of those spells the entry granted so far, the first
+in the order they were collected. Answers and spell names match trimmed and
+without case. A defense's `damageType` (`resist`, `immune`, `vulnerable`) and an
+action's `note` take one. The effect holds the first row's words until it is
+emitted; with none of the table's then, a defense is not given and a note is
+left out, the action kept (the 2014 Elemental Affinity before a dragon is
+picked). A table has at most 30 rows, each read as the field's own words, and
+is refused in play, where no entry answers. One naming a pick its list does not
+ask is refused, inside what a pick gives too, where `{pick}` is the answer
+already. The Workshop shows one as "By the answer to kind, as written" or "By
+the spell granted, as written", and a value picked takes its place.
 
 ## Roll fields
 

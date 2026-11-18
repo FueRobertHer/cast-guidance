@@ -900,3 +900,40 @@ describe('a pick in words', () => {
     expect(pickWords({ kind: 'pick', id: 'x', ...e })).toBe(words);
   });
 });
+
+describe('words a file gives by an answer or a spell granted', () => {
+  const KIND = {
+    kind: 'pick',
+    id: 'kind',
+    ask: 'option',
+    options: [
+      { id: 'storm', label: 'Storm' },
+      { id: 'flame', label: 'Flame' },
+    ],
+  };
+  const byKind = { byAnswer: 'kind', values: { storm: 'lightning', flame: 'fire' } };
+
+  it('shows a table as written, keeps it untouched, and a value picked takes its place', () => {
+    const start = [KIND, { kind: 'resist', damageType: byKind }];
+    const effects = withCards(start);
+    const damage = box('Resistance: Damage');
+    expect([damage.value, damage.selectedOptions[0]?.textContent]).toEqual([
+      '',
+      'By the answer to kind, as written',
+    ]);
+    expect(misshown()).toEqual([]);
+    expect(screen.getByText('Resistance by the answer to kind')).toBeTruthy();
+    expect(effects()).toEqual(start);
+    pick('Resistance: Damage', 'cold');
+    expect(effects()[1]).toEqual({ kind: 'resist', damageType: 'cold' });
+    expect(problems(effects())).toEqual([]);
+  });
+
+  it('says a table by the spell granted', () => {
+    withCards([{ kind: 'immune', damageType: { byGrant: { 'chill touch': 'necrotic' } } }]);
+    expect(box('Resistance: Damage').selectedOptions[0]?.textContent).toBe(
+      'By the spell granted, as written',
+    );
+    expect(screen.getByText('Immunity by the spell granted')).toBeTruthy();
+  });
+});
