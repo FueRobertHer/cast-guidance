@@ -1,10 +1,16 @@
 import { WORN_TAG_KINDS } from '../castGuidance';
-import { ITEM_CHARGES, itemChargeKey } from '../curated/itemCharges';
+import { itemChargeKey } from '../curated/itemCharges';
 import type { DataEntity, EffectOrigin } from '../types';
 import { refUid } from '../types';
 import { collectAdditionalSpells } from './additionalSpells';
 import { type Collector, str } from './base';
-import { builtInRowsFor, emitRuleRows, mechanicsOf, type RuleRow } from './mechanics';
+import {
+  builtInRowsFor,
+  builtInRuleFor,
+  emitRuleRows,
+  mechanicsOf,
+  type RuleRow,
+} from './mechanics';
 
 export function itemTypeCode(e: DataEntity): string | undefined {
   const t = str(e.type);
@@ -132,9 +138,11 @@ export function collectItems(col: Collector): void {
           readWornTags(col, e, origin);
         },
       });
-      // Charges that cast spells (`ITEM_CHARGES`): a pool of its own, which
-      // the cast prompt spends and a long rest (dawn) partly refills.
-      const charged = ITEM_CHARGES[origin.uid];
+      // Charges that cast spells (a built-in `charges` row, under the entry's
+      // ref as the cast prompt finds it): a pool of its own, outside what the
+      // item inherits, which the cast prompt spends and a long rest (dawn)
+      // partly refills.
+      const charged = builtInRuleFor(col, 'charges', [origin.uid])?.charges;
       if (charged !== undefined) {
         col.add({
           kind: 'resource',

@@ -159,6 +159,105 @@
           "abilities": ["wis"]
         }
       ]
+    },
+    {
+      "part": "charges",
+      "keys": ["staff of healing|dmg", "staff of healing|xdmg"],
+      "charges": 10,
+      "regain": "1d6+4",
+      "spells": [
+        {
+          "spell": "cure wounds",
+          "cost": 1,
+          "upTo": 4
+        },
+        {
+          "spell": "lesser restoration",
+          "cost": 2
+        },
+        {
+          "spell": "mass cure wounds",
+          "cost": 5
+        }
+      ]
+    },
+    {
+      "part": "charges",
+      "keys": ["wand of magic missiles|dmg"],
+      "charges": 7,
+      "regain": "1d6+1",
+      "spells": [
+        {
+          "spell": "magic missile",
+          "cost": 1,
+          "upTo": 9
+        }
+      ]
+    },
+    {
+      "part": "charges",
+      "keys": ["wand of magic missiles|xdmg"],
+      "charges": 7,
+      "regain": "1d6+1",
+      "spells": [
+        {
+          "spell": "magic missile",
+          "cost": 1,
+          "upTo": 3
+        }
+      ]
+    },
+    {
+      "part": "charges",
+      "keys": ["wand of fireballs|dmg"],
+      "charges": 7,
+      "regain": "1d6+1",
+      "spells": [
+        {
+          "spell": "fireball",
+          "cost": 1,
+          "upTo": 9
+        }
+      ]
+    },
+    {
+      "part": "charges",
+      "keys": ["wand of fireballs|xdmg"],
+      "charges": 7,
+      "regain": "1d6+1",
+      "spells": [
+        {
+          "spell": "fireball",
+          "cost": 1,
+          "upTo": 5
+        }
+      ]
+    },
+    {
+      "part": "charges",
+      "keys": ["wand of lightning bolts|dmg"],
+      "charges": 7,
+      "regain": "1d6+1",
+      "spells": [
+        {
+          "spell": "lightning bolt",
+          "cost": 1,
+          "upTo": 9
+        }
+      ]
+    },
+    {
+      "part": "charges",
+      "keys": ["wand of lightning bolts|xdmg"],
+      "charges": 7,
+      "regain": "1d6+1",
+      "spells": [
+        {
+          "spell": "lightning bolt",
+          "cost": 1,
+          "upTo": 5
+        }
+      ]
     }
   ]
 }

@@ -116,6 +116,8 @@ interface RowContext {
   dcRaisedBy: (block: SpellcastingBlock) => string[];
   /** What lowered it, for its red ring. */
   dcLoweredBy: (block: SpellcastingBlock) => string[];
+  /** The built-in rule sets: what a carried item's charges cast (`SpellCast.ruleSets`). */
+  ruleSets: SpellCast['ruleSets'];
 }
 
 const hasSpellAttack = (entity: Entity | undefined) =>
@@ -217,6 +219,7 @@ function SlotSpellRow({
     block,
     abilityModifier: sheet.abilities[block.ability].mod,
     attack: attackModifier !== undefined,
+    ruleSets: ctx.ruleSets,
   };
   const locked =
     block.learnable !== undefined &&
@@ -335,6 +338,7 @@ function InnateSpellRow({
         ? undefined
         : { key: limited.key, label: grant.origin, max: limited.max },
     attack: attackModifier !== undefined,
+    ruleSets: ctx.ruleSets,
   };
   // Rolling is always allowed, but a spent grant with nothing else to cast it
   // with must not go on marking your action and your concentration.
@@ -641,7 +645,10 @@ export function YourSpells({
   built?: DerivedSheet | null;
   update: DocUpdater;
 }) {
-  const { registry, spellsMissing, spellPacks, spellsSettling } = useSpellData(sheet, doc);
+  const { registry, ruleSets, spellsMissing, spellPacks, spellsSettling } = useSpellData(
+    sheet,
+    doc,
+  );
   const ignore = useIgnoreOnce(JSON.stringify(doc.play.conditions));
   const [filter, setFilter] = useState('');
 
@@ -696,6 +703,7 @@ export function YourSpells({
     entityOf,
     dcRaisedBy: (block) => saveDcRaisedBy(block, built),
     dcLoweredBy: (block) => saveDcLoweredBy(block, built),
+    ruleSets,
   };
 
   // Always prepared grants cast with a class's slots, so they sit in its list.

@@ -181,6 +181,46 @@ describe('long rest (TEST-003)', () => {
   });
 });
 
+describe("a long rest and an item's charges", () => {
+  const staff: DataEntity = {
+    name: 'Staff of Healing',
+    source: 'XDMG',
+    type: 'ST|XDMG',
+    rarity: 'rare',
+    reqAttune: 'by a Bard, Cleric, or Druid',
+    entries: ['This staff has 10 charges.'],
+  };
+
+  it('rolls the dawn regain of a staff put away, whose pool the sheet leaves out', async () => {
+    const doc = sorcerer();
+    doc.equipment = [
+      {
+        id: 's1',
+        ref: { name: 'Staff of Healing', source: 'XDMG' },
+        qty: 1,
+        equipped: false,
+        attuned: true,
+      },
+    ];
+    doc.play.resources = [{ key: 'item-charges:s1', used: 9 }];
+    const sheet = await renderSheet(doc, { extra: { item: [staff] } });
+    expect(screen.queryByRole('button', { name: /^Staff of Healing charges use/ })).toBeNull();
+
+    press('Long rest');
+    await (await dialog('Long rest')).press('Rest');
+
+    // The dawn roll (1d6 + 4, so 5 to 10) gives back that many of the 9 spent, 9 at
+    // most: rolled, where a refill would say "resources" and give back all 9.
+    const back = Number(/(\d+) Staff of Healing charges/.exec(notice() ?? '')?.[1]);
+    expect(back).toBeGreaterThanOrEqual(5);
+    expect(back).toBeLessThanOrEqual(9);
+    const stillSpent = 9 - back;
+    expect((await sheet.saved()).play.resources).toEqual(
+      stillSpent === 0 ? [] : [{ key: 'item-charges:s1', used: stillSpent }],
+    );
+  });
+});
+
 describe('table rules and moments at a rest (Homebrew Workshop phase 4)', () => {
   afterEach(() => setAppTableRule('hpOnLongRest', undefined));
 

@@ -24,7 +24,7 @@ export interface CastSpellInfo {
  * the label both read it from one place. `arcanum` is a warlock's Mystic
  * Arcanum at the spell's own level: no slot, once per long rest. `uses` is one
  * use of an innate or feat grant's own pool (Infernal Legacy's Hellish
- * Rebuke), and `charges` an item's charges (`ITEM_CHARGES`), `cost` of them.
+ * Rebuke), and `charges` an item's charges (its built-in `charges` row), `cost` of them.
  */
 export type CastResource =
   | { kind: 'cantrip'; level: 0 }
