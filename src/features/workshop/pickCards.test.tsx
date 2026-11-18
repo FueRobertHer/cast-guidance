@@ -740,6 +740,9 @@ describe('a shipped pick on a card', () => {
       expect(document.body.textContent).toMatch(/the one picked/);
       // Its spell is cast with the pool's uses, said for the one picked.
       expect(screen.getAllByText('Spending 1 use of the one picked').length).toBeGreaterThan(0);
+      // Its line names the pool by its key, made around the one picked.
+      expect(document.body.textContent).toMatch(/spending 1 use of the one picked/);
+      expect(document.body.textContent).not.toMatch(/-the one picked/);
       expect(document.body.textContent).not.toMatch(/\{pick\.(slug|title)\}/);
       cleanup();
     }

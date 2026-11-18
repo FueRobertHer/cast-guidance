@@ -863,7 +863,9 @@ const NOT_IN_PLAY = new Set(['rollPaid', 'rollReroll', 'pick']);
 const NOT_IN_PICK = new Set(['pick', 'resource', 'action']);
 
 /** `{pick}` and its forms in a card's words, said for what each pick gives. */
-const pickedWords = (s: string) => s.replaceAll(/\{pick(?:\.slug|\.title)?\}/g, 'the one picked');
+const pickedWords = (s: string) =>
+  // A key made around it ("sig-{pick.slug}", a pool's) is said whole.
+  s.replaceAll(/[\w-]*\{pick(?:\.slug|\.title)?\}[\w-]*/g, 'the one picked');
 
 /** A stored value standing for the one picked. */
 const PICKED = '{pick}';

@@ -577,21 +577,24 @@ export function PickFields({
             className={fieldClass}
           />
         </Field>
-        <Field label="Prompt words">
-          <input
-            aria-label={`${title}: Prompt words`}
-            value={typeof effect.label === 'string' ? effect.label : ''}
-            placeholder={promptWords(ask, effect.count)}
-            onChange={(e) =>
-              onChange(
-                e.target.value === ''
-                  ? omit(effect, ['label'])
-                  : { ...effect, label: e.target.value },
-              )
-            }
-            className={fieldClass}
-          />
-        </Field>
+        {/* The row's width, so the sheet's own words it suggests fit a phone. */}
+        <div className="col-span-2">
+          <Field label="Prompt words">
+            <input
+              aria-label={`${title}: Prompt words`}
+              value={typeof effect.label === 'string' ? effect.label : ''}
+              placeholder={promptWords(ask, effect.count)}
+              onChange={(e) =>
+                onChange(
+                  e.target.value === ''
+                    ? omit(effect, ['label'])
+                    : { ...effect, label: e.target.value },
+                )
+              }
+              className={fieldClass}
+            />
+          </Field>
+        </div>
         {showId && (
           <Field label="Id">
             <input
