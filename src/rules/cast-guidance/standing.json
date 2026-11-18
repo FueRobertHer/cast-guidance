@@ -1145,6 +1145,122 @@
           ]
         }
       ]
+    },
+    {
+      "part": "standing",
+      "keys": ["nature's ward|circle of the land"],
+      "effects": [
+        {
+          "kind": "immune",
+          "damageType": "poison"
+        },
+        {
+          "kind": "conditionImmune",
+          "condition": "poisoned"
+        },
+        {
+          "kind": "conditionImmune",
+          "condition": "disease"
+        },
+        {
+          "kind": "cue",
+          "tone": "ward",
+          "text": "Can't be charmed or frightened by elementals or fey."
+        }
+      ]
+    },
+    {
+      "part": "standing",
+      "keys": ["nature's ward|circle of the land|xphb"],
+      "effects": [
+        {
+          "kind": "conditionImmune",
+          "condition": "poisoned"
+        },
+        {
+          "kind": "resist",
+          "damageType": {
+            "byAnswer": "branch",
+            "values": {
+              "arid land": "fire",
+              "polar land": "cold",
+              "temperate land": "lightning",
+              "tropical land": "poison"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "part": "standing",
+      "keys": ["darkvision|warrior of shadow"],
+      "effects": [
+        {
+          "kind": "sense",
+          "sense": "darkvision",
+          "range": 60,
+          "orMore": 60
+        }
+      ]
+    },
+    {
+      "part": "standing",
+      "keys": ["umbral sight|gloom stalker"],
+      "effects": [
+        {
+          "kind": "sense",
+          "sense": "darkvision",
+          "range": 60,
+          "orMore": 30,
+          "orMoreFrom": "race"
+        }
+      ]
+    },
+    {
+      "part": "standing",
+      "keys": ["umbral sight|gloom stalker|xphb"],
+      "effects": [
+        {
+          "kind": "sense",
+          "sense": "darkvision",
+          "range": 60,
+          "orMore": 60
+        }
+      ]
+    },
+    {
+      "part": "standing",
+      "keys": ["dread allegiance|scion of the three"],
+      "effects": [
+        {
+          "kind": "resist",
+          "damageType": {
+            "byGrant": {
+              "minor illusion": "psychic",
+              "blade ward": "poison",
+              "chill touch": "necrotic"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "part": "standing",
+      "keys": ["elemental gift|the genie"],
+      "effects": [
+        {
+          "kind": "resist",
+          "damageType": {
+            "byAnswer": "branch",
+            "values": {
+              "dao": "bludgeoning",
+              "djinni": "thunder",
+              "efreeti": "fire",
+              "marid": "cold"
+            }
+          }
+        }
+      ]
     }
   ]
 }
