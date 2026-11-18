@@ -60,17 +60,29 @@ const STARTS: Readonly<Partial<Record<string, Eff>>> = {
 };
 
 /**
- * `count` new options' ids, `option-1` and on, none of them in `taken` (lower
- * case, trimmed, as the reader compares them), each named for its place.
+ * `count` new options to follow `beside`: ids `option-1` and on, none of them
+ * in `taken` (lower case, trimmed, as the reader compares them), and names
+ * "Option N" for their place, never one an option beside them has.
  */
-function freshOptions(taken: ReadonlySet<string>, count: number, after = 0) {
+function freshOptions(taken: ReadonlySet<string>, count: number, beside: readonly unknown[] = []) {
+  const names = new Set(
+    beside.map((o) =>
+      isRecord(o)
+        ? String(o.label ?? '')
+            .trim()
+            .toLowerCase()
+        : '',
+    ),
+  );
   const made: Array<{ id: string; label: string }> = [];
   let n = 1;
+  let k = beside.length + 1;
   while (made.length < count) {
-    if (!taken.has(`option-${n}`)) {
-      made.push({ id: `option-${n}`, label: `Option ${after + made.length + 1}` });
-    }
+    while (taken.has(`option-${n}`)) n += 1;
+    while (names.has(`option ${k}`)) k += 1;
+    made.push({ id: `option-${n}`, label: `Option ${k}` });
     n += 1;
+    k += 1;
   }
   return made;
 }
@@ -345,12 +357,9 @@ function WeaponFields({
   onChange: (next: Eff) => void;
 }) {
   const weapons = isRecord(effect.weapons) ? effect.weapons : undefined;
-  // Named stays named while its list is emptied, to be typed again. Cards are
-  // their place in the list, so one handed another pick takes that one's mode.
-  const [naming, setNaming] = useState(effect.from !== undefined);
-  const mode = weapons !== undefined ? false : effect.from !== undefined ? true : undefined;
-  if (mode !== undefined && mode !== naming) setNaming(mode);
-  const named = weapons === undefined && (effect.from !== undefined || naming);
+  // Kinds always name one at least (the last chip stays), so a pick without
+  // them is named: its list emptied to be typed again stays named.
+  const named = weapons === undefined;
   const without = weapons === undefined ? [] : strings(weapons.without);
   return (
     <>
@@ -461,7 +470,7 @@ function OptionRows({
     // One its pick's options have, or had: an answer saved for it stays its own.
     const ids = optionIdsIn(versions(), String(effect.id));
     for (const o of options) if (isRecord(o)) ids.add(optionKey(o.id));
-    onChange({ ...effect, options: [...options, ...freshOptions(ids, 1, options.length)] });
+    onChange({ ...effect, options: [...options, ...freshOptions(ids, 1, options)] });
   };
   return (
     <div className="flex flex-col gap-2">

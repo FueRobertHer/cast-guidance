@@ -268,6 +268,16 @@ describe('a new pick’s id', () => {
     expect(problems(effects())).toEqual([]);
   });
 
+  it('names a new option for its place, never as an option beside it is named', async () => {
+    const effects = withCards([]);
+    await addPick();
+    pick('Pick: Asks for', 'option');
+    press('Remove option Option 1');
+    press('Add an option');
+    expect((effects()[0]?.options as Json[]).map((o) => o.label)).toEqual(['Option 2', 'Option 3']);
+    expect(problems(effects())).toEqual([]);
+  });
+
   it('compares option ids as the reader does, trimmed and without case', () => {
     const effects = withCards([
       {
@@ -457,6 +467,14 @@ describe('the Pick card, each ask', () => {
     expect(box('Pick: Weapons').value).toBe('named');
     pick('Pick: From', 'scimitar');
     expect(effects()).toEqual([{ ...named, from: ['scimitar'] }]);
+    cleanup();
+    // Its list emptied first, then the card above it taken out.
+    const again = withCards([kinds, named]);
+    pick('Pick: From', '');
+    press(`Remove ${pickWords(kinds)}`);
+    expect(box('Pick: Weapons').value).toBe('named');
+    pick('Pick: From', 'scimitar');
+    expect(again()).toEqual([{ ...named, from: ['scimitar'] }]);
   });
 
   it('asks for a saving throw from abilities, in place of one held', async () => {
@@ -708,6 +726,21 @@ describe('what each pick gives', () => {
     ]);
     expect(effects()[3]?.always).toEqual([{ ...cast, spell: 'Light|PHB', resourceKey: 'charms' }]);
     expect(misshown()).toEqual([]);
+  });
+
+  it('says the one picked in words beside it, keeping those words', () => {
+    withCards([
+      {
+        kind: 'pick',
+        id: 'choice',
+        ask: 'skill',
+        gives: [
+          SKILL,
+          { kind: 'cue', tone: 'info', text: "Use {pick}-based tricks, {pick}'s kit" },
+        ],
+      },
+    ]);
+    expect(screen.getByText("Use the one picked-based tricks, the one picked's kit")).toBeTruthy();
   });
 
   it("says what a Weapon Mastery pick's gives cannot be read for, kept as written", () => {

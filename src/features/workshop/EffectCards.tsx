@@ -864,8 +864,9 @@ const NOT_IN_PICK = new Set(['pick', 'resource', 'action']);
 
 /** `{pick}` and its forms in a card's words, said for what each pick gives. */
 const pickedWords = (s: string) =>
-  // A key made around it ("sig-{pick.slug}", a pool's) is said whole.
-  s.replaceAll(/[\w-]*\{pick(?:\.slug|\.title)?\}[\w-]*/g, 'the one picked');
+  // A key made around its slug ("sig-{pick.slug}", a pool's) is said whole;
+  // words beside the others stay.
+  s.replaceAll(/[\w-]*\{pick\.slug\}[\w-]*|\{pick(?:\.title)?\}/g, 'the one picked');
 
 /** A stored value standing for the one picked. */
 const PICKED = '{pick}';
