@@ -2162,7 +2162,7 @@ export interface RuleRow {
   scan: RuleScan;
   /** Every part but `curated`: the feature level it counts at alone. */
   level?: number;
-  /** Every part but `spend` and `charges`, whose rows emit none. */
+  /** Every part but `spend`, `charges` and `spellRest`, whose rows emit none. */
   effects: readonly EffectTemplate[];
   /** `spend` rows only: the prices it puts on the feature's actions, in order. */
   links?: readonly SpendLinkRow[];
@@ -2170,6 +2170,16 @@ export interface RuleRow {
   replaces?: readonly WornTagKind[];
   /** `charges` rows only: the charges the item casts spells with. */
   charges?: ItemCharges;
+  /** `spellRest` rows only: the origin's spell pools that come back on a short rest. */
+  shortRest?: ShortRestSpells;
+}
+
+/**
+ * A `spellRest` row, read: the spells whose pool from the origin comes back on
+ * a short rest, each by its name in lower case, once, or `every` pool it grants.
+ */
+export interface ShortRestSpells {
+  spells: 'every' | readonly string[];
 }
 
 /** A kind of what an item's data tags give while worn (`WORN_TAG_KINDS`). */
@@ -2225,6 +2235,7 @@ const ROW_FIELDS: Record<RulePart, ReadonlySet<string>> = {
   spend: new Set(['part', 'keys', 'links']),
   wornTags: new Set(['part', 'keys', 'replaces', 'effects']),
   charges: new Set(['part', 'keys', 'charges', 'regain', 'spells']),
+  spellRest: new Set(['part', 'keys', 'spells']),
 };
 
 const isFeatureLevel = (v: unknown): v is number =>
@@ -2335,6 +2346,16 @@ function readRuleSetOnce(raw: Record<string, unknown>): ReadRuleSet {
       if (held.charges === undefined) return;
       for (const key of keys) inPart.add(slot(key));
       read.rows.push({ part, keys, scan, effects: [], charges: held.charges });
+      return;
+    }
+    if (part === 'spellRest') {
+      const rest = readRestSpells(own(row, 'spells'));
+      for (const problem of rest.problems) read.problems.push(`${at}: ${problem}`);
+      // A row that cannot say which pools come back would leave one on a long
+      // rest, or bring one back early, unseen: it is left out, and its keys stay free.
+      if (rest.spells === undefined) return;
+      for (const key of keys) inPart.add(slot(key));
+      read.rows.push({ part, keys, scan, effects: [], shortRest: { spells: rest.spells } });
       return;
     }
     if (!Array.isArray(own(row, 'effects'))) {
@@ -2486,6 +2507,35 @@ function readCharges(row: Record<string, unknown>): { charges?: ItemCharges; pro
   }
   if (problems.length > 0 || !counted) return { problems };
   return { charges: { charges, regain, spells }, problems };
+}
+
+/**
+ * A `spellRest` row's `spells`: `every`, or a list of distinct spell names, in
+ * lower case as the grant compares them. `spells` is absent when the row cannot count.
+ */
+function readRestSpells(raw: unknown): { spells?: 'every' | string[]; problems: string[] } {
+  if (raw === 'every') return { spells: 'every', problems: [] };
+  if (!Array.isArray(raw) || raw.length === 0) {
+    return { problems: ['"spells" is "every", or lists the spells whose pools come back'] };
+  }
+  if (raw.length > RULE_SET_LIMITS.restSpells) {
+    return { problems: [`"spells" lists at most ${RULE_SET_LIMITS.restSpells} spells`] };
+  }
+  const spells: string[] = [];
+  const problems: string[] = [];
+  raw.forEach((named, i) => {
+    if (typeof named !== 'string' || named.trim() === '' || named.length > L.targetLength) {
+      problems.push(`spell ${i + 1}: is the spell's name`);
+      return;
+    }
+    const spell = named.trim().toLowerCase();
+    // `every` in a list would be read as a spell of that name, which no pool has.
+    if (spell === 'every') problems.push(`spell ${i + 1}: "every" stands alone, not in a list`);
+    else if (spells.includes(spell)) {
+      problems.push(`spell ${i + 1}: "${clip(spell)}" is named twice`);
+    } else spells.push(spell);
+  });
+  return problems.length > 0 ? { problems } : { spells, problems };
 }
 
 /** Rows by part, then by key: one row, or a `standing` key's rows at each level. */

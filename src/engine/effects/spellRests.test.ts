@@ -1,10 +1,14 @@
 /**
  * Spell pools the data writes as daily whose printed text refills them on a
- * short or long rest, end to end through `deriveSheet`. The world has the names,
- * sources and `additionalSpells` blocks of the pinned release, and placeholder
- * prose.
+ * short or long rest (the built-in `spellRest` rows, which were the table
+ * `SHORT_REST_SPELLS`, rule pack port 5c), end to end through `deriveSheet`.
+ * The world has the names, sources and `additionalSpells` blocks of the pinned
+ * release, placeholder prose, and the rule sets the app ships.
  */
 import { describe, expect, it } from 'vitest';
+import spellRestRules from '@/rules/cast-guidance/spell-rests.json';
+import { BUILT_IN_RULE_SETS } from '../../../tests-fixtures/testWorld';
+import { RULE_SET_TYPE } from '../castGuidance';
 import { deriveSheet } from '../derive';
 import {
   type CharacterDoc,
@@ -13,6 +17,7 @@ import {
   type EngineContext,
   newCharacterDoc,
 } from '../types';
+import { builtInRuleIn, readRuleSet, type ShortRestSpells } from './mechanics';
 
 const PROSE = ['Placeholder text.'];
 
@@ -91,7 +96,7 @@ const ctx: EngineContext = {
         String(e.name).toLowerCase() === name.toLowerCase() &&
         (source === undefined || String(e.source).toLowerCase() === source.toLowerCase()),
     ),
-  byType: (type) => WORLD[type] ?? [],
+  byType: (type) => (type === RULE_SET_TYPE ? BUILT_IN_RULE_SETS : (WORLD[type] ?? [])),
 };
 
 function fighter(levels: number): CharacterDoc {
@@ -100,11 +105,16 @@ function fighter(levels: number): CharacterDoc {
   return doc;
 }
 
-function withFeat(name: string, source: string, choices: CharacterDoc['choices'] = {}) {
+function withFeat(
+  name: string,
+  source: string,
+  choices: CharacterDoc['choices'] = {},
+  world: EngineContext = ctx,
+) {
   const doc = fighter(5);
   doc.feats = [{ ref: { name, source }, instanceId: 'f1' }];
   doc.choices = choices;
-  return deriveSheet(doc, ctx);
+  return deriveSheet(doc, world);
 }
 
 /** The pool a spell is cast from, and how often the sheet says it can be. */
@@ -120,6 +130,18 @@ describe('spell pools the data writes as daily', () => {
       key: 'spell:fey teleportation|xge:misty-step',
       resetOn: 'short',
       usage: '1/rest',
+    });
+  });
+
+  it('leaves it on a long rest, as its data says, with no rule sets', () => {
+    const noSets: EngineContext = {
+      ...ctx,
+      byType: (type) => (type === RULE_SET_TYPE ? [] : ctx.byType(type)),
+    };
+    expect(pool(withFeat('Fey Teleportation', 'XGE', {}, noSets), 'misty step')).toEqual({
+      key: 'spell:fey teleportation|xge:misty-step',
+      resetOn: 'long',
+      usage: '1/day',
     });
   });
 
@@ -222,5 +244,97 @@ describe('spell pools the data writes as daily', () => {
         });
       });
     });
+  });
+});
+
+/** What each origin's `spellRest` row says, as the table the rows came from said it. */
+const EXPECTED: Record<string, ShortRestSpells> = {
+  'feat:fey teleportation|xge': { spells: ['misty step'] },
+  'feat:boon of siberys|efa': { spells: 'every' },
+  'race:mammon|mtf': { spells: ["tenser's floating disk"] },
+};
+
+describe('the built-in spell rest rows', () => {
+  it('cover the keys the table had, each once, and read with no problem', () => {
+    const keys = spellRestRules.rows.flatMap((r) => r.keys);
+    expect([...keys].sort()).toEqual(Object.keys(EXPECTED).sort());
+    expect(readRuleSet(spellRestRules).problems).toEqual([]);
+  });
+
+  for (const [key, expected] of Object.entries(EXPECTED)) {
+    it(`say which of ${key}'s pools come back on a short rest`, () => {
+      expect(builtInRuleIn(BUILT_IN_RULE_SETS, 'spellRest', [key])?.shortRest).toEqual(expected);
+    });
+  }
+});
+
+describe('a spell rest row, read', () => {
+  const read = (fields: Record<string, unknown>, more: Record<string, unknown>[] = []) =>
+    readRuleSet({
+      type: RULE_SET_TYPE,
+      v: 1,
+      name: 'Test rules',
+      rows: [
+        { part: 'spellRest', keys: ['feat:tests|tst'], spells: ['shield'], ...fields },
+        ...more.map((f) => ({ part: 'spellRest', keys: ['feat:tests|tst'], ...f })),
+      ],
+    });
+
+  it('keeps every pool, or its spells trimmed and by name in lower case', () => {
+    expect(read({ spells: 'every' }).rows[0]?.shortRest).toEqual({ spells: 'every' });
+    const set = read({ spells: [' Misty Step ', "Tenser's Floating Disk"] });
+    expect(set.problems).toEqual([]);
+    expect(set.rows[0]?.shortRest).toEqual({
+      spells: ['misty step', "tenser's floating disk"],
+    });
+    expect(set.rows[0]?.effects).toEqual([]);
+  });
+
+  it.each([
+    ['no spells', { spells: undefined }, '"spells" is "every", or lists the spells'],
+    ['an empty list', { spells: [] }, '"spells" is "every", or lists the spells'],
+    ['a word other than every', { spells: 'Every' }, '"spells" is "every", or lists the spells'],
+    [
+      'more spells than a row lists',
+      { spells: Array.from({ length: 21 }, (_, i) => `spell ${i}`) },
+      '"spells" lists at most 20 spells',
+    ],
+    [
+      'a spell that is not a name',
+      { spells: [{ spell: 'shield' }] },
+      "spell 1: is the spell's name",
+    ],
+    ['a spell with no name', { spells: ['shield', ' '] }, "spell 2: is the spell's name"],
+    ['a name longer than a name', { spells: ['x'.repeat(201)] }, "spell 1: is the spell's name"],
+    [
+      'every in a list',
+      { spells: ['misty step', 'Every'] },
+      'spell 2: "every" stands alone, not in a list',
+    ],
+    [
+      'a spell named twice, in any case',
+      { spells: ['Shield', 'shield'] },
+      'spell 2: "shield" is named twice',
+    ],
+    ['a field a row has not', { level: 3 }, '"level" is not a field a spellRest row has'],
+    ['effects', { effects: [] }, '"effects" is not a field a spellRest row has'],
+  ])('leaves out a row with %s, and its keys stay free', (_, fields, problem) => {
+    const set = read(fields, [{ spells: ['misty step'] }]);
+    expect(set.problems.join('; ')).toContain(problem);
+    expect(set.rows).toHaveLength(1);
+    expect(set.rows[0]?.shortRest).toEqual({ spells: ['misty step'] });
+  });
+
+  it('takes as many as 20 spells', () => {
+    const spells = Array.from({ length: 20 }, (_, i) => `spell ${i}`);
+    const set = read({ spells });
+    expect(set.problems).toEqual([]);
+    expect(set.rows[0]?.shortRest).toEqual({ spells });
+  });
+
+  it('keeps the first of two rows under one key, and says the second is a row already', () => {
+    const set = read({ spells: ['shield'] }, [{ spells: ['misty step'] }]);
+    expect(set.problems.join('; ')).toContain('"feat:tests|tst" is already a row');
+    expect(set.rows.map((r) => r.shortRest)).toEqual([{ spells: ['shield'] }]);
   });
 });

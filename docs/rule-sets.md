@@ -2,16 +2,19 @@
 
 A built-in rule set is data the app ships in place of code: rows of effects
 that hold what were the engine's hard-coded mechanics tables, and the tables
-these parts replaced are gone (the rule pack port, below). It holds seven parts: `curated`, which holds
+these parts replaced are gone (the rule pack port, below). It holds eight parts: `curated`, which holds
 what was `CURATED`; `standing`, which holds what was `STANDING`;
 `rollAdvantage`, which holds what was the advantage table, `ROLL_ADVANTAGES`;
 `rollExtra`, which holds what was `ROLL_EXTRAS`; `spend`, which holds what
 were the spend links, `SPEND_LINKS` and `SLOT_LINKS` (`linkSpend` in
 `src/engine/curated/spendLinks.ts` reads it); `wornTags`, which holds what
 was `ITEM_TAG_FIXES` (`src/rules/cast-guidance/items.json`, read in
-`src/engine/effects/item.ts`); and `charges`, which holds what was
+`src/engine/effects/item.ts`); `charges`, which holds what was
 `ITEM_CHARGES` (the same file, read in `item.ts`, the cast prompt and the
-long rest through `src/engine/curated/itemCharges.ts`). The files live in
+long rest through `src/engine/curated/itemCharges.ts`); and `spellRest`,
+which holds what was `SHORT_REST_SPELLS`
+(`src/rules/cast-guidance/spell-rests.json`, read where
+`src/engine/effects/additionalSpells.ts` grants a spell pool). The files live in
 `src/rules/`, one a part, but for the two item parts, which share one. (Source of truth: `readRuleSet` and `mechanicsOf` in
 `src/engine/effects/mechanics.ts`, `src/data5e/builtInRules.ts`.)
 
@@ -166,6 +169,12 @@ The 8 `ITEM_CHARGES` keys have moved too, as 7 `charges` rows in the same file
 Wands of Magic Missiles, Fireballs and Lightning Bolts, each printing its own
 row, since a 2024 wand spends at most 3 charges a cast. The table is gone.
 
+The 3 `SHORT_REST_SPELLS` keys have moved, as 3 `spellRest` rows
+(`src/rules/cast-guidance/spell-rests.json`, rule pack port 5c): spell pools
+the data writes as daily that the text gives back on a short or long rest,
+Fey Teleportation's Misty Step, every pool of Boon of Siberys, and the Mammon
+tiefling's Tenser's Floating Disk. The table is gone.
+
 ## A file
 
 ```jsonc
@@ -176,7 +185,7 @@ row, since a 2024 wand spends at most 3 charges a cast. The table is gone.
   "edition": "both",           // "2014", "2024" or "both"; optional
   "rows": [
     {
-      "part": "curated",                // which of the seven parts it is
+      "part": "curated",                // which of the eight parts it is
       "keys": ["stunning strike|monk"], // the keys it is found under
       "scan": "replace",                // or "keep"; "replace" when absent
       "effects": [ /* the stored effects a rule pack's patch holds */ ]
@@ -218,6 +227,11 @@ row, since a 2024 wand spends at most 3 charges a cast. The table is gone.
       "charges": 7,                     // how many it holds
       "regain": "1d6+1",                // the dice of charges back at dawn
       "spells": [{ "spell": "fireball", "cost": 1, "upTo": 5 }]
+    },
+    {
+      "part": "spellRest",
+      "keys": ["feat:fey teleportation|xge"],
+      "spells": ["misty step"]          // or "every"
     }
   ]
 }
@@ -263,11 +277,16 @@ row, since a 2024 wand spends at most 3 charges a cast. The table is gone.
   spells they cast ("Charges rows", below). A row with
   any problem in them is left out, and its keys stay free: a spell missing or
   misread would offer the charges for less, or not at all, unseen.
+- **`spells`** (`spellRest` rows, in place of `effects`): `"every"`, or the
+  spells by name whose pools from the origin come back on a short rest ("Spell
+  rest rows", below). A row with no spells, an entry that is not a name,
+  `"every"` inside the list, or a spell named twice is left out, and its keys
+  stay free: a spell misread would leave its pool on a long rest unseen.
 - A row the reader cannot read is left out, and the rest still count. What it
   left out goes to the console once, not the sheet: the files are the app's, so
   a problem in one is a bug its tests catch, not something a player can fix.
-- At most 5,000 rows a file, 16 keys a row and 20 spells a `charges` row
-  (`RULE_SET_LIMITS`).
+- At most 5,000 rows a file, 16 keys a row, and 20 spells a `charges` or
+  `spellRest` row (`RULE_SET_LIMITS`).
 - A later file's row wins over an earlier one's under the same part, key and
   level; its rows at other levels keep theirs.
 
@@ -295,6 +314,10 @@ which the sheet's pool, the cast prompt and the long rest all read alike. The
 two agree for every ref that names its book; starting equipment can write one
 that does not, and then no `charges` row is found. A copy of an item is not
 reached by the official one's rows: its tags and charges are its author's.
+
+A `spellRest` row is found under the `type:uid` of the origin granting the
+spells: `feat:fey teleportation|xge`, and for a subrace, whose origin has type
+`race`, `race:mammon|mtf`.
 
 A `standing` row is found under the same keys, in the same order, for a class
 or subclass feature and for an optional feature; feats, traits and class rows
@@ -372,6 +395,25 @@ not always that: Cure Wounds from the staff is a charge a spell level, up to
   (`SpellCast.ruleSets`).
 - A player's item writes its charges as a resource of its own in its
   `castGuidance`, spent by a "Cast a spell" card; this part is the app's.
+
+## Spell rest rows
+
+A few origins grant spells their data writes as cast once a day (`daily`)
+where the text gives the use back on a short or long rest. A `spellRest` row
+says so.
+
+- **`spells`**: the spells by name (matched without case, any printing), or
+  `"every"`, each pool the origin grants, a pick's included. A pool comes back
+  on a short rest when the row names every spell in it, so a pool shared with
+  a spell the row does not name stays on a long rest (Mammon's Arcane Lock is
+  once a long rest).
+- **What reads it.** Granting an origin's `additionalSpells` makes a resource
+  for each pool with a limit; the row turns that pool's rest to short, and its
+  casts read `1/rest`. With no rule sets loaded, every such pool follows its
+  data.
+- Homebrew says it in its own data, with a `rest` bucket in
+  `additionalSpells`, or a Workshop pool with `reset: "short"`; this part is
+  the app's.
 
 ## Where a row sits
 
@@ -953,8 +995,9 @@ read the same data. Take `before.json` in a checkout of the base commit (with
 this script copied in when the base has none). `compare` names the builds that
 changed, field by field, and with `--expect-zero` exits 1 when any did.
 
-`snapshot --coverage <file>` also writes the built-in rows (a spend row's
-links) no build read, by part, first key and level. A row read is not a row
+`snapshot --coverage <file>` also writes the built-in rows no build read (by
+what the call site reads: a spend row's links, a charges row's numbers, a
+spell rest row's spells, any other row's effects), by part, first key and level. A row read is not a row
 that added something, but a row at one level, named with `@` and the level, is
 read only where it adds, and a row never read is one a zero change says
 nothing about, so a change to one is proved another way: a test of its own.

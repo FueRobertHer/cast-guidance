@@ -488,6 +488,9 @@ export const RULE_SET_TYPE = 'ruleSet';
  * carried item casts spells with (the table that was `ITEM_CHARGES`), found
  * under the item's `name|source` as the equipment entry names it: how many it
  * holds, the dice that come back at dawn, and what each spell costs.
+ * `spellRest` is the spell pools an origin grants that come back on a short
+ * rest where its data says a long one (the table that was `SHORT_REST_SPELLS`),
+ * found under the granting origin's `type:uid`: the spells, or `every` pool.
  */
 export const RULE_SET_PARTS = [
   'curated',
@@ -497,6 +500,7 @@ export const RULE_SET_PARTS = [
   'spend',
   'wornTags',
   'charges',
+  'spellRest',
 ] as const;
 
 /**
@@ -528,6 +532,8 @@ export const RULE_SET_LIMITS = {
   charges: 99,
   /** The most spells a `charges` row's item casts. */
   chargeSpells: 20,
+  /** The most spells a `spellRest` row lists. */
+  restSpells: 20,
 } as const;
 
 /** One row of a built-in rule set. */
@@ -543,7 +549,7 @@ export interface StoredRuleRow {
    * at 3, 6 and 14). Absent: at every level.
    */
   level?: number;
-  /** Every part but `spend` and `charges`. */
+  /** Every part but `spend`, `charges` and `spellRest`. */
   effects?: StoredEffect[];
   /** `spend` rows only: the prices it puts on the feature's actions, in order. */
   links?: StoredSpendLink[];
@@ -557,8 +563,12 @@ export interface StoredRuleRow {
   charges?: number;
   /** `charges` rows only: the charges that come back at dawn, as dice (`1d6+4`). */
   regain?: string;
-  /** `charges` rows only: the spells its charges cast, and what each costs. */
-  spells?: StoredChargeSpell[];
+  /**
+   * `charges` rows: the spells its charges cast, and what each costs.
+   * `spellRest` rows: the spells, by name in any case, whose pool from the
+   * origin comes back on a short rest, or `every` pool the origin grants.
+   */
+  spells?: StoredChargeSpell[] | string[] | 'every';
 }
 
 /** One spell a `charges` row's item casts with its charges. */
