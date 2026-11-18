@@ -462,4 +462,20 @@ describe('charges that only actions spend', () => {
     ]);
     expect(strikes(doc, world([old]))).toEqual(['charges']);
   });
+
+  it("moves only the counted item's own actions, not those of an item carried before it", () => {
+    // An older-shape wand carried first: its action spends its own `charges` pool.
+    const old = item('Old Wand', 'HB', [
+      { kind: 'resource', key: 'charges', label: 'Charges', max: 3, reset: 'long' },
+      { ...STRIKE, label: 'Zap' },
+    ]);
+    const doc = carrying(
+      { id: 'a', name: 'Old Wand', source: 'HB' },
+      { id: 'b', name: 'Rod of Knocks', source: 'HB' },
+    );
+    const sheet = deriveSheet(doc, world([old, item('Rod of Knocks', 'HB', [COUNTED, STRIKE])]));
+    const spends = (label: string) => sheet.actions.find((a) => a.label === label)?.cost?.resource;
+    expect(spends('Zap')).toBe('charges');
+    expect(spends('Strike')).toBe('item-charges:b');
+  });
 });

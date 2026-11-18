@@ -525,11 +525,41 @@ describe('ItemEditor', () => {
     expect(effects[1]).toMatchObject({ kind: 'action', cost: { resource: ITEM_CHARGES } });
     expect(readOwnEffects(effects, 'effects').problems).toEqual([]);
     expect(screen.getAllByText(/spends 1 charge\b/).length).toBeGreaterThan(0);
+    // A buy-back stays on the pool it names, which is not the copy's.
+    const back = screen.getByLabelText('Action: Buys back a use with') as HTMLSelectElement;
+    expect([...back.options].map((o) => o.value)).not.toContain(ITEM_CHARGES);
     // A spell an item casts by its charges is listed under Charges, so a card does not spend them.
     choice.current = 'Cast a spell';
     press('More');
     const cast = (await screen.findByLabelText('Cast a spell: Cast')) as HTMLSelectElement;
     expect([...cast.options].map((o) => o.value)).toEqual(['', 'prepared']);
+  });
+
+  it("names a pool of its own under the charges' key as its charges, which an action spends", () => {
+    // A pool named Charges beside the counted charges: the sheet moves an
+    // action's cost under that key to the copy's charges.
+    mount(item, {
+      name: 'Twin Rod',
+      type: 'RD',
+      entries: [],
+      charges: 3,
+      castGuidance: {
+        v: 1,
+        effects: [
+          { kind: 'charges', charges: 3, regain: 'all' },
+          { kind: 'resource', key: ITEM_CHARGES, label: 'Charges', max: 2, reset: 'long' },
+          { kind: 'action', economy: 'bonus', label: 'Jolt', cost: { resource: ITEM_CHARGES } },
+        ],
+      },
+    });
+    const spends = screen.getByLabelText('Action: Spends') as HTMLSelectElement;
+    expect([...spends.options].filter((o) => o.value === ITEM_CHARGES).map((o) => o.text)).toEqual([
+      'Its charges',
+    ]);
+    const back = screen.getByLabelText('Action: Buys back a use with') as HTMLSelectElement;
+    expect([...back.options].filter((o) => o.value === ITEM_CHARGES).map((o) => o.text)).toEqual([
+      'Uses of Charges',
+    ]);
   });
 
   it('leaves charges counted the older way as they are, and says so', () => {

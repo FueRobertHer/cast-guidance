@@ -14,12 +14,7 @@ import {
   type StoredState,
 } from '@/engine/castGuidance';
 import { ITEM_CHARGES } from '@/engine/curated/itemCharges';
-import {
-  pickGivesProblems,
-  readMechanics,
-  readOwnEffects,
-  readStoredEffects,
-} from '@/engine/effects/mechanics';
+import { pickGivesProblems, readMechanics, readStoredEffects } from '@/engine/effects/mechanics';
 import type { PickFill } from '@/engine/effects/picks';
 import { HIT_DIE_COST, type RollFilter, SKILLS, SLOT_COST, type SlotPrice } from '@/engine/types';
 import { pickWords } from '@/features/homebrew/pickWords';
@@ -1106,24 +1101,25 @@ function PriceFields({
   onChange: (next: Eff) => void;
   unset?: string;
   keeps?: boolean;
-  /** Spends offers the item's charges (`ITEM_CHARGES`), which the sheet spends from the carried copy's pool. */
+  /**
+   * Spends offers the item's charges (`ITEM_CHARGES`), which the sheet spends
+   * from the carried copy's pool, in place of a pool of the list's own under
+   * that key. A buy-back is not moved to the copy's pool, so it is not offered there.
+   */
   charges?: boolean;
 }) {
   const cost = priceOf(effect.cost);
   const kept = keeps ? keptOf(effect.cost) : undefined;
   const back = priceOf(effect.buyBack);
   const pools: Options = resources.map((r) => [String(r.key), `Uses of ${words(r.label)}`]);
-  const own =
-    charges && !resources.some((r) => r.key === ITEM_CHARGES)
-      ? ([[ITEM_CHARGES, 'Its charges']] as const)
-      : [];
   const payWith = (p: Price | undefined, hitDie: boolean): { value: string; options: Options } => {
     const value = hitDie && kept !== undefined ? KEEPS : p === undefined ? '' : String(p.resource);
+    const own = hitDie && charges;
     const options: Options = [
       ['', unset],
       ...(hitDie && keeps ? ([[KEEPS, 'Same pool']] as const) : []),
-      ...pools,
-      ...(hitDie ? own : []),
+      ...(own ? pools.filter(([k]) => k !== ITEM_CHARGES) : pools),
+      ...(own ? ([[ITEM_CHARGES, 'Its charges']] as const) : []),
       [SLOT_COST, 'A spell slot'],
       ...(hitDie ? ([[HIT_DIE_COST, 'A Hit Point Die']] as const) : []),
     ];
@@ -2290,8 +2286,8 @@ export function EffectCards({
   /** Effects another control of the editor shows, left out of the cards (an item's charges). */
   hide?: (e: Eff) => boolean;
   /**
-   * The list is an item's own: its `charges` effect is read with it, not a
-   * problem, and while it holds one an action's cost can spend them.
+   * The list is an item's own: while it holds a `charges` effect (shown by
+   * the editor and left out with `hide`), an action's cost can spend them.
    */
   holdsCharges?: boolean;
   /** Uses kept elsewhere that an action or a spell here can spend too (a class's pools). */
@@ -2310,12 +2306,10 @@ export function EffectCards({
   const list: Eff[] = Array.isArray(effects) ? (effects as Eff[]) : [];
   const amends: Eff[] = Array.isArray(amend) ? (amend as Eff[]) : [];
   const inPick = fills !== undefined;
-  const problems = inPick
-    ? pickGivesProblems(list, fills)
-    : holdsCharges
-      ? readOwnEffects(list, 'effects').problems
-      : readStoredEffects(list).problems;
-  const charges = holdsCharges && !inPick && list.some((e) => e.kind === 'charges');
+  // An item's charges effect reads as a problem here, which goes to its card,
+  // and `hide` leaves that card out: the editor shows the reader's own words.
+  const problems = inPick ? pickGivesProblems(list, fills) : readStoredEffects(list).problems;
+  const charges = holdsCharges && list.some((e) => e.kind === 'charges');
   const versions = useContext(EntryVersions);
   const problemsOf = (i: number) =>
     problems
