@@ -3,13 +3,13 @@ import itemRules from '@/rules/cast-guidance/items.json';
 import { BUILT_IN_RULE_SETS } from '../../../tests-fixtures/testWorld';
 import { RULE_SET_TYPE } from '../castGuidance';
 import { type ItemCharges, readRuleSet } from '../effects/mechanics';
-import { chargeCosts, ITEM_CHARGES, itemChargesIn } from './itemCharges';
+import { chargeCosts, itemChargesIn } from './itemCharges';
 
 /**
  * What each item's `charges` row says, as the table the rows came from
- * (`ITEM_CHARGES`) said it, written out so that each key's numbers and spells
- * are pinned: the sheet shows only the pool (its charges and dawn roll), and
- * what each spell costs is outside it.
+ * (`ITEM_CHARGES`, rule pack port 5b) said it, written out so that each key's
+ * numbers and spells are pinned: the sheet shows only the pool (its charges
+ * and dawn roll), and what each spell costs is outside it.
  */
 const staff: ItemCharges = {
   charges: 10,
@@ -71,46 +71,6 @@ describe('the built-in charges rows', () => {
 
   it('say nothing without the rule sets', () => {
     expect(itemChargesIn([], refOf('staff of healing|xdmg'))).toBe(undefined);
-  });
-});
-
-/** Every spell level a spell is cast from, and the names either side writes. */
-const LEVELS = [1, 2, 3, 4, 5, 6, 7, 8, 9];
-
-describe('the charges rows beside the table they came from', () => {
-  it('say what the table said, key by key', () => {
-    let compared = 0;
-    for (const [key, table] of Object.entries(ITEM_CHARGES)) {
-      const read = row(key);
-      expect(read, key).toEqual({
-        charges: table.charges,
-        regain: table.regain,
-        spells: table.spells.map((s) => ({
-          spell: s.name,
-          cost: s.cost,
-          ...(s.upTo === undefined ? {} : { upTo: s.upTo }),
-        })),
-      });
-      // What each spell either side names costs at every level it is cast from.
-      const names = new Set([
-        ...table.spells.map((s) => s.name),
-        ...read.spells.map((s) => s.spell),
-      ]);
-      const asTable = {
-        ...table,
-        spells: table.spells.map((s) => ({ ...s, spell: s.name })),
-      } as unknown as ItemCharges;
-      for (const name of names) {
-        for (const level of LEVELS) {
-          expect(chargeCosts(read, name, level), `${key} ${name} ${level}`).toEqual(
-            chargeCosts(asTable, name, level),
-          );
-          compared++;
-        }
-      }
-    }
-    expect(Object.keys(ITEM_CHARGES)).toHaveLength(8);
-    expect(compared).toBe(8 * 9 + 2 * 2 * 9);
   });
 });
 

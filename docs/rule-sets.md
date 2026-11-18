@@ -2,14 +2,17 @@
 
 A built-in rule set is data the app ships in place of code: rows of effects
 that hold what were the engine's hard-coded mechanics tables, and the tables
-these parts replaced are gone (the rule pack port, below). It holds six parts: `curated`, which holds
+these parts replaced are gone (the rule pack port, below). It holds seven parts: `curated`, which holds
 what was `CURATED`; `standing`, which holds what was `STANDING`;
 `rollAdvantage`, which holds what was the advantage table, `ROLL_ADVANTAGES`;
 `rollExtra`, which holds what was `ROLL_EXTRAS`; `spend`, which holds what
 were the spend links, `SPEND_LINKS` and `SLOT_LINKS` (`linkSpend` in
-`src/engine/curated/spendLinks.ts` reads it); and `wornTags`, which holds what
+`src/engine/curated/spendLinks.ts` reads it); `wornTags`, which holds what
 was `ITEM_TAG_FIXES` (`src/rules/cast-guidance/items.json`, read in
-`src/engine/effects/item.ts`). The files live in `src/rules/`, one a part. (Source of truth: `readRuleSet` and `mechanicsOf` in
+`src/engine/effects/item.ts`); and `charges`, which holds what was
+`ITEM_CHARGES` (the same file, read in `item.ts`, the cast prompt and the
+long rest through `src/engine/curated/itemCharges.ts`). The files live in
+`src/rules/`, one a part, but for the two item parts, which share one. (Source of truth: `readRuleSet` and `mechanicsOf` in
 `src/engine/effects/mechanics.ts`, `src/data5e/builtInRules.ts`.)
 
 218 rows have moved (`src/rules/cast-guidance/curated.json`), every `CURATED` row. Four came
@@ -158,6 +161,11 @@ picked when attuning, take a save bonus that holds only sometimes, or keep it
 to the one ability the text names. Keys whose rows are the same share one, and
 the table is gone.
 
+The 8 `ITEM_CHARGES` keys have moved too, as 7 `charges` rows in the same file
+(rule pack port 5b): the Staff of Healing (both printings, one row) and the
+Wands of Magic Missiles, Fireballs and Lightning Bolts, each printing its own
+row, since a 2024 wand spends at most 3 charges a cast. The table is gone.
+
 ## A file
 
 ```jsonc
@@ -168,7 +176,7 @@ the table is gone.
   "edition": "both",           // "2014", "2024" or "both"; optional
   "rows": [
     {
-      "part": "curated",                // which of the six parts it is
+      "part": "curated",                // which of the seven parts it is
       "keys": ["stunning strike|monk"], // the keys it is found under
       "scan": "replace",                // or "keep"; "replace" when absent
       "effects": [ /* the stored effects a rule pack's patch holds */ ]
@@ -203,6 +211,13 @@ the table is gone.
       "keys": ["mace of the black crown (awakened)|egw"],
       "replaces": ["resist"],           // the kinds of the item's data tags it stands in for
       "effects": [{ "kind": "resist", "damageType": "poison" }]
+    },
+    {
+      "part": "charges",
+      "keys": ["wand of fireballs|xdmg"],
+      "charges": 7,                     // how many it holds
+      "regain": "1d6+1",                // the dice of charges back at dawn
+      "spells": [{ "spell": "fireball", "cost": 1, "upTo": 5 }]
     }
   ]
 }
@@ -241,10 +256,16 @@ the table is gone.
   kinds. A row with a kind it does not know, a kind twice, an effect of a kind
   it does not replace, or an effect it cannot read (which would take that
   tag away unseen) is left out, and its keys stay free for a later row.
+- **`charges`, `regain` and `spells`** (`charges` rows, in place of
+  `effects`): how many charges the item holds (1 to 99), the dice that come
+  back at dawn, and the spells they cast ("Charges rows", below). A row with
+  any problem in them is left out, and its keys stay free: a spell missing or
+  misread would offer the charges for less, or not at all, unseen.
 - A row the reader cannot read is left out, and the rest still count. What it
   left out goes to the console once, not the sheet: the files are the app's, so
   a problem in one is a bug its tests catch, not something a player can fix.
-- At most 5,000 rows a file and 16 keys a row (`RULE_SET_LIMITS`).
+- At most 5,000 rows a file, 16 keys a row and 20 spells a `charges` row
+  (`RULE_SET_LIMITS`).
 - A later file's row wins over an earlier one's under the same part, key and
   level; its rows at other levels keep theirs.
 
@@ -264,10 +285,14 @@ for a copy), then its class's or subclass's, so a 2014 subclass kept under a
 printing with no row of its own.
 
 The first key with a row wins, in the order the call site tries them. A
-subclass has no row of its own. Items have no curated row: their one part is
+subclass has no row of its own. Items have no curated row: their parts are
 `wornTags`, under the item's own `name|source` (`rod of alertness|dmg`), the
-entity found rather than the ref a character saved. A copy of an item is not
-reached by the official one's row: its tags are its author's to write.
+entity found rather than the ref a character saved, and `charges`, under the
+`name|source` the character's equipment entry names (`refUid(entry.ref)`),
+which the sheet's pool, the cast prompt and the long rest all read alike. The
+two agree for every ref that names its book; starting equipment can write one
+that does not, and then no `charges` row is found. A copy of an item is not
+reached by the official one's rows: its tags and charges are its author's.
 
 A `standing` row is found under the same keys, in the same order, for a class
 or subclass feature and for an optional feature; feats, traits and class rows
@@ -319,6 +344,32 @@ one. A `wornTags` row says what the item gives instead.
   pack's patch that replaces the item's mechanics leaves it out, and the item's
   own `drop` reaches it. A player's item or copy drops and gives tags with its
   own `drop` and `effects`; this part is the app's.
+
+## Charges rows
+
+Some items cast spells with charges: a Staff of Healing's Cure Wounds, a
+wand's Fireball. Their data says how many charges and one fixed cost a spell,
+not always that: Cure Wounds from the staff is a charge a spell level, up to
+4th, and the 2024 staff's data lists it as at will. A `charges` row says it.
+
+- **`spells`**: each spell by name (matched without case, any printing), what
+  it `cost`s at its own level (1 to the item's charges), and `upTo`, the
+  highest spell level it can be cast at for one more charge a level. Without
+  `upTo` it casts at its own level alone. A level whose cost is more than the
+  item holds is not offered, so a 2014 wand's `upTo` of 9 on 7 charges is
+  allowed. A spell named twice is a problem.
+- **What reads it.** The item call site makes a pool of its own for each
+  carried item with a row, `item-charges:<entry id>`, labelled `<item>
+  charges`, refilled by `regain` on a long rest, while the item's magic works
+  (attuned, where it asks). The pool is not part of what the item inherits:
+  a pack's patch that replaces the item's mechanics, or the item's own `drop`,
+  leaves it standing. The cast prompt offers the item's tiles at each level it
+  can pay for (`itemChargeWays`), and a long rest rolls the dawn regain of an
+  item put away or not attuned too (`idleChargePools`). Both read the row from
+  the registry's rule sets, so the Play and Spells tabs pass them
+  (`SpellCast.ruleSets`).
+- A player's item writes its charges as a resource of its own in its
+  `castGuidance`, spent by a "Cast a spell" card; this part is the app's.
 
 ## Where a row sits
 

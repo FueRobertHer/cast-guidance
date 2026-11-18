@@ -17,58 +17,6 @@ import {
   refUid,
 } from '../types';
 
-export interface ChargeSpell {
-  /** The spell, by name in lower case: any printing of it casts from the item. */
-  name: string;
-  /** Charges it costs at its own level. */
-  cost: number;
-  /** One more charge for each level above its own, up to this spell level. Absent: its own level only. */
-  upTo?: number;
-}
-
-export interface ItemChargeRow {
-  charges: number;
-  /** The charges that come back at dawn, as dice. */
-  regain: string;
-  spells: readonly ChargeSpell[];
-}
-
-const STAFF_OF_HEALING: ItemChargeRow = {
-  charges: 10,
-  regain: '1d6+4',
-  spells: [
-    { name: 'cure wounds', cost: 1, upTo: 4 },
-    { name: 'lesser restoration', cost: 2 },
-    { name: 'mass cure wounds', cost: 5 },
-  ],
-};
-
-/** A 2014 wand: one charge at the spell's level, one more a level, as far as its charges go. */
-const wand2014 = (spell: string): ItemChargeRow => ({
-  charges: 7,
-  regain: '1d6+1',
-  spells: [{ name: spell, cost: 1, upTo: 9 }],
-});
-
-/** A 2024 wand: the same, but "no more than 3 charges" a cast. */
-const wand2024 = (spell: string, level: number): ItemChargeRow => ({
-  charges: 7,
-  regain: '1d6+1',
-  spells: [{ name: spell, cost: 1, upTo: level + 2 }],
-});
-
-/** The table the `charges` rows came from, kept while a test compares the two. */
-export const ITEM_CHARGES: Readonly<Record<string, ItemChargeRow>> = {
-  'staff of healing|dmg': STAFF_OF_HEALING,
-  'staff of healing|xdmg': STAFF_OF_HEALING,
-  'wand of magic missiles|dmg': wand2014('magic missile'),
-  'wand of magic missiles|xdmg': wand2024('magic missile', 1),
-  'wand of fireballs|dmg': wand2014('fireball'),
-  'wand of fireballs|xdmg': wand2024('fireball', 3),
-  'wand of lightning bolts|dmg': wand2014('lightning bolt'),
-  'wand of lightning bolts|xdmg': wand2024('lightning bolt', 3),
-};
-
 /** The charges an item casts spells with, by its equipment entry's ref, from the built-in rows. */
 export function itemChargesIn(
   ruleSets: readonly DataEntity[],
