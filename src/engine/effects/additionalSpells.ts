@@ -13,7 +13,6 @@
  * prompt where `offersPick` says so, and otherwise still a note.
  */
 import { classSpellcastingMode } from '../calc/slots';
-import { refillsOnShortRest } from '../curated/spellRests';
 import { describeSpellQuery, parseSpellFilter, spellFitsQuery } from '../spellQuery';
 import {
   ABILITIES,
@@ -26,6 +25,23 @@ import {
   type SpellQuery,
 } from '../types';
 import { asEntityArray, type Collector, num, str } from './base';
+import { builtInRuleFor } from './mechanics';
+
+/**
+ * Whether this origin's pool of these spells comes back on a short rest, where
+ * its data says a long one: its built-in `spellRest` row, found under the
+ * granting origin's `type:uid`, names every spell of the pool, or `every` pool.
+ */
+function refillsOnShortRest(
+  col: Collector,
+  origin: EffectOrigin,
+  pool: ReadonlyArray<{ name: string }>,
+): boolean {
+  const listed = builtInRuleFor(col, 'spellRest', [`${origin.type}:${origin.uid}`])?.shortRest
+    ?.spells;
+  if (listed === undefined) return false;
+  return listed === 'every' || pool.every((s) => listed.includes(s.name.toLowerCase()));
+}
 
 function totalLevelOf(col: Collector): number {
   return col.doc.classes.reduce((s, c) => s + c.levels, 0);
@@ -450,7 +466,7 @@ function grantSpellEntry(
     const pools = group.shared ? [spells] : spells.map((spell) => [spell]);
     for (const pool of pools) {
       // The data writes a few short rest pools as daily, so its rest can be overruled.
-      const resetOn = refillsOnShortRest(origin, pool) ? 'short' : group.limit.resetOn;
+      const resetOn = refillsOnShortRest(col, origin, pool) ? 'short' : group.limit.resetOn;
       const per = resetOn === 'long' ? 'day' : 'rest';
       const key = spellPoolKey(
         origin.uid,

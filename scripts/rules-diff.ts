@@ -163,10 +163,17 @@ async function withRules(reg: EntityRegistry): Promise<string> {
   return `${reg.byType('ruleSet' as never).length} sets`;
 }
 
+/** What a part's call site reads of its row, where that is not its effects. */
+const READ_FIELD: Readonly<Record<string, string>> = {
+  spend: 'links',
+  charges: 'charges',
+  spellRest: 'shortRest',
+};
+
 /**
- * Wrap each built-in row's effects (a `spend` row's links), so a read of one is
- * counted; the engine gets what it got before. Returns the keys read and the
- * keys in all.
+ * Wrap each built-in row's effects (a `spend` row's links, a `charges` row's
+ * numbers, a `spellRest` row's spells), so a read of one is counted; the
+ * engine gets what it got before. Returns the keys read and the keys in all.
  */
 async function instrument(
   reg: EntityRegistry,
@@ -188,9 +195,7 @@ async function instrument(
         // A row at one level is read only when a feature of that level emits it.
         const key = `${row.part}:${row.keys[0]}${row.level === undefined ? '' : ` @${row.level}`}`;
         all.push(key);
-        // What its call site reads: a spend row's links, a charges row's numbers, or its effects.
-        const field =
-          row.part === 'spend' ? 'links' : row.part === 'charges' ? 'charges' : 'effects';
+        const field = READ_FIELD[row.part] ?? 'effects';
         const held = row as unknown as Record<string, object>;
         held[field] = new Proxy(held[field] ?? [], {
           get(target, prop, receiver) {

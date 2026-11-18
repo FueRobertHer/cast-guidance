@@ -9,6 +9,7 @@ import curatedRules from '@/rules/cast-guidance/curated.json';
 import itemRules from '@/rules/cast-guidance/items.json';
 import rollAdvantageRules from '@/rules/cast-guidance/roll-advantages.json';
 import rollExtraRules from '@/rules/cast-guidance/roll-extras.json';
+import spellRestRules from '@/rules/cast-guidance/spell-rests.json';
 import spendRules from '@/rules/cast-guidance/spend.json';
 import standingRules from '@/rules/cast-guidance/standing.json';
 
@@ -23,6 +24,7 @@ export const BUILT_IN_RULE_SETS: DataEntity[] = [
   rollExtraRules as DataEntity,
   spendRules as DataEntity,
   itemRules as DataEntity,
+  spellRestRules as DataEntity,
 ];
 
 const race: DataEntity[] = [

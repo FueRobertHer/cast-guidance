@@ -1,0 +1,11 @@
+{
+  "type": "ruleSet",
+  "v": 1,
+  "name": "Built-in spell rests",
+  "edition": "both",
+  "rows": [
+    { "part": "spellRest", "keys": ["feat:fey teleportation|xge"], "spells": ["misty step"] },
+    { "part": "spellRest", "keys": ["feat:boon of siberys|efa"], "spells": "every" },
+    { "part": "spellRest", "keys": ["race:mammon|mtf"], "spells": ["tenser's floating disk"] }
+  ]
+}
