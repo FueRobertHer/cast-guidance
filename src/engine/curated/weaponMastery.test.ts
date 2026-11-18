@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { makeTestContext } from '../../../tests-fixtures/testWorld';
+import { BUILT_IN_RULE_SETS, makeTestContext } from '../../../tests-fixtures/testWorld';
+import { RULE_SET_TYPE } from '../castGuidance';
 import { deriveSheet } from '../derive';
 import { Collector } from '../effects/base';
+import { mechanicsOf, printingKeys } from '../effects/mechanics';
 import { weaponKindName, weaponMasteryOptions } from '../effects/readers';
 import {
   type CharacterDoc,
@@ -10,7 +12,6 @@ import {
   type EngineContext,
   newCharacterDoc,
 } from '../types';
-import { emitCuratedEffects } from './curatedEffects';
 
 // Invented classes and weapons, shaped like the 2024 ones: a class table with a
 // Weapon Mastery column, and one without.
@@ -54,8 +55,27 @@ const ctx: EngineContext = {
         String(e.name).toLowerCase() === name.toLowerCase() &&
         (source === undefined || String(e.source).toLowerCase() === source.toLowerCase()),
     ),
-  byType: (type) => (type === 'baseitem' ? weapons : type === 'class' ? classes : []),
+  byType: (type) =>
+    type === 'baseitem'
+      ? weapons
+      : type === 'class'
+        ? classes
+        : type === RULE_SET_TYPE
+          ? BUILT_IN_RULE_SETS
+          : [],
 };
+
+/** The feature's row in the shipped rule set, emitted as a class walk emits it. */
+function emitRow(col: Collector, key: string, origin: EffectOrigin): void {
+  mechanicsOf(col, {
+    entry: {},
+    label: origin.label,
+    origin,
+    target: key,
+    ruleKeys: printingKeys([key], '', origin.uid),
+    inherited: () => {},
+  });
+}
 
 function masteryAt(
   className: string,
@@ -78,7 +98,7 @@ function masteryAt(
   const col = new Collector(doc, ctx);
   for (const name of profs) col.add({ kind: 'weaponProf', name, origin });
   if (opts.filter !== undefined) col.add({ kind: 'weaponProfFilter', filter: opts.filter, origin });
-  emitCuratedEffects(col, `weapon mastery|${className.toLowerCase()}`, origin);
+  emitRow(col, `weapon mastery|${className.toLowerCase()}`, origin);
   // A proficiency the build gains after the feature (a feat at a later level).
   if (opts.later !== undefined) col.add({ kind: 'weaponProf', name: opts.later, origin });
   for (const ask of col.afterAll) ask();
@@ -88,8 +108,13 @@ const prompt = (col: Collector) => col.pending.find((p) => p.label === 'Weapon M
 
 describe('the 2024 Weapon Mastery', () => {
   it("counts the kinds by the class table's column", () => {
-    expect([1, 4, 10, 16].map((l) => prompt(masteryAt('Fighter', l))?.count)).toEqual([3, 4, 5, 6]);
-    expect([1, 4, 10].map((l) => prompt(masteryAt('Barbarian', l))?.count)).toEqual([2, 3, 4]);
+    // The level before each step too, so the table is read at the class's own level.
+    expect([1, 3, 4, 9, 10, 15, 16].map((l) => prompt(masteryAt('Fighter', l))?.count)).toEqual([
+      3, 3, 4, 4, 5, 5, 6,
+    ]);
+    expect([1, 3, 4, 9, 10].map((l) => prompt(masteryAt('Barbarian', l))?.count)).toEqual([
+      2, 2, 3, 3, 4,
+    ]);
   });
 
   it('counts two where the table has no column', () => {
@@ -102,6 +127,25 @@ describe('the 2024 Weapon Mastery', () => {
       'Quickblade',
       'Warblade',
     ]);
+  });
+
+  it('offers a Fighter every kind, melee or ranged, proficient or not', () => {
+    expect(prompt(masteryAt('Fighter', 1))?.options.map((o) => o.id)).toEqual([
+      'Knife',
+      'Quickblade',
+      'Warblade',
+      'Warbow',
+    ]);
+  });
+
+  it('offers a Paladin, a Ranger and a Rogue two of the kinds each is proficient with', () => {
+    // No Weapon Mastery column for any of them (the test world has no Paladin or Ranger).
+    expect(
+      ['Paladin', 'Ranger', 'Rogue'].map((c) => {
+        const p = prompt(masteryAt(c, 1, undefined, ['simple weapons', 'warbow']));
+        return `${c} ${p?.count} ${p?.options.map((o) => o.id).join(', ')}`;
+      }),
+    ).toEqual(['Paladin 2 Knife, Warbow', 'Ranger 2 Knife, Warbow', 'Rogue 2 Knife, Warbow']);
   });
 
   it('offers a Rogue the kinds it is proficient with', () => {
@@ -136,6 +180,25 @@ describe('the 2024 Weapon Mastery', () => {
       'Warblade',
       'Warbow',
       'Knife',
+    ]);
+  });
+
+  it('masters the kinds picked for the Barbarian, Paladin, Ranger and Rogue too', () => {
+    const profs = ['simple weapons', 'warbow'];
+    const mastered = (c: string, picks: string[]) => {
+      const col = masteryAt(c, 1, picks, profs);
+      return `${c} ${col.pending.length} ${col.effects.flatMap((e) => (e.kind === 'weaponMastery' ? [e.name] : [])).join(', ')}`;
+    };
+    expect([
+      mastered('Barbarian', ['Knife', 'Warblade']),
+      mastered('Paladin', ['Knife', 'Warbow']),
+      mastered('Ranger', ['Warbow', 'Knife']),
+      mastered('Rogue', ['Knife', 'Warbow']),
+    ]).toEqual([
+      'Barbarian 0 Knife, Warblade',
+      'Paladin 0 Knife, Warbow',
+      'Ranger 0 Warbow, Knife',
+      'Rogue 0 Knife, Warbow',
     ]);
   });
 });

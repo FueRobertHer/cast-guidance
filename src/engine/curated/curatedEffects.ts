@@ -6,10 +6,8 @@
  *   - class/subclass features:   `featureName|classLabel` (lowercased)
  * These are facts of the game rules — fine to commit.
  */
-import { isProficient } from '../calc/attacks';
-import { asEntityArray, type Collector } from '../effects/base';
-import { weaponMasteryOptions } from '../effects/readers';
-import { type EffectOrigin, refUid } from '../types';
+import type { Collector } from '../effects/base';
+import type { EffectOrigin } from '../types';
 import { DRACONIC_ANCESTRY } from './draconicAncestry';
 
 /**
@@ -18,58 +16,6 @@ import { DRACONIC_ANCESTRY } from './draconicAncestry';
  * is a row of its own in the data (`printingKeys`).
  */
 type CuratedFn = (col: Collector, origin: EffectOrigin, from?: string) => void;
-
-/**
- * How many kinds of weapon a class's Weapon Mastery covers at its level: the
- * class table's Weapon Mastery column (Barbarian, Fighter and the WoW classes
- * that carry one), else two.
- */
-function masteryCount(col: Collector, origin: EffectOrigin): number {
-  const entry = col.doc.classes.find((c) => refUid(c.ref) === origin.uid);
-  const cls = entry && col.ctx.get('class', entry.ref.name, entry.ref.source);
-  for (const group of asEntityArray(cls?.classTableGroups)) {
-    const labels = Array.isArray(group.colLabels) ? group.colLabels.map(String) : [];
-    const at = labels.findIndex((l) => /weapon mastery/i.test(l));
-    const row = Array.isArray(group.rows) ? group.rows[(entry?.levels ?? 1) - 1] : undefined;
-    const count = at >= 0 && Array.isArray(row) ? Number(row[at]) : Number.NaN;
-    if (count > 0) return count;
-  }
-  return 2;
-}
-
-/**
- * The 2024 Weapon Mastery: a pick of kinds of weapon whose mastery properties the
- * character can use, swapped on a long rest. `melee`: melee kinds alone (the
- * Barbarian's). `proficient`: kinds the character is proficient with (the Paladin's,
- * Ranger's and Rogue's), by the proficiencies collected so far.
- */
-const weaponMastery =
-  (opts: { melee?: boolean; proficient?: boolean } = {}): CuratedFn =>
-  (col, origin) =>
-    // Asked once the build is in: a feat at a later level, or a later class, can
-    // add the proficiency a kind needs.
-    col.afterAll.push(() => {
-      const profs = col.effects.flatMap((e) => (e.kind === 'weaponProf' ? [e.name] : []));
-      const filters = col.effects.flatMap((e) => (e.kind === 'weaponProfFilter' ? [e.filter] : []));
-      col.choice(
-        {
-          id: `${origin.type}:${origin.uid}:weapon-mastery`,
-          origin,
-          kind: 'generic',
-          label: 'Weapon Mastery',
-          count: masteryCount(col, origin),
-          options: weaponMasteryOptions(
-            col.ctx,
-            (e, ranged) =>
-              (opts.melee !== true || !ranged) &&
-              (opts.proficient !== true || isProficient(e, profs, filters)),
-          ),
-        },
-        (selected) => {
-          for (const name of selected) col.add({ kind: 'weaponMastery', name, origin });
-        },
-      );
-    });
 
 /**
  * The 2014 Draconic Bloodline's dragon, beside the subclass's other picks: asked
@@ -88,12 +34,12 @@ export const CURATED: Record<string, CuratedFn> = {
   // More of this section's rows are data, in `src/rules/cast-guidance/curated.json`.
   // --- Standing numbers: speeds, saves, scores and defenses ----------------
   // More of this section's rows are data, in `src/rules/cast-guidance/curated.json`.
-  // The 2024 classes' (no 2014 class has the feature).
-  'weapon mastery|barbarian': weaponMastery({ melee: true }),
-  'weapon mastery|fighter': weaponMastery(),
-  'weapon mastery|paladin': weaponMastery({ proficient: true }),
-  'weapon mastery|ranger': weaponMastery({ proficient: true }),
-  'weapon mastery|rogue': weaponMastery({ proficient: true }),
+  // The 2024 Weapon Mastery (Barbarian, Fighter, Paladin, Ranger and Rogue) is a
+  // pick in the data (rule pack port 4f): kinds of weapon, as many as the class
+  // table's Weapon Mastery column says, else two, asked once the build is in
+  // (`afterBuild`), since a later class or feat can add the proficiency a kind
+  // needs. The Barbarian's are melee kinds alone; the Paladin's, Ranger's and
+  // Rogue's, kinds the character is proficient with.
   // --- Always-on riders: damage every hit or every cast adds -----------------
   // More of this section's rows are data, in `src/rules/cast-guidance/curated.json`.
   // The 2024 Agonizing Blast, Charisma on the damage of a Warlock cantrip the
