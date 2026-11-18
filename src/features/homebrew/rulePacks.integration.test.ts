@@ -135,6 +135,45 @@ describe('a rule pack applied to a character', () => {
   });
 });
 
+describe('a pick a pack adds', () => {
+  it('is asked of whom the pack reaches, and the answer gives what it says', async () => {
+    const file = packFile();
+    const guidance = (file._meta as Record<string, unknown>).castGuidance as Record<
+      string,
+      unknown
+    >;
+    guidance.patches = [
+      {
+        target: 'Grit|Warrior',
+        add: [
+          {
+            kind: 'pick',
+            id: 'lore',
+            ask: 'skill',
+            from: ['Medicine', 'Nature'],
+            gives: [{ kind: 'skillProf', skill: '{pick}', level: 1 }],
+          },
+        ],
+      },
+    ];
+    await addPack(file, { characters: ['hild'] });
+    const ctx = await context();
+    const asked = deriveSheet(warrior('hild'), ctx).pending.filter((p) =>
+      p.id.endsWith(':pick-lore'),
+    );
+    expect(asked).toEqual([expect.objectContaining({ kind: 'skill', count: 1 })]);
+    expect(asked[0]?.options.map((o) => o.id)).toEqual(['Medicine', 'Nature']);
+    expect(deriveSheet(warrior('bram'), ctx).pending.some((p) => p.id.endsWith(':pick-lore'))).toBe(
+      false,
+    );
+    const doc = warrior('hild');
+    doc.choices[asked[0]?.id ?? ''] = ['Nature'];
+    const sheet = deriveSheet(doc, ctx);
+    expect(sheet.skills.Nature?.prof).toBe(1);
+    expect(sheet.skills.Medicine?.prof).toBe(0);
+  });
+});
+
 describe('who a pack applies to stays on this device', () => {
   it('leaves with a character it reaches, without its Apply to, and reaches nobody where it lands', async () => {
     const { row } = await addPack(packFile(), { characters: ['hild'] });

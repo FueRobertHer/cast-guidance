@@ -1345,7 +1345,7 @@ const SAMPLE_SPELL: PickFill = {
 };
 
 /** An answer of each ask, to check a pick's stored effects read with one filled in. */
-function sampleFills(ask: PickAsk): PickFill[] {
+export function sampleFills(ask: PickAsk): PickFill[] {
   switch (ask) {
     case 'skill':
       return [{ pick: 'Athletics' }];
@@ -1391,6 +1391,18 @@ function pickGives(
     seen.set(key, read);
     return read;
   };
+}
+
+/**
+ * The problems what a player's pick gives (`gives`, an option's `gives`) has
+ * with each of these answers filled in, each once: as the pick's reader finds
+ * them, effect by effect, for the Workshop's cards of what a pick gives.
+ */
+export function pickGivesProblems(raw: unknown, fills: readonly PickFill[]): string[] {
+  const how: HowRead = { strict: false, builtIn: false, inPick: true };
+  return [
+    ...new Set(fills.flatMap((f) => readStoredEffects(filled(raw, f), 'gives', how).problems)),
+  ];
 }
 
 /** A pick's count: a number, a level table of numbers, or a class table's column. */

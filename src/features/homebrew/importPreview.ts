@@ -43,6 +43,7 @@ import {
   collectCharacterRefs,
   collectCharacterSources,
 } from '@/features/characters/homebrewExport';
+import { pickWords } from '@/features/homebrew/pickWords';
 import { HOMEBREW_ENTITY_KEYS, IMPORT_LIMITS } from '@/lib/guards';
 
 /**
@@ -899,6 +900,18 @@ function outcomeWords(o: unknown): string | undefined {
   }
 }
 
+/** A pick the engine reads: one it refuses is an effect that does not count, said as one. */
+const asks = (e: unknown) =>
+  isRecord(e) && own(e, 'kind') === 'pick' && readStoredEffects([e]).effects.length === 1;
+
+/** What the picks of a list ask for, those the engine reads: "asks for 2 skills". */
+function asksWords(list: readonly unknown[]): string[] {
+  return list
+    .filter(asks)
+    .map((e) => pickWords(e as Record<string, unknown>))
+    .map((w) => `${w[0]?.toLowerCase() ?? ''}${w.slice(1)}`);
+}
+
 function changeWords(p: Record<string, unknown>): string {
   const replace = own(p, 'effects');
   const add = own(p, 'add');
@@ -908,18 +921,29 @@ function changeWords(p: Record<string, unknown>): string {
   const replaces =
     Array.isArray(replace) &&
     (replace.length === 0 || readStoredEffects(replace).effects.length > 0);
+  const adds = Array.isArray(add) ? add : [];
+  // A pick is said by what it asks for, not counted as an effect.
+  const effects = (list: readonly unknown[]) => list.filter((e) => !asks(e)).length;
   const parts: string[] = [];
   if (replaces) {
+    const n = effects(replace);
     parts.push(
       replace.length === 0
         ? 'Does nothing now'
-        : `Works by ${plural(replace.length, 'effect')} in place of its own`,
+        : n === 0
+          ? 'Works in place of its own'
+          : `Works by ${plural(n, 'effect')} in place of its own`,
     );
   }
-  if (Array.isArray(add) && add.length > 0) {
+  if (effects(adds) > 0) {
     parts.push(
-      parts.length === 0 ? `Gains ${plural(add.length, 'effect')}` : `gains ${add.length} more`,
+      parts.length === 0
+        ? `Gains ${plural(effects(adds), 'effect')}`
+        : `gains ${effects(adds)} more`,
     );
+  }
+  for (const words of asksWords([...(replaces ? replace : []), ...adds])) {
+    parts.push(parts.length === 0 ? `${words[0]?.toUpperCase() ?? ''}${words.slice(1)}` : words);
   }
   // Only the prices it reads: one it refuses (a misspelt field) is a problem.
   const amend = replaces ? [] : readMechanics({ v: 1, amend: listOf(p, 'amend') }).amend;

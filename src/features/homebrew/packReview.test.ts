@@ -29,6 +29,49 @@ const pack = (id: string, guidance: Record<string, unknown>, appliesTo?: PackApp
   }) satisfies PackInPlay;
 const rest = (value: string) => ({ tableRules: { restLength: value } });
 
+describe('what a changed entry asks for', () => {
+  const lore = {
+    kind: 'pick',
+    id: 'lore',
+    ask: 'skill',
+    count: 2,
+    from: ['Arcana', 'History'],
+    gives: [{ kind: 'skillProf', skill: '{pick}', level: 1 }],
+  };
+  it('says each pick the engine reads by what it asks, not as an effect', () => {
+    const review = packReview({
+      _meta: {
+        sources: [{ json: 'Lore' }],
+        castGuidance: {
+          v: 1,
+          patches: [
+            { target: 'Alert|PHB', add: [lore] },
+            { target: 'Grit|Warrior', add: [{ kind: 'speedBonus', amount: 5 }, lore] },
+            { target: 'Tough|PHB', effects: [lore] },
+            {
+              target: 'Lucky|PHB',
+              effects: [{ kind: 'acBonus', amount: 1 }],
+              add: [{ ...lore, id: 'save', ask: 'save', from: ['dex'] }],
+            },
+            // Its id does not read, so it asks nothing: an effect that does not count.
+            { target: 'Sentinel|PHB', add: [{ ...lore, id: 'Not An Id' }] },
+          ],
+        },
+      },
+    });
+    expect(review?.changes.map((c) => c.value)).toEqual([
+      'Asks for 2 skills from Arcana or History',
+      'Gains 1 effect, and asks for 2 skills from Arcana or History',
+      'Works in place of its own, and asks for 2 skills from Arcana or History',
+      'Works by 1 effect in place of its own, and asks for 2 saving throws from Dexterity',
+      'Gains 1 effect',
+    ]);
+    expect(review?.problems).toEqual([
+      expect.stringMatching(/^patch 5 \(Sentinel\|PHB\): effect 1 \(pick\): "id" is a short name/),
+    ]);
+  });
+});
+
 describe('where packs disagree', () => {
   it('the later wins between two alike, and packs that agree are no clash', () => {
     const got = packConflicts([
