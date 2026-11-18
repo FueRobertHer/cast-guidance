@@ -12,15 +12,22 @@
  * is a class's.
  */
 import { X } from 'lucide-react';
-import { type ReactNode, useState } from 'react';
+import { type ReactNode, useContext, useState } from 'react';
 import { isRecord, type StoredEffect } from '@/engine/castGuidance';
-import { sampleFills } from '@/engine/effects/mechanics';
-import { DAMAGE_TYPES, PICK_ASKS, type PickAsk, type PickFill } from '@/engine/effects/picks';
+import { pickSamples } from '@/engine/effects/mechanics';
+import {
+  DAMAGE_TYPES,
+  defaultLabel,
+  PICK_ASKS,
+  type PickAsk,
+  type PickFill,
+} from '@/engine/effects/picks';
 import { SKILLS } from '@/engine/types';
 import { orList, weaponKinds } from '@/features/homebrew/pickWords';
 import { Chip } from '@/ui/Chip';
 import { fieldClass } from '@/ui/TextField';
 import { ABILITY_WORDS, ChipPicks, Field, Kept, Select } from './fields';
+import { EntryVersions, optionIdsIn } from './pickIds';
 
 type Eff = StoredEffect;
 type Options = ReadonlyArray<readonly [string, string]>;
@@ -79,16 +86,15 @@ export const NEW_PICK: Eff = { kind: 'pick', id: 'choice', ask: 'skill', gives: 
 /** The asks whose answers a pick can take "in place of" what is held (`IN_PLACE_ASKS`). */
 const IN_PLACE = new Set(['skill', 'tool', 'save']);
 
-/** The prompt words the sheet shows for a pick that names none (`defaultLabel`). */
-const PROMPTS: Readonly<Record<string, string>> = {
-  skill: 'Skill proficiency',
-  tool: 'Tool proficiency',
-  weapon: 'Weapon proficiency',
-  save: 'Saving throw',
-  damage: 'Damage type',
-  spell: 'Spell',
-  option: 'Option',
-};
+/** The asks a card keeps as written, its words alone: a class's Weapon Mastery. */
+export const KEPT_ASKS: ReadonlySet<string> = new Set(['weaponMastery']);
+
+/** The prompt words the sheet shows for a pick that names none, as `defaultLabel` words them. */
+function promptWords(ask: string, count: unknown): string {
+  if (!(PICK_ASKS as readonly string[]).includes(ask)) return 'Choose';
+  const n = typeof count === 'number' ? count : 1;
+  return defaultLabel(ask as PickAsk, n, "The feature's name");
+}
 
 const omit = (e: Eff, keys: readonly string[]): Eff =>
   Object.fromEntries(Object.entries(e).filter(([k]) => !keys.includes(k))) as Eff;
@@ -125,13 +131,13 @@ const nameList = (text: string): string[] =>
 export function fillsOf(e: Eff): PickFill[] {
   const ask = String(e.ask);
   const options = Array.isArray(e.options) ? e.options.filter(isRecord) : [];
-  const asked: PickFill[] =
-    ask === 'option'
-      ? options.map((o) => ({ pick: String(o.id) }))
-      : (PICK_ASKS as readonly string[]).includes(ask)
-        ? sampleFills(ask as PickAsk)
-        : [];
-  return [...asked, ...strings(e.inPlaceOf).map((pick) => ({ pick }))];
+  return (PICK_ASKS as readonly string[]).includes(ask)
+    ? pickSamples(
+        ask as PickAsk,
+        options.map((o) => String(o.id)),
+        strings(e.inPlaceOf),
+      )
+    : [];
 }
 
 /** A pick id the reader takes from a player's file. */
@@ -325,7 +331,9 @@ function WeaponFields({
   onChange: (next: Eff) => void;
 }) {
   const weapons = isRecord(effect.weapons) ? effect.weapons : undefined;
-  const named = weapons === undefined && effect.from !== undefined;
+  // Named stays named while its list is emptied, to be typed again.
+  const [naming, setNaming] = useState(effect.from !== undefined);
+  const named = weapons === undefined && (effect.from !== undefined || naming);
   const without = weapons === undefined ? [] : strings(weapons.without);
   return (
     <>
@@ -334,13 +342,14 @@ function WeaponFields({
           <Select
             aria-label={`${title}: Weapons`}
             value={named ? 'named' : 'kinds'}
-            onChange={(e) =>
+            onChange={(e) => {
+              setNaming(e.target.value === 'named');
               onChange(
                 e.target.value === 'named'
                   ? { ...omit(effect, ['weapons']), from: ['longsword'] }
                   : { ...omit(effect, ['from']), weapons: { filter: 'type=martial weapon' } },
-              )
-            }
+              );
+            }}
           >
             <option value="kinds">Of a kind</option>
             <option value="named">Named</option>
@@ -428,11 +437,14 @@ function OptionRows({
   onChange: (next: Eff) => void;
   gives: (p: GivesProps) => ReactNode;
 }) {
+  const versions = useContext(EntryVersions);
   const options = Array.isArray(effect.options) ? effect.options : [];
   const setAt = (i: number, next: unknown) =>
     onChange({ ...effect, options: options.map((o, j) => (j === i ? next : o)) });
   const add = () => {
-    const ids = new Set(options.map((o) => (isRecord(o) ? String(o.id).toLowerCase() : '')));
+    // One its pick's options have, or had: an answer saved for it stays its own.
+    const ids = optionIdsIn(versions(), String(effect.id));
+    for (const o of options) if (isRecord(o)) ids.add(String(o.id).toLowerCase());
     let n = options.length + 1;
     while (ids.has(`option-${n}`)) n += 1;
     onChange({ ...effect, options: [...options, { id: `option-${n}`, label: `Option ${n}` }] });
@@ -518,8 +530,10 @@ export function PickFields({
   onChange: (next: Eff) => void;
   gives: (p: GivesProps) => ReactNode;
 }) {
+  // Once shown, the Id box stays while its id is typed.
+  const [idOpen, setIdOpen] = useState(false);
   const ask = String(effect.ask);
-  if (ask === 'weaponMastery') {
+  if (KEPT_ASKS.has(ask)) {
     return (
       <Kept label="Weapon Mastery">a class's, asked as its class table says: kept as written</Kept>
     );
@@ -528,7 +542,7 @@ export function PickFields({
   const asks: Options = known ? ASKS : [...ASKS, [ask, `${ask}, as written`]];
   const count = countBox(effect);
   const id = typeof effect.id === 'string' ? effect.id : '';
-  const showId = !PICK_ID.test(id) || problems.some(idProblem);
+  const showId = idOpen || !PICK_ID.test(id) || problems.some(idProblem);
   const inPlace = strings(effect.inPlaceOf);
   const always = Array.isArray(effect.always) ? effect.always.length : 0;
   const givesAll = Array.isArray(effect.givesAll) ? effect.givesAll.length : 0;
@@ -567,7 +581,7 @@ export function PickFields({
           <input
             aria-label={`${title}: Prompt words`}
             value={typeof effect.label === 'string' ? effect.label : ''}
-            placeholder={PROMPTS[ask] ?? 'Choose'}
+            placeholder={promptWords(ask, effect.count)}
             onChange={(e) =>
               onChange(
                 e.target.value === ''
@@ -584,7 +598,10 @@ export function PickFields({
               aria-label={`${title}: Id`}
               value={id}
               placeholder="favoured-tool"
-              onChange={(e) => onChange({ ...effect, id: e.target.value })}
+              onChange={(e) => {
+                setIdOpen(true);
+                onChange({ ...effect, id: e.target.value });
+              }}
               className={fieldClass}
             />
           </Field>

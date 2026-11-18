@@ -508,8 +508,8 @@ function Editor({
           className={fieldClass}
         />
       </Field>
-      {/* A pick added anywhere in the entry takes an id none of its picks has. */}
-      <EntryPicks draft={draft} original={original}>
+      {/* A pick added anywhere in the entry takes an id none of its picks has, nor had. */}
+      <EntryPicks draft={draft} before={[subject.draft, clean, original]}>
         <Body
           draft={draft}
           change={change}

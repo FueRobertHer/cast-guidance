@@ -25,8 +25,8 @@ import { askChoice } from '@/ui/dialogs';
 import { fieldClass } from '@/ui/TextField';
 import type { EditorProps } from './editorTypes';
 import { ABILITY_WORDS, Field, Section, Select } from './fields';
-import { NEW_PICK, PickFields } from './PickFields';
-import { EntryPickIds, freshPickId, pickIdsIn } from './pickIds';
+import { KEPT_ASKS, NEW_PICK, PickFields } from './PickFields';
+import { EntryVersions, freshPickId, pickIdsIn } from './pickIds';
 
 type Eff = StoredEffect;
 type Options = ReadonlyArray<readonly [string, string]>;
@@ -946,6 +946,43 @@ function repaid(price: Price | undefined, resource: string): Price {
   return { ...rest, resource, amount: one || rest.amount === undefined ? 1 : rest.amount };
 }
 
+/** The lists of what a pick gives, each by its place: "gives", "givesAll", "options 2 gives". */
+function givenLists(x: Eff): Array<readonly [string, readonly unknown[]]> {
+  if (x.kind !== 'pick') return [];
+  const options = Array.isArray(x.options) ? x.options : [];
+  return [
+    ...(['gives', 'givesAll'] as const).flatMap((k) =>
+      Array.isArray(x[k]) ? [[k, x[k] as unknown[]] as const] : [],
+    ),
+    ...options.flatMap((o, n) =>
+      isRecord(o) && Array.isArray(o.gives) ? [[`options ${n} gives`, o.gives] as const] : [],
+    ),
+  ];
+}
+
+/** A pick's lists of what it gives (`givenLists`), each effect `g` turned by `turn`. */
+function regiven(
+  x: Eff,
+  turn: (g: unknown, at: string, k: number) => unknown,
+): Partial<Record<'gives' | 'givesAll' | 'options', unknown>> {
+  if (x.kind !== 'pick') return {};
+  const each = (list: unknown, at: string) =>
+    Array.isArray(list) ? list.map((g, k) => turn(g, at, k)) : list;
+  return {
+    ...(x.gives === undefined ? {} : { gives: each(x.gives, 'gives') }),
+    ...(x.givesAll === undefined ? {} : { givesAll: each(x.givesAll, 'givesAll') }),
+    ...(Array.isArray(x.options)
+      ? {
+          options: x.options.map((o, n) =>
+            isRecord(o) && o.gives !== undefined
+              ? { ...o, gives: each(o.gives, `options ${n} gives`) }
+              : o,
+          ),
+        }
+      : {}),
+  };
+}
+
 /** A price's fields that name a pool, for its cost and its buy-back. */
 const PRICE_KEYS = [
   ['cost', ['resource', 'slotRefills']],
@@ -1796,15 +1833,18 @@ function Card({
   const line = ((s: string) => (inPick ? pickedWords(s) : s))(spec?.line(effect) ?? effect.kind);
   // A pick's cards of what it gives say their own problems; the rest are the card's.
   const own =
-    effect.kind === 'pick' && editable
+    effect.kind === 'pick' && editable && !KEPT_ASKS.has(String(effect.ask))
       ? problems.filter((p) => !/^"(gives|options\.\d+\.gives)": effect \d+/.test(p))
       : problems;
   const paidRoll = effect.kind === 'rollPaid' || effect.kind === 'rollReroll';
   // One of each key: a pool given once for each rules version (`edition`) is one
   // pool, the card's own or one kept elsewhere (a class's).
-  const resources = [...list.filter((x) => x.kind === 'resource'), ...pools].filter(
-    (x, i, all) => typeof x.key === 'string' && all.findIndex((y) => y.key === x.key) === i,
-  );
+  // In what a pick gives, a pool named for the one picked is said so (`pickedWords`).
+  const resources = [...list.filter((x) => x.kind === 'resource'), ...pools]
+    .filter((x, i, all) => typeof x.key === 'string' && all.findIndex((y) => y.key === x.key) === i)
+    .map((x) =>
+      inPick && typeof x.label === 'string' ? { ...x, label: pickedWords(x.label) } : x,
+    );
   const state = typeof effect.while === 'string' ? effect.while : '';
   const edition = editionOf(effect);
   const set = (f: FieldSpec, text: string) => {
@@ -2208,7 +2248,7 @@ export function EffectCards({
   const amends: Eff[] = Array.isArray(amend) ? (amend as Eff[]) : [];
   const inPick = fills !== undefined;
   const problems = inPick ? pickGivesProblems(list, fills) : readStoredEffects(list).problems;
-  const entryPickIds = useContext(EntryPickIds);
+  const versions = useContext(EntryVersions);
   const problemsOf = (i: number) =>
     problems
       .filter((p) => p.startsWith(`effect ${i + 1}:`) || p.startsWith(`effect ${i + 1} (`))
@@ -2228,9 +2268,12 @@ export function EffectCards({
    * pool for the other rules version, `edition`), the uses a spell is cast
    * with, and on an action or a price on what a copy inherits (`priced`), its
    * cost (and the points a slot gives back), what buys a use back and the use
-   * it gives back.
+   * it gives back. A pick's are those of what it gives, its options' too.
    */
   const naming = (x: Eff, place: string, from: string, priced = x.kind === 'action'): string[] => [
+    ...givenLists(x).flatMap(([at, given]) =>
+      given.flatMap((g, k) => (isRecord(g) ? naming(g as Eff, `${place} ${at} ${k}`, from) : [])),
+    ),
     ...(x.kind === 'resource' && x.key === from ? [`${place} key`] : []),
     ...(x.kind === 'grantSpell' && x.resourceKey === from ? [`${place} resourceKey`] : []),
     ...PRICE_KEYS.flatMap(([key, fields]) => {
@@ -2263,6 +2306,7 @@ export function EffectCards({
           ]);
     const renamed = (x: Eff, place: string): Eff => ({
       ...x,
+      ...regiven(x, (g, at, k) => (isRecord(g) ? renamed(g as Eff, `${place} ${at} ${k}`) : g)),
       ...(at.has(`${place} key`) ? { key: to, label: next.label } : {}),
       ...(at.has(`${place} resourceKey`) ? { resourceKey: to } : {}),
       ...Object.assign(
@@ -2284,9 +2328,7 @@ export function EffectCards({
     const made = spec.make();
     // A new pick takes an id none of the entry's picks has, so each is asked.
     const next =
-      made.kind === 'pick'
-        ? { ...made, id: freshPickId(new Set([...pickIdsIn(list), ...entryPickIds()])) }
-        : made;
+      made.kind === 'pick' ? { ...made, id: freshPickId(pickIdsIn([list, ...versions()])) } : made;
     onChange([...list, next]);
   };
   const more = async () => {

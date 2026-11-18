@@ -1345,7 +1345,7 @@ const SAMPLE_SPELL: PickFill = {
 };
 
 /** An answer of each ask, to check a pick's stored effects read with one filled in. */
-export function sampleFills(ask: PickAsk): PickFill[] {
+function sampleFills(ask: PickAsk): PickFill[] {
   switch (ask) {
     case 'skill':
       return [{ pick: 'Athletics' }];
@@ -1363,6 +1363,22 @@ export function sampleFills(ask: PickAsk): PickFill[] {
     case 'spell':
       return [SAMPLE_SPELL];
   }
+}
+
+/**
+ * The answers what a pick gives is checked with: each option's id (else an
+ * answer of the ask), and each name it takes in place of. The reader and the
+ * Workshop's cards check with these alike.
+ */
+export function pickSamples(
+  ask: PickAsk,
+  optionIds: readonly string[],
+  inPlaceOf: readonly string[] = [],
+): PickFill[] {
+  return [
+    ...(ask === 'option' ? optionIds.map((pick) => ({ pick })) : sampleFills(ask)),
+    ...inPlaceOf.map((pick) => ({ pick })),
+  ];
 }
 
 /**
@@ -1401,7 +1417,12 @@ function pickGives(
 export function pickGivesProblems(raw: unknown, fills: readonly PickFill[]): string[] {
   const how: HowRead = { strict: false, builtIn: false, inPick: true };
   return [
-    ...new Set(fills.flatMap((f) => readStoredEffects(filled(raw, f), 'gives', how).problems)),
+    ...new Set(
+      // `{picks}` is filled in what the picks give together alone, as the reader fills it.
+      fills.flatMap(
+        ({ picks: _, ...f }) => readStoredEffects(filled(raw, f), 'gives', how).problems,
+      ),
+    ),
   ];
 }
 
@@ -1556,10 +1577,11 @@ function readPick(raw: Record<string, unknown>, how: HowRead): EffectTemplate {
   mark(raw, r, 'gives');
   mark(raw, r, 'givesAll');
   mark(raw, r, 'always');
-  const samples: PickFill[] = [
-    ...(ask === 'option' ? (options ?? []).map((o) => ({ pick: o.id })) : sampleFills(ask)),
-    ...(inPlaceOf ?? []).map((pick) => ({ pick })),
-  ];
+  const samples = pickSamples(
+    ask,
+    (options ?? []).map((o) => o.id),
+    inPlaceOf,
+  );
   // `{picks}` is filled in what the picks give together alone.
   const gives =
     own(raw, 'gives') === undefined

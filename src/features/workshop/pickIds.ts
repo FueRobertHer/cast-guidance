@@ -1,9 +1,12 @@
 /**
- * The ids of a Workshop entry's picks. A pick's prompt is filed under the
- * entry it is asked for (a class's, for each of its features), so two picks
- * of one entry under one id would share one answer: the sheet asks the second
- * of them never. A new Pick card takes an id none of the entry's picks has,
- * and keeps it, since the answers saved for it are filed under it.
+ * The ids of a Workshop entry's picks and of their options. A pick's prompt is
+ * filed under the entry it is asked for (a class's, for each of its features),
+ * so two picks of one entry under one id would share one answer: the sheet
+ * asks the second of them never. A new Pick card takes an id none of the
+ * entry's picks has, nor had in a version the editor knows of, and keeps it,
+ * since the answers saved for it are filed under it. A new option likewise
+ * takes an id its pick's options never had, so an answer saved for one taken
+ * out is not read as the new one.
  */
 import { createContext, createElement, type ReactNode } from 'react';
 import { isRecord } from '@/engine/castGuidance';
@@ -19,27 +22,37 @@ export function pickIdsIn(v: unknown, out = new Set<string>()): Set<string> {
   return out;
 }
 
-/**
- * The pick ids the entry being edited holds, its original's too, which its
- * editor gives the cards it holds. Read when a pick is added, not on each change.
- */
-export const EntryPickIds = createContext<() => ReadonlySet<string>>(() => new Set());
+/** The ids, lower case, of the options of each pick in `v` whose id is `pick`. */
+export function optionIdsIn(v: unknown, pick: string, out = new Set<string>()): Set<string> {
+  if (Array.isArray(v)) {
+    for (const x of v) optionIdsIn(x, pick, out);
+  } else if (isRecord(v)) {
+    if (v.kind === 'pick' && v.id === pick && Array.isArray(v.options)) {
+      for (const o of v.options) if (isRecord(o)) out.add(String(o.id).toLowerCase());
+    }
+    for (const x of Object.values(v)) optionIdsIn(x, pick, out);
+  }
+  return out;
+}
 
-/** The cards of an entry being edited (`draft`, made from `original`), told its picks' ids. */
+/**
+ * The versions of the entry being edited its cards are told of: as it stands,
+ * as it opened, as last saved, and the original a copy is made from. Read
+ * when a pick or an option is added, not on each change.
+ */
+export const EntryVersions = createContext<() => readonly unknown[]>(() => []);
+
+/** The cards of an entry being edited (`draft`), told of the versions it was `before`. */
 export function EntryPicks({
   draft,
-  original,
+  before = [],
   children,
 }: {
   draft: unknown;
-  original?: unknown;
+  before?: readonly unknown[];
   children: ReactNode;
 }) {
-  return createElement(
-    EntryPickIds.Provider,
-    { value: () => pickIdsIn([draft, original]) },
-    children,
-  );
+  return createElement(EntryVersions.Provider, { value: () => [draft, ...before] }, children);
 }
 
 /** A new pick's id: "choice", else "choice-2" and on, one that none in `taken` has. */

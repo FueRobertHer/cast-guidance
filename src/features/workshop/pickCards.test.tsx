@@ -27,7 +27,7 @@ vi.mock('@/ui/dialogs', () => ({
 import { moreKinds } from './EffectCards';
 import { editor as feat } from './editors/FeatEditor';
 import type { Json } from './editorTypes';
-import { EntryPickIds, EntryPicks } from './pickIds';
+import { EntryPicks, EntryVersions } from './pickIds';
 
 afterEach(cleanup);
 
@@ -45,9 +45,9 @@ function withCards(effects: Json[], taken: readonly string[] = []) {
         return next;
       });
     return (
-      <EntryPickIds.Provider value={() => new Set(taken)}>
+      <EntryVersions.Provider value={() => [taken.map((id) => ({ kind: 'pick', id }))]}>
         <feat.Body draft={draft} change={change} registry={new EntityRegistry()} readOnly={false} />
-      </EntryPickIds.Provider>
+      </EntryVersions.Provider>
     );
   }
   render(
@@ -164,20 +164,14 @@ describe('a new pick’s id', () => {
     expect(effects()[1]?.id).toBe('choice-4');
   });
 
-  it("is one none of the entry's parts has, as the Workshop page tells its cards", async () => {
-    const lore = { kind: 'pick', id: 'choice', ask: 'skill', gives: [SKILL] };
-    const part = {
-      type: 'entries',
-      name: 'Lore',
-      entries: [],
-      castGuidance: { v: 1, effects: [lore] },
-    };
+  /** The feat editor as the Workshop page shows it: `start`, made from `original`. */
+  function withEntry(start: Json, before: Json[] = []) {
     let latest: Json = {};
     function Harness() {
-      const [draft, setDraft] = useState<Json>({ name: 'Gift', ...feat.blank(), entries: [part] });
+      const [draft, setDraft] = useState<Json>({ name: 'Gift', ...feat.blank(), ...start });
       latest = draft;
       return (
-        <EntryPicks draft={draft}>
+        <EntryPicks draft={draft} before={before}>
           <feat.Body
             draft={draft}
             change={(patch) => setDraft((d) => ({ ...d, ...patch }))}
@@ -192,12 +186,27 @@ describe('a new pick’s id', () => {
         <Harness />
       </MemoryRouter>,
     );
+    return () => ((latest.castGuidance as Json | undefined)?.effects ?? []) as Json[];
+  }
+  const lore = { kind: 'pick', id: 'choice', ask: 'skill', gives: [SKILL] };
+
+  it("is one none of the entry's parts has, as the Workshop page tells its cards", async () => {
+    const part = {
+      type: 'entries',
+      name: 'Lore',
+      entries: [],
+      castGuidance: { v: 1, effects: [lore] },
+    };
+    const effects = withEntry({ entries: [part] });
     // A file's part holds a pick a feat's editor shows no card for: its id is still taken.
-    choice.current = 'Pick';
-    press('More');
-    await screen.findByLabelText('Pick: Asks for');
-    const own = ((latest.castGuidance as Json).effects as Json[])[0];
-    expect(own?.id).toBe('choice-2');
+    await addPick();
+    expect(effects()[0]?.id).toBe('choice-2');
+  });
+
+  it('is one the entry it was made from has not, so answers saved for a pick taken out stay its own', async () => {
+    const effects = withEntry({}, [{ name: 'Gift', castGuidance: { v: 1, effects: [lore] } }]);
+    await addPick();
+    expect(effects()[0]?.id).toBe('choice-2');
   });
 
   it('stays as it is whatever else changes, so the answers saved for it keep', async () => {
@@ -207,6 +216,33 @@ describe('a new pick’s id', () => {
     pick('Pick: Prompt words', 'A sturdy save');
     pick('Pick: Asks for', 'option');
     expect(effects()[0]?.id).toBe('choice');
+  });
+
+  it('keeps its box while a new id is typed, though the first letter is one the reader takes', () => {
+    const effects = withCards([{ kind: 'pick', id: '', ask: 'skill', gives: [SKILL] }]);
+    fireEvent.change(screen.getByLabelText('Pick: Id'), { target: { value: 'f' } });
+    fireEvent.change(screen.getByLabelText('Pick: Id'), { target: { value: 'favoured-tool' } });
+    expect(effects()[0]?.id).toBe('favoured-tool');
+    expect(problems(effects())).toEqual([]);
+  });
+
+  it('gives a new option an id its pick never had, so one taken out keeps its answers', async () => {
+    const was = {
+      kind: 'pick',
+      id: 'choice',
+      ask: 'option',
+      options: [
+        { id: 'option-1', label: 'Climber' },
+        { id: 'option-2', label: 'Swimmer' },
+      ],
+    };
+    const effects = withEntry({ castGuidance: { v: 1, effects: [was] } }, [
+      { castGuidance: { v: 1, effects: [was] } },
+    ]);
+    press('Remove option Swimmer');
+    press('Add an option');
+    expect((effects()[0]?.options as Json[]).map((o) => o.id)).toEqual(['option-1', 'option-3']);
+    expect(problems(effects())).toEqual([]);
   });
 
   it('shows a box to fix one the reader does not take, or one another pick has', () => {
@@ -352,6 +388,19 @@ describe('the Pick card, each ask', () => {
     expect(kinds.pending[0]?.options.length).toBeGreaterThan(0);
   });
 
+  it('keeps a named weapon list named while it is emptied to be typed again', async () => {
+    const effects = withCards([]);
+    await addPick();
+    pick('Pick: Asks for', 'weapon');
+    pick('Pick: Weapons', 'named');
+    pick('Pick: From', '');
+    expect(box('Pick: Weapons').value).toBe('named');
+    pick('Pick: From', 'rapier');
+    expect(effects()[0]).toMatchObject({ ask: 'weapon', from: ['rapier'] });
+    expect(effects()[0]).not.toHaveProperty('weapons');
+    expect(problems(effects())).toEqual([]);
+  });
+
   it('asks for a saving throw from abilities, in place of one held', async () => {
     const e = await walk([
       ['to a save', () => pick('Pick: Asks for', 'save')],
@@ -480,6 +529,23 @@ describe('the Pick card, each ask', () => {
       expect.objectContaining({ kind: 'moveSpeed', mode: 'swim' }),
     ]);
   });
+
+  it('keeps one option at least, and one giving nothing holds no list of what it gives', async () => {
+    const effects = withCards([]);
+    await addPick();
+    pick('Pick: Asks for', 'option');
+    choice.current = 'Skill';
+    press('Add to what option 1 gives');
+    await screen.findByLabelText('Option 1 gives: Skill: Skill');
+    press('Remove Proficiency in Perception');
+    const [first] = (effects()[0]?.options ?? []) as Json[];
+    expect(first).toEqual({ id: 'option-1', label: 'Option 1' });
+    expect(problems(effects())).toEqual([]);
+    press('Remove option Option 2');
+    expect(screen.queryByRole('button', { name: /^Remove option/ })).toBeNull();
+    expect(effects()[0]?.options).toEqual([{ id: 'option-1', label: 'Option 1' }]);
+    expect(problems(effects())).toEqual([]);
+  });
 });
 
 describe('turning a pick to another ask', () => {
@@ -532,6 +598,89 @@ describe('what each pick gives', () => {
     ]);
   });
 
+  it('offers the one picked to a card added for a skill or a damage type', async () => {
+    withCards([]);
+    await addPick();
+    choice.current = 'Skill';
+    press('Add to what each pick gives');
+    await screen.findByText('Proficiency in Perception');
+    const [, added] = screen.getAllByLabelText('Each pick gives: Skill: Skill');
+    expect([...(added as HTMLSelectElement).options].map((o) => o.value)).toContain('{pick}');
+    cleanup();
+    withCards([]);
+    await addPick();
+    pick('Pick: Asks for', 'damage');
+    choice.current = 'Resistance';
+    press('Add to what each pick gives');
+    await screen.findByText('Resistance to fire damage');
+    const [, kind] = screen.getAllByLabelText('Each pick gives: Resistance: Kind');
+    fireEvent.change(kind as HTMLSelectElement, { target: { value: 'vulnerable' } });
+    const [, damage] = screen.getAllByLabelText('Each pick gives: Resistance: Damage');
+    expect([...(damage as HTMLSelectElement).options].map((o) => o.value)).toContain('{pick}');
+  });
+
+  it('shows the one picked where a file gives it, though the ask is another', () => {
+    // A tool pick giving a skill of the same name: the reader takes any skill.
+    withCards([{ kind: 'pick', id: 'choice', ask: 'tool', gives: [SKILL] }]);
+    expect(box('Each pick gives: Skill: Skill').value).toBe('{pick}');
+    expect(misshown()).toEqual([]);
+  });
+
+  it('follows a pool renamed into a spell a pick gives to cast with its uses', () => {
+    const pool = { kind: 'resource', key: 'uses', label: 'Uses', max: 1, reset: 'long' };
+    const cast = { kind: 'grantSpell', spell: '{pick}', resourceKey: 'uses', usage: '1/day' };
+    const spell = { kind: 'pick', id: 'choice', ask: 'spell', spells: { levels: [1] } };
+    const effects = withCards([
+      pool,
+      { ...spell, gives: [cast] },
+      { ...spell, id: 'charm', ask: 'option', options: [{ id: 'a', label: 'A', gives: [cast] }] },
+    ]);
+    fireEvent.change(screen.getByLabelText('Uses per rest: Name'), { target: { value: 'Charms' } });
+    expect(effects()[1]?.gives).toEqual([{ ...cast, resourceKey: 'charms' }]);
+    expect((effects()[2]?.options as Json[])[0]?.gives).toEqual([
+      { ...cast, resourceKey: 'charms' },
+    ]);
+    expect(misshown()).toEqual([]);
+  });
+
+  it("says what a Weapon Mastery pick's gives cannot be read for, kept as written", () => {
+    withCards([
+      { kind: 'pick', id: 'wm', ask: 'weaponMastery', count: 1, gives: [{ kind: 'bogus' }] },
+    ]);
+    expect(screen.getByText(/"gives": effect 1 \(bogus\)/)).toBeTruthy();
+  });
+
+  it('checks what each pick gives as the reader does, with the picks together left out', () => {
+    const effects = withCards([
+      {
+        kind: 'pick',
+        id: 'choice',
+        ask: 'spell',
+        spells: { levels: [1] },
+        gives: [
+          { kind: 'grantSpell', spell: '{pick}' },
+          { kind: 'cue', tone: 'info', text: '{picks}' },
+        ],
+      },
+    ]);
+    expect(problems(effects())).toEqual([]);
+    expect(screen.queryByText(/This does not count yet/)).toBeNull();
+  });
+
+  it('suggests the prompt words the sheet shows when it names none', async () => {
+    withCards([]);
+    await addPick();
+    const words = () =>
+      (screen.getByLabelText('Pick: Prompt words') as HTMLInputElement).placeholder;
+    expect(words()).toBe('Skill proficiency');
+    pick('Pick: How many', '2');
+    expect(words()).toBe('Skill proficiencies');
+    pick('Pick: Asks for', 'save');
+    expect(words()).toBe("The feature's name: saving throw");
+    pick('Pick: Asks for', 'damage');
+    expect(words()).toBe("The feature's name");
+  });
+
   it('offers no one picked where it does not fit: a skill is not an ability', async () => {
     withCards([]);
     await addPick();
@@ -573,6 +722,25 @@ describe('a shipped pick on a card', () => {
       pick('Pick: Rules', '2014');
       pick('Pick: Rules', '');
       expect(effects(), key).toEqual([effect]);
+      cleanup();
+    }
+  });
+
+  it('keeps a pool a pick gives as written, its words said for the one picked', () => {
+    const pooled = shipped.filter(
+      ({ effect }) =>
+        Array.isArray(effect.gives) &&
+        effect.gives.some((g) => (g as Json | undefined)?.kind === 'resource'),
+    );
+    expect(pooled.map(({ key }) => key)).toEqual(['signature spells|wizard']);
+    for (const { effect } of pooled) {
+      withCards([effect]);
+      expect(screen.getAllByText('Kept as written')).toHaveLength(1);
+      expect(screen.queryAllByLabelText(/^Each pick gives: Uses per rest/)).toEqual([]);
+      expect(document.body.textContent).toMatch(/the one picked/);
+      // Its spell is cast with the pool's uses, said for the one picked.
+      expect(screen.getAllByText('Spending 1 use of the one picked').length).toBeGreaterThan(0);
+      expect(document.body.textContent).not.toMatch(/\{pick\.(slug|title)\}/);
       cleanup();
     }
   });
