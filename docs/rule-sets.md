@@ -1,8 +1,8 @@
 # Built-in rule sets
 
 A built-in rule set is data the app ships in place of code: rows of effects
-that hold what were the engine's hard-coded mechanics tables, all of which are
-gone (the rule pack port, below). It holds five parts: `curated`, which holds
+that hold what were the engine's hard-coded mechanics tables, and the tables
+these parts replaced are gone (the rule pack port, below). It holds five parts: `curated`, which holds
 what was `CURATED`; `standing`, which holds what was `STANDING`;
 `rollAdvantage`, which holds what was the advantage table, `ROLL_ADVANTAGES`;
 `rollExtra`, which holds what was `ROLL_EXTRAS`; and `spend`, which holds what
@@ -696,9 +696,10 @@ row the reader leaves anything out of.
    nothing, and when that changes nothing, its zero proves nothing for those
    keys (for a spend row, no paid extra is priced as its action).
 
-Every row came out of a code table (rule pack port phases 0 to 4), proved by
-the tools under "Proving a move out of code", below, and the tables, their
-lookups and the call sites' fallback to them are gone.
+Every row but the few written new (Tasha's Roving, above) came out of a code
+table (rule pack port phases 0 to 4), proved by the tools under "Proving a
+move out of code", below, and the tables, their lookups and the call sites'
+fallback to them are gone.
 
 The stored effect format is the one rule packs use, so a row that needs a field
 the format lacks widens the format for players too: `dcAbility: "strOrDex"` (a

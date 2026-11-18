@@ -180,7 +180,7 @@ describe('Disarming Attack, an optional feature row', () => {
     const expected = [['none', 'str', 12, 'superiority-dice']];
     expect(maneuver('disarming attack|phb')).toEqual(expected);
     expect(maneuver('knock loose|hb')).toEqual(expected);
-    // The 2024 printing's row is still in code.
+    // The 2024 printing's row, a row of its own.
     expect(maneuver('disarming attack|xphb')).toEqual(expected);
   });
 });

@@ -460,9 +460,9 @@ export interface RulePackEntry {
 
 /**
  * The registry type the app's own rule sets reach the engine as (`src/rules/`,
- * loaded by `data5e/builtInRules.ts`). Their rows stand in for the code tables
- * in `engine/curated/` at layer 3 of the seam, what an entry inherits, so a
- * player's pack and an entry's own mechanics still come first. See
+ * loaded by `data5e/builtInRules.ts`). Their rows sit at layer 3 of the seam,
+ * what an entry inherits, so a player's pack and an entry's own mechanics
+ * still come first. See
  * `docs/rule-sets.md`.
  */
 export const RULE_SET_TYPE = 'ruleSet';
@@ -472,9 +472,10 @@ export const RULE_SET_TYPE = 'ruleSet';
  * under its curated keys (`docs/rule-sets.md`): a feat or optional feature by
  * `name|source`, a class feature by `name|class`, a subclass feature by
  * `name|subclass full name`, a species trait by `trait:<name>`, a class by
- * `class:<name|source>`. `standing` is defenses, senses and speeds a feature
- * adds beside what its prose scan or curated row reads, found under the same
- * keys. `rollAdvantage` and `rollExtra` are what a
+ * `class:<name|source>`. `standing` is defenses, senses and speeds a class or
+ * subclass feature or an optional feature adds beside what its prose scan or
+ * curated row reads, found under its curated keys. `rollAdvantage` and
+ * `rollExtra` are what a
  * feature adds to the character's own d20 tests (the tables that were
  * `ROLL_ADVANTAGES` and `ROLL_EXTRAS`), found under the roll keys, which name
  * the book: `brave|phb`, `feral instinct|barbarian|phb`. `spend` is what a
@@ -507,7 +508,7 @@ export const RULE_SET_LIMITS = {
 /** One row of a built-in rule set. */
 export interface StoredRuleRow {
   part: (typeof RULE_SET_PARTS)[number];
-  /** Lowercased keys, as the part's code table keys its rows: `stunning strike|monk`. */
+  /** Lowercased keys, as the part's call sites look rows up: `stunning strike|monk`. */
   keys: string[];
   /** `curated` rows only. Absent: `replace`, as a curated row does. */
   scan?: (typeof RULE_SET_SCANS)[number];

@@ -2145,7 +2145,7 @@ function patchesFor(col: Collector): Map<string, PackPatches> {
 // Built-in rule sets
 // ---------------------------------------------------------------------------
 
-/** The code table a built-in row stands in for (`RULE_SET_PARTS`). */
+/** The part a built-in row belongs to (`RULE_SET_PARTS`). */
 export type RulePart = (typeof RULE_SET_PARTS)[number];
 
 /** Whether a built-in row turns the prose scan off for its entry (`replace`) or runs beside it. */
@@ -2154,7 +2154,7 @@ export type RuleScan = (typeof RULE_SET_SCANS)[number];
 /** One built-in row, read. */
 export interface RuleRow {
   part: RulePart;
-  /** Lowercased, as the part's code table keys its rows. */
+  /** Lowercased, as the part's call sites look rows up. */
   keys: readonly string[];
   /** Only a `curated` row may turn the scan off; every other part's runs beside it: `keep`. */
   scan: RuleScan;
