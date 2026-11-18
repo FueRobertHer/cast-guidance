@@ -110,8 +110,13 @@ const prompt = (col: Collector) => col.pending.find((p) => p.label === 'Weapon M
 
 describe('the 2024 Weapon Mastery', () => {
   it("counts the kinds by the class table's column", () => {
-    expect([1, 4, 10, 16].map((l) => prompt(masteryAt('Fighter', l))?.count)).toEqual([3, 4, 5, 6]);
-    expect([1, 4, 10].map((l) => prompt(masteryAt('Barbarian', l))?.count)).toEqual([2, 3, 4]);
+    // The level before each step too, so the table is read at the class's own level.
+    expect([1, 3, 4, 9, 10, 15, 16].map((l) => prompt(masteryAt('Fighter', l))?.count)).toEqual([
+      3, 3, 4, 4, 5, 5, 6,
+    ]);
+    expect([1, 3, 4, 9, 10].map((l) => prompt(masteryAt('Barbarian', l))?.count)).toEqual([
+      2, 2, 3, 3, 4,
+    ]);
   });
 
   it('counts two where the table has no column', () => {
