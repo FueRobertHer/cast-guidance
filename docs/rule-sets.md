@@ -9,8 +9,7 @@ what was `CURATED`; `standing`, which holds what was `STANDING`;
 were the spend links, `SPEND_LINKS` and `SLOT_LINKS` (`linkSpend` in
 `src/engine/curated/spendLinks.ts` reads it); and `wornTags`, which holds what
 was `ITEM_TAG_FIXES` (`src/rules/cast-guidance/items.json`, read in
-`src/engine/effects/item.ts`). The files live in `src/rules/`, one a part,
-but for `items.json`, which holds the item parts. (Source of truth: `readRuleSet` and `mechanicsOf` in
+`src/engine/effects/item.ts`). The files live in `src/rules/`, one a part. (Source of truth: `readRuleSet` and `mechanicsOf` in
 `src/engine/effects/mechanics.ts`, `src/data5e/builtInRules.ts`.)
 
 218 rows have moved (`src/rules/cast-guidance/curated.json`), every `CURATED` row. Four came
@@ -239,8 +238,9 @@ the table is gone.
 - **`replaces`** (`wornTags` rows, at least one): the kinds of tag the row
   stands in for, of `resist`, `immune`, `vulnerable`, `conditionImmune` and
   `saveBonus` ("Worn tag rows", below). Its `effects` may only be of those
-  kinds. A row with a kind it does not know, a kind twice, or an effect of a
-  kind it does not replace is left out, and its keys stay free for a later row.
+  kinds. A row with a kind it does not know, a kind twice, an effect of a kind
+  it does not replace, or an effect it cannot read (which would take that
+  tag away unseen) is left out, and its keys stay free for a later row.
 - A row the reader cannot read is left out, and the rest still count. What it
   left out goes to the console once, not the sheet: the files are the app's, so
   a problem in one is a bug its tests catch, not something a player can fix.

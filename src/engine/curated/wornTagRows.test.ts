@@ -129,17 +129,32 @@ describe('the built-in worn tag rows', () => {
     });
   }
 
+  /** Every tag the fixture carries, on the sheet as the data says it. */
+  const everyTag = (sheet: ReturnType<typeof deriveSheet>) => {
+    expect(sheet.resists.map((r) => r.damageType)).toEqual(EVERY_TAG.resist);
+    expect(sheet.immunities.map((r) => r.damageType)).toEqual(EVERY_TAG.immune);
+    expect(sheet.vulnerabilities.map((r) => r.damageType)).toEqual(EVERY_TAG.vulnerable);
+    expect(sheet.conditionImmunities.map((c) => c.condition)).toEqual(EVERY_TAG.conditionImmune);
+    for (const a of ABILITIES) expect(sheet.saves[a].total.value, a).toBe(2);
+  };
+
   it('give nothing under a key no row names, which reads every tag', () => {
     const item: DataEntity = { name: 'Charm of Tests', source: 'TST', ...EVERY_TAG };
-    const sheet = deriveSheet(wearing(item), world([item]));
-    expect(sheet.resists.map((r) => r.damageType)).toEqual(['acid']);
-    expect(sheet.saves.wis.total.value).toBe(2);
+    everyTag(deriveSheet(wearing(item), world([item])));
   });
 
-  it('are read only by the item found: without the rule sets the tags stand', () => {
+  it('give nothing without the rule sets: the tags stand', () => {
     const item = fixtureFor('far gear|ai');
-    const sheet = deriveSheet(wearing(item), world([item], []));
-    expect(sheet.saves.str.total.value).toBe(2);
+    everyTag(deriveSheet(wearing(item), world([item], [])));
+  });
+
+  it("give nothing to a copy, whose tags are its author's", () => {
+    const copy: DataEntity = {
+      ...fixtureFor('far gear|ai'),
+      source: 'HB',
+      castGuidance: { v: 1, basedOn: 'far gear|ai' },
+    };
+    everyTag(deriveSheet(wearing(copy), world([copy])));
   });
 
   it('give a potion nothing, whose tags count once it is drunk', () => {
@@ -204,17 +219,26 @@ describe('a worn tag row, read', () => {
   it.each([
     ['no replaces', { replaces: undefined }, '"replaces" lists kinds of tag'],
     ['an empty list', { replaces: [] }, '"replaces" lists kinds of tag'],
-    ['a kind that is not a tag', { replaces: ['acBonus'] }, '"replaces" lists kinds of tag'],
+    [
+      'a kind that is not a tag',
+      { replaces: ['acBonus'] },
+      '"replaces": "acBonus" is not a kind of tag',
+    ],
     ['a kind twice', { replaces: ['resist', 'resist'] }, '"replaces" names "resist" twice'],
     [
       'an effect of a kind no tag is',
       { effects: [{ kind: 'acBonus', amount: 1 }] },
-      'a "acBonus" is not a kind of tag it replaces',
+      'an effect of kind "acBonus" is not a kind of tag it can replace',
     ],
     [
       'an effect of a kind it does not replace',
       { effects: [{ kind: 'immune', damageType: 'fire' }] },
       'gives a "immune" but does not replace that kind',
+    ],
+    [
+      'an effect it cannot read, which would take a tag away',
+      { effects: [{ kind: 'resist', damageType: 5 }] },
+      'an effect it cannot read would take a tag away',
     ],
   ])('leaves out a row with %s, and its keys stay free', (_, fields, problem) => {
     const set = read(row(fields), [row({ replaces: ['immune'] })]);

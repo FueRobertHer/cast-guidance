@@ -2324,7 +2324,8 @@ function readRuleSetOnce(raw: Record<string, unknown>): ReadRuleSet {
     });
     for (const problem of problems) read.problems.push(`${at}: ${problem}`);
     if (part === 'wornTags') {
-      const replaces = readReplaces(own(row, 'replaces'), effects);
+      const written = (own(row, 'effects') as unknown[]).length;
+      const replaces = readReplaces(own(row, 'replaces'), effects, written);
       for (const problem of replaces.problems) read.problems.push(`${at}: ${problem}`);
       // A row that cannot say what it stands in for would leave tags in place, or
       // take them out, unseen: it is left out, and its keys stay free.
@@ -2345,28 +2346,33 @@ function readRuleSetOnce(raw: Record<string, unknown>): ReadRuleSet {
 
 /**
  * A `wornTags` row's `replaces`: a list of distinct `WORN_TAG_KINDS`, which
- * every one of its effects is of. `kinds` is absent when the row cannot count.
+ * every one of its effects is of. `kinds` is absent when the row cannot count,
+ * as when an effect of its `written` ones could not be read: what it gives of a
+ * kind would be less than it says, and the item would lose that tag unseen.
  */
 function readReplaces(
   raw: unknown,
   effects: readonly EffectTemplate[],
+  written: number,
 ): { kinds?: WornTagKind[]; problems: string[] } {
   const named = `"replaces" lists kinds of tag: ${WORN_TAG_KINDS.join(', ')}`;
   if (!Array.isArray(raw) || raw.length === 0) return { problems: [named] };
   const kinds: WornTagKind[] = [];
   const problems: string[] = [];
   for (const k of raw) {
-    if (!isOneOf(WORN_TAG_KINDS, k)) problems.push(named);
+    if (!isOneOf(WORN_TAG_KINDS, k))
+      problems.push(`"replaces": "${clip(k)}" is not a kind of tag (${WORN_TAG_KINDS.join(', ')})`);
     else if (kinds.includes(k)) problems.push(`"replaces" names "${k}" twice`);
     else kinds.push(k);
   }
   for (const t of effects) {
     const kind = t.effect.kind;
     if (!isOneOf(WORN_TAG_KINDS, kind))
-      problems.push(`a "${kind}" is not a kind of tag it replaces`);
+      problems.push(`an effect of kind "${kind}" is not a kind of tag it can replace`);
     else if (!kinds.includes(kind))
       problems.push(`gives a "${kind}" but does not replace that kind`);
   }
+  if (effects.length < written) problems.push('an effect it cannot read would take a tag away');
   return problems.length > 0 ? { problems } : { kinds, problems };
 }
 
