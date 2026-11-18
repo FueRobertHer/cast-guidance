@@ -540,6 +540,9 @@ describe('charges that only actions spend', () => {
     expect(of(doc('b'), 'Mend')?.regains).toEqual({ resource: 'item-charges:b', amount: 1 });
     expect(of(doc('a'), 'Siphon')?.cost).toMatchObject({ slotRefills: 'item-charges:a' });
     expect(of(doc('b'), 'Siphon')?.cost).toMatchObject({ slotRefills: 'item-charges:b' });
-    expect(JSON.stringify(rod.castGuidance)).toContain('"slotRefills":"charges"');
+    // What the item says is left as it was written.
+    const said = JSON.stringify(rod.castGuidance);
+    expect(said).toContain('"slotRefills":"charges"');
+    expect(said).toContain('"regains":{"resource":"charges"');
   });
 });

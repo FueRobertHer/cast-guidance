@@ -658,6 +658,7 @@ describe('ItemEditor', () => {
       { kind: 'charges', charges: 3, regain: 'none' },
     ]);
     expect(draft()).not.toHaveProperty('recharge');
+    expect(draft()).not.toHaveProperty('rechargeAmount');
     expect(regains.selectedOptions[0]?.text).toBe('Never');
     expect([...regains.options].map((o) => o.text)).not.toContain('1d4 at dawn, as written');
     cleanup();
@@ -668,6 +669,34 @@ describe('ItemEditor', () => {
     });
     const all = screen.getByLabelText('Regains them') as HTMLSelectElement;
     expect(all.selectedOptions[0]?.text).toBe('All at dawn, as written');
+    cleanup();
+    // An empty recharge field is none, as the effect is made: what it says shows.
+    const blank = mount(item, {
+      name: 'Dusk Rod',
+      charges: 3,
+      recharge: '',
+      castGuidance: { v: 1, effects: [{ kind: 'charges', charges: 3, regain: '1d4' }] },
+    });
+    const dusk = screen.getByLabelText('Regains them') as HTMLSelectElement;
+    expect(dusk.selectedOptions[0]?.text).toBe('1d4 at dawn, as written');
+    // A time picked in its place keeps how many it says.
+    type('Regains them', 'dusk');
+    expect(blank()).toMatchObject({ recharge: 'dusk', rechargeAmount: '{@dice 1d4}' });
+    expect(screen.getByLabelText('How many')).toHaveProperty('value', '1d4');
+    expect((blank().castGuidance as Json).effects).toEqual([
+      { kind: 'charges', charges: 3, regain: '1d4' },
+    ]);
+    cleanup();
+    // Where the fields say it, a new time keeps their words.
+    const fields = mount(item, {
+      name: 'Field Rod',
+      charges: 3,
+      recharge: 'dawn',
+      rechargeAmount: '{@dice 1d6 + 1}',
+      castGuidance: { v: 1, effects: [{ kind: 'charges', charges: 3, regain: '1d6+1' }] },
+    });
+    type('Regains them', 'dusk');
+    expect(fields()).toMatchObject({ recharge: 'dusk', rechargeAmount: '{@dice 1d6 + 1}' });
   });
 
   it('ends a new number typed by way of an empty box, or of none, as typing it in place does', () => {

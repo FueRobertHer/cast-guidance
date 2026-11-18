@@ -631,6 +631,9 @@ function Charges(props: EditorProps) {
   // A file written by hand may say them in the effect alone.
   const n = draft.charges ?? counted?.charges;
   const charges = typeof n === 'number' ? n : undefined;
+  // The recharge the fields say; an empty one is none, as `regainOf` reads it.
+  const recharge =
+    typeof draft.recharge === 'string' && draft.recharge !== '' ? draft.recharge : undefined;
   // What comes back as the effect says it, shown while no recharge field says it.
   const handRegain =
     counted?.regain !== undefined && counted.regain !== 'none' ? counted.regain : undefined;
@@ -703,24 +706,22 @@ function Charges(props: EditorProps) {
         {charges !== undefined && (
           <KeptSelect
             label="Regains them"
-            value={
-              typeof draft.recharge === 'string'
-                ? draft.recharge
-                : handRegain !== undefined
-                  ? AS_WRITTEN
-                  : ''
-            }
+            value={recharge ?? (handRegain !== undefined ? AS_WRITTEN : '')}
             options={RECHARGE}
             shown={
-              typeof draft.recharge === 'string'
-                ? draft.recharge
-                : `${handRegain === 'all' ? 'All' : String(handRegain)} at dawn, as written`
+              recharge ?? `${handRegain === 'all' ? 'All' : String(handRegain)} at dawn, as written`
             }
             disabled={readOnly}
-            // A select sends no change for the option already chosen, so this
-            // only guards: what the effect says is never written as a recharge.
             onChange={(v) => {
-              if (v !== AS_WRITTEN) set({ recharge: v === '' ? undefined : v });
+              // A select sends no change for the option already chosen, so this
+              // only guards: what the effect says is never written as a recharge.
+              if (v === AS_WRITTEN) return;
+              // A time picked in its place keeps how many the effect says.
+              const carried =
+                v !== '' && recharge === undefined && handRegain !== undefined
+                  ? { rechargeAmount: rechargeValue(String(handRegain)) }
+                  : {};
+              set({ recharge: v === '' ? undefined : v, ...carried });
             }}
           />
         )}
