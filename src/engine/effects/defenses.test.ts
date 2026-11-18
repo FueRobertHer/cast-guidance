@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest';
+import { BUILT_IN_RULE_SETS } from '../../../tests-fixtures/testWorld';
+import { RULE_SET_TYPE } from '../castGuidance';
 import { heldOff } from '../conditions';
 import { deriveSheet } from '../derive';
 import {
@@ -9,7 +11,7 @@ import {
   newCharacterDoc,
 } from '../types';
 
-/** A context holding only the given entities, looked up by type and name. */
+/** A context holding only the given entities, looked up by type and name, and the built-in rules. */
 function world(entities: Array<DataEntity & { type_: string }>): EngineContext {
   return {
     get: (type, name, source) =>
@@ -19,7 +21,8 @@ function world(entities: Array<DataEntity & { type_: string }>): EngineContext {
           String(e.name).toLowerCase() === name.toLowerCase() &&
           (source === undefined || String(e.source).toLowerCase() === source.toLowerCase()),
       ),
-    byType: (type) => entities.filter((e) => e.type_ === type),
+    byType: (type) =>
+      type === RULE_SET_TYPE ? BUILT_IN_RULE_SETS : entities.filter((e) => e.type_ === type),
   };
 }
 

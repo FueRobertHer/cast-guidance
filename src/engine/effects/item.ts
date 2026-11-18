@@ -1,10 +1,10 @@
+import { WORN_TAG_KINDS } from '../castGuidance';
 import { ITEM_CHARGES, itemChargeKey } from '../curated/itemCharges';
-import { ITEM_TAG_FIXES } from '../curated/itemTags';
 import type { DataEntity, EffectOrigin } from '../types';
 import { refUid } from '../types';
 import { collectAdditionalSpells } from './additionalSpells';
 import { type Collector, str } from './base';
-import { mechanicsOf } from './mechanics';
+import { builtInRowsFor, emitRuleRows, mechanicsOf, type RuleRow } from './mechanics';
 
 export function itemTypeCode(e: DataEntity): string | undefined {
   const t = str(e.type);
@@ -62,29 +62,32 @@ const strings = (v: unknown): string[] =>
 
 /**
  * The defenses and save bonus an equipped item gives, once its magic works
- * (`magicWorks`), from its data tags as `ITEM_TAG_FIXES` corrects them. A
- * potion's last a while once it is drunk, so it gives none while carried.
+ * (`magicWorks`), from its data tags, kind by kind in `WORN_TAG_KINDS` order.
+ * A built-in `wornTags` row under the item's own `name|source` stands in for
+ * the kinds it `replaces`, its effects where the tags of that kind would be.
+ * A potion's last a while once it is drunk, so it gives none while carried.
  */
 function readWornTags(col: Collector, e: DataEntity, origin: EffectOrigin): void {
   if (itemTypeCode(e) === 'P') return;
-  const fix = ITEM_TAG_FIXES[refUid({ name: str(e.name) ?? '', source: str(e.source) ?? '' })];
-  for (const kind of ['resist', 'immune', 'vulnerable'] as const) {
-    for (const damageType of strings(fix?.[kind] ?? e[kind])) {
-      col.add({ kind, damageType, origin });
+  const key = refUid({ name: str(e.name) ?? '', source: str(e.source) ?? '' });
+  const row = builtInRowsFor(col, 'wornTags', [key])?.[0];
+  for (const kind of WORN_TAG_KINDS) {
+    if (row?.replaces?.includes(kind) === true) emitKind(col, row, kind, origin);
+    else if (kind === 'conditionImmune') {
+      for (const condition of strings(e.conditionImmune)) col.add({ kind, condition, origin });
+    } else if (kind === 'saveBonus') {
+      const amount = parseBonus(e.bonusSavingThrow);
+      if (amount !== 0) col.add({ kind, amount, origin });
+    } else {
+      for (const damageType of strings(e[kind])) col.add({ kind, damageType, origin });
     }
   }
-  for (const condition of strings(fix?.conditionImmune ?? e.conditionImmune)) {
-    col.add({ kind: 'conditionImmune', condition, origin });
-  }
-  const save = fix?.save !== undefined ? fix.save : { amount: parseBonus(e.bonusSavingThrow) };
-  if (save !== null && save.amount !== 0) {
-    col.add({
-      kind: 'saveBonus',
-      amount: save.amount,
-      ...(save.abilities !== undefined ? { abilities: [...save.abilities] } : {}),
-      origin,
-    });
-  }
+}
+
+/** A `wornTags` row's effects of one kind, in the row's order. */
+function emitKind(col: Collector, row: RuleRow, kind: string, origin: EffectOrigin): void {
+  const effects = row.effects.filter((t) => t.effect.kind === kind);
+  if (effects.length > 0) emitRuleRows(col, [{ ...row, effects }], origin);
 }
 
 /** Equipped-item effects that aren't armor/weapon math (handled in calc). */

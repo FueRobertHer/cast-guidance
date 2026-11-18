@@ -1,0 +1,164 @@
+{
+  "type": "ruleSet",
+  "v": 1,
+  "name": "Built-in item rules",
+  "edition": "both",
+  "rows": [
+    {
+      "part": "wornTags",
+      "keys": [
+        "deck of many more things|bmt",
+        "deck of wonder|bmt",
+        "moon card|bmt",
+        "muroosa balm|egw"
+      ],
+      "replaces": ["resist", "immune", "vulnerable", "conditionImmune", "saveBonus"],
+      "effects": []
+    },
+    {
+      "part": "wornTags",
+      "keys": ["ghost step tattoo|tce", "ring of red fury|crcotn"],
+      "replaces": ["conditionImmune"],
+      "effects": []
+    },
+    {
+      "part": "wornTags",
+      "keys": [
+        "ioun stone of vitality|imr",
+        "leather golem armor|llk",
+        "rod of alertness|dmg",
+        "rod of alertness|xdmg"
+      ],
+      "replaces": ["saveBonus"],
+      "effects": []
+    },
+    {
+      "part": "wornTags",
+      "keys": ["nightbringer|mcv2dc", "shield of the blazing dreadnought|bgg"],
+      "replaces": ["immune"],
+      "effects": []
+    },
+    {
+      "part": "wornTags",
+      "keys": ["mace of the black crown (awakened)|egw"],
+      "replaces": ["resist"],
+      "effects": [
+        {
+          "kind": "resist",
+          "damageType": "poison"
+        }
+      ]
+    },
+    {
+      "part": "wornTags",
+      "keys": ["mace of the black crown (dormant)|egw"],
+      "replaces": ["resist"],
+      "effects": []
+    },
+    {
+      "part": "wornTags",
+      "keys": ["netherese ring of protection|pabtso"],
+      "replaces": ["saveBonus"],
+      "effects": [
+        {
+          "kind": "saveBonus",
+          "amount": 1
+        }
+      ]
+    },
+    {
+      "part": "wornTags",
+      "keys": ["orcsplitter|pota"],
+      "replaces": ["conditionImmune"],
+      "effects": [
+        {
+          "kind": "conditionImmune",
+          "condition": "frightened"
+        }
+      ]
+    },
+    {
+      "part": "wornTags",
+      "keys": ["periapt of proof against poison|xdmg"],
+      "replaces": ["conditionImmune"],
+      "effects": [
+        {
+          "kind": "conditionImmune",
+          "condition": "poisoned"
+        }
+      ]
+    },
+    {
+      "part": "wornTags",
+      "keys": ["chronolometer|ai", "ioun stone, self-preservation|llk"],
+      "replaces": ["saveBonus"],
+      "effects": [
+        {
+          "kind": "saveBonus",
+          "amount": 1,
+          "abilities": ["int"]
+        }
+      ]
+    },
+    {
+      "part": "wornTags",
+      "keys": ["dimensional loop|ai"],
+      "replaces": ["saveBonus"],
+      "effects": [
+        {
+          "kind": "saveBonus",
+          "amount": 1,
+          "abilities": ["str"]
+        }
+      ]
+    },
+    {
+      "part": "wornTags",
+      "keys": ["far gear|ai"],
+      "replaces": ["saveBonus"],
+      "effects": [
+        {
+          "kind": "saveBonus",
+          "amount": 1,
+          "abilities": ["cha"]
+        }
+      ]
+    },
+    {
+      "part": "wornTags",
+      "keys": ["rotor of return|ai"],
+      "replaces": ["saveBonus"],
+      "effects": [
+        {
+          "kind": "saveBonus",
+          "amount": 1,
+          "abilities": ["con"]
+        }
+      ]
+    },
+    {
+      "part": "wornTags",
+      "keys": ["timepiece of travel|ai"],
+      "replaces": ["saveBonus"],
+      "effects": [
+        {
+          "kind": "saveBonus",
+          "amount": 1,
+          "abilities": ["dex"]
+        }
+      ]
+    },
+    {
+      "part": "wornTags",
+      "keys": ["wheel of stars|ai"],
+      "replaces": ["saveBonus"],
+      "effects": [
+        {
+          "kind": "saveBonus",
+          "amount": 1,
+          "abilities": ["wis"]
+        }
+      ]
+    }
+  ]
+}

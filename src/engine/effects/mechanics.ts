@@ -40,6 +40,7 @@ import {
   RULE_SET_PARTS,
   RULE_SET_SCANS,
   RULE_SET_TYPE,
+  WORN_TAG_KINDS,
 } from '../castGuidance';
 import { type Formula, readAmount } from '../formula';
 import { SPELL_SCHOOLS } from '../spellQuery';
@@ -2164,7 +2165,12 @@ export interface RuleRow {
   effects: readonly EffectTemplate[];
   /** `spend` rows only: the prices it puts on the feature's actions, in order. */
   links?: readonly SpendLinkRow[];
+  /** `wornTags` rows only: the kinds of the item's data tags its effects stand in for. */
+  replaces?: readonly WornTagKind[];
 }
+
+/** A kind of what an item's data tags give while worn (`WORN_TAG_KINDS`). */
+export type WornTagKind = (typeof WORN_TAG_KINDS)[number];
 
 /** A built-in rule set (`RULE_SET_TYPE` entry), read. */
 export interface ReadRuleSet {
@@ -2202,6 +2208,7 @@ const ROW_FIELDS: Record<RulePart, ReadonlySet<string>> = {
   rollAdvantage: LEVEL_ROW,
   rollExtra: LEVEL_ROW,
   spend: new Set(['part', 'keys', 'links']),
+  wornTags: new Set(['part', 'keys', 'replaces', 'effects']),
 };
 
 const isFeatureLevel = (v: unknown): v is number =>
@@ -2316,6 +2323,16 @@ function readRuleSetOnce(raw: Record<string, unknown>): ReadRuleSet {
       inPick: false,
     });
     for (const problem of problems) read.problems.push(`${at}: ${problem}`);
+    if (part === 'wornTags') {
+      const written = (own(row, 'effects') as unknown[]).length;
+      const replaces = readReplaces(own(row, 'replaces'), effects, written);
+      for (const problem of replaces.problems) read.problems.push(`${at}: ${problem}`);
+      // A row that cannot say what it stands in for would leave tags in place, or
+      // take them out, unseen: it is left out, and its keys stay free.
+      if (replaces.kinds === undefined) for (const key of keys) inPart.delete(slot(key));
+      else read.rows.push({ part, keys, scan, effects, replaces: replaces.kinds });
+      return;
+    }
     read.rows.push({
       part,
       keys,
@@ -2325,6 +2342,38 @@ function readRuleSetOnce(raw: Record<string, unknown>): ReadRuleSet {
     });
   });
   return read;
+}
+
+/**
+ * A `wornTags` row's `replaces`: a list of distinct `WORN_TAG_KINDS`, which
+ * every one of its effects is of. `kinds` is absent when the row cannot count,
+ * as when an effect of its `written` ones could not be read: what it gives of a
+ * kind would be less than it says, and the item would lose that tag unseen.
+ */
+function readReplaces(
+  raw: unknown,
+  effects: readonly EffectTemplate[],
+  written: number,
+): { kinds?: WornTagKind[]; problems: string[] } {
+  const named = `"replaces" lists kinds of tag: ${WORN_TAG_KINDS.join(', ')}`;
+  if (!Array.isArray(raw) || raw.length === 0) return { problems: [named] };
+  const kinds: WornTagKind[] = [];
+  const problems: string[] = [];
+  for (const k of raw) {
+    if (!isOneOf(WORN_TAG_KINDS, k))
+      problems.push(`"replaces": "${clip(k)}" is not a kind of tag (${WORN_TAG_KINDS.join(', ')})`);
+    else if (kinds.includes(k)) problems.push(`"replaces" names "${k}" twice`);
+    else kinds.push(k);
+  }
+  for (const t of effects) {
+    const kind = t.effect.kind;
+    if (!isOneOf(WORN_TAG_KINDS, kind))
+      problems.push(`an effect of kind "${kind}" is not a kind of tag it can replace`);
+    else if (!kinds.includes(kind))
+      problems.push(`gives a "${kind}" but does not replace that kind`);
+  }
+  if (effects.length < written) problems.push('an effect it cannot read would take a tag away');
+  return problems.length > 0 ? { problems } : { kinds, problems };
 }
 
 /** Rows by part, then by key: one row, or a `standing` key's rows at each level. */
