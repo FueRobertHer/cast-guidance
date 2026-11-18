@@ -401,3 +401,65 @@ describe('the spells its charges grant', () => {
     expect(grants(doc, world([old]))).toEqual([['Fireball', '1/day', 'charges', undefined]]);
   });
 });
+
+describe('charges that only actions spend', () => {
+  const COUNTED = { kind: 'charges', charges: 3, regain: 'all' };
+  const STRIKE = {
+    kind: 'action',
+    economy: 'bonus',
+    label: 'Strike',
+    cost: { resource: 'charges', amount: 1 },
+  };
+  const strikes = (doc: CharacterDoc, ctx: EngineContext) =>
+    deriveSheet(doc, ctx)
+      .actions.filter((a) => a.label === 'Strike')
+      .map((a) => a.cost?.resource ?? null);
+
+  it('makes the pool with no spells, which a built-in row still needs', () => {
+    const read = readMechanics({ v: 1, effects: [COUNTED, { ...COUNTED, spells: [] }] });
+    expect(read.charges).toEqual({ charges: 3, regain: 'all', spells: [] });
+    expect(read.problems).toEqual([
+      "effect 2 (charges): says the item's charges again: effect 1 says them",
+    ]);
+    const doc = carrying({ id: 'a', name: 'Rod of Knocks', source: 'HB' });
+    const sheet = deriveSheet(doc, world([item('Rod of Knocks', 'HB', [COUNTED])]));
+    expect(sheet.resources.find((r) => r.key === 'item-charges:a')?.max).toBe(3);
+    const row = readRuleSet({
+      type: RULE_SET_TYPE,
+      v: 1,
+      name: 'Test rules',
+      rows: [{ part: 'charges', keys: ['rod|tst'], charges: 5, regain: '1d4', spells: [] }],
+    });
+    expect(row.problems.join('; ')).toContain('"spells" lists the spells its charges cast');
+  });
+
+  it("spends each copy's own pool for an action that costs its charges, derive after derive", () => {
+    const rod = item('Rod of Knocks', 'HB', [COUNTED, STRIKE]);
+    const doc = carrying(
+      { id: 'a', name: 'Rod of Knocks', source: 'HB' },
+      { id: 'b', name: 'Rod of Knocks', source: 'HB' },
+    );
+    const ctx = world([rod]);
+    // Same-named actions are one chip on the sheet, so two rods show the first's.
+    expect(strikes(doc, ctx)).toEqual(['item-charges:a']);
+    const second = carrying({ id: 'b', name: 'Rod of Knocks', source: 'HB' });
+    expect(strikes(second, ctx)).toEqual(['item-charges:b']);
+    expect(strikes(doc, ctx)).toEqual(['item-charges:a']);
+    // What the item says is left as it was written.
+    expect(JSON.stringify(rod.castGuidance)).toContain('"resource":"charges"');
+  });
+
+  it("spends them for a pack's action too, and leaves an item with no charges as it was", () => {
+    const doc = carrying({ id: 'a', name: 'Rod of Knocks', source: 'HB' });
+    const adds = pack('Adds', [{ target: 'Rod of Knocks|HB', add: [STRIKE] }]);
+    expect(strikes(doc, world([item('Rod of Knocks', 'HB', [COUNTED])], [adds]))).toEqual([
+      'item-charges:a',
+    ]);
+    // The Workshop's older shape: its own pool under the key `charges`.
+    const old = item('Rod of Knocks', 'HB', [
+      { kind: 'resource', key: 'charges', label: 'Charges', max: 3, reset: 'long' },
+      STRIKE,
+    ]);
+    expect(strikes(doc, world([old]))).toEqual(['charges']);
+  });
+});

@@ -417,7 +417,13 @@ effect in its `castGuidance` effects, the row's fields and reader:
 - **Each spell names its book** (`name|source`), since the item grants it:
   while the item's magic works, each spell is granted on a row of its own,
   paid from that copy's pool, priced by level as a row prices it. Without an
-  `ability`, the row shows no attack or DC, as any grant without one.
+  `ability`, the row shows no attack or DC, as any grant without one. Its
+  `spells` may be empty or left out: the pool is still made, for its actions
+  to spend. A built-in row still lists at least one.
+- **Its actions spend it.** An action of the item's, its own or a pack's,
+  whose `cost` names the pool `charges` spends that copy's pool
+  (`item-charges:<entry id>`) while the item holds charges. Same-named actions
+  are one chip on the sheet, so two copies show the first's.
 - **Which counts.** `itemChargesOf` takes the last that says the item's
   charges: its built-in row, its own effect, a pack's `add`, a pack's
   `effects`. A pack whose `effects` replace the item's own replaces its own
@@ -432,7 +438,8 @@ effect in its `castGuidance` effects, the row's fields and reader:
   rest of the item still counts.
 - **Old files.** The Workshop wrote an item's charges as a `resource` pool
   under the key `charges` and a "Cast a spell" card spending it. They are read
-  as they always were: an ordinary pool and grant.
+  as they always were: an ordinary pool and grant, its actions spending that
+  pool, since the item holds no `charges` effect.
 
 ## Spell rest rows
 

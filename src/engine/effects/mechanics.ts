@@ -2137,8 +2137,8 @@ function readPackOnce(entry: DataEntity): ReadPack {
     }
     const where = `patch ${i + 1} (${clip(target)})`;
     const rawReplace = own(p as Record<string, unknown>, 'effects');
-    const replace = readPatchList(rawReplace, 'effects');
-    const add = readPatchList(own(p as Record<string, unknown>, 'add'), 'add');
+    const replace = readOwnEffects(rawReplace, 'effects');
+    const add = readOwnEffects(own(p as Record<string, unknown>, 'add'), 'add');
     const amendProblems: string[] = [];
     const amend = readAmends(own(p as Record<string, unknown>, 'amend'), amendProblems);
     for (const problem of [...replace.problems, ...add.problems, ...amendProblems])
@@ -2166,13 +2166,17 @@ function readPackOnce(entry: DataEntity): ReadPack {
   return read;
 }
 
-/** A pack's patch's `effects` or `add`, read as an entry's own: an item's charges among them. */
-export function readPatchList(raw: unknown, field: 'effects' | 'add'): ReadEffects {
+/**
+ * A list read as an entry's own effects (`effects`, or a pack's patch's
+ * `effects` or `add`): an item's charges among them, which a Workshop item's
+ * list holds too.
+ */
+export function readOwnEffects(raw: unknown, field: 'effects' | 'add'): ReadEffects {
   return readStoredEffects(raw, field, OWN_EFFECTS);
 }
 
 /**
- * Whether a patch's `effects`, read (`readPatchList`), replace the entry's
+ * Whether a patch's `effects`, read (`readOwnEffects`), replace the entry's
  * own. An empty list replaces them with nothing, on purpose; a list none of
  * which can be read (no effect, no charges) replaces nothing, so the entry
  * keeps its own.
@@ -2614,9 +2618,10 @@ function readCharges(
   if (named !== undefined && ability === undefined) {
     problems.push(`"ability" is the ability its spells cast with: ${ABILITY_LIST.join(', ')}`);
   }
-  const listed = own(row, 'spells');
+  // An item's own may cast none: its charges are counted, and its actions spend them.
+  const listed = own(row, 'spells') ?? (effect ? [] : undefined);
   const spells: ChargeSpell[] = [];
-  if (!Array.isArray(listed) || listed.length === 0) {
+  if (!Array.isArray(listed) || (listed.length === 0 && !effect)) {
     problems.push('"spells" lists the spells its charges cast');
   } else if (listed.length > RULE_SET_LIMITS.chargeSpells) {
     problems.push(`"spells" lists at most ${RULE_SET_LIMITS.chargeSpells} spells`);
