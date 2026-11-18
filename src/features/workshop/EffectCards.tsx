@@ -2465,7 +2465,8 @@ export function EffectCards({
         <p className="text-caption text-ink-muted">
           {inPick
             ? 'Nothing yet.'
-            : 'Nothing for the sheet to count yet. Add what it does, and the sheet adds it up.'}
+            : // Another control of the editor shows what is hidden (an item's charges).
+              `Nothing ${list.length > 0 ? 'else ' : ''}for the sheet to count yet. Add what it does, and the sheet adds it up.`}
         </p>
       )}
       {!readOnly && inPick && (

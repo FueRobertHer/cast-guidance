@@ -497,6 +497,7 @@ describe('ItemEditor', () => {
     expect(screen.queryByText(/This does not count yet/)).toBeNull();
     // The charges show under Charges, not again among the cards.
     expect(screen.queryByRole('button', { name: /^Remove charges/ })).toBeNull();
+    expect(screen.getByText(/^Nothing else for the sheet to count yet/)).toBeTruthy();
     type('Charge spell 1: up to level', '');
     type('Charge spell 1: costs', '2');
     expect((effects() as Json[])[0]?.spells).toEqual([{ spell: 'Misty Step|PHB', cost: 2 }]);
@@ -505,6 +506,7 @@ describe('ItemEditor', () => {
     type('Charges', '');
     expect(draft()).not.toHaveProperty('castGuidance');
     expect(screen.queryByText(/The sheet counts them/)).toBeNull();
+    expect(screen.getByText(/^Nothing for the sheet to count yet/)).toBeTruthy();
   });
 
   it('lets an action spend its charges once the sheet counts them, and a spell card not', async () => {
