@@ -3,7 +3,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Entity } from '@/data5e/copyMod';
 import { type DerivedSheet, newCharacterDoc } from '@/engine/types';
-import { BUILT_IN_RULE_SETS } from '../../../tests-fixtures/testWorld';
+import { ruleSetLookup } from '../../../tests-fixtures/testWorld';
 import {
   castDamageBonuses,
   castDiceAt,
@@ -36,7 +36,7 @@ function twoStaves() {
 describe('the items whose charges cast a spell', () => {
   it('numbers two of one item, so each tile says which it spends', () => {
     const { doc, sheet } = twoStaves();
-    const ways = itemChargeWays(doc, sheet, 'Cure Wounds', 1, BUILT_IN_RULE_SETS);
+    const ways = itemChargeWays(doc, sheet, 'Cure Wounds', 1, ruleSetLookup());
     expect(ways.map((w) => [w.key, w.label])).toEqual([
       ['item-charges:a', 'Staff of Healing 1'],
       ['item-charges:b', 'Staff of Healing 2'],
@@ -53,26 +53,26 @@ describe('the items whose charges cast a spell', () => {
       level: 1,
       attack: false,
     } as unknown as SpellCast;
-    expect(itemChargeWays(doc, sheet, 'Cure Wounds', 1, BUILT_IN_RULE_SETS)).toHaveLength(2);
+    expect(itemChargeWays(doc, sheet, 'Cure Wounds', 1, ruleSetLookup())).toHaveLength(2);
     expect(castsByPrompt(atWill)).toBe(false);
   });
 
   it("prices each level from the staff's row, and offers nothing without the rule sets", () => {
     const { doc, sheet } = twoStaves();
-    const [first] = itemChargeWays(doc, sheet, 'Cure Wounds', 1, BUILT_IN_RULE_SETS);
+    const [first] = itemChargeWays(doc, sheet, 'Cure Wounds', 1, ruleSetLookup());
     expect(first?.costs).toEqual([
       { level: 1, cost: 1 },
       { level: 2, cost: 2 },
       { level: 3, cost: 3 },
       { level: 4, cost: 4 },
     ]);
-    expect(itemChargeWays(doc, sheet, 'Cure Wounds', 1, [])).toEqual([]);
+    expect(itemChargeWays(doc, sheet, 'Cure Wounds', 1, ruleSetLookup([]))).toEqual([]);
   });
 
   it("finds the row under the entry's ref, as the pool's derive does", () => {
     const { doc, sheet } = twoStaves();
     doc.equipment = doc.equipment.map((e) => ({ ...e, ref: { name: STAFF.name, source: '' } }));
-    expect(itemChargeWays(doc, sheet, 'Cure Wounds', 1, BUILT_IN_RULE_SETS)).toEqual([]);
+    expect(itemChargeWays(doc, sheet, 'Cure Wounds', 1, ruleSetLookup())).toEqual([]);
   });
 });
 

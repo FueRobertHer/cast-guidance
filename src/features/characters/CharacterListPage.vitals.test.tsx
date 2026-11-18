@@ -17,7 +17,10 @@ vi.mock('dexie-react-hooks', () => ({
 vi.mock('@/data5e/hooks', () => ({
   useRegistryState: () => ({ registry: makeTestContext(), status: 'ready' }),
 }));
-vi.mock('@/data5e/engineAdapter', () => ({ engineContextFor: (r: unknown) => r }));
+vi.mock('@/data5e/engineAdapter', () => ({
+  engineContextFor: (r: unknown) => r,
+  entityLookup: (r: unknown) => r,
+}));
 vi.mock('@/db/characterRepo', () => ({ characterRepo: {} }));
 vi.mock('@/db/homebrewRepo', () => ({ homebrewRepo: {} }));
 

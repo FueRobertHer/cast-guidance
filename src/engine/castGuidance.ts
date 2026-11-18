@@ -561,8 +561,8 @@ export interface StoredRuleRow {
   replaces?: Array<(typeof WORN_TAG_KINDS)[number]>;
   /** `charges` rows only: how many charges the item holds. */
   charges?: number;
-  /** `charges` rows only: the charges that come back at dawn, as dice (`1d6+4`). */
-  regain?: string;
+  /** `charges` rows only: what comes back at dawn (`StoredItemCharges.regain`). */
+  regain?: string | number;
   /**
    * `charges` rows: the spells its charges cast, and what each costs.
    * `spellRest` rows: the spells, by name in any case, whose pool from the
@@ -571,14 +571,39 @@ export interface StoredRuleRow {
   spells?: StoredChargeSpell[] | string[] | 'every';
 }
 
-/** One spell a `charges` row's item casts with its charges. */
+/** One spell an item casts with its charges (a `charges` row's, a `charges` effect's). */
 export interface StoredChargeSpell {
-  /** The spell, by name in lower case: any printing of it casts from the item. */
+  /**
+   * A row's: the spell by name, in any case. An effect's: by name and book
+   * (`name|source`), since the item grants it. Either way, any printing of it
+   * casts from the item.
+   */
   spell: string;
   /** Charges it costs at its own level. */
   cost: number;
   /** One more charge for each level above its own, up to this spell level. Absent: its own level only. */
   upTo?: number;
+}
+
+/**
+ * An item's own `charges` effect, in its `castGuidance` or a pack's patch of
+ * it: the charges it holds, what comes back at dawn, and the spells they cast,
+ * which the item grants while its magic works. It emits no effect of its own:
+ * the item's pool is made from it (`itemChargesOf`), and it holds no `while`
+ * or `edition`. Only an item's: anywhere else it is a problem.
+ */
+export interface StoredItemCharges {
+  kind: 'charges';
+  /** How many it holds, 1 to `RULE_SET_LIMITS.charges`. */
+  charges: number;
+  /**
+   * What comes back at dawn (a long rest): dice, a die first, added up
+   * (`1d6+4`); a whole number of 1 or more; `"all"`; or `"none"`, never.
+   */
+  regain: string | number;
+  spells: StoredChargeSpell[];
+  /** The ability its spells cast with. Absent: the character's first spellcasting ability. */
+  ability?: 'str' | 'dex' | 'con' | 'int' | 'wis' | 'cha';
 }
 
 /**

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { idleChargePools } from '@/engine/curated/itemCharges';
 import type { DerivedSheet, EquipmentEntry, PlayState } from '@/engine/types';
-import { BUILT_IN_RULE_SETS } from '../../../tests-fixtures/testWorld';
+import { ruleSetLookup } from '../../../tests-fixtures/testWorld';
 import { backCaption, longRest, shortRest } from './rest';
 
 /** Minimal DerivedSheet with just the fields the rest rules read. */
@@ -308,16 +308,16 @@ describe("an item's charges on a long rest", () => {
       { id: 'r1', ref: { name: 'Rope', source: 'XPHB' }, qty: 1, equipped: false, attuned: false },
     ];
     const worn = { ...staff, key: 'item-charges:s2' };
-    const idle = idleChargePools(equipment, [worn], BUILT_IN_RULE_SETS);
+    const idle = idleChargePools({ id: 'c1', equipment }, [worn], ruleSetLookup());
     expect(idle).toEqual([staff]);
     // Its row says its charges: without the rule sets, nothing is idle.
-    expect(idleChargePools(equipment, [worn], [])).toEqual([]);
+    expect(idleChargePools({ id: 'c1', equipment }, [worn], ruleSetLookup([]))).toEqual([]);
     // Under the entry's ref, as the pool's derive finds it: none by name alone.
     const sourceless = equipment.map((e) => ({
       ...e,
       ref: { name: 'Staff of Healing', source: '' },
     }));
-    expect(idleChargePools(sourceless, [], BUILT_IN_RULE_SETS)).toEqual([]);
+    expect(idleChargePools({ id: 'c1', equipment: sourceless }, [], ruleSetLookup())).toEqual([]);
 
     const p = play({ resources: [{ key: staff.key, used: 8 }] });
     const restored = longRest(p, sheet({ resources: [worn] }), '2024', 0, () => 5, idle);

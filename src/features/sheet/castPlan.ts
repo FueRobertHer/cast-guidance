@@ -5,9 +5,14 @@
  * build their rows' casting here, so the two tabs offer the same ways.
  */
 import type { Entity } from '@/data5e/copyMod';
-import { chargeCosts, itemChargeKey, itemChargesIn } from '@/engine/curated/itemCharges';
+import {
+  type ChargeLookup,
+  chargeCosts,
+  itemChargeKey,
+  itemChargesOf,
+} from '@/engine/curated/itemCharges';
 import type { HpLimits } from '@/engine/effectLife';
-import type { CharacterDoc, DataEntity, DerivedSheet, SpellcastingBlock } from '@/engine/types';
+import type { CharacterDoc, DerivedSheet, SpellcastingBlock } from '@/engine/types';
 import { rememberCastLevel } from '@/stores/castLevels';
 import type { DocUpdater } from '@/stores/characterSession';
 import type { CastDice, HeldCast } from '@/stores/heldRoll';
@@ -51,8 +56,8 @@ export interface SpellCast {
   grantPool?: UseWay | undefined;
   /** It casts with a spell attack: its hit offers the damage, and its d20 is the prompt's. */
   attack: boolean;
-  /** The built-in rule sets (`byType(RULE_SET_TYPE)`): what an item's charges cast. */
-  ruleSets: readonly DataEntity[];
+  /** The registry's lookups: what a carried item's charges cast (`itemChargesOf`). */
+  entities: ChargeLookup;
 }
 
 const lower = (s: string) => s.trim().toLowerCase();
@@ -85,18 +90,18 @@ export function castRolls(c: SpellCast, slotLevel: number): SpellRollAction[] {
   });
 }
 
-/** The carried items whose charges cast `name`, with what each level costs (their `charges` rows). */
+/** The carried items whose charges cast `name`, with what each level costs (`itemChargesOf`). */
 export function itemChargeWays(
   doc: CharacterDoc,
   sheet: DerivedSheet,
   name: string,
   spellLevel: number,
-  ruleSets: readonly DataEntity[],
+  entities: ChargeLookup,
 ): ChargeWay[] {
   const out: ChargeWay[] = [];
   for (const entry of doc.equipment) {
     if (!entry.equipped || entry.ref === undefined) continue;
-    const row = itemChargesIn(ruleSets, entry.ref);
+    const row = itemChargesOf(entities, doc.id, entry.ref)?.charges;
     // The pool is there only while the item's magic works (attuned, where it asks).
     const pool = sheet.resources.find((r) => r.key === itemChargeKey(entry.id));
     if (row === undefined || pool === undefined) continue;
@@ -151,7 +156,7 @@ export function castWaysOf(c: SpellCast): CastWay[] {
         : [c.grantPool];
   return castWays(contextOf(c), {
     uses,
-    charges: itemChargeWays(c.doc, c.sheet, c.info.name, c.level, c.ruleSets),
+    charges: itemChargeWays(c.doc, c.sheet, c.info.name, c.level, c.entities),
   });
 }
 

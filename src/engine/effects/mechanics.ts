@@ -40,12 +40,12 @@ import {
   RULE_SET_PARTS,
   RULE_SET_SCANS,
   RULE_SET_TYPE,
-  type StoredChargeSpell,
   WORN_TAG_KINDS,
 } from '../castGuidance';
 import { type Formula, readAmount } from '../formula';
 import { SPELL_SCHOOLS } from '../spellQuery';
 import {
+  type Ability,
   ACTIVE_PART_KINDS,
   type ActionBuyBack,
   type ActionCost,
@@ -360,6 +360,8 @@ export interface ReadMechanics {
   /** False when it cannot be read at all (no version, a newer one): none of it counts. */
   readable: boolean;
   effects: readonly EffectTemplate[];
+  /** An item's `charges` effect (`ReadEffects.charges`), read apart from `effects`. */
+  charges?: ItemCharges;
   drop: readonly DropRule[];
   /** Prices it puts on the actions it inherits, in order. */
   amend: readonly AmendRule[];
@@ -1483,7 +1485,15 @@ interface HowRead {
   builtIn: boolean;
   /** What a pick gives: no pick of its own. */
   inPick: boolean;
+  /**
+   * An entry's own effects or a pack's patch of them, where an item's
+   * `charges` effect is read (`ReadEffects.charges`). Anywhere else it is a problem.
+   */
+  holdsCharges?: boolean;
 }
+
+/** How an entry's own effects and a pack's patches are read: a player's file, which may hold an item's charges. */
+const OWN_EFFECTS: HowRead = { strict: false, builtIn: false, inPick: false, holdsCharges: true };
 
 /** `{pick}` and the rest filled into stored words, `{picks}` standing alone as the list of them. */
 function filled(v: unknown, f: PickFill): unknown {
@@ -1556,7 +1566,7 @@ function pickGives(
   samples: readonly PickFill[],
   how: HowRead,
 ): PickGives<EffectTemplate> {
-  const inner: HowRead = { ...how, inPick: true };
+  const inner: HowRead = { ...how, inPick: true, holdsCharges: false };
   for (const sample of samples) {
     const read = readStoredEffects(filled(raw, sample), name, inner);
     const [problem] = read.problems;
@@ -1830,6 +1840,19 @@ function readEffect(raw: unknown, how: HowRead): EffectTemplate {
   };
 }
 
+/** A stored list of effects, read (`readStoredEffects`). */
+export interface ReadEffects {
+  effects: EffectTemplate[];
+  problems: string[];
+  /** Where each of `effects` sits in the list, from 1: the reader leaves bad ones out. */
+  places: number[];
+  /**
+   * An item's `charges` effect, read apart from the others: it says what the
+   * item's charges hold, regain and cast (`itemChargesOf`), and emits nothing.
+   */
+  charges?: ItemCharges;
+}
+
 /**
  * A stored list of effects (an entry's, a patch's, a moment's), each read on its
  * own: a bad one is a problem and is left out, the rest count. `strict` (the
@@ -1840,7 +1863,7 @@ export function readStoredEffects(
   raw: unknown,
   name = 'effects',
   strictOrHow: boolean | HowRead = false,
-): { effects: EffectTemplate[]; problems: string[]; places: number[] } {
+): ReadEffects {
   const how: HowRead =
     typeof strictOrHow === 'boolean'
       ? { strict: strictOrHow, builtIn: false, inPick: false }
@@ -1863,8 +1886,27 @@ export function readStoredEffects(
       isRecord(x) && typeof own(x, 'kind') === 'string' ? ` (${clip(own(x, 'kind'))})` : '';
     problems.push(`effect ${i + 1}${kind}: ${err.message}`);
   };
+  let charges: ItemCharges | undefined;
+  // Where the list first says the item's charges, from 0: a second says them again.
+  let chargesAt: number | undefined;
   raw.slice(0, L.effectsPerEntry).forEach((x, i) => {
     try {
+      if (isRecord(x) && own(x, 'kind') === 'charges') {
+        if (how.holdsCharges !== true) {
+          throw new Bad("is an item's own, in its effects or a pack's patch of them");
+        }
+        if (own(x, 'while') !== undefined || own(x, 'edition') !== undefined) {
+          throw new Bad('holds its charges always: no "while" or "edition"');
+        }
+        if (chargesAt !== undefined) {
+          throw new Bad(`says the item's charges again: effect ${chargesAt + 1} says them`);
+        }
+        chargesAt = i;
+        const held = readCharges(x, true);
+        for (const problem of held.problems) said(x, i, new Bad(problem));
+        charges = held.charges;
+        return;
+      }
       const t = readEffect(x, how);
       if (t.pick !== undefined) {
         const editions = pickIds.get(t.pick.id) ?? [];
@@ -1895,7 +1937,7 @@ export function readStoredEffects(
       );
     }
   }
-  return { effects, problems, places };
+  return { effects, problems, places, ...(charges === undefined ? {} : { charges }) };
 }
 
 function readRef(s: string): EntityRef | undefined {
@@ -1951,7 +1993,11 @@ export function readMechanics(raw: unknown): ReadMechanics {
   if ('problem' in version) {
     read = UNREADABLE(version.problem);
   } else {
-    const { effects, problems } = readStoredEffects(own(raw, 'effects'));
+    const { effects, problems, charges } = readStoredEffects(
+      own(raw, 'effects'),
+      'effects',
+      OWN_EFFECTS,
+    );
     const drop = readDrops(own(raw, 'drop'), problems);
     const amend = readAmends(own(raw, 'amend'), problems);
     const replace = own(raw, 'replace');
@@ -1963,6 +2009,7 @@ export function readMechanics(raw: unknown): ReadMechanics {
     read = {
       readable: true,
       effects,
+      ...(charges !== undefined ? { charges } : {}),
       drop,
       amend,
       replace: replace === true,
@@ -2022,6 +2069,8 @@ export function printingKeys(keys: readonly string[], printing: string, uid: str
 interface PackChange {
   pack: string;
   effects: readonly EffectTemplate[];
+  /** An item's charges, which the patch says (`ReadEffects.charges`). */
+  charges?: ItemCharges | undefined;
 }
 
 interface PackPatches {
@@ -2038,6 +2087,10 @@ export interface ReadPack {
     target: string;
     replace?: EffectTemplate[];
     add?: EffectTemplate[];
+    /** The item's charges its `effects` say, in place of the item's own. */
+    replaceCharges?: ItemCharges;
+    /** The item's charges its `add` says. */
+    addCharges?: ItemCharges;
     amend?: AmendRule[];
   }>;
   problems: string[];
@@ -2083,8 +2136,8 @@ function readPackOnce(entry: DataEntity): ReadPack {
     }
     const where = `patch ${i + 1} (${clip(target)})`;
     const rawReplace = own(p as Record<string, unknown>, 'effects');
-    const replace = readStoredEffects(rawReplace);
-    const add = readStoredEffects(own(p as Record<string, unknown>, 'add'), 'add');
+    const replace = readStoredEffects(rawReplace, 'effects', OWN_EFFECTS);
+    const add = readStoredEffects(own(p as Record<string, unknown>, 'add'), 'add', OWN_EFFECTS);
     const amendProblems: string[] = [];
     const amend = readAmends(own(p as Record<string, unknown>, 'amend'), amendProblems);
     for (const problem of [...replace.problems, ...add.problems, ...amendProblems])
@@ -2092,7 +2145,8 @@ function readPackOnce(entry: DataEntity): ReadPack {
     // An empty list replaces the entry's mechanics with nothing, on purpose; a
     // list none of which can be read replaces nothing, so the entry keeps its own.
     const replaces =
-      Array.isArray(rawReplace) && (rawReplace.length === 0 || replace.effects.length > 0);
+      Array.isArray(rawReplace) &&
+      (rawReplace.length === 0 || replace.effects.length > 0 || replace.charges !== undefined);
     // A replacement inherits nothing, so there is no action for a price to land on.
     if (replaces && amend.length > 0) {
       read.problems.push(
@@ -2103,6 +2157,8 @@ function readPackOnce(entry: DataEntity): ReadPack {
       target: target.trim().toLowerCase(),
       ...(replaces ? { replace: replace.effects } : {}),
       ...(add.effects.length > 0 ? { add: add.effects } : {}),
+      ...(replaces && replace.charges !== undefined ? { replaceCharges: replace.charges } : {}),
+      ...(add.charges !== undefined ? { addCharges: add.charges } : {}),
       // Said once above; the sheet would say it again for each price.
       ...(amend.length > 0 && !replaces ? { amend } : {}),
     });
@@ -2135,12 +2191,47 @@ function patchesFor(col: Collector): Map<string, PackPatches> {
       const slot = index.get(patch.target) ?? { add: [], amend: [] };
       index.set(patch.target, slot);
       // A later pack's replacement wins over an earlier one's.
-      if (patch.replace !== undefined) slot.replace = { pack: pack.name, effects: patch.replace };
-      if (patch.add !== undefined) slot.add.push({ pack: pack.name, effects: patch.add });
+      if (patch.replace !== undefined) {
+        slot.replace = { pack: pack.name, effects: patch.replace, charges: patch.replaceCharges };
+      }
+      if (patch.add !== undefined || patch.addCharges !== undefined) {
+        slot.add.push({ pack: pack.name, effects: patch.add ?? [], charges: patch.addCharges });
+      }
       if (patch.amend !== undefined) slot.amend.push({ pack: pack.name, rules: patch.amend });
     }
   }
   return index;
+}
+
+/**
+ * The charges the packs applied to a character say for the entry under
+ * `target` (an item's `name|source`), as `mechanicsOf` applies their patches:
+ * the replacement's (a later pack's wins), else the last addition's that says
+ * them. `replaced`: a pack replaces the entry's own effects, its own charges
+ * among them. Read outside a derive too (`itemChargesOf`), so it says no problem.
+ */
+export function packChargesOf(
+  packs: readonly DataEntity[],
+  characterId: string,
+  target: string,
+): { charges?: ItemCharges; replaced: boolean } {
+  const key = target.toLowerCase();
+  let replaced = false;
+  let replace: ItemCharges | undefined;
+  let add: ItemCharges | undefined;
+  for (const entry of packs) {
+    if (!appliesTo(entry, characterId)) continue;
+    for (const patch of readPack(entry).patches) {
+      if (patch.target !== key) continue;
+      if (patch.replace !== undefined) {
+        replaced = true;
+        replace = patch.replaceCharges;
+      }
+      if (patch.addCharges !== undefined) add = patch.addCharges;
+    }
+  }
+  const charges = replace ?? add;
+  return { ...(charges === undefined ? {} : { charges }), replaced };
 }
 
 // ---------------------------------------------------------------------------
@@ -2185,17 +2276,32 @@ export interface ShortRestSpells {
 /** A kind of what an item's data tags give while worn (`WORN_TAG_KINDS`). */
 export type WornTagKind = (typeof WORN_TAG_KINDS)[number];
 
-/** A `charges` row, read: what a carried item's charges hold, regain and cast. */
+/**
+ * What a carried item's charges hold, regain and cast, read: a built-in
+ * `charges` row, or an item's own `charges` effect (`ReadEffects.charges`).
+ */
 export interface ItemCharges {
   charges: number;
-  /** The charges that come back at dawn, as dice. */
+  /**
+   * What comes back at dawn (a long rest): dice or a whole number, rolled;
+   * `all`; or `none`, never.
+   */
   regain: string;
   /** Each spell by its name in lower case, once. */
   spells: readonly ChargeSpell[];
+  /** An item's own effect only: the ability the spells it grants cast with. */
+  ability?: Ability;
 }
 
 /** One spell an item's charges cast (`StoredChargeSpell`), read. */
-export type ChargeSpell = Readonly<StoredChargeSpell>;
+export interface ChargeSpell {
+  /** Its name in lower case: any printing of it casts from the item. */
+  spell: string;
+  cost: number;
+  upTo?: number;
+  /** An item's own effect only: the spell by name and book, which the item grants. */
+  ref?: EntityRef;
+}
 
 /** A built-in rule set (`RULE_SET_TYPE` entry), read. */
 export interface ReadRuleSet {
@@ -2339,7 +2445,7 @@ function readRuleSetOnce(raw: Record<string, unknown>): ReadRuleSet {
       return;
     }
     if (part === 'charges') {
-      const held = readCharges(row);
+      const held = readCharges(row, false);
       for (const problem of held.problems) read.problems.push(`${at}: ${problem}`);
       // A row that cannot say what each spell costs would price the item's
       // charges wrong in the cast prompt: it is left out, and its keys stay free.
@@ -2446,20 +2552,45 @@ function regainDice(s: string): boolean {
 }
 
 /**
- * A `charges` row's numbers and spells. `charges` is absent when anything in
- * it is a problem: a spell left out, or a cost misread, would offer the item's
- * charges for less, or for nothing, unseen.
+ * What comes back at dawn (`ItemCharges.regain`): dice (`regainDice`), a whole
+ * number from 1 to `most`, kept as its digits, which the roller rolls as a
+ * number, or `all` or `none`, in any case.
  */
-function readCharges(row: Record<string, unknown>): { charges?: ItemCharges; problems: string[] } {
+function readRegain(v: unknown, most: number): string | undefined {
+  if (typeof v === 'number') return isWhole(v, 1, most) ? String(v) : undefined;
+  if (typeof v !== 'string') return undefined;
+  const s = v.trim();
+  const word = s.toLowerCase();
+  if (word === 'all' || word === 'none') return word;
+  return regainDice(s) ? s : undefined;
+}
+
+/**
+ * A `charges` row's numbers and spells, or an item's own `charges` effect's
+ * (`effect`): each of its spells names its book (`name|source`), since the
+ * item grants it, and it may name the `ability` they cast with. `charges` is
+ * absent when anything in it is a problem: a spell left out, or a cost
+ * misread, would offer the item's charges for less, or for nothing, unseen.
+ */
+function readCharges(
+  row: Record<string, unknown>,
+  effect: boolean,
+): { charges?: ItemCharges; problems: string[] } {
   const problems: string[] = [];
   const most = RULE_SET_LIMITS.charges;
   const charges = own(row, 'charges');
   const counted = isWhole(charges, 1, most);
   if (!counted) problems.push(`"charges" is how many it holds, a whole number from 1 to ${most}`);
-  const raw = own(row, 'regain');
-  const regain = typeof raw === 'string' ? raw.trim() : '';
-  if (!regainDice(regain)) {
-    problems.push('"regain" is the dice of charges back at dawn, like 1d6+4, added up');
+  const regain = readRegain(own(row, 'regain'), counted ? charges : most);
+  if (regain === undefined) {
+    problems.push(
+      '"regain" is what comes back at dawn: dice like 1d6+4, a whole number, "all" or "none"',
+    );
+  }
+  const named = effect ? own(row, 'ability') : undefined;
+  const ability = isOneOf(ABILITY_LIST, named) ? named : undefined;
+  if (named !== undefined && ability === undefined) {
+    problems.push(`"ability" is the ability its spells cast with: ${ABILITY_LIST.join(', ')}`);
   }
   const listed = own(row, 'spells');
   const spells: ChargeSpell[] = [];
@@ -2479,13 +2610,19 @@ function readCharges(row: Record<string, unknown>): { charges?: ItemCharges; pro
         problems.push(`${at}: "${clip(extra)}" is not a field a charged spell has`);
         return;
       }
-      const named = own(x, 'spell');
-      if (typeof named !== 'string' || named.trim() === '' || named.length > L.targetLength) {
+      const written = own(x, 'spell');
+      if (typeof written !== 'string' || written.trim() === '' || written.length > L.targetLength) {
         problems.push(`${at}: "spell" is the spell's name`);
         return;
       }
+      // The item grants an effect's spells, so each names the book it is found in.
+      const ref = effect ? readRef(written) : undefined;
+      if (effect && ref === undefined) {
+        problems.push(`${at}: "spell" is "name|source"`);
+        return;
+      }
       // Lower case, as the cast prompt looks a spell up, before the twice check.
-      const spell = named.trim().toLowerCase();
+      const spell = (ref?.name ?? written).trim().toLowerCase();
       if (spells.some((s) => s.spell === spell)) {
         problems.push(`${at}: "${clip(spell)}" is named twice`);
         return;
@@ -2502,11 +2639,19 @@ function readCharges(row: Record<string, unknown>): { charges?: ItemCharges; pro
         problems.push(`${at}: "upTo" is a spell level, 1 to 9`);
         return;
       }
-      spells.push({ spell, cost, ...(upTo === undefined ? {} : { upTo }) });
+      spells.push({
+        spell,
+        cost,
+        ...(upTo === undefined ? {} : { upTo }),
+        ...(ref === undefined ? {} : { ref }),
+      });
     });
   }
-  if (problems.length > 0 || !counted) return { problems };
-  return { charges: { charges, regain, spells }, problems };
+  if (problems.length > 0 || !counted || regain === undefined) return { problems };
+  return {
+    charges: { charges, regain, spells, ...(ability === undefined ? {} : { ability }) },
+    problems,
+  };
 }
 
 /**
@@ -2847,6 +2992,14 @@ export function mechanicsOf(col: Collector, s: MechanicsSubject): void {
   const mine = raw === undefined ? undefined : readMechanics(raw);
   for (const problem of mine?.problems ?? []) col.warn(`${s.label}: ${problem}`);
   const patches = patchesFor(col).get(s.target.toLowerCase());
+  // An item's charges are read where its pool is made (`itemChargesOf`), never here.
+  if (s.origin.type !== 'item') {
+    const why = 'only an item holds charges, so its "charges" effect counts for nothing';
+    if (mine?.charges !== undefined) col.warn(`${s.label}: ${why}`);
+    for (const change of [patches?.replace, ...(patches?.add ?? [])]) {
+      if (change?.charges !== undefined) col.warn(`${change.pack}: ${s.label}: ${why}`);
+    }
+  }
   const level = s.classLevel ?? characterLevel(col);
 
   if (patches?.replace !== undefined) {
