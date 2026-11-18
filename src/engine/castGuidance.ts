@@ -602,7 +602,7 @@ export interface StoredItemCharges {
    */
   regain: string | number;
   spells: StoredChargeSpell[];
-  /** The ability its spells cast with. Absent: the character's first spellcasting ability. */
+  /** The ability its spells cast with. Absent: they show no attack or DC, as any grant without one. */
   ability?: 'str' | 'dex' | 'con' | 'int' | 'wis' | 'cha';
 }
 

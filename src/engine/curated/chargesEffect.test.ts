@@ -198,30 +198,33 @@ describe("a pack's patch of an item's charges", () => {
 describe('itemChargesOf: which says the charges', () => {
   const ref = { name: 'Wand of Fireballs', source: 'XDMG' };
   const own = item('Wand of Fireballs', 'XDMG', [{ ...WAND, charges: 4 }]);
+  // Each source says a count of its own: the row 7, the item's own 4, packs
+  // 2, 5 or 6. Only the item's own and a pack's name their spells' book, to grant them.
   const charges = (ctx: EngineContext, id = 'hero') => {
     const held = itemChargesOf(ctx, id, ref);
-    return held === undefined ? undefined : [held.from, held.charges.charges];
+    if (held === undefined) return undefined;
+    return [held.spells.every((s) => s.ref !== undefined) ? 'grants' : 'prices', held.charges];
   };
 
   it("the built-in row, then the item's own, then a pack's addition, then its replacement", () => {
-    expect(charges(world([item('Wand of Fireballs', 'XDMG')]))).toEqual(['row', 7]);
-    expect(charges(world([own]))).toEqual(['own', 4]);
+    expect(charges(world([item('Wand of Fireballs', 'XDMG')]))).toEqual(['prices', 7]);
+    expect(charges(world([own]))).toEqual(['grants', 4]);
     const adds = pack('Adds', [
       { target: 'Wand of Fireballs|XDMG', add: [{ ...WAND, charges: 5 }] },
     ]);
-    expect(charges(world([own], [adds]))).toEqual(['pack', 5]);
+    expect(charges(world([own], [adds]))).toEqual(['grants', 5]);
     const replaces = pack('Replaces', [
       { target: 'wand of fireballs|xdmg', effects: [{ ...WAND, charges: 6 }] },
     ]);
-    expect(charges(world([own], [replaces, adds]))).toEqual(['pack', 6]);
-    expect(charges(world([own], [adds, replaces]))).toEqual(['pack', 6]);
+    expect(charges(world([own], [replaces, adds]))).toEqual(['grants', 6]);
+    expect(charges(world([own], [adds, replaces]))).toEqual(['grants', 6]);
   });
 
   it("only a pack applied to the character, and none without the rule sets' row", () => {
     const adds = pack('Adds', [
       { target: 'Wand of Fireballs|XDMG', add: [{ ...WAND, charges: 5 }] },
     ]);
-    expect(charges(world([own], [adds]), 'someone else')).toEqual(['own', 4]);
+    expect(charges(world([own], [adds]), 'someone else')).toEqual(['grants', 4]);
     expect(charges(world([item('Wand of Fireballs', 'XDMG')], [], []))).toBe(undefined);
   });
 
@@ -229,14 +232,14 @@ describe('itemChargesOf: which says the charges', () => {
     const replaces = pack('Replaces', [
       { target: 'Wand of Fireballs|XDMG', effects: [{ kind: 'acBonus', amount: 1 }] },
     ]);
-    expect(charges(world([own], [replaces]))).toEqual(['row', 7]);
+    expect(charges(world([own], [replaces]))).toEqual(['prices', 7]);
     const later = pack('Adds', [
       { target: 'Wand of Fireballs|XDMG', add: [{ ...WAND, charges: 2 }] },
     ]);
-    expect(charges(world([own], [replaces, later]))).toEqual(['pack', 2]);
+    expect(charges(world([own], [replaces, later]))).toEqual(['grants', 2]);
     // A later pack's replacement wins, saying none.
     const first = pack('First', [{ target: 'Wand of Fireballs|XDMG', effects: [WAND] }]);
-    expect(charges(world([own], [first, replaces]))).toEqual(['row', 7]);
+    expect(charges(world([own], [first, replaces]))).toEqual(['prices', 7]);
   });
 
   it('a long rest rolls the dice or number back, all of them back as any pool, and none never', () => {
@@ -318,6 +321,39 @@ describe("the pool a homebrew item's charges make", () => {
     expect(sheet.warnings.join('; ')).toContain(
       'only an item holds charges, so its "charges" effect counts for nothing',
     );
+  });
+
+  it("replaces nothing on what is not an item with a pack's list of charges alone", () => {
+    const feat: DataEntity = {
+      name: 'Sparky',
+      source: 'HB',
+      castGuidance: { v: 1, effects: [{ kind: 'acBonus', amount: 2 }] },
+    };
+    const doc = newCharacterDoc('hero', 'Hero', 't');
+    doc.feats = [{ ref: { name: 'Sparky', source: 'HB' }, instanceId: 'f0' }];
+    const withFeat = (packs: DataEntity[]): EngineContext => {
+      const ctx = world([], packs);
+      return {
+        get: (type, name, source) =>
+          type === 'feat' && name.toLowerCase() === 'sparky' ? feat : ctx.get(type, name, source),
+        byType: (type) => (type === 'feat' ? [feat] : ctx.byType(type)),
+      };
+    };
+    const ac = deriveSheet(doc, withFeat([])).ac.value;
+    const wand = pack('Wand', [{ target: 'Sparky|HB', effects: [WAND] }]);
+    const sheet = deriveSheet(doc, withFeat([wand]));
+    expect(sheet.ac.value).toBe(ac);
+    expect(sheet.warnings.join('; ')).toContain(
+      'Wand: Sparky: only an item holds charges, so its "charges" effect counts for nothing',
+    );
+    // An earlier pack's replacement still counts.
+    const plus = pack('Plus', [{ target: 'Sparky|HB', effects: [{ kind: 'acBonus', amount: 3 }] }]);
+    expect(deriveSheet(doc, withFeat([plus, wand])).ac.value).toBe(ac + 1);
+    // Beside an effect that counts, the list replaces as any other.
+    const both = pack('Both', [
+      { target: 'Sparky|HB', effects: [WAND, { kind: 'acBonus', amount: 1 }] },
+    ]);
+    expect(deriveSheet(doc, withFeat([both])).ac.value).toBe(ac - 1);
   });
 });
 

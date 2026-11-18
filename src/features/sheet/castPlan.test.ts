@@ -15,6 +15,7 @@ import {
   grantUsedUp,
   itemChargeWays,
   type SpellCast,
+  usedUpTitle,
 } from './castPlan';
 
 const STAFF = { name: 'Staff of Healing', source: 'XDMG' };
@@ -170,6 +171,10 @@ describe("a grant paid in an item's own charges", () => {
     expect(doc.play.resources).toEqual([{ key: 'item-charges:r1', used: 2 }]);
     expect(grantUsedUp(flick, 2)).toBe(false);
     expect(grantUsedUp(flick, 1)).toBe(true);
+    // Its cast button says why it is off: charges, not a rest.
+    expect(usedUpTitle(flick)).toBe('Not enough charges left');
+    const daily = { ...flick, grantPool: { key: 'fey-step', label: 'Fey Step', max: 1 } };
+    expect(usedUpTitle(daily as SpellCast)).toBe('No uses left until you rest');
   });
 
   it('is used up when the item no longer casts the spell', () => {

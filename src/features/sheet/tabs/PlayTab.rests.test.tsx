@@ -312,6 +312,27 @@ describe("a homebrew item's charges put away", () => {
     return doc;
   };
 
+  it('never calls them over a limit, not even as the Play tab opens', async () => {
+    let flashed = false;
+    // Each node as it was added, so a banner taken away again is still seen.
+    const watch = new MutationObserver((records) => {
+      for (const r of records) {
+        for (const n of r.addedNodes) {
+          if (n.textContent?.includes('Bring within limits')) flashed = true;
+        }
+      }
+    });
+    const sheet = await renderSheet(putAway(6), { extra: { item: [rodOf()] }, path: 'spells' });
+    watch.observe(document.body, { subtree: true, childList: true, characterData: true });
+    try {
+      await sheet.tab('Play');
+      await screen.findByRole('button', { name: 'Long rest' });
+    } finally {
+      watch.disconnect();
+    }
+    expect(flashed).toBe(false);
+  });
+
   it('keeps them spent, within limits, and rolls their dawn regain on a long rest', async () => {
     const sheet = await renderSheet(putAway(6), { extra: { item: [rodOf()] } });
     expect(screen.queryByRole('button', { name: /^Rod of Mending charges use/ })).toBeNull();

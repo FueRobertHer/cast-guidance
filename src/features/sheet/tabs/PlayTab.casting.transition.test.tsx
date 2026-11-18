@@ -490,6 +490,19 @@ describe("a homebrew item's own charges", () => {
     expect((await sheet.saved()).play.resources).toEqual([{ key: 'item-charges:r1', used: 6 }]);
   });
 
+  it('says a cantrip it cannot pay for wants charges, not a rest', async () => {
+    // Spark Flick for 2 charges, with one left.
+    const rod = rodOf();
+    const effects = (rod.castGuidance as { effects: Array<{ spells: unknown[] }> }).effects;
+    if (effects[0] !== undefined) effects[0].spells = [{ spell: 'Spark Flick|TST', cost: 2 }];
+    const doc = mender(false, 'r1');
+    doc.play.resources = [{ key: 'item-charges:r1', used: 6 }];
+    await renderSheet(doc, { extra: { spell: [cureWounds, flick], item: [rod] } });
+    const cast = screen.getAllByRole('button', { name: 'Cast Spark Flick' })[0];
+    expect(cast?.hasAttribute('disabled')).toBe(true);
+    expect(cast?.getAttribute('title')).toBe('Not enough charges left');
+  });
+
   it('gives two rods two rows, each spending its own charges', async () => {
     const sheet = await renderSheet(mender(false, 'r1', 'r2'), world());
     const chips = screen.getAllByRole('button', { name: '1d8' });

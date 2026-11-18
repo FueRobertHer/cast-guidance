@@ -645,15 +645,18 @@ export function Component() {
   // Exhaustion's halved maximum (2014) is one more such limit. A class whose
   // data has not landed yet derives no slots or pools at all, so there is
   // nothing to compare with: the warning would call every spent slot over a
-  // limit of 0, and its button would wipe them.
-  const overages = sheet.classDataMissing
-    ? []
-    : detectPlayStateOverages(
-        play,
-        sheet,
-        idleChargePools(doc, sheet.resources, entities),
-        maxHp.value,
-      );
+  // limit of 0, and its button would wipe them. So too a tab just opened,
+  // whose registry lands a moment after the sheet: until then it finds no
+  // put-away item's charges (`idleChargePools`).
+  const overages =
+    sheet.classDataMissing || registry === null
+      ? []
+      : detectPlayStateOverages(
+          play,
+          sheet,
+          idleChargePools(doc, sheet.resources, entities),
+          maxHp.value,
+        );
 
   /**
    * Mark a slice of the action economy used (attacks, casting). `label` names

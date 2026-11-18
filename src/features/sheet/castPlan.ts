@@ -102,7 +102,7 @@ export function itemChargeWays(
   const out: ChargeWay[] = [];
   for (const entry of doc.equipment) {
     if (!entry.equipped || entry.ref === undefined) continue;
-    const row = itemChargesOf(entities, doc.id, entry.ref)?.charges;
+    const row = itemChargesOf(entities, doc.id, entry.ref);
     // The pool is there only while the item's magic works (attuned, where it asks).
     const pool = sheet.resources.find((r) => r.key === itemChargeKey(entry.id));
     if (row === undefined || pool === undefined) continue;
@@ -196,6 +196,11 @@ export function grantUsedUp(c: SpellCast, remaining: number | undefined): boolea
   if (remaining === undefined || castsByPrompt(c)) return false;
   const cost = directCost(c);
   return cost === undefined || remaining < cost;
+}
+
+/** Why a row's cast button is off (`grantUsedUp`): its charges cannot pay, or its uses are spent. */
+export function usedUpTitle(c: SpellCast): string {
+  return paidInCharges(c) ? 'Not enough charges left' : 'No uses left until you rest';
 }
 
 /** A limited grant's badge title: where its uses come from, or that none are left. */

@@ -136,9 +136,8 @@ export function collectItems(col: Collector): void {
       // or a pack's `charges` effect, under the entry's ref as the cast prompt
       // finds them): a pool of its own, outside what the item inherits, which
       // the cast prompt spends and a long rest (dawn) refills by its roll.
-      const held = itemChargesOf(col.ctx, col.doc.id, entry.ref);
-      if (held !== undefined) {
-        const charged = held.charges;
+      const charged = itemChargesOf(col.ctx, col.doc.id, entry.ref);
+      if (charged !== undefined) {
         const key = itemChargeKey(entry.id);
         const roll = regainRollOf(charged);
         col.add({
@@ -151,21 +150,20 @@ export function collectItems(col: Collector): void {
           origin,
         });
         // The spells its own or a pack's charges cast are granted, each paid
-        // from this copy's pool by level. A built-in row's only price spells
-        // the character casts anyway: some of their items cast at a fixed DC,
-        // which a grant would not show.
-        if (held.from !== 'row') {
-          for (const s of charged.spells) {
-            if (s.ref === undefined) continue;
-            col.add({
-              kind: 'grantSpell',
-              spell: s.ref,
-              usage: 'charges',
-              resourceKey: key,
-              ...(charged.ability === undefined ? {} : { ability: charged.ability }),
-              origin,
-            });
-          }
+        // from this copy's pool by level. Those name their book (`ref`); a
+        // built-in row's name none, as they only price spells the character
+        // casts anyway: some of their items cast at a fixed DC, which a grant
+        // would not show.
+        for (const s of charged.spells) {
+          if (s.ref === undefined) continue;
+          col.add({
+            kind: 'grantSpell',
+            spell: s.ref,
+            usage: 'charges',
+            resourceKey: key,
+            ...(charged.ability === undefined ? {} : { ability: charged.ability }),
+            origin,
+          });
         }
       }
     }

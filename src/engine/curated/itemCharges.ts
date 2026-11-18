@@ -30,9 +30,6 @@ import {
 /** What the resolver reads: a derive's context, or the registry outside one. */
 export type ChargeLookup = Pick<EngineContext, 'get' | 'byType'>;
 
-/** Where an item's charges are said: a built-in row, its own effect, or a pack's patch. */
-export type ChargeSource = 'row' | 'own' | 'pack';
-
 /** The charges an item casts spells with, by its equipment entry's ref, from the built-in rows alone. */
 export function itemChargesIn(
   ruleSets: readonly DataEntity[],
@@ -42,9 +39,9 @@ export function itemChargesIn(
 }
 
 /**
- * The charges a carried item casts spells with, and where they are said: the
- * last of its built-in row, its own `charges` effect and the packs applied to
- * the character (`packChargesOf`) that says them. A pack that replaces the
+ * The charges a carried item casts spells with: the last of its built-in row,
+ * its own `charges` effect and the packs applied to the character
+ * (`packChargesOf`) that says them. A pack that replaces the
  * item's effects replaces its own charges too; the row stands outside what
  * the item inherits, so only a pack's charges or the item's own come before it.
  */
@@ -52,20 +49,17 @@ export function itemChargesOf(
   lookup: ChargeLookup,
   characterId: string,
   ref: EntityRef,
-): { charges: ItemCharges; from: ChargeSource } | undefined {
+): ItemCharges | undefined {
   const uid = refUid(ref);
   const packs = packChargesOf(lookup.byType(RULE_PACK_TYPE), characterId, uid);
-  if (packs.charges !== undefined) return { charges: packs.charges, from: 'pack' };
+  if (packs.charges !== undefined) return packs.charges;
   if (!packs.replaced) {
     const entry = lookupItem({ ctx: lookup }, ref.name, ref.source);
     const raw = entry === undefined ? undefined : entry.castGuidance;
     const mine = raw === undefined ? undefined : readMechanics(raw);
-    if (mine?.readable === true && mine.charges !== undefined) {
-      return { charges: mine.charges, from: 'own' };
-    }
+    if (mine?.readable === true && mine.charges !== undefined) return mine.charges;
   }
-  const row = itemChargesIn(lookup.byType(RULE_SET_TYPE), ref);
-  return row === undefined ? undefined : { charges: row, from: 'row' };
+  return itemChargesIn(lookup.byType(RULE_SET_TYPE), ref);
 }
 
 /**
@@ -100,7 +94,7 @@ export function idleChargePools(
   return doc.equipment.flatMap((entry) => {
     const key = itemChargeKey(entry.id);
     if (entry.ref === undefined || resources.some((r) => r.key === key)) return [];
-    const held = itemChargesOf(lookup, doc.id, entry.ref)?.charges;
+    const held = itemChargesOf(lookup, doc.id, entry.ref);
     if (held === undefined) return [];
     const roll = regainRollOf(held);
     return [

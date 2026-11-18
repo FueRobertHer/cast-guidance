@@ -2074,7 +2074,8 @@ interface PackChange {
 }
 
 interface PackPatches {
-  replace?: PackChange;
+  /** Each pack's replacement, in the player's order: the last that counts wins. */
+  replaces: PackChange[];
   add: PackChange[];
   /** Prices on what the entry inherits, in the player's order of packs. */
   amend: Array<{ pack: string; rules: readonly AmendRule[] }>;
@@ -2136,17 +2137,13 @@ function readPackOnce(entry: DataEntity): ReadPack {
     }
     const where = `patch ${i + 1} (${clip(target)})`;
     const rawReplace = own(p as Record<string, unknown>, 'effects');
-    const replace = readStoredEffects(rawReplace, 'effects', OWN_EFFECTS);
-    const add = readStoredEffects(own(p as Record<string, unknown>, 'add'), 'add', OWN_EFFECTS);
+    const replace = readPatchList(rawReplace, 'effects');
+    const add = readPatchList(own(p as Record<string, unknown>, 'add'), 'add');
     const amendProblems: string[] = [];
     const amend = readAmends(own(p as Record<string, unknown>, 'amend'), amendProblems);
     for (const problem of [...replace.problems, ...add.problems, ...amendProblems])
       read.problems.push(`${where}: ${problem}`);
-    // An empty list replaces the entry's mechanics with nothing, on purpose; a
-    // list none of which can be read replaces nothing, so the entry keeps its own.
-    const replaces =
-      Array.isArray(rawReplace) &&
-      (rawReplace.length === 0 || replace.effects.length > 0 || replace.charges !== undefined);
+    const replaces = patchReplaces(rawReplace, replace);
     // A replacement inherits nothing, so there is no action for a price to land on.
     if (replaces && amend.length > 0) {
       read.problems.push(
@@ -2164,6 +2161,24 @@ function readPackOnce(entry: DataEntity): ReadPack {
     });
   });
   return read;
+}
+
+/** A pack's patch's `effects` or `add`, read as an entry's own: an item's charges among them. */
+export function readPatchList(raw: unknown, field: 'effects' | 'add'): ReadEffects {
+  return readStoredEffects(raw, field, OWN_EFFECTS);
+}
+
+/**
+ * Whether a patch's `effects`, read (`readPatchList`), replace the entry's
+ * own. An empty list replaces them with nothing, on purpose; a list none of
+ * which can be read (no effect, no charges) replaces nothing, so the entry
+ * keeps its own.
+ */
+export function patchReplaces(raw: unknown, read: ReadEffects): boolean {
+  return (
+    Array.isArray(raw) &&
+    (raw.length === 0 || read.effects.length > 0 || read.charges !== undefined)
+  );
 }
 
 /** Applied to this character, or to every character (`appliesTo.appDefault`). */
@@ -2188,11 +2203,14 @@ function patchesFor(col: Collector): Map<string, PackPatches> {
     const pack = readPack(entry);
     for (const problem of pack.problems) col.warn(`${pack.name}: ${problem}`);
     for (const patch of pack.patches) {
-      const slot = index.get(patch.target) ?? { add: [], amend: [] };
+      const slot = index.get(patch.target) ?? { replaces: [], add: [], amend: [] };
       index.set(patch.target, slot);
-      // A later pack's replacement wins over an earlier one's.
       if (patch.replace !== undefined) {
-        slot.replace = { pack: pack.name, effects: patch.replace, charges: patch.replaceCharges };
+        slot.replaces.push({
+          pack: pack.name,
+          effects: patch.replace,
+          charges: patch.replaceCharges,
+        });
       }
       if (patch.add !== undefined || patch.addCharges !== undefined) {
         slot.add.push({ pack: pack.name, effects: patch.add ?? [], charges: patch.addCharges });
@@ -2587,7 +2605,8 @@ function readCharges(
       '"regain" is what comes back at dawn: dice like 1d6+4, a whole number, "all" or "none"',
     );
   }
-  const named = effect ? own(row, 'ability') : undefined;
+  // A row with an `ability` is left out before this reads it (`ROW_FIELDS`).
+  const named = own(row, 'ability');
   const ability = isOneOf(ABILITY_LIST, named) ? named : undefined;
   if (named !== undefined && ability === undefined) {
     problems.push(`"ability" is the ability its spells cast with: ${ABILITY_LIST.join(', ')}`);
@@ -2993,20 +3012,27 @@ export function mechanicsOf(col: Collector, s: MechanicsSubject): void {
   for (const problem of mine?.problems ?? []) col.warn(`${s.label}: ${problem}`);
   const patches = patchesFor(col).get(s.target.toLowerCase());
   // An item's charges are read where its pool is made (`itemChargesOf`), never here.
-  if (s.origin.type !== 'item') {
+  const holds = s.origin.type === 'item';
+  if (!holds) {
     const why = 'only an item holds charges, so its "charges" effect counts for nothing';
     if (mine?.charges !== undefined) col.warn(`${s.label}: ${why}`);
-    for (const change of [patches?.replace, ...(patches?.add ?? [])]) {
-      if (change?.charges !== undefined) col.warn(`${change.pack}: ${s.label}: ${why}`);
+    for (const change of [...(patches?.replaces ?? []), ...(patches?.add ?? [])]) {
+      if (change.charges !== undefined) col.warn(`${change.pack}: ${s.label}: ${why}`);
     }
   }
+  // A later pack's replacement wins over an earlier one's. On what holds no
+  // charges, a list of charges alone is a list none of whose effects counts,
+  // so it replaces nothing.
+  const replace = patches?.replaces.findLast(
+    (c) => holds || c.effects.length > 0 || c.charges === undefined,
+  );
   const level = s.classLevel ?? characterLevel(col);
 
-  if (patches?.replace !== undefined) {
+  if (replace !== undefined) {
     emit(
       col,
-      patches.replace.effects,
-      { ...s.origin, pack: patches.replace.pack },
+      replace.effects,
+      { ...s.origin, pack: replace.pack },
       level,
       s.className,
       false,
@@ -3016,7 +3042,7 @@ export function mechanicsOf(col: Collector, s: MechanicsSubject): void {
   for (const add of patches?.add ?? [])
     emit(col, add.effects, { ...s.origin, pack: add.pack }, level, s.className, false, s.pickBase);
   const self = mine?.readable === true ? mine : undefined;
-  if (patches?.replace !== undefined) {
+  if (replace !== undefined) {
     unpriced(col, s, self, patches);
     return;
   }

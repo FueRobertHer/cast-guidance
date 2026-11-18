@@ -426,7 +426,8 @@ effect in its `castGuidance` effects, the row's fields and reader:
 - **Read apart.** The effect emits nothing; the pool and grants are made from
   it. It holds no `while` or `edition`, is said once a list, and counts only on
   an item: in a moment's list, a pick's `gives` or a built-in row it is a
-  problem, and on another kind of entry the sheet says it counts for nothing.
+  problem, and on another kind of entry the sheet says it counts for nothing
+  (so a pack's `effects` of charges alone replace nothing there).
   An app before it reads it as a kind it does not know, a problem, and the
   rest of the item still counts.
 - **Old files.** The Workshop wrote an item's charges as a `resource` pool
