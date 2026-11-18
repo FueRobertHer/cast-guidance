@@ -136,18 +136,37 @@ export function collectItems(col: Collector): void {
       // or a pack's `charges` effect, under the entry's ref as the cast prompt
       // finds them): a pool of its own, outside what the item inherits, which
       // the cast prompt spends and a long rest (dawn) refills by its roll.
-      const charged = itemChargesOf(col.ctx, col.doc.id, entry.ref)?.charges;
-      if (charged !== undefined) {
+      const held = itemChargesOf(col.ctx, col.doc.id, entry.ref);
+      if (held !== undefined) {
+        const charged = held.charges;
+        const key = itemChargeKey(entry.id);
         const roll = regainRollOf(charged);
         col.add({
           kind: 'resource',
-          key: itemChargeKey(entry.id),
+          key,
           label: `${origin.label} charges`,
           max: charged.charges,
           resetOn: 'long',
           ...(roll === undefined ? {} : { regainRoll: roll }),
           origin,
         });
+        // The spells its own or a pack's charges cast are granted, each paid
+        // from this copy's pool by level. A built-in row's only price spells
+        // the character casts anyway: some of their items cast at a fixed DC,
+        // which a grant would not show.
+        if (held.from !== 'row') {
+          for (const s of charged.spells) {
+            if (s.ref === undefined) continue;
+            col.add({
+              kind: 'grantSpell',
+              spell: s.ref,
+              usage: 'charges',
+              resourceKey: key,
+              ...(charged.ability === undefined ? {} : { ability: charged.ability }),
+              origin,
+            });
+          }
+        }
       }
     }
 

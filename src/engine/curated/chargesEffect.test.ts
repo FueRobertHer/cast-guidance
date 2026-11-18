@@ -320,3 +320,46 @@ describe("the pool a homebrew item's charges make", () => {
     );
   });
 });
+
+describe('the spells its charges grant', () => {
+  const grants = (doc: CharacterDoc, ctx: EngineContext) =>
+    deriveSheet(doc, ctx).grantedSpells.map((g) => [g.name, g.usage, g.resourceKey, g.ability]);
+
+  it("grants each spell of its own effect, from each copy's pool, while its magic works", () => {
+    const rod = item('Rod of Sparks', 'HB', [{ ...WAND, ability: 'wis' }], { reqAttune: true });
+    const doc = carrying(
+      { id: 'a', name: 'Rod of Sparks', source: 'HB' },
+      { id: 'b', name: 'Rod of Sparks', source: 'HB' },
+    );
+    expect(grants(doc, world([rod]))).toEqual([
+      ['Fireball', 'charges', 'item-charges:a', 'wis'],
+      ['Fireball', 'charges', 'item-charges:b', 'wis'],
+    ]);
+    doc.equipment = doc.equipment.map((e) => ({ ...e, attuned: false }));
+    expect(grants(doc, world([rod]))).toEqual([]);
+  });
+
+  it("grants a pack's, and none of a built-in row's, which only prices", () => {
+    const doc = carrying({ id: 'a', name: 'Wand of Fireballs', source: 'XDMG' });
+    const wand = item('Wand of Fireballs', 'XDMG');
+    expect(grants(doc, world([wand]))).toEqual([]);
+    expect(deriveSheet(doc, world([wand])).resources.map((r) => r.key)).toContain('item-charges:a');
+    const adds = pack('Adds', [{ target: 'Wand of Fireballs|XDMG', add: [WAND] }]);
+    expect(grants(doc, world([wand], [adds]))).toEqual([
+      ['Fireball', 'charges', 'item-charges:a', undefined],
+    ]);
+  });
+
+  it("still reads an item in the Workshop's older shape, a pool and a card, as before", () => {
+    const old = item('Old Wand', 'HB', [
+      { kind: 'resource', key: 'charges', label: 'Charges', max: 5, reset: 'long' },
+      { kind: 'grantSpell', spell: 'Fireball|XPHB', usage: '1/day', resourceKey: 'charges' },
+    ]);
+    const doc = carrying({ id: 'a', name: 'Old Wand', source: 'HB' });
+    const sheet = deriveSheet(doc, world([old]));
+    expect(sheet.warnings).toEqual([]);
+    expect(sheet.resources.find((r) => r.key === 'charges')?.max).toBe(5);
+    expect(sheet.resources.some((r) => r.key.startsWith('item-charges:'))).toBe(false);
+    expect(grants(doc, world([old]))).toEqual([['Fireball', '1/day', 'charges', undefined]]);
+  });
+});

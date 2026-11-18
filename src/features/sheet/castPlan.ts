@@ -8,6 +8,7 @@ import type { Entity } from '@/data5e/copyMod';
 import {
   type ChargeLookup,
   chargeCosts,
+  isItemChargeKey,
   itemChargeKey,
   itemChargesOf,
 } from '@/engine/curated/itemCharges';
@@ -118,11 +119,17 @@ export function itemChargeWays(
 
 /**
  * The innate and feat grants of `name` with a pool of their own (Infernal
- * Legacy's Hellish Rebuke), so a class row offers them beside its slots.
+ * Legacy's Hellish Rebuke), so a class row offers them beside its slots. An
+ * item's charges are not a use: `itemChargeWays` offers them, priced by level.
  */
 export function grantUseWays(sheet: DerivedSheet, name: string): UseWay[] {
   return sheet.grantedSpells.flatMap((g) => {
-    if (g.usage === 'prepared' || g.resourceKey === undefined || lower(g.name) !== lower(name)) {
+    if (
+      g.usage === 'prepared' ||
+      g.resourceKey === undefined ||
+      isItemChargeKey(g.resourceKey) ||
+      lower(g.name) !== lower(name)
+    ) {
       return [];
     }
     const pool = sheet.resources.find((r) => r.key === g.resourceKey);
@@ -143,10 +150,20 @@ function contextOf(c: SpellCast): CastContext {
   };
 }
 
+/** Whether a grant's row is paid in a carried item's charges (an item's own `charges` effect's spell). */
+export function paidInCharges(c: SpellCast): boolean {
+  return c.block === undefined && c.grantPool !== undefined && isItemChargeKey(c.grantPool.key);
+}
+
 /** Every way this row's spell can be cast now, grouped by source. */
 export function castWaysOf(c: SpellCast): CastWay[] {
   // An at-will grant casts for nothing, at once: an item's charges are the class row's.
   if (c.block === undefined && c.grantPool === undefined) return [];
+  const charges = itemChargeWays(c.doc, c.sheet, c.info.name, c.level, c.entities);
+  // A grant paid in an item's charges offers that copy's, priced by level, and no use.
+  if (paidInCharges(c)) {
+    return castWays(contextOf(c), { charges: charges.filter((w) => w.key === c.grantPool?.key) });
+  }
   // A class row offers every grant's pool of the spell; a grant's row, its own.
   const uses =
     c.block !== undefined
@@ -154,10 +171,46 @@ export function castWaysOf(c: SpellCast): CastWay[] {
       : c.grantPool === undefined
         ? []
         : [c.grantPool];
-  return castWays(contextOf(c), {
-    uses,
-    charges: itemChargeWays(c.doc, c.sheet, c.info.name, c.level, c.entities),
-  });
+  return castWays(contextOf(c), { uses, charges });
+}
+
+/**
+ * What a cast with nothing to choose (`castNow`) takes from a grant's pool:
+ * one use, or the charges the spell costs at its own level from the item's.
+ * None when the item no longer casts it, so the row cannot cast it.
+ */
+function directCost(c: SpellCast): number | undefined {
+  if (!paidInCharges(c)) return 1;
+  const way = itemChargeWays(c.doc, c.sheet, c.info.name, c.level, c.entities).find(
+    (w) => w.key === c.grantPool?.key,
+  );
+  return way?.costs.find((x) => x.level === c.level)?.cost;
+}
+
+/**
+ * Whether a grant's row cannot cast now, with `remaining` left in its pool:
+ * spent, with nothing else to cast it with, or paid in an item's charges with
+ * too few left for any level. It must not then go on marking the turn.
+ */
+export function grantUsedUp(c: SpellCast, remaining: number | undefined): boolean {
+  if (remaining === undefined || castsByPrompt(c)) return false;
+  const cost = directCost(c);
+  return cost === undefined || remaining < cost;
+}
+
+/** A limited grant's badge title: where its uses come from, or that none are left. */
+export function grantBadgeTitle(usage: string | undefined, origin: string, spent: boolean): string {
+  if (!spent) return `${usage ?? ''} from ${origin}`;
+  return usage === 'charges' ? 'No charges left' : 'No uses left until you rest';
+}
+
+/**
+ * The words after a limited grant's count: "per day" for "1/day", and an
+ * item's charges by their name, "charges".
+ */
+export function grantLimitWords(usage: string | undefined): string {
+  const per = usage?.split('/')[1];
+  return per === undefined ? (usage ?? '') : `per ${per}`;
 }
 
 /**
@@ -266,9 +319,11 @@ export function castPlan(c: SpellCast): HeldCast {
  */
 export function castNow(c: SpellCast): void {
   if (c.block === undefined) {
-    // A grant's own pool, when it has one, still pays for a cantrip.
+    // A grant's own pool, when it has one, still pays for a cantrip: an item's
+    // charges, what the cantrip costs.
     const pool = c.grantPool;
-    castGrantedAsking(c.update, c.hp, c.info, pool && { key: pool.key, max: pool.max });
+    const cost = directCost(c) ?? 1;
+    castGrantedAsking(c.update, c.hp, c.info, pool && { key: pool.key, max: pool.max, cost });
   } else if (c.level === 0) {
     castSpellAsking(c.update, c.hp, c.block, 0, c.info, { kind: 'cantrip', level: 0 });
   } else {

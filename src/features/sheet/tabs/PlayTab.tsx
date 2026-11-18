@@ -80,7 +80,7 @@ import {
   actionUse,
   applyRestore,
 } from '../actionUse';
-import { castsByPrompt, type SpellCast } from '../castPlan';
+import { grantBadgeTitle, grantLimitWords, grantUsedUp, type SpellCast } from '../castPlan';
 import { castingEconomy, isConcentratingOn, type SlotSpent, spendSlot } from '../castResources';
 import { capabilityKey, collectCapabilityCards } from '../combatCapabilities';
 import { conditionLimits } from '../conditionEffects';
@@ -646,7 +646,14 @@ export function Component() {
   // data has not landed yet derives no slots or pools at all, so there is
   // nothing to compare with: the warning would call every spent slot over a
   // limit of 0, and its button would wipe them.
-  const overages = sheet.classDataMissing ? [] : detectPlayStateOverages(play, sheet, maxHp.value);
+  const overages = sheet.classDataMissing
+    ? []
+    : detectPlayStateOverages(
+        play,
+        sheet,
+        idleChargePools(doc, sheet.resources, entities),
+        maxHp.value,
+      );
 
   /**
    * Mark a slice of the action economy used (attacks, casting). `label` names
@@ -995,7 +1002,16 @@ export function Component() {
               would sit under 3:1 on the tint. */}
           <BannerAction
             tone="guide"
-            onClick={() => update((d) => clampPlayStateToMax(d.play, sheet, maxHp.value))}
+            onClick={() =>
+              update((d) =>
+                clampPlayStateToMax(
+                  d.play,
+                  sheet,
+                  idleChargePools(d, sheet.resources, entities),
+                  maxHp.value,
+                ),
+              )
+            }
             className="mt-1 -mb-1.5 -ml-1.5"
           >
             Bring within limits
@@ -2561,7 +2577,7 @@ export function Component() {
                 attack: hasAttack,
                 entities,
               };
-              const usedUp = depleted && !castsByPrompt(cast);
+              const usedUp = grantUsedUp(cast, remaining);
               return (
                 <div
                   key={`${g.name}|${g.source}|${g.resourceKey ?? ''}|${g.added ? 'added' : ''}`}
@@ -2602,16 +2618,12 @@ export function Component() {
                           )}
                           {remaining !== undefined && limited !== undefined && (
                             <span
-                              title={
-                                depleted
-                                  ? 'No uses left until you rest'
-                                  : `${g.usage} from ${g.origin}`
-                              }
+                              title={grantBadgeTitle(g.usage, g.origin, depleted)}
                               // Uses left of an innate spell are magic's to spend,
                               // so `arcane`; spent, a neutral badge.
                               className={`shrink-0 ${badgeClass(depleted ? 'neutral' : 'arcane')}`}
                             >
-                              {remaining}/{limited.max} per {g.usage?.split('/')[1]}
+                              {remaining}/{limited.max} {grantLimitWords(g.usage)}
                             </span>
                           )}
                         </button>

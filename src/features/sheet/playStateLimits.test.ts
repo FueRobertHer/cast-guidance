@@ -37,11 +37,11 @@ describe('detectPlayStateOverages', () => {
   it('finds nothing when everything is within limits', () => {
     const p = play({ currentHp: 8, slotsSpent: [1, 0], pactSlotsSpent: 0 });
     const s = sheet({ maxHp: 10, slots: [3, 2] });
-    expect(detectPlayStateOverages(p, s)).toEqual([]);
+    expect(detectPlayStateOverages(p, s, [])).toEqual([]);
   });
 
   it('flags HP above the derived max', () => {
-    const found = detectPlayStateOverages(play({ currentHp: 15 }), sheet({ maxHp: 10 }));
+    const found = detectPlayStateOverages(play({ currentHp: 15 }), sheet({ maxHp: 10 }), []);
     expect(found).toContainEqual({ kind: 'hp', label: 'Current HP', current: 15, max: 10 });
   });
 
@@ -50,6 +50,7 @@ describe('detectPlayStateOverages', () => {
     const found = detectPlayStateOverages(
       play({ slotsSpent: [0, 2] }),
       sheet({ maxHp: 10, slots: [3, 1] }),
+      [],
     );
     expect(found).toContainEqual({
       kind: 'slots',
@@ -66,7 +67,7 @@ describe('detectPlayStateOverages', () => {
       resources: [{ key: 'rage', used: 3 }],
     });
     const s = sheet({ maxHp: 10, pactSlots: 1, hitDice: { d10: 3 }, resources: [] });
-    const found = detectPlayStateOverages(p, s);
+    const found = detectPlayStateOverages(p, s, []);
     expect(found).toContainEqual({
       kind: 'pactSlots',
       label: 'Pact slots spent',
@@ -93,13 +94,46 @@ describe('clampPlayStateToMax', () => {
       resources: [{ key: 'rage', used: 3 }],
     });
     const s = sheet({ maxHp: 10, slots: [3, 1], pactSlots: 1, hitDice: { d10: 3 }, resources: [] });
-    clampPlayStateToMax(p, s);
+    clampPlayStateToMax(p, s, []);
     expect(p.currentHp).toBe(10);
     expect(p.slotsSpent).toEqual([1, 1]); // level-1 (1<=3) untouched, level-2 clamped 2->1
     expect(p.pactSlotsSpent).toBe(1);
     expect(p.hitDiceSpent.d10).toBe(3);
     expect(p.resources).toEqual([{ key: 'rage', used: 0 }]);
     // Nothing over-limit remains.
-    expect(detectPlayStateOverages(p, s)).toEqual([]);
+    expect(detectPlayStateOverages(p, s, [])).toEqual([]);
+  });
+});
+
+describe('an item put away', () => {
+  // A Staff of Healing put away with 9 of its 10 charges spent: its pool is
+  // idle (`idleChargePools`), not gone, so the count is kept.
+  const idle = [
+    {
+      key: 'item-charges:s1',
+      label: 'Staff of Healing charges',
+      max: 10,
+      resetOn: 'long' as const,
+      origin: 'Staff of Healing',
+      regainRoll: '1d6+4',
+    },
+  ];
+
+  it('keeps its spent charges within its limit, and over it only past its maximum', () => {
+    const p = play({ resources: [{ key: 'item-charges:s1', used: 9 }] });
+    expect(detectPlayStateOverages(p, sheet({}), idle)).toEqual([]);
+    const over = play({ resources: [{ key: 'item-charges:s1', used: 12 }] });
+    expect(detectPlayStateOverages(over, sheet({}), idle)).toEqual([
+      { kind: 'resource', label: 'Staff of Healing charges used', current: 12, max: 10 },
+    ]);
+    // Without its idle pool, the count reads as over a limit of none.
+    expect(detectPlayStateOverages(p, sheet({}), [])).toHaveLength(1);
+  });
+
+  it('leaves its spent charges alone when the rest is brought within limits', () => {
+    const p = play({ currentHp: 15, resources: [{ key: 'item-charges:s1', used: 9 }] });
+    clampPlayStateToMax(p, sheet({ maxHp: 10 }), idle);
+    expect(p.currentHp).toBe(10);
+    expect(p.resources).toEqual([{ key: 'item-charges:s1', used: 9 }]);
   });
 });

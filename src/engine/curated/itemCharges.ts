@@ -82,6 +82,11 @@ export function itemChargeKey(entryId: string): string {
   return `item-charges:${entryId}`;
 }
 
+/** Whether a pool is a carried item's charges (`itemChargeKey`). */
+export function isItemChargeKey(key: string): boolean {
+  return key.startsWith('item-charges:');
+}
+
 /**
  * The charge pools of carried items whose magic is not working now (put away,
  * or not attuned), which the sheet leaves out: their charges still come back

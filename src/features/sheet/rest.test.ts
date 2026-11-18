@@ -286,6 +286,8 @@ describe("an item's charges on a long rest", () => {
 
   it('says when the charges come back', () => {
     expect(backCaption(staff)).toBe('1d6+4 back at dawn (a long rest)');
+    expect(backCaption({ ...staff, regainRoll: '3' })).toBe('3 back at dawn (a long rest)');
+    expect(backCaption({ ...staff, regainRoll: '0' })).toBe('Never back');
   });
 
   it('gives back the dawn roll of an item put away, whose pool the sheet leaves out', () => {

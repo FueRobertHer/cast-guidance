@@ -6,7 +6,7 @@
  * maximum and is guidance like the rest: nothing is cut until the player says. This surfaces those mismatches and offers a
  * non-destructive clamp (only over-limit values change).
  */
-import type { DerivedSheet, PlayState } from '@/engine/types';
+import type { DerivedResource, DerivedSheet, PlayState } from '@/engine/types';
 
 export interface PlayStateOverage {
   kind: 'hp' | 'slots' | 'pactSlots' | 'hitDice' | 'resource';
@@ -35,17 +35,29 @@ function pactSlotMax(sheet: DerivedSheet): number {
   return m;
 }
 
-function resourceMax(sheet: DerivedSheet, key: string): number {
-  return sheet.resources.find((x) => x.key === key)?.max ?? 0;
+/** A pool on the sheet, or a carried item's charges the sheet leaves out while its magic is off. */
+function poolOf(
+  sheet: DerivedSheet,
+  idle: readonly DerivedResource[],
+  key: string,
+): DerivedResource | undefined {
+  return sheet.resources.find((x) => x.key === key) ?? idle.find((x) => x.key === key);
+}
+
+function resourceMax(sheet: DerivedSheet, idle: readonly DerivedResource[], key: string): number {
+  return poolOf(sheet, idle, key)?.max ?? 0;
 }
 
 /**
- * List every play-state value currently above its derived maximum. `maxHp` is
- * the maximum in play, which 2014's exhaustion can halve (`conditionMaxHp`).
+ * List every play-state value currently above its derived maximum. `idle` are
+ * the charge pools of items put away (`idleChargePools`), whose spent charges
+ * are kept, not over a limit. `maxHp` is the maximum in play, which 2014's
+ * exhaustion can halve (`conditionMaxHp`).
  */
 export function detectPlayStateOverages(
   play: PlayState,
   sheet: DerivedSheet,
+  idle: readonly DerivedResource[],
   maxHp: number = sheet.maxHp.value,
 ): PlayStateOverage[] {
   const out: PlayStateOverage[] = [];
@@ -85,9 +97,9 @@ export function detectPlayStateOverages(
   }
 
   for (const r of play.resources) {
-    const m = resourceMax(sheet, r.key);
+    const m = resourceMax(sheet, idle, r.key);
     if (r.used > m) {
-      const label = sheet.resources.find((x) => x.key === r.key)?.label ?? r.key;
+      const label = poolOf(sheet, idle, r.key)?.label ?? r.key;
       out.push({ kind: 'resource', label: `${label} used`, current: r.used, max: m });
     }
   }
@@ -102,6 +114,7 @@ export function detectPlayStateOverages(
 export function clampPlayStateToMax(
   play: PlayState,
   sheet: DerivedSheet,
+  idle: readonly DerivedResource[],
   maxHp: number = sheet.maxHp.value,
 ): void {
   if (play.currentHp > maxHp) play.currentHp = maxHp;
@@ -119,6 +132,6 @@ export function clampPlayStateToMax(
 
   play.resources = play.resources.map((r) => ({
     ...r,
-    used: Math.min(r.used, resourceMax(sheet, r.key)),
+    used: Math.min(r.used, resourceMax(sheet, idle, r.key)),
   }));
 }

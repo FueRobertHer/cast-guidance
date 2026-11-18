@@ -21,7 +21,7 @@ import { PackProblem } from '@/ui/PackProblem';
 import { cardClass, openListClass } from '@/ui/surfaces';
 import { fieldClass } from '@/ui/TextField';
 import { RemoveAddedSpell } from './AddSpellSheet';
-import { castsByPrompt, type SpellCast } from './castPlan';
+import { grantBadgeTitle, grantLimitWords, grantUsedUp, type SpellCast } from './castPlan';
 import { castingEconomy, isConcentratingOn } from './castResources';
 import { conditionLimits } from './conditionEffects';
 import {
@@ -343,7 +343,7 @@ function InnateSpellRow({
   // Rolling is always allowed, but a spent grant with nothing else to cast it
   // with must not go on marking your action and your concentration.
   const depleted = remaining !== undefined && remaining <= 0;
-  const usedUp = depleted && !castsByPrompt(cast);
+  const usedUp = grantUsedUp(cast, remaining);
   return (
     <SpellRow
       name={name}
@@ -358,14 +358,12 @@ function InnateSpellRow({
           {grant.added && <Badge tone="guide">Outside your class</Badge>}
           {remaining !== undefined && limited !== undefined && (
             <span
-              title={
-                depleted ? 'No uses left until you rest' : `${grant.usage} from ${grant.origin}`
-              }
+              title={grantBadgeTitle(grant.usage, grant.origin, depleted)}
               // Uses left of an innate spell are magic's to spend, so `arcane`;
               // spent, a neutral badge.
               className={`shrink-0 ${badgeClass(depleted ? 'neutral' : 'arcane')}`}
             >
-              {remaining}/{limited.max} per {grant.usage?.split('/')[1]}
+              {remaining}/{limited.max} {grantLimitWords(grant.usage)}
             </span>
           )}
           <VerbalMark entity={entity} noVerbal={ctx.noVerbal} />

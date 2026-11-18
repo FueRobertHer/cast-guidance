@@ -20,7 +20,8 @@ export function backCaption(
 ): string {
   // Portent's numbers: rolled again on a long rest, those left lost.
   if (r.foretell === true) return 'Foretold anew on a long rest';
-  // An item's charges: at dawn, which the sheet counts at a long rest.
+  // An item's charges: at dawn, which the sheet counts at a long rest; `0`, never.
+  if (r.regainRoll === '0') return 'Never back';
   if (r.regainRoll !== undefined) return `${r.regainRoll} back at dawn (a long rest)`;
   if (r.resetOn === 'short' || r.regainOnShort === undefined) return `Back on a ${r.resetOn} rest`;
   const count = r.regainOnShort === 1 ? 'One' : String(r.regainOnShort);
