@@ -273,7 +273,7 @@ work:
   reads that text's speed. A trait offered in place of
   another ("Variant: Aquatic", "in place of Skill Versatility") gives no
   speed, since the race lists both. `printingOf` does not
-  reach `spellRests.ts` (keyed by the granting origin) or the `wornTags` rows, and
+  reach the `spellRest` rows (keyed by the granting origin) or the `wornTags` rows, and
   a name Fight Club words its own way beyond what `officialName` undoes
   names no official entry (about 45% of marked items resolve, mostly magic
   variants such as `Battleaxe +1`). Granted spells left as text: picks a
