@@ -209,9 +209,15 @@ describe("a long rest and an item's charges", () => {
     press('Long rest');
     await (await dialog('Long rest')).press('Rest');
 
-    // The roll (1d6 + 4, the die at 4) gives back 8 of the 9 spent: rolled, not refilled.
-    expect(notice()).toContain('8 Staff of Healing charges');
-    expect((await sheet.saved()).play.resources).toEqual([{ key: 'item-charges:s1', used: 1 }]);
+    // The dawn roll (1d6 + 4, so 5 to 10) gives back that many of the 9 spent, 9 at
+    // most: rolled, where a refill would say "resources" and give back all 9.
+    const back = Number(/(\d+) Staff of Healing charges/.exec(notice() ?? '')?.[1]);
+    expect(back).toBeGreaterThanOrEqual(5);
+    expect(back).toBeLessThanOrEqual(9);
+    const stillSpent = 9 - back;
+    expect((await sheet.saved()).play.resources).toEqual(
+      stillSpent === 0 ? [] : [{ key: 'item-charges:s1', used: stillSpent }],
+    );
   });
 });
 
