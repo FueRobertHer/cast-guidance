@@ -652,6 +652,10 @@ describe('ItemEditor', () => {
     expect(screen.getByText(/The sheet counts them/)).toBeTruthy();
     const regains = screen.getByLabelText('Regains them') as HTMLSelectElement;
     expect(regains.selectedOptions[0]?.text).toBe('1d4 at dawn, as written');
+    // Chosen again, what the effect says is not written as a recharge.
+    const before = structuredClone(draft());
+    fireEvent.change(regains, { target: { value: regains.value } });
+    expect(draft()).toStrictEqual(before);
     // Never is one pick away, and says none come back.
     type('Regains them', '');
     expect((draft().castGuidance as Json).effects).toEqual([
