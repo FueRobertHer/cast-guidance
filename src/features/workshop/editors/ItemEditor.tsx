@@ -631,11 +631,9 @@ function Charges(props: EditorProps) {
   // A file written by hand may say them in the effect alone.
   const n = draft.charges ?? counted?.charges;
   const charges = typeof n === 'number' ? n : undefined;
-  // What comes back as the effect says it, with no recharge field to say it.
+  // What comes back as the effect says it, shown while no recharge field says it.
   const handRegain =
-    typeof draft.recharge !== 'string' && counted?.regain !== undefined && counted.regain !== 'none'
-      ? counted.regain
-      : undefined;
+    counted?.regain !== undefined && counted.regain !== 'none' ? counted.regain : undefined;
   const old = counted === undefined && effects.some(isOldCharges);
   // The effect an empty Charges box (or none at all, 0) took out, and its place,
   // put back whole when a number is typed again: a new number by way of an
@@ -719,6 +717,8 @@ function Charges(props: EditorProps) {
                 : `${handRegain === 'all' ? 'All' : String(handRegain)} at dawn, as written`
             }
             disabled={readOnly}
+            // A select sends no change for the option already chosen, so this
+            // only guards: what the effect says is never written as a recharge.
             onChange={(v) => {
               if (v !== AS_WRITTEN) set({ recharge: v === '' ? undefined : v });
             }}

@@ -660,6 +660,14 @@ describe('ItemEditor', () => {
     expect(draft()).not.toHaveProperty('recharge');
     expect(regains.selectedOptions[0]?.text).toBe('Never');
     expect([...regains.options].map((o) => o.text)).not.toContain('1d4 at dawn, as written');
+    cleanup();
+    mount(item, {
+      name: 'Full Rod',
+      charges: 3,
+      castGuidance: { v: 1, effects: [{ kind: 'charges', charges: 3, regain: 'all' }] },
+    });
+    const all = screen.getByLabelText('Regains them') as HTMLSelectElement;
+    expect(all.selectedOptions[0]?.text).toBe('All at dawn, as written');
   });
 
   it('ends a new number typed by way of an empty box, or of none, as typing it in place does', () => {
