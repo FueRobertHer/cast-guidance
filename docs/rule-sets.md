@@ -860,7 +860,8 @@ alone, the class that gives it, or the class beside the classes typed in.
 
 `scripts/rules-diff.ts` derives about 10,800 builds over the pinned release
 (every class and subclass across levels in both editions, every feat, race,
-background, optional feature and magic item, and some multiclasses) and
+background, optional feature and magic item, every mundane item whose tags
+give something while worn, and some multiclasses) and
 records a hash of each sheet field, about 32,500 sheets in all, in about six
 minutes. It makes each build three times: with every
 ability 14; with every ability 8 (ids ending `[8s]`), where a minimum such as
