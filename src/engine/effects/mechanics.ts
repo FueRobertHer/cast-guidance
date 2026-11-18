@@ -2145,7 +2145,10 @@ function readPackOnce(entry: DataEntity): ReadPack {
       read.problems.push(`${where}: ${problem}`);
     const replaces = patchReplaces(rawReplace, replace);
     // A replacement inherits nothing, so there is no action for a price to land on.
-    if (replaces && amend.length > 0) {
+    // Charges alone replace an item's own and nothing on another entry, which this
+    // cannot see: the sheet says it (`unpriced`) when its price finds nothing.
+    const priced = !replaces || (replace.effects.length === 0 && replace.charges !== undefined);
+    if (!priced && amend.length > 0) {
       read.problems.push(
         `${where}: "amend" changes nothing beside "effects", which inherit nothing`,
       );
@@ -2157,7 +2160,7 @@ function readPackOnce(entry: DataEntity): ReadPack {
       ...(replaces && replace.charges !== undefined ? { replaceCharges: replace.charges } : {}),
       ...(add.charges !== undefined ? { addCharges: add.charges } : {}),
       // Said once above; the sheet would say it again for each price.
-      ...(amend.length > 0 && !replaces ? { amend } : {}),
+      ...(amend.length > 0 && priced ? { amend } : {}),
     });
   });
   return read;

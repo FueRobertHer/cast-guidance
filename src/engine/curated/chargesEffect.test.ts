@@ -354,6 +354,8 @@ describe("the pool a homebrew item's charges make", () => {
       { target: 'Sparky|HB', effects: [WAND, { kind: 'acBonus', amount: 1 }] },
     ]);
     expect(deriveSheet(doc, withFeat([both])).ac.value).toBe(ac - 1);
+    // Of two that count, the later wins.
+    expect(deriveSheet(doc, withFeat([plus, both])).ac.value).toBe(ac - 1);
   });
 });
 
