@@ -246,12 +246,13 @@ describe('a new pick’s id', () => {
   });
 
   it('starts a pick turned back to options with option ids it never had', () => {
+    // A hand-written id the reader trims and takes without case.
     const was = {
       kind: 'pick',
       id: 'choice',
       ask: 'option',
       options: [
-        { id: 'option-1', label: 'Fire' },
+        { id: 'Option-1 ', label: 'Fire' },
         { id: 'option-2', label: 'Cold' },
       ],
     };

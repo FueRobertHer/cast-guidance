@@ -406,16 +406,18 @@ ability, a damage type) offers "The pick", and a name box takes `{pick}`; a
 card's words say "the one picked". A named option's pick lists its options,
 each with what it gives. A new pick's id is `choice`, else `choice-2` and on,
 one no pick of the entry has or had in a version the editor knows (as it
-opened, as last saved, and a copy's original; a class's features file their
-picks under the class, so the whole entry counts), and it never changes, since
-the answers are filed under it. A new option likewise takes an id its pick's
-options never had there. An Id box shows when the reader refuses the id a file
+opened, each save while it is open, and a copy's original; a class's features
+file their picks under the class, so the whole entry counts), and it never
+changes, since the answers are filed under it. A new option likewise takes an
+id its pick's options never had there, and so do the two a pick turned to
+options starts with. An Id box shows when the reader refuses the id a file
 gives or two picks share one, and stays while it is typed. Turning a pick to
 another ask takes away what only the old ask reads, and turns what it gives too
 while that is still what the old ask started with. What it gives holds no pick,
 pool or action (a pool there would be named for the one picked, which the cards
 that follow a pool's name do not reach): one a file gives is shown as written.
-A pool of the entry renamed is followed into what its picks give. What no box
+A pool of the entry renamed is followed into what its picks give (`gives`,
+`givesAll`, `always`, each option's). What no box
 edits is kept and said so: a count by level or by the class table (a number
 typed replaces it), `givesAll`, `always`, a weapon pick's `without`,
 `afterBuild`, and a Weapon Mastery pick, a class's, in words alone, with what
