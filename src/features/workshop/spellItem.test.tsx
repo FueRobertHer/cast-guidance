@@ -686,7 +686,14 @@ describe('ItemEditor', () => {
       cleanup();
       return text;
     };
-    expect([shown('None'), shown(''), shown(null), shown({ n: 1 }), shown(2), shown('ALL')]).toEqual([
+    expect([
+      shown('None'),
+      shown(''),
+      shown(null),
+      shown({ n: 1 }),
+      shown(2),
+      shown('ALL'),
+    ]).toEqual([
       'Never',
       'Never',
       'Never',
