@@ -641,8 +641,8 @@ describe('ItemEditor', () => {
     expect(screen.getByLabelText('Charge spell 1')).toBeTruthy();
   });
 
-  it('shows the count an effect written by hand says, with no charges field', () => {
-    mount(item, {
+  it('shows the count and regain an effect written by hand says, with no fields', () => {
+    const draft = mount(item, {
       name: 'Hand Rod',
       type: 'RD',
       entries: [],
@@ -650,6 +650,76 @@ describe('ItemEditor', () => {
     });
     expect(screen.getByLabelText('Charges')).toHaveProperty('value', '3');
     expect(screen.getByText(/The sheet counts them/)).toBeTruthy();
+    const regains = screen.getByLabelText('Regains them') as HTMLSelectElement;
+    expect(regains.selectedOptions[0]?.text).toBe('1d4 at dawn, as written');
+    // Never is one pick away, and says none come back.
+    type('Regains them', '');
+    expect((draft().castGuidance as Json).effects).toEqual([
+      { kind: 'charges', charges: 3, regain: 'none' },
+    ]);
+    expect(draft()).not.toHaveProperty('recharge');
+    expect(regains.selectedOptions[0]?.text).toBe('Never');
+    expect([...regains.options].map((o) => o.text)).not.toContain('1d4 at dawn, as written');
+  });
+
+  it('ends a new number typed by way of an empty box, or of none, as typing it in place does', () => {
+    const FB = [{ spell: 'Fireball|PHB', cost: 1 }];
+    const counted = (more: Json) => ({ kind: 'charges', charges: 3, spells: FB, ...more });
+    const pool = { kind: 'resource', key: ITEM_CHARGES, label: 'Charges', max: 2, reset: 'long' };
+    const starts: Record<string, Json> = {
+      'the standard fields': {
+        name: 'Field Rod',
+        charges: 3,
+        recharge: 'dawn',
+        rechargeAmount: '{@dice 1d6 + 1}',
+        castGuidance: { v: 1, effects: [counted({ regain: '1d6+1', ability: 'int' })] },
+      },
+      'an effect written by hand, after another': {
+        name: 'Hand Rod',
+        castGuidance: {
+          v: 1,
+          effects: [{ kind: 'acBonus', amount: 1 }, counted({ regain: '1d4' })],
+        },
+      },
+      'charges and no recharge': {
+        name: 'Half Rod',
+        charges: 3,
+        castGuidance: { v: 1, effects: [counted({ regain: '1d4', ability: 'wis' })] },
+      },
+      'a pool named Charges beside it': {
+        name: 'Twin Rod',
+        charges: 3,
+        recharge: 'dawn',
+        castGuidance: { v: 1, effects: [counted({ regain: 'all' }), pool] },
+      },
+    };
+    for (const [name, start] of Object.entries(starts)) {
+      const typed = (steps: string[]) => {
+        const draft = mount(item, structuredClone(start));
+        for (const s of steps) type('Charges', s);
+        const out = draft();
+        cleanup();
+        return out;
+      };
+      const direct = typed(['5']);
+      const was = ((start.castGuidance as Json).effects as Json[]).find(
+        (e) => e.kind === 'charges',
+      );
+      expect(
+        ((direct.castGuidance as Json).effects as Json[]).find((e) => e.kind === 'charges'),
+        name,
+      ).toEqual({
+        ...was,
+        charges: 5,
+      });
+      for (const steps of [
+        ['', '5'],
+        ['0', '5'],
+        ['', '0', '5'],
+      ]) {
+        expect(typed(steps), `${name}: ${steps.join(', ')}`).toStrictEqual(direct);
+      }
+    }
   });
 
   it('leaves charges counted the older way as they are, and says so', () => {

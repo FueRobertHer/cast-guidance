@@ -489,9 +489,57 @@ describe('charges that only actions spend', () => {
     const sparks = { kind: 'resource', key: 'sparks', label: 'Sparks', max: 2, reset: 'long' };
     const bought = { ...STRIKE, buyBack: { resource: 'sparks', amount: 1, own: 'charges' } };
     const rod = item('Rod of Knocks', 'HB', [COUNTED, sparks, bought]);
-    const doc = carrying({ id: 'a', name: 'Rod of Knocks', source: 'HB' });
-    const strike = deriveSheet(doc, world([rod])).actions.find((a) => a.label === 'Strike');
-    expect(strike?.buyBack).toMatchObject({ resource: 'sparks', own: 'item-charges:a' });
+    const ctx = world([rod]);
+    const strike = (doc: CharacterDoc) =>
+      deriveSheet(doc, ctx).actions.find((a) => a.label === 'Strike');
+    const a = carrying({ id: 'a', name: 'Rod of Knocks', source: 'HB' });
+    expect(strike(a)?.buyBack).toMatchObject({ resource: 'sparks', own: 'item-charges:a' });
+    const b = carrying({ id: 'b', name: 'Rod of Knocks', source: 'HB' });
+    expect(strike(b)?.buyBack).toMatchObject({ resource: 'sparks', own: 'item-charges:b' });
+    expect(strike(a)?.buyBack).toMatchObject({ own: 'item-charges:a' });
     expect(JSON.stringify(rod.castGuidance)).toContain('"own":"charges"');
+  });
+
+  it("refills each copy's own pool for an action that regains its charges or turns a slot into them", () => {
+    const regains = {
+      kind: 'action',
+      economy: 'action',
+      label: 'Mend',
+      regains: { resource: 'charges', amount: 1 },
+    };
+    const turns = {
+      kind: 'action',
+      economy: 'bonus',
+      label: 'Siphon',
+      cost: { resource: 'spell-slot', amount: 1, slotRefills: 'charges' },
+    };
+    const rod = item('Rod of Knocks', 'HB', [COUNTED, regains, turns]);
+    // A caster, so a spell slot pays.
+    const wizard = {
+      name: 'Wizard',
+      source: 'HB',
+      hd: { number: 1, faces: 6 },
+      casterProgression: 'full',
+      spellcastingAbility: 'int',
+    };
+    const base = world([rod]);
+    const ctx: EngineContext = {
+      ...base,
+      get: (type, name, source) =>
+        type === 'class' && name.toLowerCase() === 'wizard' ? wizard : base.get(type, name, source),
+      byType: (type) => (type === 'class' ? [wizard] : base.byType(type)),
+    };
+    const doc = (id: string) => {
+      const d = carrying({ id, name: 'Rod of Knocks', source: 'HB' });
+      d.classes = [{ ref: { name: 'Wizard', source: 'HB' }, levels: 3, hp: ['avg', 'avg', 'avg'] }];
+      return d;
+    };
+    const of = (d: CharacterDoc, label: string) =>
+      deriveSheet(d, ctx).actions.find((a) => a.label === label);
+    expect(of(doc('a'), 'Mend')?.regains).toEqual({ resource: 'item-charges:a', amount: 1 });
+    expect(of(doc('b'), 'Mend')?.regains).toEqual({ resource: 'item-charges:b', amount: 1 });
+    expect(of(doc('a'), 'Siphon')?.cost).toMatchObject({ slotRefills: 'item-charges:a' });
+    expect(of(doc('b'), 'Siphon')?.cost).toMatchObject({ slotRefills: 'item-charges:b' });
+    expect(JSON.stringify(rod.castGuidance)).toContain('"slotRefills":"charges"');
   });
 });

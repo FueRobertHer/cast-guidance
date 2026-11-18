@@ -93,6 +93,11 @@ const PROPERTIES: Options = [
   ['LD', 'Loading'],
 ];
 const MASTERIES = ['Cleave', 'Graze', 'Nick', 'Push', 'Sap', 'Slow', 'Topple', 'Vex'];
+/**
+ * Regains them, for an effect written by hand that says what comes back with
+ * no recharge field: shown, never written.
+ */
+const AS_WRITTEN = '*as-written';
 const RECHARGE: Options = [
   ['', 'Never'],
   ['dawn', 'At dawn'],
@@ -626,10 +631,16 @@ function Charges(props: EditorProps) {
   // A file written by hand may say them in the effect alone.
   const n = draft.charges ?? counted?.charges;
   const charges = typeof n === 'number' ? n : undefined;
+  // What comes back as the effect says it, with no recharge field to say it.
+  const handRegain =
+    typeof draft.recharge !== 'string' && counted?.regain !== undefined && counted.regain !== 'none'
+      ? counted.regain
+      : undefined;
   const old = counted === undefined && effects.some(isOldCharges);
-  // What emptying the Charges box took out, given back when a number is typed
-  // again, so a change made by way of an empty box loses no spells.
-  const cleared = useRef<Json | undefined>(undefined);
+  // The effect an empty Charges box (or none at all, 0) took out, and its place,
+  // put back whole when a number is typed again: a new number by way of an
+  // empty box ends as typing it in place would.
+  const cleared = useRef<{ effect: Json; at: number } | undefined>(undefined);
   const options = spellOptions(props);
   // A copy of an official item the app counts already: its row is written out.
   const row =
@@ -641,12 +652,23 @@ function Charges(props: EditorProps) {
         });
   const set = (patch: Json, own?: Json) => change(withCharges(draft, patch, own));
   const setCharges = (to: number | undefined) => {
-    if (to === undefined && counted !== undefined) {
-      cleared.current = { spells: counted.spells, ability: counted.ability };
+    if (to === undefined || to <= 0) {
+      if (counted !== undefined) {
+        cleared.current = { effect: counted, at: effects.indexOf(counted as StoredEffect) };
+      }
+      set({ charges: to });
+      return;
     }
-    const back = to !== undefined && counted === undefined ? cleared.current : undefined;
-    if (to !== undefined) cleared.current = undefined;
-    set({ charges: to }, back);
+    const back = counted === undefined ? cleared.current : undefined;
+    cleared.current = undefined;
+    if (back === undefined) {
+      set({ charges: to });
+      return;
+    }
+    const now = [...effects];
+    now.splice(back.at, 0, back.effect as StoredEffect);
+    const restored = { ...draft, castGuidance: guidanceWith(draft.castGuidance, { effects: now }) };
+    change(withCharges(restored, { charges: to }));
   };
   const spells = list(counted?.spells).filter(isRecord) as Json[];
   const fromRow =
@@ -683,11 +705,23 @@ function Charges(props: EditorProps) {
         {charges !== undefined && (
           <KeptSelect
             label="Regains them"
-            value={typeof draft.recharge === 'string' ? draft.recharge : ''}
+            value={
+              typeof draft.recharge === 'string'
+                ? draft.recharge
+                : handRegain !== undefined
+                  ? AS_WRITTEN
+                  : ''
+            }
             options={RECHARGE}
-            shown={String(draft.recharge ?? '')}
+            shown={
+              typeof draft.recharge === 'string'
+                ? draft.recharge
+                : `${handRegain === 'all' ? 'All' : String(handRegain)} at dawn, as written`
+            }
             disabled={readOnly}
-            onChange={(v) => set({ recharge: v === '' ? undefined : v })}
+            onChange={(v) => {
+              if (v !== AS_WRITTEN) set({ recharge: v === '' ? undefined : v });
+            }}
           />
         )}
         {charges !== undefined && draft.recharge !== undefined && (
