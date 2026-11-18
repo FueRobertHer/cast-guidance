@@ -179,6 +179,25 @@ describe('the 2024 Weapon Mastery', () => {
       'Knife',
     ]);
   });
+
+  it('masters the kinds picked for each class that has the feature', () => {
+    const profs = ['simple weapons', 'warbow'];
+    const mastered = (c: string, picks: string[]) => {
+      const col = masteryAt(c, 1, picks, profs);
+      return `${c} ${col.pending.length} ${col.effects.flatMap((e) => (e.kind === 'weaponMastery' ? [e.name] : [])).join(', ')}`;
+    };
+    expect([
+      mastered('Barbarian', ['Knife', 'Warblade']),
+      mastered('Paladin', ['Knife', 'Warbow']),
+      mastered('Ranger', ['Warbow', 'Knife']),
+      mastered('Rogue', ['Knife', 'Warbow']),
+    ]).toEqual([
+      'Barbarian 0 Knife, Warblade',
+      'Paladin 0 Knife, Warbow',
+      'Ranger 0 Warbow, Knife',
+      'Rogue 0 Knife, Warbow',
+    ]);
+  });
 });
 
 describe('the kinds of weapon a mastery pick offers', () => {
