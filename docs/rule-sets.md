@@ -779,7 +779,10 @@ wins. It reaches only what the entry inherits, never an action its author wrote
 or a pack's `effects` or `add` gave. An entry that replaces what it inherits
 (`replace: true`, or a pack's `effects`) has nothing for it to price, and an
 `amend` that finds no action says so on the sheet; a patch with both `effects`
-and `amend` says so once, as the pack is read. It reaches what `drop` reaches:
+and `amend` says so once, as the pack is read. One whose `effects` are an
+item's charges alone keeps its `amend`, since on another kind of entry they
+replace nothing: the sheet prices that entry, or says on an item that the price
+finds nothing. It reaches what `drop` reaches:
 class and subclass features, feats, optional features and species traits. Items
 add their charges after it, and backgrounds price nothing themselves.
 
