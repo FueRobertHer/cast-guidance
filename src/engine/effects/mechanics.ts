@@ -1306,7 +1306,10 @@ const KINDS = new Map<Kind, Build>([
   ],
   ['resist', defense],
   ['immune', defense],
-  ['vulnerable', (o, r) => ({ damageType: req(o, r, 'damageType', text()) })],
+  [
+    'vulnerable',
+    (o, r) => ({ damageType: req(o, r, 'damageType', byAnswerWords(text(), { needed: true })) }),
+  ],
   [
     'conditionImmune',
     (o, r) => ({
@@ -1835,15 +1838,17 @@ export function readStoredEffects(
   raw: unknown,
   name = 'effects',
   strictOrHow: boolean | HowRead = false,
-): { effects: EffectTemplate[]; problems: string[] } {
+): { effects: EffectTemplate[]; problems: string[]; places: number[] } {
   const how: HowRead =
     typeof strictOrHow === 'boolean'
       ? { strict: strictOrHow, builtIn: false, inPick: false }
       : strictOrHow;
   const effects: EffectTemplate[] = [];
   const problems: string[] = [];
-  if (raw === undefined) return { effects, problems };
-  if (!Array.isArray(raw)) return { effects, problems: [`"${name}" is not a list`] };
+  // Where each effect read sits in the list, from 1: the reader leaves bad ones out.
+  const places: number[] = [];
+  if (raw === undefined) return { effects, problems, places };
+  if (!Array.isArray(raw)) return { effects, problems: [`"${name}" is not a list`], places };
   if (raw.length > L.effectsPerEntry) {
     problems.push(`only the first ${L.effectsPerEntry} of "${name}" count`);
   }
@@ -1875,8 +1880,10 @@ export function readStoredEffects(
   // does not ask has no answer to read. The engine's own ids are asked elsewhere.
   for (const { t, i } of read) {
     const missing = t.byAnswer?.find((a) => a.of?.startsWith('pick-') && !pickIds.has(a.of));
-    if (missing?.of === undefined) effects.push(t);
-    else {
+    if (missing?.of === undefined) {
+      effects.push(t);
+      places.push(i + 1);
+    } else {
       said(
         raw[i],
         i,
@@ -1886,7 +1893,7 @@ export function readStoredEffects(
       );
     }
   }
-  return { effects, problems };
+  return { effects, problems, places };
 }
 
 function readRef(s: string): EntityRef | undefined {

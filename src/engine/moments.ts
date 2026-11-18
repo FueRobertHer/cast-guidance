@@ -202,16 +202,11 @@ function readOutcome(raw: unknown, problems: string[], where: string): ReadOutco
       const stored = own(raw, 'effects');
       const read = readStoredEffects(stored);
       for (const p of read.problems) problems.push(`${where}: ${p}`);
-      // Where each effect read sits in the stored list: the reader leaves bad ones out.
-      const readAt = Array.isArray(stored)
-        ? stored
-            .slice(0, L.effectsPerEntry)
-            .flatMap((x, i) => (readStoredEffects([x]).effects.length === 1 ? [i + 1] : []))
-        : [];
       const effects: EffectTemplate[] = [];
       const places: number[] = [];
       for (const [i, each] of read.effects.entries()) {
-        const place = readAt[i] ?? i + 1;
+        // Where it sits in the stored list, as the reader read the list whole.
+        const place = read.places[i] ?? i + 1;
         // An AC formula with no label of its own is named for the effect.
         const t = namedFor(each, name);
         // Effects in play are stricter than an entry's own: plain dice ("1d6",

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { makeTestContext } from '../../../tests-fixtures/testWorld';
 import { storedInPlay } from '../activeEffects';
 import { CAST_GUIDANCE_LIMITS as L, RULE_SET_TYPE } from '../castGuidance';
+import { readMoments } from '../moments';
 import {
   type CharacterDoc,
   type DataEntity,
@@ -83,6 +84,17 @@ describe('words by an answer', () => {
     expect(
       resisted(emitted([resist, KIND], { choices: { 'feat:lantern|hb:pick-kind': ['storm'] } })),
     ).toEqual(['lightning']);
+  });
+
+  it('gives a vulnerability by an answer, as the other defenses', () => {
+    const vulnerable = { kind: 'vulnerable', damageType: byKind };
+    const given = emitted([KIND, vulnerable], {
+      choices: { 'feat:lantern|hb:pick-kind': ['storm'] },
+    });
+    expect(given.flatMap((e) => (e.kind === 'vulnerable' ? [e.damageType] : []))).toEqual([
+      'lightning',
+    ]);
+    expect(emitted([KIND, vulnerable]).some((e) => e.kind === 'vulnerable')).toBe(false);
   });
 
   it('reads the first answer of a pick of more than one', () => {
@@ -259,5 +271,41 @@ describe('reading a table of words', () => {
   it('is refused in play, where there is no entry to answer', () => {
     const refused = storedInPlay([resist({ byGrant: { light: 'fire' } })]);
     expect(refused.problems[0]?.why).toMatch(/not by an answer or a spell granted/);
+    // Read with the list beside it, a table of a pick it asks is refused for being in play.
+    expect(storedInPlay([resist(byKind), KIND]).problems).toEqual([
+      {
+        place: 1,
+        why: 'an effect in play takes words as written, not by an answer or a spell granted',
+      },
+      {
+        place: 2,
+        why: 'an effect in play changes only numbers and rolls, not proficiencies, uses or actions',
+      },
+    ]);
+  });
+
+  it("says each effect in play by its place in the list, as the list's reader read it", () => {
+    const outcome = (effects: unknown[]) =>
+      readMoments(
+        [
+          {
+            at: 'zeroHp',
+            do: [{ kind: 'addEffect', name: 'Glow', effects, lasts: { minutes: 1 } }],
+          },
+        ],
+        'Pack',
+      );
+    const ac = { kind: 'acBonus', amount: 1 };
+    const read = outcome([resist(byKind), KIND, ac]);
+    expect(read.problems).toEqual([
+      'moment 1 (zeroHp), outcome 1: effect 1 (resist): an effect in play takes words as written, not by an answer or a spell granted',
+      'moment 1 (zeroHp), outcome 1: effect 2 (pick): an effect in play reaches only numbers and rolls',
+    ]);
+    const [added] = read.moments[0]?.do ?? [];
+    expect(added?.kind === 'addEffect' && added.places).toEqual([3]);
+    // A pick asked twice is left out of the list read whole, so the places after it hold.
+    const twice = outcome([KIND, KIND, ac]);
+    const [kept] = twice.moments[0]?.do ?? [];
+    expect(kept?.kind === 'addEffect' && kept.places).toEqual([3]);
   });
 });
