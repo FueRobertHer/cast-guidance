@@ -707,6 +707,72 @@ describe('the call sites read built-in rows', () => {
     });
   });
 
+  // The same three ways for a class feature and a picked optional feature, whose
+  // call sites each decide the scan on their own.
+  const prose = ['You can use it once per long rest.'];
+  const subjects: Array<{
+    name: string;
+    label: string;
+    key: string;
+    sheetWith: (...sets: unknown[]) => ReturnType<typeof deriveSheet>;
+  }> = [
+    {
+      name: 'a class feature',
+      label: 'Grit',
+      key: 'grit|warrior',
+      sheetWith: (...sets) => {
+        const ctx = world({ [RULE_SET_TYPE]: sets as DataEntity[] });
+        const byType: EngineContext['byType'] = (type) =>
+          ctx
+            .byType(type)
+            .map((e) =>
+              type === 'classFeature' && e.name === 'Grit' ? { ...e, entries: prose } : e,
+            );
+        return deriveSheet(character(), { ...ctx, byType });
+      },
+    },
+    {
+      name: 'an optional feature',
+      label: 'Gift Stance',
+      key: 'gift stance|hb',
+      sheetWith: (...sets) => {
+        const stance: DataEntity = {
+          name: 'Gift Stance',
+          source: 'HB',
+          featureType: ['FS:T'],
+          entries: prose,
+        };
+        const ctx = world({ optionalfeature: [stance], [RULE_SET_TYPE]: sets as DataEntity[] });
+        const doc = character();
+        const prompt = deriveSheet(doc, ctx).pending.find((p) => p.kind === 'optionalfeature');
+        expect(prompt).toBeDefined();
+        doc.choices[prompt?.id ?? ''] = ['gift stance|hb'];
+        return deriveSheet(doc, ctx);
+      },
+    },
+  ];
+  describe.each(subjects)('$name, whose prose the scan reads', ({ label, key, sheetWith }) => {
+    const scanned = (sheet: ReturnType<typeof deriveSheet>) =>
+      sheet.resources.some((r) => r.label === label);
+    const cued = (sheet: ReturnType<typeof deriveSheet>) =>
+      sheet.cues.some((c) => c.text === 'Its row');
+
+    it('scans it without a row', () => {
+      const sheet = sheetWith();
+      expect([scanned(sheet), cued(sheet)]).toEqual([true, false]);
+    });
+
+    it('scans it no more under a row that replaces the scan', () => {
+      const sheet = sheetWith(ruleSet([row([key], [cue('Its row')])]));
+      expect([scanned(sheet), cued(sheet)]).toEqual([false, true]);
+    });
+
+    it('scans it beside a row that keeps the scan', () => {
+      const sheet = sheetWith(ruleSet([row([key], [cue('Its row')], 'keep')]));
+      expect([scanned(sheet), cued(sheet)]).toEqual([true, true]);
+    });
+  });
+
   it('a race trait is read under trait:', () => {
     const testfolk = (d: CharacterDoc) => {
       d.race = { name: 'Testfolk', source: 'TST' };
