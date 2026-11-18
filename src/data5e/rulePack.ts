@@ -225,6 +225,15 @@ export function packRefusals(guidance: Record<string, unknown>): string[] {
           }
           // A level table's rows are the values of the field that holds it: a note's are texts.
           for (const row of Object.values(child)) stack.push([row, key]);
+        } else if (
+          isRecord(child) &&
+          (k === 'byGrant' || (k === 'values' && value.byAnswer !== undefined))
+        ) {
+          if (Object.keys(child).length > L.answerRows) {
+            reasons.add(`a table by an answer or a spell granted has at most ${L.answerRows} rows`);
+          }
+          // As a level table's: its rows are the values of the field that holds it.
+          for (const row of Object.values(child)) stack.push([row, key]);
         } else stack.push([child, k]);
       }
     }

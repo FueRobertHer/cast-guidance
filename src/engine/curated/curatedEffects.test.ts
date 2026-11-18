@@ -12,7 +12,7 @@ import {
   newCharacterDoc,
 } from '../types';
 import { emitCuratedEffects } from './curatedEffects';
-import { DRAGONS, dragonOptions } from './draconicAncestry';
+import { DRACONIC_ANCESTRY, DRAGONS, dragonOptions } from './draconicAncestry';
 import { linkSpend } from './spendLinks';
 
 // No data but the rule sets every registry holds: the rows moved out of `CURATED`.
@@ -645,6 +645,33 @@ describe('the Draconic sorcerer’s dragon', () => {
         'resistance to cold for 1 hour · cold spells add your Charisma modifier to one damage roll',
       ],
     ]);
+    // Every dragon the Dragon Ancestor offers names its ancestry table's type: the
+    // probe answers the first and the last alone.
+    for (const dragon of DRAGONS) {
+      const c = col('Sorcerer', 6);
+      c.doc.choices['subclass:draconic bloodline|phb:ancestor'] = [dragon];
+      const type = DRACONIC_ANCESTRY[dragon]?.type;
+      expect(note(c)).toEqual([
+        [
+          'none',
+          `resistance to ${type} for 1 hour · ${type} spells add your Charisma modifier to one damage roll`,
+        ],
+      ]);
+    }
+    // A dragon it does not offer names none, as no type is known for it.
+    const other = col('Sorcerer', 6);
+    other.doc.choices['subclass:draconic bloodline|phb:ancestor'] = ['amethyst'];
+    expect(note(other)).toEqual([['none', undefined]]);
+  });
+
+  it('prices the 2014 Elemental Affinity at a sorcery point, its spend link', () => {
+    const affinity = { ...bloodline, label: 'Elemental Affinity' };
+    const c = run('elemental affinity|draconic bloodline', col('Sorcerer', 6), affinity);
+    linkSpend(c, ['elemental affinity|draconic bloodline|phb'], 'Elemental Affinity', affinity);
+    const action = c.effects.find((e) => e.kind === 'action');
+    expect(action?.kind === 'action' ? action.cost : undefined).toMatchObject({
+      resource: expect.stringMatching(/sorcery/),
+    });
   });
 
   it('resists the type the 2024 Elemental Affinity picks', () => {

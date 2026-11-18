@@ -306,22 +306,27 @@ export function storedInPlay(
 ): { parts: EffectPart[]; problems: StoredProblem[] } {
   const parts: EffectPart[] = [];
   const problems: StoredProblem[] = [];
+  // Read whole, as an entry's list is: an effect may read a pick beside it.
+  const all = readStoredEffects(raw);
   // The list as a whole (not a list, too long) is said once, with no place.
-  for (const p of readStoredEffects(raw).problems) {
+  for (const p of all.problems) {
     if (!/^effect \d+/.test(p)) problems.push({ why: p });
   }
   if (!Array.isArray(raw)) return { parts, problems };
   Array.from(raw as unknown[])
     .slice(0, CAST_GUIDANCE_LIMITS.effectsPerEntry)
-    .forEach((x, i) => {
+    .forEach((_, i) => {
       const place = i + 1;
-      const one = readStoredEffects([x]);
-      const read = one.effects[0];
+      const at = all.places.indexOf(place);
+      const read = at < 0 ? undefined : all.effects[at];
       const t = read === undefined || named === undefined ? read : namedFor(read, named);
       if (t === undefined) {
+        const said = all.problems.find(
+          (p) => p.startsWith(`effect ${place} `) || p.startsWith(`effect ${place}:`),
+        );
         problems.push({
           place,
-          why: whyOf(one.problems[0] ?? 'it could not be read'),
+          why: whyOf(said ?? 'it could not be read'),
           unreadable: true,
         });
         return;

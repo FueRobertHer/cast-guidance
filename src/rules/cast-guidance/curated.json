@@ -3940,6 +3940,32 @@
           ]
         }
       ]
+    },
+    {
+      "part": "curated",
+      "keys": ["elemental affinity|draconic bloodline"],
+      "effects": [
+        {
+          "kind": "action",
+          "economy": "none",
+          "label": "Elemental Affinity",
+          "note": {
+            "byAnswer": "ancestor",
+            "values": {
+              "black": "resistance to acid for 1 hour · acid spells add your Charisma modifier to one damage roll",
+              "blue": "resistance to lightning for 1 hour · lightning spells add your Charisma modifier to one damage roll",
+              "brass": "resistance to fire for 1 hour · fire spells add your Charisma modifier to one damage roll",
+              "bronze": "resistance to lightning for 1 hour · lightning spells add your Charisma modifier to one damage roll",
+              "copper": "resistance to acid for 1 hour · acid spells add your Charisma modifier to one damage roll",
+              "gold": "resistance to fire for 1 hour · fire spells add your Charisma modifier to one damage roll",
+              "green": "resistance to poison for 1 hour · poison spells add your Charisma modifier to one damage roll",
+              "red": "resistance to fire for 1 hour · fire spells add your Charisma modifier to one damage roll",
+              "silver": "resistance to cold for 1 hour · cold spells add your Charisma modifier to one damage roll",
+              "white": "resistance to cold for 1 hour · cold spells add your Charisma modifier to one damage roll"
+            }
+          }
+        }
+      ]
     }
   ]
 }

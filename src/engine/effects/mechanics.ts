@@ -92,6 +92,22 @@ export interface LevelWords {
   needed?: true;
 }
 
+/**
+ * Words a stored effect gives by another answer of its entry (`byAnswer`: the
+ * first answer saved for one of its picks) or by which of some spells the entry
+ * granted so far (`byGrant`): the effect's `field`, filled when it is emitted.
+ * With none of the table's, a field the kind needs leaves the effect out, and
+ * any other is left out.
+ */
+export interface AnswerWords {
+  field: string;
+  /** The pick's prompt id after the origin; absent, by the spell granted. */
+  of?: string;
+  /** Each answer, or spell name, trimmed and lowercase, with its words. */
+  values: ReadonlyArray<readonly [string, string]>;
+  needed?: true;
+}
+
 /** One stored effect, read: the engine's fields, its formulas and its states. */
 export interface EffectTemplate {
   /** The effect without `origin`, which the collector adds. A pick's is its kind, id and ask. */
@@ -101,6 +117,8 @@ export interface EffectTemplate {
   formulas?: ReadonlyArray<{ field: FormulaField; formula: Formula }>;
   /** Its words by class level; the effect holds the first row's until it is emitted. */
   byLevel?: readonly LevelWords[];
+  /** Its words by an answer or a spell granted; the effect holds the first row's until then. */
+  byAnswer?: readonly AnswerWords[];
   while?: readonly WhileState[];
   /** The rules version it counts under alone; `emit` leaves it out under the other. */
   edition?: (typeof EFFECT_EDITIONS)[number];
@@ -114,6 +132,59 @@ function fillLevelWords(e: Record<string, unknown>, t: EffectTemplate, classLeve
     if (at !== undefined) e[field] = at;
     else if (needed !== true) delete e[field];
   }
+}
+
+/**
+ * `t`'s words by an answer or a spell granted filled in on `e`, a fresh copy of
+ * its effect. False when a field the kind needs has none of its table's, so the
+ * effect is not given.
+ */
+function fillAnswerWords(
+  col: Collector,
+  e: Record<string, unknown>,
+  t: EffectTemplate,
+  origin: EffectOrigin,
+  pickBase: string | undefined,
+): boolean {
+  for (const { field, of, values, needed } of t.byAnswer ?? []) {
+    const key =
+      of === undefined ? grantedOf(col, origin, values) : answerTo(col, of, origin, pickBase);
+    const words = key === undefined ? undefined : values.find(([k]) => k === key)?.[1];
+    if (words !== undefined) e[field] = words;
+    else if (needed === true) return false;
+    else delete e[field];
+  }
+  return true;
+}
+
+/** The first answer saved for the entry's pick `of`, filed as `askPick` files it, trimmed and lowercase. */
+function answerTo(
+  col: Collector,
+  of: string,
+  origin: EffectOrigin,
+  pickBase: string | undefined,
+): string | undefined {
+  const base =
+    pickBase !== undefined && of.startsWith('pick-') ? pickBase : `${origin.type}:${origin.uid}`;
+  // Functions, so a `$` in a name is the name's, not a replacement pattern.
+  const id = `${base}:${of.replace('{feature}', () => origin.label.toLowerCase())}`;
+  const picked = col.doc.choices[id];
+  const first = Array.isArray(picked) ? picked[0] : undefined;
+  return first === undefined ? undefined : String(first).trim().toLowerCase();
+}
+
+/** Of the spells `values` names, the first the entry granted so far, lowercase. */
+function grantedOf(
+  col: Collector,
+  origin: EffectOrigin,
+  values: AnswerWords['values'],
+): string | undefined {
+  for (const x of col.effects) {
+    if (x.kind !== 'grantSpell' || x.origin.uid !== origin.uid) continue;
+    const name = x.spell.name.toLowerCase();
+    if (values.some(([k]) => k === name)) return name;
+  }
+  return undefined;
 }
 
 /**
@@ -272,7 +343,9 @@ export const inPlayRefusal = (t: EffectTemplate, holder: string): string | undef
         ? `${holder} asks nothing: a pick is made as the character is built`
         : t.effect.kind === 'sense' && t.effect.orMore !== undefined
           ? `${holder} takes a plain range, with no "orMore"`
-          : undefined;
+          : t.byAnswer !== undefined
+            ? `${holder} takes words as written, not by an answer or a spell granted`
+            : undefined;
 
 /** An inherited effect an entry leaves out: of this kind, and this label when given. */
 export interface DropRule {
@@ -310,6 +383,8 @@ interface Reading {
   slots: Array<{ field: FormulaField; formula: Formula }>;
   /** Words by class level, filled when the effect is emitted (`byLevelWords`). */
   words?: LevelWords[];
+  /** Words by an answer or a spell granted, filled when the effect is emitted (`byAnswerWords`). */
+  answers?: AnswerWords[];
   /**
    * A strict reading (a built-in rule set's): the keys read off each object, so
    * a field the reader does not know is a problem rather than dropped unseen.
@@ -504,6 +579,90 @@ const byLevelWords =
     return first[1];
   };
 
+/**
+ * The prompts a built-in row may read beside its picks': the spell option an
+ * entry's `additionalSpells` asks (`branch`), filed under the class's or
+ * subclass's own id. A player's file reads only its own picks.
+ */
+const READ_ONLY_PICKS: ReadonlySet<string> = new Set(['branch']);
+
+/**
+ * Words chosen by another answer of the entry, or else read by `other`:
+ * `{ "byAnswer": "<pick id>", "values": { "<answer>": "<words>" } }` by the first
+ * answer saved for one of its picks (named by the pick's `id`), or
+ * `{ "byGrant": { "<spell>": "<words>" } }` by the first of those spells it
+ * granted so far. Each row's words are read by `read`. The effect holds the
+ * first row's until it is emitted; with none of the table's then, a field the
+ * kind needs (`needed`) leaves the effect out, and any other is left out.
+ */
+const byAnswerWords =
+  (read: Field, how: { needed?: true } = {}, other: Field = read): Field =>
+  (v, r, key) => {
+    if (!isRecord(v) || (own(v, 'byAnswer') === undefined && own(v, 'byGrant') === undefined)) {
+      return other(v, r, key);
+    }
+    const granted = own(v, 'byGrant') !== undefined;
+    if (granted && own(v, 'byAnswer') !== undefined) {
+      throw new Bad('is by an answer or by a spell granted, not both');
+    }
+    onlyKnown(
+      v,
+      r,
+      (k) => (granted ? k === 'byGrant' : k === 'byAnswer' || k === 'values'),
+      granted ? 'a table by the spell granted' : 'a table by an answer',
+    );
+    let of: string | undefined;
+    if (!granted) {
+      const id = own(v, 'byAnswer');
+      try {
+        of =
+          r.builtIn === true && typeof id === 'string' && READ_ONLY_PICKS.has(id)
+            ? id
+            : (pickId(r.builtIn === true)(id, r, 'byAnswer') as string);
+      } catch (err) {
+        if (err instanceof Bad) throw new Bad(`"byAnswer" ${err.message}`);
+        throw err;
+      }
+    }
+    const table = own(v, granted ? 'byGrant' : 'values');
+    if (!isRecord(table)) {
+      throw new Bad(
+        granted
+          ? '"byGrant" is a table of spells and words'
+          : '"values" is a table of answers and words',
+      );
+    }
+    const entries = Object.entries(table);
+    if (entries.length > L.answerRows) throw new Bad(`names at most ${L.answerRows} answers`);
+    const names = new Set<string>();
+    const values = entries.map(([answer, words]): readonly [string, string] => {
+      const name = answer.trim().toLowerCase();
+      if (name === '' || name.length > L.labelLength) {
+        throw new Bad(`"${clip(answer)}" is not an answer`);
+      }
+      if (names.has(name)) throw new Bad(`names "${clip(answer)}" twice`);
+      names.add(name);
+      try {
+        return [name, read(words, r, key) as string];
+      } catch (err) {
+        if (err instanceof Bad) throw new Bad(`"${clip(answer)}" ${err.message}`);
+        throw err;
+      }
+    });
+    const [first] = values;
+    if (first === undefined) throw new Bad('names no answer');
+    r.answers = [
+      ...(r.answers ?? []),
+      {
+        field: key,
+        ...(of === undefined ? {} : { of }),
+        values,
+        ...(how.needed === true ? { needed: true as const } : {}),
+      },
+    ];
+    return first[1];
+  };
+
 /** A number that may be a formula or a level table, filled at fold time. */
 const amount: Field = (v, r, key) => {
   if (isRecord(v)) {
@@ -641,7 +800,7 @@ const initiativeBonus: Build = (o, r) => {
   return { amount: 'profBonus' };
 };
 const defense: Build = (o, r) => ({
-  damageType: req(o, r, 'damageType', text()),
+  damageType: req(o, r, 'damageType', byAnswerWords(text(), { needed: true })),
   ...opt(o, r, 'note', text(L.textLength)),
 });
 
@@ -753,7 +912,7 @@ const action: Build = (o, r) => ({
   ...opt(o, r, 'roll', byLevelWords(dice)),
   ...opt(o, r, 'heals', flag),
   ...opt(o, r, 'plainDice', flag),
-  ...opt(o, r, 'note', byLevelWords(text(L.textLength))),
+  ...opt(o, r, 'note', byAnswerWords(text(L.textLength), {}, byLevelWords(text(L.textLength)))),
   ...opt(
     o,
     r,
@@ -1147,7 +1306,10 @@ const KINDS = new Map<Kind, Build>([
   ],
   ['resist', defense],
   ['immune', defense],
-  ['vulnerable', (o, r) => ({ damageType: req(o, r, 'damageType', text()) })],
+  [
+    'vulnerable',
+    (o, r) => ({ damageType: req(o, r, 'damageType', byAnswerWords(text(), { needed: true })) }),
+  ],
   [
     'conditionImmune',
     (o, r) => ({
@@ -1660,6 +1822,7 @@ function readEffect(raw: unknown, how: HowRead): EffectTemplate {
     effect,
     ...(r.slots.length > 0 ? { formulas: r.slots } : {}),
     ...(r.words === undefined ? {} : { byLevel: r.words }),
+    ...(r.answers === undefined ? {} : { byAnswer: r.answers }),
     ...states,
     ...edition,
   };
@@ -1675,21 +1838,29 @@ export function readStoredEffects(
   raw: unknown,
   name = 'effects',
   strictOrHow: boolean | HowRead = false,
-): { effects: EffectTemplate[]; problems: string[] } {
+): { effects: EffectTemplate[]; problems: string[]; places: number[] } {
   const how: HowRead =
     typeof strictOrHow === 'boolean'
       ? { strict: strictOrHow, builtIn: false, inPick: false }
       : strictOrHow;
   const effects: EffectTemplate[] = [];
   const problems: string[] = [];
-  if (raw === undefined) return { effects, problems };
-  if (!Array.isArray(raw)) return { effects, problems: [`"${name}" is not a list`] };
+  // Where each effect read sits in the list, from 1: the reader leaves bad ones out.
+  const places: number[] = [];
+  if (raw === undefined) return { effects, problems, places };
+  if (!Array.isArray(raw)) return { effects, problems: [`"${name}" is not a list`], places };
   if (raw.length > L.effectsPerEntry) {
     problems.push(`only the first ${L.effectsPerEntry} of "${name}" count`);
   }
   // Two picks under one id would share one answer, each applying it: unless each
   // counts under its own rules version, so only one is ever asked.
   const pickIds = new Map<string, Array<string | undefined>>();
+  const read: Array<{ t: EffectTemplate; i: number }> = [];
+  const said = (x: unknown, i: number, err: Bad) => {
+    const kind =
+      isRecord(x) && typeof own(x, 'kind') === 'string' ? ` (${clip(own(x, 'kind'))})` : '';
+    problems.push(`effect ${i + 1}${kind}: ${err.message}`);
+  };
   raw.slice(0, L.effectsPerEntry).forEach((x, i) => {
     try {
       const t = readEffect(x, how);
@@ -1699,15 +1870,30 @@ export function readStoredEffects(
           throw new Bad(`asks "${clip(t.pick.id)}" again: give each pick its own "id"`);
         pickIds.set(t.pick.id, [...editions, t.edition]);
       }
-      effects.push(t);
+      read.push({ t, i });
     } catch (err) {
       if (!(err instanceof Bad)) throw err;
-      const kind =
-        isRecord(x) && typeof own(x, 'kind') === 'string' ? ` (${clip(own(x, 'kind'))})` : '';
-      problems.push(`effect ${i + 1}${kind}: ${err.message}`);
+      said(x, i, err);
     }
   });
-  return { effects, problems };
+  // A pick of the entry's own is read where it is asked, in this list: one it
+  // does not ask has no answer to read. The engine's own ids are asked elsewhere.
+  for (const { t, i } of read) {
+    const missing = t.byAnswer?.find((a) => a.of?.startsWith('pick-') && !pickIds.has(a.of));
+    if (missing?.of === undefined) {
+      effects.push(t);
+      places.push(i + 1);
+    } else {
+      said(
+        raw[i],
+        i,
+        new Bad(
+          `reads the answer to "${clip(missing.of.slice(5))}", a pick this list does not ask`,
+        ),
+      );
+    }
+  }
+  return { effects, problems, places };
 }
 
 function readRef(s: string): EntityRef | undefined {
@@ -2406,6 +2592,9 @@ function emit(
     // A fresh copy each time: fold time fills its numbers in place.
     const e = { ...structuredClone(named.effect), origin } as EffectInput;
     fillLevelWords(e as unknown as Record<string, unknown>, named, classLevel);
+    if (!fillAnswerWords(col, e as unknown as Record<string, unknown>, named, origin, pickBase)) {
+      continue;
+    }
     classNamed(col, e as unknown as Record<string, unknown>, t, cls);
     if (t.formulas !== undefined) {
       e.formulas = t.formulas.map((f) => ({

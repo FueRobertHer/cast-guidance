@@ -197,6 +197,26 @@ function words(v: unknown): string {
  */
 export const BY_LEVEL = 'By level, as written';
 
+/** A stored table of words by an answer or a spell granted (`byAnswer`, `byGrant`). */
+export const isByAnswer = (v: unknown): v is Record<string, unknown> =>
+  isRecord(v) && (v.byAnswer !== undefined || v.byGrant !== undefined);
+
+/** A table of words by an answer or a spell granted, as a sentence reads it. */
+const byAnswerWords = (v: Record<string, unknown>) =>
+  v.byGrant !== undefined ? 'by the spell granted' : `by the answer to ${String(v.byAnswer)}`;
+
+/**
+ * What a box shows for a table a file may hold and no box edits (by level, by an
+ * answer, by a spell granted), or nothing for a value a box does edit. Picking or
+ * typing a value puts that one value in its place.
+ */
+export function asWritten(v: unknown): string | undefined {
+  if (isByLevel(v)) return BY_LEVEL;
+  if (!isByAnswer(v)) return undefined;
+  const said = byAnswerWords(v);
+  return `${said.charAt(0).toUpperCase()}${said.slice(1)}, as written`;
+}
+
 /**
  * What a file's `ownClass` or `ownClassBeside` adds to a pool's or an action's
  * name: the sheet names it for the class that gives it, "Channel Divinity
@@ -633,7 +653,7 @@ const KINDS: readonly KindSpec[] = [
       { key: 'damageType', label: 'Damage', type: 'pick', options: DAMAGE },
     ],
     line: (e) =>
-      `${e.kind === 'immune' ? 'Immunity' : e.kind === 'vulnerable' ? 'Vulnerability' : 'Resistance'} to ${String(e.damageType)} damage`,
+      `${e.kind === 'immune' ? 'Immunity' : e.kind === 'vulnerable' ? 'Vulnerability' : 'Resistance'} ${isByAnswer(e.damageType) ? byAnswerWords(e.damageType) : `to ${String(e.damageType)} damage`}`,
   },
   {
     kinds: ['conditionImmune'],
@@ -1717,8 +1737,8 @@ function keyOf(label: string): string {
 /** A field's value as its box shows it. */
 function shown(e: Eff, f: FieldSpec): string {
   const v = e[f.key];
-  // A level table has no box of its own: the box offers to replace it (`BY_LEVEL`).
-  if (v === undefined || isByLevel(v)) return '';
+  // A table has no box of its own: the box offers to replace it (`asWritten`).
+  if (v === undefined || asWritten(v) !== undefined) return '';
   if (typeof v === 'object' && v !== null && 'f' in v) return String(v.f);
   if (typeof v === 'object') return JSON.stringify(v);
   return String(v);
@@ -1921,7 +1941,9 @@ function Card({
                   value={f.key === 'kind' ? effect.kind : shown(effect, f)}
                   onChange={(e) => set(f, e.target.value)}
                 >
-                  {isByLevel(effect[f.key]) && <option value="">{BY_LEVEL}</option>}
+                  {asWritten(effect[f.key]) !== undefined && (
+                    <option value="">{asWritten(effect[f.key])}</option>
+                  )}
                   {(takesPicked(picked, effect.kind, f.key) ||
                     shown(effect, f).includes('{pick')) && <option value={PICKED}>The pick</option>}
                   {f.options.map(([v, text]) => (
@@ -1934,7 +1956,7 @@ function Card({
                 <input
                   aria-label={`${title}: ${f.label}`}
                   value={shown(effect, f)}
-                  placeholder={isByLevel(effect[f.key]) ? BY_LEVEL : undefined}
+                  placeholder={asWritten(effect[f.key])}
                   onChange={(e) => set(f, e.target.value)}
                   className={fieldClass}
                 />

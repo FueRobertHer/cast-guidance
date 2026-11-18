@@ -29,7 +29,8 @@
  * query fits, and with `--answers last` every prompt with its last usable
  * options. A subclass that reads a moved row is built again at every level
  * with what an "in place of" pick names held: under a background giving those
- * skills and tools, and after a first level of Wizard (INT and WIS saves).
+ * skills and tools, and after a first level of Wizard (INT and WIS saves); and
+ * on a Dwarf, whose darkvision a row may add to (`orMore`).
  *
  * It sees one entity at a time (a class alone, a feat or race on a bare
  * Fighter or Wizard), so a row that only differs beside another entity's row
@@ -110,6 +111,20 @@ const reg = normalizeDataset(await releaseFiles(values.release));
 await withBuiltInRules(reg);
 if (reg.ruleSetsFailed) throw new Error('The built-in rule sets did not load.');
 const ctx: EngineContext = engineContextFor(reg, {});
+
+/**
+ * Darkvision held already, from the species: a Dwarf of each edition (60 and
+ * 120 feet), so a row giving "darkvision, or more if you have it" shows its more.
+ */
+const SIGHTED: Record<'2014' | '2024', EntityRef> = {
+  '2014': { name: 'Dwarf', source: 'PHB' },
+  '2024': { name: 'Dwarf', source: 'XPHB' },
+};
+for (const ref of Object.values(SIGHTED)) {
+  if (reg.get('race', ref.name, ref.source) === undefined) {
+    throw new Error(`The release has no ${ref.name}|${ref.source} for the sighted builds.`);
+  }
+}
 
 /** What the "in place of" picks name, held: a background no other build takes. */
 const PAST: EntityRef = { name: 'Rules Probe Past', source: 'RULESPROBE' };
@@ -531,6 +546,7 @@ for (const cls of classes) {
     if (subRef !== undefined && shapes.length > 0) {
       const held: Shape = { ...base, background: PAST };
       sweep(`${id} [held]`, ALL_LEVELS, at(held));
+      sweep(`${id} [sighted]`, ALL_LEVELS, at({ ...base, race: SIGHTED[edition] }));
       sweep(`${id} after Wizard 1`, ALL_LEVELS.slice(0, 19), (n) => ({
         ...base,
         classes: [

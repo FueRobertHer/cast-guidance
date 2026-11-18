@@ -728,6 +728,7 @@ describe('readMechanics', () => {
     expect(readStoredEffects('x', 'add')).toEqual({
       effects: [],
       problems: ['"add" is not a list'],
+      places: [],
     });
     expect(readStoredEffects([{ kind: 'acBonus', amount: 1 }]).effects).toHaveLength(1);
   });

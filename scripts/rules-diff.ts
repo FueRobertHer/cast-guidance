@@ -29,8 +29,9 @@
  * query fits (by level, school and the like, not by class list), sorted by
  * `name|source`. Each subclass is built again where an "in place of" pick
  * opens, at levels 3, 7 and 20: with a background giving the skills and tools
- * those picks name (`held`), and under a first level of Wizard, whose saves
- * (INT, WIS) they name (`saves`).
+ * those picks name (`held`), under a first level of Wizard, whose saves
+ * (INT, WIS) they name (`saves`), and on a Dwarf, whose darkvision a row may
+ * add to (`sighted`).
  *
  * `--answers last` answers each prompt with its last usable options instead of
  * its first, so a pick's other end is on a sheet too; snapshot both ways.
@@ -596,6 +597,11 @@ async function snapshot(): Promise<void> {
       const saves = baseDoc(edition);
       saves.classes = [wizard(edition), { ref, subclass: subRef, levels: level, hp: [] }];
       record(`saves ${at}`, saves);
+      // Darkvision held already, from the species, which a row may add to (`orMore`).
+      const sighted = baseDoc(edition);
+      sighted.race = { name: 'Dwarf', source: edition === '2024' ? 'XPHB' : 'PHB' };
+      sighted.classes = [{ ref, subclass: subRef, levels: level, hp: [] }];
+      record(`sighted ${at}`, sighted);
     }
   }
 

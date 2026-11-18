@@ -55,6 +55,8 @@ export const CAST_GUIDANCE_LIMITS = {
   formulaDepth: 32,
   /** Rows in one `byLevel` table. */
   byLevelRows: 30,
+  /** Rows in one table of words by an answer or a spell granted (`byAnswer`, `byGrant`). */
+  answerRows: 30,
   /** Formula steps worked out in one derive; past it, the rest count as 0. */
   formulaStepsPerDerive: 20_000,
   /** The largest number, either way, a stored amount or a formula's result may be. */
