@@ -8,7 +8,6 @@
  */
 import type { Collector } from '../effects/base';
 import type { EffectOrigin } from '../types';
-import { DRACONIC_ANCESTRY } from './draconicAncestry';
 
 /**
  * `from` is the printing of the feature itself, lowercase, where it can differ from
@@ -17,19 +16,11 @@ import { DRACONIC_ANCESTRY } from './draconicAncestry';
  */
 type CuratedFn = (col: Collector, origin: EffectOrigin, from?: string) => void;
 
-/**
- * The 2014 Draconic Bloodline's dragon, beside the subclass's other picks: asked
- * by the Dragon Ancestor's row in the data, read here by its Elemental Affinity.
- */
-const dragonAncestorId = (origin: EffectOrigin) => `${origin.type}:${origin.uid}:ancestor`;
-
 export const CURATED: Record<string, CuratedFn> = {
   // --- Feats ---------------------------------------------------------------
   // Every row of this section is data, in `src/rules/cast-guidance/curated.json`.
-
   // --- Fighting styles (2014 optional features; 2024 feats share names) ----
   // Every row of this section is data, in `src/rules/cast-guidance/curated.json`.
-
   // --- Class features ------------------------------------------------------
   // More of this section's rows are data, in `src/rules/cast-guidance/curated.json`.
   // --- Standing numbers: speeds, saves, scores and defenses ----------------
@@ -64,7 +55,6 @@ export const CURATED: Record<string, CuratedFn> = {
   // (`{pick.slug}`, `{pick.title}`).
   // Primal Knowledge and the sidekick classes' Bonus Proficiencies, picks, are
   // data too.
-
   // --- Subclass features (keyed by the subclass's full name) ---------------
   // More of this section's rows are data, in `src/rules/cast-guidance/curated.json`:
   // the plain picks from a list (rule pack port 4b), and the skills and tools given
@@ -75,25 +65,9 @@ export const CURATED: Record<string, CuratedFn> = {
   // Elemental Affinity (a type of five, resisted) are picks in the data too (4d),
   // of a named option and of a damage type. The Dragon Ancestor's doubled
   // proficiency with dragons stays in the card.
-  // The 2014 Elemental Affinity, by the Dragon Ancestor's type: a sorcery point
-  // (its spend link) for an hour's resistance, and a Charisma rider on spells.
-  'elemental affinity|draconic bloodline': (col, origin) => {
-    const picked = col.doc.choices[dragonAncestorId(origin)];
-    const dragon = Array.isArray(picked) ? String(picked[0]).toLowerCase() : undefined;
-    const type = dragon !== undefined ? DRACONIC_ANCESTRY[dragon]?.type : undefined;
-    col.add({
-      kind: 'action',
-      economy: 'none',
-      label: 'Elemental Affinity',
-      ...(type !== undefined
-        ? {
-            note: `resistance to ${type} for 1 hour · ${type} spells add your Charisma modifier to one damage roll`,
-          }
-        : {}),
-      origin,
-    });
-  },
-
+  // The 2014 Elemental Affinity, by the Dragon Ancestor's type (a sorcery point,
+  // its spend link, for an hour's resistance, and a Charisma rider on spells), is
+  // data too (4h): an action whose note is by the dragon picked (`byAnswer`).
   // --- Racial traits (keyed `trait:<traitName>`) ---------------------------
   // Most limited-use traits (Relentless Endurance, Breath Weapon, Fey Step,
   // Stone's Endurance, …) are handled per-source by the prose scanner, which

@@ -614,10 +614,15 @@ const byAnswerWords =
     let of: string | undefined;
     if (!granted) {
       const id = own(v, 'byAnswer');
-      of =
-        r.builtIn === true && typeof id === 'string' && READ_ONLY_PICKS.has(id)
-          ? id
-          : (pickId(r.builtIn === true)(id, r, 'byAnswer') as string);
+      try {
+        of =
+          r.builtIn === true && typeof id === 'string' && READ_ONLY_PICKS.has(id)
+            ? id
+            : (pickId(r.builtIn === true)(id, r, 'byAnswer') as string);
+      } catch (err) {
+        if (err instanceof Bad) throw new Bad(`"byAnswer" ${err.message}`);
+        throw err;
+      }
     }
     const table = own(v, granted ? 'byGrant' : 'values');
     if (!isRecord(table)) {

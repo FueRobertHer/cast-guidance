@@ -136,18 +136,41 @@ describe('standing rows', () => {
   });
 
   it('reads the branch picked for a resistance that follows it', () => {
-    const resisted = (key: string, uid: string, branch?: string) => {
-      const doc = newCharacterDoc('c', 'H', 't');
-      if (branch !== undefined) doc.choices[`subclass:${uid}:branch`] = [branch];
-      const col = new Collector(doc, empty);
-      emitStandingEffects(col, key, sub(uid), undefined, 10);
-      return of(col, 'resist').map((e) => e.damageType);
-    };
-    expect(resisted('elemental gift|the genie', 'the genie|tce', 'marid')).toEqual(['cold']);
+    const resisted = (key: string, uid: string, branch?: string) =>
+      of(
+        emit(key, sub(uid), {
+          level: 10,
+          ...(branch === undefined ? {} : { choices: { [`subclass:${uid}:branch`]: [branch] } }),
+        }),
+        'resist',
+      ).map((e) => e.damageType);
+    // Every branch, the middle ones too: the probe answers the first and the last alone.
+    const genie: Array<[string, string]> = [
+      ['dao', 'bludgeoning'],
+      ['djinni', 'thunder'],
+      ['efreeti', 'fire'],
+      ['marid', 'cold'],
+    ];
+    for (const [kind, type] of genie) {
+      expect(resisted('elemental gift|the genie', 'the genie|tce', kind)).toEqual([type]);
+    }
     expect(resisted('elemental gift|the genie', 'the genie|tce')).toEqual([]);
+    const lands: Array<[string, string]> = [
+      ['arid land', 'fire'],
+      ['polar land', 'cold'],
+      ['temperate land', 'lightning'],
+      ['tropical land', 'poison'],
+    ];
+    for (const [land, type] of lands) {
+      expect(resisted("nature's ward|circle of the land", 'circle of the land|xphb', land)).toEqual(
+        [type],
+      );
+    }
+    expect(resisted("nature's ward|circle of the land", 'circle of the land|xphb')).toEqual([]);
+    // The 2014 printing's lands give no resistance.
     expect(
-      resisted("nature's ward|circle of the land", 'circle of the land|xphb', 'polar land'),
-    ).toEqual(['cold']);
+      resisted("nature's ward|circle of the land", 'circle of the land|phb', 'arctic'),
+    ).toEqual([]);
   });
 
   it('gives the 2014 Land druid poison and disease, and the 2024 one the Poisoned condition', () => {
@@ -287,17 +310,21 @@ describe('standing rows', () => {
 
   it("resists the type of the god whose cantrip Dread Allegiance's subclass picked", () => {
     const uid = 'scion of the three|frhof';
-    const resisted = (cantrip?: string, fromUid = uid) => {
-      const col = new Collector(newCharacterDoc('c', 'H', 't'), empty);
-      if (cantrip !== undefined)
-        col.add({
-          kind: 'grantSpell',
-          spell: { name: cantrip, source: 'XPHB' },
-          origin: { label: 'Scion', uid: fromUid, type: 'subclass' },
-        });
-      emitStandingEffects(col, 'dread allegiance|scion of the three', sub(uid), undefined, 3);
-      return of(col, 'resist').map((e) => e.damageType);
-    };
+    const resisted = (cantrip?: string, fromUid = uid) =>
+      of(
+        emit('dread allegiance|scion of the three', sub(uid), {
+          level: 3,
+          before: (col) => {
+            if (cantrip !== undefined)
+              col.add({
+                kind: 'grantSpell',
+                spell: { name: cantrip, source: 'XPHB' },
+                origin: { label: 'Scion', uid: fromUid, type: 'subclass' },
+              });
+          },
+        }),
+        'resist',
+      ).map((e) => e.damageType);
     expect(resisted('Chill Touch')).toEqual(['necrotic']);
     expect(resisted('blade ward')).toEqual(['poison']);
     expect(resisted('Minor Illusion')).toEqual(['psychic']);
@@ -339,9 +366,14 @@ describe('darkvision that grows on darkvision already had', () => {
       });
     return col;
   };
-  const umbral = (col: Collector, uid: string) => {
-    emitStandingEffects(col, 'umbral sight|gloom stalker', sub(uid), undefined, 3);
-    return of(col, 'sense').at(-1)?.range;
+  const umbral = (col: Collector, uid: string, key = 'umbral sight|gloom stalker') => {
+    const more = emit(key, sub(uid), {
+      level: 3,
+      before: (c) => {
+        for (const e of col.effects) c.add(e);
+      },
+    });
+    return of(more, 'sense').at(-1)?.range;
   };
 
   it('gives 60 feet to a character with none', () => {
@@ -361,6 +393,14 @@ describe('darkvision that grows on darkvision already had', () => {
 
   it('reads darkvision however it is spelled', () => {
     expect(umbral(had(60, 'race', 'Darkvision'), 'gloom stalker|xge')).toBe(90);
+  });
+
+  it("gives the Warrior of Shadow's darkvision, or 60 feet more on any had", () => {
+    const shadow = (col: Collector) =>
+      umbral(col, 'warrior of shadow|xphb', 'darkvision|warrior of shadow');
+    expect(shadow(had(0, 'race'))).toBe(60);
+    expect(shadow(had(60, 'race'))).toBe(120);
+    expect(shadow(had(90, 'feat'))).toBe(150);
   });
 });
 
