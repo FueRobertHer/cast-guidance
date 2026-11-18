@@ -148,6 +148,37 @@ describe('the built-in worn tag rows', () => {
     expect(sheet.saves.cha.total.value).toBe(0);
     expect(sheet.resists).toEqual([]);
   });
+
+  it('give each kind they replace only the effects of that kind, once', () => {
+    const item: DataEntity = { name: 'Charm of Tests', source: 'TST', ...EVERY_TAG };
+    const sets: DataEntity[] = [
+      {
+        type: RULE_SET_TYPE,
+        v: 1,
+        name: 'Test rules',
+        rows: [
+          {
+            part: 'wornTags',
+            keys: ['charm of tests|tst'],
+            replaces: ['resist', 'conditionImmune', 'saveBonus'],
+            effects: [
+              { kind: 'saveBonus', amount: 1, abilities: ['dex'] },
+              { kind: 'resist', damageType: 'fire' },
+              { kind: 'resist', damageType: 'cold' },
+              { kind: 'conditionImmune', condition: 'frightened' },
+            ],
+          },
+        ],
+      },
+    ];
+    const sheet = deriveSheet(wearing(item), world([item], sets));
+    expect(sheet.resists.map((r) => r.damageType)).toEqual(['fire', 'cold']);
+    expect(sheet.immunities.map((r) => r.damageType)).toEqual(['cold']);
+    expect(sheet.vulnerabilities.map((r) => r.damageType)).toEqual(['fire']);
+    expect(sheet.conditionImmunities.map((c) => c.condition)).toEqual(['frightened']);
+    expect(sheet.saves.dex.total.value).toBe(1);
+    expect(sheet.saves.wis.total.value).toBe(0);
+  });
 });
 
 describe('a worn tag row, read', () => {
