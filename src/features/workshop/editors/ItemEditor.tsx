@@ -11,7 +11,7 @@
  * the spells they cast, each priced by level, which an action can spend too.
  */
 import { CircleAlert } from 'lucide-react';
-import { useId, useState } from 'react';
+import { useId, useRef, useState } from 'react';
 import { useTypePacks } from '@/data5e/hooks';
 import { isRecord, RULE_SET_TYPE, type StoredEffect } from '@/engine/castGuidance';
 import { ITEM_CHARGES, itemChargesIn } from '@/engine/curated/itemCharges';
@@ -146,17 +146,25 @@ export function regainOf(recharge: unknown, amount: unknown): string | number {
  * by, made from them, with what `own` sets (its spells, the ability they cast
  * with) or else what it had. The effect is begun by `own` (Count them on the
  * sheet) or by charges given an item that had none, and taken out with them.
- * An item that counts them the older way (`isOldCharges`) gets its fields alone.
+ * A field the item leaves out keeps what the effect says (a file written by
+ * hand). An item that counts them the older way (`isOldCharges`, and no
+ * effect) gets its fields alone.
  */
 export function withCharges(draft: Json, patch: Json, own?: Json): Json {
   const effects = effectsOf(draft);
-  const n = 'charges' in patch ? patch.charges : draft.charges;
+  const had = effects.find(isCharges);
+  const n = 'charges' in patch ? patch.charges : (draft.charges ?? had?.charges);
   const charges = typeof n === 'number' && n > 0 ? n : undefined;
   const fields = 'charges' in patch ? { ...patch, charges } : patch;
-  const had = effects.find(isCharges);
   const begins = own !== undefined || (typeof draft.charges !== 'number' && charges !== undefined);
-  if (effects.some(isOldCharges) || (had === undefined && !begins)) return fields;
+  if (had === undefined && (!begins || effects.some(isOldCharges))) return fields;
   const next = { ...draft, ...fields };
+  // What comes back is the fields' once they say it, or are changed.
+  const fresh =
+    had === undefined ||
+    'recharge' in patch ||
+    'rechargeAmount' in patch ||
+    typeof next.recharge === 'string';
   const kept: Json = { ability: had?.ability, spells: had?.spells, ...own };
   const spells = list(kept.spells);
   const made: StoredEffect | undefined =
@@ -165,7 +173,7 @@ export function withCharges(draft: Json, patch: Json, own?: Json): Json {
       : ({
           kind: 'charges',
           charges,
-          regain: regainOf(next.recharge, next.rechargeAmount),
+          regain: fresh ? regainOf(next.recharge, next.rechargeAmount) : had.regain,
           ...(typeof kept.ability === 'string' ? { ability: kept.ability } : {}),
           ...(spells.length > 0 ? { spells } : {}),
         } as StoredEffect);
@@ -616,10 +624,15 @@ function Charges(props: EditorProps) {
   const { draft, change, original, registry, readOnly } = props;
   const listId = useId();
   const spellData = useTypePacks('spell');
-  const charges = typeof draft.charges === 'number' ? draft.charges : undefined;
   const effects = effectsOf(draft);
-  const old = effects.some(isOldCharges);
   const counted = effects.find(isCharges) as Json | undefined;
+  // A file written by hand may say them in the effect alone.
+  const n = draft.charges ?? counted?.charges;
+  const charges = typeof n === 'number' ? n : undefined;
+  const old = counted === undefined && effects.some(isOldCharges);
+  // What emptying the Charges box took out, given back when a number is typed
+  // again, so a change made by way of an empty box loses no spells.
+  const cleared = useRef<Json | undefined>(undefined);
   const options = spellOptions(props);
   // A copy of an official item the app counts already: its row is written out.
   const row =
@@ -630,7 +643,29 @@ function Charges(props: EditorProps) {
           source: String(original.source),
         });
   const set = (patch: Json, own?: Json) => change(withCharges(draft, patch, own));
+  const setCharges = (to: number | undefined) => {
+    if (to === undefined && counted !== undefined) {
+      cleared.current = { spells: counted.spells, ability: counted.ability };
+    }
+    const back = to !== undefined && counted === undefined ? cleared.current : undefined;
+    if (to !== undefined) cleared.current = undefined;
+    set({ charges: to }, back);
+  };
   const spells = list(counted?.spells).filter(isRecord) as Json[];
+  const fromRow =
+    row === undefined ? undefined : (
+      <Button
+        variant="outline"
+        size="sm"
+        className="self-start"
+        disabled={spellData.status !== 'ready'}
+        onClick={() => set({}, { spells: rowSpells(row, options) })}
+      >
+        {counted === undefined
+          ? 'Count them on the sheet'
+          : `Add the spells ${String(original?.name)} casts`}
+      </Button>
+    );
   const setSpells = (next: Json[]) => set({}, { spells: next });
   const problems =
     counted === undefined
@@ -646,7 +681,7 @@ function Charges(props: EditorProps) {
           value={charges}
           placeholder="None"
           disabled={readOnly}
-          onChange={(n) => set({ charges: n })}
+          onChange={setCharges}
         />
         {charges !== undefined && (
           <KeptSelect
@@ -671,7 +706,8 @@ function Charges(props: EditorProps) {
       {charges !== undefined && old && (
         <p className="text-caption text-ink-muted">
           The Charges card under What it does on the sheet counts these the older way, all back on a
-          long rest. Remove it to count them here, where each spell costs its charges by level.
+          long rest. Remove it, and the Cast a spell cards that spend it, to count them here, where
+          each spell costs its charges by level.
         </p>
       )}
       {charges !== undefined && !old && counted === undefined && !readOnly && (
@@ -681,15 +717,11 @@ function Charges(props: EditorProps) {
             {row !== undefined &&
               ` Counted, they cast the spells ${String(original?.name)} casts, priced as the app prices them.`}
           </p>
-          <Button
-            variant="outline"
-            size="sm"
-            className="self-start"
-            disabled={row !== undefined && spellData.status !== 'ready'}
-            onClick={() => set({}, row === undefined ? {} : { spells: rowSpells(row, options) })}
-          >
-            Count them on the sheet
-          </Button>
+          {fromRow ?? (
+            <Button variant="outline" size="sm" className="self-start" onClick={() => set({}, {})}>
+              Count them on the sheet
+            </Button>
+          )}
         </div>
       )}
       {counted !== undefined && (
@@ -739,6 +771,7 @@ function Charges(props: EditorProps) {
               Add a spell its charges cast
             </Button>
           )}
+          {!readOnly && spells.length === 0 && fromRow}
           {problems.map((p) => (
             <p key={p} className="flex items-start gap-1.5 text-caption text-danger">
               <CircleAlert size={14} aria-hidden className="mt-0.5 shrink-0" />

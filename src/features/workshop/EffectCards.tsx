@@ -1102,9 +1102,9 @@ function PriceFields({
   unset?: string;
   keeps?: boolean;
   /**
-   * Spends offers the item's charges (`ITEM_CHARGES`), which the sheet spends
-   * from the carried copy's pool, in place of a pool of the list's own under
-   * that key. A buy-back is not moved to the copy's pool, so it is not offered there.
+   * Spends and Restores offer the item's charges (`ITEM_CHARGES`), which the
+   * sheet spends from and gives back to the carried copy's pool, in place of a
+   * pool of the list's own under that key. A buy-back is never paid in them.
    */
   charges?: boolean;
 }) {
@@ -1170,9 +1170,11 @@ function PriceFields({
   };
   const restores = (p: Price) => {
     const value = p.own === undefined ? '' : held(p.own, isString);
+    const named: Options = resources.map((r) => [String(r.key), words(r.label)]);
     const options: Options = [
       ['', 'Same name'],
-      ...resources.map((r): readonly [string, string] => [String(r.key), words(r.label)]),
+      ...(charges ? named.filter(([k]) => k !== ITEM_CHARGES) : named),
+      ...(charges ? ([[ITEM_CHARGES, 'Its charges']] as const) : []),
     ];
     return { value, options: offering(options, value, value) };
   };

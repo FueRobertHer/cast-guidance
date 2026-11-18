@@ -58,9 +58,13 @@ const cureWounds: DataEntity = {
   ],
 };
 
-/** A sorcerer carrying the rod the Workshop is about to make, in My homebrew. */
+/**
+ * A sorcerer carrying the rod the Workshop is about to make, in My homebrew,
+ * four of its charges spent (its pool is the copy's, `r1`).
+ */
 function carrier() {
   const doc = sorcerer();
+  doc.play.resources = [{ key: 'item-charges:r1', used: 4 }];
   doc.spellcasting = { 'sorcerer|tst': { known: [], prepared: [] } };
   doc.equipment = [
     {
@@ -75,7 +79,7 @@ function carrier() {
 }
 
 describe("an item's charges from the Workshop to the sheet", () => {
-  it('casts its spell from the charges it counts, and its action spends them', async () => {
+  it('casts its spell from the charges it counts, and its action spends them and buys one back', async () => {
     const sheet = await renderSheet(carrier(), { extra: { spell: [cureWounds] } });
     // From the Workshop's home, as a player gets to New.
     await sheet.visit('/workshop');
@@ -99,6 +103,7 @@ describe("an item's charges from the Workshop to the sheet", () => {
     });
     type('Action: Takes', 'bonus');
     type('Action: Spends', ITEM_CHARGES);
+    type('Action: Buys back a use with', 'spell-slot');
     expect(screen.queryByText(/This does not count yet/)).toBeNull();
     press('Save');
     await waitFor(() => expect(notice()).toBe('Saved Rod of Mending'), { timeout: WAIT });
@@ -106,7 +111,7 @@ describe("an item's charges from the Workshop to the sheet", () => {
     await sheet.visit(`/c/${sheet.doc.id}`);
     expect(grantedSpell('Cure Wounds')).toEqual({
       alwaysPrepared: false,
-      uses: '7/7 charges',
+      uses: '3/7 charges',
       usesTitle: 'charges from Rod of Mending',
     });
     press('1d8');
@@ -117,12 +122,18 @@ describe("an item's charges from the Workshop to the sheet", () => {
     ]);
     castHeld('Level 2 from Rod of Mending');
     expect(rollLogStore.getState().rolls.map((r) => [r.expr, r.kind])).toEqual([['2d8', 'heal']]);
-    expect(left('Rod of Mending charges use')).toBe(5);
+    expect(left('Rod of Mending charges use')).toBe(1);
 
     press('Use Flare');
-    expect(left('Rod of Mending charges use')).toBe(4);
-    expect(grantedSpell('Cure Wounds').uses).toBe('4/7 charges');
-    expect((await sheet.saved()).play.resources).toEqual([{ key: 'item-charges:r1', used: 3 }]);
+    expect(left('Rod of Mending charges use')).toBe(0);
+    expect(grantedSpell('Cure Wounds').uses).toBe('0/7 charges');
+    // With none left, a spell slot buys one back, into this copy's pool.
+    expect(left('Level 1 slot')).toBe(4);
+    press('Restore Rod of Mending charges, spending a spell slot');
+    castHeld('Level 1 slot');
+    expect(left('Rod of Mending charges use')).toBe(1);
+    expect(left('Level 1 slot')).toBe(3);
+    expect((await sheet.saved()).play.resources).toEqual([{ key: 'item-charges:r1', used: 6 }]);
 
     // The file as an export of it holds it: one item, its effects read with
     // nothing wrong, and nothing the import preview takes for a rule pack.
@@ -155,6 +166,7 @@ describe("an item's charges from the Workshop to the sheet", () => {
           economy: 'bonus',
           label: 'Flare',
           cost: { resource: ITEM_CHARGES, amount: 1 },
+          buyBack: { own: ITEM_CHARGES, resource: 'spell-slot', amount: 1 },
         },
       ],
     });

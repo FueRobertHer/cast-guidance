@@ -140,13 +140,14 @@ export function collectItems(col: Collector): void {
       const charged = itemChargesOf(col.ctx, col.doc.id, entry.ref);
       if (charged !== undefined) {
         const key = itemChargeKey(entry.id);
-        // Its actions that cost its charges spend this copy's pool. Each is a
-        // copy of what the item says (`emit`), so the next copy's is its own.
+        // Its actions that cost its charges, or buy one back, spend or restore
+        // this copy's pool. Each is a copy of what the item says (`emit`), and
+        // each price a new object, so the next copy's is its own.
         for (let i = from; i < col.effects.length; i++) {
           const x = col.effects[i];
-          if (x?.kind === 'action' && x.cost?.resource === ITEM_CHARGES) {
-            x.cost = { ...x.cost, resource: key };
-          }
+          if (x?.kind !== 'action') continue;
+          if (x.cost?.resource === ITEM_CHARGES) x.cost = { ...x.cost, resource: key };
+          if (x.buyBack?.own === ITEM_CHARGES) x.buyBack = { ...x.buyBack, own: key };
         }
         const roll = regainRollOf(charged);
         col.add({

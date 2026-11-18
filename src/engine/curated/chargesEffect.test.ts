@@ -421,6 +421,11 @@ describe('charges that only actions spend', () => {
     expect(read.problems).toEqual([
       "effect 2 (charges): says the item's charges again: effect 1 says them",
     ]);
+    // An empty list, written, reads as none listed.
+    expect(readMechanics({ v: 1, effects: [{ ...COUNTED, spells: [] }] })).toMatchObject({
+      charges: { charges: 3, regain: 'all', spells: [] },
+      problems: [],
+    });
     const doc = carrying({ id: 'a', name: 'Rod of Knocks', source: 'HB' });
     const sheet = deriveSheet(doc, world([item('Rod of Knocks', 'HB', [COUNTED])]));
     expect(sheet.resources.find((r) => r.key === 'item-charges:a')?.max).toBe(3);
@@ -477,5 +482,16 @@ describe('charges that only actions spend', () => {
     const spends = (label: string) => sheet.actions.find((a) => a.label === label)?.cost?.resource;
     expect(spends('Zap')).toBe('charges');
     expect(spends('Strike')).toBe('item-charges:b');
+  });
+
+  it("gives a use back to each copy's own pool for an action bought back", () => {
+    // Paid from a pool of the rod's own, so the sheet keeps it with no spell slots.
+    const sparks = { kind: 'resource', key: 'sparks', label: 'Sparks', max: 2, reset: 'long' };
+    const bought = { ...STRIKE, buyBack: { resource: 'sparks', amount: 1, own: 'charges' } };
+    const rod = item('Rod of Knocks', 'HB', [COUNTED, sparks, bought]);
+    const doc = carrying({ id: 'a', name: 'Rod of Knocks', source: 'HB' });
+    const strike = deriveSheet(doc, world([rod])).actions.find((a) => a.label === 'Strike');
+    expect(strike?.buyBack).toMatchObject({ resource: 'sparks', own: 'item-charges:a' });
+    expect(JSON.stringify(rod.castGuidance)).toContain('"own":"charges"');
   });
 });
