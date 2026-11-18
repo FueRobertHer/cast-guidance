@@ -181,6 +181,40 @@ describe('long rest (TEST-003)', () => {
   });
 });
 
+describe("a long rest and an item's charges", () => {
+  const staff: DataEntity = {
+    name: 'Staff of Healing',
+    source: 'XDMG',
+    type: 'ST|XDMG',
+    rarity: 'rare',
+    reqAttune: 'by a Bard, Cleric, or Druid',
+    entries: ['This staff has 10 charges.'],
+  };
+
+  it('rolls the dawn regain of a staff put away, whose pool the sheet leaves out', async () => {
+    const doc = sorcerer();
+    doc.equipment = [
+      {
+        id: 's1',
+        ref: { name: 'Staff of Healing', source: 'XDMG' },
+        qty: 1,
+        equipped: false,
+        attuned: true,
+      },
+    ];
+    doc.play.resources = [{ key: 'item-charges:s1', used: 3 }];
+    const sheet = await renderSheet(doc, { extra: { item: [staff] } });
+    expect(screen.queryByRole('button', { name: /^Staff of Healing charges use/ })).toBeNull();
+
+    press('Long rest');
+    await (await dialog('Long rest')).press('Rest');
+
+    // The roll (1d6 + 4) covers the 3 spent, so all 3 come back.
+    expect(notice()).toContain('3 Staff of Healing charges');
+    expect((await sheet.saved()).play.resources).toEqual([]);
+  });
+});
+
 describe('table rules and moments at a rest (Homebrew Workshop phase 4)', () => {
   afterEach(() => setAppTableRule('hpOnLongRest', undefined));
 

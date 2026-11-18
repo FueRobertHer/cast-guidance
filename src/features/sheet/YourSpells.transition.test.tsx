@@ -402,3 +402,79 @@ describe('who lands where', () => {
     expect(screen.getByRole('button', { name: 'Cast Aid' })).toBeTruthy();
   });
 });
+
+describe("an item's charges on the Spells tab", () => {
+  /** Heals 1d8, a die more a slot level. */
+  const cure: DataEntity = {
+    name: 'Cure Wounds',
+    source: 'TST',
+    level: 1,
+    school: 'A',
+    time: [{ number: 1, unit: 'action' }],
+    entries: ['A creature you touch regains {@dice 1d8} hit points.'],
+    entriesHigherLevel: [
+      { entries: ['The healing increases by {@scaledice 1d8|1-9|1d8} per slot above 1st.'] },
+    ],
+  };
+  const staff: DataEntity = {
+    name: 'Staff of Healing',
+    source: 'XDMG',
+    type: 'ST|XDMG',
+    rarity: 'rare',
+    reqAttune: 'by a Bard, Cleric, or Druid',
+    entries: ['This staff has 10 charges.'],
+  };
+  /** Grants Cure Wounds once a day, which the staff's charges cast too. */
+  const healersSpark: DataEntity = {
+    name: "Healer's Spark",
+    source: 'TST',
+    additionalSpells: [{ ability: 'wis', innate: { _: { daily: { '1': ['cure wounds|tst'] } } } }],
+    entries: ['You carry a healing spark.'],
+  };
+  const world = { spell: [cure], item: [staff], feat: [healersSpark] };
+  /** The staff equipped and attuned, as entry `s1`. */
+  const carrying = (doc: CharacterDoc) => {
+    doc.equipment = [
+      {
+        id: 's1',
+        ref: { name: 'Staff of Healing', source: 'XDMG' },
+        qty: 1,
+        equipped: true,
+        attuned: true,
+      },
+    ];
+    return doc;
+  };
+  const STAFF_TILES = [
+    'Level 1 from Staff of Healing, 1 charge',
+    'Level 2 from Staff of Healing, 2 charges',
+    'Level 3 from Staff of Healing, 3 charges',
+    'Level 4 from Staff of Healing, 4 charges',
+  ];
+  const staffTiles = () => castTiles().filter((t) => t.includes('Staff of Healing'));
+
+  it("offers a carried staff's charges on a class spell's row, and spends them", async () => {
+    const doc = carrying(sorcerer());
+    doc.spellcasting = { 'sorcerer|tst': { known: [ref('Cure Wounds')], prepared: [] } };
+    const sheet = await renderSheet(doc, { path: 'spells', extra: world });
+
+    press('1d8');
+    expect(staffTiles()).toEqual(STAFF_TILES);
+    castHeld('Level 2 from Staff of Healing');
+    expect((await sheet.saved()).play.resources).toEqual([{ key: 'item-charges:s1', used: 2 }]);
+  });
+
+  it("offers them on an innate grant's row too, beside its own use", async () => {
+    const doc = carrying(sorcerer());
+    doc.spellcasting = { 'sorcerer|tst': { known: [], prepared: [] } };
+    doc.feats = [{ ref: { name: "Healer's Spark", source: 'TST' }, instanceId: 'f1' }];
+    await renderSheet(doc, { path: 'spells', extra: world });
+
+    const heading = screen.getByRole('heading', { level: 2, name: 'Innate & granted spells' });
+    const group = heading.closest('section');
+    if (group === null) throw new Error('no group');
+    fireEvent.click(within(group).getByRole('button', { name: '1d8' }));
+    expect(castTiles().some((t) => t.startsWith("Healer's Spark"))).toBe(true);
+    expect(staffTiles()).toEqual(STAFF_TILES);
+  });
+});

@@ -361,4 +361,29 @@ describe("casting from an item's charges", () => {
     press('1d8');
     expect(castTiles().some((t) => t.includes('Staff of Healing'))).toBe(false);
   });
+
+  it("offers the staff on a grant's row with a use of its own, beside that use", async () => {
+    /** Grants Cure Wounds once a day, which the staff's charges cast too. */
+    const healersSpark: DataEntity = {
+      name: "Healer's Spark",
+      source: 'TST',
+      additionalSpells: [
+        { ability: 'wis', innate: { _: { daily: { '1': ['cure wounds|tst'] } } } },
+      ],
+      entries: ['You carry a healing spark.'],
+    };
+    const doc = healer(true);
+    doc.spellcasting = { 'sorcerer|tst': { known: [], prepared: [] } };
+    doc.feats = [{ ref: { name: "Healer's Spark", source: 'TST' }, instanceId: 'f1' }];
+    await renderSheet(doc, { extra: { ...world.extra, feat: [healersSpark] } });
+
+    press('1d8');
+    expect(castTiles().some((t) => t.startsWith("Healer's Spark"))).toBe(true);
+    expect(castTiles().filter((t) => t.includes('Staff of Healing'))).toEqual([
+      'Level 1 from Staff of Healing, 1 charge',
+      'Level 2 from Staff of Healing, 2 charges',
+      'Level 3 from Staff of Healing, 3 charges',
+      'Level 4 from Staff of Healing, 4 charges',
+    ]);
+  });
 });
