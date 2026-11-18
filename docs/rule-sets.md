@@ -995,8 +995,9 @@ read the same data. Take `before.json` in a checkout of the base commit (with
 this script copied in when the base has none). `compare` names the builds that
 changed, field by field, and with `--expect-zero` exits 1 when any did.
 
-`snapshot --coverage <file>` also writes the built-in rows (a spend row's
-links) no build read, by part, first key and level. A row read is not a row
+`snapshot --coverage <file>` also writes the built-in rows no build read (by
+what the call site reads: a spend row's links, a charges row's numbers, a
+spell rest row's spells, any other row's effects), by part, first key and level. A row read is not a row
 that added something, but a row at one level, named with `@` and the level, is
 read only where it adds, and a row never read is one a zero change says
 nothing about, so a change to one is proved another way: a test of its own.
