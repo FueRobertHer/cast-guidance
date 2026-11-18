@@ -1,9 +1,8 @@
 /**
  * A stored pick (`{ "kind": "pick" }`, rule pack port phase 4): a prompt an
  * entry asks, and what each answer gives. `mechanics.ts` reads it into a
- * `PickRule`; this file asks it, as the code rows of `CURATED` and `STANDING`
- * asked theirs, so a row moved out of code asks the same prompt under the same
- * id and the answers characters saved keep reading.
+ * `PickRule`; this file asks it under the ids the code rows it replaced asked
+ * theirs, so the answers characters saved before the port keep reading.
  */
 import { isProficient } from '../calc/attacks';
 import {

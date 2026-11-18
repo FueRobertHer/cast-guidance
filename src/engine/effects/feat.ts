@@ -1,10 +1,9 @@
-import { emitCuratedEffects, hasCuratedRow } from '../curated/curatedEffects';
 import { linkSpend } from '../curated/spendLinks';
 import { type DataEntity, type EffectOrigin, refUid, SKILLS } from '../types';
 import { collectAdditionalSpells } from './additionalSpells';
 import { asEntityArray, type Collector, num, str } from './base';
 import { isRepeatableFeat, readFeatOptionalFeatures, readProsePick } from './featPicks';
-import { emitBuiltInRows, entryKeys, mechanicsOf, officialOf } from './mechanics';
+import { emitBuiltInRows, entryKeys, mechanicsOf } from './mechanics';
 import { proseScanFeature } from './proseScan';
 import {
   expertiseOptions,
@@ -169,23 +168,15 @@ export function collectFeatEntity(
     origin,
     entries: e.entries,
   });
-  const printed = officialOf(e)?.source.toLowerCase();
   mechanicsOf(col, {
     entry: e,
     label: origin.label,
     origin,
     target: uid,
     ruleKeys: uids,
-    inCode: hasCuratedRow,
     pickBase: idBase,
     inherited: (builtIn) => {
-      const curated =
-        builtIn !== undefined
-          ? builtIn.scan === 'replace'
-          : uids.some((key) =>
-              emitCuratedEffects(col, key, origin, key === uid ? undefined : printed),
-            );
-      if (!curated) proseScanFeature(col, origin.label, e.entries, origin);
+      if (builtIn?.scan !== 'replace') proseScanFeature(col, origin.label, e.entries, origin);
       emitBuiltInRows(col, 'rollAdvantage', uids, origin);
       emitBuiltInRows(col, 'rollExtra', uids, origin);
       linkSpend(col, uids, origin.label, origin);

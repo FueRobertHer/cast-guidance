@@ -3,7 +3,7 @@ import { BUILT_IN_RULE_SETS, makeTestContext } from '../../../tests-fixtures/tes
 import { RULE_SET_TYPE } from '../castGuidance';
 import { deriveSheet } from '../derive';
 import { Collector } from '../effects/base';
-import { builtInRowsFor, emitRuleRows, printingKeys } from '../effects/mechanics';
+import { builtInRowsFor, emitBuiltInRows, emitRuleRows, printingKeys } from '../effects/mechanics';
 import {
   type CharacterDoc,
   type DataEntity,
@@ -12,7 +12,6 @@ import {
   type EngineContext,
   newCharacterDoc,
 } from '../types';
-import { emitStandingEffects, hasStandingRow } from './standingEffects';
 
 const empty: EngineContext = {
   get: () => undefined,
@@ -21,9 +20,9 @@ const empty: EngineContext = {
 const sub = (uid: string, label = 'Feature'): EffectOrigin => ({ label, uid, type: 'subclass' });
 
 /**
- * A feature's standing row, as the call sites emit it: the code row, or the
- * built-in rule set's (`src/rules/cast-guidance/standing.json`) once it moved,
- * under the key for its printing first (`from`, then the origin's uid's).
+ * A feature's standing row, as the call sites emit it: the built-in rule set's
+ * (`src/rules/cast-guidance/standing.json`), under the key for its printing
+ * first (`from`, then the origin's uid's).
  */
 function emit(
   key: string,
@@ -41,9 +40,8 @@ function emit(
   const col = new Collector(doc, empty);
   opts.before?.(col);
   const level = opts.level ?? 20;
-  if (emitStandingEffects(col, key, origin, opts.from, level)) return col;
   const keys = printingKeys([key], opts.from ?? '', origin.uid);
-  const rows = builtInRowsFor(col, 'standing', keys, hasStandingRow);
+  const rows = builtInRowsFor(col, 'standing', keys);
   if (rows === undefined) throw new Error(`No standing row under ${key}`);
   emitRuleRows(col, rows, origin, level, level);
   return col;
@@ -54,9 +52,10 @@ const of = <K extends EffectInput['kind']>(col: Collector, kind: K) =>
 describe('standing rows', () => {
   it('has no row for an unknown key, and adds nothing', () => {
     const col = new Collector(newCharacterDoc('c', 'H', 't'), empty);
-    expect(emitStandingEffects(col, 'nothing|here', sub('x'), undefined, 1)).toBe(false);
-    expect(builtInRowsFor(col, 'standing', ['nothing|here'], hasStandingRow)).toBeUndefined();
+    expect(builtInRowsFor(col, 'standing', ['nothing|here'])).toBeUndefined();
+    expect(emitBuiltInRows(col, 'standing', ['nothing|here'], sub('x'))).toBe(false);
     expect(col.effects).toEqual([]);
+    expect(() => emit('nothing|here', sub('x'))).toThrow('No standing row under nothing|here');
   });
 
   it('adds a built-in row with the origin itself, which spend links find actions by', () => {

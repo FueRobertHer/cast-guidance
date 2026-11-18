@@ -1,5 +1,4 @@
 import { subraceBelongsTo } from '../../data5e/subraceOptions';
-import { emitCuratedTrait, hasCuratedRow } from '../curated/curatedEffects';
 import {
   ancestryDragons,
   DRACONIC_ANCESTRY,
@@ -278,8 +277,8 @@ function collectFrom(col: Collector, e: DataEntity, origin: EffectOrigin, idBase
   collectAdditionalSpells(col, e.additionalSpells, origin, undefined, idBase);
 
   // Named traits (Relentless Endurance, Breath Weapon, …) carry their mechanics
-  // only in prose: the curated table first (by its name, or the trait a homebrew
-  // copy is `basedOn`), the generic prose scan for the long tail.
+  // only in prose: a built-in curated row first (by its name, or the trait a
+  // homebrew copy is `basedOn`), the generic prose scan for the long tail.
   for (const entry of asEntityArray(e.entries)) {
     const traitName = str(entry.name);
     if (traitName === undefined) continue;
@@ -291,13 +290,8 @@ function collectFrom(col: Collector, e: DataEntity, origin: EffectOrigin, idBase
       origin,
       target: `${traitName}|${origin.label}`,
       ruleKeys: names.map((n) => `trait:${n}`),
-      inCode: hasCuratedRow,
       inherited: (builtIn) => {
-        const curated =
-          builtIn !== undefined
-            ? builtIn.scan === 'replace'
-            : names.some((n) => emitCuratedTrait(col, n, origin));
-        if (!curated) proseScanFeature(col, traitName, entry.entries, origin);
+        if (builtIn?.scan !== 'replace') proseScanFeature(col, traitName, entry.entries, origin);
         // What the trait adds to rolls, named for the trait (Brave), not the race.
         const rollKeys = [
           `${traitName}|${str(e.name)}|${str(e.source)}`,

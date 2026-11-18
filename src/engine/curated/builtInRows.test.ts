@@ -1,7 +1,7 @@
 /**
- * The rows moved out of `CURATED` into the shipped rule set
+ * The curated rows of the shipped rule set
  * (`src/rules/cast-guidance/curated.json`), end to end through `deriveSheet`, by
- * every route that reached the code row: the official entry, a Workshop copy
+ * every route that reaches a row: the official entry, a Workshop copy
  * (`basedOn`), a converted copy (`printingOf`), and the spend links that find
  * the row's action by its origin. The world is synthetic, in the release's shape.
  */
@@ -180,7 +180,7 @@ describe('Disarming Attack, an optional feature row', () => {
     const expected = [['none', 'str', 12, 'superiority-dice']];
     expect(maneuver('disarming attack|phb')).toEqual(expected);
     expect(maneuver('knock loose|hb')).toEqual(expected);
-    // The 2024 printing's row is still in code.
+    // The 2024 printing's row, a row of its own.
     expect(maneuver('disarming attack|xphb')).toEqual(expected);
   });
 });

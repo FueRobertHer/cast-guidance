@@ -159,7 +159,7 @@ try {
   die(error instanceof Error ? error.message : String(error));
 }
 const registry = normalizeDataset(release.files);
-// The rows moved out of `CURATED`: without them a curated entry looks like prose
+// The built-in curated rows: without them a curated entry looks like prose
 // to judge, and Jev is asked (and paid) again.
 try {
   registry.setRuleSets(await requireBuiltInRules());

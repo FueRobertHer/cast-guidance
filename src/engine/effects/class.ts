@@ -1,7 +1,5 @@
 import { plainEntryText } from '../../data5e/entries/plainText';
-import { emitCuratedEffects as emitCurated, hasCuratedRow } from '../curated/curatedEffects';
 import { linkSpend } from '../curated/spendLinks';
-import { emitStandingEffects as emitStanding, hasStandingRow } from '../curated/standingEffects';
 import { summarizeEntries } from '../summarize';
 import {
   ABILITIES,
@@ -349,27 +347,13 @@ function collectFeatureWithNested(
     classLevel: walk.classLevel,
     className: walk.className,
     ruleKeys,
-    inCode: hasCuratedRow,
     inherited: (builtIn) => {
-      const curated =
-        builtIn !== undefined
-          ? builtIn.scan === 'replace'
-          : curatedKeys.some((k) => emitCurated(col, k, featureOrigin, printing));
-      if (!curated) proseScanFeature(col, name, feature.entries, featureOrigin, cardOrigin.label);
+      if (builtIn?.scan !== 'replace') {
+        proseScanFeature(col, name, feature.entries, featureOrigin, cardOrigin.label);
+      }
       const at = { featureLevel: level, classLevel: walk.classLevel, className: walk.className };
       // Standing rows are found under the curated keys, in the same order.
-      if (
-        !emitBuiltInRows(col, 'standing', ruleKeys, featureOrigin, {
-          ...at,
-          inCode: hasStandingRow,
-        })
-      ) {
-        names.some((n) =>
-          labels.some((label) =>
-            emitStanding(col, `${n}|${label}`.toLowerCase(), featureOrigin, printing, level),
-          ),
-        );
-      }
+      emitBuiltInRows(col, 'standing', ruleKeys, featureOrigin, at);
       const rollKeys = names.flatMap((n) =>
         labels.flatMap((label) => sources.map((source) => `${n}|${label}|${source}`)),
       );
@@ -949,10 +933,6 @@ export function collectClasses(col: Collector): void {
       classLevel,
       className: entry.ref.name,
       ruleKeys: rowKeys,
-      inCode: hasCuratedRow,
-      inherited: (builtIn) => {
-        if (builtIn === undefined) rowKeys.some((k) => emitCurated(col, k, origin));
-      },
     });
   });
 }

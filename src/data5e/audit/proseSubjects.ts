@@ -12,7 +12,6 @@
  * Relative imports only: `scripts/data-judge.ts` loads this under plain Bun.
  */
 import { RULE_SET_TYPE } from '../../engine/castGuidance';
-import { CURATED } from '../../engine/curated/curatedEffects';
 import { parseSpellRef } from '../../engine/effects/additionalSpells';
 import { Collector } from '../../engine/effects/base';
 import { collectClasses } from '../../engine/effects/class';
@@ -78,7 +77,7 @@ export interface ProseSubject {
 
 /**
  * Anything a registry can list by type, and look an entity up in. Its built-in
- * rule sets (`RULE_SET_TYPE`) hold the rows moved out of `CURATED`.
+ * rule sets (`RULE_SET_TYPE`) hold the curated rows.
  */
 export interface ByType {
   byType(type: EntityType | typeof RULE_SET_TYPE): readonly Entity[];
@@ -436,9 +435,8 @@ export function proseSubjects(registry: ByType): ProseSubject[] {
     if (prose.trim() === '') continue;
     const state = `${owner.name}\n${prose}`;
     const key = textHash(state);
-    // A curated row turns the scan off: in code, or a built-in row that replaces it.
+    // A built-in curated row that replaces the scan turns it off.
     const curated =
-      Object.hasOwn(CURATED, owner.curatedKey) ||
       builtInRuleIn(ruleSets, 'curated', [
         ...(owner.printings ?? [])
           .filter((p) => p !== '')

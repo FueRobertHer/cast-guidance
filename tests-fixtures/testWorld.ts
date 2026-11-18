@@ -13,7 +13,7 @@ import standingRules from '@/rules/cast-guidance/standing.json';
 
 /**
  * The rule sets the app ships (`src/data5e/builtInRules.ts`), as every registry
- * holds them: rows moved out of `CURATED` reach tests as they reach the app.
+ * holds them: the built-in rows reach tests as they reach the app.
  */
 export const BUILT_IN_RULE_SETS: DataEntity[] = [
   curatedRules as DataEntity,
@@ -407,7 +407,7 @@ const cls: DataEntity[] = [
       weapons: ['simple'],
       skills: [{ choose: { from: ['acrobatics', 'athletics'], count: 1 } }],
     },
-    // Ki resource + Stunning Strike are curated (see curatedEffects.ts).
+    // Ki resource + Stunning Strike are curated (rows in src/rules/cast-guidance/curated.json).
     classFeatures: ['Ki|Monk|TST|2', 'Stunning Strike|Monk|TST|5'],
   },
   {

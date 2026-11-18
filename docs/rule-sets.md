@@ -1,16 +1,15 @@
 # Built-in rule sets
 
 A built-in rule set is data the app ships in place of code: rows of effects
-that stand in for the engine's hard-coded mechanics tables. It holds five
-parts: `curated`, which stands in for `CURATED`
-(`src/engine/curated/curatedEffects.ts`); `standing`, which stands in for
-`STANDING` (`src/engine/curated/standingEffects.ts`); `rollAdvantage`, which
-holds what was the advantage table, `ROLL_ADVANTAGES`; `rollExtra`, which
-holds what was `ROLL_EXTRAS`; and `spend`,
-which holds what were the spend links, `SPEND_LINKS` and `SLOT_LINKS`
-(`linkSpend` in `src/engine/curated/spendLinks.ts` reads it). The files live in
-`src/rules/`, one a part. (Source of truth: `readRuleSet` and
-`mechanicsOf` in `src/engine/effects/mechanics.ts`, `src/data5e/builtInRules.ts`.)
+that hold what were the engine's hard-coded mechanics tables, and the tables
+these parts replaced are gone (the rule pack port, below). It holds five parts: `curated`, which holds
+what was `CURATED`; `standing`, which holds what was `STANDING`;
+`rollAdvantage`, which holds what was the advantage table, `ROLL_ADVANTAGES`;
+`rollExtra`, which holds what was `ROLL_EXTRAS`; and `spend`, which holds what
+were the spend links, `SPEND_LINKS` and `SLOT_LINKS` (`linkSpend` in
+`src/engine/curated/spendLinks.ts` reads it). The files live in `src/rules/`,
+one a part. (Source of truth: `readRuleSet` and `mechanicsOf` in
+`src/engine/effects/mechanics.ts`, `src/data5e/builtInRules.ts`.)
 
 218 rows have moved (`src/rules/cast-guidance/curated.json`), every `CURATED` row. Four came
 first, one for each kind of call site, to prove the routes: Stunning Strike (a
@@ -87,7 +86,8 @@ the Fighter, and in one row the Paladin, Ranger and Rogue (kinds the character
 is proficient with), as many as the class table's column says, else two,
 asked once the build is in. The last (4h) is the 2014 Elemental Affinity, an
 action whose note names the type of the dragon the Dragon Ancestor picked
-(`byAnswer`). No row is left in `CURATED`, which holds only its lookups.
+(`byAnswer`). No row was left in `CURATED`, so the table, its lookups and
+the call sites' code fallback went in the cleanup after 4h.
 
 79 `standing` rows have moved (`src/rules/cast-guidance/standing.json`): every
 `STANDING` row the format held before phase 4, the defenses, senses and speeds a
@@ -104,8 +104,8 @@ Nature's Ward and Umbral Sight split by printing, the Warrior of Shadow's
 Darkvision and Umbral Sight as darkvision or more (`orMore`; the 2014 Umbral
 Sight's 30 more only on a race's, `orMoreFrom`), Elemental Gift and the 2024
 Nature's Ward by the branch picked (`byAnswer`), and Dread Allegiance by the
-god whose cantrip the subclass granted (`byGrant`). No row is left in
-`STANDING`, which holds only its lookups. One more `standing` row is new rather than
+god whose cantrip the subclass granted (`byGrant`). No row was left in
+`STANDING`, which went with `CURATED`. One more `standing` row is new rather than
 moved: Tasha's Roving, the 2014 Ranger's level 6 Deft Explorer Improvement (5
 more feet of walking speed, and a climbing and a swimming speed equal to it), a
 `level` row because the level 10 improvement has the same name and keys.
@@ -159,7 +159,7 @@ keys, in 115 rows, and both link tables are gone.
   "edition": "both",           // "2014", "2024" or "both"; optional
   "rows": [
     {
-      "part": "curated",                // the code table it stands in for
+      "part": "curated",                // which of the five parts it is
       "keys": ["stunning strike|monk"], // the keys it is found under
       "scan": "replace",                // or "keep"; "replace" when absent
       "effects": [ /* the stored effects a rule pack's patch holds */ ]
@@ -193,19 +193,19 @@ keys, in 115 rows, and both link tables are gone.
 }
 ```
 
-- **`keys`** are the keys the code table uses, matched without case. A key
-  already taken by an earlier row of the same part in the same file is left
-  out, and the reader says so.
+- **`keys`** are the keys its call sites look it up under ("Keys by call
+  site", below), matched without case. A key already taken by an earlier row
+  of the same part in the same file is left out, and the reader says so.
 - **`scan`** (`curated` rows): `replace` turns the prose scan off for the
-  entry, as a `CURATED` row does; `keep` runs the scan beside the row. A row
-  of any other part has no `scan`: it always runs beside the scan.
+  entry; `keep` runs the scan beside the row. A row of any other part has no
+  `scan`: it always runs beside the scan.
 - **`level`** (every part but `curated`, optional): the row counts only for the feature
   gained at that level, 1 to 20, which tells apart features of one name (Storm
   Herald's Desert at 3, 6 and 14). A key is taken once per level, so a key may
   have a row at each of several levels and one for every level. The first key
   with a row at any level wins: a feature whose key has rows only at other
-  levels gets none, and the walk does not go on to a later key, as `STANDING`
-  answers today, and the advantage table and `ROLL_EXTRAS` did.
+  levels gets none, and the walk does not go on to a later key, as `STANDING`,
+  the advantage table and `ROLL_EXTRAS` answered.
 - **`effects`** read as a rule pack's (`readStoredEffects`), formulas and
   `while` included, but strictly: a field the reader does not read is a problem
   and that effect is left out, where a player's file reads past it. So a row
@@ -240,14 +240,10 @@ keys, in 115 rows, and both link tables are gone.
 A class or subclass feature's printings are its own book (the official one's,
 for a copy), then its class's or subclass's, so a 2014 subclass kept under a
 2024 class reads its own printing's row. A row under the key alone is for every
-printing with no row of its own. Code rows have no printing in their keys: they
-test it in code, and a printing's built-in row stands in for the code row under
-the key alone.
+printing with no row of its own.
 
-The first key with a row wins, in the order the call site tried `CURATED`, and
-across both tables: while rows are moving, a `CURATED` row under an earlier key
-is still the one read (`inCode`). Items have no keys yet, and a subclass has no
-row of its own.
+The first key with a row wins, in the order the call site tries them. Items
+have no keys yet, and a subclass has no row of its own.
 
 A `standing` row is found under the same keys, in the same order, for a class
 or subclass feature and for an optional feature; feats, traits and class rows
@@ -280,21 +276,21 @@ key with a row wins.
 ## Where a row sits
 
 A row is the curated row of the entry it is found for (layer 3 of the seam,
-ADR-001), so it keeps every rule a `CURATED` row has:
+ADR-001), so it keeps every rule a `CURATED` row had:
 
 1. A player's rule pack patch that replaces the entry wins over it; a pack's
    `add` sits beside it.
 2. The entry's own `castGuidance` comes first; its `drop` reaches the row's
    effects, and its `replace: true` leaves the row out.
-3. The row is emitted in place of `CURATED`, with the entry's own origin
-   object, which spend links find actions by. The rest of layer 3 (standing
-   rows, roll rows, spend rows) runs as before.
+3. The row is emitted first in layer 3, with the entry's own origin object,
+   which spend links find actions by. The rest of layer 3 (the prose scan
+   unless the row replaces it, then standing rows, roll rows, spend rows)
+   follows it.
 
-A `standing` row runs where `STANDING` runs, after the curated row or the prose
-scan: beside them, with the entry's origin object, and after the curated row's
-`from`, so the entry's `drop` reaches it and an entry or pack that replaces
-what it inherits leaves it out, as before. Its formulas read the class's level
-the curated row's read.
+A `standing` row runs after the curated row or the prose scan: beside them,
+with the entry's origin object, and after the curated row's `from`, so the
+entry's `drop` reaches it and an entry or pack that replaces what it inherits
+leaves it out. Its formulas read the class's level the curated row's read.
 
 A roll row runs where the roll tables ran, after the standing rows, with the
 origin they had: the feature's, feat's or option's own object, and for a trait
@@ -328,7 +324,8 @@ in `mechanics.ts`, `askPick` in `src/engine/effects/picks.ts`):
   short name (lowercase letters, digits and hyphens, at most 40), filed as
   `pick-<id>`: renaming a copy keeps its answers, and no pick shares an engine
   prompt's id (`ancestor`, `branch`, `cantrip`), whose one answer would then
-  apply twice. A built-in row writes the code row's own id after the origin,
+  apply twice. A built-in row writes, after the origin, the id the code row it
+  replaced asked under,
   `skill:{feature}` (the entry's name, lowercased) or a fixed word
   (`CODE_PICK_IDS`), so the answers characters saved keep reading. A feat's
   `pick-` ids file under its copy (`feat:<uid>:<instance>:pick-<id>`), so each
@@ -631,6 +628,25 @@ beside their rows are kept here:
   name the pool, nor do Divine Sense, Champion Challenge and Dreadful Aspect;
   their rows say which Channel Divinity they spend.
 
+The curated tables' comments gave these reasons beside their rows:
+
+- Stunning Strike states its effect but leaves the DC to the ki save DC of the
+  Ki (Monk's Focus) feature, which the prose scan cannot read from another
+  feature, so its row pins it: a Constitution save against 8 + proficiency +
+  Wisdom modifier. It rides on a hit, so it takes no action of its own; its
+  cost is a spend row.
+- The Paladin's Channel Divinity pool has a key of its own, not the Cleric's:
+  the 2024 text says "each time you use this class's Channel Divinity", and a
+  shared key made the uses depend on the class added first.
+- Tasha's Harness Divine Power has uses of its own by class level. The scan
+  read one pool for both spells, and nothing in the 2024 printing.
+- The 2014 Dragon Ancestor's doubled proficiency with dragons stays in the
+  feature's card.
+- Most limited-use species traits (Relentless Endurance, Breath Weapon, Fey
+  Step, Stone's Endurance) are left to the prose scan, which reads each
+  printing's own wording. A trait has a curated row only for what prose cannot
+  show: a standing number with no usage phrasing.
+
 ## Loading
 
 Each file is a dynamic `import()` listed in `src/data5e/builtInRules.ts`, so the
@@ -658,41 +674,40 @@ equal to what the loader loads.
 ## Adding a file
 
 Add it under `src/rules/`, list it in `FILES` in `builtInRules.ts` and in
-`BUILT_IN_RULE_SETS`; the tests fail on a file not listed. They also fail on a row the reader leaves anything
-out of, and on a key its part's code table (`CURATED` or `STANDING`) still
-has (the row would never be the one read, or the code row
-would be dead).
+`BUILT_IN_RULE_SETS`; the tests fail on a file not listed. They also fail on a
+row the reader leaves anything out of.
 
-## Moving a row out of code
+## Adding or changing a row
 
-1. Write the row with the effects the code row adds, in the code's order: a
-   spend link, for one, finds the first action of an origin.
-2. With the code row still in place, run `scripts/rules-probe.ts` (below). It
-   must find no difference and no row that no build reads. (Until step 3 the
-   tests fail on the key both tables hold.)
-3. Delete the code row. A section whose rows moved keeps one comment pointing
-   at the JSON, not one per row.
-4. Compare the whole tree with `scripts/rules-diff.ts` against the base commit:
-   zero change.
-5. A test that read the row through a code table reads it through the seam
-   instead (`emitRow` in `curatedEffects.test.ts`, `emit` in
-   `standingEffects.test.ts`, `emitRolls` in `rollRows.test.ts`, `emit` in
-   `paidRolls.test.ts`); a test
-   context or registry holds `BUILT_IN_RULE_SETS`, as every registry does.
-6. For a row the roll prompt prices (a spend row, a paid extra or a reroll),
-   the roll prompt's prices must not change either
-   (`scripts/roll-price-census.ts`, below), and the census must be able to see
-   the move: run it once with the moved rows doing nothing, and when that
-   changes nothing, its zero proves nothing for those keys (for a spend row, no
-   paid extra is priced as its action), so the probe is the proof.
+1. Write the row with its effects in the order they should be added: a spend
+   link, for one, finds the first action of an origin.
+2. Test it through the seam (`emitRow` in `curatedRows.test.ts`, `emit` in
+   `standingRows.test.ts`, `emitRolls` in `rollRows.test.ts`, `emit` in
+   `paidRolls.test.ts`); a test context or registry holds
+   `BUILT_IN_RULE_SETS`, as every registry does.
+3. Compare the whole tree with `scripts/rules-diff.ts` against the base commit,
+   at both answer ends (below): only the builds the row is meant to change may
+   change, and a row rewritten to the same effect changes none. A row no build
+   reads (`--coverage`) needs a test of its own, since a zero change says
+   nothing about it.
+4. For a row the roll prompt prices (a spend row, a paid extra or a reroll),
+   check the roll prompt's prices too (`scripts/roll-price-census.ts`, below),
+   and that the census can see the change: run it once with the rows doing
+   nothing, and when that changes nothing, its zero proves nothing for those
+   keys (for a spend row, no paid extra is priced as its action).
+
+Every row but the few written new (Tasha's Roving, above) came out of a code
+table (rule pack port phases 0 to 4), proved by the tools under "Proving a
+move out of code", below, and the tables, their lookups and the call sites'
+fallback to them are gone.
 
 The stored effect format is the one rule packs use, so a row that needs a field
 the format lacks widens the format for players too: `dcAbility: "strOrDex"` (a
 maneuver's DC) came in with Disarming Attack.
 
-A code row that reads a named class's level (`classLevel(col, 'Fighter')`)
-moves to a level table or `classLevel`, which read the level its call site
-passes: the class being walked for a class feature, the host class for an
+A row that needs a class's level takes a level table or `classLevel` (where
+its code row read a named class's level, `classLevel(col, 'Fighter')`), which
+read the level its call site passes: the class being walked for a class feature, the host class for an
 optional feature, and the character's level for a feat or a trait. That is the
 level of the class that gives the feature, which the owner chose (2026-11-14)
 over the first class that is or stands for the named one. The two differ
@@ -707,9 +722,9 @@ where the class walked is not the one the code named:
   homebrew Diviner for a Bard 14 has Portent's three rolls at Bard 14, where the
   code read the character's Wizard level (none).
 
-A code row that names a class's spells (`className: 'Cleric'`, read as the
-character's class of that name, else one reskinning it, else one copying it)
-moves to `"ownClass": true` on a spell damage bonus. The call site passes the
+A row that adds to a class's spells takes `"ownClass": true` on a spell damage
+bonus (where its code row named the class, `className: 'Cleric'`, read as the
+character's class of that name, else one reskinning it, else one copying it). The call site passes the
 class that gives the feature beside its level (`MechanicsSubject.className`):
 the class walked for a class's or subclass's feature, the host class for an
 optional feature it offers. `emit()` writes that class's name into `className`,
@@ -735,8 +750,8 @@ class that gives it, as a level does. The Workshop's "Cast a spell" card shows a
 file's `ownClass` as "The class that gives it", and picking an ability there
 puts the ability in its place.
 
-A code row that builds a pool's or an action's words from the class level (a
-die in a name, a rest that changes at level 5) moves to a level table of words,
+A row whose pool or action words change with the class level (a die in a name,
+a rest that changes at level 5) takes a level table of words,
 `{ "byLevel": { "1": "1d8", "10": "1d10" } }`, read the way an amount's table is:
 the words at the highest level reached, at the level its call site passes. A
 pool's `label`, `die` and `reset` take one, an action's `label`, `roll` and
@@ -748,8 +763,8 @@ needs (a `label`, a `reset`) starts at level 1. A player's file takes the same
 tables; the Workshop shows one as "By level, as written" and puts a single
 value in its place when the box is changed, as it does for an amount's table.
 
-A code row that reads the character's rules version (`doc.rulesVersion`, the
-2014 or 2024 rules the player picked, not the feature's printing) moves to
+A row that differs by the character's rules version (`doc.rulesVersion`, the
+2014 or 2024 rules the player picked, not the feature's printing) takes
 effects that say `"edition": "2014"` or `"edition": "2024"`: any stored effect
 may name one, and it counts only under that version, as though it were not
 there under the other (it keeps no pool another effect names). An effect
@@ -823,7 +838,8 @@ each build's prompts in words (id, count, label, open ones marked), and
 reads the base tree's saved answers on the new one unchanged: no saved answer
 is lost or asked again.
 
-Moving rows out of code must change none:
+A change meant to move no sheet (a refactor, a row rewritten to the same
+effect) must change none:
 
 ```bash
 bun --tsconfig-override=tsconfig.app.json scripts/rules-diff.ts snapshot --release <cache.json> --out before.json
@@ -836,59 +852,11 @@ read the same data. Take `before.json` in a checkout of the base commit (with
 this script copied in when the base has none). `compare` names the builds that
 changed, field by field, and with `--expect-zero` exits 1 when any did.
 
-`snapshot --coverage <file>` also writes, for each code table (`CURATED`,
-`STANDING`) and the built-in rows
-(a spend row's links), the keys no build read. A row read is not a row that added something (a code row for one
-feature level is read at every level and adds at one; a built-in row at one
-level, named with `@` and the level, is read only where it adds), but a row never read is
-one zero change says nothing about, so a move of one is
-proved another way, before the code row goes.
-
-`scripts/rules-probe.ts` is that proof. It runs while a row is in both places
-(a built-in row whose key its part's code table, `CURATED` or `STANDING`,
-still has; `ROLL_EXTRAS` until 3e) and derives
-each build that reads the row twice in one process, once with the code row and
-once with the data row, comparing every sheet field and the actions and pools
-the build collected, since the sheet drops a price the character cannot pay (a
-pool or slots it lacks). On the code side a row drops only its moved keys, so a
-key that shares the row and moved earlier, with no code row left, still reads
-it; a key new to a row, with no code row, reads it both ways and is never
-compared, so `rules-diff` against the base is what shows it. Until 3d it also
-linked each moved spend key alone, both ways, in each state a feature may
-leave its actions in, which proved a key no build reads; that check went with
-the link tables. Its builds go wider than
-`rules-diff`'s. Each class and subclass that reads a moved row is built at
-every level from 1 to 20 in four states: plain and raging at 1 hit point, each
-with five ability arrays (every score 14, 8, 3 or 20, and a mixed one), and in
-heavy gear (plate, a shield, a longsword and a longbow) or light gear (leather
-and the longsword alone), each with two. It is built again as a multiclass
-where the class's level is not the character's (levels 1 to 17 and three of
-another class, raging, three arrays). Every feat, optional feature and race
-that reads one is built across levels in the four states, a feat on a Fighter
-and again on a Wizard, whose slots a slot price needs. So it also catches
-what the reader rewrites as it reads (a `false` flag read as absent, a list's
-repeats dropped, a skill's case), level table thresholds at levels
-`rules-diff` does not build, and a gear condition (`unless`, a ranged or melee
-scope, `weaponsOnly`) that differs. It answers picks as `rules-diff` does
-(spells by query, `--answers last`), and builds each subclass that reads a
-moved row again at every level with the "in place of" names held, under a
-background and after a first level of Wizard.
-
-It sees one entity at a time: a class alone, a feat or a race on a bare
-Fighter or Wizard. A row that differs only beside another entity's row is beyond it, so
-such a row needs a test of its own (the initiative `profBonus` above counts
-once across features, and a formula's number would not).
-
-```bash
-bun --tsconfig-override=tsconfig.app.json scripts/rules-probe.ts --release <cache.json>
-```
-
-A full run takes about 35 minutes (about 50 for the 287 spend keys of 3c);
-`--only <text>` probes only the moved keys
-that hold the text, in a minute or two, and may be given more than once (a
-mutant of several rows in one run). It exits 1 when a sheet differs or a moved
-row is read by no build. A build that throws the same way both times compared no sheet, so it
-counts for no row, and the summary says how many did.
+`snapshot --coverage <file>` also writes the built-in rows (a spend row's
+links) no build read, by part, first key and level. A row read is not a row
+that added something, but a row at one level, named with `@` and the level, is
+read only where it adds, and a row never read is one a zero change says
+nothing about, so a change to one is proved another way: a test of its own.
 
 `scripts/roll-price-census.ts` records what the roll prompt offers for every
 paid die or bonus and every reroll (`pricedRollEffects`), with what paying
@@ -901,30 +869,34 @@ worked out in the prompt, not on the sheet. It sees a spend row only through a
 paid extra priced as that row's action, with no use spent, so a buy-back, and
 a slot or Hit Point Die price (which the prompt never offers), never shows: the
 15 keys of 3b changed nothing when they linked nothing, while every link
-linking nothing changes 729 riders. A move of spend rows must change none,
-taken as `rules-diff` takes its snapshots:
+linking nothing changes 729 riders. A change to spend rows meant to move no
+price must change none, taken as `rules-diff` takes its snapshots:
 
 ```bash
 bun --tsconfig-override=tsconfig.app.json scripts/roll-price-census.ts snapshot --release <cache.json> --out before.json
 bun --tsconfig-override=tsconfig.app.json scripts/roll-price-census.ts compare before.json after.json --expect-zero
 ```
 
-`scripts/pick-census.ts` checks a pick row against its code row for every
-answer, where `rules-diff` and the probe see only the first and last. It
-catches each code row where real builds call it (every class and subclass at
-levels 3, 6, 10, 14 and 20 in its edition, settled), and runs it again beside
-the stored row on two fresh collectors holding what the build held so far,
-three times: as it was, and with some and with all of what the "in place of"
-rows name held. Each prompt must match (id, kind, label, count, options and
-their greyed-out reasons, spell query), as must the effects added before it,
-the effects of every single answer (every option, every spell the query fits)
-and the warnings. A row of one level no build reaches (Tiger) runs at that
-level alone. `--rows <file>` checks drafted rows before a move (`{ "rows":
-[...] }`, as a rule set writes them); without it, the shipped rows whose code
-row is still in the tree, with those rows hidden so the builds reach the code.
-It exits 1 on a difference, on a row no build reaches, and when it checked no
-"in place of" prompt, spell answer or level row that the rows have.
+### Proving a move out of code
 
-```bash
-bun --tsconfig-override=tsconfig.app.json scripts/pick-census.ts --release <cache.json> [--rows <file>] [--only <text>]...
-```
+Two tools proved each row against the code row it replaced while both were in
+the tree, and went with the last tables, since with no code row they compare
+nothing. To move a mechanic out of code again, restore them from 65e79a2
+(`git show 65e79a2:scripts/rules-probe.ts`, and `pick-census.ts`) beside the
+code table, with a call site fallback for them to hide.
+
+- `scripts/rules-probe.ts` derived each build that read a moved row twice in
+  one process, once with the code row and once with the data row, comparing
+  every sheet field and the actions and pools the build collected. Its builds
+  went wider than `rules-diff`'s: every level from 1 to 20, five ability arrays
+  (every score 14, 8, 3 or 20, and a mixed one), raging at 1 hit point, heavy
+  and light gear, and multiclasses where the class's level is not the
+  character's. So it also caught what the reader rewrites as it reads (a
+  `false` flag read as absent, a list's repeats dropped, a skill's case), level
+  table thresholds at levels `rules-diff` does not build, and a gear condition
+  (`unless`, a ranged or melee scope, `weaponsOnly`) that differs. A change to
+  a row now has only `rules-diff`'s builds and the row's tests to show those.
+- `scripts/pick-census.ts` checked a pick row against its code row for every
+  answer (every option, every spell the query fits), where `rules-diff` sees
+  only the first and last, with some and with all of what an "in place of" row
+  names held. A pick row's other answers now have only its tests.

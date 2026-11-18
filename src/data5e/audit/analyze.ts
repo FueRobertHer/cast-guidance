@@ -72,8 +72,8 @@ export interface AnalyzeInput {
   /** Saved judgments (`scripts/data-judgments.json`), when the file exists. */
   judgments?: JudgmentFile;
   /**
-   * The app's built-in rule sets (`loadBuiltInRules`), which hold the rows moved
-   * out of `CURATED`: without them the audit counts those entries as prose.
+   * The app's built-in rule sets (`loadBuiltInRules`), which hold the curated
+   * rows: without them the audit counts those entries as prose.
    */
   ruleSets: readonly Entity[];
 }

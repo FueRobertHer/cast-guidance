@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { BUILT_IN_RULE_SETS, makeTestContext } from '../../../tests-fixtures/testWorld';
 import { RULE_SET_TYPE } from '../castGuidance';
-import { emitCuratedEffects } from '../curated/curatedEffects';
 import { deriveSheet } from '../derive';
 import { type EffectInput, type EffectOrigin, type EngineContext, newCharacterDoc } from '../types';
 import { Collector } from './base';
@@ -2928,19 +2927,18 @@ describe('proseScanFeature: standing bonuses to checks and initiative', () => {
   });
 
   describe('a homebrew feature worded like a curated one', () => {
-    // No data but the rule sets every registry holds: the rows moved out of `CURATED`.
+    // No data but the rule sets every registry holds: the built-in curated rows.
     const noData: EngineContext = {
       get: () => undefined,
       byType: (type) => (type === RULE_SET_TYPE ? BUILT_IN_RULE_SETS : []),
     };
     /**
-     * The curated row's effects: `CURATED`'s, else the shipped rule set's, as the
-     * seam emits it, under the key for the printing in `uid` first.
+     * The shipped rule set's curated row's effects, as the seam emits it, under
+     * the key for the printing in `uid` first.
      */
     const curatedEffects = (key: string, uid: string) => {
       const col = new Collector(newCharacterDoc('c', 'H', 't'), noData);
       const at = { ...origin, uid };
-      if (emitCuratedEffects(col, key, at)) return col.effects;
       let builtIn = false;
       mechanicsOf(col, {
         entry: {},
