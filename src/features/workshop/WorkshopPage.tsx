@@ -47,7 +47,7 @@ import {
 import { EditorShell } from './EditorShell';
 import { EDITORS, type EditorSpec, type Json } from './editorTypes';
 import { Field } from './fields';
-import { EntryPickIds, pickIdsIn } from './pickIds';
+import { EntryPicks } from './pickIds';
 
 const NOTE = 'text-body text-ink-muted';
 const ICON =
@@ -509,7 +509,7 @@ function Editor({
         />
       </Field>
       {/* A pick added anywhere in the entry takes an id none of its picks has. */}
-      <EntryPickIds.Provider value={() => pickIdsIn([draft, original])}>
+      <EntryPicks draft={draft} original={original}>
         <Body
           draft={draft}
           change={change}
@@ -517,7 +517,7 @@ function Editor({
           registry={registry}
           readOnly={readOnly}
         />
-      </EntryPickIds.Provider>
+      </EntryPicks>
       {failure !== undefined && (
         <p role="alert" className="rounded-control bg-danger-soft px-3 py-2 text-caption">
           {failure}

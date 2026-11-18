@@ -27,7 +27,7 @@ vi.mock('@/ui/dialogs', () => ({
 import { moreKinds } from './EffectCards';
 import { editor as feat } from './editors/FeatEditor';
 import type { Json } from './editorTypes';
-import { EntryPickIds } from './pickIds';
+import { EntryPickIds, EntryPicks } from './pickIds';
 
 afterEach(cleanup);
 
@@ -164,6 +164,42 @@ describe('a new pick’s id', () => {
     expect(effects()[1]?.id).toBe('choice-4');
   });
 
+  it("is one none of the entry's parts has, as the Workshop page tells its cards", async () => {
+    const lore = { kind: 'pick', id: 'choice', ask: 'skill', gives: [SKILL] };
+    const part = {
+      type: 'entries',
+      name: 'Lore',
+      entries: [],
+      castGuidance: { v: 1, effects: [lore] },
+    };
+    let latest: Json = {};
+    function Harness() {
+      const [draft, setDraft] = useState<Json>({ name: 'Gift', ...feat.blank(), entries: [part] });
+      latest = draft;
+      return (
+        <EntryPicks draft={draft}>
+          <feat.Body
+            draft={draft}
+            change={(patch) => setDraft((d) => ({ ...d, ...patch }))}
+            registry={new EntityRegistry()}
+            readOnly={false}
+          />
+        </EntryPicks>
+      );
+    }
+    render(
+      <MemoryRouter>
+        <Harness />
+      </MemoryRouter>,
+    );
+    // A file's part holds a pick a feat's editor shows no card for: its id is still taken.
+    choice.current = 'Pick';
+    press('More');
+    await screen.findByLabelText('Pick: Asks for');
+    const own = ((latest.castGuidance as Json).effects as Json[])[0];
+    expect(own?.id).toBe('choice-2');
+  });
+
   it('stays as it is whatever else changes, so the answers saved for it keep', async () => {
     const effects = withCards([]);
     await addPick();
@@ -195,7 +231,7 @@ const withCardsLast = (): Json => lastEffects()[0] as Json;
 
 describe('the Pick card, each ask', () => {
   /** After each step of `steps`, the reader takes the card strictly. */
-  async function walk(steps: Array<[string, () => void | Promise<void>]>) {
+  async function walk(steps: Array<[string, () => unknown]>) {
     const effects = withCards([]);
     await addPick();
     for (const [step, act] of steps) {

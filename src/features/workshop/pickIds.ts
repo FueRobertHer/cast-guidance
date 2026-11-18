@@ -5,7 +5,7 @@
  * of them never. A new Pick card takes an id none of the entry's picks has,
  * and keeps it, since the answers saved for it are filed under it.
  */
-import { createContext } from 'react';
+import { createContext, createElement, type ReactNode } from 'react';
 import { isRecord } from '@/engine/castGuidance';
 
 /** The ids of every stored pick in `v`, however deep it holds them. */
@@ -24,6 +24,23 @@ export function pickIdsIn(v: unknown, out = new Set<string>()): Set<string> {
  * editor gives the cards it holds. Read when a pick is added, not on each change.
  */
 export const EntryPickIds = createContext<() => ReadonlySet<string>>(() => new Set());
+
+/** The cards of an entry being edited (`draft`, made from `original`), told its picks' ids. */
+export function EntryPicks({
+  draft,
+  original,
+  children,
+}: {
+  draft: unknown;
+  original?: unknown;
+  children: ReactNode;
+}) {
+  return createElement(
+    EntryPickIds.Provider,
+    { value: () => pickIdsIn([draft, original]) },
+    children,
+  );
+}
 
 /** A new pick's id: "choice", else "choice-2" and on, one that none in `taken` has. */
 export function freshPickId(taken: ReadonlySet<string>): string {
