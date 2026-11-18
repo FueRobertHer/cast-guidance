@@ -139,7 +139,7 @@ describe("an item's charges from the Workshop to the sheet", () => {
     expect(preview.counts).toEqual({ item: 1 });
     expect(preview.pack).toBeUndefined();
     expect(preview.copyIssues).toEqual([]);
-    const [rod] = row.json.item as Array<Record<string, unknown>>;
+    const [rod] = (row.json as { item: Array<Record<string, unknown>> }).item;
     expect(rod?.castGuidance).toEqual({
       v: 1,
       effects: [
