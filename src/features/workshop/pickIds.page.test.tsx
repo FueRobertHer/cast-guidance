@@ -43,8 +43,17 @@ async function savedIds(fileId: string): Promise<unknown[]> {
     .map((e) => (e as { id: unknown }).id);
 }
 
+/** The effect cards' More, not the page header's menu of the same name. */
+function effectsMore(): HTMLElement {
+  const more = screen
+    .getAllByRole('button', { name: 'More' })
+    .find((b) => !b.hasAttribute('aria-label'));
+  if (more === undefined) throw new Error('no More beside the effect cards');
+  return more;
+}
+
 describe('a pick added where one was taken out, on the Workshop page', () => {
-  it('takes an id the entry had neither as it opened nor as last saved', async () => {
+  it('takes an id the entry had in no version the editor knows: as opened, or any save', async () => {
     const row = await homebrewRepo.createEditable('My Brews', 'HBX');
     await homebrewRepo.saveEditable(row.id, {
       ...(row.json as Record<string, unknown>),
@@ -68,12 +77,7 @@ describe('a pick added where one was taken out, on the Workshop page', () => {
       fireEvent.click(
         await screen.findByRole('button', { name: 'Remove Asks for a skill' }, { timeout: WAIT }),
       );
-      // The effect cards' More, not the page header's menu of the same name.
-      const more = screen
-        .getAllByRole('button', { name: 'More' })
-        .find((b) => !b.hasAttribute('aria-label'));
-      if (more === undefined) throw new Error('no More beside the effect cards');
-      fireEvent.click(more);
+      fireEvent.click(effectsMore());
       fireEvent.click(await screen.findByRole('button', { name: 'Pick' }));
       await screen.findByLabelText('Pick: Asks for');
       fireEvent.click(screen.getByRole('button', { name: 'Save' }));
@@ -83,5 +87,16 @@ describe('a pick added where one was taken out, on the Workshop page', () => {
     await replace(['choice-2']);
     // Taken out of the entry as last saved.
     await replace(['choice-3']);
+    // Taken out and saved, then a new one added: an earlier save had it.
+    fireEvent.click(screen.getByRole('button', { name: 'Remove Asks for a skill' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(async () => expect(await savedIds(row.id)).toEqual([]), { timeout: WAIT });
+    fireEvent.click(effectsMore());
+    fireEvent.click(await screen.findByRole('button', { name: 'Pick' }));
+    await screen.findByLabelText('Pick: Asks for');
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(async () => expect(await savedIds(row.id)).toEqual(['choice-4']), {
+      timeout: WAIT,
+    });
   });
 });

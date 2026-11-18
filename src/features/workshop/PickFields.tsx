@@ -57,14 +57,26 @@ const GIVES: Readonly<Partial<Record<string, readonly Eff[]>>> = {
 const STARTS: Readonly<Partial<Record<string, Eff>>> = {
   weapon: { kind: 'pick', weapons: { filter: 'type=martial weapon' } },
   spell: { kind: 'pick', spells: { levels: [0] } },
-  option: {
-    kind: 'pick',
-    options: [
-      { id: 'option-1', label: 'Option 1' },
-      { id: 'option-2', label: 'Option 2' },
-    ],
-  },
 };
+
+/**
+ * `count` new options' ids, `option-1` and on, none of them in `taken` (lower
+ * case, trimmed, as the reader compares them), each named for its place.
+ */
+function freshOptions(taken: ReadonlySet<string>, count: number, after = 0) {
+  const made: Array<{ id: string; label: string }> = [];
+  let n = 1;
+  while (made.length < count) {
+    if (!taken.has(`option-${n}`)) {
+      made.push({ id: `option-${n}`, label: `Option ${after + made.length + 1}` });
+    }
+    n += 1;
+  }
+  return made;
+}
+
+/** An option id as the reader compares two: trimmed, without case. */
+const optionKey = (id: unknown) => String(id).trim().toLowerCase();
 
 /** Fields only some asks read (`PICK_ONLY`), which a pick turned to another ask leaves. */
 const ASK_ONLY = [
@@ -105,12 +117,14 @@ const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b)
  * A pick turned to another ask: what only the old ask reads is left, and what
  * it gives turns too while it is still what the old ask started with.
  */
-export function withAsk(e: Eff, ask: string): Eff {
+export function withAsk(e: Eff, ask: string, takenOptions: ReadonlySet<string> = new Set()): Eff {
   const rest = omit(e, [...ASK_ONLY, 'ask']);
   const started = e.gives === undefined || same(e.gives, GIVES[String(e.ask)]);
   const base = started ? omit(rest, ['gives']) : rest;
   const gives = started && GIVES[ask] !== undefined ? { gives: GIVES[ask] } : {};
-  return { ...base, ask, ...STARTS[ask], ...gives, kind: 'pick' };
+  // Two options to start, with ids the pick's options never had (`takenOptions`).
+  const options = ask === 'option' ? { options: freshOptions(takenOptions, 2) } : {};
+  return { ...base, ask, ...STARTS[ask], ...options, ...gives, kind: 'pick' };
 }
 
 const strings = (v: unknown): string[] =>
@@ -331,8 +345,11 @@ function WeaponFields({
   onChange: (next: Eff) => void;
 }) {
   const weapons = isRecord(effect.weapons) ? effect.weapons : undefined;
-  // Named stays named while its list is emptied, to be typed again.
+  // Named stays named while its list is emptied, to be typed again. Cards are
+  // their place in the list, so one handed another pick takes that one's mode.
   const [naming, setNaming] = useState(effect.from !== undefined);
+  const mode = weapons !== undefined ? false : effect.from !== undefined ? true : undefined;
+  if (mode !== undefined && mode !== naming) setNaming(mode);
   const named = weapons === undefined && (effect.from !== undefined || naming);
   const without = weapons === undefined ? [] : strings(weapons.without);
   return (
@@ -342,14 +359,13 @@ function WeaponFields({
           <Select
             aria-label={`${title}: Weapons`}
             value={named ? 'named' : 'kinds'}
-            onChange={(e) => {
-              setNaming(e.target.value === 'named');
+            onChange={(e) =>
               onChange(
                 e.target.value === 'named'
                   ? { ...omit(effect, ['weapons']), from: ['longsword'] }
                   : { ...omit(effect, ['from']), weapons: { filter: 'type=martial weapon' } },
-              );
-            }}
+              )
+            }
           >
             <option value="kinds">Of a kind</option>
             <option value="named">Named</option>
@@ -444,10 +460,8 @@ function OptionRows({
   const add = () => {
     // One its pick's options have, or had: an answer saved for it stays its own.
     const ids = optionIdsIn(versions(), String(effect.id));
-    for (const o of options) if (isRecord(o)) ids.add(String(o.id).toLowerCase());
-    let n = options.length + 1;
-    while (ids.has(`option-${n}`)) n += 1;
-    onChange({ ...effect, options: [...options, { id: `option-${n}`, label: `Option ${n}` }] });
+    for (const o of options) if (isRecord(o)) ids.add(optionKey(o.id));
+    onChange({ ...effect, options: [...options, ...freshOptions(ids, 1, options.length)] });
   };
   return (
     <div className="flex flex-col gap-2">
@@ -532,6 +546,7 @@ export function PickFields({
 }) {
   // Once shown, the Id box stays while its id is typed.
   const [idOpen, setIdOpen] = useState(false);
+  const versions = useContext(EntryVersions);
   const ask = String(effect.ask);
   if (KEPT_ASKS.has(ask)) {
     return (
@@ -554,7 +569,7 @@ export function PickFields({
           <Select
             aria-label={`${title}: Asks for`}
             value={ask}
-            onChange={(e) => onChange(withAsk(effect, e.target.value))}
+            onChange={(e) => onChange(withAsk(effect, e.target.value, optionIdsIn(versions(), id)))}
           >
             {asks.map(([v, text]) => (
               <option key={v} value={v}>

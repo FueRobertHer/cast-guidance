@@ -245,6 +245,45 @@ describe('a new pick’s id', () => {
     expect(problems(effects())).toEqual([]);
   });
 
+  it('starts a pick turned back to options with option ids it never had', () => {
+    const was = {
+      kind: 'pick',
+      id: 'choice',
+      ask: 'option',
+      options: [
+        { id: 'option-1', label: 'Fire' },
+        { id: 'option-2', label: 'Cold' },
+      ],
+    };
+    const effects = withEntry({ castGuidance: { v: 1, effects: [was] } }, [
+      { castGuidance: { v: 1, effects: [was] } },
+    ]);
+    pick('Pick: Asks for', 'skill');
+    pick('Pick: Asks for', 'option');
+    expect(effects()[0]?.options).toEqual([
+      { id: 'option-3', label: 'Option 1' },
+      { id: 'option-4', label: 'Option 2' },
+    ]);
+    expect(problems(effects())).toEqual([]);
+  });
+
+  it('compares option ids as the reader does, trimmed and without case', () => {
+    const effects = withCards([
+      {
+        kind: 'pick',
+        id: 'choice',
+        ask: 'option',
+        options: [
+          { id: 'Option-1 ', label: 'A' },
+          { id: 'option-2', label: 'B' },
+        ],
+      },
+    ]);
+    press('Add an option');
+    expect((effects()[0]?.options as Json[])[2]).toEqual({ id: 'option-3', label: 'Option 3' });
+    expect(problems(effects())).toEqual([]);
+  });
+
   it('shows a box to fix one the reader does not take, or one another pick has', () => {
     withCards([{ kind: 'pick', id: 'skill:{feature}', ask: 'skill', gives: [SKILL] }]);
     expect(box('Pick: Id').value).toBe('skill:{feature}');
@@ -399,6 +438,24 @@ describe('the Pick card, each ask', () => {
     expect(effects()[0]).toMatchObject({ ask: 'weapon', from: ['rapier'] });
     expect(effects()[0]).not.toHaveProperty('weapons');
     expect(problems(effects())).toEqual([]);
+  });
+
+  it('keeps the mode of the pick a card is handed when one above it is taken out', () => {
+    const gives = [{ kind: 'weaponProf', name: '{pick}' }];
+    const kinds = {
+      kind: 'pick',
+      id: 'blade',
+      ask: 'weapon',
+      weapons: { filter: 'type=martial weapon' },
+      gives,
+    };
+    const named = { kind: 'pick', id: 'rapier', ask: 'weapon', from: ['rapier'], gives };
+    const effects = withCards([kinds, named]);
+    press(`Remove ${pickWords(kinds)}`);
+    pick('Pick: From', '');
+    expect(box('Pick: Weapons').value).toBe('named');
+    pick('Pick: From', 'scimitar');
+    expect(effects()).toEqual([{ ...named, from: ['scimitar'] }]);
   });
 
   it('asks for a saving throw from abilities, in place of one held', async () => {
@@ -634,12 +691,21 @@ describe('what each pick gives', () => {
       pool,
       { ...spell, gives: [cast] },
       { ...spell, id: 'charm', ask: 'option', options: [{ id: 'a', label: 'A', gives: [cast] }] },
+      {
+        kind: 'pick',
+        id: 'lore',
+        ask: 'skill',
+        inPlaceOf: ['Persuasion'],
+        gives: [SKILL],
+        always: [{ ...cast, spell: 'Light|PHB' }],
+      },
     ]);
     fireEvent.change(screen.getByLabelText('Uses per rest: Name'), { target: { value: 'Charms' } });
     expect(effects()[1]?.gives).toEqual([{ ...cast, resourceKey: 'charms' }]);
     expect((effects()[2]?.options as Json[])[0]?.gives).toEqual([
       { ...cast, resourceKey: 'charms' },
     ]);
+    expect(effects()[3]?.always).toEqual([{ ...cast, spell: 'Light|PHB', resourceKey: 'charms' }]);
     expect(misshown()).toEqual([]);
   });
 

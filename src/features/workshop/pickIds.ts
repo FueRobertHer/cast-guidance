@@ -22,13 +22,13 @@ export function pickIdsIn(v: unknown, out = new Set<string>()): Set<string> {
   return out;
 }
 
-/** The ids, lower case, of the options of each pick in `v` whose id is `pick`. */
+/** The ids, trimmed and lower case as the reader compares them, of the options of each pick in `v` whose id is `pick`. */
 export function optionIdsIn(v: unknown, pick: string, out = new Set<string>()): Set<string> {
   if (Array.isArray(v)) {
     for (const x of v) optionIdsIn(x, pick, out);
   } else if (isRecord(v)) {
     if (v.kind === 'pick' && v.id === pick && Array.isArray(v.options)) {
-      for (const o of v.options) if (isRecord(o)) out.add(String(o.id).toLowerCase());
+      for (const o of v.options) if (isRecord(o)) out.add(String(o.id).trim().toLowerCase());
     }
     for (const x of Object.values(v)) optionIdsIn(x, pick, out);
   }

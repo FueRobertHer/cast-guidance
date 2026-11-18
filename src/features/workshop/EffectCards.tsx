@@ -948,12 +948,15 @@ function repaid(price: Price | undefined, resource: string): Price {
   return { ...rest, resource, amount: one || rest.amount === undefined ? 1 : rest.amount };
 }
 
-/** The lists of what a pick gives, each by its place: "gives", "givesAll", "options 2 gives". */
+/**
+ * The lists of what a pick gives, each by its place: "gives", "givesAll",
+ * "always" (given in place of nothing), "options 2 gives".
+ */
 function givenLists(x: Eff): Array<readonly [string, readonly unknown[]]> {
   if (x.kind !== 'pick') return [];
   const options = Array.isArray(x.options) ? x.options : [];
   return [
-    ...(['gives', 'givesAll'] as const).flatMap((k) =>
+    ...(['gives', 'givesAll', 'always'] as const).flatMap((k) =>
       Array.isArray(x[k]) ? [[k, x[k] as unknown[]] as const] : [],
     ),
     ...options.flatMap((o, n) =>
@@ -966,13 +969,14 @@ function givenLists(x: Eff): Array<readonly [string, readonly unknown[]]> {
 function regiven(
   x: Eff,
   turn: (g: unknown, at: string, k: number) => unknown,
-): Partial<Record<'gives' | 'givesAll' | 'options', unknown>> {
+): Partial<Record<'gives' | 'givesAll' | 'always' | 'options', unknown>> {
   if (x.kind !== 'pick') return {};
   const each = (list: unknown, at: string) =>
     Array.isArray(list) ? list.map((g, k) => turn(g, at, k)) : list;
   return {
     ...(x.gives === undefined ? {} : { gives: each(x.gives, 'gives') }),
     ...(x.givesAll === undefined ? {} : { givesAll: each(x.givesAll, 'givesAll') }),
+    ...(x.always === undefined ? {} : { always: each(x.always, 'always') }),
     ...(Array.isArray(x.options)
       ? {
           options: x.options.map((o, n) =>
