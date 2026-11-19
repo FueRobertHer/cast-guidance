@@ -1,3 +1,4 @@
+import { type PackLocal, readPackLocal } from '@/data5e/rulePack';
 import {
   assertHomebrewFile,
   assertJsonWithinLimits,
@@ -5,14 +6,19 @@ import {
   sha256Hex,
 } from '@/lib/guards';
 import { db, type HomebrewFileRow, type HomebrewMetaRow } from './db';
+import { bookOf, mayBeOldWholeImport, oldWholeImports, splitBooks } from './homebrewBooks';
 import {
-  bookOf,
-  mayBeOldWholeImport,
-  oldWholeImports,
-  sameBookCopy,
-  splitBooks,
-} from './homebrewBooks';
-import { compareMergeOrder } from './homebrewOrder';
+  CHANGES_SOURCE,
+  COLLECTION_ID_KEY,
+  collectionIdOf,
+  collectionKey,
+  compareMergeOrder,
+  sameCollection,
+  WORKSHOP_SOURCE,
+  withCollectionId,
+} from './homebrewOrder';
+
+export { CHANGES_SOURCE, WORKSHOP_SOURCE };
 
 /** A file to be stored a book at a time, as {@link homebrewRepo.prepareBooks} gives it. */
 export interface PreparedBooks {
@@ -37,10 +43,12 @@ export interface CommittedBooks {
 
 /**
  * Build a content-hashed homebrew row from a raw 5etools homebrew file object.
- * Identity (`id`) and all metadata (`sourceIds`, `counts`) are recomputed from
- * the content, never taken from a caller — so an importer cannot forge an id
- * to collide with unrelated local content or misrepresent what a file holds.
- * Imported files are never `editable` (that flag belongs to in-app originals).
+ * Identity (`id`) and all metadata (`sourceIds`, `counts`, `key`) are
+ * recomputed from the content, never taken from a caller, so an importer
+ * cannot forge an id to collide with unrelated local content or misrepresent
+ * what a file holds. Imported files are never `editable` (that flag belongs to
+ * in-app originals), and never hold a `pack` or a `role`: those are this
+ * device's, set here alone.
  */
 export async function buildHomebrewRow(
   rawFile: unknown,
@@ -51,6 +59,17 @@ export async function buildHomebrewRow(
   assertJsonWithinLimits(rawFile);
   const { meta, json } = assertHomebrewFile(rawFile);
   const id = await sha256Hex(JSON.stringify(rawFile));
+  // One book of a converted compendium says so in its `_meta`, wherever it
+  // comes from: an import, a download of it, or a character's export.
+  const book = bookOf(json);
+  const sourceIds = meta.sources.map((s) => s.json);
+  const key = collectionKey({
+    url,
+    sourceIds,
+    fileName,
+    book: book.book,
+    made: collectionIdOf(json),
+  });
   return {
     id,
     fileName,
@@ -58,12 +77,11 @@ export async function buildHomebrewRow(
     json,
     enabled: true,
     editable: false,
-    sourceIds: meta.sources.map((s) => s.json),
+    sourceIds,
     counts: homebrewEntityCounts(json),
     addedAt: Date.now(),
-    // One book of a converted compendium says so in its `_meta`, wherever
-    // it comes from: an import, a download of it, or a character's export.
-    ...bookOf(json),
+    ...book,
+    ...(key === undefined ? {} : { key }),
   };
 }
 
@@ -138,12 +156,13 @@ function readHomebrewMeta(row: unknown): HomebrewFileMeta | HomebrewReadError {
     return { fileName, message: 'the row has no id, so nothing can address it' };
   }
   const counts = isRecord(row.counts) ? row.counts : {};
-  return {
+  const editable = row.editable === true;
+  const meta: HomebrewFileMeta = {
     id,
     fileName: fileName ?? `${id}.json`,
     url: typeof row.url === 'string' ? row.url : undefined,
     enabled: row.enabled !== false,
-    editable: row.editable === true,
+    editable,
     sourceIds: Array.isArray(row.sourceIds)
       ? row.sourceIds.filter((s) => typeof s === 'string')
       : [],
@@ -154,6 +173,21 @@ function readHomebrewMeta(row: unknown): HomebrewFileMeta | HomebrewReadError {
     rev: typeof row.rev === 'number' && Number.isFinite(row.rev) ? row.rev : undefined,
     ...(typeof row.book === 'string' && row.book !== '' ? { book: row.book } : {}),
     ...(row.subset === true ? { subset: true as const } : {}),
+  };
+  const pack = readPackLocal(row.pack);
+  // A row written without its key (by a test, or before keys) is keyed as its
+  // fields say. An imported file has one unless the app made it before stamps.
+  const key = editable
+    ? undefined
+    : typeof row.key === 'string' && row.key !== ''
+      ? row.key
+      : collectionKey(meta);
+  return {
+    ...meta,
+    ...(key === undefined ? {} : { key }),
+    ...(pack === undefined ? {} : { pack }),
+    // The app's to set, on a file the player owns: never one an import stored.
+    ...(editable && row.role === 'changes' ? { role: 'changes' as const } : {}),
   };
 }
 
@@ -218,13 +252,75 @@ function newestFirst(a: HomebrewFileMeta, b: HomebrewFileMeta): number {
   return b.addedAt - a.addedAt || (a.id < b.id ? 1 : a.id > b.id ? -1 : 0);
 }
 
+/** A file coming in, as it lands: what it brings, and what it took the place of. */
+export interface Landed {
+  row: HomebrewFileRow;
+  /** The copies of its collection stored before, which it replaced. */
+  replaced: HomebrewFileMeta[];
+}
+
 /**
- * The book the Workshop keeps the player's own entries in: one file per
- * device, made on the first save. Its entries are `name|MyHomebrew`, apart
- * from every official printing of the same name.
+ * Store `row`, taking the place of every stored copy of its collection
+ * (`stored`, read in the caller's transaction over both tables). The one way
+ * an imported file lands, whole or a book at a time, from a file or a
+ * character's export (ADR-002, D4). The copies
+ * go; the row keeps the earliest one's place in the merge order, is on when
+ * any of them was, and keeps the first one's pack settings over any it
+ * brings, so an update never cuts a pack loose from its characters. `how`
+ * as `putHomebrewRow` takes it: `add` refuses a row already stored by its id.
  */
-export const WORKSHOP_SOURCE = 'MyHomebrew';
+export async function landHomebrewRow(
+  row: HomebrewFileRow,
+  stored: readonly HomebrewFileMeta[],
+  how: 'put' | 'add' = 'put',
+): Promise<Landed> {
+  const replaced = stored
+    .filter((s) => s.id !== row.id && sameCollection(s, row))
+    .sort(compareMergeOrder);
+  for (const r of replaced) {
+    await db.homebrewFiles.delete(r.id);
+    await db.homebrewJson.delete(r.id);
+  }
+  const first = replaced[0];
+  const pack = replaced.find((r) => r.pack !== undefined)?.pack ?? row.pack;
+  // A role is the app's to set on a file the player owns: never one imported.
+  const { pack: _, role: __, ...rest } = row;
+  const landed: HomebrewFileRow = {
+    ...rest,
+    ...(first === undefined
+      ? {}
+      : { enabled: replaced.some((r) => r.enabled), addedAt: first.addedAt }),
+    ...(pack === undefined ? {} : { pack }),
+  };
+  await putHomebrewRow(landed, how);
+  return { row: landed, replaced };
+}
+
+/**
+ * A short code for a new collection the player makes, its own (suspected bug
+ * 8): `wanted`, unless another stored file declares it already or the app
+ * keeps it for its own files, then `wanted` with the first number after it
+ * that is free. Two collections under one source could not be told apart:
+ * every entry is known by its name and its source.
+ */
+function freeSource(wanted: string, stored: readonly HomebrewFileMeta[]): string {
+  const taken = new Set(
+    [WORKSHOP_SOURCE, CHANGES_SOURCE, ...stored.flatMap((f) => f.sourceIds)].map((s) =>
+      s.toLowerCase(),
+    ),
+  );
+  if (!taken.has(wanted.toLowerCase())) return wanted;
+  for (let n = 2; ; n += 1) {
+    const next = `${wanted}${n}`;
+    if (!taken.has(next.toLowerCase())) return next;
+  }
+}
+
+/** The title of the Workshop file (`WORKSHOP_SOURCE`). */
 const WORKSHOP_TITLE = 'My homebrew';
+
+/** The title of the file of the player's changes to the books (`CHANGES_SOURCE`). */
+const CHANGES_TITLE = 'Changes to the books';
 
 /** An entry's identity in a file: its name and its book, compared without case. */
 export interface EntryKey {
@@ -244,8 +340,11 @@ function isEntry(e: unknown, key: EntryKey): boolean {
 
 /** The player's Workshop file among stored rows: theirs to edit, in the Workshop's book. */
 function isWorkshopFile(row: HomebrewFileMeta): boolean {
-  return row.editable && row.sourceIds[0] === WORKSHOP_SOURCE;
+  return row.editable && row.role === undefined && row.sourceIds[0] === WORKSHOP_SOURCE;
 }
+
+/** The file the player's changes to the books are in. */
+const isChangesFile = (row: HomebrewFileMeta): boolean => row.editable && row.role === 'changes';
 
 /** A save refused because another entry of that type already has the name and book. */
 export class EntryClash extends Error {}
@@ -349,7 +448,11 @@ function withoutOwned(json: Row, type: string, owner: unknown, others: readonly 
   if (Array.isArray(list)) json[own.type] = list.filter((e) => !isRecord(e) || !own.owns(owner, e));
 }
 
-/** A new file the player owns, with no entries yet. */
+/**
+ * A new file the player owns, with no entries yet, stamped with an id of its
+ * own (`COLLECTION_ID_KEY`): what another device knows it by when it comes
+ * there, in a character's export or as a file.
+ */
 function editableRow(fullName: string, abbreviation: string): HomebrewFileRow {
   return {
     id: crypto.randomUUID(),
@@ -359,6 +462,7 @@ function editableRow(fullName: string, abbreviation: string): HomebrewFileRow {
         sources: [
           { json: abbreviation, abbreviation, full: fullName, authors: [], version: '1.0.0' },
         ],
+        [COLLECTION_ID_KEY]: crypto.randomUUID(),
       },
     },
     enabled: true,
@@ -373,8 +477,17 @@ function editableRow(fullName: string, abbreviation: string): HomebrewFileRow {
  * Write new content to a file the player owns, bumping `rev` so the registry
  * and the search index notice a change under the same id. The caller holds a
  * transaction over both tables. False when the row is gone.
+ *
+ * The file keeps the id it was stamped with, whatever `json` says (the
+ * builder hands back the content it opened, which can be older than the
+ * stamp). A file made before stamps is stamped on its first save here.
  */
-async function rewrite(id: string, json: Record<string, unknown>): Promise<boolean> {
+async function rewrite(id: string, next: Record<string, unknown>): Promise<boolean> {
+  const stored = await db.homebrewJson.get(id);
+  const json = withCollectionId(
+    next,
+    collectionIdOf(stored?.json) ?? collectionIdOf(next) ?? crypto.randomUUID(),
+  );
   const count = await db.homebrewFiles
     .where('id')
     .equals(id)
@@ -476,20 +589,26 @@ export const homebrewRepo = {
    * (content-hash keyed, so this is idempotent). `duplicate` says which
    * happened, and `row` is what the database holds either way.
    *
-   * The row is stamped with the time of the commit, not of the prepare: the
-   * merge order counts imports from when they land, so a preview left open
-   * cannot jump ahead of a file imported while it was showing.
+   * A file of a collection stored before (the same key, ADR-002 D4) updates
+   * it in place: it takes the place of every copy of it, keeping their
+   * switch, their place in the merge order and their pack's settings, and
+   * `replaced` names them. Otherwise the row is stamped with the time of the
+   * commit, not of the prepare: the merge order counts imports from when they
+   * land, so a preview left open cannot jump ahead of a file imported while
+   * it was showing.
    */
-  async commit(prepared: HomebrewFileRow): Promise<{ row: HomebrewFileRow; duplicate: boolean }> {
+  async commit(
+    prepared: HomebrewFileRow,
+  ): Promise<{ row: HomebrewFileRow; duplicate: boolean; replaced: HomebrewFileMeta[] }> {
     return db.transaction('rw', db.homebrewFiles, db.homebrewJson, async () => {
       const existing = await db.homebrewFiles.get(prepared.id);
       if (existing !== undefined) {
         const [stored] = await withContent([existing]);
-        return { row: stored as HomebrewFileRow, duplicate: true };
+        return { row: stored as HomebrewFileRow, duplicate: true, replaced: [] };
       }
-      const row: HomebrewFileRow = { ...prepared, addedAt: Date.now() };
-      await putHomebrewRow(row);
-      return { row, duplicate: false };
+      const stored = partitionHomebrewMeta(await db.homebrewFiles.toArray()).files;
+      const { row, replaced } = await landHomebrewRow({ ...prepared, addedAt: Date.now() }, stored);
+      return { row, duplicate: false, replaced };
     });
   },
 
@@ -502,7 +621,9 @@ export const homebrewRepo = {
     const { json } = assertHomebrewFile(raw);
     const books: HomebrewFileRow[] = [];
     for (const part of splitBooks(json)) {
-      books.push({ ...(await buildHomebrewRow(part.json, fileName, url)), book: part.full });
+      const row = await buildHomebrewRow(part.json, fileName, url);
+      // A book whether or not its `_meta` says it was converted, so keyed as one.
+      books.push({ ...row, book: part.full, key: collectionKey({ ...row, book: part.full }) });
     }
     const whole: HomebrewFileRow = {
       id: '',
@@ -522,11 +643,12 @@ export const homebrewRepo = {
    * Store prepared books in one transaction. A book is stored once per file
    * it came from: one already here exactly is left alone, and a copy of it
    * stored before from the same file (a part a character brought included)
-   * is replaced. The new copy keeps that copy's switch and its place in the
-   * merge order. A copy from another file stays: between them, the one
-   * imported first wins an entry both hold. The file imported whole before
-   * it was stored a book at a time ({@link oldWholeImports}) is replaced
-   * too. All the books land at one time, as one import.
+   * is replaced, as any collection is (`land`): the new copy keeps that
+   * copy's switch and its place in the merge order. A copy from another file
+   * stays: between them, the one imported first wins an entry both hold. The
+   * file imported whole before it was stored a book at a time
+   * ({@link oldWholeImports}) is replaced too. All the books land at one
+   * time, as one import.
    */
   async commitBooks(books: readonly HomebrewFileRow[]): Promise<CommittedBooks> {
     return db.transaction('rw', db.homebrewFiles, db.homebrewJson, async () => {
@@ -552,22 +674,14 @@ export const homebrewRepo = {
       }
       for (const book of books) {
         if (ids.has(book.id)) continue;
-        const old = stored.filter((r) => ids.has(r.id) && sameBookCopy(r, book));
-        for (const r of old) {
-          await db.homebrewFiles.delete(r.id);
-          await db.homebrewJson.delete(r.id);
-          ids.delete(r.id);
-        }
-        replaced += old.length;
-        const row: HomebrewFileRow = {
-          ...book,
-          enabled: old.length === 0 ? book.enabled : old.some((r) => r.enabled),
-          // A fold, not a spread: the copy it replaces keeps its place.
-          addedAt: old.reduce((min, r) => Math.min(min, r.addedAt), addedAt),
-        };
-        await putHomebrewRow(row);
-        ids.add(row.id);
-        added.push(row);
+        const landed = await landHomebrewRow(
+          { ...book, addedAt },
+          stored.filter((r) => ids.has(r.id)),
+        );
+        for (const r of landed.replaced) ids.delete(r.id);
+        replaced += landed.replaced.length;
+        ids.add(landed.row.id);
+        added.push(landed.row);
       }
       return { added, replaced, same: books.length - added.length };
     });
@@ -576,6 +690,32 @@ export const homebrewRepo = {
   /** Validate + store a homebrew JSON file; content-hash keyed (idempotent). */
   async importJson(raw: unknown, fileName: string, url?: string): Promise<HomebrewFileRow> {
     return (await homebrewRepo.commit(await homebrewRepo.prepare(raw, fileName, url))).row;
+  },
+
+  /**
+   * Write a rule pack's Apply to or its place, on its row and never in its
+   * file, so the file stays what was imported (suspected bug 10). `change`
+   * gets what is stored, or nobody for a pack never applied here. The
+   * revision moves, so the registry and every tab rebuild.
+   */
+  async setPackLocal(id: string, change: (now: PackLocal) => PackLocal): Promise<void> {
+    await db.transaction('rw', db.homebrewFiles, async () => {
+      const row = await db.homebrewFiles.get(id);
+      const meta = row === undefined ? undefined : readHomebrewMeta(row);
+      if (meta === undefined) throw new Error('that pack is no longer on this device');
+      if (isReadError(meta)) throw new Error(meta.message);
+      const next = change(meta.pack ?? { appliesTo: { characters: [] } });
+      await db.homebrewFiles.update(id, {
+        pack: {
+          appliesTo: {
+            characters: [...next.appliesTo.characters],
+            ...(next.appliesTo.appDefault === true ? { appDefault: true } : {}),
+          },
+          ...(next.order === undefined ? {} : { order: next.order }),
+        },
+        rev: (meta.rev ?? 0) + 1,
+      });
+    });
   },
 
   async setEnabled(id: string, enabled: boolean): Promise<void> {
@@ -599,11 +739,19 @@ export const homebrewRepo = {
     });
   },
 
-  /** New in-app editable homebrew file (uuid id — edits don't change identity). */
+  /**
+   * New in-app editable homebrew file (uuid id: edits don't change identity).
+   * It gets a source of its own: `abbreviation`, or the first free one after
+   * it when another file here declares it already (`freeSource`). The row
+   * returned says which.
+   */
   async createEditable(fullName: string, abbreviation: string): Promise<HomebrewFileRow> {
-    const row = editableRow(fullName, abbreviation);
-    await db.transaction('rw', db.homebrewFiles, db.homebrewJson, () => putHomebrewRow(row));
-    return row;
+    return db.transaction('rw', db.homebrewFiles, db.homebrewJson, async () => {
+      const stored = partitionHomebrewMeta(await db.homebrewFiles.toArray()).files;
+      const row = editableRow(fullName, freeSource(abbreviation, stored));
+      await putHomebrewRow(row);
+      return row;
+    });
   },
 
   async saveEditable(id: string, json: Record<string, unknown>): Promise<void> {
@@ -628,7 +776,9 @@ export const homebrewRepo = {
 
   /**
    * Save one entry into a file the player owns, as one write: into `fileId`,
-   * else the Workshop file, made on the first save (`created` says so). It
+   * else the Workshop file, made on the first save (`created` says so); with
+   * `role: 'changes'` and no `fileId`, the file of the player's changes to
+   * the books instead, made the same way with that role on its row. It
    * takes the place of the entry `replaces` names (the one the editor opened,
    * renamed or not); without `replaces` it is added. An entry of that type with
    * the new name and book already, other than the one it replaces, refuses the
@@ -643,18 +793,29 @@ export const homebrewRepo = {
   async saveEntry(
     type: string,
     entry: Record<string, unknown> & EntryKey,
-    opts: { fileId?: string; replaces?: EntryKey; owned?: readonly Row[] } = {},
+    opts: {
+      fileId?: string;
+      replaces?: EntryKey;
+      owned?: readonly Row[];
+      role?: 'changes';
+    } = {},
   ): Promise<{ fileId: string; created: boolean }> {
     return db.transaction('rw', db.homebrewFiles, db.homebrewJson, async () => {
       let file: HomebrewFile | undefined;
+      const changes = opts.role === 'changes';
       if (opts.fileId !== undefined) file = await ownedFile(opts.fileId);
       else {
         const mine = partitionHomebrewMeta(await db.homebrewFiles.toArray()).files.find(
-          isWorkshopFile,
+          changes ? isChangesFile : isWorkshopFile,
         );
         if (mine !== undefined) file = await ownedFile(mine.id);
       }
-      const row = file === undefined ? editableRow(WORKSHOP_TITLE, WORKSHOP_SOURCE) : undefined;
+      const row =
+        file !== undefined
+          ? undefined
+          : changes
+            ? { ...editableRow(CHANGES_TITLE, CHANGES_SOURCE), role: 'changes' as const }
+            : editableRow(WORKSHOP_TITLE, WORKSHOP_SOURCE);
       const json = structuredClone(file?.json ?? (row?.json as Record<string, unknown>));
       const list: unknown[] = Array.isArray(json[type]) ? [...(json[type] as unknown[])] : [];
       const { replaces } = opts;

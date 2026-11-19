@@ -17,10 +17,17 @@
  */
 import { type Entity, uidOf } from '@/data5e/copyMod';
 import { ENTITY_TYPES, type EntityRegistry, type EntityType } from '@/data5e/normalize';
-import { packGuidance, packName, packReach, packRefusals, packsInOrder } from '@/data5e/rulePack';
+import {
+  type PackFile,
+  packGuidance,
+  packName,
+  packReach,
+  packRefusals,
+  packsInOrder,
+} from '@/data5e/rulePack';
 import type { HomebrewFileRow } from '@/db/db';
 import { bookKey, oldWholeImports, sameBookCopy } from '@/db/homebrewBooks';
-import { compareMergeOrder, type MergeOrderKey } from '@/db/homebrewOrder';
+import { compareMergeOrder, type MergeOrderKey, sameCollection } from '@/db/homebrewOrder';
 import type { HomebrewFile } from '@/db/homebrewRepo';
 import {
   CAST_GUIDANCE_LIMITS,
@@ -251,6 +258,19 @@ export interface HomebrewPreview {
     /** For a file of books: how many of its books here are turned off. */
     booksOff?: number;
   };
+  /**
+   * The collection here this file is a new version of (its key, ADR-002 D4):
+   * importing updates it in place, so it keeps its switch, its place in the
+   * merge order and who its pack applies to (`appliesTo`, for a pack that
+   * has one). `copies` counts the stored copies it replaces: more than one
+   * where a changed file landed beside the old one before.
+   */
+  updates?: FileRef & {
+    addedAt: number;
+    enabled: boolean;
+    copies: number;
+    appliesTo?: PackAppliesTo;
+  };
   /** Files here that declare a source id this file also declares. */
   sourceCollisions: { sourceId: string; files: (FileRef & { enabled: boolean })[] }[];
   /** At most {@link MAX_LISTED_COLLISIONS}; `collisionTotal` is the real count. */
@@ -273,6 +293,11 @@ export interface HomebrewPreview {
   packsOn?: PackInPlay[];
   /** The pack coming in, as the clash check reads it once Apply to is chosen. */
   packIn?: PackInPlay;
+  /**
+   * For a pack that updates one here: every pack on once it has, the pack
+   * coming in at the place it keeps, with the Apply to it keeps.
+   */
+  packsAfter?: PackInPlay[];
   /** For a file stored a book at a time: each book, in the file's order. */
   books?: BookChoice[];
   /**
@@ -478,7 +503,13 @@ export function previewHomebrewImport(input: HomebrewPreviewInput): HomebrewPrev
   const ownSources = new Set(row.sourceIds.map(lower));
   const books = input.books === undefined ? undefined : bookChoices(input.books, existing);
   const oldImports = books === undefined ? [] : oldWholeImports(row.fileName, existing);
-  const replaced = new Set(oldImports.map((f) => f.id));
+  // The copies of its collection here, which a file stored whole replaces
+  // (`homebrewRepo.commit`), the first in merge order being the one it updates.
+  const updated =
+    books !== undefined || existing.some((f) => f.id === row.id)
+      ? []
+      : existing.filter((f) => sameCollection(f, row)).sort(compareMergeOrder);
+  const replaced = new Set([...oldImports, ...updated].map((f) => f.id));
   const others = existing.filter(
     (f) => f.id !== row.id && books?.ownCopies.has(f.id) !== true && !replaced.has(f.id),
   );
@@ -487,11 +518,17 @@ export function previewHomebrewImport(input: HomebrewPreviewInput): HomebrewPrev
   const disabled = others.filter((f) => !f.enabled).sort(compareMergeOrder);
   const notes: string[] = [];
   const byId = new Map(existing.map((f) => [f.id, f]));
+  const first = updated[0];
+  const updatePlace: MergeOrderKey | undefined =
+    first === undefined ? undefined : { addedAt: first.addedAt, id: row.id };
   // Whether `ref`, the first file here with an entry, comes ahead of where
-  // `e` lands: always for a file coming in, which is the newest; for a book
-  // taking its own copy's place, only a file imported before that copy.
+  // `e` lands: always for a file coming in new, which is the newest; for an
+  // update, or a book taking its own copy's place, only a file imported
+  // before that copy.
   const ahead = (ref: FileRef, e: Entity) => {
-    const place = typeof e.source === 'string' ? books?.places.get(lower(e.source)) : undefined;
+    const place =
+      updatePlace ??
+      (typeof e.source === 'string' ? books?.places.get(lower(e.source)) : undefined);
     const f = byId.get(ref.id);
     return place === undefined || f === undefined || compareMergeOrder(f, place) < 0;
   };
@@ -710,6 +747,7 @@ export function previewHomebrewImport(input: HomebrewPreviewInput): HomebrewPrev
     limitBytes: input.limitBytes ?? IMPORT_LIMITS.maxImportBytes,
     sources: metaSources(row.json),
     duplicateOf,
+    ...(first === undefined ? {} : { updates: updateOf(first, updated) }),
     sourceCollisions,
     entityCollisions: collisions.slice(0, MAX_LISTED_COLLISIONS),
     collisionTotal: collisions.length,
@@ -721,13 +759,7 @@ export function previewHomebrewImport(input: HomebrewPreviewInput): HomebrewPrev
     affectedCharacters,
     officialCoverage: coverage,
     notes,
-    ...(pack === undefined
-      ? {}
-      : {
-          pack,
-          packsOn: packsInPlay(existing.filter((f) => f.enabled && f.id !== row.id)),
-          packIn: { id: row.id, name: pack.name, guidance: packGuidance(row.json) ?? {} },
-        }),
+    ...(pack === undefined ? {} : packSide(row, pack, existing, replaced, updated)),
     ...(books === undefined ? {} : { books: books.choices }),
     ...(oldImports.length === 0
       ? {}
@@ -739,6 +771,57 @@ export function previewHomebrewImport(input: HomebrewPreviewInput): HomebrewPrev
           })),
           oldImportCharacters,
         }),
+  };
+}
+
+/** The collection an update takes the place of, from its copies here in merge order. */
+function updateOf(
+  first: HomebrewFile,
+  copies: readonly HomebrewFile[],
+): NonNullable<HomebrewPreview['updates']> {
+  const kept = copies.find((f) => f.pack !== undefined)?.pack;
+  return {
+    id: first.id,
+    fileName: fileLabel(first),
+    addedAt: first.addedAt,
+    enabled: copies.some((f) => f.enabled),
+    copies: copies.length,
+    ...(kept === undefined ? {} : { appliesTo: kept.appliesTo }),
+  };
+}
+
+/**
+ * A pack coming in, beside the packs on here. An update keeps the place and
+ * the Apply to of the pack it updates (`homebrewRepo.commit`), so for one the
+ * packs on after it are worked out with it there.
+ */
+function packSide(
+  row: HomebrewFileRow,
+  pack: PackReview,
+  existing: readonly HomebrewFile[],
+  replaced: ReadonlySet<string>,
+  updated: readonly HomebrewFile[],
+): Pick<HomebrewPreview, 'pack' | 'packsOn' | 'packIn' | 'packsAfter'> {
+  const on = existing.filter((f) => f.enabled && f.id !== row.id && !replaced.has(f.id));
+  const packIn: PackInPlay = {
+    id: row.id,
+    name: pack.name,
+    guidance: packGuidance(row.json) ?? {},
+  };
+  const first = updated[0];
+  if (first === undefined) return { pack, packsOn: packsInPlay(on), packIn };
+  const kept = updated.find((f) => f.pack !== undefined)?.pack;
+  const after = {
+    id: row.id,
+    json: row.json,
+    addedAt: first.addedAt,
+    ...(kept === undefined ? {} : { pack: kept }),
+  };
+  return {
+    pack,
+    packsOn: packsInPlay(on),
+    packIn: kept === undefined ? packIn : { ...packIn, appliesTo: kept.appliesTo },
+    packsAfter: packsInPlay(updated.some((f) => f.enabled) ? [...on, after] : on),
   };
 }
 
@@ -1243,28 +1326,34 @@ export function describeConflict(c: PackConflict): string {
   return `${names(c.packs)} ${all} set ${c.what}. ${c.winner} wins: ${why}.`;
 }
 
-/** A clash a pack being added would join, worded from its side. */
-export function describeIncomingConflict(c: PackConflict, incomingId: string): string {
+/**
+ * A clash a pack being added would join, worded from its side. One that
+ * `updates` a pack here takes that one's place in the order, not the last.
+ */
+export function describeIncomingConflict(
+  c: PackConflict,
+  incomingId: string,
+  updates = false,
+): string {
   const others = c.packs.filter((_, i) => c.ids[i] !== incomingId);
   const incoming = c.packs[c.ids.indexOf(incomingId)] ?? 'This pack';
+  const place = updates ? 'it comes later in your pack order' : 'it goes last in your pack order';
   const win =
     c.winnerId === incomingId
-      ? `${incoming} would win, as ${c.why === 'chosen' ? 'it is applied to those characters' : 'it goes last in your pack order'}.`
+      ? `${incoming} would win, as ${c.why === 'chosen' ? 'it is applied to those characters' : place}.`
       : `${c.winner} would still win, as ${c.why === 'chosen' ? 'it is applied to those characters' : 'it comes later in your pack order'}.`;
   return `Sets ${c.what}, which ${names(others)} also ${others.length === 1 ? 'sets' : 'set'}. ${win}`;
 }
 
 /** The packs among stored files, in the player's order, with who each reaches now. */
-export function packsInPlay(files: readonly HomebrewFile[]): PackInPlay[] {
-  return packsInOrder([...files].sort(compareMergeOrder).map((f) => [f.id, f.json] as const)).map(
-    (p) => {
-      const to = packReach(p);
-      return {
-        id: p.id,
-        name: p.name,
-        guidance: p.guidance,
-        ...(to === undefined ? {} : { appliesTo: to }),
-      };
-    },
-  );
+export function packsInPlay(files: readonly (PackFile & MergeOrderKey)[]): PackInPlay[] {
+  return packsInOrder([...files].sort(compareMergeOrder)).map((p) => {
+    const to = packReach(p);
+    return {
+      id: p.id,
+      name: p.name,
+      guidance: p.guidance,
+      ...(to === undefined ? {} : { appliesTo: to }),
+    };
+  });
 }

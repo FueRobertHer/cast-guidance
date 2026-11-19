@@ -1,5 +1,6 @@
 import Dexie, { type ObservabilitySet } from 'dexie';
 import { invalidateRegistry } from '@/data5e/registry';
+import { packGuidance } from '@/data5e/rulePack';
 import { migrateCharacter } from '@/engine/migrate';
 import type { CharacterDoc } from '@/engine/types';
 import { sameContent } from '@/lib/docDiff';
@@ -20,13 +21,38 @@ import {
   mergeBook,
   sameBookCopy,
 } from './homebrewBooks';
+import { sameCollection } from './homebrewOrder';
 import {
   buildHomebrewRow,
   type HomebrewFileMeta,
+  landHomebrewRow,
   partitionHomebrewMeta,
   putHomebrewRow,
   withContent,
 } from './homebrewRepo';
+
+/**
+ * The copies of `row`'s collection here a character import takes the place
+ * of (ADR-002, D4), read in the caller's transaction: none when the file or
+ * the copy is a rule pack. A pack changes only through a file import, which
+ * shows its rules and clashes before Update; one in a character file lands
+ * beside and reaches nobody, as before collections had keys.
+ */
+async function updatableCopies(
+  row: HomebrewFileRow,
+  stored: readonly HomebrewFileMeta[],
+): Promise<HomebrewFileMeta[]> {
+  if (packGuidance(row.json) !== undefined) return [];
+  const same = stored.filter((f) => f.id !== row.id && sameCollection(f, row));
+  if (same.length === 0) return [];
+  const rows = await db.homebrewFiles.bulkGet(same.map((f) => f.id));
+  const packs = new Set(
+    ((await withContent(rows.filter((r) => r !== undefined))) as HomebrewFileRow[])
+      .filter((r) => packGuidance(r.json) !== undefined)
+      .map((r) => r.id),
+  );
+  return same.filter((f) => !packs.has(f.id));
+}
 
 /**
  * What a save expects the stored row to be (REL-007, #98): the revision this
@@ -268,8 +294,35 @@ export const characterRepo = {
           now: () => new Date().toISOString(),
         });
         // Stamped at commit, as `homebrewRepo.commit` does: merge order counts
-        // an import from when it lands.
-        for (const row of plan.homebrewToAdd) await putHomebrewRow({ ...row, addedAt }, 'add');
+        // an import from when it lands. A file stored whole lands as a homebrew
+        // import does, taking the place of the copies of its collection here
+        // (ADR-002, D4); a book takes its copy in below instead. Only copies
+        // the export does not carry: a copy here that it holds as it is, or
+        // another of its files, stays, so every entry the character came with
+        // stays too (two copies side by side on the device it came from land
+        // side by side here). A rule pack never takes or gives its place
+        // (`updatableCopies`).
+        const carried = new Set(homebrew.map((r) => r.id));
+        let whole = plan.homebrewToAdd.some((r) => r.book === undefined)
+          ? partitionHomebrewMeta(await db.homebrewFiles.toArray()).files.filter(
+              (f) => !carried.has(f.id),
+            )
+          : [];
+        let homebrewUpdated = 0;
+        for (const row of plan.homebrewToAdd) {
+          if (row.book !== undefined) {
+            await putHomebrewRow({ ...row, addedAt }, 'add');
+            continue;
+          }
+          const landed = await landHomebrewRow(
+            { ...row, addedAt },
+            await updatableCopies(row, whole),
+            'add',
+          );
+          if (landed.replaced.length > 0) homebrewUpdated += 1;
+          const gone = new Set(landed.replaced.map((r) => r.id));
+          whole = whole.filter((f) => !gone.has(f.id));
+        }
         // A copy taken into the one here keeps that copy's id, switch and place.
         for (const merge of plan.homebrewToMerge) {
           const here = await db.homebrewFiles.get(merge.id);
@@ -286,7 +339,7 @@ export const characterRepo = {
           });
         }
         await db.characters.put({ ...plan.finalDoc, revision: randomId() });
-        return plan.summary;
+        return homebrewUpdated === 0 ? plan.summary : { ...plan.summary, homebrewUpdated };
       },
     );
 
@@ -420,6 +473,12 @@ export interface ImportSummary {
   /** True when the character id collided locally and a fresh id was assigned. */
   renamed: boolean;
   homebrewAdded: number;
+  /**
+   * Of `homebrewAdded`, the files that took the place of a copy of their
+   * collection here (ADR-002, D4), keeping its switch and place. Absent when
+   * none did.
+   */
+  homebrewUpdated?: number;
   /** Books here that took in what a copy from the same file had and they lacked. */
   homebrewMerged: number;
   /**

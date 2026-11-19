@@ -21,7 +21,7 @@ vi.mock('@/lib/download', async (importOriginal) => ({
   downloadJson: (_: string, data: unknown) => downloaded.push(data),
 }));
 
-import { PACK_LOCAL_KEY, packLocal } from '@/data5e/rulePack';
+import { PACK_LOCAL_KEY } from '@/data5e/rulePack';
 import { characterRepo } from '@/db/characterRepo';
 import { db } from '@/db/db';
 import { homebrewRepo } from '@/db/homebrewRepo';
@@ -85,13 +85,13 @@ function chooseFile(name: string, content: unknown) {
 
 const findDialog = (name: string) => screen.findByRole('dialog', { name }, { timeout: 5000 });
 
-/** The stored pack named `full`, with who it applies to here. */
+/** The stored pack named `full`, with who it applies to here, from its row. */
 async function storedPack(full: string) {
   const { files } = await homebrewRepo.listSafe();
   const file = files.find(
     (f) => (f.json._meta as { sources: Array<{ full?: string }> }).sources[0]?.full === full,
   );
-  return { file, local: file === undefined ? undefined : packLocal(file.json, file.id) };
+  return { file, local: file?.pack };
 }
 
 async function addThroughPage(name: string, json: unknown, title: string) {
@@ -256,6 +256,64 @@ describe('packs on the Homebrew page', () => {
     fireEvent.click(within(sheet).getByRole('button', { name: 'Turn off' }));
     await waitFor(async () => expect((await storedPack('Gritty Table')).file?.enabled).toBe(false));
     expect((await storedPack('Gritty Table')).local?.appliesTo).toEqual({ characters: ['hild'] });
+  });
+
+  it('updates a pack imported again, keeping who it applies to without asking', async () => {
+    await characterRepo.put(newCharacterDoc('hild', 'Hild', 'tag'));
+    renderPage();
+    await addThroughPage('gritty-table.json', grittyTable, 'Add Gritty Table?');
+    const { file: first } = await storedPack('Gritty Table');
+    if (first === undefined) throw new Error('not stored');
+    await savePackLocal(first.id, (local) => ({ ...local, appliesTo: { characters: ['hild'] } }));
+
+    const changed = structuredClone(grittyTable) as { _meta: { castGuidance: Json } };
+    changed._meta.castGuidance.tableRules = { restLength: 'heroic' };
+    chooseFile('gritty-table.json', changed);
+    const dialog = await findDialog('Update Gritty Table?');
+    expect(dialog.textContent).toContain('Updates a collection here');
+    expect(dialog.textContent).toContain('and who it applies to');
+    expect(within(dialog).queryByRole('button', { name: 'Every character' })).toBeNull();
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Update' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+
+    const { files } = await homebrewRepo.listSafe();
+    expect(files.map((f) => [f.json, f.addedAt, f.pack])).toEqual([
+      [changed, first.addedAt, { appliesTo: { characters: ['hild'] } }],
+    ]);
+  });
+
+  it('says an update wins a clash by the place it keeps, not by going last', async () => {
+    renderPage();
+    await addThroughPage('heroic.json', heroic(), 'Add Heroic Table?');
+    await addThroughPage('gritty-table.json', grittyTable, 'Add Gritty Table?');
+    const changed = structuredClone(grittyTable) as { _meta: { castGuidance: Json } };
+    changed._meta.castGuidance.cues = [{ at: 'longRest', text: 'Rest somewhere safe.' }];
+    chooseFile('gritty-table.json', changed);
+    const dialog = await findDialog('Update Gritty Table?');
+    expect(dialog.textContent).toContain(
+      'Sets rest length, which Heroic Table also sets. Gritty Table would win, as it comes later in your pack order.',
+    );
+  });
+
+  it('applies an update to nobody when the pack it kept the Apply to of is gone first', async () => {
+    await characterRepo.put(newCharacterDoc('hild', 'Hild', 'tag'));
+    renderPage();
+    await addThroughPage('gritty-table.json', grittyTable, 'Add Gritty Table?');
+    const { file: first } = await storedPack('Gritty Table');
+    if (first === undefined) throw new Error('not stored');
+    await savePackLocal(first.id, (local) => ({ ...local, appliesTo: { characters: ['hild'] } }));
+
+    const changed = structuredClone(grittyTable) as { _meta: { castGuidance: Json } };
+    changed._meta.castGuidance.tableRules = { restLength: 'heroic' };
+    chooseFile('gritty-table.json', changed);
+    const dialog = await findDialog('Update Gritty Table?');
+    // Deleted from another tab while the dialog asks nothing of its own.
+    await homebrewRepo.delete(first.id);
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Update' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+
+    const { files } = await homebrewRepo.listSafe();
+    expect(files.map((f) => f.pack)).toEqual([{ appliesTo: { characters: [] } }]);
   });
 
   it('leaves a newer Apply to alone when a sheet open before it closes unchanged', async () => {

@@ -16,10 +16,11 @@
  * importing the whole book there replaces it.
  *
  * A rule pack applied to the character goes too, so the table's rules travel
- * with them, without who it is applied to here: the device that imports it
- * applies it to nobody until its player chooses (`data5e/rulePack.ts`).
+ * with them, without who it is applied to here (that is on the file's row,
+ * not in it): the device that imports it applies it to nobody until its
+ * player chooses (`data5e/rulePack.ts`).
  */
-import { packGuidance, packLocal, packRefusals, sharedFile } from '@/data5e/rulePack';
+import { packGuidance, packRefusals, sharedFile } from '@/data5e/rulePack';
 import { bookParts } from '@/db/homebrewBooks';
 import type { HomebrewFile } from '@/db/homebrewRepo';
 import type { CharacterDoc, EntityRef } from '@/engine/types';
@@ -117,7 +118,7 @@ export function toHomebrewExportDTO(row: HomebrewFile): HomebrewExportDTO {
 function packReaches(row: HomebrewFile, characterId: string): boolean {
   const guidance = packGuidance(row.json);
   if (guidance === undefined || packRefusals(guidance).length > 0) return false;
-  const to = packLocal(row.json, row.id)?.appliesTo;
+  const to = row.pack?.appliesTo;
   return to !== undefined && (to.appDefault === true || to.characters.includes(characterId));
 }
 

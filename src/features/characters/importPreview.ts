@@ -1,16 +1,19 @@
 /**
  * What importing a character export would do, worked out before anything is
  * written (IMP-002). Pure. Its runtime imports are `collectCharacterSources`
- * and the homebrew preview's `officialCoverage`, both loaded with the import
- * flow, so the roster can load it on demand without growing the entry chunk.
+ * (with the pack reader it uses) and the homebrew preview's
+ * `officialCoverage`, both loaded with the import flow, so the roster can
+ * load it on demand without growing the entry chunk.
  *
  * The commit decides again inside its transaction (`characterRepo.commitImport`),
  * so this is a forecast for the player, not a promise: another tab may change
  * the answer in between, and the commit's summary is the one that counts.
  */
+
+import { packGuidance } from '@/data5e/rulePack';
 import type { PreparedCharacterImport } from '@/db/characterRepo';
 import { bookHolders, mergeBook, sameBookCopy } from '@/db/homebrewBooks';
-import { compareMergeOrder } from '@/db/homebrewOrder';
+import { compareMergeOrder, sameCollection } from '@/db/homebrewOrder';
 import type { HomebrewFile } from '@/db/homebrewRepo';
 import {
   type OfficialCoverage,
@@ -46,7 +49,15 @@ export type EmbeddedFileStatus =
    * entries: importing adds those to that copy (`adds` of them), so the
    * book is still stored once.
    */
-  | 'adds-to-book';
+  | 'adds-to-book'
+  /**
+   * Another version of a file here, by its collection key (ADR-002, D4: the
+   * id a collection made in the app is stamped with, else the same link, or
+   * the same first source and file name): importing takes its place
+   * (`updates` names it), keeping its switch and its place in the merge
+   * order, whichever version is newer. Never a rule pack, on either side.
+   */
+  | 'updates';
 
 export interface EmbeddedFilePreview {
   fileName: string;
@@ -64,12 +75,15 @@ export interface EmbeddedFilePreview {
   /**
    * For `already-here`: whether the copy here is turned on; for `book-here`,
    * whether a file holding the book is; for `adds-to-book`, whether the copy
-   * taking the entries in is. A turned-off copy is skipped like any other,
+   * taking the entries in is; for `updates`, whether the file it takes the
+   * place of is, which it stays. A turned-off copy is skipped like any other,
    * but its entries are not in use until it is turned back on.
    */
   existingEnabled?: boolean;
   /** For `adds-to-book`: how many entries the copy here takes in. */
   adds?: number;
+  /** For `updates`: the file here it takes the place of. */
+  updates?: string;
 }
 
 export interface CharacterPreview {
@@ -108,6 +122,11 @@ export function previewCharacterImport(input: CharacterPreviewInput): CharacterP
 
   // The commit skips a file repeated inside the export, so list it once.
   const seen = new Set<string>();
+  // Copies here a file of the export takes the place of. Never one the export
+  // carries as it is, and each once: the export's other copies of that
+  // collection land beside it (`characterRepo.commitImport`).
+  const carried = new Set(prepared.homebrew.map((r) => r.id));
+  const claimed = new Set<string>();
   const files: EmbeddedFilePreview[] = [];
   for (const row of prepared.homebrew) {
     if (seen.has(row.id)) continue;
@@ -121,6 +140,22 @@ export function previewCharacterImport(input: CharacterPreviewInput): CharacterP
       existingIds.has(row.id) || holders.length > 0 || row.book === undefined
         ? undefined
         : existing.find((f) => sameBookCopy(f, row));
+    // The copies of its collection here, which a file stored whole replaces
+    // (`characterRepo.commitImport`), the first in merge order being the one
+    // it updates. Never a rule pack, coming in or here: it lands beside.
+    const updated =
+      existingIds.has(row.id) || row.book !== undefined || packGuidance(row.json) !== undefined
+        ? []
+        : existing
+            .filter(
+              (f) =>
+                !carried.has(f.id) &&
+                !claimed.has(f.id) &&
+                sameCollection(f, row) &&
+                packGuidance(f.json) === undefined,
+            )
+            .sort(compareMergeOrder);
+    for (const f of updated) claimed.add(f.id);
     const base = {
       // A book of a converted file goes by the book's name: every book shares the file's.
       fileName: row.book ?? row.fileName,
@@ -164,6 +199,20 @@ export function previewCharacterImport(input: CharacterPreviewInput): CharacterP
               adds,
             },
       );
+    } else if (updated[0] !== undefined) {
+      const first = updated[0];
+      const gone = new Set(updated.map((f) => f.id));
+      // It takes the first copy's place under its own id, so only a file ahead of that wins over it.
+      const place = { addedAt: first.addedAt, id: row.id };
+      files.push({
+        ...base,
+        status: 'updates',
+        localFiles: listed(
+          sharing.filter((f) => !gone.has(f.id) && compareMergeOrder(f, place) < 0),
+        ),
+        existingEnabled: updated.some((f) => f.enabled),
+        updates: first.fileName,
+      });
     } else {
       const status = sharing.some((f) => f.enabled) ? 'other-version' : 'new';
       files.push({ ...base, status });

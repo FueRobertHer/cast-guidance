@@ -3,21 +3,15 @@
  * applies to, where it clashes with another, and the order that settles a
  * clash. The import preview shows the same details before a pack goes on (H8).
  *
- * Who a pack reaches is this device's alone, kept on the stored file bound to
- * its id (`data5e/rulePack.ts`), so Share, Download and a character's export
- * leave it behind.
+ * Who a pack reaches is this device's alone, kept on the stored file's row,
+ * never in the file (`data5e/rulePack.ts`), so Share, Download and a
+ * character's export leave it behind, and an imported file stays as it came.
  */
 import { useLiveQuery } from 'dexie-react-hooks';
 import { ArrowDown, ArrowUp } from 'lucide-react';
 import { useEffect, useId, useRef, useState } from 'react';
 import { invalidateRegistry } from '@/data5e/registry';
-import {
-  type PackLocal,
-  packGuidance,
-  packLocal,
-  packsInOrder,
-  withPackLocal,
-} from '@/data5e/rulePack';
+import { type PackLocal, packGuidance, packsInOrder } from '@/data5e/rulePack';
 import { characterRepo } from '@/db/characterRepo';
 import { compareMergeOrder } from '@/db/homebrewOrder';
 import { type HomebrewFile, type HomebrewFileMeta, homebrewRepo } from '@/db/homebrewRepo';
@@ -64,7 +58,7 @@ export function inPlay(p: PackHere, appliesTo = p.local?.appliesTo): PackInPlay 
 /** The packs among `files`, in the player's order. */
 export function packsHere(files: readonly HomebrewFile[]): PackHere[] {
   const byId = new Map(files.map((f) => [f.id, f]));
-  return packsInOrder([...files].sort(compareMergeOrder).map((f) => [f.id, f.json] as const))
+  return packsInOrder([...files].sort(compareMergeOrder))
     .map((p): PackHere | undefined => {
       const file = byId.get(p.id);
       const review = file === undefined ? undefined : packReview(file.json);
@@ -90,9 +84,10 @@ const versionOf = (f: Pick<HomebrewFileMeta, 'addedAt' | 'rev'>) => `${f.addedAt
  * The rule packs among the files listed, read from their content. Only a file
  * stored whole can be a pack (a converted compendium's books never are), so
  * the books are never read for this. A file is read again only when its
- * content moves; switching one on or off reads nothing. Undefined until first
- * read. A file that cannot be read is left out, as the page reports it on its
- * own.
+ * content moves; switching one on or off reads nothing. Its switch and its
+ * Apply to are taken from the rows listed, as they are now. Undefined until
+ * first read. A file that cannot be read is left out, as the page reports it
+ * on its own.
  */
 export function usePacksHere(
   rows: readonly HomebrewFileMeta[] | undefined,
@@ -101,7 +96,9 @@ export function usePacksHere(
     rows === undefined
       ? undefined
       : JSON.stringify(
-          rows.filter((r) => r.book === undefined).map((r) => [r.id, versionOf(r), r.enabled]),
+          rows
+            .filter((r) => r.book === undefined)
+            .map((r) => [r.id, versionOf(r), r.enabled, r.pack ?? null]),
         );
   const [read, setRead] = useState<{ key: string; packs: PackHere[] }>();
   // Each file's last read, by id, for as long as the page is open.
@@ -110,10 +107,10 @@ export function usePacksHere(
     if (key === undefined) return;
     let live = true;
     const readFiles = cache.current;
-    const wanted = JSON.parse(key) as Array<[string, string, boolean]>;
+    const wanted = JSON.parse(key) as Array<[string, string, boolean, PackLocal | null]>;
     void (async () => {
       const files: HomebrewFile[] = [];
-      for (const [id, version, enabled] of wanted) {
+      for (const [id, version, enabled, local] of wanted) {
         let known = readFiles.get(id);
         if (known?.version !== version) {
           try {
@@ -129,7 +126,10 @@ export function usePacksHere(
             continue;
           }
         }
-        if (known.pack !== null) files.push({ ...known.pack, enabled });
+        if (known.pack !== null) {
+          const { pack: _, ...file } = known.pack;
+          files.push({ ...file, enabled, ...(local === null ? {} : { pack: local }) });
+        }
       }
       // A file no longer here is not kept.
       const here = new Set(wanted.map(([id]) => id));
@@ -150,18 +150,15 @@ function useRoster(): Array<{ id: string; name: string }> {
 }
 
 /**
- * Write who a stored pack applies to, or its place. The file keeps its id, so
- * the block stays bound to it; the revision moves, so the registry rebuilds.
+ * Write who a stored pack applies to, or its place, on its row: the file
+ * itself is never written, imported or not. The revision moves, so the
+ * registry rebuilds.
  */
 export async function savePackLocal(
   id: string,
   change: (local: PackLocal) => PackLocal,
 ): Promise<void> {
-  const { file, error } = await homebrewRepo.getSafe(id);
-  if (file === undefined)
-    throw new Error(error?.message ?? 'that pack is no longer on this device');
-  const now = packLocal(file.json, id) ?? { file: id, appliesTo: { characters: [] } };
-  await homebrewRepo.saveEditable(id, withPackLocal(file.json, { ...change(now), file: id }));
+  await homebrewRepo.setPackLocal(id, change);
   invalidateRegistry();
 }
 
@@ -305,16 +302,20 @@ export function ApplyTo({
 export const appliesToAnyone = (to: PackAppliesTo): boolean =>
   to.appDefault === true || to.characters.length > 0;
 
-/** The clash lines for one pack, worded from its side or as the page says them. */
+/**
+ * The clash lines for one pack, worded from its side or as the page says them.
+ * `updates`: the pack coming in takes the place of one here.
+ */
 export function clashLines(
   packs: readonly PackInPlay[],
   id: string,
   incoming: boolean,
   app: AppTableRules = {},
+  updates = false,
 ): string[] {
   const lines = packConflicts(packs, app)
     .filter((c) => c.ids.includes(id))
-    .map((c) => (incoming ? describeIncomingConflict(c, id) : describeConflict(c)));
+    .map((c) => (incoming ? describeIncomingConflict(c, id, updates) : describeConflict(c)));
   // Two packs may share a name, so two clashes can read the same: each is said once.
   return [...new Set(lines)];
 }

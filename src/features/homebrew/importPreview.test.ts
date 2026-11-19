@@ -354,6 +354,78 @@ describe('previewHomebrewImport', () => {
   });
 });
 
+describe('previewHomebrewImport for a file of a collection here (ADR-002, D4)', () => {
+  const key = 'file:hb|brew';
+  const keyed = (f: HomebrewFile): HomebrewFile => ({ ...f, key });
+  const incoming = { _meta: meta(['HB']), spell: [spell('Zap', 'HB'), spell('Fizz', 'HB')] };
+
+  function update(existing: HomebrewFile[]) {
+    return previewHomebrewImport({
+      row: { ...row(incoming), key },
+      bytes: 10,
+      existing,
+      official: NO_OFFICIAL,
+      characters: [],
+    });
+  }
+
+  it('says it updates that one, and clashes with none of its copies', () => {
+    const old = keyed(local('old', { _meta: meta(['HB']), spell: [spell('Zap', 'HB')] }));
+    const twin = keyed(
+      local('twin', { _meta: meta(['HB']), spell: [] }, { addedAt: 3, enabled: false }),
+    );
+    const p = update([old, twin]);
+    expect(p.updates).toEqual({
+      id: 'old',
+      fileName: 'old.json',
+      addedAt: 1,
+      enabled: true,
+      copies: 2,
+    });
+    expect(p.duplicateOf).toBeUndefined();
+    expect(p.sourceCollisions).toEqual([]);
+    expect(p.entityCollisions).toEqual([]);
+  });
+
+  it('keeps the old one’s place, so only a file imported before it wins a clash', () => {
+    const old = keyed(local('old', { _meta: meta(['HB']), spell: [] }, { addedAt: 5 }));
+    const before = local(
+      'before',
+      { _meta: meta(['B']), spell: [spell('Zap', 'HB')] },
+      { addedAt: 2 },
+    );
+    const after = local(
+      'after',
+      { _meta: meta(['A']), spell: [spell('Fizz', 'HB')] },
+      { addedAt: 9 },
+    );
+    const p = update([old, before, after]);
+    expect(
+      p.entityCollisions.map((c) => [c.name, c.against === 'official' ? '' : c.against.id]),
+    ).toEqual([['Zap', 'before']]);
+  });
+
+  it('updates a copy with no stamp under its file with a stamped one, never another stamp', () => {
+    const stamped = (existing: HomebrewFile[]) =>
+      previewHomebrewImport({
+        row: { ...row(incoming), key: 'made:osk' },
+        bytes: 10,
+        existing,
+        official: NO_OFFICIAL,
+        characters: [],
+      }).updates?.id;
+    const old = { ...local('old', { _meta: meta(['HB']), spell: [] }), key: 'file:hb|new-file' };
+    expect(stamped([old])).toBe('old');
+    expect(stamped([{ ...old, key: 'made:bram' }])).toBeUndefined();
+  });
+
+  it('never updates a file the player owns, or one under another key', () => {
+    const mine = { ...local('mine', { _meta: meta(['HB']), spell: [] }), editable: true, key };
+    const other = { ...local('other', { _meta: meta(['HB']), spell: [] }), key: 'file:hb|other' };
+    expect(update([mine, other]).updates).toBeUndefined();
+  });
+});
+
 describe('officialIndexFrom', () => {
   it('takes official entities and sources across every type, never merged homebrew', () => {
     const reg = new EntityRegistry();

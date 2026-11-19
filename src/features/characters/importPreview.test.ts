@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import type { PreparedCharacterImport } from '@/db/characterRepo';
 import type { HomebrewFileRow } from '@/db/db';
-import type { HomebrewFile } from '@/db/homebrewRepo';
+import { withCollectionId } from '@/db/homebrewOrder';
+import { buildHomebrewRow, type HomebrewFile } from '@/db/homebrewRepo';
 import { newCharacterDoc } from '@/engine/types';
 import type { OfficialIndex } from '@/features/homebrew/importPreview';
 import { previewCharacterImport } from './importPreview';
@@ -308,5 +309,146 @@ describe('previewCharacterImport of part of a book', () => {
     }).files;
     expect(file?.fileName).toBe('Ember Codex');
     expect(file?.localFiles.map((f) => f.fileName)).toEqual(['Ember Codex']);
+  });
+});
+
+describe('previewCharacterImport of a file of a collection here (ADR-002, D4)', () => {
+  const key = 'file:hb|brew';
+  const keyed = <T extends HomebrewFileRow>(f: T, addedAt = 1): T => ({ ...f, key, addedAt });
+  const run = (existing: HomebrewFile[], row = keyed(brew('incoming', ['HB']))) =>
+    previewCharacterImport({
+      prepared: prepared([row]),
+      existing,
+      official: officialPhb(),
+      characterExists: false,
+    }).files;
+
+  it('says it updates the first copy here, keeping its switch, and names no copy as a rival', () => {
+    const old = keyed(local('old', ['HB'], false), 5);
+    const twin = keyed(local('twin', ['HB'], false), 7);
+    const before = { ...local('before', ['HB']), addedAt: 2 };
+    const after = { ...local('after', ['HB']), addedAt: 9 };
+    expect(run([twin, after, old, before])).toEqual([
+      expect.objectContaining({
+        status: 'updates',
+        updates: 'old.json',
+        existingEnabled: false,
+        // Only a file imported before the copy it takes the place of wins over it.
+        localFiles: [{ id: 'before', fileName: 'before.json', enabled: true }],
+      }),
+    ]);
+  });
+
+  it('is on when any copy it takes the place of is', () => {
+    const files = run([keyed(local('old', ['HB'], false), 5), keyed(local('twin', ['HB']), 7)]);
+    expect(files[0]?.existingEnabled).toBe(true);
+  });
+
+  it('names, of copies tied in merge order, those ahead of where it lands under its own id', () => {
+    // One character import stamps its files with one time, so ties break on the id.
+    const old = keyed(local('aaa', ['HB']), 5);
+    const tied = { ...local('bbb', ['HB']), addedAt: 5 };
+    expect(run([old, tied])[0]?.localFiles).toEqual([
+      { id: 'bbb', fileName: 'bbb.json', enabled: true },
+    ]);
+  });
+
+  it('updates neither a copy the export carries nor one another of its files updates', () => {
+    const run2 = (existing: HomebrewFile[], rows: HomebrewFileRow[]) =>
+      previewCharacterImport({
+        prepared: prepared(rows),
+        existing,
+        official: officialPhb(),
+        characterExists: false,
+      }).files.map((f) => [f.fileName, f.status, f.updates]);
+    const here = keyed(local('here', ['HB']));
+    const a = keyed(brew('a', ['HB']));
+    const b = keyed(brew('b', ['HB']));
+    // The copy here comes in as it is: the other lands beside it.
+    expect(run2([here], [keyed(brew('here', ['HB'])), b])).toEqual([
+      ['here.json', 'already-here', undefined],
+      ['b.json', 'other-version', undefined],
+    ]);
+    // A copy here it does not carry: the first takes its place, the next lands beside.
+    expect(run2([here], [a, b])).toEqual([
+      ['a.json', 'updates', 'here.json'],
+      ['b.json', 'other-version', undefined],
+    ]);
+  });
+
+  it('updates a Workshop file with a newer one from its maker, never one from another player', async () => {
+    const workshop = (stamp: string | undefined, spell: string) => {
+      const json = {
+        _meta: { sources: [{ json: 'MyHomebrew', full: 'My homebrew' }] },
+        spell: [{ name: spell, source: 'MyHomebrew', level: 1 }],
+      };
+      return buildHomebrewRow(
+        stamp === undefined ? json : withCollectionId(json, stamp),
+        'My_homebrew.json',
+      );
+    };
+    const here = (row: HomebrewFileRow): HomebrewFile => ({
+      ...row,
+      json: row.json as Record<string, unknown>,
+    });
+    const osk = here(await workshop('osk', 'Osk Lance'));
+    const status = async (existing: HomebrewFile[], stamp: string | undefined) =>
+      previewCharacterImport({
+        prepared: prepared([await workshop(stamp, 'Osk Ward')]),
+        existing,
+        official: officialPhb(),
+        characterExists: false,
+      }).files.map((f) => [f.status, f.updates]);
+    expect(await status([osk], 'osk')).toEqual([['updates', 'My_homebrew.json']]);
+    expect(await status([osk], 'bram')).toEqual([['other-version', undefined]]);
+    // Made before stamps, either one: beside.
+    expect(await status([osk], undefined)).toEqual([['other-version', undefined]]);
+    const old = here(await workshop(undefined, 'Osk Lance'));
+    expect(await status([old], 'osk')).toEqual([['other-version', undefined]]);
+  });
+
+  it('updates a copy with no stamp under a chosen source with the first stamped one', async () => {
+    const brewed = (stamp: string | undefined, spell: string) => {
+      const json = {
+        _meta: { sources: [{ json: 'HB', full: 'Homebrew' }] },
+        spell: [{ name: spell, source: 'HB', level: 1 }],
+      };
+      return buildHomebrewRow(
+        stamp === undefined ? json : withCollectionId(json, stamp),
+        'Homebrew.json',
+      );
+    };
+    const here = (row: HomebrewFileRow): HomebrewFile => ({
+      ...row,
+      json: row.json as Record<string, unknown>,
+    });
+    const status = async (existing: HomebrewFile[], stamp: string | undefined) =>
+      previewCharacterImport({
+        prepared: prepared([await brewed(stamp, 'Osk Ward')]),
+        existing,
+        official: officialPhb(),
+        characterExists: false,
+      }).files.map((f) => [f.status, f.updates]);
+    const old = here(await brewed(undefined, 'Osk Lance'));
+    expect(await status([old], 'osk')).toEqual([['updates', 'Homebrew.json']]);
+    const stamped = here(await brewed('osk', 'Osk Lance'));
+    expect(await status([stamped], undefined)).toEqual([['other-version', undefined]]);
+  });
+
+  it('never updates a rule pack, nor with one: a pack lands beside', () => {
+    const asPack = <T extends { json: unknown }>(f: T): T =>
+      ({ ...f, json: { _meta: { sources: [{ json: 'HB' }], castGuidance: { v: 1 } } } }) as T;
+    const plain = keyed(local('plain', ['HB']));
+    expect(run([plain], asPack(keyed(brew('incoming', ['HB']))))[0]?.status).toBe('other-version');
+    expect(run([asPack(plain)])[0]?.status).toBe('other-version');
+    expect(run([plain])[0]?.status).toBe('updates');
+  });
+
+  it('never updates a file the player owns, the same file, or one under another key', () => {
+    const mine = { ...local('mine', ['HB']), editable: true, key };
+    const other = { ...local('other', ['HB']), key: 'file:hb|other' };
+    expect(run([mine, other])[0]?.status).toBe('other-version');
+    const same = keyed(local('incoming', ['HB']));
+    expect(run([same])[0]?.status).toBe('already-here');
   });
 });

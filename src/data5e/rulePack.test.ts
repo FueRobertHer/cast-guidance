@@ -3,13 +3,14 @@ import { CAST_GUIDANCE_LIMITS as L } from '@/engine/castGuidance';
 import { mergeHomebrew, normalizeDataset } from './normalize';
 import {
   PACK_LOCAL_KEY,
-  packLocal,
+  type PackFile,
+  type PackLocal,
   packName,
   packRefusals,
   packsInOrder,
+  readPackLocal,
   rulePackEntries,
   sharedFile,
-  withPackLocal,
 } from './rulePack';
 
 const pack = (guidance: Record<string, unknown>, full = 'Gritty Table') => ({
@@ -18,44 +19,36 @@ const pack = (guidance: Record<string, unknown>, full = 'Gritty Table') => ({
 const everyone = { characters: [], appDefault: true };
 
 describe('a pack on this device', () => {
-  it('holds who it applies to only for the file it was written for', () => {
-    const stored = withPackLocal(pack({}), { file: 'id-1', appliesTo: { characters: ['hild'] } });
-    expect(packLocal(stored, 'id-1')).toEqual({
-      file: 'id-1',
-      appliesTo: { characters: ['hild'] },
+  it('reads a row’s settings as data: odd characters dropped, the list capped', () => {
+    const local = readPackLocal({
+      appliesTo: { characters: ['hild', 7, '', 'x'.repeat(101), ...Array(1_200).fill('a')] },
+      order: Number.NaN,
     });
-    // The same content under another id: a file that arrived holding it.
-    expect(packLocal(stored, 'id-2')).toBeUndefined();
-    expect(packLocal(stored, '')).toBeUndefined();
-  });
-
-  it('reads a stored block as data: odd characters dropped, the list capped', () => {
-    const odd = {
-      _meta: {
-        ...pack({})._meta,
-        [PACK_LOCAL_KEY]: {
-          file: 'id-1',
-          appliesTo: { characters: ['hild', 7, '', 'x'.repeat(101), ...Array(1_200).fill('a')] },
-          order: Number.NaN,
-        },
-      },
-    };
-    const local = packLocal(odd, 'id-1');
     expect(local?.appliesTo.characters[0]).toBe('hild');
     expect(local?.appliesTo.characters).toHaveLength(L.charactersPerPack - 3);
     expect(local).not.toHaveProperty('order');
     expect(local?.appliesTo).not.toHaveProperty('appDefault');
+    expect(readPackLocal({ appliesTo: everyone, order: 2 })).toEqual({
+      appliesTo: everyone,
+      order: 2,
+    });
+    expect(readPackLocal(undefined)).toBeUndefined();
+    expect(readPackLocal('everyone')).toBeUndefined();
   });
 
-  it('leaves it behind when the file leaves, and changes nothing else', () => {
+  it('sends a file without an old Apply to block, and changes nothing else', () => {
     const original = pack({ tableRules: { restLength: 'gritty' } });
-    const stored = withPackLocal(original, { file: 'id-1', appliesTo: everyone, order: 2 });
-    expect(stored._meta).toHaveProperty(PACK_LOCAL_KEY);
-    expect(original._meta).not.toHaveProperty(PACK_LOCAL_KEY);
+    const held = {
+      ...original,
+      _meta: { ...original._meta, [PACK_LOCAL_KEY]: { file: 'id-1', appliesTo: everyone } },
+    };
     // The same text as the file that came in, so the same id where it is imported again.
-    expect(JSON.stringify(sharedFile(stored))).toBe(JSON.stringify(original));
+    expect(JSON.stringify(sharedFile(held))).toBe(JSON.stringify(original));
     const plain = { _meta: { sources: [] }, spell: [] };
     expect(sharedFile(plain)).toBe(plain);
+    // The id a collection made in the app is known by goes with it.
+    const made = { _meta: { ...held._meta, castGuidanceCollection: 'osk' } };
+    expect(sharedFile(made)._meta).toHaveProperty('castGuidanceCollection', 'osk');
   });
 
   it('is named by its book', () => {
@@ -66,30 +59,38 @@ describe('a pack on this device', () => {
 });
 
 describe('the registry’s packs', () => {
-  const files = (...entries: Array<[string, Record<string, unknown>]>) => new Map(entries);
+  const file = (id: string, json: Record<string, unknown>, local?: PackLocal): PackFile =>
+    local === undefined ? { id, json } : { id, json, pack: local };
 
   it('lists packs in the player’s order, then as they merged, so the later wins', () => {
-    const a = withPackLocal(pack({}, 'A'), { file: 'a', appliesTo: everyone, order: 1 });
-    const b = withPackLocal(pack({}, 'B'), { file: 'b', appliesTo: everyone, order: 0 });
-    const c = withPackLocal(pack({}, 'C'), { file: 'c', appliesTo: everyone });
-    const d = withPackLocal(pack({}, 'D'), { file: 'd', appliesTo: everyone });
     const plain = { _meta: { sources: [{ json: 'X' }] }, spell: [] };
     expect(
-      packsInOrder(files(['c', c], ['a', a], ['x', plain], ['d', d], ['b', b])).map((p) => p.name),
+      packsInOrder([
+        file('c', pack({}, 'C'), { appliesTo: everyone }),
+        file('a', pack({}, 'A'), { appliesTo: everyone, order: 1 }),
+        file('x', plain),
+        file('d', pack({}, 'D'), { appliesTo: everyone }),
+        file('b', pack({}, 'B'), { appliesTo: everyone, order: 0 }),
+      ]).map((p) => p.name),
     ).toEqual(['B', 'A', 'C', 'D']);
   });
 
   it('gives a pack no reach unless applied here, and none while it breaks a limit', () => {
-    const applied = withPackLocal(pack({}, 'Applied'), {
-      file: 'a',
-      appliesTo: { characters: ['hild'] },
-    });
-    const elsewhere = withPackLocal(pack({}, 'Elsewhere'), { file: 'other', appliesTo: everyone });
-    const tooMany = withPackLocal(
-      pack({ moments: Array(L.momentsPerPack + 1).fill({ at: 'zeroHp', do: [] }) }, 'Too many'),
-      { file: 't', appliesTo: everyone },
+    // Arrived holding another device's Apply to, in the file: read as nothing.
+    const elsewhere = pack({}, 'Elsewhere');
+    (elsewhere._meta as Record<string, unknown>)[PACK_LOCAL_KEY] = {
+      file: 'e',
+      appliesTo: everyone,
+    };
+    const tooMany = pack(
+      { moments: Array(L.momentsPerPack + 1).fill({ at: 'zeroHp', do: [] }) },
+      'Too many',
     );
-    const entries = rulePackEntries(files(['a', applied], ['e', elsewhere], ['t', tooMany]));
+    const entries = rulePackEntries([
+      file('a', pack({}, 'Applied'), { appliesTo: { characters: ['hild'] } }),
+      file('e', elsewhere),
+      file('t', tooMany, { appliesTo: everyone }),
+    ]);
     expect(entries.map((e) => [e.name, e.source, e.appliesTo])).toEqual([
       ['Applied', 'GT', { characters: ['hild'] }],
       ['Elsewhere', 'GT', undefined],
@@ -99,15 +100,17 @@ describe('the registry’s packs', () => {
 
   it('reach the engine through the registry, never as content', () => {
     const reg = normalizeDataset(new Map());
-    const applied = withPackLocal(
-      { ...pack({}), feat: [{ name: 'Grit Feat', source: 'GT' }] },
-      { file: 'a', appliesTo: everyone },
-    );
-    mergeHomebrew(reg, files(['a', applied]));
-    expect(reg.byType('rulePack').map((e) => e.name)).toEqual(['Gritty Table']);
+    const applied = { ...pack({}), feat: [{ name: 'Grit Feat', source: 'GT' }] };
+    mergeHomebrew(reg, new Map([['a', applied]]), new Map([['a', { appliesTo: everyone }]]));
+    expect(reg.byType('rulePack').map((e) => [e.name, e.appliesTo])).toEqual([
+      ['Gritty Table', everyone],
+    ]);
     // Its content merges as any homebrew file's does.
     expect(reg.byType('feat').map((e) => e.name)).toEqual(['Grit Feat']);
-    mergeHomebrew(reg, files());
+    // Without its row's settings it reaches nobody.
+    mergeHomebrew(reg, new Map([['a', applied]]));
+    expect(reg.byType('rulePack').map((e) => e.appliesTo)).toEqual([undefined]);
+    mergeHomebrew(reg, new Map());
     expect(reg.byType('rulePack')).toEqual([]);
   });
 });
