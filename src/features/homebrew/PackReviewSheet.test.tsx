@@ -282,6 +282,19 @@ describe('packs on the Homebrew page', () => {
     ]);
   });
 
+  it('says an update wins a clash by the place it keeps, not by going last', async () => {
+    renderPage();
+    await addThroughPage('heroic.json', heroic(), 'Add Heroic Table?');
+    await addThroughPage('gritty-table.json', grittyTable, 'Add Gritty Table?');
+    const changed = structuredClone(grittyTable) as { _meta: { castGuidance: Json } };
+    changed._meta.castGuidance.cues = [{ at: 'longRest', text: 'Rest somewhere safe.' }];
+    chooseFile('gritty-table.json', changed);
+    const dialog = await findDialog('Update Gritty Table?');
+    expect(dialog.textContent).toContain(
+      'Sets rest length, which Heroic Table also sets. Gritty Table would win, as it comes later in your pack order.',
+    );
+  });
+
   it('applies an update to nobody when the pack it kept the Apply to of is gone first', async () => {
     await characterRepo.put(newCharacterDoc('hild', 'Hild', 'tag'));
     renderPage();
