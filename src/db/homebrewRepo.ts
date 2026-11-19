@@ -17,6 +17,7 @@ import {
   WORKSHOP_SOURCE,
   withCollectionId,
 } from './homebrewOrder';
+import type { MoveRequest, RepointReport } from './repoint';
 
 export { CHANGES_SOURCE, WORKSHOP_SOURCE };
 
@@ -500,6 +501,12 @@ async function rewrite(id: string, next: Record<string, unknown>): Promise<boole
   return count > 0;
 }
 
+/**
+ * What `repoint.ts` builds on, kept out of this file so a move's code loads
+ * only with a move. Not for other callers.
+ */
+export const internals = { isEntry, rewrite, OWNED } as const;
+
 /** A stored file the player owns, with its content, or why it cannot take a save. */
 async function ownedFile(id: string): Promise<HomebrewFile> {
   const row = await db.homebrewFiles.get(id);
@@ -789,6 +796,11 @@ export const homebrewRepo = {
    * whose owned ones could not be told apart from this one's refuses the
    * save, as do two owned entries the sheet could not tell apart; the error
    * says which.
+   *
+   * A save that renames the entry it replaces (a new name or book) re-points
+   * every character that held it, and the player's own rule packs, in the
+   * same write (ADR-002, D5); `repointed` says what. A change to the books
+   * keeps the book's name and source, so it re-points nothing.
    */
   async saveEntry(
     type: string,
@@ -799,8 +811,21 @@ export const homebrewRepo = {
       owned?: readonly Row[];
       role?: 'changes';
     } = {},
-  ): Promise<{ fileId: string; created: boolean }> {
-    return db.transaction('rw', db.homebrewFiles, db.homebrewJson, async () => {
+  ): Promise<{ fileId: string; created: boolean; repointed?: RepointReport }> {
+    const { replaces: was } = opts;
+    // Loaded before the transaction opens: waiting on anything else inside it
+    // would let it commit.
+    const walker =
+      was !== undefined &&
+      opts.role !== 'changes' &&
+      (was.name !== entry.name || was.source !== entry.source)
+        ? await import('./repoint')
+        : undefined;
+    const tables =
+      walker === undefined
+        ? [db.homebrewFiles, db.homebrewJson]
+        : [db.homebrewFiles, db.homebrewJson, db.characters];
+    return db.transaction('rw', tables, async () => {
       let file: HomebrewFile | undefined;
       const changes = opts.role === 'changes';
       if (opts.fileId !== undefined) file = await ownedFile(opts.fileId);
@@ -849,6 +874,7 @@ export const homebrewRepo = {
         json[own.type] = [...kept, ...opts.owned];
         if (at !== -1 && isRecord(list[at])) own.carry?.(json, list[at] as Row, entry);
       }
+      const before = list[at];
       if (at === -1) list.push(entry);
       else list[at] = entry;
       json[type] = list;
@@ -857,11 +883,31 @@ export const homebrewRepo = {
         await putHomebrewRow({ ...row, json, counts: homebrewEntityCounts(json) });
         return { fileId: row.id, created: true };
       }
-      const id = (file as HomebrewFile).id;
+      const { id, role } = file as HomebrewFile;
       if (!(await rewrite(id, json)))
         throw new Error('that homebrew file is no longer on this device');
-      return { fileId: id, created: false };
+      // The changes file is opened by its id too: a change to the books is
+      // found by the book's entry, so a character holding it keeps it.
+      const repointed =
+        walker !== undefined && isRecord(before) && role !== 'changes'
+          ? await walker.repointRename(
+              type,
+              { name: String(before.name), source: String(before.source) },
+              { name: entry.name, source: entry.source },
+            )
+          : undefined;
+      return { fileId: id, created: false, ...(repointed === undefined ? {} : { repointed }) };
     });
+  },
+
+  /**
+   * Move entries from one of the player's collections to another (ADR-002,
+   * D5): each takes the new collection's source, and every character, and the
+   * player's own rule packs, follow it in the same write. Loads the move's code
+   * first (`repoint.ts`).
+   */
+  async moveEntries(req: MoveRequest): Promise<RepointReport> {
+    return (await import('./repoint')).moveEntries(req);
   },
 
   /**

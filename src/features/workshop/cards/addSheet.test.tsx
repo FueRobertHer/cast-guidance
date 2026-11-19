@@ -118,7 +118,8 @@ describe('the Add an effect sheet', () => {
   it('finds a kind by what it does, not only by its name', async () => {
     const sheet = await openMore();
     search('minimum');
-    expect(listed(sheet)).toEqual(['Ability score is at least']);
+    // Board 4: "minimum" finds both at-least cards.
+    expect(listed(sheet)).toEqual(['Ability score is at least', 'Armor Class is at least']);
     search('darkvision');
     expect(listed(sheet)).toEqual(['Sense']);
     search('fly');
