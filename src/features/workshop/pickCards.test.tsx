@@ -92,12 +92,20 @@ const problems = (effects: Json[]) => readStoredEffects(effects, 'effects', true
 
 const SKILL = { kind: 'skillProf', skill: '{pick}', level: 1 };
 
-/** Add a Pick card through More, as a player does. */
-async function addPick() {
+/** Add a Pick card through More, as a player does, in `at` (the screen, or one list of cards). */
+async function addPick(at: Pick<typeof screen, 'getByRole' | 'findByLabelText'> = screen) {
   choice.current = 'Pick';
-  press('More');
-  await screen.findByLabelText('Pick: Asks for');
+  fireEvent.click(at.getByRole('button', { name: 'More' }));
+  await at.findByLabelText('Pick: Asks for');
 }
+
+/** The entry's own cards: a feat's benefits have cards of their own, with a More each. */
+const ownCards = () =>
+  within(
+    screen
+      .getByRole('heading', { name: 'What it does on the sheet' })
+      .closest('section') as HTMLElement,
+  );
 
 /** The homebrew feat Gift with these effects, taken by a Warrior 4, its answers `answers`. */
 function collect(effects: Json[], answers: Record<string, string[]> = {}) {
@@ -198,8 +206,8 @@ describe('a new pick’s id', () => {
       castGuidance: { v: 1, effects: [lore] },
     };
     const effects = withEntry({ entries: [part] });
-    // A file's part holds a pick a feat's editor shows no card for: its id is still taken.
-    await addPick();
+    // The benefit's pick (on its own cards) holds an id: the feat's new pick takes another.
+    await addPick(ownCards());
     expect(effects()[0]?.id).toBe('choice-2');
   });
 
