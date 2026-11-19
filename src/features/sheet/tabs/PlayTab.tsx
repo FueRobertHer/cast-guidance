@@ -173,11 +173,12 @@ const RULES = 'underline decoration-line-strong decoration-dashed';
 const ROW = 'flex flex-wrap items-center gap-x-2 gap-y-1';
 const ROW_NAME = 'flex min-w-0 flex-1 basis-26 items-center gap-2';
 /**
- * ROW_NAME beside an item's name in place of an ability's three letters (a
- * spell an item grants): sized by its content, so the chips drop under it
- * first, and then the item's name under the spell's (wrapping if it must),
- * before it squeezes the spell's to a letter. Its name button grows from its
- * own width (not `flex-1`'s none), and the item's name may shrink.
+ * ROW_NAME beside its source's name in place of an ability's three letters (a
+ * grant with no ability: an item's, a feat's): sized by its content, so the
+ * chips drop under it first, and then the source's name under the spell's
+ * (wrapping if it must), before it squeezes the spell's to a letter. Its name
+ * button grows from its own width (not `flex-1`'s none), and the source's
+ * name may shrink.
  */
 const ROW_NAME_WIDE = 'flex min-w-0 grow flex-wrap items-center gap-x-2 gap-y-0.5';
 const ROW_ACTIONS = 'ml-auto flex max-w-full shrink-0 flex-wrap items-center justify-end';
