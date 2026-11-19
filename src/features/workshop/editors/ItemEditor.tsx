@@ -264,6 +264,34 @@ export function fixedOfOriginal(registry: EntityRegistry, original: Json | undef
   return { ...firstOf(originalRefs(original), (ref) => itemDcIn(sets, ref)) };
 }
 
+/** The standard fields that say an item's charges and what comes back. */
+const POOL_FIELDS = ['charges', 'recharge', 'rechargeAmount'] as const;
+
+/**
+ * The standard fields saying a built-in `charges` row's count and what comes
+ * back, which `regainOf` reads back as the row says them, for a copy whose
+ * fields still say what its original's do: the row is read from the item's
+ * text where those fields misstate it. Only what they misstate: a count, or
+ * what comes back, they already say as the row does is left as written. A time
+ * the fields give that a long rest covers is kept, else dawn; none comes back
+ * with no recharge. A copy whose author changed any of them keeps them all,
+ * and one a charges effect counts already keeps what the effect says.
+ */
+export function rowPoolFields(row: ItemCharges, draft: Json, original: Json | undefined): Json {
+  if (original === undefined || effectsOf(draft).some(isCharges)) return {};
+  if (POOL_FIELDS.some((k) => draft[k] !== original[k])) return {};
+  const regain = String(row.regain);
+  const count: Json = draft.charges === row.charges ? {} : { charges: row.charges };
+  if (String(regainOf(draft.recharge, draft.rechargeAmount)) === regain) return count;
+  if (regain === 'none') return { ...count, recharge: undefined, rechargeAmount: undefined };
+  const time = rechargeIn(draft.recharge);
+  return {
+    ...count,
+    recharge: time !== undefined && regainOf(time, undefined) !== 'none' ? time : 'dawn',
+    rechargeAmount: regain === 'all' ? undefined : rechargeValue(regain),
+  };
+}
+
 /** What was typed, stored as the data has it: a number, a tagged roll, or the words. */
 export function rechargeValue(typed: string | undefined): string | number | undefined {
   if (typed === undefined) return undefined;
@@ -730,9 +758,11 @@ function Charges(props: EditorProps) {
   };
   const spells = list(counted?.spells).filter(isRecord) as Json[];
   // Written out, the effect says what the sheet counted: the row's spells or
-  // the fields', and the DC the original's text fixes.
+  // the fields', and the DC the original's text fixes. The row's count and
+  // what comes back go in the fields while they are still the original's.
   const fixed = fixedOfOriginal(registry, original);
   const fieldSpells = byFields?.spells ?? [];
+  const pool = row === undefined ? {} : rowPoolFields(row, draft, original);
   const fromRow =
     row === undefined ? undefined : (
       <Button
@@ -740,7 +770,7 @@ function Charges(props: EditorProps) {
         size="sm"
         className="self-start"
         disabled={spellData.status !== 'ready'}
-        onClick={() => set({}, { spells: rowSpells(row, options), ...fixed })}
+        onClick={() => set(pool, { spells: rowSpells(row, options), ...fixed })}
       >
         {counted === undefined && byFields === undefined
           ? 'Count them on the sheet'
@@ -803,6 +833,16 @@ function Charges(props: EditorProps) {
           card, and the Cast a spell cards that spend it, to count them here alone, where each spell
           costs its charges by level.
         </p>
+      )}
+      {charges === undefined && 'charges' in pool && !readOnly && (
+        // An item whose fields give no count, which the app counts by its row
+        // (a Ring of Three Wishes), while they are still its original's.
+        <div className="flex flex-col gap-2">
+          <p className="text-caption text-ink-muted">
+            {`${String(original?.name)} has charges the app counts. Counted, they cast the spells it casts, priced as the app prices them.`}
+          </p>
+          {fromRow}
+        </div>
       )}
       {charges !== undefined && !old && counted === undefined && !readOnly && (
         <div className="flex flex-col gap-2">

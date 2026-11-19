@@ -517,7 +517,12 @@ effect in its `castGuidance` effects, the row's fields and reader:
   one's did. For a copy of a copy, or of a converted file's item, it finds
   those rows under the original, then the official item the copy is saved
   `basedOn`. Its lists then take the official one's `itemSpells` row, whatever
-  it takes out ("Keys by call site", above).
+  it takes out ("Keys by call site", above). While the copy's `charges`,
+  `recharge` and `rechargeAmount` are still the original's and no effect
+  counts them, a row's count and what comes back go in those fields where
+  they misstate it (a Robe of Stars gives no time, a Ring of Three Wishes no
+  count), so the effect says the row's pool; a field the author changed keeps
+  them all.
 - **Its actions spend it.** An action of the item's, its own or a pack's,
   whose `cost` names the pool `charges` spends that copy's pool
   (`item-charges:<entry id>`) while the item holds charges. Same-named actions

@@ -30,7 +30,13 @@ vi.mock('@/data5e/hooks', () => ({
 vi.mock('@/ui/dialogs', () => ({ askChoice: () => Promise.resolve(choice.current) }));
 
 import { EffectCards } from './EffectCards';
-import { editor as item, rechargeValue, withCharges, withProperty } from './editors/ItemEditor';
+import {
+  editor as item,
+  rechargeValue,
+  rowPoolFields,
+  withCharges,
+  withProperty,
+} from './editors/ItemEditor';
 import {
   damageRolls,
   healRolls,
@@ -485,6 +491,64 @@ describe('item fields', () => {
     expect(regainOf('restShort', 2)).toBe('none');
   });
 
+  it("writes a built-in row's count and what comes back in fields still the original's", () => {
+    const row = (charges: number, regain: string | number) =>
+      ({ charges, regain, spells: [] }) as unknown as ItemCharges;
+    // A copy as made: the original's fields, unchanged.
+    const pool = (r: ItemCharges, fields: Json) =>
+      rowPoolFields(r, structuredClone(fields), fields);
+    // Robe of Stars: how many, with no time.
+    expect(pool(row(6, '1d6'), { charges: 6, rechargeAmount: '{@dice 1d6}' })).toEqual({
+      recharge: 'dawn',
+      rechargeAmount: '{@dice 1d6}',
+    });
+    // Jewel of Three Prayers (Awakened): no recharge, all back.
+    expect(pool(row(5, 'all'), { charges: 5 })).toEqual({
+      recharge: 'dawn',
+      rechargeAmount: undefined,
+    });
+    // Eyes of Charming and Spirit Board: the fields' time kept.
+    expect(pool(row(3, 'all'), { charges: 3, recharge: 'dawn', rechargeAmount: 3 })).toEqual({
+      recharge: 'dawn',
+      rechargeAmount: undefined,
+    });
+    expect(pool(row(3, 1), { charges: 3, recharge: 'dusk', rechargeAmount: 3 })).toEqual({
+      recharge: 'dusk',
+      rechargeAmount: 1,
+    });
+    // A time no long rest covers gives nothing back, so dawn in its place.
+    expect(pool(row(3, 1), { charges: 3, recharge: 'special', rechargeAmount: 3 })).toEqual({
+      recharge: 'dawn',
+      rechargeAmount: 1,
+    });
+    // Ring of Three Wishes and Staff of Charming: no count in the fields.
+    expect(pool(row(3, 'none'), {})).toEqual({ charges: 3 });
+    expect(pool(row(10, '1d8+2'), {})).toEqual({
+      charges: 10,
+      recharge: 'dawn',
+      rechargeAmount: '{@dice 1d8+2}',
+    });
+    // None back clears a recharge the fields give.
+    expect(pool(row(3, 'none'), { charges: 3, recharge: 'dawn' })).toEqual({
+      recharge: undefined,
+      rechargeAmount: undefined,
+    });
+    // Fields that say the row already, in their own way, are left as written.
+    expect(
+      pool(row(7, '1d6+1'), { charges: 7, recharge: 'dawn', rechargeAmount: '{@dice 1d6 + 1}' }),
+    ).toEqual({});
+    // A copy changed from its original, or counted by an effect already, keeps them.
+    const wand: Json = { charges: 7, recharge: 'dawn' };
+    expect(rowPoolFields(row(7, '1d6+1'), { ...wand, charges: 8 }, wand)).toEqual({});
+    expect(rowPoolFields(row(7, '1d6+1'), { ...wand, rechargeAmount: 2 }, wand)).toEqual({});
+    const counted = {
+      ...wand,
+      castGuidance: { v: 1, effects: [{ kind: 'charges', charges: 7, regain: 'all' }] },
+    };
+    expect(rowPoolFields(row(7, '1d6+1'), counted, wand)).toEqual({});
+    expect(rowPoolFields(row(7, '1d6+1'), wand, undefined)).toEqual({});
+  });
+
   it('writes a property as the others are written', () => {
     expect(withProperty({ property: ['L|XPHB'] }, 'F', true)).toEqual(['L|XPHB', 'F|XPHB']);
     expect(withProperty({}, 'F', true)).toEqual(['F']);
@@ -937,12 +1001,62 @@ describe('ItemEditor', () => {
       { kind: 'charges', charges: 8, regain: 'all' },
     ]);
     press('Add the spells Wand of Fireballs casts');
-    expect(((draft().castGuidance as Json).effects as Json[])[0]?.spells).toEqual([
-      { spell: 'Fireball|XPHB', cost: 1, upTo: 5 },
-    ]);
+    expect(((draft().castGuidance as Json).effects as Json[])[0]).toMatchObject({
+      // The author's number, and what comes back as the fields say it.
+      charges: 8,
+      regain: 'all',
+      spells: [{ spell: 'Fireball|XPHB', cost: 1, upTo: 5 }],
+    });
+    expect(draft()).toMatchObject({ charges: 8, recharge: 'dawn' });
+    expect(draft().rechargeAmount).toBeUndefined();
     expect(
       screen.queryByRole('button', { name: 'Add the spells Wand of Fireballs casts' }),
     ).toBeNull();
+  });
+
+  it("writes out a copy's count and what comes back as the app counts them, with fields that misstate them or give none", () => {
+    const registry = new EntityRegistry();
+    registry.setRuleSets(BUILT_IN_RULE_SETS);
+    registry.addAll('spell', [
+      { name: 'Magic Missile', source: 'PHB', level: 1 },
+      { name: 'Wish', source: 'PHB', level: 9 },
+    ] as unknown as Entity[]);
+    // Robe of Stars: how many come back, but no time, so the fields give none back.
+    const robe: Json = {
+      name: 'Robe of Stars',
+      source: 'DMG',
+      type: 'OTH',
+      charges: 6,
+      rechargeAmount: '{@dice 1d6}',
+      entries: [],
+    };
+    let draft = mount(item, structuredClone(robe), registry, robe);
+    press('Add the spells Robe of Stars casts');
+    expect(draft()).toMatchObject({ charges: 6, recharge: 'dawn', rechargeAmount: '{@dice 1d6}' });
+    expect(((draft().castGuidance as Json).effects as Json[])[0]).toMatchObject({
+      kind: 'charges',
+      charges: 6,
+      regain: '1d6',
+      spells: [{ spell: 'Magic Missile|PHB', cost: 1 }],
+    });
+    cleanup();
+    // Ring of Three Wishes: no count in its fields at all.
+    const ring: Json = { name: 'Ring of Three Wishes', source: 'DMG', type: 'RG', entries: [] };
+    draft = mount(item, structuredClone(ring), registry, ring);
+    expect(screen.getByText(/Ring of Three Wishes has charges the app counts/)).toBeTruthy();
+    press('Count them on the sheet');
+    expect(draft().charges).toBe(3);
+    expect(draft().recharge).toBeUndefined();
+    expect((draft().castGuidance as Json).effects).toEqual([
+      { kind: 'charges', charges: 3, regain: 'none', spells: [{ spell: 'Wish|PHB', cost: 1 }] },
+    ]);
+    expect(screen.queryByText(/has charges the app counts/)).toBeNull();
+    cleanup();
+    // An item the app does not count, with no count, offers nothing.
+    const plain: Json = { name: 'Plain Ring', source: 'HB', type: 'RG', entries: [] };
+    mount(item, structuredClone(plain), registry, plain);
+    expect(screen.queryByText(/has charges the app counts/)).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Count them on the sheet' })).toBeNull();
   });
 
   it("writes out the official item's row and DC for a copy of a copy, or of a converted file's item", () => {
@@ -972,7 +1086,8 @@ describe('ItemEditor', () => {
     const official = {
       kind: 'charges',
       charges: 7,
-      regain: 'all',
+      // The row's, in place of the fields' all: their fields are still the original's.
+      regain: '1d6+1',
       dc: 15,
       spells: [{ spell: 'Fireball|XPHB', cost: 1, upTo: 5 }],
     };
