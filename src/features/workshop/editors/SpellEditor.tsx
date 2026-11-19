@@ -9,7 +9,7 @@
  * spell puts on its target while it lasts has no such field: that is the
  * spell's own `castGuidance.effects`.
  */
-import { CircleAlert, Plus, X } from 'lucide-react';
+import { ChevronRight, CircleAlert, Plus, X } from 'lucide-react';
 import { type ReactNode, useState } from 'react';
 import { DAMAGE_TYPES } from '@/convert/fc5/text';
 import { useTypePacks } from '@/data5e/hooks';
@@ -30,7 +30,6 @@ import {
   ABILITY_WORDS,
   ChipPicks,
   Field,
-  Kept,
   NumberField,
   onePerName,
   Section,
@@ -483,6 +482,37 @@ function listKey(e: Json): string {
   return subclassKey(c.name, s.name);
 }
 
+/** A `fromSubclass` entry's class and the names its subclass goes by, lowercased. */
+function listNames(e: Json): { className: string; names: string[] } {
+  const c = isRecord(e.class) ? e.class : {};
+  const s = isRecord(e.subclass) ? e.subclass : {};
+  const names = [s.name, s.shortName].filter((n) => typeof n === 'string');
+  return {
+    className: String(c.name).toLowerCase(),
+    names: names.map((n) => String(n).toLowerCase()),
+  };
+}
+
+/**
+ * The offered list a `fromSubclass` entry is: the same class, and a subclass
+ * that goes by one of the same names, full or short, as files differ in which
+ * they write.
+ */
+function listFor(e: Json, offered: readonly SubclassList[]): SubclassList | undefined {
+  const want = listNames(e);
+  return offered.find((s) => {
+    const has = listNames(s.entry);
+    return has.className === want.className && has.names.some((n) => want.names.includes(n));
+  });
+}
+
+/** How a `fromSubclass` entry the chips do not offer reads: subclass (class). */
+function listLabel(e: Json): string {
+  const c = isRecord(e.class) ? e.class : {};
+  const s = isRecord(e.subclass) ? e.subclass : {};
+  return `${String(s.name ?? '?')} (${String(c.name ?? '?')})`;
+}
+
 /**
  * The subclasses in the player's data that cast from a list of their own (the
  * Eldritch Knight's): those with a caster progression, as the Spells tab gives
@@ -523,6 +553,15 @@ function Reads({ children }: { children: ReactNode }) {
   return <p className="text-caption text-ink-muted">{children}</p>;
 }
 
+/**
+ * `options` with a chip for each value they lack, named as written: it stays
+ * pressed while kept, and pressing it takes it away.
+ */
+function withWritten(options: Options, value: readonly string[]): Options {
+  const written = [...new Set(value)].filter((v) => !options.some(([o]) => o === v));
+  return [...options, ...written.map((v) => [v, `${v}, as written`] as const)];
+}
+
 /** Toggle chips over a list field, with any value the chips lack kept and named. */
 function TagPicks({
   label,
@@ -537,18 +576,14 @@ function TagPicks({
   disabled: boolean;
   onChange: (v: string[]) => void;
 }) {
-  const unknown = value.filter((v) => !options.some(([o]) => o === v));
   return (
-    <>
-      <ChipPicks
-        label={label}
-        options={options}
-        value={value}
-        disabled={disabled}
-        onChange={onChange}
-      />
-      {unknown.length > 0 && <Kept label={`${label}, kept as written`}>{unknown.join(', ')}</Kept>}
-    </>
+    <ChipPicks
+      label={label}
+      options={withWritten(options, value)}
+      value={value}
+      disabled={disabled}
+      onChange={onChange}
+    />
   );
 }
 
@@ -563,8 +598,13 @@ const TAG_FIELDS: ReadonlyArray<readonly [string, string, Options]> = [
 function Tags({ draft, change, readOnly }: EditorProps) {
   const set = TAG_FIELDS.reduce((n, [key]) => n + strings(draft[key]).length, 0);
   return (
-    <details className="rounded-control ring-1 ring-line ring-inset">
-      <summary className="flex min-h-tap cursor-pointer items-center gap-2 px-3 text-body-strong">
+    <details className="group rounded-control ring-1 ring-line ring-inset">
+      <summary className="flex min-h-tap cursor-pointer list-none items-center gap-2 px-3 text-body-strong">
+        <ChevronRight
+          aria-hidden
+          size={14}
+          className="shrink-0 text-ink-muted transition-transform group-open:rotate-90"
+        />
         <span className="flex-1">Tags for search</span>
         <span className="text-caption text-ink-muted">{set === 0 ? 'None' : `${set} set`}</span>
       </summary>
@@ -685,8 +725,14 @@ function About(props: EditorProps) {
   const pickedNames = picked.map((c) => String(c.name).toLowerCase());
   const subPicked = list(classes.fromSubclass).filter(isRecord);
   const subLists = subclassLists(props);
-  const subKeys = subPicked.map(listKey);
-  const subUnknown = subPicked.filter((e) => !subLists.some((s) => s.key === listKey(e)));
+  // Each entry as the chip it is: an offered list, or its own, named as written.
+  const subKeys = subPicked.map((e) => listFor(e, subLists)?.key ?? listKey(e));
+  const subOptions: Options = [
+    ...subLists.map((s) => [s.key, s.label] as const),
+    ...subPicked
+      .filter((e, i) => listFor(e, subLists) === undefined && subKeys.indexOf(listKey(e)) === i)
+      .map((e) => [listKey(e), `${listLabel(e)}, as written`] as const),
+  ];
   /** `classes` with one of its lists set, gone when nothing is left in it. */
   const setClasses = (key: string, next: Json[]) => {
     const { [key]: _, ...rest } = classes;
@@ -747,7 +793,14 @@ function About(props: EditorProps) {
                       type: 'point',
                       distance:
                         type === 'feet'
-                          ? { type, amount: Number(distance?.amount ?? 60) }
+                          ? {
+                              type,
+                              // Feet carried over from feet; miles start again at 60.
+                              amount:
+                                distance?.type === 'feet' && typeof distance.amount === 'number'
+                                  ? distance.amount
+                                  : 60,
+                            }
                           : { type },
                     },
             })
@@ -793,8 +846,8 @@ function About(props: EditorProps) {
       </div>
       {rangeKey === 'area' && (
         <Reads>
-          Its range reads “{spellRange(draft.range)}” in the Library, on its rules sheet and in its
-          row on the Spells tab.
+          Its range reads “{spellRange(draft.range)}” in the Library and on its rules sheet, and “
+          {spellRange(draft.range).replace(/\bfeet\b/, 'ft')}” in its row on the Spells tab.
         </Reads>
       )}
       <ChipPicks
@@ -865,28 +918,17 @@ function About(props: EditorProps) {
         <>
           <ChipPicks
             label="On a subclass’s own list"
-            options={subLists.map((s) => [s.key, s.label] as const)}
+            options={subOptions}
             value={subKeys}
             disabled={readOnly}
             onChange={(keys) => {
-              const kept = subPicked.filter((e) => keys.includes(listKey(e)));
+              const kept = subPicked.filter((_, i) => keys.includes(subKeys[i] ?? ''));
               const added = subLists
                 .filter((s) => keys.includes(s.key) && !subKeys.includes(s.key))
                 .map((s) => s.entry);
               setClasses('fromSubclass', [...kept, ...added]);
             }}
           />
-          {subUnknown.length > 0 && (
-            <Kept label="On a subclass’s own list, kept as written">
-              {subUnknown
-                .map((e) => {
-                  const c = isRecord(e.class) ? e.class : {};
-                  const s = isRecord(e.subclass) ? e.subclass : {};
-                  return `${String(s.name ?? '?')} (${String(c.name ?? '?')})`;
-                })
-                .join(', ')}
-            </Kept>
-          )}
           <Reads>
             Kept in the file as 5etools writes it. The Spells tab does not read a subclass’s list
             from your own spells yet.

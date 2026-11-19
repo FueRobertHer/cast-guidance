@@ -147,7 +147,10 @@ describe('the range shape (board 5)', () => {
     fireEvent.change(screen.getByLabelText('Feet'), { target: { value: '20' } });
     const range = { type: 'sphere', distance: { type: 'feet', amount: 20 } };
     expect(draft().range).toEqual(range);
-    expect(screen.getByText(/Its range reads “Self \(20 feet sphere\)”/)).toBeTruthy();
+    expect(
+      screen.getByText(/Its range reads “Self \(20 feet sphere\)” in the Library/),
+    ).toBeTruthy();
+    expect(screen.getByText(/“Self \(20 ft sphere\)” in its row on the Spells tab/)).toBeTruthy();
 
     const saved = save(draft());
     expect(saved.range).toEqual(range);
@@ -173,6 +176,21 @@ describe('the range shape (board 5)', () => {
     pick('Range', 'touch');
     expect(draft().range).toEqual({ type: 'point', distance: { type: 'touch' } });
     expect(screen.queryByLabelText('Area')).toBeNull();
+  });
+
+  it('starts a range in feet at 60 from miles, and carries feet over', () => {
+    const draft = mount({
+      name: 'Far Call',
+      ...spell.blank(),
+      range: { type: 'point', distance: { type: 'miles', amount: 1 } },
+    });
+    // One mile is not one foot.
+    pick('Range', 'feet');
+    expect(draft().range).toEqual({ type: 'point', distance: { type: 'feet', amount: 60 } });
+    pick('Range', 'area');
+    fireEvent.change(screen.getByLabelText('Feet'), { target: { value: '30' } });
+    pick('Range', 'feet');
+    expect(draft().range).toEqual({ type: 'point', distance: { type: 'feet', amount: 30 } });
   });
 
   it("changes a book spell's shape as a change, and reads back to the draft", () => {
@@ -249,18 +267,23 @@ describe('the tags 5etools files a spell under (board 5)', () => {
     expect(screen.getByText(/The sheet does not read these yet/)).toBeTruthy();
   });
 
-  it('keeps a tag it has no chip for, and the Healing card and its flag agree', () => {
+  it('keeps a tag it has no chip for as one that takes it away, and shows the Healing tag', () => {
     const draft = mount({ name: 'Odd Mend', ...spell.blank(), miscTags: ['ZZZ'] });
     open();
-    expect(screen.getByText('Flags, kept as written:')).toBeTruthy();
+    expect(pressed('Flags')).toEqual(['ZZZ, as written']);
     fireEvent.click(chip('Area of effect', 'Single target'));
     // The Healing card, added from What it does, files the spell under Healing too.
     const does = screen.getByRole('heading', { name: 'What it does' }).parentElement as HTMLElement;
     fireEvent.click(within(does).getByRole('button', { name: 'Healing' }));
     expect(draft().miscTags).toEqual(['ZZZ', 'HL']);
-    expect(pressed('Flags')).toEqual(['Healing']);
+    expect(pressed('Flags')).toEqual(['Healing', 'ZZZ, as written']);
     fireEvent.click(chip('Flags', 'Healing'));
     expect(draft().miscTags).toEqual(['ZZZ']);
+    fireEvent.click(chip('Flags', 'ZZZ, as written'));
+    expect(draft().miscTags).toBeUndefined();
+    expect(
+      within(screen.getByRole('group', { name: 'Flags' })).queryByText(/as written/),
+    ).toBeNull();
   });
 
   it("clears a book spell's tag as a change, and it stays cleared when read back", () => {
@@ -321,7 +344,7 @@ describe("a subclass's own list (board 5)", () => {
     expect(back().classes).toBeUndefined();
   });
 
-  it('keeps a list for a subclass the data does not have, and names it', () => {
+  it('keeps a list for a subclass the data does not have, named, until it is taken away', () => {
     const other = {
       class: { name: 'Rogue', source: 'PHB' },
       subclass: { name: 'Arcane Trickster', shortName: 'Arcane Trickster', source: 'PHB' },
@@ -330,12 +353,42 @@ describe("a subclass's own list (board 5)", () => {
       { name: 'Quiet Hand', ...spell.blank(), classes: { fromSubclass: [other] } },
       knights(),
     );
-    expect(screen.getByText('Arcane Trickster (Rogue)')).toBeTruthy();
-    fireEvent.click(chip('On a subclass’s own list', 'Eldritch Knight (Fighter)'));
-    expect((draft().classes as Json).fromSubclass).toEqual([
-      other,
-      expect.objectContaining({ subclass: expect.objectContaining({ name: 'Eldritch Knight' }) }),
+    const group = 'On a subclass’s own list';
+    expect(pressed(group)).toEqual(['Arcane Trickster (Rogue), as written']);
+    fireEvent.click(chip(group, 'Eldritch Knight (Fighter)'));
+    const knight = expect.objectContaining({
+      subclass: expect.objectContaining({ name: 'Eldritch Knight' }),
+    });
+    expect((draft().classes as Json).fromSubclass).toEqual([other, knight]);
+    fireEvent.click(chip(group, 'Arcane Trickster (Rogue), as written'));
+    expect((draft().classes as Json).fromSubclass).toEqual([knight]);
+    expect(within(screen.getByRole('group', { name: group })).queryByText(/as written/)).toBeNull();
+  });
+
+  it('knows a list a file names by its short name as the one it offers', () => {
+    const registry = knights();
+    registry.addAll('subclass', [
+      {
+        name: 'College of Spellsong',
+        shortName: 'Spellsong',
+        source: 'MyHomebrew',
+        className: 'Bard',
+        classSource: 'XPHB',
+        casterProgression: '1/3',
+      },
     ]);
+    const short = { class: { name: 'Bard', source: 'XPHB' }, subclass: { name: 'Spellsong' } };
+    const draft = mount(
+      { name: 'Hum', ...spell.blank(), classes: { fromSubclass: [short] } },
+      registry,
+    );
+    const group = 'On a subclass’s own list';
+    // One chip, pressed, and none beside it as written.
+    expect(pressed(group)).toEqual(['College of Spellsong (Bard)']);
+    expect(within(screen.getByRole('group', { name: group })).queryByText(/as written/)).toBeNull();
+    // Taking it away takes the entry as the file wrote it.
+    fireEvent.click(chip(group, 'College of Spellsong (Bard)'));
+    expect(draft().classes).toBeUndefined();
   });
 });
 
@@ -359,7 +412,9 @@ describe('what a spell puts on its target (suspected bug 1)', () => {
     await waitFor(() => expect(asked.current.length).toBeGreaterThan(0));
     const offered = [...chips, ...asked.current];
     // A target holds numbers and rolls, not proficiencies, uses or actions:
-    // each of these was offered and then refused by + Effect.
+    // each of these but the last was offered and then refused by + Effect.
+    // Cast a spell passes without the fix: the editor gives the cards no
+    // spells to cast, so it was never offered here (+ Effect refuses it too).
     for (const no of [
       'Ability score',
       'Skill',
