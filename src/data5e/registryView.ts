@@ -191,8 +191,9 @@ function buildView(
         ...every.filter((l) => l.from.kind !== 'pack'),
       ].filter(picks);
       if (layers.length === 0) continue;
+      // The shared registry's own layers alone: its entry, kept as it is.
       const placed =
-        x === undefined && sameAsShared(r, layers)
+        layers.every((l) => r.layers.includes(l)) && sameAsShared(r, layers)
           ? r.placed
           : stackChanges(
               r.type,

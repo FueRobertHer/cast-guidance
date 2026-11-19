@@ -331,6 +331,10 @@ describe('a collection switched off on the device', () => {
     expect(aidRecords(his)).toHaveLength(1);
     expect(aidRecords(his)[0]?.layers.map((l) => l.from.kind)).toEqual(['pack', 'changes']);
     expect(aids(his)).toHaveLength(1);
+    // With Changes to the books off too, the pack's alone.
+    const without = { id: 'osk', sourceSwitches: { on: ['OFF'], off: ['MyChanges'] } };
+    expect(levelOf(registryViewFor(device, without))).toBe(4);
+    expect(levelOf(registryViewFor(reg, without))).toBe(4);
   });
 
   it('gives its pack’s changes to the characters its Apply to names, as the device would', () => {
@@ -343,6 +347,12 @@ describe('a collection switched off on the device', () => {
     expect(levelOf(hers)).toBe(2);
     expect(hers.get('spell', 'Aid', 'XPHB')).toBe(reg.get('spell', 'Aid', 'XPHB'));
     expect(registryViewFor(reg, turnsOn('osk'))).not.toBe(hers);
+  });
+
+  it('keeps the shared entry where its pack reaches someone else', () => {
+    const reg = shared({ off: [levelPack(9, { characters: ['maren'] })] });
+    const his = registryViewFor(reg, turnsOn('osk'));
+    expect(his.get('spell', 'Aid', 'XPHB')).toBe(reg.get('spell', 'Aid', 'XPHB'));
   });
 
   it('as Changes to the books, places its changes rather than adding a second Aid', () => {
