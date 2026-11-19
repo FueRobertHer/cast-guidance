@@ -59,6 +59,10 @@ export interface CardProps {
   /** The one a pick answers (`ask`), when the list is what a pick gives. */
   picked?: string;
   inPick: boolean;
+  /** Its list is in play (a condition's, a spell's while it lasts), not an entry's own. */
+  inPlay?: boolean;
+  /** A moment puts it on (Counts when), so it is in play once the moment comes. */
+  atMoment?: boolean;
   onChange: (next: Eff, renamedKey?: [string, string]) => void;
   /** The effect list itself, for a card that holds one (what a pick gives). */
   List: ComponentType<ListProps>;

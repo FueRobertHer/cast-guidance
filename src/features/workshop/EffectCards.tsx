@@ -298,6 +298,8 @@ function Card({
     charges,
     picked,
     inPick,
+    inPlay,
+    atMoment: place !== undefined,
     onChange,
     List: EffectCards,
   };
