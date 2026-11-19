@@ -240,7 +240,7 @@ export function RollChip({
     }
     // Damage asks first: what is in it, and what the character may add.
     if (damagePrompt !== undefined) {
-      damageFrom(from, damagePrompt, landed, { face });
+      damageFrom(from, damagePrompt, landed, { face, of: withAttack?.of, label });
       return;
     }
     rollFrom(

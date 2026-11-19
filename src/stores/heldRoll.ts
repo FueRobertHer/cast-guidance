@@ -302,6 +302,9 @@ export interface HeldRoll {
         onLanded: Landed | undefined;
         face: RollFace | undefined;
         from: HTMLElement | null;
+        /** The attack it goes with, by name, and its label: a cast spell's own damage is asked at the level picked. */
+        of?: string | undefined;
+        label?: string | undefined;
       }
     | undefined;
 }
@@ -539,7 +542,16 @@ export function damageFrom(
   from: HTMLElement | null,
   make: () => DamageAsk,
   onLanded?: Landed,
-  { face }: { face?: RollFace } = {},
+  {
+    face,
+    of,
+    label,
+  }: {
+    face?: RollFace;
+    /** The attack it goes with, by name, and its label (a spell's own damage, `queued`). */
+    of?: string | undefined;
+    label?: string | undefined;
+  } = {},
 ): void {
   const { held } = heldRollStore.getState();
   if (held !== null && from !== null && held.from === from) {
@@ -547,7 +559,9 @@ export function damageFrom(
     return;
   }
   if (held?.ask?.attack === true) {
-    heldRollStore.setState({ held: { ...held, queued: { make, onLanded, face, from } } });
+    heldRollStore.setState({
+      held: { ...held, queued: { make, onLanded, face, from, of, label } },
+    });
     announce('Damage asks once the attack hits.', { key: 'roll', repeat: true });
     return;
   }
@@ -993,7 +1007,13 @@ export function rollHeld(): void {
   if (queued !== undefined && !missed) {
     // Damage tapped while the attack waited asks now, the crit known; with
     // nothing to choose it rolls with the attack, and shows with it.
-    const hit = { ...queued.make(), after: attackWords(result) };
+    // The cast spell's own damage, at the level picked; its chip's dice when it has no roll of that label.
+    const own =
+      cast !== undefined && queued.of === cast.spell
+        ? (cast.dice(picked, queued.label) ?? castDamage)
+        : undefined;
+    const asked = own !== undefined ? spellDamageAsk(own, crit) : queued.make();
+    const hit = { ...asked, after: attackWords(result) };
     if (!asksAnything(hit)) {
       const on = hit.extras.map(startsOn);
       landDamage(hit, on, undefined, null, queued.onLanded, held.from, id);
@@ -1018,9 +1038,9 @@ export function rollHeld(): void {
     followUpStore.setState({
       offer: { id, expr: crit ? critDice(after.expr) : after.expr, go, from: held.from },
     });
-    return;
   }
-  // A miss, or a hit with nothing to offer: the Attack action's next attack.
+  // The Attack action's next attack, hit or miss: the table may say a hit missed
+  // its AC, and the next swing should not wait on damage that never comes.
   offerNext(held.next, id, held.from);
 }
 
@@ -1028,7 +1048,7 @@ export function rollHeld(): void {
  * A spell attack's damage at the level cast, asked as a weapon's is: its dice,
  * twice on a crit, and what the player adds for this roll alone.
  */
-function spellDamageAsk(dice: CastDice, crit: boolean): DamageAsk {
+export function spellDamageAsk(dice: CastDice, crit: boolean): DamageAsk {
   return {
     kind: 'damage',
     label: dice.label,

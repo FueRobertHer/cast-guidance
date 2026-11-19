@@ -253,8 +253,9 @@ describe('Extra Attack', () => {
     render(<RollToast />);
     nextFaces(15);
     rollOn(attack('Longsword'));
-    // A hit offers its damage first; the offer opens the damage prompt.
-    expect(screen.queryByRole('button', { name: /^Next attack/ })).toBeNull();
+    // A hit offers its damage, and the next attack beside it: the table may
+    // say it missed its AC. The damage offer opens the damage prompt.
+    expect(nextAttack().textContent).toContain('Attack 2 of 2');
     nextFaces();
     fireEvent.click(screen.getByRole('button', { name: 'Roll 1d8+3' }));
     const group = prompt('Longsword slashing damage');

@@ -225,8 +225,9 @@ describe('a critical hit doubles the damage dice', () => {
     await sheet.tab('Spells');
     nextFaces(20);
     rollOn(screen.getByTitle('Ray Bolt spell attack'));
+    // The spell's damage chip asks first, as a weapon's does; tapped again it rolls.
     nextFaces(9, 8);
-    fireEvent.click(screen.getByRole('button', { name: '1d10' }));
+    rollOn(screen.getByRole('button', { name: '1d10' }));
     expect(dice(newest())).toEqual(['d10 [9, 8]']);
   });
 
@@ -234,8 +235,9 @@ describe('a critical hit doubles the damage dice', () => {
     await renderSheet(raySorcerer(), { extra: { spell: [ray] } });
     nextFaces(20);
     rollOn(screen.getByTitle('Ray Bolt spell attack'));
+    // The spell's damage chip asks first, as a weapon's does; tapped again it rolls.
     nextFaces(9, 8);
-    fireEvent.click(screen.getByRole('button', { name: '1d10' }));
+    rollOn(screen.getByRole('button', { name: '1d10' }));
     expect(dice(newest())).toEqual(['d10 [9, 8]']);
     // Searing Bolt has no attack roll: nothing of the crit reaches it. Its
     // chip opens the roll prompt, and tapped again it casts.
