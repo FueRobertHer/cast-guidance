@@ -40,6 +40,7 @@ import {
   RULE_SET_PARTS,
   RULE_SET_SCANS,
   RULE_SET_TYPE,
+  type StoredItemSpellLists,
   WORN_TAG_KINDS,
 } from '../castGuidance';
 import { type Formula, readAmount } from '../formula';
@@ -2288,6 +2289,19 @@ export interface RuleRow {
   charges?: ItemCharges;
   /** `spellRest` rows only: the origin's spell pools that come back on a short rest. */
   shortRest?: ShortRestSpells;
+  /** `itemDc` rows only: what the item's spells cast with. */
+  itemDc?: FixedCast;
+  /** `itemSpells` rows only: what the item casts without its charges, as its data writes it. */
+  itemSpells?: StoredItemSpellLists;
+}
+
+/**
+ * The save DC and spell attack bonus an item's text fixes for every spell it
+ * casts (an `itemDc` row, a `charges` effect's), each absent where it fixes none.
+ */
+export interface FixedCast {
+  dc?: number;
+  attack?: number;
 }
 
 /**
@@ -2316,6 +2330,12 @@ export interface ItemCharges {
   spells: readonly ChargeSpell[];
   /** An item's own effect only: the ability the spells it grants cast with. */
   ability?: Ability;
+  /**
+   * The save DC and attack bonus its spells cast with: an item's own effect's,
+   * or for a built-in row's or the fields' charges the item's `itemDc` row's.
+   */
+  dc?: number;
+  attack?: number;
 }
 
 /** One spell an item's charges cast (`StoredChargeSpell`), read. */
@@ -2324,7 +2344,13 @@ export interface ChargeSpell {
   spell: string;
   cost: number;
   upTo?: number;
-  /** An item's own effect only: the spell by name and book, which the item grants. */
+  /** The one level it casts at for `cost`, in place of its own (`StoredChargeSpell.at`). */
+  at?: number;
+  /**
+   * The spell the item grants: by name and book (an item's own effect's, a
+   * field naming one), or by name with no book (`source` empty), which the
+   * sheet finds in the character's rules version.
+   */
   ref?: EntityRef;
 }
 
@@ -2367,6 +2393,8 @@ const ROW_FIELDS: Record<RulePart, ReadonlySet<string>> = {
   wornTags: new Set(['part', 'keys', 'replaces', 'effects']),
   charges: new Set(['part', 'keys', 'charges', 'regain', 'spells']),
   spellRest: new Set(['part', 'keys', 'spells']),
+  itemDc: new Set(['part', 'keys', 'dc', 'attack']),
+  itemSpells: new Set(['part', 'keys', 'spells']),
 };
 
 const isFeatureLevel = (v: unknown): v is number =>
@@ -2489,6 +2517,30 @@ function readRuleSetOnce(raw: Record<string, unknown>): ReadRuleSet {
       read.rows.push({ part, keys, scan, effects: [], shortRest: { spells: rest.spells } });
       return;
     }
+    if (part === 'itemDc') {
+      const fixed = readFixedCast(row);
+      for (const problem of fixed.problems) read.problems.push(`${at}: ${problem}`);
+      // A row that misreads a number would cast the item's spells at the wrong
+      // DC unseen: it is left out, and its keys stay free.
+      if (fixed.problems.length > 0) return;
+      if (fixed.dc === undefined && fixed.attack === undefined) {
+        read.problems.push(`${at}: says a "dc", an "attack", or both`);
+        return;
+      }
+      for (const key of keys) inPart.add(slot(key));
+      read.rows.push({ part, keys, scan, effects: [], itemDc: fixedOf(fixed) });
+      return;
+    }
+    if (part === 'itemSpells') {
+      const lists = readItemSpellLists(own(row, 'spells'));
+      for (const problem of lists.problems) read.problems.push(`${at}: ${problem}`);
+      // A row that misreads a list would grant the item's spells wrong unseen:
+      // it is left out, and its keys stay free.
+      if (lists.spells === undefined) return;
+      for (const key of keys) inPart.add(slot(key));
+      read.rows.push({ part, keys, scan, effects: [], itemSpells: lists.spells });
+      return;
+    }
     if (!Array.isArray(own(row, 'effects'))) {
       read.problems.push(`${at}: "effects" is not a list`);
       return;
@@ -2554,9 +2606,38 @@ function readReplaces(
   return problems.length > 0 ? { problems } : { kinds, problems };
 }
 
-const CHARGE_SPELL_FIELDS: ReadonlySet<string> = new Set(['spell', 'cost', 'upTo']);
+const CHARGE_SPELL_FIELDS: ReadonlySet<string> = new Set(['spell', 'cost', 'upTo', 'at']);
 const isWhole = (v: unknown, min: number, max: number): v is number =>
   typeof v === 'number' && Number.isInteger(v) && v >= min && v <= max;
+
+/**
+ * The `dc` and `attack` an `itemDc` row or a `charges` effect says, each a
+ * whole number in its range (`RULE_SET_LIMITS`), or absent.
+ */
+function readFixedCast(raw: Record<string, unknown>): FixedCast & { problems: string[] } {
+  const problems: string[] = [];
+  const dc = own(raw, 'dc');
+  if (dc !== undefined && !isWhole(dc, 1, RULE_SET_LIMITS.dc)) {
+    problems.push(`"dc" is the save DC its spells cast with, 1 to ${RULE_SET_LIMITS.dc}`);
+  }
+  const attack = own(raw, 'attack');
+  if (attack !== undefined && !isWhole(attack, 0, RULE_SET_LIMITS.attack)) {
+    problems.push(
+      `"attack" is the spell attack bonus its spells cast with, 0 to ${RULE_SET_LIMITS.attack}`,
+    );
+  }
+  return {
+    problems,
+    ...(isWhole(dc, 1, RULE_SET_LIMITS.dc) ? { dc } : {}),
+    ...(isWhole(attack, 0, RULE_SET_LIMITS.attack) ? { attack } : {}),
+  };
+}
+
+/** A `FixedCast` without the reader's problems. */
+const fixedOf = ({ dc, attack }: FixedCast): FixedCast => ({
+  ...(dc === undefined ? {} : { dc }),
+  ...(attack === undefined ? {} : { attack }),
+});
 const CHARGE_DIE = /^(\d{0,3})d(\d{1,3})$/;
 
 /**
@@ -2638,10 +2719,16 @@ function readCharges(
   if (named !== undefined && ability === undefined) {
     problems.push(`"ability" is the ability its spells cast with: ${ABILITY_LIST.join(', ')}`);
   }
-  // An item's own may cast none: its charges are counted, and its actions spend them.
+  // A row with a `dc` or `attack` is left out before this reads it (`ROW_FIELDS`):
+  // an item's DC is an `itemDc` row's.
+  const fixed = readFixedCast(row);
+  problems.push(...fixed.problems);
+  // Either may cast none: an item's own counts its charges for its actions to
+  // spend, and a row stands in for a list of spells cast at random (a Wand of
+  // Wonder's). A row says so with an empty list.
   const listed = own(row, 'spells') ?? (effect ? [] : undefined);
   const spells: ChargeSpell[] = [];
-  if (!Array.isArray(listed) || (listed.length === 0 && !effect)) {
+  if (!Array.isArray(listed)) {
     problems.push('"spells" lists the spells its charges cast');
   } else if (listed.length > RULE_SET_LIMITS.chargeSpells) {
     problems.push(`"spells" lists at most ${RULE_SET_LIMITS.chargeSpells} spells`);
@@ -2686,19 +2773,88 @@ function readCharges(
         problems.push(`${at}: "upTo" is a spell level, 1 to 9`);
         return;
       }
+      const level = own(x, 'at');
+      if (level !== undefined && !isWhole(level, 1, 9)) {
+        problems.push(`${at}: "at" is the spell level it casts at, 1 to 9`);
+        return;
+      }
+      // One level for its cost, or one more charge a level above its own: not both.
+      if (level !== undefined && upTo !== undefined) {
+        problems.push(`${at}: casts at one level ("at") or up to one ("upTo"), not both`);
+        return;
+      }
       spells.push({
         spell,
         cost,
         ...(upTo === undefined ? {} : { upTo }),
+        ...(level === undefined ? {} : { at: level }),
         ...(ref === undefined ? {} : { ref }),
       });
     });
   }
   if (problems.length > 0 || !counted || regain === undefined) return { problems };
   return {
-    charges: { charges, regain, spells, ...(ability === undefined ? {} : { ability }) },
+    charges: {
+      charges,
+      regain,
+      spells,
+      ...(ability === undefined ? {} : { ability }),
+      ...fixedOf(fixed),
+    },
     problems,
   };
+}
+
+/** A count of casts an `itemSpells` list is keyed by: a number, or a number of each ("1e"). */
+const CAST_COUNT = /^[1-9]\d?e?$/;
+
+/**
+ * An `itemSpells` row's `spells`: an object of `will`, a list of spell names,
+ * and `daily` and `rest`, each a count (`CAST_COUNT`) to a list of names, as
+ * the data writes `attachedSpells`; each name a spell (`name` or
+ * `name|source`), at most `RULE_SET_LIMITS.chargeSpells` a list. `{}` casts
+ * none. `spells` is absent when the row cannot count.
+ */
+function readItemSpellLists(raw: unknown): { spells?: StoredItemSpellLists; problems: string[] } {
+  const said = '"spells" is what it casts without charges: "will", "daily" and "rest" lists';
+  if (!isRecord(raw)) return { problems: [said] };
+  const problems: string[] = [];
+  const names = (v: unknown, where: string): string[] | undefined => {
+    const ok =
+      Array.isArray(v) &&
+      v.length > 0 &&
+      v.length <= RULE_SET_LIMITS.chargeSpells &&
+      v.every((s) => typeof s === 'string' && s.trim() !== '' && s.length <= L.targetLength);
+    if (!ok) {
+      problems.push(
+        `"${where}" lists 1 to ${RULE_SET_LIMITS.chargeSpells} spells, each by its name`,
+      );
+    }
+    return ok ? (v as string[]) : undefined;
+  };
+  const spells: StoredItemSpellLists = {};
+  for (const [bucket, v] of Object.entries(raw)) {
+    if (bucket === 'will') {
+      const listed = names(v, 'will');
+      if (listed !== undefined) spells.will = listed;
+    } else if (bucket === 'daily' || bucket === 'rest') {
+      if (!isRecord(v) || Object.keys(v).length === 0) {
+        problems.push(`"${bucket}" gives each count of casts, as "1" or "1e", its spells`);
+        continue;
+      }
+      const counts: Record<string, string[]> = {};
+      for (const [count, list] of Object.entries(v)) {
+        if (!CAST_COUNT.test(count)) {
+          problems.push(`"${bucket}": "${clip(count)}" is a count of casts, as "1" or "1e"`);
+          continue;
+        }
+        const listed = names(list, `${bucket}.${count}`);
+        if (listed !== undefined) counts[count] = listed;
+      }
+      spells[bucket] = counts;
+    } else problems.push(`"${clip(bucket)}" is not a list it casts from: "will", "daily", "rest"`);
+  }
+  return problems.length > 0 ? { problems } : { spells, problems };
 }
 
 /**

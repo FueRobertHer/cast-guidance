@@ -1,17 +1,25 @@
-import { WORN_TAG_KINDS } from '../castGuidance';
+import { isRecord, RULE_SET_TYPE, WORN_TAG_KINDS } from '../castGuidance';
 import {
   ACTION_CHARGE_PLACES,
   ITEM_CHARGES,
   itemChargeKey,
   itemChargesOf,
+  itemDcIn,
   regainRollOf,
   upgradeOlderCharges,
 } from '../curated/itemCharges';
-import type { DataEntity, EffectOrigin } from '../types';
-import { refUid } from '../types';
+import type { Ability, DataEntity, EffectOrigin, EntityRef } from '../types';
+import { ABILITIES, refUid } from '../types';
 import { collectAdditionalSpells } from './additionalSpells';
 import { type Collector, str } from './base';
-import { builtInRowsFor, emitRuleRows, mechanicsOf, type RuleRow } from './mechanics';
+import {
+  builtInRowsFor,
+  builtInRuleFor,
+  emitRuleRows,
+  type FixedCast,
+  mechanicsOf,
+  type RuleRow,
+} from './mechanics';
 
 export function itemTypeCode(e: DataEntity): string | undefined {
   const t = str(e.type);
@@ -96,6 +104,64 @@ function readWornTags(col: Collector, e: DataEntity, origin: EffectOrigin): void
   }
 }
 
+/** The buckets of an item's `attachedSpells` the sheet grants: at will, a number a day, a number a short rest. */
+const ATTACHED_BUCKETS = ['will', 'daily', 'rest'] as const;
+
+/**
+ * The spells an item's `attachedSpells` (`attached`) lets its holder cast
+ * without its charges, as an `additionalSpells` entry open at every level: its
+ * `will`, `daily` and `rest` lists, its charge spells that cost none (at
+ * will), and the `ability` it names. Only those: any other list (`limited`,
+ * `other`, `ritual`) counts its uses some way the sheet does not, and the
+ * charges' spells are the pool's (`fieldChargeSpells`). Absent when it grants
+ * none.
+ */
+export function attachedInnate(attached: unknown): DataEntity | undefined {
+  if (!isRecord(attached)) return undefined;
+  const innate: Record<string, unknown> = {};
+  for (const bucket of ATTACHED_BUCKETS) {
+    if (attached[bucket] !== undefined) innate[bucket] = attached[bucket];
+  }
+  const free = isRecord(attached.charges) ? attached.charges['0'] : undefined;
+  if (Array.isArray(free)) {
+    innate.will = [...(Array.isArray(innate.will) ? innate.will : []), ...free];
+  }
+  if (Object.keys(innate).length === 0) return undefined;
+  const ability = ABILITIES.find((x) => x === attached.ability);
+  return { ...(ability === undefined ? {} : { ability }), innate: { _: innate } };
+}
+
+/**
+ * Grant what an item casts without its charges (`attachedInnate`), as what
+ * the item inherits: a pack's patch that replaces its effects takes them away.
+ * Its built-in `itemSpells` row stands in for the data's lists and its charge
+ * spells costing none, since it is read from the item's text where they
+ * misstate it (the 2024 Staff of Healing's Cure Wounds is no cantrip); the
+ * ability the data names still counts.
+ */
+function grantAttached(col: Collector, e: DataEntity, ref: EntityRef, origin: EffectOrigin): void {
+  const data = isRecord(e.attachedSpells) ? e.attachedSpells : {};
+  const row = builtInRuleFor(col, 'itemSpells', [refUid(ref)])?.itemSpells;
+  const innate = attachedInnate(row === undefined ? data : { ...row, ability: data.ability });
+  if (innate === undefined) return;
+  const ability = innate.ability as Ability | undefined;
+  collectAdditionalSpells(col, [innate], origin, ability, `attached:${origin.uid}`);
+}
+
+/**
+ * Give each spell an item grants the DC and attack bonus its text fixes
+ * (`fixed`), from effect `from` on: its charges', its lists', its own grants'.
+ */
+function fixGrants(col: Collector, from: number, fixed: FixedCast | undefined): void {
+  if (fixed?.dc === undefined && fixed?.attack === undefined) return;
+  for (let i = from; i < col.effects.length; i++) {
+    const x = col.effects[i];
+    if (x?.kind !== 'grantSpell') continue;
+    if (fixed.dc !== undefined) x.dc = fixed.dc;
+    if (fixed.attack !== undefined) x.attack = fixed.attack;
+  }
+}
+
 /** A `wornTags` row's effects of one kind, in the row's order. */
 function emitKind(col: Collector, row: RuleRow, kind: string, origin: EffectOrigin): void {
   const effects = row.effects.filter((t) => t.effect.kind === kind);
@@ -127,8 +193,10 @@ export function collectItems(col: Collector): void {
       uid: refUid(entry.ref),
       type: 'item',
     };
+    const ref = entry.ref;
+    const from = col.effects.length;
+    let charged: ReturnType<typeof itemChargesOf>;
     if (magicWorks(e, entry.attuned)) {
-      const from = col.effects.length;
       // Its magic fields are what it inherits; its own `castGuidance` adds to
       // them, and a pack's patch can replace them, while the magic works.
       mechanicsOf(col, {
@@ -143,13 +211,14 @@ export function collectItems(col: Collector): void {
             col.add({ kind: 'acBonus', amount: bonusAc, origin });
           }
           readWornTags(col, e, origin);
+          grantAttached(col, e, ref, origin);
         },
       });
       // Its charges (its own charge fields, a built-in `charges` row, or the
       // item's own or a pack's `charges` effect, under the entry's ref as the
       // cast prompt finds them): a pool of its own, which the cast prompt and
       // the item's actions spend and a long rest (dawn) refills by its roll.
-      const charged = itemChargesOf(col.ctx, col.doc.id, entry.ref);
+      charged = itemChargesOf(col.ctx, col.doc.id, ref);
       if (charged !== undefined) {
         const key = itemChargeKey(entry.id);
         // Its actions that spend its charges or give them back (a buy-back, a
@@ -175,16 +244,13 @@ export function collectItems(col: Collector): void {
           ...(roll === undefined ? {} : { regainRoll: roll }),
           origin,
         });
-        // The spells its own or a pack's charges cast are granted, each paid
-        // from this copy's pool by level. Those name their book (`ref`); a
-        // built-in row's name none, as they only price spells the character
-        // casts anyway: some of their items cast at a fixed DC, which a grant
-        // would not show.
+        // The spells its charges cast are granted, each paid from this copy's
+        // pool by level. A built-in row's name no book: the sheet finds each
+        // by name in the character's rules version.
         for (const s of charged.spells) {
-          if (s.ref === undefined) continue;
           col.add({
             kind: 'grantSpell',
-            spell: s.ref,
+            spell: s.ref ?? { name: s.spell, source: '' },
             usage: 'charges',
             resourceKey: key,
             ...(charged.ability === undefined ? {} : { ability: charged.ability }),
@@ -200,5 +266,8 @@ export function collectItems(col: Collector): void {
     // turns it on: an item's bonuses and defenses wait on attunement
     // (`magicWorks`), and its spells do not.
     collectAdditionalSpells(col, e.additionalSpells, origin);
+    // Each spell it grants casts at the DC its text fixes: its charges' say it,
+    // else its `itemDc` row (`itemChargesOf` gives a row's and the fields' it).
+    fixGrants(col, from, charged ?? itemDcIn(col.ctx.byType(RULE_SET_TYPE), ref));
   }
 }

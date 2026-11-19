@@ -328,6 +328,11 @@ export interface ChargeWay {
   label: string;
   max: number;
   costs: ReadonlyArray<{ level: number; cost: number }>;
+  /**
+   * The item's text fixes the DC or attack bonus its spells cast with, so only
+   * the item's own row of the spell offers its charges (`castWaysOf`).
+   */
+  fixed?: true;
 }
 
 /** One way to cast, as a tile: what it spends, whether it can pay now, and what is under its level. */

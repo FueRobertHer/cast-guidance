@@ -168,6 +168,9 @@ The 8 `ITEM_CHARGES` keys have moved too, as 7 `charges` rows in the same file
 (rule pack port 5b): the Staff of Healing (both printings, one row) and the
 Wands of Magic Missiles, Fireballs and Lightning Bolts, each printing its own
 row, since a 2024 wand spends at most 3 charges a cast. The table is gone.
+Since then (O2b) the item's own charge fields count, and the file holds rows
+read from each granting item's text where its data misstates it: 17 more
+`charges` rows, 13 `itemSpells` rows and 22 `itemDc` rows.
 
 The 3 `SHORT_REST_SPELLS` keys have moved, as 3 `spellRest` rows
 (`src/rules/cast-guidance/spell-rests.json`, rule pack port 5c): spell pools
@@ -232,6 +235,16 @@ tiefling's Tenser's Floating Disk. The table is gone.
       "part": "spellRest",
       "keys": ["feat:fey teleportation|xge"],
       "spells": ["misty step"]          // or "every"
+    },
+    {
+      "part": "itemDc",
+      "keys": ["wand of fireballs|xdmg"],
+      "dc": 15                          // and or "attack": the numbers its text fixes
+    },
+    {
+      "part": "itemSpells",
+      "keys": ["icon of ravenloft|cos"],
+      "spells": { "daily": { "1e": ["augury"] } } // its will, daily and rest lists
     }
   ]
 }
@@ -283,11 +296,21 @@ tiefling's Tenser's Floating Disk. The table is gone.
   rest rows", below). A row with no spells, an entry that is not a name,
   `"every"` inside the list, or a spell named twice is left out, and its keys
   stay free: a spell misread would leave its pool on a long rest unseen.
+- **`dc` and `attack`** (`itemDc` rows, in place of `effects`, one or both):
+  the save DC (1 to 30) and spell attack bonus (0 to 20) every spell the item
+  grants casts with ("Item DC rows", below). A row with neither, or with
+  either out of range, is left out, and its keys stay free.
+- **`spells`** (`itemSpells` rows, in place of `effects`): what the item casts
+  without its charges, as its data writes `attachedSpells`: `will`, a list of
+  spell names, and `daily` and `rest`, each a count of casts (`"1"`, shared;
+  `"1e"`, each) to a list of names ("Item spell rows", below). `{}` casts
+  none. A row with another list, a count that is not one, or an empty list is
+  left out, and its keys stay free.
 - A row the reader cannot read is left out, and the rest still count. What it
   left out goes to the console once, not the sheet: the files are the app's, so
   a problem in one is a bug its tests catch, not something a player can fix.
 - At most 5,000 rows a file, 16 keys a row, and 20 spells a `charges` or
-  `spellRest` row (`RULE_SET_LIMITS`).
+  `spellRest` row or an `itemSpells` list (`RULE_SET_LIMITS`).
 - A later file's row wins over an earlier one's under the same part, key and
   level; its rows at other levels keep theirs.
 
@@ -309,13 +332,14 @@ printing with no row of its own.
 The first key with a row wins, in the order the call site tries them. A
 subclass has no row of its own. Items have no curated row: their parts are
 `wornTags`, under the item's own `name|source` (`rod of alertness|dmg`), the
-entity found rather than the ref a character saved, and `charges`, under the
-`name|source` the character's equipment entry names (`refUid(entry.ref)`),
-which the sheet's pool, the cast prompt and the long rest all read alike. The
-two agree for every ref that names its book; starting equipment can write one
-that does not, and then no `charges` row is found. A copy of an item is not
-reached by the official one's rows: its tags and charges are its author's
-(its own `charges` effect, "An item's own charges", below).
+entity found rather than the ref a character saved, and `charges`, `itemDc`
+and `itemSpells`, under the `name|source` the character's equipment entry
+names (`refUid(entry.ref)`), which the sheet's pool, the cast prompt and the
+long rest all read alike. The two agree for every ref that names its book;
+starting equipment can write one that does not, and then no row of those is
+found. A copy of an item is not reached by the official one's rows: its tags,
+charges and spells are its author's (its own `charges` effect, "An item's own
+charges", below), and the Workshop writes the official one's out for it.
 
 A `spellRest` row is found under the `type:uid` of the origin granting the
 spells: `feat:fey teleportation|xge`, and for a subrace, whose origin has type
@@ -379,12 +403,23 @@ wand's Fireball. Their data says how many charges and one fixed cost a spell,
 not always that: Cure Wounds from the staff is a charge a spell level, up to
 4th, and the 2024 staff's data lists it as at will. A `charges` row says it.
 
+- **The item's own fields** count where no row or effect says its charges:
+  `charges`, `recharge` with `rechargeAmount` (dawn, dusk, midnight and a long
+  rest all come back on a long rest), and the spells `attachedSpells.charges`
+  lists by cost (`fieldChargeSpells`), each read on its own, so a spell the
+  reader cannot take is left out alone. A cost of 0 is at will ("Item spell
+  rows", below). `#N` on a name (`fireball#7`) is the one level it casts at.
+  A row stands in for the fields' count, regain and charge spells, so a row
+  is written only where the fields misstate the item's text (29 keys).
 - **`spells`**: each spell by name (matched without case, any printing), what
   it `cost`s at its own level (1 to the item's charges), and `upTo`, the
   highest spell level it can be cast at for one more charge a level. Without
   `upTo` it casts at its own level alone. A level whose cost is more than the
   item holds is not offered, so a 2014 wand's `upTo` of 9 on 7 charges is
-  allowed. A spell named twice is a problem.
+  allowed. `at` is the one level it casts at for its cost instead (a Staff of
+  Power's 5th-level Fireball), never beside `upTo`; below the spell's own
+  level it casts none. A spell named twice is a problem. An empty list counts
+  charges that cast no spell on demand (a Wand of Wonder's are the table's).
 - **What reads it.** The item call site makes a pool of its own for each
   carried item with a row, `item-charges:<entry id>`, labelled `<item>
   charges`, refilled by `regain` on a long rest, while the item's magic works
@@ -396,8 +431,42 @@ not always that: Cure Wounds from the staff is a charge a spell level, up to
   are kept, not over a limit. All of them find the item's charges through
   `itemChargesOf`, which reads the registry outside a derive, so the Play and
   Spells tabs pass its lookups (`SpellCast.entities`).
-- A row prices the spells the character casts anyway. It grants none: some of
-  these items cast at a fixed DC, which a grant would not show.
+- **It grants them.** While the item's magic works, each spell its charges
+  cast (a row's, its fields', its own effect's) is granted on a row of its
+  own, paid from that copy's pool. A row's spell names no book: the sheet
+  finds it by name in the character's rules version. A class spell's row, and
+  another grant's, offers the item's charges beside its own ways only when the
+  item casts with the character's numbers: one whose text fixes a DC casts on
+  its own row, at that DC.
+
+## Item DC rows
+
+Some items cast their spells at a save DC or attack bonus their text fixes (a
+2024 Wand of Fireballs' DC 15). An `itemDc` row says it, for every spell the
+item grants: its charges', its lists', its own `additionalSpells`'. A
+`charges` effect says its own (`dc`, `attack`) and takes no row's.
+
+- **Where nothing fixes them**, an item's spell with no `ability` casts with
+  the character's first spellcasting's DC, attack bonus and modifier, and with
+  none, 8 + proficiency bonus, proficiency bonus, and no modifier. One with an
+  `ability` casts by it. Two items granting one spell with other numbers keep
+  a row each.
+- **Read from the text**, item by item (164 keys): a DC of the item's own
+  feature, not a spell (a Staff of the Magi's Retributive Strike), is not one;
+  "14 or your spell save DC, whichever is higher" is left to the character's.
+
+## Item spell rows
+
+An item's `attachedSpells` lists what it casts without its charges: `will`,
+at will; `daily`, a number a day; `rest`, a number a short rest; and its
+charge spells costing none, at will. The sheet grants those, while the item's
+magic works, as what the item inherits (a pack's patch that replaces it takes
+them away). Its `limited`, `other` and `ritual` lists count their uses some
+way the sheet does not, so they are not granted. An `itemSpells` row stands in
+for the four where the data misstates the text: one cast a day between
+spells the data gives each one (`"1"` for `"1e"`), a spell the item casts
+itself (`{}`, a Blackrazor's), or one its charges cast (the 2024 Staff of
+Healing's Cure Wounds). The item's `ability` still counts.
 
 ### An item's own charges
 
@@ -410,6 +479,7 @@ effect in its `castGuidance` effects, the row's fields and reader:
   "charges": 7,
   "regain": "1d6+1",
   "ability": "wis",                            // optional: what its spells cast with
+  "dc": 15,                                    // optional: the save DC its text fixes
   "spells": [{ "spell": "Fireball|XPHB", "cost": 1, "upTo": 5 }]
 }
 ```
@@ -417,9 +487,12 @@ effect in its `castGuidance` effects, the row's fields and reader:
 - **Each spell names its book** (`name|source`), since the item grants it:
   while the item's magic works, each spell is granted on a row of its own,
   paid from that copy's pool, priced by level as a row prices it. Without an
-  `ability`, the row shows no attack or DC, as any grant without one. Its
-  `spells` may be empty or left out: the pool is still made, for its actions
-  to spend. A built-in row still lists at least one.
+  `ability`, `dc` or `attack`, it casts with the character's numbers ("Item DC
+  rows", above). Its `spells` may be empty or left out: the pool is still
+  made, for its actions to spend. A built-in row says an empty list.
+- **The Workshop writes one out** for a copy of an official item: the row's
+  spells or the fields', each with its book, `at` kept, and the DC its
+  `itemDc` row fixes, so the copy counts what the official one did.
 - **Its actions spend it.** An action of the item's, its own or a pack's,
   whose `cost` names the pool `charges` spends that copy's pool
   (`item-charges:<entry id>`) while the item holds charges. Same-named actions

@@ -11,6 +11,7 @@ import {
   castsByPrompt,
   castWaysOf,
   grantBadgeTitle,
+  grantCast,
   grantLimitWords,
   grantUsedUp,
   itemChargeWays,
@@ -182,6 +183,25 @@ describe("a grant paid in an item's own charges", () => {
     expect(grantUsedUp(cast('Light', 0), 7)).toBe(true);
   });
 
+  it("offers its charges on another grant's row only while the item casts with the character's numbers", () => {
+    const { cast } = holding(0);
+    // A daily Cure Wounds of a feat's, beside the rod's.
+    const daily = {
+      ...cast('Cure Wounds', 1),
+      grantPool: { key: 'spark', label: 'Spark', max: 1 },
+    };
+    const kinds = (c: SpellCast) => castWaysOf(c).map((w) => w.tiles[0]?.resource.kind);
+    expect(kinds(daily)).toEqual(['uses', 'charges']);
+    // A rod whose text fixes its DC casts with it on its own row, and on no other.
+    const effects = rod.castGuidance as { effects: Array<Record<string, unknown>> };
+    const fixed = { ...rod, castGuidance: { v: 1, effects: [{ ...effects.effects[0], dc: 15 }] } };
+    const lookup = { ...entities, get: (type: string) => (type === 'item' ? fixed : undefined) };
+    expect(kinds({ ...daily, entities: lookup } as SpellCast)).toEqual(['uses']);
+    expect(kinds({ ...cast('Cure Wounds', 1), entities: lookup } as SpellCast)).toEqual([
+      'charges',
+    ]);
+  });
+
   it('says its count in charges, and a daily use per day', () => {
     expect(grantLimitWords('charges')).toBe('charges');
     expect(grantLimitWords('1/day')).toBe('per day');
@@ -189,6 +209,42 @@ describe("a grant paid in an item's own charges", () => {
     expect(grantBadgeTitle('charges', 'Rod of Sparks', false)).toBe('charges from Rod of Sparks');
     expect(grantBadgeTitle('charges', 'Rod of Sparks', true)).toBe('No charges left');
     expect(grantBadgeTitle('1/day', 'Fey Step', true)).toBe('No uses left until you rest');
+  });
+});
+
+describe('grantCast: what a granted spell casts with', () => {
+  const sheet = {
+    abilities: { wis: { mod: 3 }, cha: { mod: -1 } },
+    profBonus: { value: 2 },
+  } as unknown as DerivedSheet;
+  const grant = (more: Partial<DerivedSheet['grantedSpells'][number]>) =>
+    ({
+      name: 'Light',
+      source: 'XPHB',
+      origin: 'Orb',
+      ...more,
+    }) as DerivedSheet['grantedSpells'][number];
+
+  it('works its numbers out from the ability it names', () => {
+    expect(grantCast(grant({ ability: 'wis' }), sheet)).toEqual({ dc: 13, attack: 5, mod: 3 });
+    expect(grantCast(grant({ ability: 'cha' }), sheet)).toEqual({ dc: 9, attack: 1, mod: -1 });
+  });
+
+  it("takes an item's, what its text fixes beside its ability", () => {
+    expect(grantCast(grant({ ability: 'wis', dc: 17 }), sheet)).toEqual({
+      dc: 17,
+      attack: 5,
+      mod: 3,
+    });
+    expect(grantCast(grant({ dc: 13, attack: 5, mod: 3 }), sheet)).toEqual({
+      dc: 13,
+      attack: 5,
+      mod: 3,
+    });
+  });
+
+  it('has none with no ability and no numbers of its own', () => {
+    expect(grantCast(grant({}), sheet)).toEqual({});
   });
 });
 

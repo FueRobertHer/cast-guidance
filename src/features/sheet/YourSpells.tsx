@@ -21,7 +21,13 @@ import { PackProblem } from '@/ui/PackProblem';
 import { cardClass, openListClass } from '@/ui/surfaces';
 import { fieldClass } from '@/ui/TextField';
 import { RemoveAddedSpell } from './AddSpellSheet';
-import { grantBadgeTitle, grantLimitWords, grantUsedUp, type SpellCast } from './castPlan';
+import {
+  grantBadgeTitle,
+  grantCast,
+  grantLimitWords,
+  grantUsedUp,
+  type SpellCast,
+} from './castPlan';
 import { castingEconomy, isConcentratingOn } from './castResources';
 import { conditionLimits } from './conditionEffects';
 import {
@@ -305,11 +311,9 @@ function InnateSpellRow({
   const { doc, sheet, update } = ctx;
   const { name, source, entity } = spell;
   const concentrating = isConcentratingOn(doc.play, name);
-  const abilityModifier =
-    grant.ability !== undefined ? sheet.abilities[grant.ability].mod : undefined;
-  const modifier =
-    abilityModifier !== undefined ? sheet.profBonus.value + abilityModifier : undefined;
-  const attackModifier = hasSpellAttack(entity) ? modifier : undefined;
+  const numbers = grantCast(grant, sheet);
+  const abilityModifier = numbers.mod;
+  const attackModifier = hasSpellAttack(entity) ? numbers.attack : undefined;
   const limited =
     grant.resourceKey !== undefined
       ? sheet.resources.find((r) => r.key === grant.resourceKey)
@@ -372,8 +376,8 @@ function InnateSpellRow({
       rulesFooter={grant.added ? <RemoveAddedSpell name={name} update={update} /> : undefined}
       actions={
         <>
-          {spellSaves(entity).length > 0 && modifier !== undefined && (
-            <Badge tone="arcane">DC {8 + modifier}</Badge>
+          {spellSaves(entity).length > 0 && numbers.dc !== undefined && (
+            <Badge tone="arcane">DC {numbers.dc}</Badge>
           )}
           <SpellCastChips
             cast={cast}

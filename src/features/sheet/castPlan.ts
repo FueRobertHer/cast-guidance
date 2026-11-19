@@ -108,7 +108,14 @@ export function itemChargeWays(
     if (row === undefined || pool === undefined) continue;
     const costs = chargeCosts(row, name, spellLevel);
     if (costs.length === 0) continue;
-    out.push({ key: pool.key, label: pool.origin, max: pool.max, costs });
+    const fixed = row.dc !== undefined || row.attack !== undefined;
+    out.push({
+      key: pool.key,
+      label: pool.origin,
+      max: pool.max,
+      costs,
+      ...(fixed ? { fixed: true as const } : {}),
+    });
   }
   // Two of one item are two pools: number them, so each tile says which.
   return out.map((way) => {
@@ -150,6 +157,28 @@ function contextOf(c: SpellCast): CastContext {
   };
 }
 
+/**
+ * What a granted spell casts with: its save DC, its spell attack bonus, and
+ * the ability modifier its dice add. An item's says them (what its text fixes,
+ * or the character's own spellcasting); any other grant's are by its ability,
+ * and absent with none.
+ */
+export function grantCast(
+  g: DerivedSheet['grantedSpells'][number],
+  sheet: Pick<DerivedSheet, 'abilities' | 'profBonus'>,
+): { dc?: number; attack?: number; mod?: number } {
+  const mod = g.ability === undefined ? g.mod : sheet.abilities[g.ability].mod;
+  const byAbility =
+    g.ability === undefined ? undefined : sheet.profBonus.value + sheet.abilities[g.ability].mod;
+  const attack = g.attack ?? byAbility;
+  const dc = g.dc ?? (byAbility === undefined ? undefined : 8 + byAbility);
+  return {
+    ...(dc === undefined ? {} : { dc }),
+    ...(attack === undefined ? {} : { attack }),
+    ...(mod === undefined ? {} : { mod }),
+  };
+}
+
 /** Whether a grant's row is paid in a carried item's charges (an item's own `charges` effect's spell). */
 export function paidInCharges(c: SpellCast): boolean {
   return c.block === undefined && c.grantPool !== undefined && isItemChargeKey(c.grantPool.key);
@@ -171,7 +200,9 @@ export function castWaysOf(c: SpellCast): CastWay[] {
       : c.grantPool === undefined
         ? []
         : [c.grantPool];
-  return castWays(contextOf(c), { uses, charges });
+  // Another row offers an item's charges only where the item casts with the
+  // character's numbers: one whose text fixes a DC has its own row for them.
+  return castWays(contextOf(c), { uses, charges: charges.filter((w) => w.fixed !== true) });
 }
 
 /**

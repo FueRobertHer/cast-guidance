@@ -80,7 +80,13 @@ import {
   actionUse,
   applyRestore,
 } from '../actionUse';
-import { grantBadgeTitle, grantLimitWords, grantUsedUp, type SpellCast } from '../castPlan';
+import {
+  grantBadgeTitle,
+  grantCast,
+  grantLimitWords,
+  grantUsedUp,
+  type SpellCast,
+} from '../castPlan';
 import { castingEconomy, isConcentratingOn, type SlotSpent, spendSlot } from '../castResources';
 import { capabilityKey, collectCapabilityCards } from '../combatCapabilities';
 import { conditionLimits } from '../conditionEffects';
@@ -2514,7 +2520,9 @@ export function Component() {
           <div className="mb-1 text-heading">Innate &amp; granted spells</div>
           <div className="@container flex flex-col gap-1">
             {sheet.grantedSpells.some(
-              (g) => g.ability !== undefined && hasSpellAttack(spellEntity(g.name, g.source)),
+              (g) =>
+                grantCast(g, sheet).attack !== undefined &&
+                hasSpellAttack(spellEntity(g.name, g.source)),
             ) && attackCue('Spell attacks')}
             {sheet.grantedSpells.map((g) => {
               const entity = spellEntity(g.name, g.source);
@@ -2535,10 +2543,9 @@ export function Component() {
               const block =
                 sheet.spellcasting.find((sc) => sc.ability === g.ability) ??
                 (g.usage === 'prepared' ? sheet.spellcasting[0] : undefined);
-              const abilityModifier =
-                g.ability !== undefined ? sheet.abilities[g.ability].mod : undefined;
-              const attackModifier =
-                abilityModifier !== undefined ? sheet.profBonus.value + abilityModifier : undefined;
+              const numbers = grantCast(g, sheet);
+              const abilityModifier = numbers.mod;
+              const attackModifier = numbers.attack;
               const running = isConcentratingOn(play, g.name);
               const hasAttack = attackModifier !== undefined && hasSpellAttack(entity);
               // "1/day" grants carry their own pool; casting spends from it.
@@ -2648,8 +2655,8 @@ export function Component() {
                     )}
                   </div>
                   <span className={`${ROW_ACTIONS} gap-1`}>
-                    {spellSaves(entity).length > 0 && attackModifier !== undefined && (
-                      <Badge tone="arcane">DC {8 + attackModifier}</Badge>
+                    {spellSaves(entity).length > 0 && numbers.dc !== undefined && (
+                      <Badge tone="arcane">DC {numbers.dc}</Badge>
                     )}
                     <SpellCastChips
                       cast={cast}

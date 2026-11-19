@@ -183,7 +183,7 @@
     },
     {
       "part": "charges",
-      "keys": ["wand of magic missiles|dmg"],
+      "keys": ["wand of magic missiles|dmg", "charred wand of magic missiles|wdh"],
       "charges": 7,
       "regain": "1d6+1",
       "spells": [
@@ -258,6 +258,732 @@
           "upTo": 5
         }
       ]
+    },
+    {
+      "part": "charges",
+      "keys": ["eyes of charming|xdmg"],
+      "charges": 3,
+      "regain": "all",
+      "spells": [
+        {
+          "spell": "charm person",
+          "cost": 1,
+          "upTo": 3
+        }
+      ]
+    },
+    {
+      "part": "charges",
+      "keys": ["failed experiment wand|ai"],
+      "charges": 2,
+      "regain": "1d6+1",
+      "spells": [
+        {
+          "spell": "fireball",
+          "cost": 1,
+          "upTo": 4
+        },
+        {
+          "spell": "lightning bolt",
+          "cost": 1,
+          "upTo": 4
+        }
+      ]
+    },
+    {
+      "part": "charges",
+      "keys": ["tloques' berserker battleaxe|tftyp"],
+      "charges": 12,
+      "regain": "1d6+4",
+      "spells": [
+        {
+          "spell": "burning hands",
+          "cost": 1,
+          "upTo": 9
+        },
+        {
+          "spell": "gust of wind",
+          "cost": 2
+        },
+        {
+          "spell": "passwall",
+          "cost": 5
+        }
+      ]
+    },
+    {
+      "part": "charges",
+      "keys": ["invincible's reins|icc"],
+      "charges": 3,
+      "regain": "1d3",
+      "spells": [
+        {
+          "spell": "find steed",
+          "cost": 1,
+          "at": 5
+        }
+      ]
+    },
+    {
+      "part": "charges",
+      "keys": ["robe of stars|dmg", "robe of stars|xdmg"],
+      "charges": 6,
+      "regain": "1d6",
+      "spells": [
+        {
+          "spell": "magic missile",
+          "cost": 1,
+          "at": 5
+        }
+      ]
+    },
+    {
+      "part": "charges",
+      "keys": ["staff of power|xdmg"],
+      "charges": 20,
+      "regain": "2d8+4",
+      "spells": [
+        {
+          "spell": "magic missile",
+          "cost": 1
+        },
+        {
+          "spell": "ray of enfeeblement",
+          "cost": 1
+        },
+        {
+          "spell": "levitate",
+          "cost": 2
+        },
+        {
+          "spell": "cone of cold",
+          "cost": 5
+        },
+        {
+          "spell": "fireball",
+          "cost": 5,
+          "at": 5
+        },
+        {
+          "spell": "hold monster",
+          "cost": 5
+        },
+        {
+          "spell": "lightning bolt",
+          "cost": 5,
+          "at": 5
+        },
+        {
+          "spell": "wall of force",
+          "cost": 5
+        },
+        {
+          "spell": "globe of invulnerability",
+          "cost": 6
+        }
+      ]
+    },
+    {
+      "part": "charges",
+      "keys": ["ironfang|pota"],
+      "charges": 3,
+      "regain": "1d3",
+      "spells": [
+        {
+          "spell": "shatter",
+          "cost": 1
+        }
+      ]
+    },
+    {
+      "part": "charges",
+      "keys": ["medallion of thoughts|dmg"],
+      "charges": 3,
+      "regain": "1d3",
+      "spells": [
+        {
+          "spell": "detect thoughts",
+          "cost": 1
+        }
+      ]
+    },
+    {
+      "part": "charges",
+      "keys": ["jewel of three prayers (awakened)|crcotn"],
+      "charges": 5,
+      "regain": "all",
+      "spells": [
+        {
+          "spell": "invisibility",
+          "cost": 1
+        }
+      ]
+    },
+    {
+      "part": "charges",
+      "keys": ["jewel of three prayers (exalted)|crcotn"],
+      "charges": 7,
+      "regain": "all",
+      "spells": [
+        {
+          "spell": "invisibility",
+          "cost": 1
+        }
+      ]
+    },
+    {
+      "part": "charges",
+      "keys": ["ring of three wishes|dmg", "ring of three wishes|xdmg"],
+      "charges": 3,
+      "regain": "none",
+      "spells": [
+        {
+          "spell": "wish",
+          "cost": 1
+        }
+      ]
+    },
+    {
+      "part": "charges",
+      "keys": ["spirit board|xdmg"],
+      "charges": 3,
+      "regain": 1,
+      "spells": [
+        {
+          "spell": "augury",
+          "cost": 1
+        },
+        {
+          "spell": "commune",
+          "cost": 3
+        }
+      ]
+    },
+    {
+      "part": "charges",
+      "keys": ["staff of charming|dmg"],
+      "charges": 10,
+      "regain": "1d8+2",
+      "spells": [
+        {
+          "spell": "charm person",
+          "cost": 1
+        },
+        {
+          "spell": "command",
+          "cost": 1
+        },
+        {
+          "spell": "comprehend languages",
+          "cost": 1
+        }
+      ]
+    },
+    {
+      "part": "charges",
+      "keys": ["rod of seven parts|veor"],
+      "charges": 7,
+      "regain": "1d4+3",
+      "spells": [
+        {
+          "spell": "arcane gate",
+          "cost": 1
+        },
+        {
+          "spell": "commune",
+          "cost": 1
+        },
+        {
+          "spell": "find the path",
+          "cost": 1
+        },
+        {
+          "spell": "mirage arcane",
+          "cost": 1
+        },
+        {
+          "spell": "regenerate",
+          "cost": 1
+        },
+        {
+          "spell": "reverse gravity",
+          "cost": 1
+        },
+        {
+          "spell": "simulacrum",
+          "cost": 1
+        }
+      ]
+    },
+    {
+      "part": "charges",
+      "keys": ["wand of wonder|dmg", "wand of wonder|xdmg"],
+      "charges": 7,
+      "regain": "1d6+1",
+      "spells": []
+    },
+    {
+      "part": "charges",
+      "keys": ["gnomeregan engineering device|wow"],
+      "charges": 7,
+      "regain": "none",
+      "spells": []
+    },
+    {
+      "part": "charges",
+      "keys": ["staff of the magi|xdmg"],
+      "charges": 50,
+      "regain": "4d6+2",
+      "spells": [
+        {
+          "spell": "flaming sphere",
+          "cost": 2
+        },
+        {
+          "spell": "invisibility",
+          "cost": 2
+        },
+        {
+          "spell": "knock",
+          "cost": 2
+        },
+        {
+          "spell": "web",
+          "cost": 2
+        },
+        {
+          "spell": "dispel magic",
+          "cost": 3
+        },
+        {
+          "spell": "ice storm",
+          "cost": 4
+        },
+        {
+          "spell": "wall of fire",
+          "cost": 4
+        },
+        {
+          "spell": "passwall",
+          "cost": 5
+        },
+        {
+          "spell": "telekinesis",
+          "cost": 5
+        },
+        {
+          "spell": "conjure elemental",
+          "cost": 7
+        },
+        {
+          "spell": "fireball",
+          "cost": 7,
+          "at": 7
+        },
+        {
+          "spell": "lightning bolt",
+          "cost": 7,
+          "at": 7
+        },
+        {
+          "spell": "plane shift",
+          "cost": 7
+        }
+      ]
+    },
+    {
+      "part": "itemSpells",
+      "keys": [
+        "blackrazor|dmg",
+        "blackrazor|xdmg",
+        "docent|erlw",
+        "murgaxor's orb|scc",
+        "professor orb|wdmm",
+        "professor skant|idrotf",
+        "bridle of capturing|imr",
+        "documancy satchel|ai",
+        "spirit-binding censer|aud"
+      ],
+      "spells": {}
+    },
+    {
+      "part": "itemSpells",
+      "keys": ["medallion of thoughts|dmg", "staff of healing|xdmg"],
+      "spells": {}
+    },
+    {
+      "part": "itemSpells",
+      "keys": ["rod of seven parts|veor"],
+      "spells": {
+        "will": ["detect evil and good"]
+      }
+    },
+    {
+      "part": "itemSpells",
+      "keys": ["icon of ravenloft|cos"],
+      "spells": {
+        "daily": {
+          "1e": ["augury"]
+        }
+      }
+    },
+    {
+      "part": "itemSpells",
+      "keys": ["pennant of the vind rune|skt"],
+      "spells": {
+        "rest": {
+          "1e": ["levitate"]
+        }
+      }
+    },
+    {
+      "part": "itemSpells",
+      "keys": ["grovelthrash (exalted)|egw"],
+      "spells": {
+        "daily": {
+          "1e": ["earthquake", "meld into stone", "stone shape"]
+        }
+      }
+    },
+    {
+      "part": "itemSpells",
+      "keys": ["iggwilv's horn|ditlcot"],
+      "spells": {
+        "daily": {
+          "1e": ["arms of hadar", "fog cloud", "gust of wind", "web"]
+        }
+      }
+    },
+    {
+      "part": "itemSpells",
+      "keys": ["helm of telepathy|xdmg"],
+      "spells": {
+        "daily": {
+          "1e": ["detect thoughts|xphb", "suggestion|xphb"]
+        }
+      }
+    },
+    {
+      "part": "itemSpells",
+      "keys": ["the bloody end (exalted)|egw"],
+      "spells": {
+        "daily": {
+          "1e": ["charm person", "dominate person", "fear", "dominate monster"]
+        }
+      }
+    },
+    {
+      "part": "itemSpells",
+      "keys": ["the infernal machine of lum the mad|imr"],
+      "spells": {
+        "daily": {
+          "1e": ["conjure animals", "summon lesser demons|xge"]
+        }
+      }
+    },
+    {
+      "part": "itemSpells",
+      "keys": ["wave|xdmg"],
+      "spells": {
+        "daily": {
+          "1e": ["globe of invulnerability|xphb"]
+        }
+      }
+    },
+    {
+      "part": "itemSpells",
+      "keys": ["wheel of stars|ai"],
+      "spells": {
+        "will": ["dancing lights", "guidance", "message"],
+        "daily": {
+          "1": ["fly", "levitate"]
+        }
+      }
+    },
+    {
+      "part": "itemSpells",
+      "keys": ["true-ice shards (dagger)|coa", "true-ice shards (rapier)|coa"],
+      "spells": {
+        "will": ["detect thoughts", "locate animals or plants", "locate creature", "locate object"],
+        "daily": {
+          "1": ["find the path", "scrying"]
+        }
+      }
+    },
+    {
+      "part": "itemDc",
+      "keys": ["circlet of blasting|dmg", "circlet of blasting|xdmg"],
+      "attack": 5
+    },
+    {
+      "part": "itemDc",
+      "keys": ["niko's mace|uthftlh"],
+      "attack": 9
+    },
+    {
+      "part": "itemDc",
+      "keys": ["bigby's beneficent bracelet|bgg"],
+      "attack": 13
+    },
+    {
+      "part": "itemDc",
+      "keys": ["staff of the rooted hills|bgg"],
+      "dc": 12
+    },
+    {
+      "part": "itemDc",
+      "keys": [
+        "azorius guild signet|ggr",
+        "boros guild signet|ggr",
+        "cloak of arachnida|dmg",
+        "cloak of arachnida|xdmg",
+        "dimir guild signet|ggr",
+        "eyes of charming|dmg",
+        "eyes of charming|xdmg",
+        "golgari guild signet|ggr",
+        "gruul guild signet|ggr",
+        "gurt's greataxe|skt",
+        "helm of telepathy|dmg",
+        "helm of telepathy|xdmg",
+        "iggwilv's horn|ditlcot",
+        "izzet guild signet|ggr",
+        "martialist's quarterstaff|au",
+        "masque charm|scc"
+      ],
+      "dc": 13
+    },
+    {
+      "part": "itemDc",
+      "keys": [
+        "masquerade tattoo|tce",
+        "medallion of thoughts|dmg",
+        "medallion of thoughts|xdmg",
+        "orzhov guild signet|ggr",
+        "rakdos guild signet|ggr",
+        "ring of animal influence|dmg",
+        "ring of animal influence|xdmg",
+        "ring of candor|aud",
+        "selesnya guild signet|ggr",
+        "simic guild signet|ggr",
+        "siren song lyre|mot",
+        "the bloody end (dormant)|egw",
+        "wand of entangle|tftyp",
+        "wand of web|xdmg",
+        "wind fan|dmg",
+        "wind fan|xdmg"
+      ],
+      "dc": 13
+    },
+    {
+      "part": "itemDc",
+      "keys": ["mistral mantle|bgg", "stonebreaker's breastplate|bgg"],
+      "dc": 14
+    },
+    {
+      "part": "itemDc",
+      "keys": [
+        "arcanist's bestiary|au",
+        "blade of broken mirrors (awakened)|egw",
+        "bookmark|toa",
+        "card sharp's deck|bmt",
+        "crown of the wrath bringer|bgg",
+        "dissuader|au",
+        "duskcrusher|egw",
+        "earworm|erlw",
+        "failed experiment wand|ai",
+        "far gear|ai",
+        "rogue's mantle|bmt",
+        "ruinblade|imr",
+        "silken spite (awakened)|egw",
+        "spider staff|lmop",
+        "spider staff|pabtso",
+        "the bloody end (awakened)|egw"
+      ],
+      "dc": 15
+    },
+    {
+      "part": "itemDc",
+      "keys": [
+        "tidecaller trident|bmt",
+        "tloques' berserker battleaxe|tftyp",
+        "trident of fish command|dmg",
+        "trident of fish command|xdmg",
+        "ventilating lungs|erlw",
+        "verminshroud (awakened)|egw",
+        "verminshroud (exalted)|egw",
+        "voting kit|ai",
+        "wand of enthralling|aud",
+        "wand of fear|dmg",
+        "wand of fear|xdmg",
+        "wand of fireballs|dmg",
+        "wand of fireballs|xdmg",
+        "wand of lightning bolts|dmg",
+        "wand of lightning bolts|xdmg",
+        "wand of polymorph|dmg"
+      ],
+      "dc": 15
+    },
+    {
+      "part": "itemDc",
+      "keys": [
+        "wand of polymorph|xdmg",
+        "wand of slumber|au",
+        "wand of web|dmg",
+        "wheel of stars|ai"
+      ],
+      "dc": 15
+    },
+    {
+      "part": "itemDc",
+      "keys": ["wand of winter|hotdq"],
+      "dc": 15,
+      "attack": 5
+    },
+    {
+      "part": "itemDc",
+      "keys": [
+        "belashyrra's beholder crown|erlw",
+        "blast scepter|wdmm",
+        "rod of hellish flames|bmt",
+        "shard solitaire (black sapphire)|kftgv",
+        "shard solitaire (diamond)|kftgv",
+        "shard solitaire (jacinth)|kftgv",
+        "shard solitaire (rainbow pearl)|kftgv",
+        "shard solitaire (ruby)|kftgv"
+      ],
+      "dc": 16
+    },
+    {
+      "part": "itemDc",
+      "keys": [
+        "bellows of strangulation|au",
+        "blade of broken mirrors (exalted)|egw",
+        "crystal ball of ominous portent|aud",
+        "crystal ball of telepathy|dmg",
+        "crystal ball of telepathy|xdmg",
+        "cube of force|xdmg",
+        "drown|pota",
+        "grave reaper|au",
+        "grovelthrash (exalted)|egw",
+        "ironfang|pota",
+        "jester card|bmt",
+        "lucent destroyer|bgg",
+        "orrery of the wanderer|ai",
+        "ring of air elemental command|dmg",
+        "ring of earth elemental command|dmg",
+        "ring of fire elemental command|dmg"
+      ],
+      "dc": 17
+    },
+    {
+      "part": "itemDc",
+      "keys": [
+        "ring of water elemental command|dmg",
+        "ring of winter|toa",
+        "rod of the sleepwalker|wow",
+        "ruin card|bmt",
+        "shard of the ise rune|skt",
+        "shield of the uven rune|wdmm",
+        "silken spite (exalted)|egw",
+        "sun card|bmt",
+        "the bloody end (exalted)|egw",
+        "throne card|bmt",
+        "tinderstrike|pota",
+        "wand of binding|dmg",
+        "wand of binding|xdmg",
+        "windvane|pota"
+      ],
+      "dc": 17
+    },
+    {
+      "part": "itemDc",
+      "keys": ["skull card|bmt"],
+      "dc": 17,
+      "attack": 9
+    },
+    {
+      "part": "itemDc",
+      "keys": [
+        "akmon, hammer of purphoros|mot",
+        "amethyst lodestone|ftd",
+        "book of vile darkness (variant)|kftgv",
+        "book of vile darkness|dmg",
+        "book of vile darkness|xdmg",
+        "crook of rao|tce",
+        "crown of horns|fraif",
+        "ephixis, bow of nylea|mot",
+        "eye of vecna|dmg",
+        "eye of vecna|xdmg",
+        "hand of vecna|dmg",
+        "hand of vecna|xdmg",
+        "helm of domination|wow",
+        "khrusor, spear of heliod|mot",
+        "life-staff of the web lair|wow",
+        "longbow of the healing hearth|bgg"
+      ],
+      "dc": 18
+    },
+    {
+      "part": "itemDc",
+      "keys": [
+        "luba's tarokka of souls|tce",
+        "orb of dragonkind|dmg",
+        "orb of dragonkind|xdmg",
+        "queen ehlissa's marvelous nightingale|au",
+        "ring of elemental command (air)|xdmg",
+        "ring of elemental command (earth)|xdmg",
+        "ring of elemental command (fire)|xdmg",
+        "ring of elemental command (water)|xdmg",
+        "rod of seven parts|veor",
+        "spirit-binding censer|aud",
+        "staff of the lost|au",
+        "sulfuras, hand of ragnaros|wow",
+        "sword of kas|dmg",
+        "sword of kas|xdmg",
+        "teeth of dahlver-nar|tce",
+        "topaz annihilator|ftd"
+      ],
+      "dc": 18
+    },
+    {
+      "part": "itemDc",
+      "keys": ["wand of orcus|dmg", "wand of orcus|xdmg"],
+      "dc": 18
+    },
+    {
+      "part": "itemDc",
+      "keys": ["orb of damara|fraif"],
+      "dc": 18,
+      "attack": 10
+    },
+    {
+      "part": "itemDc",
+      "keys": [
+        "harp of gilded plenty|bgg",
+        "ring of maddening whispers|icc",
+        "shadow's edge|icc",
+        "sundial of eternal dusk|icc",
+        "wyrmskull throne|skt"
+      ],
+      "dc": 19
+    },
+    {
+      "part": "itemDc",
+      "keys": [
+        "chime of exile|veor",
+        "demonomicon of iggwilv|tce",
+        "demonomicon of iggwilv|xdmg",
+        "helm of perfect potential|bgg",
+        "true-ice shards (dagger)|coa",
+        "true-ice shards (rapier)|coa",
+        "wave|xdmg"
+      ],
+      "dc": 20
+    },
+    {
+      "part": "itemDc",
+      "keys": ["helm of devil command|bgdia", "shield of the hidden lord|bgdia"],
+      "dc": 21
     }
   ]
 }
