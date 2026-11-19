@@ -101,7 +101,9 @@ describe('the modifiers each card offers', () => {
     const expected = [
       ['bloodied', 'concentrating', 'noArmor', 'shield'].some((s) => takes(whole, { while: s })) &&
         'Only while',
+      // It grows from a plain number: a formula or a speed of walk is not turned into one.
       field !== undefined &&
+        typeof made[field.key] === 'number' &&
         takes(whole, { [field.key]: { byLevel: { 1: 1, 5: 2 } } }) &&
         'Grows with level',
       takes(whole, { edition: '2024' }) && 'Rules version',
@@ -213,7 +215,7 @@ describe('the modifiers each card offers', () => {
     render(<List />);
     fireEvent.click(screen.getByRole('button', { name: 'Grows with level' }));
     expect(latest).toEqual([{ kind: 'acBonus', amount: { byLevel: { 1: 1 } } }]);
-    fireEvent.click(screen.getByRole('button', { name: 'Add a level' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Armor Class: Add a level' }));
     fireEvent.change(screen.getByLabelText('Armor Class: Amount, row 2'), {
       target: { value: '3' },
     });
@@ -225,6 +227,51 @@ describe('the modifiers each card offers', () => {
     expect(readStoredEffects(latest).problems).toEqual([]);
     fireEvent.click(screen.getByRole('button', { name: 'Grows with level' }));
     expect(latest).toEqual([{ kind: 'acBonus', amount: 1 }]);
+  });
+
+  it('grows only a plain number, so a formula, a walking speed or a proficiency bonus is kept', () => {
+    const fly = SPECS.find((s) => s.add === 'Fly, swim or climb')?.make() as Eff;
+    expect(fly.speed).toBe('walk');
+    const effects: Eff[] = [
+      { kind: 'acBonus', amount: { f: 'prof' } },
+      { kind: 'initiativeBonus', profBonus: true },
+      fly,
+    ];
+    let written: unknown;
+    render(
+      <EffectCards
+        effects={effects}
+        readOnly={false}
+        onChange={(next) => {
+          written = next;
+        }}
+      />,
+    );
+    for (const title of ['Armor Class', 'Initiative', 'Fly, swim or climb']) {
+      expect(offered(title)).not.toContain('Grows with level');
+    }
+    fireEvent.click(chip('Armor Class', 'Grows with level'));
+    expect(written).toBeUndefined();
+    expect(screen.getByRole('status').textContent).toBe(
+      'Grows with level is not offered here: it grows from a plain number, and this one is not: give it one first.',
+    );
+  });
+
+  it('shows where a table a file gives starts, and offers later levels only above it', () => {
+    render(
+      <EffectCards
+        effects={[{ kind: 'acBonus', amount: { byLevel: { 5: 1, 11: 2 } } }]}
+        readOnly={false}
+        onChange={() => {}}
+      />,
+    );
+    expect(chip('Armor Class', 'Grows with level', true)).toBeTruthy();
+    expect(screen.getAllByText('5').length).toBeGreaterThan(0);
+    const levels = [
+      ...(screen.getByLabelText('Armor Class: From level, row 2') as HTMLSelectElement).options,
+    ].map((o) => Number(o.value));
+    expect(Math.min(...levels)).toBe(6);
+    expect(screen.getByRole('button', { name: 'Armor Class: Remove level 11' })).toBeTruthy();
   });
 });
 
@@ -370,6 +417,124 @@ describe('Counts when and Lasts', () => {
       'bloodied',
     );
   });
+
+  it('puts a card back where it stood, edited in the moment or not', () => {
+    const start = {
+      v: 1,
+      effects: [
+        { kind: 'skillProf', skill: 'stealth' },
+        { kind: 'acBonus', amount: 1 },
+        { kind: 'speedBonus', amount: 10 },
+      ],
+    };
+    const guidance = featWith(structuredClone(start));
+    fireEvent.click(chip('Armor Class', 'Counts when'));
+    fireEvent.change(screen.getByLabelText('Armor Class: Put on when'), {
+      target: { value: 'zeroHp' },
+    });
+    fireEvent.change(screen.getByLabelText('Armor Class: Amount'), { target: { value: '2' } });
+    fireEvent.click(chip('Armor Class', 'Counts when', true));
+    expect(guidance()).toEqual({
+      v: 1,
+      effects: [
+        { kind: 'skillProf', skill: 'stealth' },
+        { kind: 'acBonus', amount: 2 },
+        { kind: 'speedBonus', amount: 10 },
+      ],
+    });
+  });
+
+  it('leaves what was open on a card with it, not with the card that takes its place', () => {
+    featWith({
+      v: 1,
+      effects: [
+        { kind: 'acBonus', amount: 1 },
+        { kind: 'speedBonus', amount: 10 },
+      ],
+    });
+    fireEvent.click(chip('Armor Class', 'Counts when'));
+    fireEvent.change(screen.getByLabelText('Armor Class: Put on when'), {
+      target: { value: 'zeroHp' },
+    });
+    // Speed now stands where Armor Class did.
+    expect(chip('Speed', 'Counts when', false)).toBeTruthy();
+    expect(screen.queryByLabelText('Speed: Put on when')).toBeNull();
+    expect(chip('Armor Class', 'Counts when', true)).toBeTruthy();
+  });
+
+  it('leaves what was open on a card taken away with it too', () => {
+    featWith({
+      v: 1,
+      effects: [
+        { kind: 'acBonus', amount: 1 },
+        { kind: 'speedBonus', amount: 10 },
+      ],
+    });
+    fireEvent.click(chip('Armor Class', 'Counts when'));
+    expect(screen.getByLabelText('Armor Class: Put on when')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Remove +1 to Armor Class' }));
+    expect(chip('Speed', 'Counts when', false)).toBeTruthy();
+    expect(screen.queryByLabelText('Speed: Put on when')).toBeNull();
+  });
+
+  it('grows a number by level on a card a moment puts on, as the moment reader takes it', () => {
+    const guidance = featWith({
+      v: 1,
+      moments: [
+        {
+          at: 'zeroHp',
+          do: [{ kind: 'addEffect', name: 'Fury Feat', effects: [{ kind: 'acBonus', amount: 1 }] }],
+        },
+      ],
+    });
+    expect(offered('Armor Class')).toEqual(['Grows with level', 'Counts when', 'Lasts']);
+    fireEvent.click(chip('Armor Class', 'Grows with level'));
+    const g = guidance() as { moments: unknown[] };
+    expect(g.moments).toEqual([
+      {
+        at: 'zeroHp',
+        do: [
+          {
+            kind: 'addEffect',
+            name: 'Fury Feat',
+            effects: [{ kind: 'acBonus', amount: { byLevel: { 1: 1 } } }],
+          },
+        ],
+      },
+    ]);
+    expect(readMoments(g.moments, 'Fury Feat').problems).toEqual([]);
+  });
+
+  it('gives each new moment a name of its own, so neither replaces the other', () => {
+    const guidance = featWith({
+      v: 1,
+      effects: [
+        { kind: 'acBonus', amount: 1 },
+        { kind: 'speedBonus', amount: 10 },
+      ],
+    });
+    for (const title of ['Armor Class', 'Speed']) {
+      fireEvent.click(chip(title, 'Counts when'));
+      fireEvent.change(screen.getByLabelText(`${title}: Put on when`), {
+        target: { value: 'zeroHp' },
+      });
+    }
+    const g = guidance() as { moments: Array<{ do: Array<{ name: string }> }> };
+    expect(g.moments.map((m) => m.do[0]?.name)).toEqual(['Fury Feat', 'Fury Feat (2)']);
+  });
+
+  it('says nothing is counted only when no moment is kept either', () => {
+    featWith({ v: 1, moments: KEPT });
+    expect(screen.queryByText(/Nothing for the sheet to count yet/)).toBeNull();
+    expect(screen.getByText(/2 moments do more than put an effect on/)).toBeTruthy();
+  });
+
+  it('puts no card into moments a file gives as something other than a list', () => {
+    const guidance = featWith({ v: 1, effects: [{ kind: 'acBonus', amount: 1 }], moments: 'odd' });
+    expect(offered('Armor Class')).not.toContain('Counts when');
+    fireEvent.click(chip('Armor Class', 'Counts when'));
+    expect((guidance() as Json).moments).toBe('odd');
+  });
 });
 
 describe('a feat written with Counts when, on a sheet', () => {
@@ -417,6 +582,42 @@ describe('a feat written with Counts when, on a sheet', () => {
     knockedOut(p, { maxHp: sheet.maxHp.value, edition: '2024', moments: sheet.moments });
     expect(p.activeEffects?.map((e) => [e.name, e.parts])).toEqual([
       ['Fury Feat', [{ kind: 'acBonus', amount: 2 }]],
+    ]);
+  });
+
+  it('puts both on when two cards count at the same moment', () => {
+    const guidance = featWith({
+      v: 1,
+      effects: [
+        { kind: 'acBonus', amount: 2 },
+        { kind: 'speedBonus', amount: 10 },
+      ],
+    });
+    for (const title of ['Armor Class', 'Speed']) {
+      fireEvent.click(chip(title, 'Counts when'));
+      fireEvent.change(screen.getByLabelText(`${title}: Put on when`), {
+        target: { value: 'zeroHp' },
+      });
+    }
+    const entity = {
+      name: 'Fury Feat',
+      source: 'HB',
+      entries: ['Fury.'],
+      castGuidance: guidance(),
+    } as DataEntity;
+    const d = newCharacterDoc('hero', 'Hero', 'test');
+    d.classes = [
+      { ref: { name: 'Warrior', source: 'TST' }, levels: 4, hp: ['avg', 'avg', 'avg', 'avg'] },
+    ];
+    d.play.hpInitialized = true;
+    d.play.currentHp = 20;
+    d.feats = [{ ref: { name: 'Fury Feat', source: 'HB' }, instanceId: 'f0' }];
+    const sheet = deriveSheet(d, world({ feat: [entity] }));
+    const p = d.play;
+    knockedOut(p, { maxHp: sheet.maxHp.value, edition: '2024', moments: sheet.moments });
+    expect(p.activeEffects?.map((e) => [e.name, e.parts])).toEqual([
+      ['Fury Feat', [{ kind: 'acBonus', amount: 2 }]],
+      ['Fury Feat (2)', [{ kind: 'speedBonus', amount: 10 }]],
     ]);
   });
 });

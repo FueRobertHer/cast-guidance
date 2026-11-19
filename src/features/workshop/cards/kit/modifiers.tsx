@@ -61,6 +61,12 @@ const atMoment = (e: Eff) =>
  */
 const takes = (base: Eff, patch: Json) =>
   asEntry({ ...base, ...patch } as Eff).length === 0 && asEntry(base).length === 0;
+/** The same, of one a moment puts on. */
+const takesAtMoment = (base: Eff, patch: Json) =>
+  atMoment({ ...base, ...patch } as Eff).length === 0 && asEntry(base).length === 0;
+
+/** A number grown by level, as the reader is asked of it. */
+const GROWN = { byLevel: { 1: 1, 5: 2 } };
 
 /** A whole one of the card's kind, as the reader takes it. */
 export const sampleOf = (spec: KindSpec | undefined, e: Eff): Eff =>
@@ -250,6 +256,17 @@ export function Modifiers({
 }: ModifierProps) {
   const [open, setOpen] = useState<Partial<Record<ModifierId, boolean>>>({});
   const [note, setNote] = useState('');
+  // A card is its place in the list, so another card can take its place (one
+  // put on at a moment leaves it): what was open leaves with it.
+  const leave = () => {
+    setOpen({});
+    setNote('');
+  };
+  const [kind, setKind] = useState(e.kind);
+  if (kind !== e.kind) {
+    setKind(e.kind);
+    leave();
+  }
   // An effect a moment puts on is in play: it holds for as long as it lasts,
   // under the rules it is put on under.
   const played = inPlay || place !== undefined;
@@ -263,11 +280,14 @@ export function Modifiers({
       : states.length === 1
         ? 'it holds all the time: only numbers and rolls can wait on a state'
         : undefined,
-    level: played
+    // A moment works a table out as it puts the effect on; an effect already in play cannot.
+    level: inPlay
       ? 'an effect in play takes the numbers it is given'
-      : key === undefined || !takes(base, { [key]: { byLevel: { 1: 1, 5: 2 } } })
+      : key === undefined || !(place === undefined ? takes : takesAtMoment)(base, { [key]: GROWN })
         ? 'it has no number to grow'
-        : undefined,
+        : isByLevel(e[key]) || typeof e[key] === 'number'
+          ? undefined
+          : 'it grows from a plain number, and this one is not: give it one first',
     edition: played
       ? 'an effect in play holds under the rules it is put in play under'
       : takes(base, { edition: '2024' })
@@ -315,8 +335,10 @@ export function Modifiers({
     if (!set[id]) return;
     if (id === 'while' || id === 'edition') onChange(omit(e, [id]));
     else if (id === 'level' && key !== undefined) onChange({ ...e, [key]: firstRow(e[key]) });
-    else if (id === 'when') place?.out();
-    else if (id === 'lasts' && place !== undefined) {
+    else if (id === 'when') {
+      leave();
+      place?.out();
+    } else if (id === 'lasts' && place !== undefined) {
       place.set({ ...place.moment, do: [omit(place.outcome as Eff, ['lasts'])] });
     }
   };
@@ -370,7 +392,20 @@ export function Modifiers({
         </Select>
       </Field>
     ),
-    when: () => <MomentFields title={title} place={place} toMoment={toMoment} />,
+    when: () => (
+      <MomentFields
+        title={title}
+        place={place}
+        toMoment={
+          toMoment === undefined
+            ? undefined
+            : (at) => {
+                leave();
+                toMoment(at);
+              }
+        }
+      />
+    ),
     lasts: () => (place === undefined ? null : <LastsFields title={title} place={place} />),
   };
   return (
@@ -390,11 +425,14 @@ export function Modifiers({
           </Chip>
         ))}
       </fieldset>
-      {note !== '' && (
-        <p role="status" className="pr-2 text-caption text-ink-muted">
-          {note}
-        </p>
-      )}
+      {/* Mounted before the note is, so a screen reader hears it come. */}
+      <div aria-live="polite" className="contents">
+        {note !== '' && (
+          <p role="status" className="pr-2 text-caption text-ink-muted">
+            {note}
+          </p>
+        )}
+      </div>
       {LABELS.filter(([id]) => shows(id)).map(([id]) => (
         <div key={id} className="mr-2 flex flex-col gap-2 rounded-control bg-surface-raised p-2">
           {subs[id]()}
@@ -430,12 +468,14 @@ function LevelRows({
   onChange: (next: Eff) => void;
 }) {
   const rows = rowsOf(effect[field]);
+  // A table a file gives may start above level 1 (nothing before it).
+  const first = rows[0]?.[0] ?? 1;
   const write = (next: Array<[number, number]>) =>
     onChange({
       ...effect,
       [field]: { byLevel: Object.fromEntries(next.map(([l, n]) => [String(l), n])) },
     });
-  const free = LEVELS.filter((l) => !rows.some(([r]) => r === l));
+  const free = LEVELS.filter((l) => l > first && !rows.some(([r]) => r === l));
   return (
     <>
       <p className="text-caption text-ink-muted">
@@ -444,10 +484,10 @@ function LevelRows({
       {rows.map(([level, n], i) => (
         <div key={level} className="grid grid-cols-[1fr_1fr_auto] items-end gap-2">
           {i === 0 ? (
-            // A table starts at level 1, since the effect needs it from the start.
+            // The first row is where the table starts: level 1 for one Grows with level makes.
             <div className="flex flex-col gap-1.5">
               <span className="text-label text-ink-muted">From level</span>
-              <span className={`${fieldClass} flex items-center`}>1</span>
+              <span className={`${fieldClass} flex items-center`}>{level}</span>
             </div>
           ) : (
             <Field label="From level">
@@ -486,7 +526,7 @@ function LevelRows({
           ) : (
             <button
               type="button"
-              aria-label={`Remove level ${level}`}
+              aria-label={`${title}: Remove level ${level}`}
               onClick={() => write(rows.filter((_, j) => j !== i))}
               className="tap rounded-full text-ink-muted hover:bg-surface hover:text-ink"
             >
@@ -500,6 +540,7 @@ function LevelRows({
           <Chip
             tone="outline"
             className="px-2.5"
+            aria-label={`${title}: Add a level`}
             onClick={() => {
               const [lastLevel, lastAmount] = rows[rows.length - 1] ?? [1, 0];
               const next = free.find((l) => l > lastLevel) ?? free[0] ?? 2;
@@ -689,6 +730,7 @@ function LastsFields({ title, place }: { title: string; place: MomentPlace }) {
         <input
           type="checkbox"
           className="size-4.5 accent-ink"
+          aria-label={`${title}: While you concentrate`}
           checked={lasts.concentration === true}
           onChange={(x) => {
             const rest = omit(lasts as Eff, ['concentration']) as Json;

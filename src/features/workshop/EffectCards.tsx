@@ -526,7 +526,32 @@ export function EffectCards({
       .filter((p) => p.startsWith(`effect ${i + 1}:`) || p.startsWith(`effect ${i + 1} (`))
       .map((p) => p.replace(/^effect \d+( \([^)]*\))?: /, ''));
   const held: unknown[] = onMoments !== undefined && Array.isArray(moments) ? moments : [];
+  // Moments a file gives as something other than a list are kept as written: no card goes in.
+  const movable = onMoments !== undefined && (moments === undefined || Array.isArray(moments));
   const named = momentName ?? 'Effect';
+  // An effect a moment puts on replaces one of the same name already on, so
+  // each new moment's gets a name none of the others has: two moments, or two
+  // cards put on at the same one, hold side by side.
+  const freshName = () => {
+    const taken = held.flatMap((m) =>
+      isRecord(m) && Array.isArray(m.do)
+        ? m.do.map((o) =>
+            isRecord(o) && typeof o.name === 'string' ? o.name.trim().toLowerCase() : '',
+          )
+        : [],
+    );
+    let name = named;
+    for (let n = 2; taken.includes(name.trim().toLowerCase()); n++) name = `${named} (${n})`;
+    return name;
+  };
+  // Where each card a moment now puts on stood in the list, so Counts when
+  // taken away puts it back there. Kept by the effect itself, and passed on
+  // as the card is edited; one this session did not move goes last.
+  const cameFrom = useRef(new WeakMap<object, number>());
+  const putBack = (effect: Eff): Eff[] => {
+    const at = cameFrom.current.get(effect);
+    return at === undefined ? [...list, effect] : [...list.slice(0, at), effect, ...list.slice(at)];
+  };
   const momentProblems = held.length > 0 ? readMoments(held, named).problems : [];
   /** What the reader says of a drawn moment's card `k`, and of the moment itself. */
   const problemsAt = (mi: number, k: number) =>
@@ -697,16 +722,18 @@ export function EffectCards({
             inPick={inPick}
             charges={charges}
             toMoment={
-              onMoments === undefined
+              onMoments === undefined || !movable
                 ? undefined
-                : (at) =>
+                : (at) => {
+                    cameFrom.current.set(effect, i);
                     onMoments(
                       [
                         ...held,
-                        { at, do: [{ kind: 'addEffect', name: named, effects: [effect] }] },
+                        { at, do: [{ kind: 'addEffect', name: freshName(), effects: [effect] }] },
                       ],
                       list.filter((_, j) => j !== i),
-                    )
+                    );
+                  }
             }
             onRemove={() => onChange(list.filter((_, j) => j !== i))}
             onChange={(next, renamed) =>
@@ -722,7 +749,7 @@ export function EffectCards({
           moment: m,
           outcome: m.do[0],
           set: (next) => onMoments?.(held.map((x, j) => (j === mi ? next : x))),
-          out: () => onMoments?.(without(mi, k), [...list, effect]),
+          out: () => onMoments?.(without(mi, k), putBack(effect)),
         };
         return (
           <Card
@@ -737,7 +764,9 @@ export function EffectCards({
             readOnly={readOnly}
             place={place}
             onRemove={() => onMoments?.(without(mi, k))}
-            onChange={(next) =>
+            onChange={(next) => {
+              const from = cameFrom.current.get(effect);
+              if (from !== undefined) cameFrom.current.set(next, from);
               onMoments?.(
                 held.map((x, j) =>
                   j === mi
@@ -747,8 +776,8 @@ export function EffectCards({
                       )
                     : x,
                 ),
-              )
-            }
+              );
+            }}
           />
         );
       })}
@@ -758,14 +787,16 @@ export function EffectCards({
           {kept === 1 ? 'it is' : 'they are'} kept as written.
         </p>
       )}
-      {list.filter((e) => hide?.(e) !== true).length === 0 && drawnCards.length === 0 && (
-        <p className="text-caption text-ink-muted">
-          {inPick
-            ? 'Nothing yet.'
-            : // Another control of the editor shows what is hidden (an item's charges).
-              `Nothing ${list.length > 0 ? 'else ' : ''}for the sheet to count yet. Add what it does, and the sheet adds it up.`}
-        </p>
-      )}
+      {list.filter((e) => hide?.(e) !== true).length === 0 &&
+        drawnCards.length === 0 &&
+        kept === 0 && (
+          <p className="text-caption text-ink-muted">
+            {inPick
+              ? 'Nothing yet.'
+              : // Another control of the editor shows what is hidden (an item's charges).
+                `Nothing ${list.length > 0 ? 'else ' : ''}for the sheet to count yet. Add what it does, and the sheet adds it up.`}
+          </p>
+        )}
       {!readOnly && inPick && (
         <div className="-mx-1.5 flex flex-wrap">
           <Chip tone="outline" className="px-2.5" aria-label={addLabel} onClick={() => void more()}>
