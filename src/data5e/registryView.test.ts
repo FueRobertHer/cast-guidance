@@ -96,7 +96,13 @@ interface Build {
 function shared({ changes = true, pack, off = [] }: Build = {}): EntityRegistry {
   const reg = normalizeDataset(release());
   reg.setRuleSets([{ name: 'Base', source: 'APP' }]);
-  const files = new Map<string, Record<string, unknown>>();
+  // An imported collection's content, after the books', so the official part is not the whole list.
+  const files = new Map<string, Record<string, unknown>>([
+    [
+      'brew',
+      { _meta: { sources: [{ json: 'HB' }] }, spell: [{ name: 'Lucky Find', source: 'HB' }] },
+    ],
+  ]);
   if (pack !== undefined) files.set('pack', packFile());
   if (changes) files.set('changes', changesFile({ spell: [aidChange()] }));
   mergeHomebrew(
@@ -146,6 +152,7 @@ describe('a character with Changes to the books off', () => {
     const hers = registryViewFor(reg, hild);
     const sharedAid = reg.get('spell', 'Aid', 'XPHB');
     expect(hers.counts()).toEqual(reg.counts());
+    expect(reg.officialCount('spell')).toBeLessThan(reg.byType('spell').length);
     for (const t of Object.keys(reg.counts()) as EntityType[]) {
       expect(hers.officialCount(t)).toBe(reg.officialCount(t));
       reg.byType(t).forEach((e, i) => {
@@ -242,6 +249,9 @@ describe('a collection switched off on the device', () => {
       'increase by 10',
     );
     expect(his.sourceCounts().get('KIB')).toBe(2);
+    // The changes it picks as the shared registry does are the shared registry's own.
+    expect(his.get('spell', 'Aid', 'XPHB')).toBe(reg.get('spell', 'Aid', 'XPHB'));
+    expect(his.officialCount('spell')).toBe(reg.officialCount('spell'));
   });
 
   it('is read again for each view, so a second one resolves as the first did', () => {

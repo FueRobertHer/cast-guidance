@@ -219,7 +219,7 @@ work:
 | Standalone feats | A sheet editor to add/remove feats directly (writing `doc.feats`), for feats gained outside a background or ASI grant (FIX-006 left this as future product scope; the engine already reads `doc.feats`). |
 | Inventory | Edit all modeled custom-item fields; add containers, location, currency transactions, carrying capacity, and table-rule encumbrance. |
 | Export and sharing | Print-friendly accessible sheet/PDF and dependency-minimal sharing. |
-| Source policy | A device-wide browsing `SourcePolicy` ships (allow-all-except / only-these, presets, full book names, homebrew sources named by their own title) and deliberately never touches the registry, so hiding a book cannot break an existing sheet. A character's own `allowedSources` (edited on its Build page) replaces the device policy in that character's pickers and labels earlier picks from other books without removing them. A character's collection switches (`sourceSwitches`, ADR-002 E2) turn a source on or off over either, in that character's pickers only. Remaining: make `dataTag` and `homebrewDeps` meaningful in provenance, exports, and warnings; let a switch turn on a file switched off on the device (the registry loads enabled files only; E4's per-character view); give a switch change a history line. |
+| Source policy | A device-wide browsing `SourcePolicy` ships (allow-all-except / only-these, presets, full book names, homebrew sources named by their own title) and deliberately never touches the registry, so hiding a book cannot break an existing sheet. A character's own `allowedSources` (edited on its Build page) replaces the device policy in that character's pickers and labels earlier picks from other books without removing them. A character's collection switches (`sourceSwitches`, ADR-002 E2) turn a source on or off over either, in that character's pickers only; an `on` switch also brings back a file switched off on the device, for that character alone (E4's per-character view of the registry). Remaining: make `dataTag` and `homebrewDeps` meaningful in provenance, exports, and warnings; give a switch change a history line. |
 | Table rules | Configurable rest recovery, level cap, point-buy budget, attunement, encumbrance, HP method, and source policy. |
 | Usability research | Test create, level-up, damage/rest, prepare/cast, homebrew import, history recovery, and offline use with new and experienced players. |
 
@@ -325,6 +325,15 @@ work:
   + Effect amount is the catalog's, not the spell's. The import preview and
   the pack review do not name a pack's `replaces` yet (U7), so a pack applied
   to every character changes the entries it lists with no line saying so.
+- Each character has its own view of the registry (ADR-002 E4): Changes to the
+  books switched off gives that character the book's version, and a file
+  switched off on the device reaches the characters that switch it on. Left
+  out: a file switched off on the device merges after the files switched on,
+  so it loses a name tie with them, and an entry it shares with one is listed
+  twice in that character's pickers; such a file's rule pack lists after the
+  device's packs, and its `replaces` reach a character only when the pack
+  applies to every character; copies of a changed entry keep the version they
+  were copied from (E3), whatever the character's switch.
 
 ### Maintainability and diagnostics
 
