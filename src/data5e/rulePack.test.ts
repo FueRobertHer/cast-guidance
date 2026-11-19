@@ -46,6 +46,9 @@ describe('a pack on this device', () => {
     expect(JSON.stringify(sharedFile(held))).toBe(JSON.stringify(original));
     const plain = { _meta: { sources: [] }, spell: [] };
     expect(sharedFile(plain)).toBe(plain);
+    // The id a collection made in the app is known by goes with it.
+    const made = { _meta: { ...held._meta, castGuidanceCollection: 'osk' } };
+    expect(sharedFile(made)._meta).toHaveProperty('castGuidanceCollection', 'osk');
   });
 
   it('is named by its book', () => {

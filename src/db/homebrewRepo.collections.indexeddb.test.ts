@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { injectIdbFault } from '../../tests-fixtures/idbFaults';
 import { db, type HomebrewFileRow } from './db';
 import { collectionIdOf, withCollectionId } from './homebrewOrder';
-import { homebrewRepo, putHomebrewRow } from './homebrewRepo';
+import { buildHomebrewRow, homebrewRepo, putHomebrewRow } from './homebrewRepo';
 
 /** The schema as version 5 left it. */
 const V5 = {
@@ -232,24 +232,27 @@ describe('the id a collection made in the app is stamped with', () => {
     expect(files).toHaveLength(2);
   });
 
-  it('leaves the books of a stamped file keyed each by its own book', async () => {
-    const both = withCollectionId(
-      {
-        _meta: {
-          sources: [
-            { json: 'EMB', full: 'Ember Book' },
-            { json: 'ASH', full: 'Ash Book' },
-          ],
+  it('leaves a book that carries one keyed by its book', async () => {
+    // One book of a converted compendium, as a file or a character's export brings it:
+    // every book of a file has that file's `_meta`, so a stamp in it would be on all of them.
+    const book = (source: string) =>
+      withCollectionId(
+        {
+          _meta: {
+            sources: [{ json: source, full: `${source} Book` }],
+            convertedFrom: { format: 'fc5-compendium', fileName: 'compendium.xml' },
+          },
+          spell: [{ name: `${source} Lance`, source, level: 1 }],
         },
-        spell: [
-          { name: 'Ember Lance', source: 'EMB', level: 1 },
-          { name: 'Ash Ward', source: 'ASH', level: 1 },
-        ],
-      },
-      'one-id',
+        'one-id',
+      );
+    const rows = await Promise.all(
+      ['EMB', 'ASH'].map((s) => buildHomebrewRow(book(s), 'compendium.json')),
     );
-    const { books } = await homebrewRepo.prepareBooks(both, 'compendium.json');
-    expect(books.map((b) => b.key)).toEqual(['book:emb|compendium', 'book:ash|compendium']);
+    expect(rows.map((r) => [r.book, r.key])).toEqual([
+      ['EMB Book', 'book:emb|compendium'],
+      ['ASH Book', 'book:ash|compendium'],
+    ]);
   });
 
   it('is missing from a file under the app’s source from before stamps, which lands beside', async () => {
@@ -382,6 +385,38 @@ describe('the version 6 upgrade', () => {
 
     await homebrewRepo.importJson(file('MyHomebrew', ['Bram Ward']), 'My_homebrew.json');
     expect((await homebrewRepo.listSafe()).files).toHaveLength(2);
+  });
+
+  it('keys a stamped file a device stored before it had keys by its stamp', async () => {
+    // Made on a newer device and imported here before this one updated.
+    const stamped = (source: string, id: string, spells: string[]) =>
+      withCollectionId(file(source, spells), id);
+    const osk = await homebrewRepo.prepare(
+      stamped('MyHomebrew', 'osk', ['Osk Lance']),
+      'My_homebrew.json',
+    );
+    const ember = await homebrewRepo.prepare(stamped('EMB', 'ember', ['Ember Lance']), 'e.json');
+    const missed = await homebrewRepo.prepare(stamped('ASH', 'ash', ['Ash Ward']), 'a.json');
+    await oldDevice(async (old) => {
+      for (const r of [osk, ember]) {
+        const { json, key: _, ...meta } = r;
+        await old.table('homebrewFiles').put(meta);
+        await old.table('homebrewJson').put({ id: r.id, json });
+      }
+      // A row version 5 left its content on.
+      const { key: _, ...row } = missed;
+      await old.table('homebrewFiles').put(row);
+    });
+    await db.open();
+    expect((await db.homebrewFiles.get(osk.id))?.key).toBe('made:osk');
+    expect((await db.homebrewFiles.get(ember.id))?.key).toBe('made:ember');
+    expect((await db.homebrewFiles.get(missed.id))?.key).toBe('made:ash');
+
+    const newer = stamped('MyHomebrew', 'osk', ['Osk Lance', 'Osk Ward']);
+    const { replaced } = await homebrewRepo.commit(
+      await homebrewRepo.prepare(newer, 'My_homebrew.json'),
+    );
+    expect(replaced.map((r) => r.id)).toEqual([osk.id]);
   });
 
   it('keys each imported file, so its first import again updates it', async () => {

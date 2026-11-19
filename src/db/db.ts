@@ -2,7 +2,7 @@ import Dexie, { type EntityTable } from 'dexie';
 import type { PackLocal } from '@/data5e/rulePack';
 import type { CharacterDoc } from '@/engine/types';
 import { jsonByteSize } from '@/lib/byteSize';
-import { collectionKey } from './homebrewOrder';
+import { collectionIdOf, collectionKey } from './homebrewOrder';
 import { installDbLifecycle } from './lifecycle';
 
 export interface DataFileRow {
@@ -211,7 +211,9 @@ db.version(5)
  * A collection keeps its identity through an update (ADR-002, D4). Each
  * imported file gets the key an import finds it by, so the first time a file
  * imported before this is imported again it updates, rather than lands beside
- * it. A rule pack's Apply to and order move off the file onto its row: they
+ * it. A file made in the app on a newer device and imported here before this
+ * one updated is keyed by the id it is stamped with, as an import keys it
+ * now. A rule pack's Apply to and order move off the file onto its row: they
  * were kept in the file's `_meta.castGuidanceLocal`, bound to its id, and are
  * read from there this once, leaving the file as it was imported. A block
  * bound to another id came with the file from another device and reached
@@ -234,12 +236,15 @@ db.version(6)
     const rows = await files.toArray();
     const whole = rows.filter((r) => typeof r.id === 'string' && r.book === undefined);
     const packs = new Map<string, PackLocal>();
+    const stamps = new Map<string, string>();
     const bodies = tx.table<HomebrewJsonRow>('homebrewJson');
     const taken: HomebrewJsonRow[] = [];
     await bodies
       .where('id')
       .anyOf(whole.map((r) => r.id))
       .each((body) => {
+        const made = collectionIdOf(body.json);
+        if (made !== undefined) stamps.set(body.id, made);
         const local = takeOldPackLocal(body.id, body.json);
         if (local === undefined) return;
         packs.set(body.id, local);
@@ -251,8 +256,8 @@ db.version(6)
       const local = packs.get(row.id) ?? takeOldPackLocal(row.id, row.json);
       if (local !== undefined) row.pack = local;
       if (row.editable !== true && typeof row.key !== 'string') {
-        // A Workshop file another device made has none: no file is stamped yet.
-        const key = storedKey(row);
+        // A Workshop file another device made before stamps has none.
+        const key = storedKey(row, stamps.get(row.id) ?? collectionIdOf(row.json));
         if (key !== undefined) row.key = key;
       }
     });
@@ -279,7 +284,7 @@ function takeOldPackLocal(id: string, json: unknown): PackLocal | undefined {
 }
 
 /** A stored row's key, from its fields read as `homebrewRepo` reads them. */
-function storedKey(row: HomebrewMetaRow): string | undefined {
+function storedKey(row: HomebrewMetaRow, made: string | undefined): string | undefined {
   const r = row as unknown as Record<string, unknown>;
   return collectionKey({
     url: typeof r.url === 'string' ? r.url : undefined,
@@ -288,6 +293,7 @@ function storedKey(row: HomebrewMetaRow): string | undefined {
       : [],
     fileName: typeof r.fileName === 'string' ? r.fileName : `${String(r.id)}.json`,
     ...(typeof r.book === 'string' && r.book !== '' ? { book: r.book } : {}),
+    made,
   });
 }
 
