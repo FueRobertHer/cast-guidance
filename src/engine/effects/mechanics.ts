@@ -2561,19 +2561,29 @@ const CHARGE_DIE = /^(\d{0,3})d(\d{1,3})$/;
 
 /**
  * Dice a long rest can roll for charges back: a die first, then dice or whole
- * numbers added. Each die has 2 sides or more and a count of 1 to 100, which
- * the roller needs, and nothing is taken away, so the roll never gives back
- * less than nothing.
+ * numbers added, or whole numbers taken away while the lowest roll stays at 0
+ * or more (a Ring of Puzzler's Wit's 1d4-1), so the roll never gives back
+ * less than nothing. Each die has 2 sides or more and a count of 1 to 100,
+ * which the roller needs.
  */
 function regainDice(s: string): boolean {
   if (s.length > 40) return false;
-  const terms = s.split('+').map((t) => t.trim());
-  const die = (t: string) => {
+  const [first = '', ...rest] = s.split(/(?=[+-])/).map((t) => t.trim());
+  // How many dice it rolls, or undefined when `t` is not a die.
+  const dice = (t: string) => {
     const m = CHARGE_DIE.exec(t);
     const count = m === null || m[1] === '' ? 1 : Number(m[1]);
-    return m !== null && count >= 1 && count <= 100 && Number(m[2]) >= 2;
+    return m !== null && count >= 1 && count <= 100 && Number(m[2]) >= 2 ? count : undefined;
   };
-  return die(terms[0] ?? '') && terms.every((t) => die(t) || /^\d{1,4}$/.test(t));
+  const whole = (t: string) => (/^\d{1,4}$/.test(t) ? Number(t) : undefined);
+  let lowest = dice(first);
+  for (const t of rest) {
+    if (lowest === undefined) return false;
+    const term = t.slice(1).trim();
+    const n = t.startsWith('+') ? (dice(term) ?? whole(term)) : -(whole(term) ?? Number.NaN);
+    lowest = n === undefined || Number.isNaN(n) ? undefined : lowest + n;
+  }
+  return lowest !== undefined && lowest >= 0;
 }
 
 /**
@@ -2588,6 +2598,15 @@ function readRegain(v: unknown, most: number): string | undefined {
   const word = s.toLowerCase();
   if (word === 'all' || word === 'none') return word;
   return regainDice(s) ? s : undefined;
+}
+
+/**
+ * An item's charges as its own data fields say them (`fieldChargesOf`), read as
+ * an item's own `charges` effect is, so both take one grammar. Absent when the
+ * effect would say a problem.
+ */
+export function readItemCharges(raw: Record<string, unknown>): ItemCharges | undefined {
+  return readCharges(raw, true).charges;
 }
 
 /**

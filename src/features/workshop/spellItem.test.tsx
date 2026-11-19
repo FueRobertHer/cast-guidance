@@ -813,6 +813,8 @@ describe('ItemEditor', () => {
     };
     const draft = mount(item, structuredClone(old));
     expect(screen.getByText(/counts these the older way/)).toBeTruthy();
+    // Its fields count them too, until the card is gone.
+    expect(screen.getByText(/as these fields say too, a second time/)).toBeTruthy();
     // Its pool is a card like any other, there to change or remove.
     expect(screen.getByLabelText('Uses per rest: Name')).toHaveProperty('value', 'Charges');
     expect(screen.queryByRole('button', { name: 'Count them on the sheet' })).toBeNull();
@@ -837,8 +839,9 @@ describe('ItemEditor', () => {
       entries: [],
     };
     const draft = mount(item, structuredClone(original), registry, original);
-    expect(screen.getByText(/cast the spells Wand of Fireballs casts/)).toBeTruthy();
-    press('Count them on the sheet');
+    expect(screen.getByText(/The sheet counts these, and they cast no spells yet/)).toBeTruthy();
+    expect(screen.getByText(/They can cast the spells Wand of Fireballs casts/)).toBeTruthy();
+    press('Add the spells Wand of Fireballs casts');
     expect((draft().castGuidance as Json).effects).toEqual([
       {
         kind: 'charges',
@@ -847,7 +850,9 @@ describe('ItemEditor', () => {
         spells: [{ spell: 'Fireball|XPHB', cost: 1, upTo: 5 }],
       },
     ]);
-    expect(screen.queryByRole('button', { name: 'Count them on the sheet' })).toBeNull();
+    expect(
+      screen.queryByRole('button', { name: 'Add the spells Wand of Fireballs casts' }),
+    ).toBeNull();
   });
 
   it("offers a copy's row while it counts no spells, as after a new number", () => {
@@ -879,14 +884,33 @@ describe('ItemEditor', () => {
     ).toBeNull();
   });
 
-  it('counts the charges of an item the app does not price, with no spells yet', () => {
+  it('says the sheet counts the charges its fields say, and writes them out to give them spells', () => {
     const draft = mount(item, { name: 'Odd Rod', type: 'RD', entries: [], charges: 2 });
-    expect(screen.getByText(/The sheet does not count these yet/)).toBeTruthy();
+    expect(screen.getByText(/The sheet counts these, and they cast no spells yet/)).toBeTruthy();
+    expect(screen.queryByText(/does not count/)).toBeNull();
     expect(screen.queryByText(/cast the spells/)).toBeNull();
-    press('Count them on the sheet');
+    press('Add spells they cast');
     expect((draft().castGuidance as Json).effects).toEqual([
       { kind: 'charges', charges: 2, regain: 'none' },
     ]);
+  });
+
+  it('says the sheet does not count fields it cannot read, and writes them out to show why', () => {
+    const draft = mount(item, {
+      name: 'Odd Rod',
+      type: 'RD',
+      entries: [],
+      charges: 2,
+      recharge: 'dawn',
+      rechargeAmount: 'lots',
+    });
+    expect(screen.getByText(/The sheet does not count these yet/)).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Add spells they cast' })).toBeNull();
+    press('Count them on the sheet');
+    expect((draft().castGuidance as Json).effects).toEqual([
+      { kind: 'charges', charges: 2, regain: 'lots' },
+    ]);
+    expect(screen.getByText(/This does not count yet/)).toBeTruthy();
   });
 
   it('keeps the granted spell box while its name is cleared and typed again', () => {

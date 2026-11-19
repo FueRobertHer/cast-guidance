@@ -14,7 +14,7 @@ import { CircleAlert } from 'lucide-react';
 import { useId, useRef, useState } from 'react';
 import { useTypePacks } from '@/data5e/hooks';
 import { isRecord, RULE_SET_TYPE, type StoredEffect } from '@/engine/castGuidance';
-import { ITEM_CHARGES, itemChargesIn } from '@/engine/curated/itemCharges';
+import { fieldChargesOf, ITEM_CHARGES, itemChargesIn } from '@/engine/curated/itemCharges';
 import { type ItemCharges, readOwnEffects } from '@/engine/effects/mechanics';
 import { ABILITIES, type Ability, type DataEntity } from '@/engine/types';
 import {
@@ -645,6 +645,8 @@ function Charges(props: EditorProps) {
       ? said
       : undefined;
   const old = counted === undefined && effects.some(isOldCharges);
+  // With no effect, the sheet counts them as the fields say, when they read.
+  const byFields = counted === undefined ? fieldChargesOf(draft) : undefined;
   // The effect an empty Charges box (or none at all, 0) took out, and its place,
   // put back whole when a number is typed again: a new number by way of an
   // empty box ends as typing it in place would.
@@ -688,7 +690,7 @@ function Charges(props: EditorProps) {
         disabled={spellData.status !== 'ready'}
         onClick={() => set({}, { spells: rowSpells(row, options) })}
       >
-        {counted === undefined
+        {counted === undefined && byFields === undefined
           ? 'Count them on the sheet'
           : `Add the spells ${String(original?.name)} casts`}
       </Button>
@@ -746,20 +748,27 @@ function Charges(props: EditorProps) {
       {charges !== undefined && old && (
         <p className="text-caption text-ink-muted">
           The Charges card under What it does on the sheet counts these the older way, all back on a
-          long rest. Remove it, and the Cast a spell cards that spend it, to count them here, where
+          long rest.
+          {byFields !== undefined &&
+            ' The sheet counts them as these fields say too, a second time.'}{' '}
+          Remove the card, and the Cast a spell cards that spend it, to count them here alone, where
           each spell costs its charges by level.
         </p>
       )}
       {charges !== undefined && !old && counted === undefined && !readOnly && (
         <div className="flex flex-col gap-2">
           <p className="text-caption text-ink-muted">
-            The sheet does not count these yet, so nothing can spend them.
+            {byFields !== undefined
+              ? 'The sheet counts these, and they cast no spells yet.'
+              : 'The sheet does not count these yet, so nothing can spend them.'}
             {row !== undefined &&
-              ` Counted, they cast the spells ${String(original?.name)} casts, priced as the app prices them.`}
+              (byFields !== undefined
+                ? ` They can cast the spells ${String(original?.name)} casts, priced as the app prices them.`
+                : ` Counted, they cast the spells ${String(original?.name)} casts, priced as the app prices them.`)}
           </p>
           {fromRow ?? (
             <Button variant="outline" size="sm" className="self-start" onClick={() => set({}, {})}>
-              Count them on the sheet
+              {byFields !== undefined ? 'Add spells they cast' : 'Count them on the sheet'}
             </Button>
           )}
         </div>

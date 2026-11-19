@@ -137,6 +137,13 @@ describe('a charges row, read', () => {
     }
   });
 
+  it('takes a whole number away while the lowest roll gives back nothing or more', () => {
+    for (const regain of ['1d4-1', '2d6 - 2', '1d6 + 3 - 4', '1d8+1d4-2']) {
+      expect(read({ regain }).rows[0]?.charges?.regain, regain).toBe(regain);
+      for (let i = 0; i < 50; i++) expect(roll(regain).total, regain).toBeGreaterThanOrEqual(0);
+    }
+  });
+
   it('takes a whole number back, up to what it holds, and "all" or "none"', () => {
     expect(read({ regain: 1 }).rows[0]?.charges?.regain).toBe('1');
     expect(read({ regain: 5 }).rows[0]?.charges?.regain).toBe('5');
@@ -167,6 +174,10 @@ describe('a charges row, read', () => {
     ['no dice of a die', { regain: '0d6' }, '"regain" is what comes back'],
     ['more dice than the roller rolls', { regain: '101d6' }, '"regain" is what comes back'],
     ['dice taken away', { regain: '1d4 - 9' }, '"regain" is what comes back'],
+    ['a die taken away', { regain: '1d6 - 1d4' }, '"regain" is what comes back'],
+    ['a roll that can go below nothing', { regain: '1d4 - 2' }, '"regain" is what comes back'],
+    ['more taken away later', { regain: '2d4 + 1 - 4' }, '"regain" is what comes back'],
+    ['nothing taken away', { regain: '1d6 -' }, '"regain" is what comes back'],
     ['a number in quotes', { regain: '4' }, '"regain" is what comes back'],
     ['no charges back', { regain: 0 }, '"regain" is what comes back'],
     ['more back than it holds', { regain: 6 }, '"regain" is what comes back'],
