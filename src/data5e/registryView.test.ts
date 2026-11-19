@@ -269,6 +269,15 @@ describe('a collection switched off on the device', () => {
     expect(his.officialCount('spell')).toBe(reg.officialCount('spell'));
   });
 
+  it('is left as stored, its copies unresolved, whatever views are built from it', () => {
+    const file = kibbles();
+    const stored = structuredClone(file.json);
+    const reg = shared({ off: [file] });
+    registryViewFor(reg, osk);
+    registryViewFor(reg, { id: 'ula', sourceSwitches: { on: ['KIB'], off: ['MyChanges'] } });
+    expect(file.json).toEqual(stored);
+  });
+
   it('is read again for each view, so a second one resolves as the first did', () => {
     const reg = shared({ off: [kibbles()] });
     registryViewFor(reg, osk);
@@ -347,6 +356,17 @@ describe('a collection switched off on the device', () => {
     const his = registryViewFor(reg, { id: 'osk', sourceSwitches: { on: ['MyChanges'] } });
     expect(textOf(his)[1]).toContain('increase by 10');
     expect(aids(his)).toHaveLength(1);
+  });
+
+  it('as Changes to the books under two sources, follows a switch on its first', () => {
+    const json = changesFile({ spell: [aidChange()] });
+    json._meta.sources.push({ json: 'MyChangesToo', full: 'More changes' });
+    const reg = shared({ changes: false, off: [{ id: 'changes', json, role: 'changes' }] });
+    const on = { id: 'osk', sourceSwitches: { on: ['MyChangesToo'] } };
+    expect(textOf(registryViewFor(reg, on))[1]).toContain('increase by 10');
+    // The same character, switching the collection's first source off.
+    const both = { id: 'osk', sourceSwitches: { on: ['MyChangesToo'], off: ['MyChanges'] } };
+    expect(textOf(registryViewFor(reg, both))[1]).toBe(AID_TEXT);
   });
 });
 
