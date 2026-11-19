@@ -168,6 +168,12 @@ describe('Temporary HP each turn', () => {
     expect(screen.getByText(NOTE)).toBeTruthy();
   });
 
+  it('says, as what a pick gives, that it counts only in play, without a Counts when it has not', () => {
+    renderCards([{ kind: 'pick', id: 'gift', ask: 'skill', gives: [FOUR] }]);
+    expect(screen.getByText('This counts only in play, not as what a pick gives.')).toBeTruthy();
+    expect(screen.queryByText(/Counts when, or give it/)).toBeNull();
+  });
+
   it("says nothing of it on a spell's while-it-lasts list, where it counts", () => {
     renderCards([FOUR], { inPlay: true });
     expect(screen.getByText('4 temporary hit points at the start of each turn')).toBeTruthy();

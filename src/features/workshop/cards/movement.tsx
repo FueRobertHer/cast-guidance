@@ -1,5 +1,7 @@
 /** Board 4's speed, senses and initiative. */
 
+import { useState } from 'react';
+import { fieldClass } from '@/ui/TextField';
 import { Field, Select } from '../fields';
 import type { Eff, KindSpec, Options } from './kit/types';
 import { amount, amountField, offering, omit, word } from './kit/words';
@@ -22,6 +24,36 @@ interface BoxProps {
   effect: Eff;
   title: string;
   onChange: (next: Eff) => void;
+}
+
+/**
+ * Speed multiplied's Times box. The box keeps what was typed ("1.0" on the
+ * way to "1.05", or "2.0" left as it is) while the effect holds the number it
+ * is; text that is no number is stored as typed, for the reader's problem line.
+ * A draft gives way once the effect holds something else (changed elsewhere).
+ */
+function TimesBox({ effect, title, onChange }: BoxProps) {
+  const [draft, setDraft] = useState<string | undefined>(undefined);
+  const shown =
+    draft !== undefined && decimal(draft) === effect.factor
+      ? draft
+      : effect.factor === undefined
+        ? ''
+        : String(effect.factor);
+  return (
+    <Field label="Times">
+      <input
+        aria-label={`${title}: Times`}
+        inputMode="decimal"
+        value={shown}
+        onChange={(e) => {
+          setDraft(e.target.value);
+          onChange({ ...effect, factor: decimal(e.target.value) });
+        }}
+        className={fieldClass}
+      />
+    </Field>
+  );
 }
 
 /** A speed bonus's armor (`unless`), the width of the card so its words fit a phone. */
@@ -77,14 +109,10 @@ function ProfBonusTick({ effect, title, onChange }: BoxProps) {
   );
 }
 
-/**
- * A number typed in, as stored: one with a decimal point stays a number too.
- * Text a number would not draw again the same ("1.0" on the way to "1.05") is
- * kept as typed until the next key, or the box would lose the point.
- */
+/** A number typed in, as stored: one with a decimal point stays a number too. */
 const decimal = (text: string): unknown => {
   const t = text.trim();
-  return /^\d+(\.\d+)?$/.test(t) && String(Number(t)) === t ? Number(t) : t;
+  return /^\d+(\.\d+)?$/.test(t) ? Number(t) : t;
 };
 
 /** The heading its cards are listed under on the add sheet. */
@@ -159,11 +187,11 @@ export const cards: readonly KindSpec[] = [
     add: 'Speed multiplied',
     does: 'Multiplies your walking speed, as Haste doubles it',
     make: () => ({ kind: 'speedMultiplier', factor: 2 }),
-    // Not a number a formula or a level table may give: a box of its own.
-    fields: [{ key: 'factor', label: 'Times', type: 'amount' }],
+    // Not a number a formula or a level table may give, and one with a point
+    // in it: a box of its own (`TimesBox`).
+    fields: [],
     line: (e) => `Walking speed times ${String(e.factor)}`,
-    set: (e, key, _v, text) =>
-      key === 'factor' ? { next: { ...e, factor: decimal(text) } } : undefined,
+    boxes: (p) => <TimesBox effect={p.effect} title={p.title} onChange={p.onChange} />,
     // The sheet keeps the largest, from 1: a smaller one never slows you.
     ownProblems: (problems, e) =>
       typeof e.factor === 'number' && e.factor > 0 && e.factor <= 1

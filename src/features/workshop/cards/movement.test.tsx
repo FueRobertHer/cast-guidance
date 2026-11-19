@@ -147,16 +147,20 @@ describe('Speed multiplied', () => {
     expect(boxValue(`${TITLE}: Times`)).toBe('1.5');
   });
 
-  it('keeps a zero after the point while it is typed key by key', () => {
+  it('keeps a zero after the point in the box, typed key by key, and stores the number', () => {
     const cards = renderCards([make(TITLE)]);
-    for (const text of ['1', '1.', '1.0', '1.05']) change(`${TITLE}: Times`, text);
+    for (const text of ['1', '1.', '1.0']) change(`${TITLE}: Times`, text);
+    expect(boxValue(`${TITLE}: Times`)).toBe('1.0');
+    expect(cards.written()).toEqual([{ kind: 'speedMultiplier', factor: 1 }]);
+    change(`${TITLE}: Times`, '1.05');
     expect(cards.written()).toEqual([{ kind: 'speedMultiplier', factor: 1.05 }]);
     expect(boxValue(`${TITLE}: Times`)).toBe('1.05');
+    // Left as typed, "2.0" is the number 2: it counts, with nothing to say.
     for (const text of ['2', '2.', '2.0']) change(`${TITLE}: Times`, text);
-    // Mid-number: the box keeps "2.0" until the next key.
     expect(boxValue(`${TITLE}: Times`)).toBe('2.0');
-    change(`${TITLE}: Times`, '2.05');
-    expect(cards.written()).toEqual([{ kind: 'speedMultiplier', factor: 2.05 }]);
+    expect(cards.written()).toEqual([{ kind: 'speedMultiplier', factor: 2 }]);
+    noProblems(cards.written());
+    expect(screen.queryByText(/This does not count yet/)).toBeNull();
   });
 
   it('says a factor of 1 or less does not count, as the sheet never slows a speed this way', () => {

@@ -115,13 +115,14 @@ export const cards: readonly KindSpec[] = [
     line: (e) => `${amount(e.amount, false)} temporary hit points at the start of each turn`,
     // The sheet gives them at a turn's start from an effect in play alone
     // (`effectLife.ts`, `play.activeEffects`), so on an entry's own list the
-    // card says how to make it count.
+    // card says how to make it count. What a pick gives has no Counts when.
     boxes: (p) =>
       p.inPlay === false &&
       p.atMoment !== true && (
         <p className="col-span-2 text-caption text-ink-muted">
-          This counts only in play: put it on with Counts when, or give it from a spell while it
-          lasts.
+          {p.inPick
+            ? 'This counts only in play, not as what a pick gives.'
+            : 'This counts only in play: put it on with Counts when, or give it from a spell while it lasts.'}
         </p>
       ),
   },
