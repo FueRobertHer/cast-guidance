@@ -423,11 +423,14 @@ export function OriginParts(
  * The species' own subraces, each found by the species it names, and Add a
  * subrace, which opens a new one already naming it. Only for a species saved
  * under the name it has: a subrace finds its species by that name and book.
+ * A copy not saved yet still has its original's book, so it is not one: its
+ * subraces would be the original's, which the Workshop cannot open as theirs.
  */
-function Subraces({ draft, registry }: EditorProps) {
+function Subraces({ draft, original, registry }: EditorProps) {
   const name = typeof draft.name === 'string' ? draft.name : '';
   const source = typeof draft.source === 'string' ? draft.source : '';
-  if (name === '' || registry.get('race', name, source) === undefined) {
+  const unsavedCopy = original !== undefined && source === String(original.source);
+  if (name === '' || unsavedCopy || registry.get('race', name, source) === undefined) {
     return <p className="text-caption text-ink-muted">Save the species to add a subrace to it.</p>;
   }
   const own = registry

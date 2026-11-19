@@ -839,4 +839,16 @@ describe('subraces', () => {
     expect(screen.getByText('Save the species to add a subrace to it.')).toBeTruthy();
     expect(screen.queryByRole('link', { name: 'Add a subrace' })).toBeNull();
   });
+
+  it("a copy not saved yet lists none of its original's subraces", () => {
+    const official = { ...LANTERNFOLK, source: 'TST' };
+    const theirs = { name: 'Deepfolk', source: 'TST', raceName: 'Lanternfolk', raceSource: 'TST' };
+    mount(species, structuredClone(official), official, {
+      race: [official],
+      subrace: [theirs],
+    });
+    expect(screen.getByText('Save the species to add a subrace to it.')).toBeTruthy();
+    expect(screen.queryByRole('list', { name: 'Subraces' })).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Add a subrace' })).toBeNull();
+  });
 });
