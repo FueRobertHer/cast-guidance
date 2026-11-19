@@ -71,6 +71,12 @@ export function regainRollOf(c: ItemCharges): string | undefined {
   return c.regain === 'none' ? '0' : c.regain;
 }
 
+/**
+ * The key an item's own actions (and a pack's on it) spend its charges by: the
+ * sheet spends the carried copy's pool (`itemChargeKey`) in its place.
+ */
+export const ITEM_CHARGES = 'charges';
+
 /** The pool holding one carried item's charges, by its equipment entry: two staves are two pools. */
 export function itemChargeKey(entryId: string): string {
   return `item-charges:${entryId}`;

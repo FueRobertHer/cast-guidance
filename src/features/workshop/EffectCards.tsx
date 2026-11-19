@@ -13,6 +13,7 @@ import {
   type StoredEffect,
   type StoredState,
 } from '@/engine/castGuidance';
+import { ITEM_CHARGES } from '@/engine/curated/itemCharges';
 import { pickGivesProblems, readMechanics, readStoredEffects } from '@/engine/effects/mechanics';
 import type { PickFill } from '@/engine/effects/picks';
 import { HIT_DIE_COST, type RollFilter, SKILLS, SLOT_COST, type SlotPrice } from '@/engine/types';
@@ -922,6 +923,11 @@ function paidWords(p: Price): string {
   if (p.resource === SLOT_COST) return slotPriceWords(p as SlotPrice);
   if (p.resource === HIT_DIE_COST) return 'a Hit Point Die';
   const n = p.amount;
+  if (p.resource === ITEM_CHARGES) {
+    return n === 'varies'
+      ? 'charges, as many as you choose'
+      : `${String(n)} ${n === 1 ? 'charge' : 'charges'}`;
+  }
   if (n === 'varies') return `uses of ${String(p.resource)}, as many as you choose`;
   return `${String(n)} ${n === 1 ? 'use' : 'uses'} of ${String(p.resource)}`;
 }
@@ -1087,6 +1093,7 @@ function PriceFields({
   onChange,
   unset = 'Nothing',
   keeps = false,
+  charges = false,
 }: {
   effect: Eff;
   title: string;
@@ -1094,6 +1101,12 @@ function PriceFields({
   onChange: (next: Eff) => void;
   unset?: string;
   keeps?: boolean;
+  /**
+   * Spends and Restores offer the item's charges (`ITEM_CHARGES`), which the
+   * sheet spends from and gives back to the carried copy's pool, in place of a
+   * pool of the list's own under that key. A buy-back is never paid in them.
+   */
+  charges?: boolean;
 }) {
   const cost = priceOf(effect.cost);
   const kept = keeps ? keptOf(effect.cost) : undefined;
@@ -1101,10 +1114,12 @@ function PriceFields({
   const pools: Options = resources.map((r) => [String(r.key), `Uses of ${words(r.label)}`]);
   const payWith = (p: Price | undefined, hitDie: boolean): { value: string; options: Options } => {
     const value = hitDie && kept !== undefined ? KEEPS : p === undefined ? '' : String(p.resource);
+    const own = hitDie && charges;
     const options: Options = [
       ['', unset],
       ...(hitDie && keeps ? ([[KEEPS, 'Same pool']] as const) : []),
-      ...pools,
+      ...(own ? pools.filter(([k]) => k !== ITEM_CHARGES) : pools),
+      ...(own ? ([[ITEM_CHARGES, 'Its charges']] as const) : []),
       [SLOT_COST, 'A spell slot'],
       ...(hitDie ? ([[HIT_DIE_COST, 'A Hit Point Die']] as const) : []),
     ];
@@ -1155,9 +1170,11 @@ function PriceFields({
   };
   const restores = (p: Price) => {
     const value = p.own === undefined ? '' : held(p.own, isString);
+    const named: Options = resources.map((r) => [String(r.key), words(r.label)]);
     const options: Options = [
       ['', 'Same name'],
-      ...resources.map((r): readonly [string, string] => [String(r.key), words(r.label)]),
+      ...(charges ? named.filter(([k]) => k !== ITEM_CHARGES) : named),
+      ...(charges ? ([[ITEM_CHARGES, 'Its charges']] as const) : []),
     ];
     return { value, options: offering(options, value, value) };
   };
@@ -1833,6 +1850,7 @@ function Card({
   prefix = '',
   picked,
   inPick = false,
+  charges = false,
 }: {
   effect: Eff;
   problems: string[];
@@ -1850,6 +1868,8 @@ function Card({
   picked?: string;
   /** It is one of what a pick gives. */
   inPick?: boolean;
+  /** An action's cost can spend the item's charges (`EffectCards`' `holdsCharges`). */
+  charges?: boolean;
 }) {
   const spec = specOf(effect);
   const name = spec?.add ?? effect.kind;
@@ -1992,7 +2012,13 @@ function Card({
             />
           )}
           {effect.kind === 'action' && (
-            <PriceFields effect={effect} title={title} resources={resources} onChange={onChange} />
+            <PriceFields
+              effect={effect}
+              title={title}
+              resources={resources}
+              charges={charges}
+              onChange={onChange}
+            />
           )}
           {STATEFUL.has(effect.kind) && (
             <Field label="When">
@@ -2229,6 +2255,7 @@ export function EffectCards({
   onReplace,
   spells,
   hide,
+  holdsCharges = false,
   resources,
   inPlay = false,
   amend,
@@ -2260,6 +2287,11 @@ export function EffectCards({
   spells?: readonly SpellOption[];
   /** Effects another control of the editor shows, left out of the cards (an item's charges). */
   hide?: (e: Eff) => boolean;
+  /**
+   * The list is an item's own: while it holds a `charges` effect (shown by
+   * the editor and left out with `hide`), an action's cost can spend them.
+   */
+  holdsCharges?: boolean;
   /** Uses kept elsewhere that an action or a spell here can spend too (a class's pools). */
   resources?: readonly Eff[];
   /**
@@ -2276,7 +2308,10 @@ export function EffectCards({
   const list: Eff[] = Array.isArray(effects) ? (effects as Eff[]) : [];
   const amends: Eff[] = Array.isArray(amend) ? (amend as Eff[]) : [];
   const inPick = fills !== undefined;
+  // An item's charges effect reads as a problem here, which goes to its card,
+  // and `hide` leaves that card out: the editor shows the reader's own words.
   const problems = inPick ? pickGivesProblems(list, fills) : readStoredEffects(list).problems;
+  const charges = holdsCharges && list.some((e) => e.kind === 'charges');
   const versions = useContext(EntryVersions);
   const problemsOf = (i: number) =>
     problems
@@ -2412,6 +2447,7 @@ export function EffectCards({
             prefix={prefix}
             picked={picked}
             inPick={inPick}
+            charges={charges}
             onRemove={() => onChange(list.filter((_, j) => j !== i))}
             onChange={(next, renamed) =>
               renamed === undefined
@@ -2425,7 +2461,8 @@ export function EffectCards({
         <p className="text-caption text-ink-muted">
           {inPick
             ? 'Nothing yet.'
-            : 'Nothing for the sheet to count yet. Add what it does, and the sheet adds it up.'}
+            : // Another control of the editor shows what is hidden (an item's charges).
+              `Nothing ${list.length > 0 ? 'else ' : ''}for the sheet to count yet. Add what it does, and the sheet adds it up.`}
         </p>
       )}
       {!readOnly && inPick && (

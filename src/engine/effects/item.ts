@@ -1,5 +1,5 @@
 import { WORN_TAG_KINDS } from '../castGuidance';
-import { itemChargeKey, itemChargesOf, regainRollOf } from '../curated/itemCharges';
+import { ITEM_CHARGES, itemChargeKey, itemChargesOf, regainRollOf } from '../curated/itemCharges';
 import type { DataEntity, EffectOrigin } from '../types';
 import { refUid } from '../types';
 import { collectAdditionalSpells } from './additionalSpells';
@@ -116,6 +116,7 @@ export function collectItems(col: Collector): void {
       type: 'item',
     };
     if (magicWorks(e, entry.attuned)) {
+      const from = col.effects.length;
       // Its magic fields are what it inherits; its own `castGuidance` adds to
       // them, and a pack's patch can replace them, while the magic works.
       mechanicsOf(col, {
@@ -139,6 +140,18 @@ export function collectItems(col: Collector): void {
       const charged = itemChargesOf(col.ctx, col.doc.id, entry.ref);
       if (charged !== undefined) {
         const key = itemChargeKey(entry.id);
+        // Its actions that spend its charges or give them back (a buy-back, a
+        // slot turned into them, a regain) spend or restore this copy's pool.
+        // Each is a copy of what the item says (`emit`), and each price a new
+        // object, so the next copy's is its own.
+        for (let i = from; i < col.effects.length; i++) {
+          const x = col.effects[i];
+          if (x?.kind !== 'action') continue;
+          if (x.cost?.resource === ITEM_CHARGES) x.cost = { ...x.cost, resource: key };
+          if (x.cost?.slotRefills === ITEM_CHARGES) x.cost = { ...x.cost, slotRefills: key };
+          if (x.buyBack?.own === ITEM_CHARGES) x.buyBack = { ...x.buyBack, own: key };
+          if (x.regains?.resource === ITEM_CHARGES) x.regains = { ...x.regains, resource: key };
+        }
         const roll = regainRollOf(charged);
         col.add({
           kind: 'resource',

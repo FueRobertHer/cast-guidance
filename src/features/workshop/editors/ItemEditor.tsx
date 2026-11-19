@@ -6,14 +6,17 @@
  * `bonusWeapon`, `bonusAc`, `bonusSavingThrow`, `reqAttune`, `extraDamage`,
  * `additionalSpells`); the rest of what an item does is its `castGuidance`,
  * read through `mechanicsOf` while it is attuned (or needs no attunement).
- * Charges are the standard `charges` field and, so the sheet counts them, a
- * "Charges" resource among the item's effects, which a "Cast a spell" card or
- * an action can spend.
+ * Charges are the standard `charges`, `recharge` and `rechargeAmount` fields
+ * and, so the sheet counts them, the item's `charges` effect made from them:
+ * the spells they cast, each priced by level, which an action can spend too.
  */
-import { useState } from 'react';
+import { CircleAlert } from 'lucide-react';
+import { useId, useRef, useState } from 'react';
 import { useTypePacks } from '@/data5e/hooks';
-import { isRecord, type StoredEffect } from '@/engine/castGuidance';
-import { ABILITIES, type Ability } from '@/engine/types';
+import { isRecord, RULE_SET_TYPE, type StoredEffect } from '@/engine/castGuidance';
+import { ITEM_CHARGES, itemChargesIn } from '@/engine/curated/itemCharges';
+import { type ItemCharges, readOwnEffects } from '@/engine/effects/mechanics';
+import { ABILITIES, type Ability, type DataEntity } from '@/engine/types';
 import {
   baseTypeCode,
   DEFAULT_RIDER_TYPE,
@@ -90,6 +93,11 @@ const PROPERTIES: Options = [
   ['LD', 'Loading'],
 ];
 const MASTERIES = ['Cleave', 'Graze', 'Nick', 'Push', 'Sap', 'Slow', 'Topple', 'Vex'];
+/**
+ * Regains them, for an effect written by hand that says what comes back with
+ * no recharge field: shown, never written.
+ */
+const AS_WRITTEN = '*as-written';
 const RECHARGE: Options = [
   ['', 'Never'],
   ['dawn', 'At dawn'],
@@ -114,9 +122,10 @@ const WEAPON_FIELDS = [
   'weaponCategory',
 ];
 
-/** The key of the resource that counts an item's charges on the sheet. */
-export const CHARGES = 'charges';
-const isCharges = (e: StoredEffect) => e.kind === 'resource' && e.key === CHARGES;
+/** The Workshop's older way of counting an item's charges: a pool of its own under the key `charges`. */
+const isOldCharges = (e: StoredEffect) => e.kind === 'resource' && e.key === ITEM_CHARGES;
+/** The item's charges as the sheet counts them: its `charges` effect. */
+const isCharges = (e: StoredEffect) => e.kind === 'charges';
 
 /** The item's own effects, as its `castGuidance` holds them. */
 const effectsOf = (draft: Json): StoredEffect[] => {
@@ -124,28 +133,84 @@ const effectsOf = (draft: Json): StoredEffect[] => {
   return list(g.effects).filter(isRecord) as StoredEffect[];
 };
 
+/** When an item's charges come back, as its `recharge` field says it: an empty one says none. */
+const rechargeIn = (v: unknown): string | undefined =>
+  typeof v === 'string' && v !== '' ? v : undefined;
+
 /**
- * The patch for an item's charges: the standard field and, while there are
- * any, the resource that counts them, which a long rest (dawn) refills.
+ * What comes back at dawn, as an item's `charges` effect says it, from the
+ * standard fields: none without a recharge, all without an amount, else the
+ * number or the dice (words the effect cannot take are kept, and say so).
  */
-export function withCharges(draft: Json, charges: number | undefined): Json {
+export function regainOf(recharge: unknown, amount: unknown): string | number {
+  if (rechargeIn(recharge) === undefined) return 'none';
+  const words = (rechargeWords(amount) ?? '').replace(/\s+/g, '');
+  if (words === '') return 'all';
+  return /^\d+$/.test(words) ? Number(words) : words;
+}
+
+/**
+ * The patch for an item's charges: `patch` to its standard fields (`charges`,
+ * `recharge`, `rechargeAmount`) and the `charges` effect the sheet counts them
+ * by, made from them, with what `own` sets (its spells, the ability they cast
+ * with) or else what it had. The effect is begun by `own` (Count them on the
+ * sheet) or by charges given an item that had none, and taken out with them.
+ * A field the item leaves out keeps what the effect says (a file written by
+ * hand). An item that counts them the older way (`isOldCharges`, and no
+ * effect) gets its fields alone.
+ */
+export function withCharges(draft: Json, patch: Json, own?: Json): Json {
   const effects = effectsOf(draft);
   const had = effects.find(isCharges);
-  const some = charges !== undefined && charges > 0;
-  const next = !some
-    ? effects.filter((e) => !isCharges(e))
-    : had !== undefined
-      ? effects.map((e) => (e === had ? { ...had, max: charges } : e))
-      : [
-          { kind: 'resource', key: CHARGES, label: 'Charges', max: charges, reset: 'long' },
-          ...effects,
-        ];
+  const n = 'charges' in patch ? patch.charges : (draft.charges ?? had?.charges);
+  const charges = typeof n === 'number' && n > 0 ? n : undefined;
+  const fields = 'charges' in patch ? { ...patch, charges } : patch;
+  const begins = own !== undefined || (typeof draft.charges !== 'number' && charges !== undefined);
+  if (had === undefined && (!begins || effects.some(isOldCharges))) return fields;
+  const next = { ...draft, ...fields };
+  // What comes back is the fields' once they say it, or are changed. (How
+  // many is changed only beside a recharge.)
+  const fresh = had === undefined || 'recharge' in patch || rechargeIn(next.recharge) !== undefined;
+  const kept: Json = { ability: had?.ability, spells: had?.spells, ...own };
+  const spells = list(kept.spells);
+  const made: StoredEffect | undefined =
+    charges === undefined
+      ? undefined
+      : ({
+          kind: 'charges',
+          charges,
+          regain: fresh ? regainOf(next.recharge, next.rechargeAmount) : had.regain,
+          ...(typeof kept.ability === 'string' ? { ability: kept.ability } : {}),
+          ...(spells.length > 0 ? { spells } : {}),
+        } as StoredEffect);
+  const now =
+    made === undefined
+      ? effects.filter((e) => !isCharges(e))
+      : had === undefined
+        ? [made, ...effects]
+        : effects.map((e) => (e === had ? made : e));
   return {
-    charges: some ? charges : undefined,
+    ...fields,
     castGuidance: guidanceWith(draft.castGuidance, {
-      effects: next.length > 0 ? next : undefined,
+      effects: now.length > 0 ? now : undefined,
     }),
   };
+}
+
+/**
+ * The spells a built-in `charges` row prices, written as an item's own effect
+ * names them: each with its book, the first of `options` by its name (the
+ * item's edition first), or its name alone when the data has none.
+ */
+export function rowSpells(row: ItemCharges, options: readonly SpellOption[]): Json[] {
+  return row.spells.map((s) => {
+    const hit = options.find((o) => o.name.toLowerCase() === s.spell.toLowerCase());
+    return {
+      spell: hit === undefined ? s.spell : `${hit.name}|${hit.source}`,
+      cost: s.cost,
+      ...(s.upTo === undefined ? {} : { upTo: s.upTo }),
+    };
+  });
 }
 
 /** A weapon's properties with `code` on or off, written as the others are (`F|XPHB` beside `L|XPHB`). */
@@ -470,9 +535,171 @@ function Bonuses({ draft, change, readOnly }: EditorProps) {
   );
 }
 
-function Charges({ draft, change, readOnly }: EditorProps) {
-  const charges = typeof draft.charges === 'number' ? draft.charges : undefined;
-  const counted = effectsOf(draft).some(isCharges);
+/** A problem with an item's charges, in the words a card would use. */
+function chargeProblem(p: string): string {
+  const pick = /^spell (\d+): "spell" is (?:"name\|source"|the spell's name)$/.exec(p);
+  return pick === null ? p : `spell ${pick[1]}: pick a spell from the list`;
+}
+
+/** One spell an item's charges cast: the spell, what it costs, and the highest level it is cast at. */
+function ChargeSpell({
+  n,
+  spell,
+  options,
+  listId,
+  disabled,
+  onChange,
+  onRemove,
+}: {
+  n: number;
+  spell: Json;
+  options: readonly SpellOption[];
+  listId: string;
+  disabled: boolean;
+  onChange: (next: Json) => void;
+  onRemove: () => void;
+}) {
+  const ref = typeof spell.spell === 'string' ? spell.spell : '';
+  const [held, setHeld] = useState(ref.split('|')[0] ?? '');
+  const resolve = (name: string) => {
+    const hit = options.find((o) => o.name.toLowerCase() === name.trim().toLowerCase());
+    return hit === undefined ? name : `${hit.name}|${hit.source}`;
+  };
+  // A row is its place in the list, so it can be handed the next one's spell
+  // (this one's above removed): then that spell is shown, not what was typed.
+  const typed = resolve(held) === ref ? held : (ref.split('|')[0] ?? '');
+  const whole = (v: string) => {
+    const k = Number.parseInt(v, 10);
+    return Number.isNaN(k) ? undefined : Math.max(0, Math.min(99, k));
+  };
+  const { upTo: _, ...rest } = spell;
+  return (
+    <div className="grid grid-cols-[1fr_4.5rem_4.5rem_auto] items-end gap-2">
+      <Field label="Spell">
+        <input
+          aria-label={`Charge spell ${n}`}
+          list={listId}
+          value={typed}
+          placeholder="Fireball"
+          disabled={disabled}
+          onChange={(e) => {
+            setHeld(e.target.value);
+            onChange({ ...spell, spell: resolve(e.target.value) });
+          }}
+          className={fieldClass}
+        />
+      </Field>
+      <Field label="Costs">
+        <input
+          aria-label={`Charge spell ${n}: costs`}
+          inputMode="numeric"
+          value={typeof spell.cost === 'number' ? spell.cost : ''}
+          disabled={disabled}
+          onChange={(e) => onChange({ ...spell, cost: whole(e.target.value) })}
+          className={fieldClass}
+        />
+      </Field>
+      <Field label="Up to level">
+        <input
+          aria-label={`Charge spell ${n}: up to level`}
+          inputMode="numeric"
+          value={typeof spell.upTo === 'number' ? spell.upTo : ''}
+          placeholder="Its own"
+          disabled={disabled}
+          onChange={(e) => {
+            const to = whole(e.target.value);
+            onChange(to === undefined ? rest : { ...spell, upTo: to });
+          }}
+          className={fieldClass}
+        />
+      </Field>
+      <Button
+        variant="ghost"
+        size="sm"
+        aria-label={`Remove charge spell ${n}`}
+        disabled={disabled}
+        onClick={onRemove}
+      >
+        Remove
+      </Button>
+    </div>
+  );
+}
+
+function Charges(props: EditorProps) {
+  const { draft, change, original, registry, readOnly } = props;
+  const listId = useId();
+  const spellData = useTypePacks('spell');
+  const effects = effectsOf(draft);
+  const counted = effects.find(isCharges) as Json | undefined;
+  // A file written by hand may say them in the effect alone.
+  const n = draft.charges ?? counted?.charges;
+  const charges = typeof n === 'number' ? n : undefined;
+  // The recharge the fields say; an empty one is none, as `regainOf` reads it.
+  const recharge = rechargeIn(draft.recharge);
+  // What comes back as the effect says it, shown while no recharge field says it.
+  // (A number or words: none, in any case, is no regain, as the reader takes it.)
+  const said = counted?.regain;
+  const handRegain =
+    typeof said === 'number' || (typeof said === 'string' && said !== '' && !/^none$/i.test(said))
+      ? said
+      : undefined;
+  const old = counted === undefined && effects.some(isOldCharges);
+  // The effect an empty Charges box (or none at all, 0) took out, and its place,
+  // put back whole when a number is typed again: a new number by way of an
+  // empty box ends as typing it in place would.
+  const cleared = useRef<{ effect: Json; at: number } | undefined>(undefined);
+  const options = spellOptions(props);
+  // A copy of an official item the app counts already: its row is written out.
+  const row =
+    original === undefined
+      ? undefined
+      : itemChargesIn(registry.byType(RULE_SET_TYPE) as readonly DataEntity[], {
+          name: String(original.name),
+          source: String(original.source),
+        });
+  const set = (patch: Json, own?: Json) => change(withCharges(draft, patch, own));
+  const setCharges = (to: number | undefined) => {
+    if (to === undefined || to <= 0) {
+      if (counted !== undefined) {
+        cleared.current = { effect: counted, at: effects.indexOf(counted as StoredEffect) };
+      }
+      set({ charges: to });
+      return;
+    }
+    const back = counted === undefined ? cleared.current : undefined;
+    cleared.current = undefined;
+    if (back === undefined) {
+      set({ charges: to });
+      return;
+    }
+    const now = [...effects];
+    now.splice(back.at, 0, back.effect as StoredEffect);
+    const restored = { ...draft, castGuidance: guidanceWith(draft.castGuidance, { effects: now }) };
+    change(withCharges(restored, { charges: to }));
+  };
+  const spells = list(counted?.spells).filter(isRecord) as Json[];
+  const fromRow =
+    row === undefined ? undefined : (
+      <Button
+        variant="outline"
+        size="sm"
+        className="self-start"
+        disabled={spellData.status !== 'ready'}
+        onClick={() => set({}, { spells: rowSpells(row, options) })}
+      >
+        {counted === undefined
+          ? 'Count them on the sheet'
+          : `Add the spells ${String(original?.name)} casts`}
+      </Button>
+    );
+  const setSpells = (next: Json[]) => set({}, { spells: next });
+  const problems =
+    counted === undefined
+      ? []
+      : readOwnEffects([counted], 'effects').problems.map((p) =>
+          chargeProblem(p.replace(/^effect 1( \([^)]*\))?: /, '')),
+        );
   return (
     <Section title="Charges">
       <div className="grid grid-cols-2 items-end gap-2">
@@ -481,48 +708,122 @@ function Charges({ draft, change, readOnly }: EditorProps) {
           value={charges}
           placeholder="None"
           disabled={readOnly}
-          onChange={(n) => change(withCharges(draft, n))}
+          onChange={setCharges}
         />
         {charges !== undefined && (
           <KeptSelect
             label="Regains them"
-            value={typeof draft.recharge === 'string' ? draft.recharge : ''}
+            value={recharge ?? (handRegain !== undefined ? AS_WRITTEN : '')}
             options={RECHARGE}
-            shown={String(draft.recharge ?? '')}
+            shown={
+              recharge ??
+              `${/^all$/i.test(String(handRegain)) ? 'All' : String(handRegain)} at dawn, as written`
+            }
             disabled={readOnly}
-            onChange={(v) => change({ recharge: v === '' ? undefined : v })}
+            onChange={(v) => {
+              // A select sends no change for the option already chosen, so this
+              // only guards: what the effect says is never written as a recharge.
+              if (v === AS_WRITTEN) return;
+              // A time picked in its place keeps how many the effect says.
+              const carried =
+                v !== '' && recharge === undefined && handRegain !== undefined
+                  ? { rechargeAmount: rechargeValue(String(handRegain)) }
+                  : {};
+              set({ recharge: v === '' ? undefined : v, ...carried });
+            }}
           />
         )}
-        {charges !== undefined && draft.recharge !== undefined && (
+        {charges !== undefined && recharge !== undefined && (
           <TextField
             label="How many"
             value={rechargeWords(draft.rechargeAmount)}
             placeholder="1d6 + 1, or all"
             disabled={readOnly}
-            onChange={(v) => change({ rechargeAmount: rechargeValue(v) })}
+            onChange={(v) => set({ rechargeAmount: rechargeValue(v) })}
           />
         )}
       </div>
-      {charges !== undefined && !counted && !readOnly && (
+      {charges !== undefined && old && (
+        <p className="text-caption text-ink-muted">
+          The Charges card under What it does on the sheet counts these the older way, all back on a
+          long rest. Remove it, and the Cast a spell cards that spend it, to count them here, where
+          each spell costs its charges by level.
+        </p>
+      )}
+      {charges !== undefined && !old && counted === undefined && !readOnly && (
         <div className="flex flex-col gap-2">
           <p className="text-caption text-ink-muted">
             The sheet does not count these yet, so nothing can spend them.
+            {row !== undefined &&
+              ` Counted, they cast the spells ${String(original?.name)} casts, priced as the app prices them.`}
           </p>
-          <Button
-            variant="outline"
-            size="sm"
-            className="self-start"
-            onClick={() => change(withCharges(draft, charges))}
-          >
-            Count them on the sheet
-          </Button>
+          {fromRow ?? (
+            <Button variant="outline" size="sm" className="self-start" onClick={() => set({}, {})}>
+              Count them on the sheet
+            </Button>
+          )}
         </div>
       )}
-      {counted && (
-        <p className="text-caption text-ink-muted">
-          The sheet counts them, back on a long rest. A Cast a spell card or an action below can
-          spend them.
-        </p>
+      {counted !== undefined && (
+        <>
+          <Field label="Its spells' attack and DC from">
+            <Select
+              value={typeof counted.ability === 'string' ? counted.ability : ''}
+              disabled={readOnly}
+              onChange={(e) =>
+                set({}, { ability: e.target.value === '' ? undefined : e.target.value })
+              }
+            >
+              <option value="">No ability</option>
+              {ABILITIES.map((a) => (
+                <option key={a} value={a}>
+                  {a.toUpperCase()}
+                </option>
+              ))}
+            </Select>
+          </Field>
+          {spells.map((s, i) => (
+            <ChargeSpell
+              // A row is its place in the list, as a card is.
+              // biome-ignore lint/suspicious/noArrayIndexKey: see above
+              key={i}
+              n={i + 1}
+              spell={s}
+              options={options}
+              listId={listId}
+              disabled={readOnly}
+              onChange={(next) => setSpells(spells.map((x, j) => (j === i ? next : x)))}
+              onRemove={() => setSpells(spells.filter((_, j) => j !== i))}
+            />
+          ))}
+          <datalist id={listId}>
+            {options.map((o) => (
+              <option key={`${o.name}|${o.source}`} value={o.name} />
+            ))}
+          </datalist>
+          {!readOnly && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="self-start"
+              onClick={() => setSpells([...spells, { spell: '', cost: 1 }])}
+            >
+              Add a spell its charges cast
+            </Button>
+          )}
+          {!readOnly && spells.length === 0 && fromRow}
+          {problems.map((p) => (
+            <p key={p} className="flex items-start gap-1.5 text-caption text-danger">
+              <CircleAlert size={14} aria-hidden className="mt-0.5 shrink-0" />
+              This does not count yet: {p}
+            </p>
+          ))}
+          <p className="text-caption text-ink-muted">
+            The sheet counts them, a pool for each one carried. Each spell costs its charges at its
+            own level, and one more a level up to the level it says. An action below can spend them
+            too.
+          </p>
+        </>
       )}
     </Section>
   );
@@ -608,7 +909,8 @@ function Effects(props: EditorProps) {
         onReplace={(replace) => set({ replace: replace ? true : undefined })}
         spells={spellOptions(props)}
         hide={isCharges}
-        // The charges resource is shown under Charges, and stays in the list it is hidden from.
+        holdsCharges
+        // The charges effect is shown under Charges, and stays in the list it is hidden from.
         onChange={(effects) => set({ effects: effects.length > 0 ? effects : undefined })}
       />
     </Section>

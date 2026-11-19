@@ -38,8 +38,8 @@ import {
 import {
   patchReplaces,
   readMechanics,
+  readOwnEffects,
   readPack,
-  readPatchList,
   readStoredEffects,
 } from '@/engine/effects/mechanics';
 import { readPackMoments } from '@/engine/moments';
@@ -924,7 +924,7 @@ function changeWords(p: Record<string, unknown>): string {
   // What the engine reads of it: a list none of whose effects can be read
   // replaces nothing (its problems say why), and beside a replacement a price
   // changes nothing.
-  const replaces = patchReplaces(raw, readPatchList(raw, 'effects'));
+  const replaces = patchReplaces(raw, readOwnEffects(raw, 'effects'));
   const replace = Array.isArray(raw) ? raw : [];
   const adds = Array.isArray(add) ? add : [];
   // A pick is said by what it asks for, not counted as an effect.

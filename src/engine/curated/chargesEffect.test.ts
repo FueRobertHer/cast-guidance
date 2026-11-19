@@ -401,3 +401,148 @@ describe('the spells its charges grant', () => {
     expect(grants(doc, world([old]))).toEqual([['Fireball', '1/day', 'charges', undefined]]);
   });
 });
+
+describe('charges that only actions spend', () => {
+  const COUNTED = { kind: 'charges', charges: 3, regain: 'all' };
+  const STRIKE = {
+    kind: 'action',
+    economy: 'bonus',
+    label: 'Strike',
+    cost: { resource: 'charges', amount: 1 },
+  };
+  const strikes = (doc: CharacterDoc, ctx: EngineContext) =>
+    deriveSheet(doc, ctx)
+      .actions.filter((a) => a.label === 'Strike')
+      .map((a) => a.cost?.resource ?? null);
+
+  it('makes the pool with no spells, which a built-in row still needs', () => {
+    const read = readMechanics({ v: 1, effects: [COUNTED, { ...COUNTED, spells: [] }] });
+    expect(read.charges).toEqual({ charges: 3, regain: 'all', spells: [] });
+    expect(read.problems).toEqual([
+      "effect 2 (charges): says the item's charges again: effect 1 says them",
+    ]);
+    // An empty list, written, reads as none listed.
+    expect(readMechanics({ v: 1, effects: [{ ...COUNTED, spells: [] }] })).toMatchObject({
+      charges: { charges: 3, regain: 'all', spells: [] },
+      problems: [],
+    });
+    const doc = carrying({ id: 'a', name: 'Rod of Knocks', source: 'HB' });
+    const sheet = deriveSheet(doc, world([item('Rod of Knocks', 'HB', [COUNTED])]));
+    expect(sheet.resources.find((r) => r.key === 'item-charges:a')?.max).toBe(3);
+    const row = readRuleSet({
+      type: RULE_SET_TYPE,
+      v: 1,
+      name: 'Test rules',
+      rows: [{ part: 'charges', keys: ['rod|tst'], charges: 5, regain: '1d4', spells: [] }],
+    });
+    expect(row.problems.join('; ')).toContain('"spells" lists the spells its charges cast');
+  });
+
+  it("spends each copy's own pool for an action that costs its charges, derive after derive", () => {
+    const rod = item('Rod of Knocks', 'HB', [COUNTED, STRIKE]);
+    const doc = carrying(
+      { id: 'a', name: 'Rod of Knocks', source: 'HB' },
+      { id: 'b', name: 'Rod of Knocks', source: 'HB' },
+    );
+    const ctx = world([rod]);
+    // Same-named actions are one chip on the sheet, so two rods show the first's.
+    expect(strikes(doc, ctx)).toEqual(['item-charges:a']);
+    const second = carrying({ id: 'b', name: 'Rod of Knocks', source: 'HB' });
+    expect(strikes(second, ctx)).toEqual(['item-charges:b']);
+    expect(strikes(doc, ctx)).toEqual(['item-charges:a']);
+    // What the item says is left as it was written.
+    expect(JSON.stringify(rod.castGuidance)).toContain('"resource":"charges"');
+  });
+
+  it("spends them for a pack's action too, and leaves an item with no charges as it was", () => {
+    const doc = carrying({ id: 'a', name: 'Rod of Knocks', source: 'HB' });
+    const adds = pack('Adds', [{ target: 'Rod of Knocks|HB', add: [STRIKE] }]);
+    expect(strikes(doc, world([item('Rod of Knocks', 'HB', [COUNTED])], [adds]))).toEqual([
+      'item-charges:a',
+    ]);
+    // The Workshop's older shape: its own pool under the key `charges`.
+    const old = item('Rod of Knocks', 'HB', [
+      { kind: 'resource', key: 'charges', label: 'Charges', max: 3, reset: 'long' },
+      STRIKE,
+    ]);
+    expect(strikes(doc, world([old]))).toEqual(['charges']);
+  });
+
+  it("moves only the counted item's own actions, not those of an item carried before it", () => {
+    // An older-shape wand carried first: its action spends its own `charges` pool.
+    const old = item('Old Wand', 'HB', [
+      { kind: 'resource', key: 'charges', label: 'Charges', max: 3, reset: 'long' },
+      { ...STRIKE, label: 'Zap' },
+    ]);
+    const doc = carrying(
+      { id: 'a', name: 'Old Wand', source: 'HB' },
+      { id: 'b', name: 'Rod of Knocks', source: 'HB' },
+    );
+    const sheet = deriveSheet(doc, world([old, item('Rod of Knocks', 'HB', [COUNTED, STRIKE])]));
+    const spends = (label: string) => sheet.actions.find((a) => a.label === label)?.cost?.resource;
+    expect(spends('Zap')).toBe('charges');
+    expect(spends('Strike')).toBe('item-charges:b');
+  });
+
+  it("gives a use back to each copy's own pool for an action bought back", () => {
+    // Paid from a pool of the rod's own, so the sheet keeps it with no spell slots.
+    const sparks = { kind: 'resource', key: 'sparks', label: 'Sparks', max: 2, reset: 'long' };
+    const bought = { ...STRIKE, buyBack: { resource: 'sparks', amount: 1, own: 'charges' } };
+    const rod = item('Rod of Knocks', 'HB', [COUNTED, sparks, bought]);
+    const ctx = world([rod]);
+    const strike = (doc: CharacterDoc) =>
+      deriveSheet(doc, ctx).actions.find((a) => a.label === 'Strike');
+    const a = carrying({ id: 'a', name: 'Rod of Knocks', source: 'HB' });
+    expect(strike(a)?.buyBack).toMatchObject({ resource: 'sparks', own: 'item-charges:a' });
+    const b = carrying({ id: 'b', name: 'Rod of Knocks', source: 'HB' });
+    expect(strike(b)?.buyBack).toMatchObject({ resource: 'sparks', own: 'item-charges:b' });
+    expect(strike(a)?.buyBack).toMatchObject({ own: 'item-charges:a' });
+    expect(JSON.stringify(rod.castGuidance)).toContain('"own":"charges"');
+  });
+
+  it("refills each copy's own pool for an action that regains its charges or turns a slot into them", () => {
+    const regains = {
+      kind: 'action',
+      economy: 'action',
+      label: 'Mend',
+      regains: { resource: 'charges', amount: 1 },
+    };
+    const turns = {
+      kind: 'action',
+      economy: 'bonus',
+      label: 'Siphon',
+      cost: { resource: 'spell-slot', amount: 1, slotRefills: 'charges' },
+    };
+    const rod = item('Rod of Knocks', 'HB', [COUNTED, regains, turns]);
+    // A caster, so a spell slot pays.
+    const wizard = {
+      name: 'Wizard',
+      source: 'HB',
+      hd: { number: 1, faces: 6 },
+      casterProgression: 'full',
+      spellcastingAbility: 'int',
+    };
+    const base = world([rod]);
+    const ctx: EngineContext = {
+      ...base,
+      get: (type, name, source) =>
+        type === 'class' && name.toLowerCase() === 'wizard' ? wizard : base.get(type, name, source),
+      byType: (type) => (type === 'class' ? [wizard] : base.byType(type)),
+    };
+    const doc = (id: string) => {
+      const d = carrying({ id, name: 'Rod of Knocks', source: 'HB' });
+      d.classes = [{ ref: { name: 'Wizard', source: 'HB' }, levels: 3, hp: ['avg', 'avg', 'avg'] }];
+      return d;
+    };
+    const of = (d: CharacterDoc, label: string) =>
+      deriveSheet(d, ctx).actions.find((a) => a.label === label);
+    expect(of(doc('a'), 'Mend')?.regains).toEqual({ resource: 'item-charges:a', amount: 1 });
+    expect(of(doc('b'), 'Mend')?.regains).toEqual({ resource: 'item-charges:b', amount: 1 });
+    expect(of(doc('a'), 'Siphon')?.cost).toMatchObject({ slotRefills: 'item-charges:a' });
+    expect(of(doc('b'), 'Siphon')?.cost).toMatchObject({ slotRefills: 'item-charges:b' });
+    // What the item says is left as it was written.
+    const said = JSON.stringify(rod.castGuidance);
+    expect(said).toContain('"slotRefills":"charges"');
+    expect(said).toContain('"regains":{"resource":"charges"');
+  });
+});
