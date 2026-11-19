@@ -176,6 +176,20 @@ export interface DamageExtra {
   pay?: (() => boolean) | undefined;
   /** Paid with a spell slot (2014 Divine Smite): its tiles, built as it is put on. */
   slot?: (() => HeldCast) | undefined;
+  /** A slot-paid spell's roll of this label, at the tile's level ("Searing Smite fire damage"). */
+  diceLabel?: string | undefined;
+  /**
+   * The extra it rides on, by key: rolled only with that one on, and shown only
+   * then (Divine Smite's d8 against a Fiend or Undead).
+   */
+  needs?: string | undefined;
+  /** Whether it starts on, when not as its kind does (Savage Attacker, a used 2014 smite). */
+  on?: boolean | undefined;
+  /**
+   * It rolls the weapon's own dice twice and keeps the higher total (Savage
+   * Attacker), rather than dice of its own.
+   */
+  best?: boolean | undefined;
   /** Takes the player's own extra off the weapon for good. */
   remove?: (() => void) | undefined;
 }
@@ -540,9 +554,14 @@ export function damageFrom(
   holdDamage(from, make(), onLanded, face);
 }
 
-/** Can the damage prompt ask anything: an extra to add, or a rider to leave out? */
+/** Can the damage prompt ask anything: an extra to add? */
 export function asksAnything(ask: DamageAsk): boolean {
   return ask.extras.some((x) => x.kind === 'add');
+}
+
+/** Does an extra start on: as its kind does (a rider, the player's own), unless it says. */
+export function startsOn(x: DamageExtra): boolean {
+  return x.on ?? x.kind !== 'add';
 }
 
 /** The damage prompt opens with `ask`, in place of any roll waiting. */
@@ -571,7 +590,7 @@ function holdDamage(
       damage: [],
       afterHit: undefined,
       hit: ask,
-      hitOn: ask.extras.map((x) => x.kind !== 'add'),
+      hitOn: ask.extras.map(startsOn),
     },
   }));
   const after = ask.after === undefined ? '' : `${ask.after}. `;
@@ -677,23 +696,39 @@ function rollDamage(
   withRoll?: string,
 ): RollResult[] {
   const id = crypto.randomUUID();
-  let head: RollResult = {
-    ...roll(hit.expr, {
+  const weapon = (): RollResult => {
+    const r = roll(hit.expr, {
       label: hit.label,
       kind: 'damage',
       ...(hit.crit ? { critical: true } : {}),
-    }),
-    id,
+    });
+    return hit.crit && hit.critDice !== undefined
+      ? withDice(r, hit.critDice.dice, hit.critDice.source)
+      : r;
   };
-  if (hit.crit && hit.critDice !== undefined) {
-    head = withDice(head, hit.critDice.dice, hit.critDice.source);
+  let head: RollResult = { ...weapon(), id };
+  // The weapon's own dice twice, the higher kept (Savage Attacker); the extras roll once.
+  const best = hit.extras.find((x, i) => on[i] === true && x.best === true);
+  if (best !== undefined && (best.pay === undefined || best.pay())) {
+    const other = weapon();
+    const kept = other.total > head.total ? other : head;
+    head = {
+      ...kept,
+      id,
+      meta: {
+        ...kept.meta,
+        cue: `${best.source}: rolled ${String(head.total)} and ${String(other.total)}, kept ${String(kept.total)}`,
+      },
+    };
   }
   const apart: RollResult[] = [];
+  const isOn = (key: string) => hit.extras.some((y, j) => y.key === key && on[j] === true);
   hit.extras.forEach((x, i) => {
-    if (on[i] !== true) return;
+    if (on[i] !== true || x.best === true) return;
+    if (x.needs !== undefined && !isOn(x.needs)) return;
     const twice = hit.crit && x.noCrit !== true;
     if (x.slot !== undefined) {
-      const dice = cast?.dice(picked);
+      const dice = cast?.dice(picked, x.diceLabel) ?? cast?.dice(picked);
       if (cast === undefined || picked === null || dice === undefined) return;
       cast.cast(picked);
       apart.push(
@@ -960,7 +995,7 @@ export function rollHeld(): void {
     // nothing to choose it rolls with the attack, and shows with it.
     const hit = { ...queued.make(), after: attackWords(result) };
     if (!asksAnything(hit)) {
-      const on = hit.extras.map((x) => x.kind !== 'add');
+      const on = hit.extras.map(startsOn);
       landDamage(hit, on, undefined, null, queued.onLanded, held.from, id);
       return;
     }

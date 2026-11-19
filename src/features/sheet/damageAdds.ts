@@ -98,6 +98,8 @@ export interface DamageAdd {
   action?: Action;
   /** The effect it spends, for `effect`. */
   effectId?: string;
+  /** More dice against some creatures (2014 Divine Smite's d8 against a fiend or undead). */
+  against?: { dice: string; who: string };
 }
 
 /** An action's row key on the Play tab, which its Use and the damage prompt both mark. */
@@ -136,6 +138,7 @@ export function damageAdds(
       kind: bySlot ? 'slot' : 'action',
       oncePerTurn: oncePerTurn(text),
       action: act,
+      ...(bySlot && againstOf(text) !== undefined ? { against: againstOf(text) } : {}),
     });
   }
   for (const o of offers) {
@@ -151,4 +154,186 @@ export function damageAdds(
     });
   }
   return out;
+}
+
+/** The damage types a spell's text names after its dice. */
+const DAMAGE_TYPE =
+  /^\s*(acid|bludgeoning|cold|fire|force|lightning|necrotic|piercing|poison|psychic|radiant|slashing|thunder)\b/i;
+
+/** The sentences of a spell's text, its higher-level text aside. */
+function sentencesOf(entries: unknown): string[] {
+  return entriesText(entries)
+    .split(/(?<=[.!?])\s+/)
+    .map((s) => s.trim())
+    .filter((s) => s !== '');
+}
+
+/** The first `{@damage X}` in a sentence: its dice, and the type named after it. */
+function damageIn(sentence: string): { dice: string; damageType?: string } | undefined {
+  const m = /\{@damage ([^}|]+)(?:\|[^}]*)?\}(.*)$/i.exec(sentence);
+  const dice = m?.[1]?.replaceAll(' ', '').replace(/^d/i, '1d');
+  if (dice === undefined) return undefined;
+  const type = DAMAGE_TYPE.exec(m?.[2] ?? '')?.[1]?.toLowerCase();
+  return type === undefined ? { dice } : { dice, damageType: type };
+}
+
+/** More dice against some creatures: Divine Smite's d8 against a Fiend or an Undead. */
+export function againstOf(text: string): { dice: string; who: string } | undefined {
+  const m =
+    /\bincreases by (?:\{@damage )?(\d*d\d+)\}?[^.]*?\b(?:an? )?(undead or a fiend|fiend or (?:an )?undead)\b/i.exec(
+      text,
+    );
+  if (m?.[1] === undefined) return undefined;
+  return { dice: m[1].replace(/^d/i, '1d'), who: 'a Fiend or Undead' };
+}
+
+/** A spell that adds damage to a weapon's hit. */
+export interface HitSpell {
+  /**
+   * `cast`: cast as the hit lands (a 2024 smite, the 2024 Divine Smite).
+   * `running`: adds while the character concentrates on it (Hex, Hunter's
+   * Mark, a 2014 smite cast before the attack).
+   */
+  how: 'cast' | 'running';
+  /** It adds to every hit while it runs (Hex), not the next one alone (a 2014 smite). */
+  every: boolean;
+  /**
+   * On to start: it runs on the character (Divine Favor) or on the target
+   * they marked (Hex). One bound to a weapon or an ally (Holy Weapon) is
+   * theirs to put on.
+   */
+  on: boolean;
+  /** The weapons it needs: a melee weapon or an Unarmed Strike, a ranged one, or any. */
+  need: 'melee' | 'ranged' | 'any';
+  /** Its on-hit dice at its own level, and the type the text names. */
+  dice: string;
+  damageType?: string;
+  /** More dice against some creatures (Divine Smite's d8 against a Fiend or Undead). */
+  against?: { dice: string; who: string };
+  /** When it holds, which the app cannot see: "Only against the spell's target". */
+  note?: string;
+}
+
+/**
+ * Does a spell add damage to a weapon's hit, and how? Cast as the hit lands
+ * when its casting time says so (2024: "which you take immediately after
+ * hitting a target"), or while `running` (the character concentrates on it)
+ * when a sentence of its text deals "extra" damage on a hit. A spell whose
+ * extra damage comes later, or to others, adds none (Ensnaring Strike, Hail of
+ * Thorns).
+ */
+export function hitSpell(entity: unknown, running: boolean): HitSpell | undefined {
+  if (entity === null || typeof entity !== 'object') return undefined;
+  const e = entity as { time?: unknown; entries?: unknown; range?: unknown };
+  const time = Array.isArray(e.time)
+    ? (e.time[0] as { condition?: unknown } | undefined)
+    : undefined;
+  const condition = typeof time?.condition === 'string' ? time.condition : '';
+  const castOnHit = /\bimmediately after hitting\b/i.test(condition);
+  if (!castOnHit && !running) return undefined;
+  const sentences = sentencesOf(e.entries);
+  const hit = sentences.find(
+    (s) =>
+      /\bextra\b/i.test(s) &&
+      /\{@damage /i.test(s) &&
+      (castOnHit || /\b(?:hit|hits|attack|attacks)\b/i.test(s)),
+  );
+  const damage = hit === undefined ? undefined : damageIn(hit);
+  if (hit === undefined || damage === undefined) return undefined;
+  const reach = castOnHit ? condition : hit;
+  const need = /\bmelee\b/i.test(reach) ? 'melee' : /\branged\b/i.test(reach) ? 'ranged' : 'any';
+  const text = sentences.join(' ');
+  const against = againstOf(text);
+  if (castOnHit) {
+    return {
+      how: 'cast',
+      every: false,
+      on: false,
+      need,
+      ...damage,
+      ...(against ? { against } : {}),
+    };
+  }
+  const every = !/\bnext time\b/i.test(hit);
+  const range = e.range as { distance?: { type?: unknown } } | undefined;
+  const self = range?.distance?.type === 'self';
+  const marked = /\bto the target whenever you hit it\b/i.test(hit);
+  const near = /\bwithin (\d+) feet of you\b/i.exec(hit)?.[1];
+  const note = marked
+    ? "Only against the spell's target"
+    : near !== undefined
+      ? `Only against a creature within ${near} feet of you`
+      : undefined;
+  return {
+    how: 'running',
+    every,
+    on: every && (self || marked),
+    need,
+    ...damage,
+    ...(against ? { against } : {}),
+    ...(note === undefined ? {} : { note }),
+  };
+}
+
+/**
+ * A feat that changes a weapon's damage, read from its text:
+ * - `power`: a −5 to hit for +10 damage, claimed in the attack prompt (2014
+ *   Great Weapon Master with a heavy melee weapon, Sharpshooter with a ranged
+ *   one), with a weapon the character is proficient with.
+ * - `heavyMastery`: the Proficiency Bonus as extra damage with a Heavy weapon
+ *   as part of the Attack action (2024 Great Weapon Master).
+ * - `savage`: once a turn, the weapon's damage dice rolled twice and either
+ *   used (Savage Attacker; 2014, melee weapon attacks only).
+ */
+export interface WeaponFeat {
+  kind: 'power' | 'heavyMastery' | 'savage';
+  source: string;
+  need: 'heavyMelee' | 'heavy' | 'ranged' | 'melee' | 'any';
+}
+
+/** The feats among the character's features that change a weapon's damage. */
+export function weaponFeats(features: readonly { name: string; entries: unknown }[]): WeaponFeat[] {
+  const out: WeaponFeat[] = [];
+  for (const f of features) {
+    const text = entriesText(f.entries);
+    const source = f.name.replace(/\s*\([^)]*\)\s*$/, '').trim();
+    if (
+      /[-−]\s?5 penalty to the attack roll/i.test(text) &&
+      /\+10 to the attack's damage/i.test(text)
+    ) {
+      const need = /\bheavy weapon\b/i.test(text)
+        ? 'heavyMelee'
+        : /\branged weapon\b/i.test(text)
+          ? 'ranged'
+          : 'any';
+      out.push({ kind: 'power', source, need });
+    } else if (
+      /\bheavy\b/i.test(text) &&
+      /\bextra damage (?:equals|equal to) your proficiency bonus\b/i.test(text)
+    ) {
+      out.push({ kind: 'heavyMastery', source, need: 'heavy' });
+    }
+    if (/\b(?:roll|reroll) the weapon's damage dice(?: twice)? and use either\b/i.test(text)) {
+      out.push({ kind: 'savage', source, need: weaponNeed(text) === 'melee' ? 'melee' : 'any' });
+    }
+  }
+  return out;
+}
+
+/** Does a weapon feat reach this attack: its weapon, and for a −5 claim the character's proficiency? */
+export function featReaches(f: WeaponFeat, a: AttackRow): boolean {
+  const heavy = a.properties.includes('heavy');
+  if (f.kind === 'power' && !a.toHit.parts.some((p) => p.label === 'Proficiency')) return false;
+  switch (f.need) {
+    case 'heavyMelee':
+      return heavy && a.ranged !== true;
+    case 'heavy':
+      return heavy;
+    case 'ranged':
+      return a.ranged === true;
+    case 'melee':
+      return a.ranged !== true;
+    default:
+      return true;
+  }
 }

@@ -513,6 +513,10 @@ export function d20Ask(
         return result;
       }
       const critFrom = attack?.critFrom ?? 20;
+      // What was claimed for this roll alone, which its damage reads (Great Weapon Master's +10).
+      const claimed = extras
+        .filter((t, i) => choice?.declared?.[i] === true && t.thisRoll === true)
+        .map((t) => t.source);
       return {
         ...result,
         meta: {
@@ -526,6 +530,7 @@ export function d20Ask(
                   of: attack.of,
                   crit,
                   ...(critFrom < 20 ? { critFrom } : {}),
+                  ...(claimed.length > 0 ? { claimed } : {}),
                 },
               }),
           ...(cue === '' ? {} : { cue }),
