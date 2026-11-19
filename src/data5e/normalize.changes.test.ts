@@ -659,6 +659,33 @@ describe('a change’s guidance', () => {
     expect(after).not.toHaveProperty('replace');
   });
 
+  it('is read in the player’s version where the entry below says none', () => {
+    const bare = {
+      _meta: { sources: [{ json: 'HB' }] },
+      spell: [
+        { name: 'Ember Lance', source: 'HB', level: 1, castGuidance: { effects: speed(10) } },
+      ],
+    };
+    const was = shown(bare);
+    const stored = writeChange('spell', was, {
+      ...was,
+      castGuidance: { ...guidance(was), effects: speed(20) },
+    });
+    expect(guidance(placed(stored, bare))).toMatchObject({ v: 1, effects: speed(20) });
+  });
+
+  it('goes to Needs a look for the part an update changes, not another', () => {
+    const was = shown(lance(speed(10), { drop: ['Ember'] }));
+    const stored = writeChange('spell', was, {
+      ...was,
+      castGuidance: { ...guidance(was), effects: speed(20) },
+    });
+    const look = (file: Record<string, unknown>) =>
+      withChanges({ spell: [stored] }, [['hb', file]]).changedEntries()[0]?.layers[0]?.needsLook;
+    expect(look(lance(speed(10), { drop: ['Lance'] }))).toEqual([]);
+    expect(look(lance(speed(30), { drop: ['Ember'] }))).toEqual(['castGuidance.effects']);
+  });
+
   it('leaves no guidance of its own on an entry that had none', () => {
     const aid = withChanges({ spell: [aidChange()] }).get('spell', 'Aid', 'XPHB');
     expect(aid).not.toHaveProperty('castGuidance');
@@ -719,7 +746,8 @@ describe('a change that cannot stand for what it changes', () => {
     expect(aids(reg)).toHaveLength(1);
     expect(reg.get('spell', 'Aid', 'XPHB')?.entries).toEqual(bookAid().entries);
     expect(reg.byType('spell').filter((s) => s.name === 'Fireball')).toHaveLength(1);
-    expect(said(reg)).toContain('left out');
+    expect(said(reg)).toContain('no longer stands for the entry it changes');
+    expect(reg.changedEntries()).toEqual([]);
   });
 
   it('is left out when its _mod moves it to another class or level', () => {
@@ -741,6 +769,8 @@ describe('a change that cannot stand for what it changes', () => {
     const reg = packed(rage, 'classFeature');
     expect(feature(reg, 'Rage', 'Barbarian', 1)?.entries).toEqual(bookRage().entries);
     expect(feature(reg, 'Rage', 'Fighter', 3)).toBeUndefined();
+    expect(said(reg)).toContain('no longer stands for the entry it changes');
+    expect(reg.changedEntries()).toEqual([]);
   });
 
   it('keeps the exact name and source of what it changes', () => {

@@ -74,11 +74,16 @@ export function fingerprint(e: Json): string {
 
 /**
  * A short mark of one field of an entry. `castGuidance` is marked by its
- * author's parts alone (`OWN_GUIDANCE`), since a save works out the rest.
+ * author's parts alone (`OWN_GUIDANCE`), since a save works out the rest, and
+ * `castGuidance.<part>` by that one part.
  */
 export function fieldPrint(e: Json, field: string): string {
-  if (field !== 'castGuidance') return hash(stable(own(e, field)));
   const g = own(e, 'castGuidance');
+  const part = field.startsWith('castGuidance.') ? field.slice('castGuidance.'.length) : undefined;
+  if (part !== undefined && (OWN_GUIDANCE as readonly string[]).includes(part)) {
+    return hash(stable(isRecord(g) ? own(g, part) : undefined));
+  }
+  if (field !== 'castGuidance') return hash(stable(own(e, field)));
   const parts: Json = {};
   if (isRecord(g)) for (const k of OWN_GUIDANCE) if (Object.hasOwn(g, k)) parts[k] = g[k];
   return hash(stable(parts));

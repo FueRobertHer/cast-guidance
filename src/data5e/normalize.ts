@@ -728,14 +728,15 @@ const RESTORED = [...DELETE_ON_COPY, 'bookEdition'] as const;
  */
 function guidanceOver(below: unknown, change: unknown): Record<string, unknown> | undefined {
   const out: Record<string, unknown> = isRecord(below) ? { ...below } : {};
-  if (isRecord(change)) {
+  if (isRecord(change) && OWN_GUIDANCE.some((part) => Object.hasOwn(change, part))) {
     for (const part of OWN_GUIDANCE) {
       if (!Object.hasOwn(change, part)) continue;
       const v = change[part];
       if (v === false || v === null || (Array.isArray(v) && v.length === 0)) delete out[part];
       else out[part] = v;
     }
-    if (!isRecord(below) && Object.keys(out).length > 0) out.v = change.v;
+    // Its parts are written in its own version, which the engine reads them by.
+    if (change.v !== undefined) out.v = change.v;
   }
   return isRecord(below) || Object.keys(out).length > 0 ? out : undefined;
 }

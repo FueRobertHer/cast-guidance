@@ -235,7 +235,10 @@ export function writeChange(type: string, original: Json, draft: Json): Json {
   const mod = own(copy, '_mod');
   if (isRecord(mod)) for (const key of Object.keys(mod)) fields[key] = fieldPrint(original, key);
   const parts = changedGuidance(own(original, 'castGuidance'), own(draft, 'castGuidance'));
-  if (Object.keys(parts).length > 0) fields.castGuidance = fieldPrint(original, 'castGuidance');
+  // Marked part by part, as the registry lays them: an update to another part comes through.
+  for (const part of Object.keys(parts)) {
+    fields[`castGuidance.${part}`] = fieldPrint(original, `castGuidance.${part}`);
+  }
   // What it is based on, as a copy says it, with the changed parts alone.
   const g: Json = { v: CAST_GUIDANCE_VERSION };
   const written = own(out, 'castGuidance');

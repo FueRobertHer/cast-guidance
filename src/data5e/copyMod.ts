@@ -521,7 +521,8 @@ export interface CopyRef extends Entity {
 
 /**
  * Copy `target` into `e` by `e._copy` (its `_mod`, `_preserve`), in place. Throws
- * when the copy machinery cannot read what `e` holds; `e` is then untouched.
+ * when the copy machinery cannot read what `e` holds, and `e` may then be partly
+ * changed (the lists it shares with the copy), so call it on a clone to drop.
  */
 export function applyCopy(
   e: Entity,
