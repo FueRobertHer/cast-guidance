@@ -273,12 +273,9 @@ export function grantRows(raw: unknown): { rows: SpellRow[]; ability: unknown } 
   if (ability !== undefined && typeof ability !== 'string' && !isRecord(ability)) return undefined;
   const rows: SpellRow[] = [];
   // In the entry's own order, which is the order they are written back in.
-  const lists = Object.keys(raw[0]).flatMap((k) =>
-    k === 'known'
-      ? [[known, 'known'] as const]
-      : k === 'innate'
-        ? [[innate, undefined] as const]
-        : [],
+  const lists = Object.keys(raw[0]).flatMap(
+    (k): Array<[unknown, 'known' | 'innate']> =>
+      k === 'known' ? [[known, 'known']] : k === 'innate' ? [[innate, 'innate']] : [],
   );
   for (const [list, how] of lists) {
     if (!isRecord(list)) return undefined;
