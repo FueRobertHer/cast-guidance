@@ -136,29 +136,46 @@ const onlyFields = (o: Record<string, unknown>, fields: ReadonlySet<string>): bo
   Object.keys(o).every((k) => fields.has(k));
 
 /**
- * Where an item's action names its charges (`ITEM_CHARGES`) and the sheet
- * moves it to the carried copy's pool: its cost, a slot turned into them, the
- * pool a buy-back is paid from and the one it restores, a regain. As
- * `[part, field]`.
+ * Where the Workshop names an item's charges on an action (`PriceFields`): its
+ * cost, a slot turned into them, the use a buy-back restores, a regain. As
+ * `[part, field]`. A buy-back is never paid in them there.
  */
-export const ACTION_CHARGE_PLACES: ReadonlyArray<readonly [string, string]> = [
+const WORKSHOP_CHARGE_PLACES: ReadonlyArray<readonly [string, string]> = [
   ['cost', 'resource'],
   ['cost', 'slotRefills'],
-  ['buyBack', 'resource'],
   ['buyBack', 'own'],
   ['regains', 'resource'],
 ];
 
-/** Words as the sheet reads them, ends trimmed (`text` in mechanics). */
-const asRead = (v: unknown): unknown => (typeof v === 'string' ? v.trim() : v);
+/**
+ * Where an item's action names its charges (`ITEM_CHARGES`) and the sheet
+ * moves it to the carried copy's pool: the Workshop's places, and the pool a
+ * buy-back is paid from, which a pack may name.
+ */
+export const ACTION_CHARGE_PLACES: ReadonlyArray<readonly [string, string]> = [
+  ...WORKSHOP_CHARGE_PLACES,
+  ['buyBack', 'resource'],
+];
 
-/** An effect less the places an action's charges move from (`ACTION_CHARGE_PLACES`). */
+/** Whether a value names the pool anywhere, as the sheet reads words (ends trimmed). */
+function namesPool(v: unknown): boolean {
+  if (typeof v === 'string') return v.trim() === ITEM_CHARGES;
+  if (Array.isArray(v)) return v.some(namesPool);
+  return isRecord(v) && Object.values(v).some(namesPool);
+}
+
+/**
+ * An effect less the places an older item's action names its charges and
+ * still does once converted (`WORKSHOP_CHARGE_PLACES`). One paying a buy-back
+ * in them keeps its older pool: the Workshop would show that price as a name
+ * it does not offer.
+ */
 function movedOut(e: Record<string, unknown>): Record<string, unknown> {
   if (e.kind !== 'action') return e;
   const out: Record<string, unknown> = { ...e };
-  for (const [part, field] of ACTION_CHARGE_PLACES) {
+  for (const [part, field] of WORKSHOP_CHARGE_PLACES) {
     const at = out[part];
-    if (isRecord(at) && asRead(at[field]) === ITEM_CHARGES) {
+    if (isRecord(at) && namesPool(at[field])) {
       const { [field]: _moved, ...rest } = at;
       out[part] = rest;
     }
@@ -190,7 +207,8 @@ const upgraded = new WeakMap<DataEntity, DataEntity>();
  * Only an item that converts without loss: one card, as the Workshop wrote it
  * (a long rest, the item's own count); spell cards as the Workshop wrote them,
  * agreeing on one ability; no other effect, and nothing outside the effects,
- * naming the pool (an action only where the sheet moves it to the new one);
+ * naming the pool (an action only where the Workshop names it, never paying
+ * a buy-back);
  * no action named as the card, or by level; no recharge the effect cannot say (a short rest,
  * `special`); and an effect that reads (each card's spell as a spell's name
  * and book). Any other item is itself, keeping its older pool, which its
@@ -225,14 +243,12 @@ function olderChargesUpgrade(entry: DataEntity): DataEntity | undefined {
   const [ability] = abilities;
   // Nothing else may name the pool, which the new one does not stand in for
   // (a `charges` effect already there names it by its kind): an action only
-  // where the sheet moves it to the new pool (`ACTION_CHARGE_PLACES`), and
-  // none, at any depth, by the card's name, which a use with no price spends.
-  // Each as the sheet reads it, ends trimmed.
-  const pattern = new RegExp(`"\\s*${ITEM_CHARGES}\\s*"`);
-  const named = (v: unknown) => pattern.test(JSON.stringify(v));
+  // where the Workshop names it (`movedOut`), and none, at any depth, by the
+  // card's name, which a use with no price spends. Each as the sheet reads
+  // it, ends trimmed.
   const { effects: _effects, ...outside } = g;
   const others = effects.filter((e) => e !== pool && !spends(e)).map(movedOut);
-  if (others.some(named) || named(outside)) return undefined;
+  if (others.some(namesPool) || namesPool(outside)) return undefined;
   if (typeof pool.label !== 'string') return undefined;
   const card = pool.label.trim().toLowerCase();
   const byName = (e: Record<string, unknown>) =>

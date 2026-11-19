@@ -176,7 +176,14 @@ describe("an item's charges from the Workshop to the sheet", () => {
 
 describe('an item the Workshop wrote before its Charges section counted them', () => {
   it('is read as its charges on the sheet, opens so in the Workshop, and a save writes it so', async () => {
-    // A pool card keyed `charges` and a Cast a spell card spending one of it.
+    // A pool card keyed `charges`, a Cast a spell card spending one of it, and
+    // an action spending one.
+    const flare = {
+      kind: 'action',
+      economy: 'bonus',
+      label: 'Flare',
+      cost: { resource: ITEM_CHARGES, amount: 1 },
+    };
     const old = {
       name: 'Wand of Old',
       source: 'OLDW',
@@ -196,6 +203,7 @@ describe('an item the Workshop wrote before its Charges section counted them', (
             usage: '1/day',
             resourceKey: ITEM_CHARGES,
           },
+          flare,
         ],
       },
     };
@@ -228,11 +236,19 @@ describe('an item the Workshop wrote before its Charges section counted them', (
       usesTitle: 'charges from Wand of Old',
     });
     expect(left('Wand of Old charges use')).toBe(5);
+    press('Use Flare');
+    expect(left('Wand of Old charges use')).toBe(4);
 
     await sheet.visit('/workshop/edit/item/Wand%20of%20Old%7COLDW');
     await screen.findByLabelText('Charge spell 1', {}, { timeout: WAIT });
     expect(screen.queryByText(/counts these the older way/)).toBeNull();
     expect(screen.queryByLabelText('Uses per rest: Name')).toBeNull();
+    // The action spends the charges the section counts, as one written now does.
+    const spends = screen.getByLabelText('Action: Spends') as HTMLSelectElement;
+    expect([spends.value, spends.selectedOptions[0]?.textContent]).toEqual([
+      ITEM_CHARGES,
+      'Its charges',
+    ]);
     press('Save');
     await waitFor(() => expect(notice()).toBe('Saved Wand of Old'), { timeout: WAIT });
     const saved = (await homebrewRepo.ownedSafe()).files.find((f) => f.id === file.id);
@@ -246,6 +262,7 @@ describe('an item the Workshop wrote before its Charges section counted them', (
           regain: '1d4',
           spells: [{ spell: 'Cure Wounds|TST', cost: 1 }],
         },
+        flare,
       ],
     });
   });
