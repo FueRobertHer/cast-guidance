@@ -122,6 +122,106 @@ export interface FollowUp {
   /** The damage's dice as its chip shows them ("1d12+4"). */
   expr: string;
   go: () => void;
+  /**
+   * The damage prompt its `go` opens. Damage tapped while the attack waits
+   * (`damageFrom`) asks with its own once the attack lands as a hit.
+   */
+  ask?: (() => DamageAsk) | undefined;
+}
+
+/**
+ * The next attack of the Attack action (Extra Attack), offered once an attack
+ * misses or its damage lands: what the button says, and the prompt it opens.
+ */
+export interface NextAttack {
+  /** "Attack 2 of 2". */
+  words: string;
+  go: () => void;
+}
+
+/**
+ * One more roll the damage prompt offers beside the weapon's own: a rider the
+ * weapon carries (Flame Tongue's fire), a feature or effect the character may
+ * add (Sneak Attack, Divine Smite, Bardic Inspiration), or what the player put
+ * on the weapon (a coated blade, a special arrow).
+ */
+export interface DamageExtra {
+  /** Its place in the prompt, unique while it waits. */
+  key: string;
+  dice: string;
+  /** What adds it: "Flame Tongue", "Sneak Attack", "Basic Poison". */
+  source: string;
+  damageType?: string | undefined;
+  /** How its roll is logged when it lands apart: "Longsword fire damage", "Sneak Attack". */
+  label: string;
+  /**
+   * `rider`: the weapon's own, on to start, as Bless rolls in. `add`: the
+   * character's to add, off to start. `own`: the player's, on to start.
+   */
+  kind: 'rider' | 'add' | 'own';
+  /**
+   * Its dice roll in the weapon's own roll, named, rather than apart: damage of
+   * the weapon's type (Sneak Attack, Enlarge), which takes resistance with it.
+   */
+  folds?: boolean | undefined;
+  /** What it says beside its name: "rolls in", "once a turn", "slot", "next hit". */
+  tag: string;
+  /** When it holds or what it pays, said under the extras while it is on. */
+  note?: string | undefined;
+  /** Its once a turn went already (it is still yours to add: the sheet cannot see whose turn). */
+  usedThisTurn?: boolean | undefined;
+  /** Its dice roll once on a crit (a poison's flat dice the player said do not double). */
+  noCrit?: boolean | undefined;
+  /** Pays for it as the roll lands; false, with nothing left to pay with, leaves it out. */
+  pay?: (() => boolean) | undefined;
+  /** Paid with a spell slot (2014 Divine Smite): its tiles, built as it is put on. */
+  slot?: (() => HeldCast) | undefined;
+  /** Takes the player's own extra off the weapon for good. */
+  remove?: (() => void) | undefined;
+}
+
+/** What the player types into the damage prompt to add (a poison, an arrow's extra). */
+export interface OwnDamage {
+  source: string;
+  dice: string;
+  damageType?: string | undefined;
+  /** Gone once the next hit lands, or kept on the weapon until taken off. */
+  once: boolean;
+  /** Its dice roll twice on a crit, as the weapon's do. */
+  crit: boolean;
+  note?: string | undefined;
+}
+
+/**
+ * A damage roll asked about before it is rolled (the damage prompt): the
+ * weapon's dice and what is in them, whether the attack crit, and the extras
+ * the character may roll with it.
+ */
+export interface DamageAsk {
+  readonly kind: 'damage';
+  /** "Longsword damage". */
+  label: string;
+  /** The weapon's own dice and modifiers ("1d8+3"). */
+  expr: string;
+  damageType?: string | undefined;
+  /** What the modifiers are, in words ("STR +3, Rage +2"), '' when it says nothing. */
+  parts: string;
+  /** The attack it goes with crit: every die rolls twice, the modifiers once. */
+  crit: boolean;
+  /** More dice a crit adds, after the weapon's (Savage Attacks). */
+  critDice?: { dice: string; source: string } | undefined;
+  extras: readonly DamageExtra[];
+  /**
+   * Makes what the player typed an extra: kept on the weapon, or for this roll
+   * alone when there is no weapon to keep it on (a spell's damage).
+   */
+  addOwn?: ((own: OwnDamage) => DamageExtra) | undefined;
+  /** Whether what the player types can stay on the weapon. */
+  keeps?: boolean | undefined;
+  /** The next attack of the Attack action, asked once the damage lands. */
+  next?: (() => NextAttack | undefined) | undefined;
+  /** The attack it follows, in words, set as the prompt opens: "Longsword attack: 17". */
+  after?: string | undefined;
 }
 
 /** A roll made and not yet landed: what the control does then, and what making it put off. */
@@ -169,6 +269,27 @@ export interface HeldRoll {
     ofCast: boolean;
   }>;
   afterHit: FollowUp | undefined;
+  /** The next attack of the Attack action, offered if this attack misses. */
+  next?: (() => NextAttack | undefined) | undefined;
+  /**
+   * A damage prompt waiting (`damageFrom`): the weapon's damage and its
+   * extras, which of them are on (`hitOn`). A slot-paid extra put on brings its
+   * tiles as `cast`, paid as the damage lands.
+   */
+  hit: DamageAsk | null;
+  hitOn: boolean[];
+  /**
+   * Damage tapped while this attack waits, which asks once it lands as a hit
+   * (or rolls with it at once, when there is nothing to choose).
+   */
+  queued?:
+    | {
+        make: () => DamageAsk;
+        onLanded: Landed | undefined;
+        face: RollFace | undefined;
+        from: HTMLElement | null;
+      }
+    | undefined;
 }
 
 export const heldRollStore = createStore<{ held: HeldRoll | null; seq: number }>(() => ({
@@ -180,7 +301,9 @@ export const heldRollStore = createStore<{ held: HeldRoll | null; seq: number }>
 export const followUpStore = createStore<{
   /** `from`: the attack's control, where focus goes back once the damage is rolled. */
   offer: { id: string; expr: string; go: () => void; from: HTMLElement | null } | null;
-}>(() => ({ offer: null }));
+  /** The next attack of the Attack action, offered on the roll `id` (a miss, or the damage). */
+  next?: { id: string; words: string; go: () => void; from: HTMLElement | null } | null;
+}>(() => ({ offer: null, next: null }));
 
 /** The log takes it, what making it put off happens, then what the control does. */
 function land({ result, onLanded, effects }: Pending): void {
@@ -221,11 +344,31 @@ export function whenLanded(effect: () => void): void {
  * doubles the dice of the damage that goes with it (`RollChip` `withAttack`).
  */
 export function attackInPlay(): AttackMark | undefined {
-  if (heldRollStore.getState().held !== null) return undefined;
+  return attackRollInPlay()?.meta?.attack;
+}
+
+/** The roll `attackInPlay` reads: the newest past damage and plain dice, while no d20 waits. */
+function attackRollInPlay(): RollResult | undefined {
+  // A damage or cast prompt waiting has no d20: the attack before it is still in play.
+  const waiting = heldRollStore.getState().held?.ask;
+  if (waiting !== null && waiting !== undefined) return undefined;
   const last = rollLogStore
     .getState()
     .rolls.find((r) => r.kind !== 'damage' && (r.kind !== undefined || r.meta?.d20 !== undefined));
-  return last?.meta?.attack;
+  return last?.meta?.attack === undefined ? undefined : last;
+}
+
+/**
+ * The newest attack that landed from the prompt, and its next attack in the
+ * Attack action: the damage that goes with it offers that next attack once it
+ * lands, from the chip or the hit's offer alike.
+ */
+let lastAttack: { id: string; next: (() => NextAttack | undefined) | undefined } | null = null;
+
+/** The next attack after the attack in play, when the damage goes with the newest one. */
+function nextAfterAttackInPlay(): (() => NextAttack | undefined) | undefined {
+  const r = attackRollInPlay();
+  return r?.id !== undefined && r.id === lastAttack?.id ? lastAttack.next : undefined;
 }
 
 /** "Doubled" dice as a crit rolls them: "1d12+4" reads "2d12+4". */
@@ -259,9 +402,12 @@ export function rollFrom(
     afterHit,
     joins,
     cast,
+    next,
   }: {
     face?: RollFace;
     afterHit?: FollowUp;
+    /** The next attack of the Attack action, offered if this attack misses (`NextAttack`). */
+    next?: (() => NextAttack | undefined) | undefined;
     /** `of`: the attack it goes with, by name, so the cast spell's own damage is made at its level. */
     joins?: { label: string; of?: string | undefined } | undefined;
     /** The spell an attack casts (a spell attack): its ways to cast join the prompt. */
@@ -299,6 +445,9 @@ export function rollFrom(
         foretold: null,
         damage: [],
         afterHit,
+        next,
+        hit: null,
+        hitOn: [],
       },
     }));
     const why = value.cueFor(value.preset);
@@ -349,6 +498,8 @@ export function castFrom(
       foretold: null,
       damage: [],
       afterHit: undefined,
+      hit: null,
+      hitOn: [],
     },
   }));
   // The word the prompt's button says (RollToast's go word).
@@ -359,6 +510,222 @@ export function castFrom(
     key: 'roll',
     repeat: true,
   });
+}
+
+/**
+ * A weapon's damage, asked before it is rolled (the damage prompt): its dice
+ * and what is in them, whether the attack crit, the riders that roll in, and
+ * what the character may add. Roll, or the same control tapped again, rolls
+ * it. Tapped while an attack waits, it asks once that attack lands as a hit,
+ * with the crit known; with nothing to choose it rolls with the attack then.
+ */
+export function damageFrom(
+  from: HTMLElement | null,
+  make: () => DamageAsk,
+  onLanded?: Landed,
+  { face }: { face?: RollFace } = {},
+): void {
+  const { held } = heldRollStore.getState();
+  if (held !== null && from !== null && held.from === from) {
+    rollHeld();
+    return;
+  }
+  if (held?.ask?.attack === true) {
+    heldRollStore.setState({ held: { ...held, queued: { make, onLanded, face, from } } });
+    announce('Damage asks once the attack hits.', { key: 'roll', repeat: true });
+    return;
+  }
+  holdDamage(from, make(), onLanded, face);
+}
+
+/** Can the damage prompt ask anything: an extra to add, or a rider to leave out? */
+export function asksAnything(ask: DamageAsk): boolean {
+  return ask.extras.some((x) => x.kind === 'add');
+}
+
+/** The damage prompt opens with `ask`, in place of any roll waiting. */
+function holdDamage(
+  from: HTMLElement | null,
+  ask: DamageAsk,
+  onLanded: Landed | undefined,
+  face: RollFace | undefined,
+): void {
+  heldRollStore.setState((s) => ({
+    seq: s.seq + 1,
+    held: {
+      seq: s.seq + 1,
+      ask: null,
+      cast: undefined,
+      picked: null,
+      onLanded,
+      effects: [],
+      from,
+      face,
+      mode: 'normal',
+      rollsIn: [],
+      named: [],
+      declared: [],
+      foretold: null,
+      damage: [],
+      afterHit: undefined,
+      hit: ask,
+      hitOn: ask.extras.map((x) => x.kind !== 'add'),
+    },
+  }));
+  const after = ask.after === undefined ? '' : `${ask.after}. `;
+  const crit = ask.crit ? 'Critical hit: every damage die rolls twice. ' : '';
+  announce(`${after}${ask.label}. ${crit}Choose, then Roll.`, { key: 'roll', repeat: true });
+}
+
+/**
+ * Puts an extra on the waiting damage roll, or takes it off. A slot-paid one
+ * (Divine Smite) brings its tiles, and takes another slot-paid one's place.
+ */
+export function toggleHeldExtra(index: number): void {
+  const { held } = heldRollStore.getState();
+  const hit = held?.hit;
+  const extra = hit?.extras[index];
+  if (held === null || hit === null || hit === undefined || extra === undefined) return;
+  const on = held.hitOn[index] !== true;
+  const hitOn = held.hitOn.map((v, i) =>
+    i === index
+      ? on
+      : on && extra.slot !== undefined && hit.extras[i]?.slot !== undefined
+        ? false
+        : v,
+  );
+  if (extra.slot === undefined) {
+    heldRollStore.setState({ held: { ...held, hitOn } });
+    return;
+  }
+  const cast = on ? extra.slot() : undefined;
+  heldRollStore.setState({ held: { ...held, hitOn, cast, picked: cast?.picked ?? null } });
+}
+
+/** Adds what the player typed to the waiting damage roll, on, kept on the weapon when it can be. */
+export function addHeldDamage(own: OwnDamage): void {
+  const { held } = heldRollStore.getState();
+  const hit = held?.hit;
+  if (held === null || hit === null || hit === undefined || hit.addOwn === undefined) return;
+  const extra = hit.addOwn(own);
+  heldRollStore.setState({
+    held: {
+      ...held,
+      hit: { ...hit, extras: [...hit.extras, extra] },
+      hitOn: [...held.hitOn, true],
+    },
+  });
+  announce(`${extra.source} added, +${extra.dice}.`, { key: 'roll', repeat: true });
+}
+
+/** Takes the player's own extra off the weapon, and out of the waiting roll. */
+export function removeHeldExtra(index: number): void {
+  const { held } = heldRollStore.getState();
+  const hit = held?.hit;
+  const extra = hit?.extras[index];
+  if (held === null || hit === null || hit === undefined || extra?.remove === undefined) return;
+  extra.remove();
+  heldRollStore.setState({
+    held: {
+      ...held,
+      hit: { ...hit, extras: hit.extras.filter((_, i) => i !== index) },
+      hitOn: held.hitOn.filter((_, i) => i !== index),
+    },
+  });
+  announce(`${extra.source} taken off.`, { key: 'roll', repeat: true });
+}
+
+/** A roll with dice of its own added after its terms, named for what adds them. */
+export function withDice(
+  result: RollResult,
+  dice: string,
+  source: string,
+  critical = false,
+): RollResult {
+  const added = roll(dice, critical ? { critical: true } : {});
+  return {
+    ...result,
+    total: result.total + added.total,
+    terms: [...result.terms, ...added.terms],
+    meta: {
+      ...result.meta,
+      from: [
+        ...(result.meta?.from ?? []),
+        ...added.terms.flatMap((t, i) =>
+          t.kind === 'dice' ? [{ term: result.terms.length + i, source }] : [],
+        ),
+      ],
+    },
+  };
+}
+
+/**
+ * The damage the prompt asked about, rolled under what it chose: the weapon's
+ * dice (twice on a crit, with the crit's own dice after), the extras of its
+ * type rolled in it, named, and the rest apart, in order. An extra that cannot
+ * be paid now stays out; a slot-paid one rolls its dice at the tile picked and
+ * spends it. Every roll after the first goes with it (`meta.withRoll`), or
+ * with the attack `withRoll` when it rolled with one.
+ */
+function rollDamage(
+  hit: DamageAsk,
+  on: readonly boolean[],
+  cast: HeldCast | undefined,
+  picked: string | null,
+  withRoll?: string,
+): RollResult[] {
+  const id = crypto.randomUUID();
+  let head: RollResult = {
+    ...roll(hit.expr, {
+      label: hit.label,
+      kind: 'damage',
+      ...(hit.crit ? { critical: true } : {}),
+    }),
+    id,
+  };
+  if (hit.crit && hit.critDice !== undefined) {
+    head = withDice(head, hit.critDice.dice, hit.critDice.source);
+  }
+  const apart: RollResult[] = [];
+  hit.extras.forEach((x, i) => {
+    if (on[i] !== true) return;
+    const twice = hit.crit && x.noCrit !== true;
+    if (x.slot !== undefined) {
+      const dice = cast?.dice(picked);
+      if (cast === undefined || picked === null || dice === undefined) return;
+      cast.cast(picked);
+      apart.push(
+        roll(dice.expr, { label: x.label, kind: 'damage', ...(twice ? { critical: true } : {}) }),
+      );
+      return;
+    }
+    if (x.pay !== undefined && !x.pay()) return;
+    if (x.folds === true) head = withDice(head, x.dice, x.source, twice);
+    else
+      apart.push(
+        roll(x.dice, { label: x.label, kind: 'damage', ...(twice ? { critical: true } : {}) }),
+      );
+  });
+  const goesWith = withRoll ?? id;
+  return [
+    withRoll === undefined ? head : { ...head, meta: { ...head.meta, withRoll } },
+    ...apart.map((r) => ({
+      ...r,
+      id: crypto.randomUUID(),
+      meta: { ...r.meta, withRoll: goesWith },
+    })),
+  ];
+}
+
+/** Offers the next attack of the Attack action on the roll `id`, if one is left. */
+function offerNext(
+  next: (() => NextAttack | undefined) | undefined,
+  id: string | undefined,
+  from: HTMLElement | null,
+): void {
+  const n = next?.();
+  if (n === undefined || id === undefined) return;
+  followUpStore.setState({ next: { id, words: n.words, go: n.go, from } });
 }
 
 /** Damage that waits with the attack, made once it lands. */
@@ -489,6 +856,10 @@ export function rollHeld(): void {
   heldRollStore.setState({ held: null });
   const id = crypto.randomUUID();
   const { ask, cast, picked } = held;
+  if (held.hit !== null) {
+    landDamage(held.hit, held.hitOn, cast, picked, held.onLanded, held.from);
+    return;
+  }
   if (ask === null) {
     const dice = cast?.dice(picked);
     if (dice !== undefined) {
@@ -568,21 +939,119 @@ export function rollHeld(): void {
     });
   }
   const missed = result.meta?.autoFail === true || result.meta?.d20?.natural === 1;
+  if (result.meta?.attack !== undefined) lastAttack = { id, next: held.next };
   // A reroll on the toast can turn the attack into a crit: the damage reads it as the log has it.
   const critNow = () =>
     rollLogStore.getState().rolls.find((r) => r.id === id)?.meta?.attack?.crit === true;
+  // A spell attack's hit asks for the spell's damage at the level cast.
   const after: FollowUp | undefined =
     castDamage !== undefined
       ? {
           expr: castDamage.expr,
-          go: () => rollFrom(null, () => rollCastDice(castDamage, critNow())),
+          go: () => undefined,
+          ask: () => spellDamageAsk(castDamage, critNow()),
         }
       : held.afterHit;
-  if (after !== undefined && held.damage.length === 0 && !missed) {
-    followUpStore.setState({
-      offer: { id, expr: crit ? critDice(after.expr) : after.expr, go: after.go, from: held.from },
-    });
+  const { queued } = held;
+  if (queued !== undefined && !missed) {
+    // Damage tapped while the attack waited asks now, the crit known; with
+    // nothing to choose it rolls with the attack, and shows with it.
+    const hit = { ...queued.make(), after: attackWords(result) };
+    if (!asksAnything(hit)) {
+      const on = hit.extras.map((x) => x.kind !== 'add');
+      landDamage(hit, on, undefined, null, queued.onLanded, held.from, id);
+      return;
+    }
+    const back = queued.from?.isConnected === true ? queued.from : held.from;
+    holdDamage(back, hit, queued.onLanded, queued.face);
+    return;
   }
+  if (after !== undefined && held.damage.length === 0 && !missed) {
+    const { ask } = after;
+    // The prompt it opens says the attack it follows, as the log has it then.
+    const go =
+      ask === undefined
+        ? after.go
+        : () => {
+            const shown = rollLogStore.getState().rolls.find((r) => r.id === id);
+            const hit = { ...ask(), after: shown === undefined ? undefined : attackWords(shown) };
+            holdDamage(held.from, hit, undefined, { text: after.expr, tone: 'danger' });
+          };
+    followUpStore.setState({
+      offer: { id, expr: crit ? critDice(after.expr) : after.expr, go, from: held.from },
+    });
+    return;
+  }
+  // A miss, or a hit with nothing to offer: the Attack action's next attack.
+  offerNext(held.next, id, held.from);
+}
+
+/**
+ * A spell attack's damage at the level cast, asked as a weapon's is: its dice,
+ * twice on a crit, and what the player adds for this roll alone.
+ */
+function spellDamageAsk(dice: CastDice, crit: boolean): DamageAsk {
+  return {
+    kind: 'damage',
+    label: dice.label,
+    expr: dice.expr,
+    parts: '',
+    crit,
+    extras: [],
+    addOwn: ownForThisRoll,
+  };
+}
+
+let ownSeq = 0;
+
+/** What the player typed, for this roll alone: there is no weapon to keep it on. */
+export function ownForThisRoll(own: OwnDamage): DamageExtra {
+  ownSeq += 1;
+  return {
+    key: `own-roll-${String(ownSeq)}`,
+    dice: own.dice,
+    source: own.source,
+    damageType: own.damageType,
+    label: own.damageType === undefined ? own.source : `${own.source} ${own.damageType} damage`,
+    kind: 'own',
+    tag: 'this roll',
+    note: own.note,
+    ...(own.crit ? {} : { noCrit: true }),
+  };
+}
+
+/** The attack a damage prompt follows, in words: "Longsword attack: 17, critical hit". */
+function attackWords(r: RollResult): string {
+  const crit = r.meta?.attack?.crit === true ? ', critical hit' : '';
+  return `${r.label ?? 'Attack'}: ${r.total}${crit}`;
+}
+
+/**
+ * The damage prompt's roll lands: the weapon's damage first, then its extras
+ * apart, the chip showing the whole of it. Then the Attack action's next attack
+ * is offered, if one is left.
+ */
+function landDamage(
+  hit: DamageAsk,
+  on: readonly boolean[],
+  cast: HeldCast | undefined,
+  picked: string | null,
+  onLanded: Landed | undefined,
+  from: HTMLElement | null,
+  withRoll?: string,
+): void {
+  // Read before the damage lands: past it, damage is the newest roll, and the attack stays in play.
+  const next = hit.next ?? nextAfterAttackInPlay();
+  const rolls = rollDamage(hit, on, cast, picked, withRoll);
+  const total = rolls.reduce((n, r) => n + r.total, 0);
+  rolls.forEach((r, i) => {
+    land({
+      result: r,
+      onLanded: i === 0 && onLanded !== undefined ? () => onLanded({ ...r, total }) : undefined,
+      effects: [],
+    });
+  });
+  offerNext(next, withRoll ?? rolls[0]?.id, from);
 }
 
 // A roll that lands from anywhere else (the dice tray, the Build page) lets

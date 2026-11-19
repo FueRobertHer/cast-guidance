@@ -118,9 +118,26 @@ export interface PlayState {
   /**
    * Per-turn action economy; true = used this turn. Optional for older docs.
    * `extra` names the boxes an effect adds that are used (Haste's action),
-   * absent when none is.
+   * absent when none is. `attacks` counts the weapon attacks made this turn,
+   * so Extra Attack's later ones spend no more of the turn; `once` names the
+   * once-a-turn extras added to a hit this turn (Sneak Attack), by the
+   * action's row key. Each is absent when none is.
    */
-  turn?: { action: boolean; bonus: boolean; reaction: boolean; extra?: string[] };
+  turn?: {
+    action: boolean;
+    bonus: boolean;
+    reaction: boolean;
+    extra?: string[];
+    attacks?: number;
+    once?: string[];
+  };
+  /**
+   * What the player put on a weapon to add to its damage (a coated blade, a
+   * special arrow), by the attack it is on: its equipment entry's id, else
+   * the attack's name. `once`: gone once the next hit with it lands. `noCrit`:
+   * its dice roll once on a crit. Absent rather than empty.
+   */
+  weaponExtras?: Record<string, WeaponExtra[]>;
   /**
    * False for a freshly built character: the sheet fills currentHp to the
    * derived max the first time HP exists, then flips this true. Undefined on
@@ -133,6 +150,18 @@ export interface PlayState {
    * the same; writers delete it when the last one ends.
    */
   activeEffects?: ActiveEffect[];
+}
+
+/** One thing the player put on a weapon's damage (`PlayState.weaponExtras`). */
+export interface WeaponExtra {
+  id: string;
+  source: string;
+  dice: string;
+  damageType?: string;
+  once?: true;
+  noCrit?: true;
+  /** What else it does, which the app does not roll: "DC 10 CON save or poisoned". */
+  note?: string;
 }
 
 /**

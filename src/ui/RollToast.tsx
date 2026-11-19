@@ -3,6 +3,7 @@ import {
   ChevronsUp,
   HeartCrack,
   HeartPlus,
+  Plus,
   RefreshCw,
   SlidersHorizontal,
   Sparkles,
@@ -15,11 +16,13 @@ import {
   Suspense,
   useCallback,
   useEffect,
+  useId,
   useLayoutEffect,
   useRef,
   useState,
 } from 'react';
 import { useStore } from 'zustand';
+import { parseDice } from '@/dice/parse';
 import { canReroll, rawTotal, rerollD20, withRaw } from '@/dice/reroll';
 import { roll } from '@/dice/roll';
 import type {
@@ -37,8 +40,11 @@ import { announce } from '@/stores/announcer';
 import { characterSessionStore, useCharacterSession } from '@/stores/characterSession';
 import { diceTrayStore, useDiceTray } from '@/stores/diceTray';
 import {
+  addHeldDamage,
   cancelHeld,
   critDice,
+  type DamageAsk,
+  type DamageExtra,
   declareHeld,
   followUpStore,
   foretellHeld,
@@ -46,10 +52,13 @@ import {
   heldRollStore,
   modeAlone,
   nameHeldDie,
+  type OwnDamage,
   pickHeldTile,
   type RollFace,
+  removeHeldExtra,
   rollHeld,
   setHeldMode,
+  toggleHeldExtra,
   toggleHeldRollIn,
 } from '@/stores/heldRoll';
 import { rollLogStore, useRollLog } from '@/stores/rollLog';
@@ -61,6 +70,7 @@ import { RollDetail } from './RollDetail';
 import { ROLL_MODES } from './rollModes';
 import { critWithoutNatural20, naturalOf, ROLL_INK, type RollTone, rollTone } from './rollTone';
 import { SegmentedControl } from './SegmentedControl';
+import { fieldClass, TextField } from './TextField';
 
 /**
  * The toast's edge and its tile. A plain result has the `line` hairline every
@@ -359,6 +369,7 @@ function RollResultToast({
   const [joined, setJoined] = useState<readonly RollResult[]>([]);
   const waiting = useStore(heldRollStore, (s) => s.held);
   const followUp = useStore(followUpStore, (s) => s.offer);
+  const nextUp = useStore(followUpStore, (s) => s.next ?? null);
   const heldSeq = waiting?.seq;
   const rollButton = useRef<HTMLButtonElement | null>(null);
   // The offered dice: rolled once each, and which are added.
@@ -416,7 +427,8 @@ function RollResultToast({
     const offering =
       (shownRoll.meta?.offers?.length ?? 0) > 0 ||
       (shownRoll.meta?.rerolls?.length ?? 0) > 0 ||
-      followUpStore.getState().offer?.id === shownRoll.id;
+      followUpStore.getState().offer?.id === shownRoll.id ||
+      followUpStore.getState().next?.id === shownRoll.id;
     const fromKeys = offering && active instanceof HTMLElement && keyboardFocus(active);
     focusOffer.current = fromKeys;
     returnTo.current = fromKeys ? (active as HTMLElement) : null;
@@ -480,6 +492,11 @@ function RollResultToast({
     followUp.id === visible.id
       ? followUp
       : null;
+  // The Attack action's next attack (Extra Attack), once this one missed or its damage landed.
+  const nextOffer =
+    !settled && nextUp !== null && visible?.id !== undefined && nextUp.id === visible.id
+      ? nextUp
+      : null;
   // A reroll not made yet that could still change the roll.
   const rerolls = settled || visible === null ? [] : (visible.meta?.rerolls ?? []);
   const rerollable = rerolls.map(
@@ -490,7 +507,8 @@ function RollResultToast({
   const deciding =
     offers.some((o, i) => open[i] && (added[i] !== true || o.spentOnSuccess === true)) ||
     rerollable.includes(true) ||
-    damageOffer !== null;
+    damageOffer !== null ||
+    nextOffer !== null;
   const held = hovered || focused;
   useEffect(() => {
     if (visible === null || held) return;
@@ -512,7 +530,13 @@ function RollResultToast({
     return () => clearTimeout(timer);
   }, [visible, held, deciding]);
 
-  if (waiting !== null) return <RollPrompt held={waiting} rollButton={rollButton} />;
+  if (waiting !== null) {
+    return waiting.hit !== null ? (
+      <DamagePrompt held={waiting} hit={waiting.hit} rollButton={rollButton} />
+    ) : (
+      <RollPrompt held={waiting} rollButton={rollButton} />
+    );
+  }
   if (visible === null) return null;
   const current = withAdded(visible, rolled, added);
   const autoFail = current.meta?.autoFail === true;
@@ -653,7 +677,10 @@ function RollResultToast({
   const shownReroll = rerolls.map((_, i) => rerollable[i] === true || rerolledWith[i] === true);
   const firstReroll = shownReroll.indexOf(true);
   const firstOpen = open.indexOf(true);
-  const offerRow = (firstOpen >= 0 || damageOffer !== null || firstReroll >= 0) && (
+  const offerRow = (firstOpen >= 0 ||
+    damageOffer !== null ||
+    nextOffer !== null ||
+    firstReroll >= 0) && (
     <div className="mt-2 flex flex-wrap items-center gap-1.5 border-line border-t pt-2">
       {offers.map((o, i) => {
         if (open[i] !== true) return null;
@@ -707,6 +734,25 @@ function RollResultToast({
           Roll {damageOffer.expr}
         </button>
       )}
+      {nextOffer !== null && (
+        <button
+          ref={firstOpen < 0 && damageOffer === null ? firstOffer : undefined}
+          type="button"
+          onClick={() => {
+            const inside = toast.current?.contains(document.activeElement) === true;
+            const back = nextOffer.from ?? returnTo.current ?? before.current;
+            followUpStore.setState({ next: null });
+            nextOffer.go();
+            if (inside && back?.isConnected === true && heldRollStore.getState().held === null)
+              back.focus();
+          }}
+          className="inline-flex min-h-tap items-center gap-1.5 rounded-full bg-roll-soft px-3.5 font-bold text-label text-roll hover:brightness-112"
+        >
+          <D20Icon size={16} aria-hidden="true" className="shrink-0" />
+          Next attack
+          <span className="font-normal">· {nextOffer.words}</span>
+        </button>
+      )}
       {rerolls.map(
         (o, i) =>
           shownReroll[i] && (
@@ -714,7 +760,9 @@ function RollResultToast({
               // biome-ignore lint/suspicious/noArrayIndexKey: a reroll's place is its identity in this roll
               key={i}
               ref={
-                i === firstReroll && firstOpen < 0 && damageOffer === null ? firstOffer : undefined
+                i === firstReroll && firstOpen < 0 && damageOffer === null && nextOffer === null
+                  ? firstOffer
+                  : undefined
               }
               type="button"
               aria-label={
@@ -769,6 +817,10 @@ function RollResultToast({
   );
 
   // Damage that went with the attack, under it: what each rolled and its total.
+  // Two damage rolls or more add up, before the target's resistances (each type
+  // takes its own, which is why they roll apart).
+  const damageRolls = [current, ...joined].filter((r) => r.kind === 'damage');
+  const damageTotal = damageRolls.reduce((n, r) => n + r.total, 0);
   const damageRows = joined.length > 0 && (
     <div className="mt-2 flex flex-col gap-1 border-line border-t pt-2 pl-14">
       {joined.map((d, i) => (
@@ -786,6 +838,14 @@ function RollResultToast({
           </span>
         </div>
       ))}
+      {damageRolls.length > 1 && (
+        <div className="flex items-baseline justify-between gap-3 border-line border-t pt-1">
+          <span className="min-w-0 text-caption text-ink-muted">Total before resistances</span>
+          <span className={`shrink-0 text-title-sheet tabular-nums ${ROLL_INK.damage}`}>
+            {damageTotal}
+          </span>
+        </div>
+      )}
     </div>
   );
 
@@ -1084,6 +1144,48 @@ function CastTiles({ held }: { held: HeldRoll }) {
 }
 
 /**
+ * The control that rolled stays in sight above the prompt, as it opens and as
+ * it grows (`grows`: damage joining, an extra added). Near the foot of the page
+ * there is no room to scroll it clear, so a spacer past the page's end lends
+ * what it lacks, while a prompt is up.
+ */
+function useKeepInSight(
+  held: HeldRoll,
+  box: { current: HTMLDivElement | null },
+  grows: number | string,
+): void {
+  const spacer = useRef<HTMLDivElement | null>(null);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: as each prompt opens, and as it grows
+  useLayoutEffect(() => {
+    const from = held.from;
+    const el = box.current;
+    if (from?.isConnected !== true || el === null) return;
+    // Where the prompt settles: its rise in (a transform) is not counted.
+    const over = from.getBoundingClientRect().bottom - el.offsetTop;
+    if (over <= 0) return;
+    const page = document.scrollingElement;
+    if (page !== null) {
+      const short = over + 8 - (page.scrollHeight - window.innerHeight - window.scrollY);
+      if (short > 0) {
+        const s = spacer.current ?? document.createElement('div');
+        s.setAttribute('aria-hidden', 'true');
+        s.style.cssText = `position:absolute;left:0;width:1px;height:1px;pointer-events:none;top:${page.scrollHeight + short - 1}px`;
+        if (!s.isConnected) document.body.appendChild(s);
+        spacer.current = s;
+      }
+    }
+    window.scrollBy?.({ top: over + 8 });
+  }, [held.seq, grows]);
+  useEffect(
+    () => () => {
+      spacer.current?.remove();
+      spacer.current = null;
+    },
+    [],
+  );
+}
+
+/**
  * The roll prompt (the rolls canvas, picked 2026-11-09): a d20 test waiting
  * before its d20 is rolled, in the toast's place above the thumb. The header
  * is the control that rolled; the mode is preset to what the sheet sets, with
@@ -1196,39 +1298,7 @@ function RollPrompt({
     act();
     if (inside && back?.isConnected === true) back.focus();
   };
-  // The control that rolled stays in sight above the prompt, as it opens and
-  // as it grows (damage joining). Near the foot of the page there is no room
-  // to scroll it clear, so a spacer past the page's end lends what it lacks,
-  // while a prompt is up.
-  const spacer = useRef<HTMLDivElement | null>(null);
-  // biome-ignore lint/correctness/useExhaustiveDependencies: as each prompt opens, and as it grows
-  useLayoutEffect(() => {
-    const from = held.from;
-    const el = box.current;
-    if (from?.isConnected !== true || el === null) return;
-    // Where the prompt settles: its rise in (a transform) is not counted.
-    const over = from.getBoundingClientRect().bottom - el.offsetTop;
-    if (over <= 0) return;
-    const page = document.scrollingElement;
-    if (page !== null) {
-      const short = over + 8 - (page.scrollHeight - window.innerHeight - window.scrollY);
-      if (short > 0) {
-        const s = spacer.current ?? document.createElement('div');
-        s.setAttribute('aria-hidden', 'true');
-        s.style.cssText = `position:absolute;left:0;width:1px;height:1px;pointer-events:none;top:${page.scrollHeight + short - 1}px`;
-        if (!s.isConnected) document.body.appendChild(s);
-        spacer.current = s;
-      }
-    }
-    window.scrollBy?.({ top: over + 8 });
-  }, [held.seq, held.damage.length]);
-  useEffect(
-    () => () => {
-      spacer.current?.remove();
-      spacer.current = null;
-    },
-    [],
-  );
+  useKeepInSight(held, box, held.damage.length);
   return (
     // biome-ignore lint/a11y/useSemanticElements: a group of controls, not a fieldset of inputs
     <div
@@ -1341,6 +1411,9 @@ function RollPrompt({
             : `${held.damage.length} damage rolls go with the attack`}
         </p>
       )}
+      {held.queued !== undefined && (
+        <p className="text-dice-small text-ink-muted">Damage asks once the attack hits</p>
+      )}
       <div className="flex items-center gap-3 border-line border-t pt-2">
         <p className="min-w-0 flex-1 text-caption text-ink-muted">{note}</p>
         <button
@@ -1362,3 +1435,397 @@ const GO = {
   roll: 'bg-brand text-on-brand hover:bg-brand-hover',
   heal: 'bg-heal text-on-brand hover:brightness-112',
 } as const;
+
+/** The damage types the prompt offers for what the player adds. */
+const DAMAGE_TYPES = [
+  'acid',
+  'bludgeoning',
+  'cold',
+  'fire',
+  'force',
+  'lightning',
+  'necrotic',
+  'piercing',
+  'poison',
+  'psychic',
+  'radiant',
+  'slashing',
+  'thunder',
+] as const;
+
+/** Can this be rolled? Read, never rolled: a die rolled here would be one the toast never shows. */
+function rollable(expr: string): boolean {
+  if (expr === '') return false;
+  try {
+    parseDice(expr);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * One extra in the damage prompt: a rider that rolls in, something to add,
+ * or what the player put on the weapon, which can come off it for good.
+ */
+function DamageExtraChip({
+  extra,
+  dice,
+  on,
+  onClick,
+  onRemove,
+}: {
+  extra: DamageExtra;
+  /** Its dice as this roll makes them: twice on a crit, a slot's at the tile picked. */
+  dice: string | undefined;
+  on: boolean;
+  onClick: () => void;
+  onRemove: (() => void) | undefined;
+}) {
+  const type = extra.damageType === undefined ? '' : ` ${extra.damageType}`;
+  const name = dice === undefined ? extra.source : `+${dieWord(dice)}${type} ${extra.source}`;
+  const tag = extra.usedThisTurn === true ? `${extra.tag}, used this turn` : extra.tag;
+  return (
+    <span className="inline-flex items-center">
+      <button
+        type="button"
+        aria-pressed={on}
+        aria-label={`${name}, ${tag}${extra.note === undefined ? '' : `: ${extra.note}`}`}
+        onClick={onClick}
+        className={`inline-flex min-h-tap items-center gap-1 rounded-full px-3 font-semibold text-label ${
+          on
+            ? 'bg-heal-soft text-ink ring-[1.5px] ring-heal ring-inset'
+            : 'bg-surface-raised text-ink hover:bg-surface-hover'
+        } ${onRemove === undefined ? '' : 'rounded-r-none'}`}
+      >
+        {on ? (
+          <Check size={14} aria-hidden="true" className="shrink-0 text-heal" />
+        ) : (
+          <ChevronsUp size={14} aria-hidden="true" className="shrink-0 text-heal" />
+        )}
+        {name}
+        <span className="font-normal text-ink-muted">· {tag}</span>
+      </button>
+      {onRemove !== undefined && (
+        <button
+          type="button"
+          aria-label={`Take ${extra.source} off`}
+          onClick={onRemove}
+          className="inline-flex min-h-tap items-center rounded-r-full bg-surface-raised px-2 text-ink-muted hover:bg-surface-hover"
+        >
+          <X size={14} aria-hidden="true" />
+        </button>
+      )}
+    </span>
+  );
+}
+
+/**
+ * What the player adds to a damage roll by hand (a coated blade, a special
+ * arrow): its name, dice and type, whether it is gone after the next hit or
+ * stays on the weapon, and whether a crit doubles its dice.
+ */
+function AddDamageForm({
+  keeps,
+  onAdd,
+  onCancel,
+}: {
+  keeps: boolean;
+  onAdd: (own: OwnDamage) => void;
+  onCancel: () => void;
+}) {
+  const [source, setSource] = useState('');
+  const [dice, setDice] = useState('');
+  const [type, setType] = useState('');
+  const [lasts, setLasts] = useState<'once' | 'kept'>('once');
+  const [crit, setCrit] = useState(true);
+  const [note, setNote] = useState('');
+  const [tried, setTried] = useState(false);
+  const typeId = useId();
+  const diceOk = rollable(dice.trim());
+  const nameOk = source.trim() !== '';
+  const add = () => {
+    setTried(true);
+    if (!diceOk || !nameOk) return;
+    onAdd({
+      source: source.trim(),
+      dice: dice.trim(),
+      ...(type === '' ? {} : { damageType: type }),
+      once: !keeps || lasts === 'once',
+      crit,
+      ...(note.trim() === '' ? {} : { note: note.trim() }),
+    });
+  };
+  return (
+    // biome-ignore lint/a11y/useSemanticElements: a group of fields inside the prompt's group, not a form to submit
+    <div
+      role="group"
+      aria-label="Add damage"
+      className="flex flex-col gap-2 rounded-control bg-surface-raised/50 p-2"
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' && event.target instanceof HTMLInputElement) {
+          event.preventDefault();
+          add();
+        }
+      }}
+    >
+      <div className="grid grid-cols-2 gap-2">
+        <TextField
+          label="Name"
+          placeholder="For example, Basic Poison"
+          value={source}
+          onChange={(event) => setSource(event.target.value)}
+          error={tried && !nameOk ? 'Name what adds it' : undefined}
+        />
+        <TextField
+          label="Dice"
+          placeholder="For example, 1d4"
+          value={dice}
+          onChange={(event) => setDice(event.target.value)}
+          error={tried && !diceOk ? 'Dice like 1d4 or 2d6+1' : undefined}
+          inputMode="text"
+          autoCapitalize="off"
+          autoCorrect="off"
+        />
+      </div>
+      <div className="flex flex-col gap-1.5">
+        <label htmlFor={typeId} className="text-label text-ink-muted">
+          Damage type
+        </label>
+        <select
+          id={typeId}
+          value={type}
+          onChange={(event) => setType(event.target.value)}
+          className={fieldClass}
+        >
+          <option value="">The weapon's own</option>
+          {DAMAGE_TYPES.map((t) => (
+            <option key={t} value={t}>
+              {t}
+            </option>
+          ))}
+        </select>
+      </div>
+      <TextField
+        label="Note (optional)"
+        placeholder="For example, DC 10 CON save or poisoned"
+        value={note}
+        onChange={(event) => setNote(event.target.value)}
+      />
+      {keeps && (
+        <SegmentedControl
+          label="How long it stays on the weapon"
+          options={[
+            { value: 'once', label: 'Next hit' },
+            { value: 'kept', label: 'Every hit' },
+          ]}
+          value={lasts}
+          onChange={setLasts}
+          block
+        />
+      )}
+      <label className="flex min-h-tap items-center gap-2 text-label text-ink">
+        <input
+          type="checkbox"
+          checked={crit}
+          onChange={(event) => setCrit(event.target.checked)}
+          className="size-5 shrink-0 accent-ink"
+        />
+        Its dice double on a critical hit
+      </label>
+      <div className="flex justify-end gap-2">
+        <button
+          type="button"
+          onClick={onCancel}
+          className="inline-flex min-h-tap items-center rounded-full px-4 font-semibold text-ink-muted text-label hover:bg-surface-hover"
+        >
+          Cancel
+        </button>
+        <button
+          type="button"
+          onClick={add}
+          className="inline-flex min-h-tap items-center rounded-full bg-ink px-4 font-semibold text-bg text-label"
+        >
+          Add
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The damage prompt: a weapon's damage asked before it is rolled, in the
+ * toast's place, as the roll prompt asks a d20 test. The header is the chip
+ * that rolled, the lines say what rolls (twice on a crit) and what the
+ * modifiers are, and the extras are the riders that roll in (on), what the
+ * character may add (off: Sneak Attack, Divine Smite with its slot tiles,
+ * Bardic Inspiration), and what the player put on the weapon (on, and
+ * removable). Add damage puts on something new: a coating, a special arrow.
+ * One note sits by Roll: what it spends, else that the chip rolls too.
+ */
+function DamagePrompt({
+  held,
+  hit,
+  rollButton,
+}: {
+  held: HeldRoll;
+  hit: DamageAsk;
+  rollButton: { current: HTMLButtonElement | null };
+}) {
+  const box = useRef<HTMLDivElement | null>(null);
+  const [adding, setAdding] = useState(false);
+  const { cast, picked } = held;
+  useKeepInSight(held, box, `${hit.extras.length}:${adding ? 1 : 0}`);
+  const on = (i: number) => held.hitOn[i] === true;
+  const twice = (x: DamageExtra) => hit.crit && x.noCrit !== true;
+  /** An extra's dice as this roll makes them. */
+  const diceOf = (x: DamageExtra) => {
+    if (x.slot !== undefined) {
+      const d = cast?.dice(picked)?.expr;
+      return d === undefined ? undefined : hit.crit ? critDice(d) : d;
+    }
+    return twice(x) ? critDice(x.dice) : x.dice;
+  };
+  const type = hit.damageType === undefined ? '' : ` ${hit.damageType}`;
+  const folded = hit.extras
+    .filter((x, i) => on(i) && x.folds === true && x.slot === undefined)
+    .map((x) => ` + ${dieWord(diceOf(x) ?? x.dice)} ${x.source}`);
+  const crits =
+    hit.crit && hit.critDice !== undefined
+      ? [` + ${dieWord(hit.critDice.dice)} ${hit.critDice.source}`]
+      : [];
+  const formula = `${hit.crit ? critDice(hit.expr) : hit.expr}${type}${[...folded, ...crits].join('')}`;
+  const apart = hit.extras.flatMap((x, i) => {
+    if (!on(i) || (x.folds === true && x.slot === undefined)) return [];
+    const d = diceOf(x);
+    const t = x.damageType === undefined ? '' : ` ${x.damageType}`;
+    return [d === undefined ? x.source : `${dieWord(d)}${t} ${x.source}`];
+  });
+  // What it spends and what holds: an add's use and its when, a slot, a coating that comes off.
+  const adds = hit.extras.filter((x, i) => on(i) && x.kind === 'add' && x.slot === undefined);
+  const slotOn = hit.extras.some((x, i) => on(i) && x.slot !== undefined);
+  const comesOff = hit.extras.filter((x, i) => on(i) && x.kind === 'own' && x.tag === 'next hit');
+  const notes = hit.extras.flatMap((x, i) => {
+    if (!on(i)) return [];
+    const said = [
+      x.note === undefined ? '' : `${x.source}: ${x.note}.`,
+      x.usedThisTurn === true ? `${x.source} was used this turn already.` : '',
+    ];
+    return said.filter((n) => n !== '');
+  });
+  const spends = [
+    slotOn && cast !== undefined ? cast.note(picked) : '',
+    adds.length > 0 ? `Adds ${andWords(adds.map((x) => x.source))}.` : '',
+    comesOff.length > 0
+      ? `${andWords(comesOff.map((x) => x.source))} ${comesOff.length === 1 ? 'comes' : 'come'} off after this hit.`
+      : '',
+  ]
+    .filter((n) => n !== '')
+    .join(' ');
+  const face = held.face ?? { text: hit.expr, tone: 'danger' as const };
+  const note = spends !== '' ? spends : `Tap ${face.text} again to roll.`;
+  const leave = (act: () => void) => {
+    const inside = box.current?.contains(document.activeElement) === true;
+    const back = held.from;
+    act();
+    if (inside && back?.isConnected === true) back.focus();
+  };
+  return (
+    // biome-ignore lint/a11y/useSemanticElements: a group of controls, not a fieldset of inputs
+    <div
+      key={held.seq}
+      ref={box}
+      role="group"
+      aria-label={`${hit.label}, choose and roll`}
+      className={`${FRAME} ${hit.crit ? TONE.crit.edge : TONE.damage.edge} flex max-h-[calc(100dvh-7rem)] flex-col gap-2 overflow-y-auto`}
+      onKeyDown={(event) => {
+        if (event.key !== 'Escape') return;
+        event.stopPropagation();
+        leave(cancelHeld);
+      }}
+    >
+      <div className={ROW}>
+        <PromptHeader face={face} setAside={false} />
+        <span className="block min-w-0 flex-1">
+          <span className="block break-words text-body-strong">{hit.label}</span>
+          <span className="block text-dice-small text-ink-muted tabular-nums">{formula}</span>
+          {hit.parts !== '' && (
+            <span className="block text-caption text-ink-muted">{hit.parts}</span>
+          )}
+          {apart.length > 0 && (
+            <span className="block text-dice-small text-ink-muted tabular-nums">
+              Then {apart.join(', ')}
+            </span>
+          )}
+        </span>
+        <button
+          type="button"
+          aria-label="Cancel this roll"
+          onClick={() => leave(cancelHeld)}
+          className="-mt-1 -mr-2 inline-flex size-11 shrink-0 items-center justify-center self-start rounded-full text-ink-muted hover:bg-surface-hover"
+        >
+          <X size={18} aria-hidden="true" />
+        </button>
+      </div>
+      {(hit.after !== undefined || hit.crit) && (
+        <p className="text-caption text-guide">
+          {[
+            hit.after,
+            hit.crit ? 'Critical hit: every damage die rolls twice, the modifiers once' : '',
+          ]
+            .filter((w) => w !== undefined && w !== '')
+            .join(' · ')}
+        </p>
+      )}
+      {hit.extras.length > 0 && (
+        <div className="flex flex-wrap items-center gap-1.5">
+          {hit.extras.map((x, i) => (
+            <DamageExtraChip
+              key={x.key}
+              extra={x}
+              dice={diceOf(x)}
+              on={on(i)}
+              onClick={() => toggleHeldExtra(i)}
+              onRemove={x.remove === undefined ? undefined : () => removeHeldExtra(i)}
+            />
+          ))}
+        </div>
+      )}
+      {slotOn && <CastTiles held={held} />}
+      {notes.length > 0 && <p className="text-caption text-ink-muted">{notes.join(' ')}</p>}
+      {hit.addOwn !== undefined &&
+        (adding ? (
+          <AddDamageForm
+            keeps={hit.keeps === true}
+            onAdd={(own) => {
+              addHeldDamage(own);
+              setAdding(false);
+              rollButton.current?.focus();
+            }}
+            onCancel={() => setAdding(false)}
+          />
+        ) : (
+          <button
+            type="button"
+            onClick={() => setAdding(true)}
+            className="inline-flex min-h-tap items-center gap-1.5 self-start rounded-full px-3 font-semibold text-ink text-label ring-1 ring-line-strong ring-inset hover:bg-surface-hover"
+          >
+            <Plus size={14} aria-hidden="true" className="shrink-0" />
+            Add damage
+          </button>
+        ))}
+      <div className="flex items-center gap-3 border-line border-t pt-2">
+        <p className="min-w-0 flex-1 text-caption text-ink-muted">{note}</p>
+        <button
+          ref={rollButton}
+          type="button"
+          onClick={() => leave(rollHeld)}
+          className={`inline-flex min-h-tap shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full px-5 font-bold text-label ${GO.roll}`}
+        >
+          <HeartCrack size={16} aria-hidden="true" />
+          Roll
+        </button>
+      </div>
+    </div>
+  );
+}
