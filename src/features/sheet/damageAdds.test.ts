@@ -2,12 +2,17 @@ import { describe, expect, it } from 'vitest';
 import type { RollEffects } from '@/engine/playRules';
 import type { AttackRow, DerivedSheet, FeatureCard } from '@/engine/types';
 import { SLOT_COST } from '@/engine/types';
+import type { WeaponFeat } from './damageAdds';
 import {
   actionKey,
+  againstOf,
   damageAdds,
   damageParts,
   entriesText,
+  featReaches,
+  hitSpell,
   oncePerTurn,
+  weaponFeats,
   weaponNeed,
 } from './damageAdds';
 
@@ -260,5 +265,356 @@ describe('damageAdds', () => {
       { dice: '1d8', source: 'Bardic Inspiration', effectId: 'b2', once: false, ifFailed: false },
     ];
     expect(damageAdds({ actions: [], features: [] }, a, offers)).toEqual([]);
+  });
+});
+
+function spell(over: Record<string, unknown> = {}): unknown {
+  return {
+    name: 'Test Spell',
+    level: 1,
+    time: [{ number: 1, unit: 'bonus' }],
+    range: { type: 'point', distance: { type: 'feet', amount: 90 } },
+    entries: [],
+    ...over,
+  };
+}
+
+const ON_HIT_TIME = [
+  {
+    number: 1,
+    unit: 'bonus',
+    condition:
+      'which you take immediately after hitting a target with a Melee weapon or an Unarmed Strike',
+  },
+];
+
+describe('againstOf', () => {
+  it('reads "an undead or a fiend"', () => {
+    expect(againstOf('The damage increases by 1d8 if the target is an undead or a fiend.')).toEqual(
+      { dice: '1d8', who: 'a Fiend or Undead' },
+    );
+  });
+
+  it('reads "a Fiend or an Undead"', () => {
+    expect(againstOf('The damage increases by 1d8 if the target is a Fiend or an Undead.')).toEqual(
+      { dice: '1d8', who: 'a Fiend or Undead' },
+    );
+  });
+
+  it('gives undefined when no sentence says so', () => {
+    expect(againstOf('The target takes an extra 2d8 radiant damage from the attack.')).toBe(
+      undefined,
+    );
+  });
+});
+
+describe('hitSpell cast as you hit', () => {
+  const searing2024 = spell({
+    time: ON_HIT_TIME,
+    entries: [
+      'As you hit the target, it takes an extra {@damage 1d6} Fire damage from the attack. At the start of each of its turns, it takes {@damage 1d6} Fire damage.',
+    ],
+  });
+
+  it('reads a 2024 smite as cast on the hit, with its dice and type', () => {
+    expect(hitSpell(searing2024, false)).toEqual({
+      how: 'cast',
+      every: false,
+      on: false,
+      need: 'melee',
+      dice: '1d6',
+      damageType: 'fire',
+    });
+  });
+
+  it('still reads it as cast while running', () => {
+    expect(hitSpell(searing2024, true)).toMatchObject({ how: 'cast', need: 'melee' });
+  });
+
+  it('reads the 2024 Divine Smite with its d8 against a Fiend or Undead', () => {
+    const smite = spell({
+      time: ON_HIT_TIME,
+      entries: [
+        'The target takes an extra {@damage 2d8} Radiant damage from the attack. The damage increases by {@damage 1d8} if the target is a Fiend or an Undead.',
+      ],
+    });
+    expect(hitSpell(smite, false)).toMatchObject({
+      how: 'cast',
+      dice: '2d8',
+      damageType: 'radiant',
+      against: { dice: '1d8', who: 'a Fiend or Undead' },
+    });
+  });
+
+  it('gives undefined for Ensnaring Strike, whose damage comes later', () => {
+    const ensnaring = spell({
+      time: ON_HIT_TIME,
+      entries: [
+        'As you hit the target, grasping vines appear and try to restrain it. While Restrained, the target takes {@damage 1d6} Piercing damage at the start of each of its turns.',
+      ],
+    });
+    expect(hitSpell(ensnaring, false)).toBe(undefined);
+    expect(hitSpell(ensnaring, true)).toBe(undefined);
+  });
+});
+
+describe('hitSpell while concentrating', () => {
+  it('reads 2014 Hex as running, every hit, on, with a note on the target', () => {
+    const hex = spell({
+      entries: [
+        'Until the spell ends, you deal an extra {@damage 1d6} necrotic damage to the target whenever you hit it with an attack.',
+      ],
+    });
+    const got = hitSpell(hex, true);
+    expect(got).toMatchObject({
+      how: 'running',
+      every: true,
+      on: true,
+      need: 'any',
+      dice: '1d6',
+      damageType: 'necrotic',
+    });
+    expect(got?.note).toContain('target');
+  });
+
+  it('gives undefined for Hex when not concentrating', () => {
+    const hex = spell({
+      entries: [
+        'Until the spell ends, you deal an extra {@damage 1d6} necrotic damage to the target whenever you hit it with an attack.',
+      ],
+    });
+    expect(hitSpell(hex, false)).toBe(undefined);
+  });
+
+  it('reads 2014 Searing Smite as one next hit, melee, not on', () => {
+    const searing = spell({
+      range: { type: 'point', distance: { type: 'self' } },
+      entries: [
+        "The next time you hit a creature with a melee weapon attack during the spell's duration, your weapon flares with white-hot intensity, and the attack deals an extra {@damage 1d6} fire damage to the target and causes the target to ignite in flames.",
+      ],
+    });
+    expect(hitSpell(searing, true)).toMatchObject({
+      how: 'running',
+      every: false,
+      on: false,
+      need: 'melee',
+      dice: '1d6',
+      damageType: 'fire',
+    });
+  });
+
+  it('reads 2014 Divine Favor as every hit, on, for the character', () => {
+    const favor = spell({
+      range: { type: 'point', distance: { type: 'self' } },
+      entries: ['Your weapon attacks deal an extra {@damage 1d4} radiant damage on a hit.'],
+    });
+    expect(hitSpell(favor, true)).toMatchObject({
+      how: 'running',
+      every: true,
+      on: true,
+      dice: '1d4',
+      damageType: 'radiant',
+    });
+  });
+
+  it('reads Holy Weapon as every hit but not on, since it is bound to a weapon', () => {
+    const holy = spell({
+      range: { type: 'point', distance: { type: 'touch' } },
+      entries: [
+        'Until the spell ends, the weapon deals an extra {@damage 2d8} radiant damage on a hit.',
+      ],
+    });
+    expect(hitSpell(holy, true)).toMatchObject({
+      how: 'running',
+      every: true,
+      on: false,
+      dice: '2d8',
+      damageType: 'radiant',
+    });
+  });
+
+  it('reads Spirit Shroud as on, with a note on the 10 feet', () => {
+    const shroud = spell({
+      range: { type: 'point', distance: { type: 'self' } },
+      entries: [
+        'Until the spell ends, any attack you make deals {@damage 1d8} extra damage when you hit a creature within 10 feet of you.',
+      ],
+    });
+    const got = hitSpell(shroud, true);
+    expect(got).toMatchObject({ how: 'running', on: true, dice: '1d8' });
+    expect(got?.note).toContain('10 feet');
+  });
+
+  it('gives undefined for a value that is not an object', () => {
+    expect(hitSpell(undefined, true)).toBe(undefined);
+    expect(hitSpell(null, true)).toBe(undefined);
+    expect(hitSpell('Hex', true)).toBe(undefined);
+  });
+});
+
+describe('weaponFeats', () => {
+  const gwm2014 = {
+    name: 'Great Weapon Master',
+    entries: [
+      "You've learned to put the weight of a weapon to your advantage...",
+      {
+        type: 'list',
+        items: [
+          "Before you make a melee attack with a heavy weapon that you are proficient with, you can choose to take a -5 penalty to the attack roll. If the attack hits, you add +10 to the attack's damage.",
+        ],
+      },
+    ],
+  };
+
+  it('reads 2014 Great Weapon Master as a heavy melee power', () => {
+    expect(weaponFeats([gwm2014])).toEqual([
+      { kind: 'power', source: 'Great Weapon Master', need: 'heavyMelee' },
+    ]);
+  });
+
+  it('reads a true minus sign in the -5 penalty the same way', () => {
+    const withMinus = {
+      name: 'Great Weapon Master',
+      entries: [
+        "Before you make a melee attack with a heavy weapon that you are proficient with, you can choose to take a −5 penalty to the attack roll. If the attack hits, you add +10 to the attack's damage.",
+      ],
+    };
+    expect(weaponFeats([withMinus])).toEqual([
+      { kind: 'power', source: 'Great Weapon Master', need: 'heavyMelee' },
+    ]);
+  });
+
+  it('reads 2014 Sharpshooter as a ranged power', () => {
+    const sharp = {
+      name: 'Sharpshooter',
+      entries: [
+        "Before you make an attack with a ranged weapon that you are proficient with, you can choose to take a -5 penalty to the attack roll. If the attack hits, you add +10 to the attack's damage.",
+      ],
+    };
+    expect(weaponFeats([sharp])).toEqual([
+      { kind: 'power', source: 'Sharpshooter', need: 'ranged' },
+    ]);
+  });
+
+  it('reads 2024 Great Weapon Master as heavy mastery from its nested entry', () => {
+    const gwm2024 = {
+      name: 'Great Weapon Master',
+      entries: [
+        {
+          type: 'entries',
+          name: 'Heavy Weapon Mastery',
+          entries: [
+            'When you hit a creature with a weapon that has the Heavy property as part of the Attack action on your turn, you can cause the weapon to deal extra damage to the target. The extra damage equals your Proficiency Bonus.',
+          ],
+        },
+      ],
+    };
+    expect(weaponFeats([gwm2024])).toEqual([
+      { kind: 'heavyMastery', source: 'Great Weapon Master', need: 'heavy' },
+    ]);
+  });
+
+  it('reads 2014 Savage Attacker as a melee savage feat', () => {
+    const savage = {
+      name: 'Savage Attacker',
+      entries: [
+        "Once per turn when you roll damage for a melee weapon attack, you can reroll the weapon's damage dice and use either total.",
+      ],
+    };
+    expect(weaponFeats([savage])).toEqual([
+      { kind: 'savage', source: 'Savage Attacker', need: 'melee' },
+    ]);
+  });
+
+  it('reads 2024 Savage Attacker as an any-weapon savage feat', () => {
+    const savage = {
+      name: 'Savage Attacker',
+      entries: [
+        "Once per turn when you hit a target with a weapon, you can roll the weapon's damage dice twice and use either roll against the target.",
+      ],
+    };
+    expect(weaponFeats([savage])).toEqual([
+      { kind: 'savage', source: 'Savage Attacker', need: 'any' },
+    ]);
+  });
+
+  it('takes the source name without a trailing parenthesis', () => {
+    const savage = {
+      name: 'Savage Attacker (Origin)',
+      entries: [
+        "Once per turn when you hit a target with a weapon, you can roll the weapon's damage dice twice and use either roll against the target.",
+      ],
+    };
+    expect(weaponFeats([savage])[0]?.source).toBe('Savage Attacker');
+  });
+
+  it('gives nothing for an unrelated feat', () => {
+    expect(
+      weaponFeats([{ name: 'Alert', entries: ['You gain a +5 bonus to initiative.'] }]),
+    ).toEqual([]);
+  });
+});
+
+describe('featReaches', () => {
+  const PROFICIENT = [{ label: 'Proficiency', amount: 2 }];
+  const proficient = (over: Partial<AttackRow> = {}): AttackRow =>
+    row({ toHit: { value: 5, base: 5, overridden: false, parts: PROFICIENT }, ...over });
+  const power = (need: WeaponFeat['need']): WeaponFeat => ({
+    kind: 'power',
+    source: 'Feat',
+    need,
+  });
+
+  it('reaches a proficient melee heavy weapon with a heavyMelee power', () => {
+    expect(
+      featReaches(power('heavyMelee'), proficient({ properties: ['heavy'], ranged: false })),
+    ).toBe(true);
+  });
+
+  it('does not reach a heavyMelee power without the Proficiency part', () => {
+    expect(featReaches(power('heavyMelee'), row({ properties: ['heavy'], ranged: false }))).toBe(
+      false,
+    );
+  });
+
+  it('does not reach a heavyMelee power with a ranged heavy weapon', () => {
+    expect(
+      featReaches(power('heavyMelee'), proficient({ properties: ['heavy'], ranged: true })),
+    ).toBe(false);
+  });
+
+  it('does not reach a heavyMelee power with a light melee weapon', () => {
+    expect(featReaches(power('heavyMelee'), proficient({ properties: [], ranged: false }))).toBe(
+      false,
+    );
+  });
+
+  it('reaches a proficient ranged weapon with a ranged power only', () => {
+    expect(featReaches(power('ranged'), proficient({ ranged: true }))).toBe(true);
+    expect(featReaches(power('ranged'), proficient({ ranged: false }))).toBe(false);
+  });
+
+  it('reaches heavy weapons, melee or ranged, with heavyMastery', () => {
+    const mastery: WeaponFeat = { kind: 'heavyMastery', source: 'GWM', need: 'heavy' };
+    expect(featReaches(mastery, row({ properties: ['heavy'], ranged: false }))).toBe(true);
+    expect(featReaches(mastery, row({ properties: ['heavy'], ranged: true }))).toBe(true);
+  });
+
+  it('does not reach light weapons with heavyMastery', () => {
+    const mastery: WeaponFeat = { kind: 'heavyMastery', source: 'GWM', need: 'heavy' };
+    expect(featReaches(mastery, row({ properties: ['light'], ranged: false }))).toBe(false);
+    expect(featReaches(mastery, row({ properties: ['light'], ranged: true }))).toBe(false);
+  });
+
+  it('reaches melee rows, not ranged ones, with a melee savage feat', () => {
+    const savage: WeaponFeat = { kind: 'savage', source: 'Savage Attacker', need: 'melee' };
+    expect(featReaches(savage, row({ ranged: false }))).toBe(true);
+    expect(featReaches(savage, row({ ranged: true }))).toBe(false);
+  });
+
+  it('reaches every row with an any savage feat', () => {
+    const savage: WeaponFeat = { kind: 'savage', source: 'Savage Attacker', need: 'any' };
+    expect(featReaches(savage, row({ ranged: false }))).toBe(true);
+    expect(featReaches(savage, row({ ranged: true }))).toBe(true);
   });
 });
