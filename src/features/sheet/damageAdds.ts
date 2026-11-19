@@ -289,6 +289,8 @@ export interface WeaponFeat {
   kind: 'power' | 'heavyMastery' | 'savage';
   source: string;
   need: 'heavyMelee' | 'heavy' | 'ranged' | 'melee' | 'any';
+  /** Decided once the damage shows (2014 Savage Attacker's reroll), not before it is rolled. */
+  after?: true;
 }
 
 /** The feats among the character's features that change a weapon's damage. */
@@ -314,7 +316,14 @@ export function weaponFeats(features: readonly { name: string; entries: unknown 
       out.push({ kind: 'heavyMastery', source, need: 'heavy' });
     }
     if (/\b(?:roll|reroll) the weapon's damage dice(?: twice)? and use either\b/i.test(text)) {
-      out.push({ kind: 'savage', source, need: weaponNeed(text) === 'melee' ? 'melee' : 'any' });
+      // 2014 rerolls once the damage shows; 2024 rolls twice as it is made.
+      const reroll = /\breroll the weapon's damage dice\b/i.test(text);
+      out.push({
+        kind: 'savage',
+        source,
+        need: weaponNeed(text) === 'melee' ? 'melee' : 'any',
+        ...(reroll ? { after: true as const } : {}),
+      });
     }
   }
   return out;
@@ -336,4 +345,40 @@ export function featReaches(f: WeaponFeat, a: AttackRow): boolean {
     default:
       return true;
   }
+}
+
+/**
+ * A spell that, once cast, puts extra damage on the character's weapon hits
+ * for its duration with no concentration to hold (2024 Divine Favor: "your
+ * attacks with weapons deal an extra 1d4 Radiant damage on a hit"): its dice,
+ * their type, and how many minutes it lasts. A concentration spell adds while
+ * it is held instead (`hitSpell`).
+ */
+export function castBuff(
+  entity: unknown,
+): { dice: string; damageType?: string; minutes?: number } | undefined {
+  if (entity === null || typeof entity !== 'object') return undefined;
+  const e = entity as { entries?: unknown; range?: unknown; duration?: unknown };
+  const duration = Array.isArray(e.duration)
+    ? (e.duration[0] as
+        | { concentration?: unknown; duration?: { type?: unknown; amount?: unknown } }
+        | undefined)
+    : undefined;
+  if (duration?.concentration === true) return undefined;
+  const range = e.range as { distance?: { type?: unknown } } | undefined;
+  if (range?.distance?.type !== 'self') return undefined;
+  const sentence = sentencesOf(e.entries).find(
+    (s) =>
+      /\buntil the spell ends\b/i.test(s) &&
+      /\bextra\b/i.test(s) &&
+      /\bweapons?\b/i.test(s) &&
+      /\bhits?\b/i.test(s) &&
+      /\{@damage /i.test(s),
+  );
+  const damage = sentence === undefined ? undefined : damageIn(sentence);
+  if (damage === undefined) return undefined;
+  const amount = typeof duration?.duration?.amount === 'number' ? duration.duration.amount : 1;
+  const unit = duration?.duration?.type;
+  const minutes = unit === 'minute' ? amount : unit === 'hour' ? amount * 60 : undefined;
+  return { ...damage, ...(minutes === undefined ? {} : { minutes }) };
 }

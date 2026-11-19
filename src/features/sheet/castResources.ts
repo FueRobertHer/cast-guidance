@@ -8,6 +8,7 @@ import type {
   SpellcastingBlock,
 } from '@/engine/types';
 import type { DocUpdater } from '@/stores/characterSession';
+import { notify } from '@/stores/notices';
 import { spellRollActions } from './spellRolls';
 
 export interface CastSpellInfo {
@@ -583,10 +584,18 @@ export function castSpell(
   // Which resource actually paid for it is only known inside the recipe, so the
   // history label is resolved afterwards (see DocUpdater).
   let spent: CastResource | undefined;
+  let secondSlot = false;
   update(
     (d) => {
       const turn = d.play.turn ?? { action: false, bonus: false, reaction: false };
       let turnUsed = false;
+      // The 2024 rules' one spell slot a turn: a slot spent outside a reaction
+      // (a Shield on another's turn is no slot of this one) is marked, and a
+      // second is said, never stopped. A pool turned into a slot spends a slot.
+      const slotSpent = (kind: CastResource['kind']) =>
+        kind === 'slot' || kind === 'pact' || kind === 'pool';
+      const marksSlot = (kind: CastResource['kind']) =>
+        d.rulesVersion === '2024' && spell?.economy !== 'reaction' && slotSpent(kind);
       if (spell?.economy !== undefined) {
         turn[spell.economy] = true;
         turnUsed = true;
@@ -623,10 +632,22 @@ export function castSpell(
       } else if (spend.kind === 'pact' || spend.kind === 'slot') {
         spendSlot(d.play, spend);
       }
+      if (marksSlot(spend.kind)) {
+        secondSlot = turn.slotSpell === true;
+        turn.slotSpell = true;
+        turnUsed = true;
+      }
       if (turnUsed) d.play.turn = turn;
     },
     spell === undefined ? undefined : () => `Cast ${spell.name}${castCost(spent, level)}`,
   );
+  if (secondSlot && spell !== undefined) {
+    notify({
+      title: 'A second spell slot this turn',
+      detail: `${spell.name} expended a spell slot, and one was expended on a spell this turn already. The 2024 rules allow one a turn.`,
+      tone: 'warn',
+    });
+  }
 }
 
 /**

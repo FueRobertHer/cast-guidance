@@ -236,6 +236,12 @@ export interface DamageAsk {
   next?: (() => NextAttack | undefined) | undefined;
   /** The attack it follows, in words, set as the prompt opens: "Longsword attack: 17". */
   after?: string | undefined;
+  /**
+   * A reroll of the weapon's own dice the result offers once it shows, the
+   * higher total kept (2014 Savage Attacker, once a turn), and what paying for
+   * it marks.
+   */
+  reroll?: { source: string; pay: () => void } | undefined;
 }
 
 /** A roll made and not yet landed: what the control does then, and what making it put off. */
@@ -320,7 +326,20 @@ export const followUpStore = createStore<{
   offer: { id: string; expr: string; go: () => void; from: HTMLElement | null } | null;
   /** The next attack of the Attack action, offered on the roll `id` (a miss, or the damage). */
   next?: { id: string; words: string; go: () => void; from: HTMLElement | null } | null;
-}>(() => ({ offer: null, next: null }));
+  /**
+   * A reroll of the weapon's dice the damage `id` offers (2014 Savage
+   * Attacker): its first `terms` are the weapon's own, coming to `total`, and
+   * `weapon` rolls them again.
+   */
+  reroll?: {
+    id: string;
+    source: string;
+    terms: number;
+    total: number;
+    weapon: () => RollResult;
+    pay: () => void;
+  } | null;
+}>(() => ({ offer: null, next: null, reroll: null }));
 
 /** The log takes it, what making it put off happens, then what the control does. */
 function land({ result, onLanded, effects }: Pending): void {
@@ -702,24 +721,27 @@ export function withDice(
  * spends it. Every roll after the first goes with it (`meta.withRoll`), or
  * with the attack `withRoll` when it rolled with one.
  */
+/** The weapon's own damage: its dice twice on a crit, the crit's own dice after (Savage Attacks). */
+function weaponRoll(hit: DamageAsk): RollResult {
+  const r = roll(hit.expr, {
+    label: hit.label,
+    kind: 'damage',
+    ...(hit.crit ? { critical: true } : {}),
+  });
+  return hit.crit && hit.critDice !== undefined
+    ? withDice(r, hit.critDice.dice, hit.critDice.source)
+    : r;
+}
+
 function rollDamage(
   hit: DamageAsk,
   on: readonly boolean[],
   cast: HeldCast | undefined,
   picked: string | null,
   withRoll?: string,
-): RollResult[] {
+): { rolls: RollResult[]; weapon: { terms: number; total: number } } {
   const id = crypto.randomUUID();
-  const weapon = (): RollResult => {
-    const r = roll(hit.expr, {
-      label: hit.label,
-      kind: 'damage',
-      ...(hit.crit ? { critical: true } : {}),
-    });
-    return hit.crit && hit.critDice !== undefined
-      ? withDice(r, hit.critDice.dice, hit.critDice.source)
-      : r;
-  };
+  const weapon = () => weaponRoll(hit);
   let head: RollResult = { ...weapon(), id };
   // The weapon's own dice twice, the higher kept (Savage Attacker); the extras roll once.
   const best = hit.extras.find((x, i) => on[i] === true && x.best === true);
@@ -735,6 +757,8 @@ function rollDamage(
       },
     };
   }
+  // The weapon's own part, before the extras of its type roll into it: what a reroll replaces.
+  const weaponPart = { terms: head.terms.length, total: head.total };
   const apart: RollResult[] = [];
   const isOn = (key: string) => hit.extras.some((y, j) => y.key === key && on[j] === true);
   hit.extras.forEach((x, i) => {
@@ -758,7 +782,7 @@ function rollDamage(
       );
   });
   const goesWith = withRoll ?? id;
-  return [
+  const rolls = [
     withRoll === undefined ? head : { ...head, meta: { ...head.meta, withRoll } },
     ...apart.map((r) => ({
       ...r,
@@ -766,6 +790,7 @@ function rollDamage(
       meta: { ...r.meta, withRoll: goesWith },
     })),
   ];
+  return { rolls, weapon: weaponPart };
 }
 
 /** Offers the next attack of the Attack action on the roll `id`, if one is left. */
@@ -1100,7 +1125,7 @@ function landDamage(
 ): void {
   // Read before the damage lands: past it, damage is the newest roll, and the attack stays in play.
   const next = hit.next ?? nextAfterAttackInPlay();
-  const rolls = rollDamage(hit, on, cast, picked, withRoll);
+  const { rolls, weapon } = rollDamage(hit, on, cast, picked, withRoll);
   const total = rolls.reduce((n, r) => n + r.total, 0);
   rolls.forEach((r, i) => {
     land({
@@ -1109,7 +1134,23 @@ function landDamage(
       effects: [],
     });
   });
-  offerNext(next, withRoll ?? rolls[0]?.id, from);
+  // A reroll the result offers, on the weapon's damage shown as the toast's own
+  // roll (not one shown under its attack).
+  const head = rolls[0];
+  const { reroll } = hit;
+  if (reroll !== undefined && withRoll === undefined && head?.id !== undefined) {
+    followUpStore.setState({
+      reroll: {
+        id: head.id,
+        source: reroll.source,
+        terms: weapon.terms,
+        total: weapon.total,
+        weapon: () => weaponRoll(hit),
+        pay: reroll.pay,
+      },
+    });
+  }
+  offerNext(next, withRoll ?? head?.id, from);
 }
 
 // A roll that lands from anywhere else (the dice tray, the Build page) lets

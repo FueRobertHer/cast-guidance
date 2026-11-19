@@ -136,6 +136,15 @@ export interface PlayState {
     once?: string[];
     /** Action Surge used this turn: one more Attack action's attacks (at most one a turn). */
     surges?: number;
+    /** The action went to the Attack action (its first attack took it), not a spell or a Dash. */
+    attackAction?: true;
+    /** An attack took the action an effect adds that allows one attack (Haste's). */
+    hasted?: true;
+    /**
+     * A spell slot was expended on a spell this turn, outside a reaction: the
+     * 2024 rules allow one a turn, which the sheet says and never stops.
+     */
+    slotSpell?: true;
   };
   /**
    * What the player put on a weapon to add to its damage (a coated blade, a

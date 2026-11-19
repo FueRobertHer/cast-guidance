@@ -962,7 +962,33 @@ export function Component() {
    * Weapon attacks the turn's Attack actions give: one action's, and as many
    * again after Action Surge (once a turn, even with two uses).
    */
-  const attacksAllowed = (p: PlayState) => perAction * (1 + Math.min(1, p.turn?.surges ?? 0));
+  /**
+   * The action an effect adds that allows one attack (Haste's: "one weapon
+   * attack only" in 2014, "one attack only" in 2024), if the character has one.
+   */
+  const hasteBox = sheet.extraActions.find((x) =>
+    /\bone (?:weapon )?attack only\b/i.test(x.note ?? ''),
+  );
+  /**
+   * The attacks the turn's Attack actions give: the action's, unless it went to
+   * something else (a spell, a Dash), and as many again after Action Surge (once
+   * a turn, even with two uses).
+   */
+  const mainAttacks = (turn: PlayState['turn']) =>
+    perAction *
+    ((turn?.action !== true || turn.attackAction === true ? 1 : 0) +
+      Math.min(1, turn?.surges ?? 0));
+  /**
+   * Weapon attacks allowed this turn: the Attack actions', and one more with an
+   * action that allows one (Haste's), while it is not spent on something else.
+   * Action Surge never doubles that one.
+   */
+  const attacksAllowed = (p: PlayState) => {
+    const hasteFree =
+      hasteBox !== undefined &&
+      (p.turn?.hasted === true || !(p.turn?.extra ?? []).includes(hasteBox.label));
+    return mainAttacks(p.turn) + (hasteFree ? 1 : 0);
+  };
   /** The feats that change a weapon's damage (Great Weapon Master, Savage Attacker). */
   const feats = weaponFeats(sheet.features);
   /** Action Surge used: one more action this turn, and with it one more Attack action. */
@@ -987,20 +1013,37 @@ export function Component() {
         thisRoll: true,
       }));
   /**
-   * A weapon attack made: the first of the turn takes the action, and Extra
-   * Attack's later ones only count, so they spend nothing more of the turn.
+   * A weapon attack made: the first of the turn takes the action as the Attack
+   * action, and Extra Attack's later ones only count, so they spend nothing more
+   * of the turn. One past what the Attack actions give (or with the action gone
+   * to something else) takes the action Haste adds, when it is free.
    */
   const markAttack = (label: string) =>
     update(
       (d) => {
         const turn = d.play.turn ?? { action: false, bonus: false, reaction: false };
-        turn.action = true;
-        turn.attacks = (turn.attacks ?? 0) + 1;
+        if (turn.action !== true) {
+          turn.action = true;
+          turn.attackAction = true;
+        }
+        const made = turn.attacks ?? 0;
+        const extra = turn.extra ?? [];
+        if (
+          made >= mainAttacks(turn) &&
+          hasteBox !== undefined &&
+          !extra.includes(hasteBox.label)
+        ) {
+          turn.extra = [...extra, hasteBox.label];
+          turn.hasted = true;
+        }
+        turn.attacks = made + 1;
         d.play.turn = turn;
       },
       (d) => {
         const made = d.play.turn?.attacks ?? 1;
         const allowed = attacksAllowed(d.play);
+        if (d.play.turn?.hasted === true && made === allowed && hasteBox !== undefined)
+          return `Attacked with ${label} (${hasteBox.label})`;
         return made > 1 && allowed > 1 && made <= allowed
           ? `Attacked with ${label} (${String(made)} of ${String(allowed)})`
           : `Attacked with ${label}`;
@@ -1239,6 +1282,19 @@ export function Component() {
     }
     return out;
   };
+  /**
+   * What a smite cast as the hit lands would go past this turn: the bonus action
+   * it takes, used already, and (2024) the one spell slot a turn, expended.
+   */
+  const castWarning = (now: PlayState): string =>
+    [
+      now.turn?.bonus === true ? 'It takes your bonus action, which is used this turn' : '',
+      doc.rulesVersion === '2024' && now.turn?.slotSpell === true
+        ? 'A spell slot was expended on a spell this turn already'
+        : '',
+    ]
+      .filter((w) => w !== '')
+      .join('. ');
   /** Marks the spell concentrated on as having dealt its next hit's damage (a 2014 smite). */
   const markSpent = (name: string) =>
     update((d) => {
@@ -1293,9 +1349,7 @@ export function Component() {
           tag: 'spell',
           diceLabel: label,
           slot: () => castPlan(c),
-          ...(now.turn?.bonus === true
-            ? { note: 'It takes your bonus action, which is used this turn' }
-            : {}),
+          ...(castWarning(now) === '' ? {} : { note: castWarning(now) }),
         };
       } else {
         const spent = !spell.every && focus?.spent === true;
@@ -1366,7 +1420,7 @@ export function Component() {
           tag: 'heavy weapon',
           ...(within ? {} : { note: 'Only as part of the Attack action on your turn' }),
         });
-      } else {
+      } else if (f.after !== true) {
         const spent = used.includes(key);
         out.push({
           key,
@@ -1427,6 +1481,11 @@ export function Component() {
         ...featExtras(a, now),
       ];
       const critDice = extraCritDice(a, expr);
+      // 2014 Savage Attacker: a reroll the result offers once the damage shows, once a turn.
+      const savage = feats.find(
+        (f) => f.kind === 'savage' && f.after === true && featReaches(f, a),
+      );
+      const savageKey = savage === undefined ? '' : `feat:${savage.source.toLowerCase()}`;
       return {
         kind: 'damage',
         label,
@@ -1438,6 +1497,14 @@ export function Component() {
         extras,
         addOwn: (own) => keepOwn(a, own),
         keeps: true,
+        ...(savage === undefined || (now.turn?.once ?? []).includes(savageKey)
+          ? {}
+          : {
+              reroll: {
+                source: savage.source,
+                pay: () => update((d) => markOnce(d, savageKey), `Used ${savage.source}`),
+              },
+            }),
       };
     };
 

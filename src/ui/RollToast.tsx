@@ -370,6 +370,7 @@ function RollResultToast({
   const waiting = useStore(heldRollStore, (s) => s.held);
   const followUp = useStore(followUpStore, (s) => s.offer);
   const nextUp = useStore(followUpStore, (s) => s.next ?? null);
+  const rerollUp = useStore(followUpStore, (s) => s.reroll ?? null);
   const heldSeq = waiting?.seq;
   const rollButton = useRef<HTMLButtonElement | null>(null);
   // The offered dice: rolled once each, and which are added.
@@ -428,7 +429,8 @@ function RollResultToast({
       (shownRoll.meta?.offers?.length ?? 0) > 0 ||
       (shownRoll.meta?.rerolls?.length ?? 0) > 0 ||
       followUpStore.getState().offer?.id === shownRoll.id ||
-      followUpStore.getState().next?.id === shownRoll.id;
+      followUpStore.getState().next?.id === shownRoll.id ||
+      followUpStore.getState().reroll?.id === shownRoll.id;
     const fromKeys = offering && active instanceof HTMLElement && keyboardFocus(active);
     focusOffer.current = fromKeys;
     returnTo.current = fromKeys ? (active as HTMLElement) : null;
@@ -497,6 +499,11 @@ function RollResultToast({
     !settled && nextUp !== null && visible?.id !== undefined && nextUp.id === visible.id
       ? nextUp
       : null;
+  // The weapon's dice to reroll, the higher kept (2014 Savage Attacker), once.
+  const damageReroll =
+    !settled && rerollUp !== null && visible?.id !== undefined && rerollUp.id === visible.id
+      ? rerollUp
+      : null;
   // A reroll not made yet that could still change the roll.
   const rerolls = settled || visible === null ? [] : (visible.meta?.rerolls ?? []);
   const rerollable = rerolls.map(
@@ -508,7 +515,8 @@ function RollResultToast({
     offers.some((o, i) => open[i] && (added[i] !== true || o.spentOnSuccess === true)) ||
     rerollable.includes(true) ||
     damageOffer !== null ||
-    nextOffer !== null;
+    nextOffer !== null ||
+    damageReroll !== null;
   const held = hovered || focused;
   useEffect(() => {
     if (visible === null || held) return;
@@ -665,6 +673,41 @@ function RollResultToast({
     announce(`${o.source}: ${done}. ${rollAnnouncement(next)}`, { key: 'roll', repeat: true });
   };
 
+  /**
+   * Rerolls the weapon's own dice of the damage shown (2014 Savage Attacker),
+   * paid as its once a turn is: the extras rolled in it and its flat bonuses
+   * stay, and the higher total stands, both said.
+   */
+  const rerollWeapon = () => {
+    if (damageReroll === null) return;
+    followUpStore.setState({ reroll: null });
+    damageReroll.pay();
+    const fresh = damageReroll.weapon();
+    const { terms: n, total: was } = damageReroll;
+    const rest = visible.terms.slice(n);
+    const shift = fresh.terms.length - n;
+    const from = [
+      ...(fresh.meta?.from ?? []),
+      ...(visible.meta?.from ?? [])
+        .filter((f) => f.term >= n)
+        .map((f) => ({ ...f, term: f.term + shift })),
+    ];
+    const better = fresh.total > was;
+    const kept = better ? fresh.total : was;
+    const cue = `${damageReroll.source}: rolled ${String(was)}, then ${String(fresh.total)}, kept ${String(kept)}`;
+    const next: RollResult = better
+      ? {
+          ...visible,
+          terms: [...fresh.terms, ...rest],
+          total: visible.total - was + fresh.total,
+          meta: { ...visible.meta, from, cue },
+        }
+      : { ...visible, meta: { ...visible.meta, cue } };
+    setVisible(next);
+    rollLogStore.getState().replace(next);
+    announce(`${cue}. ${rollAnnouncement(next)}`, { key: 'roll', repeat: true });
+  };
+
   // The dice an effect offers, after the roll: tap to add, tap again to take
   // off. Then a hit's damage, rolled as its chip rolls it, and the rerolls.
   const prices = [
@@ -680,6 +723,7 @@ function RollResultToast({
   const offerRow = (firstOpen >= 0 ||
     damageOffer !== null ||
     nextOffer !== null ||
+    damageReroll !== null ||
     firstReroll >= 0) && (
     <div className="mt-2 flex flex-wrap items-center gap-1.5 border-line border-t pt-2">
       {offers.map((o, i) => {
@@ -734,9 +778,24 @@ function RollResultToast({
           Roll {damageOffer.expr}
         </button>
       )}
-      {nextOffer !== null && (
+      {damageReroll !== null && (
         <button
           ref={firstOpen < 0 && damageOffer === null ? firstOffer : undefined}
+          type="button"
+          aria-label={`Reroll the weapon's dice with ${damageReroll.source}, keeping the higher`}
+          onClick={rerollWeapon}
+          className="inline-flex min-h-tap items-center gap-1 rounded-full bg-surface-raised px-3 font-semibold text-ink text-label hover:bg-surface-hover"
+        >
+          <RefreshCw size={14} aria-hidden="true" className="shrink-0 text-heal" />
+          Reroll weapon dice, {damageReroll.source}
+          <span className="font-normal text-ink-muted">· once a turn</span>
+        </button>
+      )}
+      {nextOffer !== null && (
+        <button
+          ref={
+            firstOpen < 0 && damageOffer === null && damageReroll === null ? firstOffer : undefined
+          }
           type="button"
           onClick={() => {
             const inside = toast.current?.contains(document.activeElement) === true;

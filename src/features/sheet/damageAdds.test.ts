@@ -514,7 +514,7 @@ describe('weaponFeats', () => {
     ]);
   });
 
-  it('reads 2014 Savage Attacker as a melee savage feat', () => {
+  it('reads 2014 Savage Attacker as a melee savage feat, decided once the damage shows', () => {
     const savage = {
       name: 'Savage Attacker',
       entries: [
@@ -522,7 +522,7 @@ describe('weaponFeats', () => {
       ],
     };
     expect(weaponFeats([savage])).toEqual([
-      { kind: 'savage', source: 'Savage Attacker', need: 'melee' },
+      { kind: 'savage', source: 'Savage Attacker', need: 'melee', after: true },
     ]);
   });
 
