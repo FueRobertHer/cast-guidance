@@ -145,6 +145,12 @@ export interface PlayState {
      * 2024 rules allow one a turn, which the sheet says and never stops.
      */
     slotSpell?: true;
+    /**
+     * The once-a-turn extras used on an opportunity attack, on another
+     * creature's turn: their own turn's once, apart from this one's (`once`).
+     * Each opportunity attack starts it afresh.
+     */
+    offOnce?: string[];
   };
   /**
    * What the player put on a weapon to add to its damage (a coated blade, a

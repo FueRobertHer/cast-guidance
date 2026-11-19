@@ -241,7 +241,7 @@ export interface DamageAsk {
    * higher total kept (2014 Savage Attacker, once a turn), and what paying for
    * it marks.
    */
-  reroll?: { source: string; pay: () => void } | undefined;
+  reroll?: { source: string; pay: () => void; used?: boolean | undefined } | undefined;
 }
 
 /** A roll made and not yet landed: what the control does then, and what making it put off. */
@@ -335,6 +335,8 @@ export const followUpStore = createStore<{
   reroll?: {
     id: string;
     target: string;
+    /** Its once a turn went already: offered still, and said (the sheet cannot see whose turn). */
+    used?: boolean | undefined;
     source: string;
     terms: number;
     total: number;
@@ -1145,6 +1147,7 @@ function landDamage(
       reroll: {
         id: withRoll ?? head.id,
         target: head.id,
+        used: reroll.used,
         source: reroll.source,
         terms: weapon.terms,
         total: weapon.total,

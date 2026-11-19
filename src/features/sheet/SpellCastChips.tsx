@@ -23,6 +23,7 @@ import {
   usedUpTitle,
 } from './castPlan';
 import type { D20Ask } from './d20Tests';
+import { castsLater } from './damageAdds';
 import type { SpellRollAction } from './spellRolls';
 
 /**
@@ -30,7 +31,10 @@ import type { SpellRollAction } from './spellRolls';
  * "Level at cast" A), the same on Play and on Spells. The control that casts
  * (the spell attack, else the first dice chip, else Cast) opens the prompt
  * with every way to cast as tiles, and the cast spends the tile as it lands. A
- * cantrip or an at-will grant casts at once, with nothing to choose.
+ * cantrip or an at-will grant casts at once, with nothing to choose. A spell
+ * cast now for damage on later hits (Hex, Divine Favor: `castsLater`) casts
+ * from Cast and rolls nothing; its dice chip only rolls, and its hits' damage
+ * comes from the damage prompt.
  *
  * The casting chip shows the dice at the level the prompt starts on. The
  * row's other dice, an attack spell's damage among them, keep the level last
@@ -70,6 +74,10 @@ export function SpellCastChips({
   const rowId = castRowId(cast);
   const last = useCastLevel(rowId);
   const prompts = !usedUp && castsByPrompt(cast);
+  // A spell cast now for damage on later hits (Hex, Divine Favor) casts from
+  // Cast, rolling nothing: its dice mean nothing yet. Its dice chip only rolls.
+  const later = attack === undefined && castsLater(cast.entity);
+  const plan = () => (later ? { ...castPlan(cast), dice: () => undefined } : castPlan(cast));
   // A cast waiting in the prompt shows what is left now: a slot spent on the
   // sheet behind it, or a rest, rebuilds its tiles. With nothing left to cast
   // it with, or the row gone from the screen, the cast goes.
@@ -78,7 +86,7 @@ export function SpellCastChips({
     const key = prompts ? castWaysKey(cast) : '';
     if (key === shown.current) return;
     shown.current = key;
-    if (prompts) refreshHeldCast(rowId, () => castPlan(cast));
+    if (prompts) refreshHeldCast(rowId, plan);
     else cancelHeldCast(rowId);
   });
   useEffect(() => () => cancelHeldCast(rowId), [rowId]);
@@ -89,11 +97,7 @@ export function SpellCastChips({
   const castingRolls = running || attack !== undefined ? rolls : rollsAt(start);
   // What a tap on the casting chip does: the prompt, or cast at once.
   const casts = !running && !usedUp;
-  const castChip = casts
-    ? prompts
-      ? { cast: () => castPlan(cast) }
-      : { onRolled: () => castNow(cast) }
-    : {};
+  const castChip = casts ? (prompts ? { cast: plan } : { onRolled: () => castNow(cast) }) : {};
   const withAttack = attack === undefined ? undefined : { by: doc.id, of: info.name };
   /**
    * A spell attack's damage asked as a weapon's is (the damage prompt): its
@@ -131,7 +135,7 @@ export function SpellCastChips({
         />
       )}
       {rolls.map((action, index) => {
-        const first = attack === undefined && index === 0;
+        const first = attack === undefined && index === 0 && !later;
         const shown = first ? (castingRolls[0] ?? action) : action;
         return (
           <RollChip
@@ -150,7 +154,7 @@ export function SpellCastChips({
           />
         );
       })}
-      {castButton && attack === undefined && rolls.length === 0 && (
+      {castButton && attack === undefined && (rolls.length === 0 || later) && (
         <CastButton
           wear={castWear}
           aria-label={`Cast ${info.name}`}
@@ -158,7 +162,7 @@ export function SpellCastChips({
           title={usedUp ? usedUpTitle(cast) : castTitle}
           onClick={(event) => {
             if (prompts) {
-              castFrom(event.currentTarget, castPlan(cast), undefined, {
+              castFrom(event.currentTarget, plan(), undefined, {
                 face: { text: 'Cast', wear: castWear, tone: 'cast' },
               });
             } else {

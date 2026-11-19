@@ -360,10 +360,11 @@ describe('2014 Savage Attacker', () => {
     noButton(reroll);
     expect((await sheet.saved()).play.turn?.once).toEqual(['feat:savage attacker']);
 
-    // Once a turn: the next damage offers no reroll.
+    // Once a turn: the next damage still offers it, said used, since the sheet
+    // cannot see whose turn it is (an opportunity attack has its own once).
     nextFaces(4, 1);
     rollDamage('Longsword', 'slashing');
-    noButton(reroll);
+    expect(button(reroll).textContent).toBe('Reroll weapon dice, Savage Attacker· used this turn');
   });
 
   it('keeps the first roll when the reroll is lower, and says so', async () => {
@@ -434,10 +435,15 @@ describe('a spell that puts its dice on every weapon hit as it is cast', () => {
     ],
   });
   /** Casts Divine Favor from its row's dice chip, on the slot the prompt starts on. */
+  /**
+   * Casts it from its row's Cast: its die rides on later hits, so casting rolls
+   * nothing (no faces are set up, so a stray roll would throw).
+   */
   const castFavor = () => {
-    nextFaces(2);
-    fireEvent.click(screen.getByTitle('Divine Favor Radiant damage'));
+    nextFaces();
+    fireEvent.click(screen.getByRole('button', { name: 'Cast Divine Favor' }));
     castHeld();
+    expect(rolls().some((r) => r.label === 'Divine Favor Radiant damage')).toBe(false);
   };
 
   it('starts an effect named for it, whose die rides on a weapon’s damage and not a punch', async () => {

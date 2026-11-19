@@ -183,6 +183,13 @@ function firstDieSides(expr: string): number | undefined {
 
 /** A section's heading and the helper line under it (DS-001 `heading`, `caption`). */
 const H2 = 'px-1 text-heading';
+
+/**
+ * What a melee weapon's attack prompt offers to claim for an opportunity
+ * attack: the attack takes the reaction, and its damage is on another
+ * creature's turn.
+ */
+const OPPORTUNITY = 'Opportunity attack';
 const HELP = 'px-1 text-caption text-ink-muted';
 /** A quiet text link in a card's footer (temp HP, breakdown). */
 const LINK =
@@ -1002,8 +1009,8 @@ export function Component() {
    * hit for +10 damage (2014 Great Weapon Master, Sharpshooter), which its
    * damage then adds.
    */
-  const powerClaims = (a: AttackRow): TurnExtra[] =>
-    feats
+  const powerClaims = (a: AttackRow): TurnExtra[] => [
+    ...feats
       .filter((f) => f.kind === 'power' && featReaches(f, a))
       .map((f) => ({
         source: f.source,
@@ -1011,14 +1018,51 @@ export function Component() {
         cost: '+10 damage if it hits',
         declare: () => undefined,
         thisRoll: true,
-      }));
+      })),
+    // An opportunity attack, with a melee weapon: the reaction, on another's turn.
+    ...(a.ranged === true
+      ? []
+      : [
+          {
+            source: OPPORTUNITY,
+            cost: 'Uses your reaction, not your action, and is no attack of your Attack action',
+            declare: () => undefined,
+            thisRoll: true,
+          },
+        ]),
+  ];
+  /**
+   * Is the attack in play this character's opportunity attack (claimed in its
+   * prompt), with `of` when given? Its damage is on another creature's turn.
+   */
+  const opportunityInPlay = (of?: string): boolean => {
+    const struck = attackInPlay();
+    return (
+      struck?.by === doc.id &&
+      (of === undefined || struck.of === of) &&
+      struck.claimed?.includes(OPPORTUNITY) === true
+    );
+  };
+  /** The once-a-turn extras used on the turn the damage is on: this one's, or another's. */
+  const usedOnce = (now: PlayState, off: boolean) =>
+    (off ? now.turn?.offOnce : now.turn?.once) ?? [];
   /**
    * A weapon attack made: the first of the turn takes the action as the Attack
    * action, and Extra Attack's later ones only count, so they spend nothing more
    * of the turn. One past what the Attack actions give (or with the action gone
    * to something else) takes the action Haste adds, when it is free.
    */
-  const markAttack = (label: string) =>
+  const markAttack = (label: string) => {
+    // An opportunity attack takes the reaction alone, and starts that turn's once afresh.
+    if (opportunityInPlay()) {
+      update((d) => {
+        const turn = d.play.turn ?? { action: false, bonus: false, reaction: false };
+        turn.reaction = true;
+        turn.offOnce = [];
+        d.play.turn = turn;
+      }, `Opportunity attack with ${label}`);
+      return;
+    }
     update(
       (d) => {
         const turn = d.play.turn ?? { action: false, bonus: false, reaction: false };
@@ -1049,8 +1093,11 @@ export function Component() {
           : `Attacked with ${label}`;
       },
     );
+  };
   /** The Attack action's next attack, in words, while Extra Attack leaves one: "Attack 2 of 2". */
   const nextAttack = (): string | undefined => {
+    // An opportunity attack is no attack of the Attack action: nothing follows it.
+    if (opportunityInPlay()) return undefined;
     const now = playNow();
     const made = now.turn?.attacks ?? 0;
     const allowed = attacksAllowed(now);
@@ -1058,10 +1105,17 @@ export function Component() {
       ? `Attack ${String(made + 1)} of ${String(allowed)}`
       : undefined;
   };
-  /** Marks a once-a-turn extra used this turn (Sneak Attack), by its row key. */
-  const markOnce = (d: CharacterDoc, key: string) => {
+  /**
+   * Marks a once-a-turn extra used (Sneak Attack), by its row key: on this turn,
+   * or with `off` on the turn of an opportunity attack.
+   */
+  const markOnce = (d: CharacterDoc, key: string, off = false) => {
     const turn = d.play.turn ?? { action: false, bonus: false, reaction: false };
-    if (!(turn.once ?? []).includes(key)) turn.once = [...(turn.once ?? []), key];
+    const list = (off ? turn.offOnce : turn.once) ?? [];
+    if (!list.includes(key)) {
+      if (off) turn.offOnce = [...list, key];
+      else turn.once = [...list, key];
+    }
     d.play.turn = turn;
   };
   /** Where a weapon's own extras are kept: its equipment entry, else the attack's name. */
@@ -1126,8 +1180,12 @@ export function Component() {
    * one paid with a slot brings its tiles; Bardic Inspiration spends the effect.
    */
   /** An add's extras: itself, and with it what it adds against some creatures (Divine Smite's d8). */
-  const addExtras = (add: DamageAdd, usedThisTurn: readonly string[]): DamageExtra[] => {
-    const own = addExtra(add, usedThisTurn);
+  const addExtras = (
+    add: DamageAdd,
+    usedThisTurn: readonly string[],
+    off = false,
+  ): DamageExtra[] => {
+    const own = addExtra(add, usedThisTurn, off);
     const { against } = add;
     return against === undefined ? [own] : [own, againstExtra(own, against)];
   };
@@ -1142,7 +1200,7 @@ export function Component() {
     tag: 'if it is one',
     needs: of.key,
   });
-  const addExtra = (add: DamageAdd, usedThisTurn: readonly string[]): DamageExtra => {
+  const addExtra = (add: DamageAdd, usedThisTurn: readonly string[], off = false): DamageExtra => {
     const base = {
       key: `add:${add.key}`,
       dice: add.dice ?? '',
@@ -1183,9 +1241,10 @@ export function Component() {
       pay: () => {
         if (paid) {
           triggerAction(action.economy, use.spends, action.label, use.regains, (d) => {
-            if (add.oncePerTurn) markOnce(d, add.key);
+            if (add.oncePerTurn) markOnce(d, add.key, off);
           });
-        } else if (add.oncePerTurn) update((d) => markOnce(d, add.key), `Used ${action.label}`);
+        } else if (add.oncePerTurn)
+          update((d) => markOnce(d, add.key, off), `Used ${action.label}`);
         return true;
       },
     };
@@ -1316,6 +1375,7 @@ export function Component() {
     a: AttackRow,
     now: PlayState,
     riders: readonly DamageRider[],
+    off = false,
   ): DamageExtra[] => {
     const focus = now.concentratingOn;
     const rolled = new Set([
@@ -1349,7 +1409,12 @@ export function Component() {
           tag: 'spell',
           diceLabel: label,
           slot: () => castPlan(c),
-          ...(castWarning(now) === '' ? {} : { note: castWarning(now) }),
+          // A bonus action is the character's own turn's: an opportunity attack has none.
+          ...(off
+            ? { note: 'It takes a bonus action, which is only yours on your own turn' }
+            : castWarning(now) === ''
+              ? {}
+              : { note: castWarning(now) }),
         };
       } else {
         const spent = !spell.every && focus?.spent === true;
@@ -1388,7 +1453,8 @@ export function Component() {
   const featExtras = (a: AttackRow, now: PlayState): DamageExtra[] => {
     const attack = attackInPlay();
     const ofThis = attack !== undefined && attack.by === doc.id && attack.of === a.label;
-    const used = now.turn?.once ?? [];
+    const off = opportunityInPlay(a.label);
+    const used = usedOnce(now, off);
     const out: DamageExtra[] = [];
     for (const f of feats) {
       if (!featReaches(f, a)) continue;
@@ -1408,7 +1474,8 @@ export function Component() {
           ...(claimed ? {} : { note: 'Only if you took the −5 to hit' }),
         });
       } else if (f.kind === 'heavyMastery') {
-        const within = (now.turn?.attacks ?? 0) <= attacksAllowed(now);
+        // Only in the Attack action on the character's turn: no opportunity attack's.
+        const within = !off && (now.turn?.attacks ?? 0) <= attacksAllowed(now);
         out.push({
           key,
           dice: String(sheet.profBonus.value),
@@ -1434,7 +1501,7 @@ export function Component() {
           tag: 'once a turn',
           note: 'Rolls the weapon’s dice twice and keeps the higher',
           pay: () => {
-            update((d) => markOnce(d, key), `Used ${f.source}`);
+            update((d) => markOnce(d, key, off), `Used ${f.source}`);
             return true;
           },
         });
@@ -1460,7 +1527,9 @@ export function Component() {
       const attack = attackInPlay();
       const crit = attack?.crit === true && attack.by === doc.id && attack.of === a.label;
       const now = playNow();
-      const used = now.turn?.once ?? [];
+      // The damage of an opportunity attack is on another creature's turn, whose once is its own.
+      const off = opportunityInPlay(a.label);
+      const used = usedOnce(now, off);
       const offers = rollEffects(sheet, weaponTest(a)).offers;
       const extras: DamageExtra[] = [
         ...riders.map(
@@ -1476,8 +1545,8 @@ export function Component() {
           }),
         ),
         ...(now.weaponExtras?.[weaponKey(a)] ?? []).map((w) => ownExtra(a, w)),
-        ...damageAdds(sheet, a, offers).flatMap((add) => addExtras(add, used)),
-        ...spellExtras(a, now, riders),
+        ...damageAdds(sheet, a, offers).flatMap((add) => addExtras(add, used, off)),
+        ...spellExtras(a, now, riders, off),
         ...featExtras(a, now),
       ];
       const critDice = extraCritDice(a, expr);
@@ -1497,12 +1566,14 @@ export function Component() {
         extras,
         addOwn: (own) => keepOwn(a, own),
         keeps: true,
-        ...(savage === undefined || (now.turn?.once ?? []).includes(savageKey)
+        // Offered once used too, said so: the sheet cannot see whose turn it is.
+        ...(savage === undefined
           ? {}
           : {
               reroll: {
                 source: savage.source,
-                pay: () => update((d) => markOnce(d, savageKey), `Used ${savage.source}`),
+                used: used.includes(savageKey),
+                pay: () => update((d) => markOnce(d, savageKey, off), `Used ${savage.source}`),
               },
             }),
       };
@@ -2730,7 +2801,7 @@ export function Component() {
                 }
                 if (starts === undefined) {
                   triggerAction(a.economy, use.spends, a.label, use.regains, (d) => {
-                    if (once) markOnce(d, rowKey);
+                    if (once) markOnce(d, rowKey, opportunityInPlay());
                     if (surges) markSurge(d);
                   });
                   return;
@@ -2845,7 +2916,20 @@ export function Component() {
                           a.heals === true ? 'heal' : a.plainDice === true ? 'dice' : 'damage'
                         }
                         // The dice still roll; only a use it can pay for is recorded.
-                        onRolled={use.noButton || use.disabled ? undefined : () => void trigger()}
+                        // A once-a-turn one is marked used either way, as the damage
+                        // prompt marks it: on an opportunity attack's turn when one is
+                        // in play.
+                        onRolled={
+                          use.noButton || use.disabled
+                            ? once
+                              ? () =>
+                                  update(
+                                    (d) => markOnce(d, rowKey, opportunityInPlay()),
+                                    `Used ${a.label}`,
+                                  )
+                              : undefined
+                            : () => void trigger()
+                        }
                         // Damage with no save is added to a hit (Sneak Attack, a
                         // smite), so a crit doubles it; a save's (Breath Weapon)
                         // is no attack's.

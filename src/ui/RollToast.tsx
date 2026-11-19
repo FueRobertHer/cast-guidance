@@ -793,7 +793,9 @@ function RollResultToast({
         >
           <RefreshCw size={14} aria-hidden="true" className="shrink-0 text-heal" />
           Reroll weapon dice, {damageReroll.source}
-          <span className="font-normal text-ink-muted">· once a turn</span>
+          <span className="font-normal text-ink-muted">
+            · {damageReroll.used === true ? 'used this turn' : 'once a turn'}
+          </span>
         </button>
       )}
       {nextOffer !== null && (

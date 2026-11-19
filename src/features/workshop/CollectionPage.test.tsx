@@ -52,7 +52,10 @@ describe('a collection page', () => {
     expect(
       await screen.findByRole('heading', { level: 1, name: 'imported.json' }, { timeout: WAIT }),
     ).toBeTruthy();
-    expect(document.title).toBe('imported.json · Workshop · Cast Guidance');
+    // The title is set in an effect, which can run after the heading shows.
+    await waitFor(() => expect(document.title).toBe('imported.json · Workshop · Cast Guidance'), {
+      timeout: WAIT,
+    });
     const use = screen.getByRole('button', { name: 'Use imported.json' });
     expect(use.getAttribute('aria-pressed')).toBe('true');
     fireEvent.click(use);
@@ -112,7 +115,10 @@ describe('a collection page', () => {
         { timeout: WAIT },
       ),
     ).toBeTruthy();
-    expect(document.title).toBe('Collection not found · Workshop · Cast Guidance');
+    await waitFor(
+      () => expect(document.title).toBe('Collection not found · Workshop · Cast Guidance'),
+      { timeout: WAIT },
+    );
     expect(screen.getByRole('link', { name: 'Back to the Workshop' }).getAttribute('href')).toBe(
       '/workshop?shelf=collections',
     );
