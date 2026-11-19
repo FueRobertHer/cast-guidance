@@ -752,10 +752,9 @@ function ChargeSpell({
             aria-label={`Charge spell ${n}: only at that level`}
             checked={fixedAt}
             disabled={disabled}
-            onChange={(e) => {
-              setHeldAt(e.target.checked ? ref : undefined);
-              onChange({ ...rest, [e.target.checked ? 'at' : 'upTo']: levelBox });
-            }}
+            // A level it writes is kept as it says (`fixedAt`), so the box's
+            // emptying alone holds or lets go of the one level.
+            onChange={(e) => onChange({ ...rest, [e.target.checked ? 'at' : 'upTo']: levelBox })}
           />
           Only at that level
         </label>
