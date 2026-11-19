@@ -340,6 +340,10 @@ starting equipment can write one that does not, and then no row of those is
 found. A copy of an item is not reached by the official one's rows: its tags,
 charges and spells are its author's (its own `charges` effect, "An item's own
 charges", below), and the Workshop writes the official one's out for it.
+Its `attachedSpells` lists are its data's, not an `itemSpells` row's, so a
+copy of an item such a row corrects grants what the data says (a copy of the
+2024 Staff of Healing casts Cure Wounds at will), and a copy keeps an
+`itemDc` row's DC only through a `charges` effect.
 
 A `spellRest` row is found under the `type:uid` of the origin granting the
 spells: `feat:fey teleportation|xge`, and for a subrace, whose origin has type
@@ -437,14 +441,16 @@ not always that: Cure Wounds from the staff is a charge a spell level, up to
   finds it by name in the character's rules version. A class spell's row, and
   another grant's, offers the item's charges beside its own ways only when the
   item casts with the character's numbers: one whose text fixes a DC casts on
-  its own row, at that DC.
+  its own row, at that DC. So do its daily and rest uses: a class's row offers
+  them only for an item without a fixed DC.
 
 ## Item DC rows
 
 Some items cast their spells at a save DC or attack bonus their text fixes (a
 2024 Wand of Fireballs' DC 15). An `itemDc` row says it, for every spell the
-item grants: its charges', its lists', its own `additionalSpells`'. A
-`charges` effect says its own (`dc`, `attack`) and takes no row's.
+item grants: its charges', its lists', its own `additionalSpells`'. An item
+with a `charges` effect, its own or a pack's, takes no row: that effect's
+`dc` and `attack`, or none, are the numbers of every spell the item grants.
 
 - **Where nothing fixes them**, an item's spell with no `ability` casts with
   the character's first spellcasting's DC, attack bonus and modifier, and with
@@ -466,7 +472,9 @@ way the sheet does not, so they are not granted. An `itemSpells` row stands in
 for the four where the data misstates the text: one cast a day between
 spells the data gives each one (`"1"` for `"1e"`), a spell the item casts
 itself (`{}`, a Blackrazor's), or one its charges cast (the 2024 Staff of
-Healing's Cure Wounds). The item's `ability` still counts.
+Healing's Cure Wounds). The item's `ability` still counts. A cast level these
+lists write after a spell (`thunderwave#4`, a Blast Scepter's) is not kept:
+the spell casts at its own level.
 
 ### An item's own charges
 
@@ -492,7 +500,8 @@ effect in its `castGuidance` effects, the row's fields and reader:
   made, for its actions to spend. A built-in row says an empty list.
 - **The Workshop writes one out** for a copy of an official item: the row's
   spells or the fields', each with its book, `at` kept, and the DC its
-  `itemDc` row fixes, so the copy counts what the official one did.
+  `itemDc` row fixes, so the copy's charges count and cast what the official
+  one's did. Its lists stay its data's (above).
 - **Its actions spend it.** An action of the item's, its own or a pack's,
   whose `cost` names the pool `charges` spends that copy's pool
   (`item-charges:<entry id>`) while the item holds charges. Same-named actions

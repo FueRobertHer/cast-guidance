@@ -55,6 +55,11 @@ export interface SpellCast {
   abilityModifier?: number | undefined;
   /** An innate grant's own pool of uses, which this row casts from. */
   grantPool?: UseWay | undefined;
+  /**
+   * An item's grant's numbers (`grantNumbersKey`): two grants of one spell
+   * cast with other ones are two rows, and two casts (`castRowId`).
+   */
+  numbers?: string | undefined;
   /** It casts with a spell attack: its hit offers the damage, and its d20 is the prompt's. */
   attack: boolean;
   /** The registry's lookups: what a carried item's charges cast (`itemChargesOf`). */
@@ -128,6 +133,7 @@ export function itemChargeWays(
  * The innate and feat grants of `name` with a pool of their own (Infernal
  * Legacy's Hellish Rebuke), so a class row offers them beside its slots. An
  * item's charges are not a use: `itemChargeWays` offers them, priced by level.
+ * Nor is a use of an item whose text fixes its DC (`fixed`): its own row has it.
  */
 export function grantUseWays(sheet: DerivedSheet, name: string): UseWay[] {
   return sheet.grantedSpells.flatMap((g) => {
@@ -135,6 +141,7 @@ export function grantUseWays(sheet: DerivedSheet, name: string): UseWay[] {
       g.usage === 'prepared' ||
       g.resourceKey === undefined ||
       isItemChargeKey(g.resourceKey) ||
+      g.fixed === true ||
       lower(g.name) !== lower(name)
     ) {
       return [];
@@ -255,7 +262,25 @@ export function grantLimitWords(usage: string | undefined): string {
  */
 export function castRowId(c: SpellCast): string {
   const from = c.block?.classUid ?? c.grantPool?.key ?? 'innate';
-  return `${c.doc.id}|${from}|${c.info.name}|${c.info.source}`.toLowerCase();
+  const row = c.numbers === undefined ? '' : `|${c.numbers}`;
+  return `${c.doc.id}|${from}|${c.info.name}|${c.info.source}${row}`.toLowerCase();
+}
+
+type Grant = DerivedSheet['grantedSpells'][number];
+
+/**
+ * An item's grant's numbers (`DerivedSheet.grantedSpells`) as a key, which
+ * keeps its row apart from another grant of the spell cast with other ones;
+ * none for a grant without them.
+ */
+export function grantNumbersKey(g: Grant): string | undefined {
+  if (g.dc === undefined && g.attack === undefined && g.mod === undefined) return undefined;
+  return `${g.dc ?? ''}/${g.attack ?? ''}/${g.mod ?? ''}`;
+}
+
+/** A granted spell's row, one of a kind as the sheet lists them (`dedupeGrantedSpells`). */
+export function grantRowKey(g: Grant): string {
+  return `${g.name}|${g.source}|${g.resourceKey ?? ''}|${g.added ? 'added' : ''}|${grantNumbersKey(g) ?? ''}`;
 }
 
 /**

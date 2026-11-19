@@ -799,6 +799,9 @@ function dedupeGrantedSpells(
       className: classOf.get(`${e.origin.type}:${e.origin.uid}`),
       ...(added ? { added: true as const } : {}),
       ...cast,
+      ...(e.origin.type === 'item' && (e.dc !== undefined || e.attack !== undefined)
+        ? { fixed: true as const }
+        : {}),
     });
   }
   return out;

@@ -8,12 +8,16 @@ import {
   castDamageBonuses,
   castDiceAt,
   castNow,
+  castRowId,
   castsByPrompt,
   castWaysOf,
   grantBadgeTitle,
   grantCast,
   grantLimitWords,
+  grantNumbersKey,
+  grantRowKey,
   grantUsedUp,
+  grantUseWays,
   itemChargeWays,
   type SpellCast,
   usedUpTitle,
@@ -245,6 +249,52 @@ describe('grantCast: what a granted spell casts with', () => {
 
   it('has none with no ability and no numbers of its own', () => {
     expect(grantCast(grant({}), sheet)).toEqual({});
+  });
+});
+
+describe("a granted spell's row beside another grant of the spell", () => {
+  const grant = (more: Partial<DerivedSheet['grantedSpells'][number]>) =>
+    ({
+      name: 'Suggestion',
+      source: 'XPHB',
+      origin: 'Feat',
+      ...more,
+    }) as DerivedSheet['grantedSpells'][number];
+
+  it("offers a daily use on the class's row, but not an item's whose text fixes its DC", () => {
+    const sheet = {
+      grantedSpells: [
+        grant({ usage: '1/day', resourceKey: 'feat' }),
+        grant({ usage: '1/day', resourceKey: 'helm', origin: 'Helm', dc: 13, fixed: true }),
+        grant({ usage: '1/day', resourceKey: 'orb', origin: 'Orb', dc: 15, attack: 7, mod: 4 }),
+      ],
+      resources: [
+        { key: 'feat', max: 1 },
+        { key: 'helm', max: 1 },
+        { key: 'orb', max: 1 },
+      ],
+    } as unknown as DerivedSheet;
+    // The orb casts with the character's own numbers, so the class row may too.
+    expect(grantUseWays(sheet, 'suggestion').map((w) => w.key)).toEqual(['feat', 'orb']);
+  });
+
+  it("keeps an item's row, cast with other numbers, apart from another's", () => {
+    const race = grant({ name: 'Light', origin: 'Race', ability: 'cha' });
+    const orb = grant({ name: 'Light', origin: 'Orb', dc: 13, attack: 5, mod: 3 });
+    const wand = grant({ name: 'Light', origin: 'Wand', dc: 15, attack: 5, mod: 3 });
+    expect(grantNumbersKey(race)).toBeUndefined();
+    expect(new Set([race, orb, wand].map(grantRowKey)).size).toBe(3);
+    // At-will rows, cast from no class and no pool of their own.
+    const light = {
+      doc: newCharacterDoc('c1', 'Vela', 't'),
+      info: { name: 'Light', source: 'XPHB' },
+    } as unknown as SpellCast;
+    const ids = [undefined, grantNumbersKey(orb), grantNumbersKey(wand)].map((numbers) =>
+      castRowId({ ...light, numbers }),
+    );
+    expect(new Set(ids).size).toBe(3);
+    // A grant without numbers keeps the id it had.
+    expect(ids[0]).toBe('c1|innate|light|xphb');
   });
 });
 

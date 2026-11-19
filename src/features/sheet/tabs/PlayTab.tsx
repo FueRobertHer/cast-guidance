@@ -84,6 +84,8 @@ import {
   grantBadgeTitle,
   grantCast,
   grantLimitWords,
+  grantNumbersKey,
+  grantRowKey,
   grantUsedUp,
   type SpellCast,
 } from '../castPlan';
@@ -173,9 +175,11 @@ const ROW_NAME = 'flex min-w-0 flex-1 basis-26 items-center gap-2';
 /**
  * ROW_NAME beside an item's name in place of an ability's three letters (a
  * spell an item grants): sized by its content, so the chips drop under it
- * before the item's name squeezes the spell's to a letter.
+ * first, and then the item's name under the spell's (wrapping if it must),
+ * before it squeezes the spell's to a letter. Its name button grows from its
+ * own width (not `flex-1`'s none), and the item's name may shrink.
  */
-const ROW_NAME_WIDE = 'flex min-w-0 grow items-center gap-2';
+const ROW_NAME_WIDE = 'flex min-w-0 grow flex-wrap items-center gap-x-2 gap-y-0.5';
 const ROW_ACTIONS = 'ml-auto flex max-w-full shrink-0 flex-wrap items-center justify-end';
 /**
  * A row's name: one line cut short while its list is at least 15rem wide, and
@@ -2536,7 +2540,7 @@ export function Component() {
               if (entity === undefined && spellsSettling) {
                 return (
                   <PendingSpellRow
-                    key={`${g.name}|${g.source}|${g.resourceKey ?? ''}|${g.added ? 'added' : ''}`}
+                    key={grantRowKey(g)}
                     name={g.name}
                     source={g.source}
                     version={doc.rulesVersion}
@@ -2590,13 +2594,14 @@ export function Component() {
                   limited === undefined
                     ? undefined
                     : { key: limited.key, label: g.origin, max: limited.max },
+                numbers: grantNumbersKey(g),
                 attack: hasAttack,
                 entities,
               };
               const usedUp = grantUsedUp(cast, remaining);
               return (
                 <div
-                  key={`${g.name}|${g.source}|${g.resourceKey ?? ''}|${g.added ? 'added' : ''}`}
+                  key={grantRowKey(g)}
                   className={`min-h-11 ${ROW} border-line border-b py-1.5 last:border-b-0`}
                 >
                   <div className={g.ability !== undefined ? ROW_NAME : ROW_NAME_WIDE}>
@@ -2615,7 +2620,9 @@ export function Component() {
                         // with a short name and its uses, so its badges wrap.
                         <button
                           type="button"
-                          className={`flex min-h-6 min-w-0 flex-1 flex-wrap items-center gap-1.5 text-left ${
+                          className={`flex min-h-6 min-w-0 ${
+                            g.ability !== undefined ? 'flex-1' : 'grow'
+                          } flex-wrap items-center gap-1.5 text-left ${
                             g.added ? '' : '@min-[15rem]:flex-nowrap'
                           }`}
                         >
@@ -2645,7 +2652,11 @@ export function Component() {
                         </button>
                       }
                     />
-                    <span className="shrink-0 text-caption text-ink-muted">
+                    <span
+                      className={`${
+                        g.ability !== undefined ? 'shrink-0' : 'ml-auto min-w-0'
+                      } text-caption text-ink-muted`}
+                    >
                       {g.ability !== undefined ? g.ability.toUpperCase() : g.origin}
                     </span>
                     {limits.noVerbal.length > 0 && spellHasVerbal(g.name, g.source) && (

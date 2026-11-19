@@ -25,6 +25,8 @@ import {
   grantBadgeTitle,
   grantCast,
   grantLimitWords,
+  grantNumbersKey,
+  grantRowKey,
   grantUsedUp,
   type SpellCast,
 } from './castPlan';
@@ -341,6 +343,7 @@ function InnateSpellRow({
       limited === undefined
         ? undefined
         : { key: limited.key, label: grant.origin, max: limited.max },
+    numbers: grantNumbersKey(grant),
     attack: attackModifier !== undefined,
     entities: ctx.entities,
   };
@@ -795,7 +798,7 @@ export function YourSpells({
               };
               return entity === undefined && spellsSettling ? (
                 <SpellRow
-                  key={`${refUid(g)}|${g.resourceKey ?? ''}|${g.added ? 'added' : ''}`}
+                  key={grantRowKey(g)}
                   name={spell.name}
                   source={g.source}
                   version={doc.rulesVersion}
@@ -805,12 +808,7 @@ export function YourSpells({
                   muted
                 />
               ) : (
-                <InnateSpellRow
-                  key={`${refUid(g)}|${g.resourceKey ?? ''}|${g.added ? 'added' : ''}`}
-                  grant={g}
-                  spell={spell}
-                  ctx={ctx}
-                />
+                <InnateSpellRow key={grantRowKey(g)} grant={g} spell={spell} ctx={ctx} />
               );
             })}
           </div>
