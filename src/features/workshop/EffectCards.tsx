@@ -110,6 +110,13 @@ const SCOPE: Options = [
   ['melee', 'Melee'],
   ['ranged', 'Ranged'],
 ];
+/**
+ * The Attack rolls card's Which for a bonus to every attack, weapon and spell
+ * (`attack: 'any'`): no scope, so a file's scope is never taken for it.
+ */
+const EVERY_ATTACK = ':every';
+/** An attack bonus that reaches spell attacks as well as weapon attacks (`slots.ts`). */
+const everyAttack = (e: Eff) => e.attack === 'any' && (e.scope === 'all' || e.scope === undefined);
 const STATES: Options = [
   ['', 'Always'],
   ['bloodied', 'While bloodied'],
@@ -166,6 +173,11 @@ const classList = (text: string): string[] =>
     .filter((s) => s !== '');
 
 const word = (options: Options, v: unknown) => options.find(([k]) => k === v)?.[1] ?? String(v);
+
+/** Words as a sentence lists them: "Strength", "Strength and Dexterity", "A, B and C". */
+function listed(xs: readonly string[]): string {
+  return xs.length < 2 ? (xs[0] ?? '') : `${xs.slice(0, -1).join(', ')} and ${xs.at(-1)}`;
+}
 
 /** A stored number as a sentence reads it: `+2`, or the formula itself. */
 function amount(v: unknown, sign = true): string {
@@ -240,7 +252,16 @@ const restWords = (v: unknown) =>
       : 'a long rest';
 
 type FieldSpec =
-  | { key: string; label: string; type: 'pick'; options: Options }
+  | {
+      key: string;
+      label: string;
+      type: 'pick';
+      options: Options;
+      /** The choice it shows, when that is not the field's own value. */
+      value?: (e: Eff) => string;
+      /** The effect once a choice is picked, when picking does more than set the field. */
+      apply?: (e: Eff, v: string) => Eff;
+    }
   | { key: string; label: string; type: 'amount' | 'text' | 'dice' };
 
 interface KindSpec {
@@ -501,6 +522,16 @@ const KINDS: readonly KindSpec[] = [
     line: (e) => `${amount(e.amount)} ${word(ABILITY, e.ability)}`,
   },
   {
+    kinds: ['abilityMin'],
+    add: 'Ability score is at least',
+    make: () => ({ kind: 'abilityMin', ability: 'str', min: 19 }),
+    fields: [
+      { key: 'ability', label: 'Ability', type: 'pick', options: ABILITY },
+      { key: 'min', label: 'At least', type: 'amount' },
+    ],
+    line: (e) => `${word(ABILITY, e.ability)} is at least ${amount(e.min, false)}`,
+  },
+  {
     kinds: ['acBonus'],
     add: 'Armor Class',
     make: () => ({ kind: 'acBonus', amount: 1 }),
@@ -583,7 +614,10 @@ const KINDS: readonly KindSpec[] = [
     add: 'Saving throws',
     make: () => ({ kind: 'saveBonus', amount: 1 }),
     fields: [amountField],
-    line: (e) => `${amount(e.amount)} to every saving throw`,
+    line: (e) =>
+      Array.isArray(e.abilities) && e.abilities.length > 0
+        ? `${amount(e.amount)} to ${listed(e.abilities.map((a) => word(ABILITY, a)))} saving throws`
+        : `${amount(e.amount)} to every saving throw`,
   },
   {
     kinds: ['skillProf'],
@@ -739,9 +773,33 @@ const KINDS: readonly KindSpec[] = [
     kinds: ['attackBonus'],
     add: 'Attack rolls',
     make: () => ({ kind: 'attackBonus', amount: 1, scope: 'all' }),
-    fields: [amountField, { key: 'scope', label: 'Which', type: 'pick', options: SCOPE }],
+    fields: [
+      amountField,
+      {
+        key: 'scope',
+        label: 'Which',
+        type: 'pick',
+        // Short enough for its half of the card at phone width; the line says the rest.
+        options: [...SCOPE, [EVERY_ATTACK, 'Every attack']],
+        // A level table shows as its own choice (`asWritten`).
+        value: (e) =>
+          asWritten(e.scope) !== undefined
+            ? ''
+            : everyAttack(e)
+              ? EVERY_ATTACK
+              : String(e.scope ?? 'all'),
+        // A spell attack is one modifier for melee and ranged alike, so only a
+        // bonus to every attack reaches it; melee or ranged are weapon attacks.
+        apply: (e, v) =>
+          v === EVERY_ATTACK
+            ? { ...e, scope: 'all', attack: 'any' }
+            : { ...omit(e, ['attack']), scope: v },
+      },
+    ],
     line: (e) =>
-      `${amount(e.amount)} to ${e.scope === 'all' || e.scope === undefined ? '' : `${String(e.scope)} `}attack rolls`,
+      everyAttack(e)
+        ? `${amount(e.amount)} to every attack roll, weapon and spell`
+        : `${amount(e.amount)} to ${e.scope === 'all' || e.scope === undefined ? '' : `${String(e.scope)} `}attack rolls`,
   },
   {
     kinds: ['damageBonus'],
@@ -1318,6 +1376,10 @@ function GrantFields({
               Spending 1 use of {words(r.label)}
             </option>
           ))}
+          {/* A pool kept where this list cannot see it (a class's, here a feat). */}
+          {how.startsWith('use:') && !resources.some((r) => `use:${String(r.key)}` === how) && (
+            <option value={how}>Spending 1 use of {how.slice(4)}, as written</option>
+          )}
         </Select>
       </Field>
       <Field label="Attack and DC from">
@@ -1340,6 +1402,11 @@ function GrantFields({
         >
           <option value="">No ability</option>
           {effect.ownClass === true && <option value={OWN_CLASS}>The class that gives it</option>}
+          {effect.ownClass !== true &&
+            typeof effect.ability === 'string' &&
+            !ABILITY.some(([v]) => v === effect.ability) && (
+              <option value={effect.ability}>{effect.ability}, as written</option>
+            )}
           {ABILITY.map(([v, text]) => (
             <option key={v} value={v}>
               {text}
@@ -1837,6 +1904,64 @@ function NamingFields({
   );
 }
 
+/** The choice a card's dropdown shows. */
+function pickValue(e: Eff, f: Extract<FieldSpec, { type: 'pick' }>): string {
+  return f.key === 'kind' ? e.kind : (f.value?.(e) ?? shown(e, f));
+}
+
+/**
+ * A card's dropdown's choices, with a value a file gives that none of them is
+ * shown as written (a homebrew condition, a skill the list has not), so the box
+ * never shows its first choice for it, unsaid. A level table, or the one a pick
+ * answers, has a choice of its own.
+ */
+function pickOptions(e: Eff, f: Extract<FieldSpec, { type: 'pick' }>): Options {
+  const v = pickValue(e, f);
+  return v === '' || v.includes('{pick') ? f.options : offering(f.options, v, `${v}, as written`);
+}
+
+/**
+ * A saving throw bonus's saves: every one while none is picked, else those
+ * picked, in the order the sheet lists them. One a file names that is no
+ * ability is kept after them, for the card's problem line to say.
+ */
+function SaveFields({
+  effect,
+  title,
+  onChange,
+}: {
+  effect: Eff;
+  title: string;
+  onChange: (next: Eff) => void;
+}) {
+  const held = Array.isArray(effect.abilities) ? effect.abilities.map(String) : [];
+  const toggle = (a: string) => {
+    const on = (v: string) => (v === a ? !held.includes(v) : held.includes(v));
+    const known = new Set(ABILITY.map(([v]) => v));
+    const next = [...ABILITY.map(([v]) => v).filter(on), ...held.filter((v) => !known.has(v))];
+    onChange(next.length === 0 ? omit(effect, ['abilities']) : { ...effect, abilities: next });
+  };
+  return (
+    <fieldset className="col-span-2 flex min-w-0 flex-col gap-1.5">
+      <legend className="mb-1.5 text-label text-ink-muted">Only these saves</legend>
+      <div className="grid grid-cols-3 gap-x-2">
+        {ABILITY.map(([v, text]) => (
+          <label key={v} className="flex min-h-tap items-center gap-2 text-body">
+            <input
+              type="checkbox"
+              className="size-4.5 accent-ink"
+              aria-label={`${title}: ${text}`}
+              checked={held.includes(v)}
+              onChange={() => toggle(v)}
+            />
+            {text}
+          </label>
+        ))}
+      </div>
+    </fieldset>
+  );
+}
+
 function Card({
   effect,
   problems,
@@ -1958,15 +2083,19 @@ function Card({
               {f.type === 'pick' ? (
                 <Select
                   aria-label={`${title}: ${f.label}`}
-                  value={f.key === 'kind' ? effect.kind : shown(effect, f)}
-                  onChange={(e) => set(f, e.target.value)}
+                  value={pickValue(effect, f)}
+                  onChange={(e) =>
+                    f.apply !== undefined
+                      ? onChange(f.apply(effect, e.target.value))
+                      : set(f, e.target.value)
+                  }
                 >
                   {asWritten(effect[f.key]) !== undefined && (
                     <option value="">{asWritten(effect[f.key])}</option>
                   )}
                   {(takesPicked(picked, effect.kind, f.key) ||
                     shown(effect, f).includes('{pick')) && <option value={PICKED}>The pick</option>}
-                  {f.options.map(([v, text]) => (
+                  {pickOptions(effect, f).map(([v, text]) => (
                     <option key={v} value={v}>
                       {text}
                     </option>
@@ -1983,6 +2112,9 @@ function Card({
               )}
             </Field>
           ))}
+          {effect.kind === 'saveBonus' && (
+            <SaveFields effect={effect} title={title} onChange={onChange} />
+          )}
           {(effect.kind === 'rollAdvantage' || effect.kind === 'rollDie') && (
             <RollFields effect={effect} title={title} onChange={onChange} />
           )}
@@ -2020,7 +2152,9 @@ function Card({
               onChange={onChange}
             />
           )}
-          {STATEFUL.has(effect.kind) && (
+          {/* An effect in play holds for as long as it lasts, with no When of its
+              own: its box shows only while a file sets one, to take it away. */}
+          {STATEFUL.has(effect.kind) && (!inPlay || effect.while !== undefined) && (
             <Field label="When">
               <Select
                 aria-label={`${title}: When`}
@@ -2034,11 +2168,13 @@ function Card({
                   );
                 }}
               >
-                {stateBox(effect).options.map(([v, text]) => (
-                  <option key={v} value={v}>
-                    {text}
-                  </option>
-                ))}
+                {stateBox(effect)
+                  .options.filter(([v]) => !inPlay || v === '' || v === stateBox(effect).value)
+                  .map(([v, text]) => (
+                    <option key={v} value={v}>
+                      {text}
+                    </option>
+                  ))}
               </Select>
             </Field>
           )}
@@ -2220,24 +2356,28 @@ function AmendCards({
 
 /**
  * What More offers, by the names the add list gives: the kinds past the first
- * chips, with Cast a spell only where spells can be named, and in play only
- * what an effect in play may do.
+ * chips, with Cast a spell only where spells can be named, in play only what
+ * an effect in play may do, and only kinds whose new card `counts` where the
+ * list's host says.
  */
 export function moreKinds({
   inPlay,
   spells,
   inPick = false,
+  counts,
 }: {
   inPlay: boolean;
   spells: boolean;
   /** For what a pick gives, whose one add button offers every kind it may hold. */
   inPick?: boolean;
+  counts?: (e: Eff) => boolean;
 }): string[] {
   return KINDS.filter(
     (k) =>
       (inPick ? !k.kinds.some((kind) => NOT_IN_PICK.has(kind)) : !FIRST.includes(k.add)) &&
       (spells || k.add !== 'Cast a spell') &&
-      !(inPlay && k.kinds.some((kind) => NOT_IN_PLAY.has(kind))),
+      !(inPlay && k.kinds.some((kind) => NOT_IN_PLAY.has(kind))) &&
+      (counts?.(k.make()) ?? true),
   ).map((k) => k.add);
 }
 
@@ -2264,6 +2404,7 @@ export function EffectCards({
   addLabel,
   fills,
   picked,
+  counts,
 }: {
   effects: unknown;
   /** The effects, and the prices (`amend`) when renaming a pool moved them too. */
@@ -2304,6 +2445,14 @@ export function EffectCards({
   fills?: readonly PickFill[];
   /** What the pick answers (`ask`), offered as "The pick" where a box fits it. */
   picked?: string;
+  /**
+   * Whether an effect counts where this list is (a condition's counts less
+   * than any effect in play): a kind is offered only when its new card would.
+   * A card a file already holds is shown whatever it is, with why it does not
+   * count. A card that starts unfinished (Cast a spell names no spell yet)
+   * never counts as made, so a host offering it needs more than the reader.
+   */
+  counts?: (e: Eff) => boolean;
 }) {
   const list: Eff[] = Array.isArray(effects) ? (effects as Eff[]) : [];
   const amends: Eff[] = Array.isArray(amend) ? (amend as Eff[]) : [];
@@ -2398,7 +2547,7 @@ export function EffectCards({
   const more = async () => {
     const id = await askChoice({
       title: inPick ? 'What does each pick give?' : 'What does it do?',
-      options: moreKinds({ inPlay, spells: spells !== undefined, inPick }).map((add) => ({
+      options: moreKinds({ inPlay, spells: spells !== undefined, inPick, counts }).map((add) => ({
         id: add,
         label: add,
       })),
@@ -2475,7 +2624,7 @@ export function EffectCards({
       )}
       {!readOnly && !inPick && (
         <div className="-mx-1.5 flex flex-wrap">
-          {KINDS.filter((k) => FIRST.includes(k.add)).map((k) => (
+          {KINDS.filter((k) => FIRST.includes(k.add) && (counts?.(k.make()) ?? true)).map((k) => (
             <Chip key={k.add} tone="outline" className="px-2.5" onClick={() => add(k)}>
               <Plus size={14} aria-hidden />
               {k.add}
