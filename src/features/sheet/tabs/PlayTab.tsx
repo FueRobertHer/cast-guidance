@@ -2801,7 +2801,7 @@ export function Component() {
                 }
                 if (starts === undefined) {
                   triggerAction(a.economy, use.spends, a.label, use.regains, (d) => {
-                    if (once) markOnce(d, rowKey);
+                    if (once) markOnce(d, rowKey, opportunityInPlay());
                     if (surges) markSurge(d);
                   });
                   return;
@@ -2916,7 +2916,20 @@ export function Component() {
                           a.heals === true ? 'heal' : a.plainDice === true ? 'dice' : 'damage'
                         }
                         // The dice still roll; only a use it can pay for is recorded.
-                        onRolled={use.noButton || use.disabled ? undefined : () => void trigger()}
+                        // A once-a-turn one is marked used either way, as the damage
+                        // prompt marks it: on an opportunity attack's turn when one is
+                        // in play.
+                        onRolled={
+                          use.noButton || use.disabled
+                            ? once
+                              ? () =>
+                                  update(
+                                    (d) => markOnce(d, rowKey, opportunityInPlay()),
+                                    `Used ${a.label}`,
+                                  )
+                              : undefined
+                            : () => void trigger()
+                        }
                         // Damage with no save is added to a hit (Sneak Attack, a
                         // smite), so a crit doubles it; a save's (Breath Weapon)
                         // is no attack's.
