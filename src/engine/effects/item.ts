@@ -1,5 +1,12 @@
 import { WORN_TAG_KINDS } from '../castGuidance';
-import { ITEM_CHARGES, itemChargeKey, itemChargesOf, regainRollOf } from '../curated/itemCharges';
+import {
+  ACTION_CHARGE_PLACES,
+  ITEM_CHARGES,
+  itemChargeKey,
+  itemChargesOf,
+  regainRollOf,
+  upgradeOlderCharges,
+} from '../curated/itemCharges';
 import type { DataEntity, EffectOrigin } from '../types';
 import { refUid } from '../types';
 import { collectAdditionalSpells } from './additionalSpells';
@@ -31,16 +38,21 @@ export function parseBonus(v: unknown): number {
   return 0;
 }
 
+/**
+ * The item an equipment entry names, as the engine reads it: one the Workshop
+ * wrote before its Charges section counted charges reads as it would write it
+ * now (`upgradeOlderCharges`), so every reader of a carried item sees one shape.
+ */
 export function lookupItem(
   col: Pick<Collector, 'ctx'>,
   name: string,
   source?: string,
 ): DataEntity | undefined {
-  return (
+  const found =
     col.ctx.get('item', name, source) ??
     col.ctx.get('baseitem', name, source) ??
-    col.ctx.get('itemGroup', name, source)
-  );
+    col.ctx.get('itemGroup', name, source);
+  return found === undefined ? undefined : upgradeOlderCharges(found);
 }
 
 /** Whether the item gives nothing until someone attunes to it ("optional" never holds it back). */
@@ -141,16 +153,17 @@ export function collectItems(col: Collector): void {
       if (charged !== undefined) {
         const key = itemChargeKey(entry.id);
         // Its actions that spend its charges or give them back (a buy-back, a
-        // slot turned into them, a regain) spend or restore this copy's pool.
-        // Each is a copy of what the item says (`emit`), and each price a new
-        // object, so the next copy's is its own.
+        // slot turned into them, a regain, `ACTION_CHARGE_PLACES`) spend or
+        // restore this copy's pool. Each is a copy of what the item says
+        // (`emit`), and each part a new object, so the next copy's is its own.
         for (let i = from; i < col.effects.length; i++) {
           const x = col.effects[i];
           if (x?.kind !== 'action') continue;
-          if (x.cost?.resource === ITEM_CHARGES) x.cost = { ...x.cost, resource: key };
-          if (x.cost?.slotRefills === ITEM_CHARGES) x.cost = { ...x.cost, slotRefills: key };
-          if (x.buyBack?.own === ITEM_CHARGES) x.buyBack = { ...x.buyBack, own: key };
-          if (x.regains?.resource === ITEM_CHARGES) x.regains = { ...x.regains, resource: key };
+          const parts = x as unknown as Record<string, Record<string, unknown> | undefined>;
+          for (const [part, field] of ACTION_CHARGE_PLACES) {
+            const at = parts[part];
+            if (at?.[field] === ITEM_CHARGES) parts[part] = { ...at, [field]: key };
+          }
         }
         const roll = regainRollOf(charged);
         col.add({

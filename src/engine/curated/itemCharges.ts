@@ -12,7 +12,7 @@
  * equipment entry names (`refUid(entry.ref)`), as every reader here and the
  * item call site look it up.
  */
-import { RULE_PACK_TYPE, RULE_SET_TYPE } from '../castGuidance';
+import { isRecord, RULE_PACK_TYPE, RULE_SET_TYPE } from '../castGuidance';
 import { lookupItem } from '../effects/item';
 import {
   builtInRuleIn,
@@ -20,6 +20,7 @@ import {
   packChargesOf,
   readItemCharges,
   readMechanics,
+  readOwnEffects,
 } from '../effects/mechanics';
 import {
   type CharacterDoc,
@@ -80,7 +81,8 @@ const fromFields = new WeakMap<DataEntity, ItemCharges | null>();
  * starts from nothing (`replace`), so inherits none, or it counts them its own
  * way, with a `charges` effect (one that does not read yet too, which says
  * why) or the Workshop's older pool, a `resource` keyed `charges`, whose cards
- * spend it. Its effects are looked at as stored, so a guidance that does not
+ * spend it (an item `upgradeOlderCharges` could not convert without loss). Its
+ * effects are looked at as stored, so a guidance that does not
  * read as a whole says the same; its `replace` counts only where it reads, as
  * everything else it would leave out (`mechanicsOf`).
  */
@@ -117,6 +119,150 @@ export function fieldChargesOf(entry: DataEntity): ItemCharges | undefined {
         });
   fromFields.set(entry, read ?? null);
   return read;
+}
+
+/** The fields the Workshop wrote on its older pool card. */
+const OLDER_POOL_FIELDS: ReadonlySet<string> = new Set(['kind', 'key', 'label', 'max', 'reset']);
+/** The fields the Workshop wrote on a Cast a spell card that spent the older pool. */
+const OLDER_GRANT_FIELDS: ReadonlySet<string> = new Set([
+  'kind',
+  'spell',
+  'ability',
+  'usage',
+  'resourceKey',
+]);
+
+const onlyFields = (o: Record<string, unknown>, fields: ReadonlySet<string>): boolean =>
+  Object.keys(o).every((k) => fields.has(k));
+
+/**
+ * Where an item's action names its charges (`ITEM_CHARGES`) and the sheet
+ * moves it to the carried copy's pool: its cost, a slot turned into them, the
+ * use a buy-back restores, a regain. As `[part, field]`. The Workshop offers
+ * them there as its charges (`PriceFields`); a spell card's or a buy-back's
+ * price under that key it offers as a Uses card of the item's own, so the
+ * sheet leaves those as written.
+ */
+export const ACTION_CHARGE_PLACES: ReadonlyArray<readonly [string, string]> = [
+  ['cost', 'resource'],
+  ['cost', 'slotRefills'],
+  ['buyBack', 'own'],
+  ['regains', 'resource'],
+];
+
+/**
+ * Whether a value may name a pool among `names`, at any depth: words that are
+ * one as the sheet finds a pool (ends trimmed, and in any case, as a moment
+ * finds one by key or name), or that a pick's answer fills in (`{pick}`).
+ */
+function namesPool(v: unknown, names: ReadonlySet<string>): boolean {
+  if (typeof v === 'string') return names.has(v.trim().toLowerCase()) || v.includes('{pick');
+  if (Array.isArray(v)) return v.some((x) => namesPool(x, names));
+  return isRecord(v) && Object.values(v).some((x) => namesPool(x, names));
+}
+
+/** An effect less the places an action's charges move from (`ACTION_CHARGE_PLACES`), read trimmed. */
+function movedOut(e: Record<string, unknown>): Record<string, unknown> {
+  if (e.kind !== 'action') return e;
+  const out: Record<string, unknown> = { ...e };
+  for (const [part, field] of ACTION_CHARGE_PLACES) {
+    const at = out[part];
+    if (isRecord(at) && typeof at[field] === 'string' && at[field].trim() === ITEM_CHARGES) {
+      const { [field]: _moved, ...rest } = at;
+      out[part] = rest;
+    }
+  }
+  return out;
+}
+
+/** Every action in a value, at any depth (a pick's options give theirs). */
+function actionsIn(v: unknown): Record<string, unknown>[] {
+  if (Array.isArray(v)) return v.flatMap(actionsIn);
+  if (!isRecord(v)) return [];
+  const inner = Object.values(v).flatMap(actionsIn);
+  return v.kind === 'action' ? [v, ...inner] : inner;
+}
+
+/** Each item's `upgradeOlderCharges`, made once. */
+const upgraded = new WeakMap<DataEntity, DataEntity>();
+
+/**
+ * An item the Workshop wrote before its Charges section counted them: a pool
+ * card keyed `charges`, all back on a long rest, and Cast a spell cards that
+ * each spend one of it. It reads as the `charges` effect the section writes
+ * now, in the card's place: each card's spell at a cost of one, cast at its
+ * own level, with the cards' ability. What comes back is what its recharge
+ * fields say when they name a time a long rest covers, else all of them, as
+ * the card gave. The item's actions spend the new pool as they spent the card
+ * (the item call site re-keys them).
+ *
+ * Only an item that converts without loss: one card, as the Workshop wrote it
+ * (a long rest, the item's own count); spell cards as the Workshop wrote them,
+ * agreeing on one ability; no other effect, and nothing outside the effects,
+ * naming the pool by its key or the card's name (an action only where the
+ * sheet moves it, never paying a buy-back), nor filled in by a pick; no action
+ * named by level; no recharge the effect cannot say (a short rest,
+ * `special`); and an effect that reads (each card's spell as a spell's name
+ * and book). Any other item is itself, keeping its older pool, which its
+ * fields stand aside for (`ownChargesStand`). The item given is never changed,
+ * and one item gives one answer.
+ */
+export function upgradeOlderCharges(entry: DataEntity): DataEntity {
+  const known = upgraded.get(entry);
+  if (known !== undefined) return known;
+  const made = olderChargesUpgrade(entry) ?? entry;
+  upgraded.set(entry, made);
+  return made;
+}
+
+function olderChargesUpgrade(entry: DataEntity): DataEntity | undefined {
+  const g = entry.castGuidance;
+  if (!isRecord(g) || !Array.isArray(g.effects)) return undefined;
+  const effects = (g.effects as unknown[]).filter(isRecord);
+  if (effects.length !== g.effects.length) return undefined;
+  const pools = effects.filter((e) => e.kind === 'resource' && e.key === ITEM_CHARGES);
+  const [pool] = pools;
+  if (pool === undefined || pools.length > 1) return undefined;
+  if (!onlyFields(pool, OLDER_POOL_FIELDS) || pool.reset !== 'long') return undefined;
+  const charges = entry.charges ?? pool.max;
+  if (charges !== pool.max) return undefined;
+  const spends = (e: Record<string, unknown>) =>
+    e.kind === 'grantSpell' && e.resourceKey === ITEM_CHARGES;
+  const grants = effects.filter(spends);
+  if (grants.some((e) => !onlyFields(e, OLDER_GRANT_FIELDS))) return undefined;
+  const abilities = new Set(grants.map((e) => e.ability));
+  if (abilities.size > 1) return undefined;
+  const [ability] = abilities;
+  // Nothing else may name the pool, by its key or the card's name, which the
+  // new one does not stand in for: a `charges` effect already there names it
+  // by its kind, a use with no price spends the pool sharing its name, and a
+  // moment finds one by key or name. Nor the new pool by its name ("<item>
+  // charges", as `collectItems` names it), which nothing found before. An
+  // action may where the sheet moves it to the new pool (`movedOut`). Nor may
+  // an action be named by level, in words no check here reads.
+  if (typeof pool.label !== 'string' || typeof entry.name !== 'string') return undefined;
+  const names = new Set([
+    ITEM_CHARGES,
+    pool.label.trim().toLowerCase(),
+    `${entry.name} charges`.trim().toLowerCase(),
+  ]);
+  const { effects: _effects, ...outside } = g;
+  const others = effects.filter((e) => e !== pool && !spends(e)).map(movedOut);
+  if (others.some((e) => namesPool(e, names)) || namesPool(outside, names)) return undefined;
+  if (actionsIn(effects).some((e) => typeof e.label !== 'string')) return undefined;
+  const recharge = typeof entry.recharge === 'string' ? entry.recharge : '';
+  if (recharge !== '' && !LONG_REST_RECHARGE.has(recharge.toLowerCase())) return undefined;
+  const effect = {
+    kind: 'charges',
+    charges,
+    regain: recharge === '' ? 'all' : regainOf(recharge, entry.rechargeAmount),
+    ...(typeof ability === 'string' ? { ability } : {}),
+    ...(grants.length > 0 ? { spells: grants.map((e) => ({ spell: e.spell, cost: 1 })) } : {}),
+  };
+  const read = readOwnEffects([effect], 'effects');
+  if (read.problems.length > 0 || read.charges === undefined) return undefined;
+  const now = effects.flatMap((e) => (e === pool ? [effect] : spends(e) ? [] : [e]));
+  return { ...entry, castGuidance: { ...g, effects: now } };
 }
 
 /**
