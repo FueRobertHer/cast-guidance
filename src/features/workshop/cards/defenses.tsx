@@ -4,7 +4,7 @@
  */
 
 import { AbilityTicks } from './kit/abilityTicks';
-import type { KindSpec, Options } from './kit/types';
+import type { Eff, KindSpec, Options } from './kit/types';
 import {
   ABILITY,
   amount,
@@ -49,14 +49,34 @@ const CONDITION: Options = [
   'Unconscious',
 ].map((c) => [c, c] as const);
 
-/** How much of the Dexterity modifier an AC worked out another way counts (`dexMax`). */
+/**
+ * How much of the Dexterity modifier an AC worked out another way counts
+ * (`dexMax`). A cap holds a bonus down, never a penalty (`calc/ac.ts` takes
+ * the smaller), so "Up to +0" still counts a negative modifier: no Dexterity
+ * at all is its tick left empty.
+ */
 const DEX_MAX: Options = [
   ['', 'In full'],
-  ['0', 'Not at all'],
+  ['0', 'Up to +0'],
   ['1', 'Up to +1'],
   ['2', 'Up to +2'],
   ['3', 'Up to +3'],
 ];
+
+/**
+ * A cap on Dexterity means Dexterity counts: picking one ticks it, in the
+ * order the ticks store, and unticking it takes the cap away, so the box and
+ * the line never say different things.
+ */
+const withDex = (e: Eff): Eff => {
+  const held = Array.isArray(e.addAbilities) ? e.addAbilities.map(String) : [];
+  if (held.includes('dex')) return e;
+  const known = new Set(ABILITY.map(([v]) => v));
+  const order = ABILITY.map(([v]) => v).filter((v) => v === 'dex' || held.includes(v));
+  return { ...e, addAbilities: [...order, ...held.filter((v) => !known.has(v))] };
+};
+const capGoesWithDex = (e: Eff): Eff =>
+  Array.isArray(e.addAbilities) && e.addAbilities.includes('dex') ? e : omit(e, ['dexMax']);
 
 /** The heading its cards are listed under on the add sheet. */
 export const group = 'Defenses and hit points';
@@ -148,14 +168,16 @@ export const cards: readonly KindSpec[] = [
         type: 'pick',
         options: DEX_MAX,
         apply: (e, v) =>
-          v === '' ? omit(e, ['dexMax']) : { ...e, dexMax: /^\d+$/.test(v) ? Number(v) : v },
+          v === ''
+            ? omit(e, ['dexMax'])
+            : withDex({ ...e, dexMax: /^\d+$/.test(v) ? Number(v) : v }),
       },
     ],
     line: (e) => {
       const plus = Array.isArray(e.addAbilities) ? e.addAbilities : [];
       const capped =
         e.dexMax !== undefined && plus.includes('dex')
-          ? ` (Dexterity ${e.dexMax === 0 ? 'not counted' : `up to +${String(e.dexMax)}`})`
+          ? ` (Dexterity up to +${String(e.dexMax)})`
           : '';
       return `Armor Class is ${amount(e.base, false)}${plus.length > 0 ? ` plus ${listed(plus.map((a) => word(ABILITY, a)))}` : ''}${capped}`;
     },
@@ -165,7 +187,7 @@ export const cards: readonly KindSpec[] = [
         field="addAbilities"
         legend="Plus the modifier of"
         title={p.title}
-        onChange={p.onChange}
+        onChange={(next) => p.onChange(capGoesWithDex(next))}
       />
     ),
   },

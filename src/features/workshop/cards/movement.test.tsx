@@ -52,6 +52,37 @@ describe('Initiative, with the proficiency bonus', () => {
     expect(tick().checked).toBe(false);
   });
 
+  it('does not offer the proficiency bonus in play or at a moment, which take a plain number', () => {
+    const named = 'Initiative: Your proficiency bonus instead';
+    renderCards([{ kind: 'initiativeBonus', amount: 2 }], { inPlay: true });
+    expect(screen.queryByRole('checkbox', { name: named })).toBeNull();
+    cleanup();
+    // One a file holds in play can be taken back.
+    const held = renderCards([{ kind: 'initiativeBonus', profBonus: true }], { inPlay: true });
+    fireEvent.click(screen.getByRole('checkbox', { name: named }));
+    expect(held.written()).toEqual([{ kind: 'initiativeBonus', amount: 1 }]);
+    expect(screen.queryByRole('checkbox', { name: named })).toBeNull();
+    cleanup();
+    renderCards([], {
+      moments: [
+        {
+          at: 'zeroHp',
+          do: [
+            {
+              kind: 'addEffect',
+              name: 'Card Feat',
+              effects: [{ kind: 'initiativeBonus', amount: 2 }],
+            },
+          ],
+        },
+      ],
+      onMoments: () => {},
+      momentName: 'Card Feat',
+    });
+    expect(screen.getByText('+2 to Initiative')).toBeTruthy();
+    expect(screen.queryByRole('checkbox', { name: named })).toBeNull();
+  });
+
   it('adds the proficiency bonus to Initiative on a sheet', () => {
     // Dexterity 16 (+3), and at level 5 a proficiency bonus of 3.
     expect(sheetWith(undefined).initiative.value).toBe(3);
@@ -114,6 +145,18 @@ describe('Speed multiplied', () => {
     cleanup();
     renderCards(cards.written());
     expect(boxValue(`${TITLE}: Times`)).toBe('1.5');
+  });
+
+  it('keeps a zero after the point while it is typed key by key', () => {
+    const cards = renderCards([make(TITLE)]);
+    for (const text of ['1', '1.', '1.0', '1.05']) change(`${TITLE}: Times`, text);
+    expect(cards.written()).toEqual([{ kind: 'speedMultiplier', factor: 1.05 }]);
+    expect(boxValue(`${TITLE}: Times`)).toBe('1.05');
+    for (const text of ['2', '2.', '2.0']) change(`${TITLE}: Times`, text);
+    // Mid-number: the box keeps "2.0" until the next key.
+    expect(boxValue(`${TITLE}: Times`)).toBe('2.0');
+    change(`${TITLE}: Times`, '2.05');
+    expect(cards.written()).toEqual([{ kind: 'speedMultiplier', factor: 2.05 }]);
   });
 
   it('says a factor of 1 or less does not count, as the sheet never slows a speed this way', () => {

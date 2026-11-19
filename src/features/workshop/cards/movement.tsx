@@ -77,10 +77,14 @@ function ProfBonusTick({ effect, title, onChange }: BoxProps) {
   );
 }
 
-/** A number typed in, as stored: one with a decimal point stays a number too. */
+/**
+ * A number typed in, as stored: one with a decimal point stays a number too.
+ * Text a number would not draw again the same ("1.0" on the way to "1.05") is
+ * kept as typed until the next key, or the box would lose the point.
+ */
 const decimal = (text: string): unknown => {
   const t = text.trim();
-  return /^\d+(\.\d+)?$/.test(t) ? Number(t) : t;
+  return /^\d+(\.\d+)?$/.test(t) && String(Number(t)) === t ? Number(t) : t;
 };
 
 /** The heading its cards are listed under on the add sheet. */
@@ -100,7 +104,13 @@ export const cards: readonly KindSpec[] = [
     // An amount typed in takes the place of the proficiency bonus.
     set: (e, key, v) =>
       key === 'amount' ? { next: { ...omit(e, ['profBonus']), amount: v } } : undefined,
-    boxes: (p) => <ProfBonusTick effect={p.effect} title={p.title} onChange={p.onChange} />,
+    // In play and at a moment an effect takes a plain number (the in-play and
+    // moment readers refuse `profBonus`), so the tick is offered there only to
+    // take back one a file holds.
+    boxes: (p) =>
+      ((p.inPlay !== true && p.atMoment !== true) || p.effect.profBonus === true) && (
+        <ProfBonusTick effect={p.effect} title={p.title} onChange={p.onChange} />
+      ),
   },
   {
     kinds: ['speedBonus'],

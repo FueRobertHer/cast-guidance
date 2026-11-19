@@ -63,6 +63,31 @@ describe('Another way to work out AC', () => {
     noProblems(again.written());
   });
 
+  it('keeps the Dexterity cap with Dexterity: picking one ticks it, unticking takes it away', () => {
+    const cards = renderCards([{ kind: 'acFormula', base: 12, addAbilities: ['con'] }]);
+    change(`${TITLE}: Dexterity counts`, '2');
+    expect(cards.written()).toEqual([
+      { kind: 'acFormula', base: 12, addAbilities: ['dex', 'con'], dexMax: 2 },
+    ]);
+    expect(tick(`${TITLE}: Dexterity`).checked).toBe(true);
+    fireEvent.click(tick(`${TITLE}: Dexterity`));
+    expect(cards.written()).toEqual([{ kind: 'acFormula', base: 12, addAbilities: ['con'] }]);
+    expect(boxValue(`${TITLE}: Dexterity counts`)).toBe('');
+    expect(screen.getByText('Armor Class is 12 plus Constitution')).toBeTruthy();
+  });
+
+  it('says a cap of +0 as the sheet counts it: a negative Dexterity still counts', () => {
+    const capped = [{ kind: 'acFormula', base: 13, addAbilities: ['dex'], dexMax: 0 }];
+    renderCards(capped);
+    expect(screen.getByText('Armor Class is 13 plus Dexterity (Dexterity up to +0)')).toBeTruthy();
+    const dex = (n: number) => (d: { abilities: { base: { dex: number } } }) => {
+      d.abilities.base.dex = n;
+    };
+    // Dexterity 8 (-1) counts; Dexterity 16 (+3) is held to +0.
+    expect(sheetWith(capped, { setup: dex(8) }).ac.value).toBe(12);
+    expect(sheetWith(capped).ac.value).toBe(13);
+  });
+
   it('counts on a sheet when it is the best way, its Dexterity held to the cap', () => {
     // Dexterity 16 (+3) and Constitution 14 (+2); unarmored, 13.
     expect(sheetWith(undefined).ac.value).toBe(13);
