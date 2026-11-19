@@ -205,7 +205,8 @@ export function withCharges(draft: Json, patch: Json, own?: Json): Json {
 /**
  * The spells a built-in `charges` row prices, written as an item's own effect
  * names them: each with its book, the first of `options` by its name (the
- * item's edition first), or its name alone when the data has none.
+ * item's edition first), else the book its fields name, or its name alone
+ * when nothing names one (which the effect does not read).
  */
 export function rowSpells(
   row: ItemCharges,
@@ -222,8 +223,10 @@ export function rowSpells(
       typeof named?.name === 'string' && typeof named.source === 'string'
         ? { name: named.name, source: named.source }
         : options.find((o) => o.name.toLowerCase() === s.spell.toLowerCase());
+    // A book the data lacks (a collection turned off) is still that spell's.
+    const book = s.ref?.source ? `${s.ref.name}|${s.ref.source}` : s.spell;
     return {
-      spell: hit === undefined ? s.spell : `${hit.name}|${hit.source}`,
+      spell: hit === undefined ? book : `${hit.name}|${hit.source}`,
       cost: s.cost,
       ...(s.upTo === undefined ? {} : { upTo: s.upTo }),
       ...(s.at === undefined ? {} : { at: s.at }),
@@ -1105,7 +1108,10 @@ function Effects(props: EditorProps) {
         readOnly={readOnly}
         inherits={original !== undefined ? String(original.name) : undefined}
         replace={g.replace === true}
-        onReplace={(replace) => set({ replace: replace ? true : undefined })}
+        // Its prices on what the original does go with what they priced.
+        onReplace={(replace) =>
+          set(replace ? { replace: true, amend: undefined } : { replace: undefined })
+        }
         spells={spellOptions(props)}
         hide={isCharges}
         holdsCharges
