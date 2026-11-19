@@ -141,7 +141,7 @@ export function grantUseWays(sheet: DerivedSheet, name: string): UseWay[] {
       g.usage === 'prepared' ||
       g.resourceKey === undefined ||
       isItemChargeKey(g.resourceKey) ||
-      g.fixed === true ||
+      g.fixed !== undefined ||
       lower(g.name) !== lower(name)
     ) {
       return [];
@@ -262,7 +262,9 @@ export function grantLimitWords(usage: string | undefined): string {
  */
 export function castRowId(c: SpellCast): string {
   const from = c.block?.classUid ?? c.grantPool?.key ?? 'innate';
-  const row = c.numbers === undefined ? '' : `|${c.numbers}`;
+  // A class's or a pool's row is one of its kind already; two at-will grants
+  // of one spell are not, without their numbers.
+  const row = from === 'innate' && c.numbers !== undefined ? `|${c.numbers}` : '';
   return `${c.doc.id}|${from}|${c.info.name}|${c.info.source}${row}`.toLowerCase();
 }
 
@@ -270,12 +272,17 @@ type Grant = DerivedSheet['grantedSpells'][number];
 
 /**
  * An item's grant's numbers (`DerivedSheet.grantedSpells`) as a key, which
- * keeps its row apart from another grant of the spell cast with other ones;
- * none for a grant without them.
+ * keeps its row apart from another grant of the spell cast with other ones:
+ * those its text fixes (and whether it names an ability), or `own` for the
+ * character's, never their values, which an effect in play moves (the row
+ * would be another, and a cast waiting in the prompt dropped). None for a
+ * grant without numbers.
  */
 export function grantNumbersKey(g: Grant): string | undefined {
-  if (g.dc === undefined && g.attack === undefined && g.mod === undefined) return undefined;
-  return `${g.dc ?? ''}/${g.attack ?? ''}/${g.mod ?? ''}`;
+  if (g.fixed !== undefined) {
+    return `${g.fixed.dc ?? ''}/${g.fixed.attack ?? ''}/${g.ability ?? ''}`;
+  }
+  return g.dc === undefined && g.attack === undefined && g.mod === undefined ? undefined : 'own';
 }
 
 /** A granted spell's row, one of a kind as the sheet lists them (`dedupeGrantedSpells`). */

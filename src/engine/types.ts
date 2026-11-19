@@ -1297,10 +1297,11 @@ export interface DerivedSheet {
     mod?: number;
     /**
      * An item's grant whose text fixes its DC or attack bonus (an `itemDc`
-     * row, a `charges` effect's): only its own row casts it, as a class's row
-     * would cast it at the class's numbers.
+     * row, a `charges` effect's): those of `dc` and `attack` that it fixes.
+     * Only its own row casts it, as a class's row would cast it at the class's
+     * numbers.
      */
-    fixed?: true;
+    fixed?: { dc?: number; attack?: number };
   }>;
   warnings: string[];
   /**

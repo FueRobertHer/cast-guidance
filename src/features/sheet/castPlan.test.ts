@@ -265,7 +265,13 @@ describe("a granted spell's row beside another grant of the spell", () => {
     const sheet = {
       grantedSpells: [
         grant({ usage: '1/day', resourceKey: 'feat' }),
-        grant({ usage: '1/day', resourceKey: 'helm', origin: 'Helm', dc: 13, fixed: true }),
+        grant({
+          usage: '1/day',
+          resourceKey: 'helm',
+          origin: 'Helm',
+          dc: 13,
+          fixed: { dc: 13 },
+        }),
         grant({ usage: '1/day', resourceKey: 'orb', origin: 'Orb', dc: 15, attack: 7, mod: 4 }),
       ],
       resources: [
@@ -280,8 +286,16 @@ describe("a granted spell's row beside another grant of the spell", () => {
 
   it("keeps an item's row, cast with other numbers, apart from another's", () => {
     const race = grant({ name: 'Light', origin: 'Race', ability: 'cha' });
+    // The orb casts with the character's numbers; the wand's text fixes a DC.
     const orb = grant({ name: 'Light', origin: 'Orb', dc: 13, attack: 5, mod: 3 });
-    const wand = grant({ name: 'Light', origin: 'Wand', dc: 15, attack: 5, mod: 3 });
+    const wand = grant({
+      name: 'Light',
+      origin: 'Wand',
+      dc: 15,
+      attack: 5,
+      mod: 3,
+      fixed: { dc: 15 },
+    });
     expect(grantNumbersKey(race)).toBeUndefined();
     expect(new Set([race, orb, wand].map(grantRowKey)).size).toBe(3);
     // At-will rows, cast from no class and no pool of their own.
@@ -295,6 +309,26 @@ describe("a granted spell's row beside another grant of the spell", () => {
     expect(new Set(ids).size).toBe(3);
     // A grant without numbers keeps the id it had.
     expect(ids[0]).toBe('c1|innate|light|xphb');
+  });
+
+  it("keeps a row's key and cast id while an effect moves the character's numbers", () => {
+    // A cloak casting with the character's DC 13, then 14 under a buff.
+    const before = grant({ usage: '1/day', resourceKey: 'cloak', dc: 13, attack: 5, mod: 3 });
+    const after = { ...before, dc: 14, attack: 6 };
+    expect(grantRowKey(after)).toBe(grantRowKey(before));
+    // A fixed item's row follows the numbers its text fixes, not the rest.
+    const fixed = { ...before, fixed: { dc: 15 } };
+    expect(grantRowKey({ ...fixed, attack: 6 })).toBe(grantRowKey(fixed));
+    // A row with a pool or a class is one of its kind: its id says no numbers,
+    // so the Spells tab's class row for a prepared grant shares it.
+    const base = {
+      doc: newCharacterDoc('c1', 'Vela', 't'),
+      info: { name: 'Suggestion', source: 'XPHB' },
+    } as unknown as SpellCast;
+    const pooled = { ...base, grantPool: { key: 'cloak', label: 'Cloak', max: 1 } };
+    expect(castRowId({ ...pooled, numbers: 'own' })).toBe(castRowId(pooled));
+    const prepared = { ...base, block: { classUid: 'wizard|xphb' } } as unknown as SpellCast;
+    expect(castRowId({ ...prepared, numbers: 'own' })).toBe(castRowId(prepared));
   });
 });
 

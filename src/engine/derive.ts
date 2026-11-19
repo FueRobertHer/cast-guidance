@@ -800,7 +800,12 @@ function dedupeGrantedSpells(
       ...(added ? { added: true as const } : {}),
       ...cast,
       ...(e.origin.type === 'item' && (e.dc !== undefined || e.attack !== undefined)
-        ? { fixed: true as const }
+        ? {
+            fixed: {
+              ...(e.dc === undefined ? {} : { dc: e.dc }),
+              ...(e.attack === undefined ? {} : { attack: e.attack }),
+            },
+          }
         : {}),
     });
   }

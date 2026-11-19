@@ -342,15 +342,16 @@ describe('the numbers an item grant casts with', () => {
 
   it("say which are fixed by the item's text, and not those cast with the character's", () => {
     const fixedOf = (doc: CharacterDoc, ctx: EngineContext) =>
-      deriveSheet(doc, ctx).grantedSpells.map((g) => g.fixed === true);
+      deriveSheet(doc, ctx).grantedSpells.map((g) => g.fixed);
     const shards = item('True-Ice Shards (Dagger)', 'CoA', {
       attachedSpells: { daily: { '1e': ['scrying'] } },
     });
     const doc = carrying(mage(), { name: 'True-Ice Shards (Dagger)', source: 'CoA' });
-    // Its built-in itemSpells row grants six, each at the DC its text fixes.
-    expect(fixedOf(doc, world([shards]))).toEqual([true, true, true, true, true, true]);
-    expect(fixedOf(carrying(mage(), ORB), world([orb()]))).toEqual([false]);
-    expect(fixedOf(carrying(mage(), ORB), world([orb({ ability: 'wis' })]))).toEqual([false]);
+    // Its built-in itemSpells row grants six, each at the DC its text fixes;
+    // its attack bonus is the character's, so not fixed.
+    expect(fixedOf(doc, world([shards]))).toEqual(Array(6).fill({ dc: 20 }));
+    expect(fixedOf(carrying(mage(), ORB), world([orb()]))).toEqual([undefined]);
+    expect(fixedOf(carrying(mage(), ORB), world([orb({ ability: 'wis' })]))).toEqual([undefined]);
   });
 
   it("are its own charges effect's, for its charges' spells and its other grants", () => {
