@@ -7,6 +7,7 @@ import { MemoryRouter } from 'react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Entity } from '@/data5e/copyMod';
 import { EntityRegistry } from '@/data5e/normalize';
+import type { StoredEffect } from '@/engine/castGuidance';
 import {
   fieldChargesOf,
   ITEM_CHARGES,
@@ -1218,7 +1219,9 @@ describe('ItemEditor', () => {
         spells: [{ spell: 'Cloudkill|XPHB', cost: 5 }],
       },
     ]);
-    expect(screen.getByText(/Every spell it casts uses save DC 17, as its text says/)).toBeTruthy();
+    // Its box says the DC the original's text fixes, there to change.
+    expect(screen.getByLabelText('Fixed save DC')).toHaveProperty('value', '17');
+    expect(screen.getByLabelText('Fixed attack bonus')).toHaveProperty('value', '');
     // The sheet counts what it did before: its pool, its spells, their DC.
     const counted = (charges: ItemCharges | undefined) =>
       charges === undefined
@@ -1261,6 +1264,111 @@ describe('ItemEditor', () => {
     expect(spell()).toEqual({ spell: 'Fireball|PHB', cost: 7 });
     type('Charge spell 1: up to level', '9');
     expect(spell()).toEqual({ spell: 'Fireball|PHB', cost: 7, upTo: 9 });
+  });
+
+  it('fixes the save DC and attack bonus its spells cast with, within what the sheet reads', () => {
+    const draft = mount(item, { name: 'Odd Rod', type: 'RD', entries: [], charges: 2 });
+    press('Add spells they cast');
+    const effect = () => ((draft().castGuidance as Json).effects as Json[])[0] as Json;
+    type('Fixed save DC', '15');
+    type('Fixed attack bonus', '7');
+    expect(effect()).toStrictEqual({
+      kind: 'charges',
+      charges: 2,
+      regain: 'none',
+      dc: 15,
+      attack: 7,
+    });
+    // Past what the sheet reads, the most it reads; below, the least.
+    type('Fixed save DC', '45');
+    type('Fixed attack bonus', '25');
+    expect(effect()).toMatchObject({ dc: 30, attack: 20 });
+    expect(readOwnEffects([effect() as StoredEffect], 'effects').problems).toEqual([]);
+    type('Fixed save DC', '0');
+    expect(effect().dc).toBe(1);
+    // Emptied, each is the character's again.
+    type('Fixed save DC', '');
+    type('Fixed attack bonus', '');
+    expect(effect()).toStrictEqual({ kind: 'charges', charges: 2, regain: 'none' });
+    expect(screen.getByText(/With either, its charges cast only from its own rows/)).toBeTruthy();
+  });
+
+  it("keeps a DC typed before a copy's row is written out, and writes the row's otherwise", () => {
+    const registry = new EntityRegistry();
+    registry.setRuleSets(BUILT_IN_RULE_SETS);
+    registry.addAll('spell', [
+      { name: 'Fireball', source: 'XPHB', level: 3 },
+    ] as unknown as Entity[]);
+    const original: Json = {
+      name: 'Wand of Fireballs',
+      source: 'XDMG',
+      type: 'WD|XDMG',
+      charges: 7,
+      recharge: 'dawn',
+      entries: [],
+    };
+    const written = (dc: string | undefined) => {
+      const draft = mount(item, structuredClone(original), registry, original);
+      // A new number counts them with no spells, and offers the row's.
+      type('Charges', '');
+      type('Charges', '8');
+      if (dc !== undefined) type('Fixed save DC', dc);
+      press('Add the spells Wand of Fireballs casts');
+      const effects = (draft().castGuidance as Json).effects as Json[];
+      cleanup();
+      return effects[0] as Json;
+    };
+    expect(written(undefined)).toMatchObject({ dc: 15, spells: [{ spell: 'Fireball|XPHB' }] });
+    const typed = written('17');
+    expect(typed).toMatchObject({ dc: 17, spells: [{ spell: 'Fireball|XPHB' }] });
+    expect('attack' in typed).toBe(false);
+  });
+
+  it('casts a spell at one level its cost buys, or up to one, as the box under it says', () => {
+    const registry = new EntityRegistry();
+    registry.addAll('spell', [
+      { name: 'Fireball', source: 'XPHB', level: 3 },
+    ] as unknown as Entity[]);
+    const start: Json = {
+      name: 'My Wand',
+      source: 'HB',
+      type: 'WD',
+      entries: [],
+      charges: 7,
+      recharge: 'dawn',
+      castGuidance: {
+        v: 1,
+        effects: [
+          {
+            kind: 'charges',
+            charges: 7,
+            regain: 'all',
+            spells: [{ spell: 'Fireball|XPHB', cost: 1 }],
+          },
+        ],
+      },
+    };
+    const draft = mount(item, structuredClone(start), registry);
+    const spell = () =>
+      (((draft().castGuidance as Json).effects as Json[])[0]?.spells as Json[])[0];
+    const only = () => screen.queryByLabelText('Charge spell 1: only at that level');
+    // At its own level alone, nothing to choose.
+    expect(only()).toBeNull();
+    type('Charge spell 1: up to level', '5');
+    expect(spell()).toStrictEqual({ spell: 'Fireball|XPHB', cost: 1, upTo: 5 });
+    expect(only()).toHaveProperty('checked', false);
+    fireEvent.click(only() as HTMLElement);
+    expect(spell()).toStrictEqual({ spell: 'Fireball|XPHB', cost: 1, at: 5 });
+    expect(only()).toHaveProperty('checked', true);
+    expect(screen.getByLabelText('Charge spell 1: at level')).toHaveProperty('value', '5');
+    expect(
+      readOwnEffects((draft().castGuidance as Json).effects as StoredEffect[], 'effects').problems,
+    ).toEqual([]);
+    fireEvent.click(only() as HTMLElement);
+    expect(spell()).toStrictEqual({ spell: 'Fireball|XPHB', cost: 1, upTo: 5 });
+    type('Charge spell 1: up to level', '');
+    expect(spell()).toStrictEqual({ spell: 'Fireball|XPHB', cost: 1 });
+    expect(only()).toBeNull();
   });
 
   it('says the sheet does not count fields it cannot read, and writes them out to show why', () => {

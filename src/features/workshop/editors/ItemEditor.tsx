@@ -14,7 +14,7 @@ import { CircleAlert } from 'lucide-react';
 import { useId, useRef, useState } from 'react';
 import { useTypePacks } from '@/data5e/hooks';
 import type { EntityRegistry } from '@/data5e/normalize';
-import { isRecord, RULE_SET_TYPE, type StoredEffect } from '@/engine/castGuidance';
+import { isRecord, RULE_SET_LIMITS, RULE_SET_TYPE, type StoredEffect } from '@/engine/castGuidance';
 import {
   fieldChargesOf,
   ITEM_CHARGES,
@@ -312,6 +312,10 @@ export function rowPoolFields(row: ItemCharges, draft: Json, of: Json | undefine
     rechargeAmount: regain === 'all' ? undefined : rechargeValue(regain),
   };
 }
+
+/** A typed number kept within what the reader takes (`RULE_SET_LIMITS`), or none. */
+const within = (v: number | undefined, least: number, most: number) =>
+  v === undefined ? undefined : Math.max(least, Math.min(most, v));
 
 /** What was typed, stored as the data has it: a number, a tagged roll, or the words. */
 export function rechargeValue(typed: string | undefined): string | number | undefined {
@@ -634,7 +638,10 @@ function chargeProblem(p: string): string {
   return pick === null ? p : `spell ${pick[1]}: pick a spell from the list`;
 }
 
-/** One spell an item's charges cast: the spell, what it costs, and the highest level it is cast at. */
+/**
+ * One spell an item's charges cast: the spell, what it costs, and the highest
+ * level it is cast at (`upTo`), or the one level (`at`).
+ */
 function ChargeSpell({
   n,
   spell,
@@ -671,54 +678,71 @@ function ChargeSpell({
   const { upTo: _, at: __, ...rest } = spell;
   const levelBox = fixedAt ? spell.at : spell.upTo;
   return (
-    <div className="grid grid-cols-[1fr_4.5rem_4.5rem_auto] items-end gap-2">
-      <Field label="Spell">
-        <input
-          aria-label={`Charge spell ${n}`}
-          list={listId}
-          value={typed}
-          placeholder="Fireball"
+    <div className="flex flex-col">
+      <div className="grid grid-cols-[1fr_4.5rem_4.5rem_auto] items-end gap-2">
+        <Field label="Spell">
+          <input
+            aria-label={`Charge spell ${n}`}
+            list={listId}
+            value={typed}
+            placeholder="Fireball"
+            disabled={disabled}
+            onChange={(e) => {
+              setHeld(e.target.value);
+              onChange({ ...spell, spell: resolve(e.target.value) });
+            }}
+            className={fieldClass}
+          />
+        </Field>
+        <Field label="Costs">
+          <input
+            aria-label={`Charge spell ${n}: costs`}
+            inputMode="numeric"
+            value={typeof spell.cost === 'number' ? spell.cost : ''}
+            disabled={disabled}
+            onChange={(e) => onChange({ ...spell, cost: whole(e.target.value) })}
+            className={fieldClass}
+          />
+        </Field>
+        <Field label={fixedAt ? 'At level' : 'Up to level'}>
+          <input
+            aria-label={`Charge spell ${n}: ${fixedAt ? 'at level' : 'up to level'}`}
+            inputMode="numeric"
+            value={typeof levelBox === 'number' ? levelBox : ''}
+            placeholder="Its own"
+            disabled={disabled}
+            onChange={(e) => {
+              const to = whole(e.target.value);
+              onChange(to === undefined ? rest : { ...rest, [fixedAt ? 'at' : 'upTo']: to });
+            }}
+            className={fieldClass}
+          />
+        </Field>
+        <Button
+          variant="ghost"
+          size="sm"
+          aria-label={`Remove charge spell ${n}`}
           disabled={disabled}
-          onChange={(e) => {
-            setHeld(e.target.value);
-            onChange({ ...spell, spell: resolve(e.target.value) });
-          }}
-          className={fieldClass}
-        />
-      </Field>
-      <Field label="Costs">
-        <input
-          aria-label={`Charge spell ${n}: costs`}
-          inputMode="numeric"
-          value={typeof spell.cost === 'number' ? spell.cost : ''}
-          disabled={disabled}
-          onChange={(e) => onChange({ ...spell, cost: whole(e.target.value) })}
-          className={fieldClass}
-        />
-      </Field>
-      <Field label={fixedAt ? 'At level' : 'Up to level'}>
-        <input
-          aria-label={`Charge spell ${n}: ${fixedAt ? 'at level' : 'up to level'}`}
-          inputMode="numeric"
-          value={typeof levelBox === 'number' ? levelBox : ''}
-          placeholder="Its own"
-          disabled={disabled}
-          onChange={(e) => {
-            const to = whole(e.target.value);
-            onChange(to === undefined ? rest : { ...rest, [fixedAt ? 'at' : 'upTo']: to });
-          }}
-          className={fieldClass}
-        />
-      </Field>
-      <Button
-        variant="ghost"
-        size="sm"
-        aria-label={`Remove charge spell ${n}`}
-        disabled={disabled}
-        onClick={onRemove}
-      >
-        Remove
-      </Button>
+          onClick={onRemove}
+        >
+          Remove
+        </Button>
+      </div>
+      {typeof levelBox === 'number' && (
+        // The level typed, as the highest it casts at for one more charge a
+        // level, or as the one level its cost casts at.
+        <label className="flex min-h-tap items-center gap-2.5 text-body">
+          <input
+            type="checkbox"
+            className="size-4.5 accent-ink"
+            aria-label={`Charge spell ${n}: only at that level`}
+            checked={fixedAt}
+            disabled={disabled}
+            onChange={(e) => onChange({ ...rest, [e.target.checked ? 'at' : 'upTo']: levelBox })}
+          />
+          Only at that level
+        </label>
+      )}
     </div>
   );
 }
@@ -782,6 +806,10 @@ function Charges(props: EditorProps) {
   const fixed = fixedOfOriginal(registry, original);
   const fieldSpells = byFields?.spells ?? [];
   const pool = found === undefined ? {} : rowPoolFields(found.row, draft, found.of);
+  // A DC or attack bonus the effect says already (typed in its box) is kept.
+  const unsaid = Object.fromEntries(
+    Object.entries(fixed).filter(([k]) => typeof counted?.[k] !== 'number'),
+  );
   const fromRow =
     row === undefined ? undefined : (
       <Button
@@ -789,7 +817,7 @@ function Charges(props: EditorProps) {
         size="sm"
         className="self-start"
         disabled={spellData.status !== 'ready'}
-        onClick={() => set(pool, { spells: rowSpells(row, options), ...fixed })}
+        onClick={() => set(pool, { spells: rowSpells(row, options), ...unsaid })}
       >
         {counted === undefined && byFields === undefined
           ? 'Count them on the sheet'
@@ -918,6 +946,27 @@ function Charges(props: EditorProps) {
               ))}
             </Select>
           </Field>
+          <div className="grid grid-cols-2 items-end gap-2">
+            <NumberField
+              label="Fixed save DC"
+              value={typeof counted.dc === 'number' ? counted.dc : undefined}
+              placeholder="None"
+              disabled={readOnly}
+              onChange={(v) => set({}, { dc: within(v, 1, RULE_SET_LIMITS.dc) })}
+            />
+            <NumberField
+              label="Fixed attack bonus"
+              value={typeof counted.attack === 'number' ? counted.attack : undefined}
+              placeholder="None"
+              disabled={readOnly}
+              onChange={(v) => set({}, { attack: within(v, 0, RULE_SET_LIMITS.attack) })}
+            />
+          </div>
+          <p className="text-caption text-ink-muted">
+            A fixed save DC or attack bonus, as an item's text may give one, is what every spell it
+            casts uses. One left empty comes from the ability above, or the character's own. With
+            either, its charges cast only from its own rows on the Spells tab.
+          </p>
           {spells.map((s, i) => (
             <ChargeSpell
               // A row is its place in the list, as a card is.
@@ -959,18 +1008,6 @@ function Charges(props: EditorProps) {
             own level, and one more a level up to the level it says, or casts at the one level it
             says. An action below can spend them too.
           </p>
-          {(typeof counted.dc === 'number' || typeof counted.attack === 'number') && (
-            <p className="text-caption text-ink-muted">
-              Every spell it casts uses{' '}
-              {[
-                typeof counted.dc === 'number' ? `save DC ${counted.dc}` : undefined,
-                typeof counted.attack === 'number' ? `+${counted.attack} to hit` : undefined,
-              ]
-                .filter((s) => s !== undefined)
-                .join(' and ')}
-              , as its text says, in place of the character's own.
-            </p>
-          )}
         </>
       )}
     </Section>

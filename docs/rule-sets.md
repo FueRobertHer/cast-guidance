@@ -524,6 +524,13 @@ effect in its `castGuidance` effects, the row's fields and reader:
   fields where they misstate it (a Robe of Stars gives no time, a Ring of
   Three Wishes no count), so the effect says the row's pool. Fields an author
   changed, in the copy or in a copy it was copied from, keep them all.
+- **The Workshop's Charges card says it all.** Its Fixed save DC and Fixed
+  attack bonus boxes write `dc` and `attack`, kept within what the reader
+  takes; each fixes only its own number, the other coming from `ability`, or
+  the character's own, and either keeps the item's charges to its own rows
+  (another row offers them only where the item casts with the character's
+  numbers). Written out, a row keeps a DC or attack bonus already typed. A
+  spell's level box writes `upTo`, or `at` with Only at that level ticked.
 - **Its actions spend it.** An action of the item's, its own or a pack's,
   whose `cost` names the pool `charges` spends that copy's pool
   (`item-charges:<entry id>`) while the item holds charges. Same-named actions
