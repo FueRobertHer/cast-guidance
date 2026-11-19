@@ -152,9 +152,10 @@ const upgraded = new WeakMap<DataEntity, DataEntity>();
  * (a long rest, the item's own count); spell cards as the Workshop wrote them,
  * agreeing on one ability; no other effect, and nothing outside the effects,
  * naming the pool; no recharge the effect cannot say (a short rest,
- * `special`); and an effect that reads. Any other item is itself, keeping its
- * older pool, which its fields stand aside for (`ownChargesStand`). The item
- * given is never changed, and one item gives one answer.
+ * `special`); and an effect that reads (each card's spell as a spell's name
+ * and book). Any other item is itself, keeping its older pool, which its
+ * fields stand aside for (`ownChargesStand`). The item given is never changed,
+ * and one item gives one answer.
  */
 export function upgradeOlderCharges(entry: DataEntity): DataEntity {
   const known = upgraded.get(entry);
@@ -168,9 +169,7 @@ function olderChargesUpgrade(entry: DataEntity): DataEntity | undefined {
   const g = entry.castGuidance;
   if (!isRecord(g) || !Array.isArray(g.effects)) return undefined;
   const effects = (g.effects as unknown[]).filter(isRecord);
-  if (effects.length !== g.effects.length || effects.some((e) => e.kind === 'charges')) {
-    return undefined;
-  }
+  if (effects.length !== g.effects.length) return undefined;
   const pools = effects.filter((e) => e.kind === 'resource' && e.key === ITEM_CHARGES);
   const [pool] = pools;
   if (pool === undefined || pools.length > 1) return undefined;
@@ -180,13 +179,12 @@ function olderChargesUpgrade(entry: DataEntity): DataEntity | undefined {
   const spends = (e: Record<string, unknown>) =>
     e.kind === 'grantSpell' && e.resourceKey === ITEM_CHARGES;
   const grants = effects.filter(spends);
-  if (grants.some((e) => !onlyFields(e, OLDER_GRANT_FIELDS) || typeof e.spell !== 'string')) {
-    return undefined;
-  }
+  if (grants.some((e) => !onlyFields(e, OLDER_GRANT_FIELDS))) return undefined;
   const abilities = new Set(grants.map((e) => e.ability));
   if (abilities.size > 1) return undefined;
   const [ability] = abilities;
-  // Nothing else may name the pool, which the new one does not stand in for.
+  // Nothing else may name the pool, which the new one does not stand in for
+  // (a `charges` effect already there names it by its kind).
   const named = (v: unknown) => JSON.stringify(v).includes(`"${ITEM_CHARGES}"`);
   const { effects: _effects, ...outside } = g;
   const others = effects.filter((e) => e !== pool && !spends(e) && e.kind !== 'action');
