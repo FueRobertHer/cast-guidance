@@ -415,7 +415,9 @@ export function rollFrom(
   } = {},
 ): void {
   const { held } = heldRollStore.getState();
-  if (held !== null && from !== null && held.from === from) {
+  // The same control again rolls what it asked; an attack chip tapped while its
+  // hit's damage waits makes a new attack instead.
+  if (held !== null && from !== null && held.from === from && held.hit === null) {
     rollHeld();
     return;
   }
@@ -975,7 +977,8 @@ export function rollHeld(): void {
         : () => {
             const shown = rollLogStore.getState().rolls.find((r) => r.id === id);
             const hit = { ...ask(), after: shown === undefined ? undefined : attackWords(shown) };
-            holdDamage(held.from, hit, undefined, { text: after.expr, tone: 'danger' });
+            // No face: the attack chip it goes back to is no control that rolls it.
+            holdDamage(held.from, hit, undefined, undefined);
           };
     followUpStore.setState({
       offer: { id, expr: crit ? critDice(after.expr) : after.expr, go, from: held.from },

@@ -2,7 +2,7 @@
 // The roll prompt casting a spell (the rolls canvas, "Level at cast" A): the
 // ways to cast as tiles by source, the note by Roll saying what the tile picked
 // spends, and Roll (or Heal, or Cast) spending it as the dice at its level land.
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { d20Ask } from '@/features/sheet/d20Tests';
 import { getAnnouncerState, resetAnnouncer } from '@/stores/announcer';
@@ -295,10 +295,16 @@ describe('the roll prompt casting a spell', () => {
     expect(followUpStore.getState().offer?.expr).toBe('2d10');
     nextFaces(20);
     fireEvent.click(screen.getByRole('button', { name: /^Reroll with Seeking Spell/ }));
-    nextFaces(1, 2, 3, 4);
+    // The offer opens the damage prompt, crit as the reroll left it; Roll rolls it.
     fireEvent.click(screen.getByRole('button', { name: 'Roll 4d10' }));
+    const prompt = screen.getByRole('group', { name: 'Ray Lance fire damage, choose and roll' });
+    expect(prompt.textContent).toContain('4d10');
+    expect(rolls()[0]?.label).toBe('Ray Lance spell attack');
+    nextFaces(1, 2, 3, 4);
+    fireEvent.click(within(prompt).getByRole('button', { name: 'Roll' }));
     const damage = rolls()[0];
     expect(damage?.label).toBe('Ray Lance fire damage');
+    expect(damage?.meta?.critical).toBe(true);
     expect(damage?.total).toBe(10);
   });
 

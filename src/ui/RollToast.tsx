@@ -1723,7 +1723,13 @@ function DamagePrompt({
     .filter((n) => n !== '')
     .join(' ');
   const face = held.face ?? { text: hit.expr, tone: 'danger' as const };
-  const note = spends !== '' ? spends : `Tap ${face.text} again to roll.`;
+  // Only a damage chip that opened it rolls it when tapped again; a hit's offer has none.
+  const note =
+    spends !== ''
+      ? spends
+      : held.face === undefined
+        ? 'Choose what to add, then Roll.'
+        : `Tap ${face.text} again to roll.`;
   const leave = (act: () => void) => {
     const inside = box.current?.contains(document.activeElement) === true;
     const back = held.from;

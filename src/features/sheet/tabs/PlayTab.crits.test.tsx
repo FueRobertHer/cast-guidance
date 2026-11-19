@@ -1,14 +1,15 @@
 // @vitest-environment jsdom
 // A critical hit through the real sheet: damage rolled for an attack that
 // crit rolls its dice twice and its modifiers once. The damage goes with the
-// newest attack: its own chips, its riders, a damage action with no save
+// newest attack: its own chips (each opening the damage prompt, tapped again
+// to roll), its riders rolled in that prompt, a damage action with no save
 // (Sneak Attack), and damage tapped while the attack waits in the roll prompt.
 import 'fake-indexeddb/auto';
 import { act, fireEvent, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { DiceRollDetail, RollResult } from '@/dice/types';
 import type { ActiveEffect, CharacterDoc, DataEntity } from '@/engine/types';
-import { followUpStore, pickHeldTile, rollHeld } from '@/stores/heldRoll';
+import { followUpStore, heldRollStore, pickHeldTile, rollHeld } from '@/stores/heldRoll';
 import { rollLogStore } from '@/stores/rollLog';
 import {
   castHeld,
@@ -97,7 +98,7 @@ const raySorcerer = () => {
 };
 
 const attack = (weapon: string) => screen.getByTitle(`${weapon} attack`);
-/** Opens a d20 test's roll prompt, and taps the control again to roll it. */
+/** Opens a d20 test's roll prompt (or the damage prompt), and taps the control again to roll it. */
 const rollOn = (el: HTMLElement) => {
   fireEvent.click(el);
   fireEvent.click(el);
@@ -110,7 +111,7 @@ describe('a critical hit doubles the damage dice', () => {
     nextFaces(20);
     rollOn(attack('Longsword'));
     nextFaces(3, 5);
-    fireEvent.click(damage('Longsword', 'slashing'));
+    rollOn(damage('Longsword', 'slashing'));
     const dealt = newest();
     expect(dice(dealt)).toEqual(['d8 [3, 5]']);
     expect(mods(dealt)).toEqual([3]);
@@ -118,7 +119,7 @@ describe('a critical hit doubles the damage dice', () => {
     expect(dealt?.meta?.critical).toBe(true);
     // Two-handed is the same attack's damage: it crits too.
     nextFaces(7, 2);
-    fireEvent.click(screen.getByTitle('Longsword slashing damage (two-handed)'));
+    rollOn(screen.getByTitle('Longsword slashing damage (two-handed)'));
     expect(dice(newest())).toEqual(['d10 [7, 2]']);
   });
 
@@ -127,7 +128,7 @@ describe('a critical hit doubles the damage dice', () => {
     nextFaces(19);
     rollOn(attack('Longsword'));
     nextFaces(4);
-    fireEvent.click(damage('Longsword', 'slashing'));
+    rollOn(damage('Longsword', 'slashing'));
     expect(dice(newest())).toEqual(['d8 [4]']);
     expect(newest()?.meta?.critical).toBeUndefined();
   });
@@ -143,7 +144,7 @@ describe('a critical hit doubles the damage dice', () => {
     rollOn(attack('Longsword'));
     expect(newest()?.meta?.attack).toMatchObject({ of: 'Longsword', crit: true });
     nextFaces(6, 1);
-    fireEvent.click(damage('Longsword', 'slashing'));
+    rollOn(damage('Longsword', 'slashing'));
     expect(dice(newest())).toEqual(['d8 [6, 1]']);
   });
 
@@ -152,7 +153,7 @@ describe('a critical hit doubles the damage dice', () => {
     nextFaces(20);
     rollOn(attack('Longsword'));
     nextFaces(4);
-    fireEvent.click(damage('Shortbow', 'piercing'));
+    rollOn(damage('Shortbow', 'piercing'));
     expect(dice(newest())).toEqual(['d6 [4]']);
   });
 
@@ -181,9 +182,16 @@ describe('a critical hit doubles the damage dice', () => {
     await renderSheet(doc, { extra: { baseitem: [ember] } });
     nextFaces(20);
     rollOn(attack('Ember Sword'));
-    nextFaces(2, 6);
-    fireEvent.click(damage('Ember Sword', 'fire'));
-    expect(dice(newest())).toEqual(['d6 [2, 6]']);
+    // The fire rolls in the weapon's damage prompt, apart from the slashing:
+    // the target resists each type on its own.
+    nextFaces(4, 1, 2, 6);
+    rollOn(damage('Ember Sword', 'slashing'));
+    const [fire, slashing] = rollLogStore.getState().rolls;
+    expect(dice(slashing)).toEqual(['d8 [4, 1]']);
+    expect(fire?.label).toBe('Ember Sword fire damage');
+    expect(fire?.meta?.withRoll).toBe(slashing?.id);
+    expect(dice(fire)).toEqual(['d6 [2, 6]']);
+    expect(fire?.meta?.critical).toBe(true);
   });
 
   it('doubles a damage action with no save (Sneak Attack), and never one the target saves against', async () => {
@@ -265,8 +273,12 @@ describe('a spell attack cast at a level', () => {
 
     const offer = followUpStore.getState().offer;
     expect(offer?.expr).toBe('6d10');
-    nextFaces(1, 2, 3, 4, 5, 6);
+    // The offer opens the damage prompt, at the level cast and crit; Roll rolls it.
+    nextFaces();
     act(() => offer?.go());
+    expect(heldRollStore.getState().held?.hit).toMatchObject({ expr: '3d10', crit: true });
+    nextFaces(1, 2, 3, 4, 5, 6);
+    act(() => rollHeld());
     expect(dice(newest())).toEqual(['d10 [1, 2, 3, 4, 5, 6]']);
     // The row's damage chip stays at the level last cast.
     expect(screen.getByTitle('Ray Lance fire damage').textContent).toBe('3d10');
@@ -313,7 +325,7 @@ describe('Improved Critical and Superior Critical', () => {
     rollOn(attack('Longsword'));
     expect(newest()?.meta?.attack).toMatchObject({ of: 'Longsword', crit: true });
     nextFaces(5, 6);
-    fireEvent.click(damage('Longsword', 'slashing'));
+    rollOn(damage('Longsword', 'slashing'));
     expect(dice(newest())).toEqual(['d8 [5, 6]']);
     nextFaces(18);
     rollOn(attack('Longsword'));
@@ -363,7 +375,7 @@ describe('Savage Attacks', () => {
     nextFaces(20);
     rollOn(attack('Longsword'));
     nextFaces(3, 5, 8);
-    fireEvent.click(damage('Longsword', 'slashing'));
+    rollOn(damage('Longsword', 'slashing'));
     const dealt = newest();
     expect(dice(dealt)).toEqual(['d8 [3, 5]', 'd8 [8]']);
     expect(mods(dealt)).toEqual([3]);
@@ -376,12 +388,12 @@ describe('Savage Attacks', () => {
     nextFaces(12);
     rollOn(attack('Longsword'));
     nextFaces(3);
-    fireEvent.click(damage('Longsword', 'slashing'));
+    rollOn(damage('Longsword', 'slashing'));
     expect(dice(newest())).toEqual(['d8 [3]']);
     nextFaces(20);
     rollOn(attack('Shortbow'));
     nextFaces(2, 4);
-    fireEvent.click(damage('Shortbow', 'piercing'));
+    rollOn(damage('Shortbow', 'piercing'));
     expect(dice(newest())).toEqual(['d6 [2, 4]']);
   });
 });
@@ -420,14 +432,14 @@ describe('Brutal Critical', () => {
     nextFaces(20);
     rollOn(attack('Longsword'));
     nextFaces(3, 5, 8, 1);
-    fireEvent.click(damage('Longsword', 'slashing'));
+    rollOn(damage('Longsword', 'slashing'));
     const dealt = newest();
     expect(dice(dealt)).toEqual(['d8 [3, 5]', 'd8 [8, 1]']);
     expect(dealt?.meta?.from).toEqual([{ term: 2, source: 'Brutal Critical' }]);
     nextFaces(20);
     rollOn(attack('Shortbow'));
     nextFaces(2, 4);
-    fireEvent.click(damage('Shortbow', 'piercing'));
+    rollOn(damage('Shortbow', 'piercing'));
     expect(dice(newest())).toEqual(['d6 [2, 4]']);
   });
 
@@ -438,7 +450,7 @@ describe('Brutal Critical', () => {
     nextFaces(20);
     rollOn(attack('Longsword'));
     nextFaces(3, 5, 8, 1);
-    fireEvent.click(damage('Longsword', 'slashing'));
+    rollOn(damage('Longsword', 'slashing'));
     const dealt = newest();
     expect(dice(dealt)).toEqual(['d8 [3, 5]', 'd8 [8, 1]']);
     expect(dealt?.meta?.from).toEqual([{ term: 2, source: 'Savage Attacks and Brutal Critical' }]);

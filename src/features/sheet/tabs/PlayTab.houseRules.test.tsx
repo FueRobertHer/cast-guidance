@@ -83,6 +83,12 @@ const rollOn = (el: HTMLElement) => {
   fireEvent.click(el);
   fireEvent.click(el);
 };
+/** Opens a weapon's damage prompt from its chip, and rolls it with the prompt's Roll. */
+const rollDamage = (el: HTMLElement) => {
+  fireEvent.click(el);
+  const prompt = screen.getByRole('group', { name: /, choose and roll$/ });
+  fireEvent.click(within(prompt).getByRole('button', { name: 'Roll' }));
+};
 
 describe('the rest card', () => {
   it('says how long rests take and what a long one heals, under the app’s rules', async () => {
@@ -132,7 +138,7 @@ describe('a crit’s rule on the roll toast', () => {
     nextFaces(20);
     rollOn(screen.getByTitle('Longsword attack'));
     nextFaces(3, 5);
-    fireEvent.click(screen.getByTitle('Longsword slashing damage'));
+    rollDamage(screen.getByTitle('Longsword slashing damage'));
     expect(rollLogStore.getState().rolls[0]?.meta?.critical).toBe(true);
 
     const chip = screen.getByRole('button', { name: /^Rule: double the dice/ });
@@ -151,7 +157,7 @@ describe('a crit’s rule on the roll toast', () => {
     nextFaces(20);
     rollOn(screen.getByTitle('Longsword attack'));
     nextFaces(6);
-    fireEvent.click(screen.getByTitle('Longsword slashing damage'));
+    rollDamage(screen.getByTitle('Longsword slashing damage'));
     const dealt = rollLogStore.getState().rolls[0];
     expect(dealt?.meta?.critRule).toBe('doubleTotal');
     expect(dealt?.total).toBe(18);
@@ -167,7 +173,16 @@ describe('a crit’s rule on the roll toast', () => {
     nextFaces(3, 5);
     const damage = screen.getByTitle('Longsword slashing damage');
     damage.focus();
+    // The chip opens the damage prompt, whose Roll takes focus; once it rolls,
+    // focus is back on the chip that opened it.
     fireEvent.click(damage);
+    const roll = within(screen.getByRole('group', { name: /, choose and roll$/ })).getByRole(
+      'button',
+      { name: 'Roll' },
+    );
+    expect(document.activeElement).toBe(roll);
+    fireEvent.click(roll);
+    expect(document.activeElement).toBe(damage);
     return { damage, chip: screen.getByRole('button', { name: /^Rule: double the dice/ }) };
   };
   const closesBackTo = async (el: HTMLElement) => {
@@ -203,7 +218,7 @@ describe('a crit’s rule on the roll toast', () => {
     nextFaces(20);
     rollOn(screen.getByTitle('Longsword attack'));
     nextFaces(3, 5);
-    fireEvent.click(screen.getByTitle('Longsword slashing damage'));
+    rollDamage(screen.getByTitle('Longsword slashing damage'));
     expect(screen.getByRole('button', { name: /^Rule: double the dice/ })).toBeTruthy();
   });
 
@@ -213,7 +228,7 @@ describe('a crit’s rule on the roll toast', () => {
     nextFaces(12);
     rollOn(screen.getByTitle('Longsword attack'));
     nextFaces(4);
-    fireEvent.click(screen.getByTitle('Longsword slashing damage'));
+    rollDamage(screen.getByTitle('Longsword slashing damage'));
     expect(screen.queryByRole('button', { name: /^Rule:/ })).toBeNull();
   });
 });
