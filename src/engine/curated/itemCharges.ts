@@ -138,14 +138,19 @@ const onlyFields = (o: Record<string, unknown>, fields: ReadonlySet<string>): bo
 /**
  * Where an item's action names its charges (`ITEM_CHARGES`) and the sheet
  * moves it to the carried copy's pool: its cost, a slot turned into them, the
- * pool a buy-back restores, a regain. As `[part, field]`.
+ * pool a buy-back is paid from and the one it restores, a regain. As
+ * `[part, field]`.
  */
 export const ACTION_CHARGE_PLACES: ReadonlyArray<readonly [string, string]> = [
   ['cost', 'resource'],
   ['cost', 'slotRefills'],
+  ['buyBack', 'resource'],
   ['buyBack', 'own'],
   ['regains', 'resource'],
 ];
+
+/** Words as the sheet reads them, ends trimmed (`text` in mechanics). */
+const asRead = (v: unknown): unknown => (typeof v === 'string' ? v.trim() : v);
 
 /** An effect less the places an action's charges move from (`ACTION_CHARGE_PLACES`). */
 function movedOut(e: Record<string, unknown>): Record<string, unknown> {
@@ -153,12 +158,20 @@ function movedOut(e: Record<string, unknown>): Record<string, unknown> {
   const out: Record<string, unknown> = { ...e };
   for (const [part, field] of ACTION_CHARGE_PLACES) {
     const at = out[part];
-    if (isRecord(at) && at[field] === ITEM_CHARGES) {
+    if (isRecord(at) && asRead(at[field]) === ITEM_CHARGES) {
       const { [field]: _moved, ...rest } = at;
       out[part] = rest;
     }
   }
   return out;
+}
+
+/** Every action in a value, at any depth (a pick's options give theirs). */
+function actionsIn(v: unknown): Record<string, unknown>[] {
+  if (Array.isArray(v)) return v.flatMap(actionsIn);
+  if (!isRecord(v)) return [];
+  const inner = Object.values(v).flatMap(actionsIn);
+  return v.kind === 'action' ? [v, ...inner] : inner;
 }
 
 /** Each item's `upgradeOlderCharges`, made once. */
@@ -178,7 +191,7 @@ const upgraded = new WeakMap<DataEntity, DataEntity>();
  * (a long rest, the item's own count); spell cards as the Workshop wrote them,
  * agreeing on one ability; no other effect, and nothing outside the effects,
  * naming the pool (an action only where the sheet moves it to the new one);
- * no action named as the card; no recharge the effect cannot say (a short rest,
+ * no action named as the card, or by level; no recharge the effect cannot say (a short rest,
  * `special`); and an effect that reads (each card's spell as a spell's name
  * and book). Any other item is itself, keeping its older pool, which its
  * fields stand aside for (`ownChargesStand`). The item given is never changed,
@@ -213,15 +226,18 @@ function olderChargesUpgrade(entry: DataEntity): DataEntity | undefined {
   // Nothing else may name the pool, which the new one does not stand in for
   // (a `charges` effect already there names it by its kind): an action only
   // where the sheet moves it to the new pool (`ACTION_CHARGE_PLACES`), and
-  // none by the card's name, which a use with no price spends.
-  const named = (v: unknown) => JSON.stringify(v).includes(`"${ITEM_CHARGES}"`);
+  // none, at any depth, by the card's name, which a use with no price spends.
+  // Each as the sheet reads it, ends trimmed.
+  const pattern = new RegExp(`"\\s*${ITEM_CHARGES}\\s*"`);
+  const named = (v: unknown) => pattern.test(JSON.stringify(v));
   const { effects: _effects, ...outside } = g;
   const others = effects.filter((e) => e !== pool && !spends(e)).map(movedOut);
   if (others.some(named) || named(outside)) return undefined;
-  const card = String(pool.label).toLowerCase();
+  if (typeof pool.label !== 'string') return undefined;
+  const card = pool.label.trim().toLowerCase();
   const byName = (e: Record<string, unknown>) =>
-    e.kind === 'action' && String(e.label).toLowerCase() === card;
-  if (effects.some(byName)) return undefined;
+    typeof e.label !== 'string' || e.label.trim().toLowerCase() === card;
+  if (actionsIn(effects).some(byName)) return undefined;
   const recharge = typeof entry.recharge === 'string' ? entry.recharge : '';
   if (recharge !== '' && !LONG_REST_RECHARGE.has(recharge.toLowerCase())) return undefined;
   const effect = {

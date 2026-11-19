@@ -54,6 +54,8 @@ const STRIKE = {
   label: 'Strike',
   cost: { resource: 'charges', amount: 1 },
 };
+/** An action with no price, which spends the pool its name shares. */
+const UNPRICED = { kind: 'action', economy: 'bonus', label: 'Zap' };
 
 /** An older Workshop item: its fields, and its effects as the Workshop wrote them. */
 const older = (effects: unknown[], more: Record<string, unknown> = {}): DataEntity => ({
@@ -141,6 +143,10 @@ describe('upgradeOlderCharges: what converts', () => {
     const actions = [
       STRIKE,
       { ...STRIKE, label: 'Bought', buyBack: { resource: 'sparks', amount: 1, own: 'charges' } },
+      // Read with its ends trimmed, as the sheet moves it.
+      { ...STRIKE, label: 'Paid', buyBack: { resource: ' charges', amount: 1, own: 'sparks' } },
+      // Named neither as the card nor as the pool, any case.
+      { ...UNPRICED, label: 'Charged' },
       { ...STRIKE, label: 'Mend', cost: undefined, regains: { resource: 'charges', amount: 1 } },
       {
         ...STRIKE,
@@ -193,22 +199,43 @@ describe('upgradeOlderCharges: what is left as it was', () => {
     ],
     ['a charges effect already', [POOL, { kind: 'charges', charges: 5, regain: 'all' }]],
     ['an effect that is not one', [POOL, CARD, 'note']],
-    // The sheet moves an action's price, a buy-back's own use and a regain to
-    // the new pool, and not what a buy-back is paid from.
-    [
-      'an action buying back with the pool',
-      [POOL, CARD, { ...STRIKE, cost: undefined, buyBack: { resource: 'charges', amount: 1 } }],
-    ],
+    // The sheet moves an action's charges only from `ACTION_CHARGE_PLACES`, as
+    // it reads them, ends trimmed.
     ['an action naming the pool elsewhere', [POOL, { ...STRIKE, note: { resource: 'charges' } }]],
-    // A use with no price spends the pool its name shares, which the new one does not.
-    ['an action named as the card', [POOL, CARD, { ...STRIKE, cost: undefined, label: 'charges' }]],
+    [
+      'an effect naming the pool with spaces',
+      [POOL, CARD, { kind: 'resourceRegain', key: ' charges ', amount: 1 }],
+    ],
+    // A use with no price spends the pool its name shares, which the new one
+    // does not: as the sheet reads names, any case and ends trimmed, at any depth.
+    ['an action named as the card', [POOL, CARD, { ...UNPRICED, label: 'CHARGES' }]],
+    ['an action named as the card with spaces', [POOL, CARD, { ...UNPRICED, label: ' Charges ' }]],
+    [
+      'a card named with spaces',
+      [{ ...POOL, label: 'Charges ' }, CARD, { ...UNPRICED, label: 'Charges' }],
+    ],
     [
       'an action named as a renamed card',
       [
         { ...POOL, label: 'Sparks' },
-        { ...STRIKE, label: 'SPARKS' },
+        { ...UNPRICED, label: 'SPARKS' },
       ],
     ],
+    ['an action named by level', [POOL, CARD, { ...UNPRICED, label: { byLevel: { 1: 'Zap' } } }]],
+    [
+      'a pick giving an action named as the card',
+      [
+        POOL,
+        CARD,
+        {
+          kind: 'pick',
+          ask: 'option',
+          id: 'mode',
+          options: [{ id: 'zap', label: 'Zap', gives: [{ ...UNPRICED, label: 'Charges' }] }],
+        },
+      ],
+    ],
+    ['a card with no name', [{ ...POOL, label: undefined }, CARD]],
   ])('%s', (_why, effects) => {
     expect(converted(older(effects))).toBe(undefined);
   });

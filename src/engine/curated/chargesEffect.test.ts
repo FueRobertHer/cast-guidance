@@ -519,6 +519,26 @@ describe('charges that only actions spend', () => {
     expect(JSON.stringify(rod.castGuidance)).toContain('"own":"charges"');
   });
 
+  it("pays a buy-back from each copy's own pool, its own action's or a pack's", () => {
+    const sparks = { kind: 'resource', key: 'sparks', label: 'Sparks', max: 2, reset: 'long' };
+    const paid = (label: string) => ({
+      ...STRIKE,
+      label,
+      cost: { resource: 'sparks', amount: 1 },
+      buyBack: { resource: 'charges', amount: 2, own: 'sparks' },
+    });
+    const rod = item('Rod of Knocks', 'HB', [COUNTED, sparks, paid('Strike')]);
+    const adds = pack('Adds', [{ target: 'Rod of Knocks|HB', add: [paid('Smite')] }]);
+    const ctx = world([rod], [adds]);
+    const paidFrom = (id: string) =>
+      deriveSheet(carrying({ id, name: 'Rod of Knocks', source: 'HB' }), ctx)
+        .actions.filter((a) => a.label === 'Strike' || a.label === 'Smite')
+        .map((a) => `${a.label} ${a.buyBack?.resource}`)
+        .sort();
+    expect(paidFrom('a')).toEqual(['Smite item-charges:a', 'Strike item-charges:a']);
+    expect(paidFrom('b')).toEqual(['Smite item-charges:b', 'Strike item-charges:b']);
+  });
+
   it("refills each copy's own pool for an action that regains its charges or turns a slot into them", () => {
     const regains = {
       kind: 'action',
