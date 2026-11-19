@@ -141,10 +141,12 @@ export function attachedInnate(attached: unknown): DataEntity | undefined {
  * spells costing none, since it is read from the item's text where they
  * misstate it (the 2024 Staff of Healing's Cure Wounds is no cantrip); the
  * ability the data names still counts. A Workshop copy takes the row of the
- * item it copies (`itemRowKeys`), save one that takes out spells the
- * original's `charges` row prices while the copy counts its charges by its
- * fields (`from`), which cast none of them: until the Workshop writes the row
- * out as its effect, it keeps its data's lists, so no spell is lost.
+ * item it copies (`itemRowKeys`), save where that item has a `charges` row
+ * too (whose spells such a row takes out of the lists: the 2024 Staff of
+ * Healing's Cure Wounds) and the copy counts its charges by no effect of its
+ * own or a pack's (`from`: by its fields, which cast none of them, or not at
+ * all). Until the Workshop writes the row out as its effect, the copy keeps
+ * its data's lists, so no spell is lost.
  */
 function grantAttached(
   col: Collector,
@@ -158,7 +160,8 @@ function grantAttached(
   const copied = keys[1];
   const priced =
     copied !== undefined &&
-    from === 'fields' &&
+    from !== 'own' &&
+    from !== 'pack' &&
     builtInRuleFor(col, 'charges', [copied]) !== undefined;
   const row = builtInRuleFor(col, 'itemSpells', priced ? keys.slice(0, 1) : keys)?.itemSpells;
   const innate = attachedInnate(row === undefined ? data : { ...row, ability: data.ability });

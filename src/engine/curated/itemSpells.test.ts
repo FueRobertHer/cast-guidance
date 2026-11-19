@@ -476,7 +476,6 @@ describe('a Workshop copy of an official item', () => {
       byType: (t: string) => (t === RULE_SET_TYPE ? [...BUILT_IN_RULE_SETS, mine] : ctx.byType(t)),
     };
     expect(grants(carrying(mage(), MINE('My Helm')), sets).map((g) => g.dc)).toEqual([18, 18]);
-    expect(itemDcIn(BUILT_IN_RULE_SETS, MINE('My Helm'))).toBeUndefined();
   });
 
   describe('of an item whose charges row prices spells its itemSpells row takes out', () => {
@@ -519,6 +518,13 @@ describe('a Workshop copy of an official item', () => {
       ]);
     });
 
+    it('keeps them too while it counts no charges at all', () => {
+      const { charges: _, ...uncounted } = staffFields;
+      expect(cast(copy('My Staff', 'Staff of Healing|XDMG', uncounted))).toEqual([
+        ['cure wounds', undefined],
+      ]);
+    });
+
     it('takes the row once the Workshop writes its charges out as its own effect', () => {
       expect(
         cast(copy('My Staff', 'Staff of Healing|XDMG', { ...staffFields, ...written })),
@@ -527,6 +533,27 @@ describe('a Workshop copy of an official item', () => {
         ['Lesser Restoration', 'charges'],
         ['Mass Cure Wounds', 'charges'],
       ]);
+      // So it does once a pack's effect counts them.
+      const pack: DataEntity = {
+        name: 'Priced',
+        source: 'Priced',
+        appliesTo: { characters: ['m1'] },
+        castGuidance: {
+          v: 1,
+          patches: [
+            {
+              target: 'My Staff|HB',
+              add: (written.castGuidance.effects as unknown[]).slice(0, 1),
+            },
+          ],
+        },
+      };
+      const byPack = grants(
+        carrying(mage(), MINE('My Staff')),
+        world([copy('My Staff', 'Staff of Healing|XDMG', staffFields)], [pack]),
+      ).map((g) => [g.name, g.usage]);
+      expect(byPack).not.toContainEqual(['cure wounds', undefined]);
+      expect(byPack).toContainEqual(['Cure Wounds', 'charges']);
       // Not a copy: its data's at-will Cure Wounds beside its own effect's.
       expect(cast(copy('My Staff', undefined, { ...staffFields, ...written }))).toContainEqual([
         'cure wounds',
@@ -534,18 +561,24 @@ describe('a Workshop copy of an official item', () => {
       ]);
     });
 
-    it('takes it while the item it copies has no charges row, by fields or not', () => {
+    it('takes it while the item it copies has no charges row, by its fields or its own effect', () => {
       // Wave's text casts globe of invulnerability once a day; its data, none.
-      const wave = (based: string | undefined) =>
+      const own = {
+        castGuidance: { v: 1, effects: [{ kind: 'charges', charges: 3, regain: 'all' }] },
+      };
+      const wave = (based: string | undefined, more: Record<string, unknown> = {}) =>
         copy('My Wave', based, {
           charges: 3,
           recharge: 'dawn',
           attachedSpells: { charges: { '1': ['dominate beast|xphb'] } },
+          ...more,
         });
-      const of = (based: string | undefined) =>
-        grants(carrying(mage(), MINE('My Wave')), world([wave(based)])).map((g) => g.name);
-      expect(of('Wave|XDMG')).toContain('globe of invulnerability');
-      expect(of(undefined)).not.toContain('globe of invulnerability');
+      const of = (staff: DataEntity) =>
+        grants(carrying(mage(), MINE('My Wave')), world([staff])).map((g) => g.name);
+      expect(of(wave('Wave|XDMG'))).toContain('globe of invulnerability');
+      expect(of(wave('Wave|XDMG', own))).toContain('globe of invulnerability');
+      expect(of(wave(undefined))).not.toContain('globe of invulnerability');
+      expect(of(wave(undefined, own))).not.toContain('globe of invulnerability');
     });
   });
 });

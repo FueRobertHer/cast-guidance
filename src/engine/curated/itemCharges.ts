@@ -12,7 +12,9 @@
  * (`StoredItemCharges`), which a pack's patch can say too. The save DC and
  * attack bonus an item's text fixes for its spells are an `itemDc` row. Each
  * is found under the `name|source` its equipment entry names
- * (`refUid(entry.ref)`), as every reader here and the item call site look it up.
+ * (`refUid(entry.ref)`), as every reader here and the item call site look it up;
+ * an `itemDc` row, and an `itemSpells` row at the item call site, under the
+ * official item a Workshop copy is `basedOn` after it (`itemRowKeys`).
  */
 import { isRecord, RULE_PACK_TYPE, RULE_SET_LIMITS, RULE_SET_TYPE } from '../castGuidance';
 import { parseSpellRef } from '../effects/additionalSpells';

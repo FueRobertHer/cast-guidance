@@ -24,8 +24,8 @@ import {
   regainOf,
   upgradeOlderCharges,
 } from '@/engine/curated/itemCharges';
-import { type ItemCharges, readOwnEffects } from '@/engine/effects/mechanics';
-import { ABILITIES, type Ability, type DataEntity } from '@/engine/types';
+import { type ItemCharges, officialOf, readOwnEffects } from '@/engine/effects/mechanics';
+import { ABILITIES, type Ability, type DataEntity, type EntityRef, refUid } from '@/engine/types';
 import {
   baseTypeCode,
   DEFAULT_RIDER_TYPE,
@@ -232,19 +232,36 @@ export function rowSpells(
 }
 
 /**
+ * Where a copy of `original` finds the official one's built-in rows: under the
+ * original's own `name|source`, then the official item it stands for (a copy
+ * it copies, or a converted file's printing), which the copy is saved
+ * `basedOn` (`basedOnKey`).
+ */
+export function originalRefs(original: Json): EntityRef[] {
+  const own = { name: String(original.name), source: String(original.source) };
+  const official = officialOf(original as DataEntity);
+  return official === undefined || refUid(official) === refUid(own) ? [own] : [own, official];
+}
+
+/** The first of `refs` a lookup finds something under. */
+function firstOf<T>(refs: readonly EntityRef[], find: (ref: EntityRef) => T | undefined) {
+  for (const ref of refs) {
+    const hit = find(ref);
+    if (hit !== undefined) return hit;
+  }
+  return undefined;
+}
+
+/**
  * What an official item's spells cast with that its own effect would lose: the
  * DC and attack bonus its built-in `itemDc` row fixes, which a written-out
- * effect says itself (`itemChargesOf` takes an effect's numbers as they are).
- * An original that is a copy itself has those of the item it copies.
+ * effect says itself (`itemChargesOf` takes an effect's numbers as they are),
+ * found as `originalRefs` finds it.
  */
 export function fixedOfOriginal(registry: EntityRegistry, original: Json | undefined): Json {
   if (original === undefined) return {};
-  const fixed = itemDcIn(
-    registry.byType(RULE_SET_TYPE) as readonly DataEntity[],
-    { name: String(original.name), source: String(original.source) },
-    original as DataEntity,
-  );
-  return { ...fixed };
+  const sets = registry.byType(RULE_SET_TYPE) as readonly DataEntity[];
+  return { ...firstOf(originalRefs(original), (ref) => itemDcIn(sets, ref)) };
 }
 
 /** What was typed, stored as the data has it: a number, a tagged roll, or the words. */
@@ -684,14 +701,13 @@ function Charges(props: EditorProps) {
   // empty box ends as typing it in place would.
   const cleared = useRef<{ effect: Json; at: number } | undefined>(undefined);
   const options = spellOptions(props);
-  // A copy of an official item the app counts already: its row is written out.
+  // A copy of an official item the app counts already: its row is written out
+  // (a copy of a copy, or of a converted file's item, the official one's).
+  const sets = registry.byType(RULE_SET_TYPE) as readonly DataEntity[];
   const row =
     original === undefined
       ? undefined
-      : itemChargesIn(registry.byType(RULE_SET_TYPE) as readonly DataEntity[], {
-          name: String(original.name),
-          source: String(original.source),
-        });
+      : firstOf(originalRefs(original), (ref) => itemChargesIn(sets, ref));
   const set = (patch: Json, own?: Json) => change(withCharges(draft, patch, own));
   const setCharges = (to: number | undefined) => {
     if (to === undefined || to <= 0) {

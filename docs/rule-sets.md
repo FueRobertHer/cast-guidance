@@ -343,16 +343,19 @@ A Workshop copy of an item (its `castGuidance` is `basedOn` the official one,
 as the Workshop saves every copy, in changes or in full) is reached by the
 official one's `itemDc` and `itemSpells` rows, under the official one's
 `name|source` after its own (`itemRowKeys`). It casts what the official one
-casts, at the DC its text fixes, whatever its own lists say. It is not reached
-by the official one's `wornTags` or `charges` rows: its tags and charges are
-its author's (its own `charges` effect, "An item's own charges", below), and
-the Workshop writes the official one's charges out for it. Until then a copy
-counts its charges by its fields, which cast none of the spells an
-`itemSpells` row takes out where the official one's `charges` row prices them
-(the 2014 Medallion of Thoughts, the 2024 Staff of Healing, the Rod of Seven
-Parts). So such a copy keeps its data's lists until its charges are written
-out, and loses no spell. A file converted from another app (`printingOf`)
-reaches none of these rows.
+casts, whatever its own lists say, and, with no `charges` effect of its own,
+at the DC its text fixes. It is not reached by the official one's `wornTags`
+or `charges` rows: its tags and charges are its author's (its own `charges`
+effect, "An item's own charges", below), and the Workshop writes the official
+one's charges out for it. Until then a copy counts its charges by its fields,
+or not at all, which cast none of the spells an `itemSpells` row takes out
+where the official one's `charges` row prices them (the 2014 Medallion of
+Thoughts, the 2024 Staff of Healing, the Rod of Seven Parts). So such a copy
+keeps its data's lists until its charges are counted by an effect of its own
+or a pack's, and loses no spell. An effect of its own takes the row, whatever
+it casts. A file converted from another app (`printingOf`) reaches none of
+these rows; a Workshop copy of one is `basedOn` the official item it prints,
+and reaches them as any copy does.
 
 A `spellRest` row is found under the `type:uid` of the origin granting the
 spells: `feat:fey teleportation|xge`, and for a subrace, whose origin has type
@@ -460,7 +463,7 @@ Some items cast their spells at a save DC or attack bonus their text fixes (a
 item grants: its charges', its lists', its own `additionalSpells`'. An item
 with a `charges` effect, its own or a pack's, takes no row: that effect's
 `dc` and `attack`, or none, are the numbers of every spell the item grants.
-A Workshop copy takes the row of the item it copies.
+A Workshop copy with no `charges` effect takes the row of the item it copies.
 
 - **Where nothing fixes them**, an item's spell with no `ability` casts with
   the character's first spellcasting's DC, attack bonus and modifier, and with
@@ -511,7 +514,9 @@ effect in its `castGuidance` effects, the row's fields and reader:
 - **The Workshop writes one out** for a copy of an official item: the row's
   spells or the fields', each with its book, `at` kept, and the DC its
   `itemDc` row fixes, so the copy's charges count and cast what the official
-  one's did. Its lists then take the official one's `itemSpells` row, whatever
+  one's did. For a copy of a copy, or of a converted file's item, it finds
+  those rows under the original, then the official item the copy is saved
+  `basedOn`. Its lists then take the official one's `itemSpells` row, whatever
   it takes out ("Keys by call site", above).
 - **Its actions spend it.** An action of the item's, its own or a pack's,
   whose `cost` names the pool `charges` spends that copy's pool
