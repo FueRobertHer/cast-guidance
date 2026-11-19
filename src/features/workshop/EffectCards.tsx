@@ -51,9 +51,14 @@ export {
 export { rollKindOf } from './cards/rolls';
 
 /** The cards each group's file gives (`cards/*.tsx`), its tests left out. */
-const FILES = import.meta.glob<{ cards?: readonly KindSpec[] }>(
+const FILES = import.meta.glob<{ cards?: readonly KindSpec[]; group?: string }>(
   ['./cards/*.tsx', '!./cards/*.test.tsx'],
   { eager: true },
+);
+
+/** The heading a card is listed under on the add sheet: its file's group. */
+const GROUP = new Map(
+  Object.values(FILES).flatMap((f) => (f.cards ?? []).map((k) => [k, f.group] as const)),
 );
 
 /**
@@ -628,12 +633,23 @@ export function EffectCards({
     onChange([...list, next]);
   };
   const more = async () => {
+    const offered = moreKinds({ inPlay, spells: spells !== undefined, inPick, counts });
+    const reminder = offered.includes('Reminder');
     const id = await askChoice({
       title: inPick ? 'What does each pick give?' : 'What does it do?',
-      options: moreKinds({ inPlay, spells: spells !== undefined, inPick, counts }).map((add) => ({
-        id: add,
-        label: add,
-      })),
+      // Searched by what a kind does, so "minimum" finds Ability score is at least.
+      search: 'Search by what it does',
+      options: offered.map((add) => {
+        const k = KINDS.find((x) => x.add === add);
+        return { id: add, label: add, line: k?.does, group: k && GROUP.get(k) };
+      }),
+      noMatch: (q) =>
+        reminder
+          ? {
+              say: `Nothing does "${q}" yet. Add a reminder instead: a line on the sheet with nothing to count.`,
+              choice: { id: 'Reminder', label: 'Add a reminder' },
+            }
+          : { say: `Nothing does "${q}" yet.` },
     });
     const spec = KINDS.find((k) => k.add === id);
     if (spec !== undefined) add(spec);

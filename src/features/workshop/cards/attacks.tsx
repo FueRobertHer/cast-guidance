@@ -16,10 +16,14 @@ const EVERY_ATTACK = ':every';
 /** An attack bonus that reaches spell attacks as well as weapon attacks (`slots.ts`). */
 const everyAttack = (e: Eff) => e.attack === 'any' && (e.scope === 'all' || e.scope === undefined);
 
+/** The heading its cards are listed under on the add sheet. */
+export const group = 'Attacks';
+
 export const cards: readonly KindSpec[] = [
   {
     kinds: ['attackBonus'],
     add: 'Attack rolls',
+    does: 'Raises or lowers attack rolls',
     make: () => ({ kind: 'attackBonus', amount: 1, scope: 'all' }),
     fields: [
       amountField,
@@ -52,6 +56,7 @@ export const cards: readonly KindSpec[] = [
   {
     kinds: ['damageBonus'],
     add: 'Damage',
+    does: 'Raises or lowers damage rolls',
     make: () => ({ kind: 'damageBonus', amount: 1, scope: 'all' }),
     fields: [amountField, { key: 'scope', label: 'Which', type: 'pick', options: SCOPE }],
     line: (e) =>

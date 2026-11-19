@@ -740,10 +740,14 @@ const paidClaim = (p: { effect: Eff; title: string; onChange: (next: Eff) => voi
     />
   );
 
+/** The heading its cards are listed under on the add sheet. */
+export const group = 'Rolls';
+
 export const cards: readonly KindSpec[] = [
   {
     kinds: ['saveBonus'],
     add: 'Saving throws',
+    does: 'Raises or lowers saving throws',
     make: () => ({ kind: 'saveBonus', amount: 1 }),
     fields: [amountField],
     line: (e) =>
@@ -755,6 +759,7 @@ export const cards: readonly KindSpec[] = [
   {
     kinds: ['rollAdvantage'],
     add: 'Advantage',
+    does: 'Advantage or disadvantage on a kind of roll',
     make: () => ({ kind: 'rollAdvantage', mode: 'adv', on: { rolls: ['save'] } }),
     fields: [
       {
@@ -780,6 +785,7 @@ export const cards: readonly KindSpec[] = [
   {
     kinds: ['rollDie'],
     add: 'Added die',
+    does: 'Adds a die to a kind of roll, as Bless does',
     make: () => ({ kind: 'rollDie', dice: '1d4', on: { rolls: ['attack'] } }),
     fields: [{ key: 'dice', label: 'Dice', type: 'dice' }],
     line: (e) => `+${String(e.dice)} to ${rollWords(e)}`,
@@ -788,6 +794,7 @@ export const cards: readonly KindSpec[] = [
   {
     kinds: ['rollPaid'],
     add: 'Paid extra',
+    does: 'Adds a die to a roll after you see it, paid with a use or Inspiration',
     make: () => ({ kind: 'rollPaid', on: { rolls: ['check'] }, dice: '1d4', ifFailed: true }),
     fields: [],
     line: paidLine,
@@ -803,6 +810,7 @@ export const cards: readonly KindSpec[] = [
   {
     kinds: ['rollReroll'],
     add: 'Reroll',
+    does: 'Rerolls a d20 or a low die, or rolls one more and keeps the best',
     make: () => ({ kind: 'rollReroll', on: { rolls: ['save'] }, ifFailed: true }),
     fields: [],
     line: rerollLine,

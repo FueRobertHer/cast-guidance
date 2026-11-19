@@ -130,11 +130,15 @@ function GrantFields({
   );
 }
 
+/** The heading its cards are listed under on the add sheet. */
+export const group = 'Spells';
+
 export const cards: readonly KindSpec[] = [
   {
     kinds: ['attackBonus'],
     is: (e) => e.attack === 'spell',
     add: 'Spell attacks',
+    does: 'Raises or lowers spell attack rolls',
     make: () => ({ kind: 'attackBonus', amount: 1, attack: 'spell' }),
     fields: [amountField],
     line: (e) => `${amount(e.amount)} to spell attack rolls`,
@@ -142,6 +146,7 @@ export const cards: readonly KindSpec[] = [
   {
     kinds: ['spellDcBonus'],
     add: 'Spell save DC',
+    does: 'Raises or lowers your spell save DC',
     make: () => ({ kind: 'spellDcBonus', amount: 1 }),
     fields: [amountField],
     line: (e) => `${amount(e.amount)} to your spell save DC`,
@@ -149,6 +154,7 @@ export const cards: readonly KindSpec[] = [
   {
     kinds: ['grantSpell'],
     add: 'Cast a spell',
+    does: 'A spell you can cast at will, with uses, or always prepared',
     make: () => ({ kind: 'grantSpell', spell: '' }),
     sample: () => ({ kind: 'grantSpell', spell: 'Misty Step|XPHB' }),
     fields: [],

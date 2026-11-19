@@ -3,10 +3,14 @@ import { SKILLS } from '@/engine/types';
 import type { KindSpec } from './kit/types';
 import { ABILITY, amount, amountField, word } from './kit/words';
 
+/** The heading its cards are listed under on the add sheet. */
+export const group = 'Abilities and proficiencies';
+
 export const cards: readonly KindSpec[] = [
   {
     kinds: ['abilityBonus'],
     add: 'Ability score',
+    does: 'Raises or lowers an ability score',
     make: () => ({ kind: 'abilityBonus', ability: 'str', amount: 1 }),
     fields: [{ key: 'ability', label: 'Ability', type: 'pick', options: ABILITY }, amountField],
     line: (e) => `${amount(e.amount)} ${word(ABILITY, e.ability)}`,
@@ -15,6 +19,7 @@ export const cards: readonly KindSpec[] = [
   {
     kinds: ['abilityMin'],
     add: 'Ability score is at least',
+    does: 'Sets a minimum for an ability score, as some items do',
     make: () => ({ kind: 'abilityMin', ability: 'str', min: 19 }),
     fields: [
       { key: 'ability', label: 'Ability', type: 'pick', options: ABILITY },
@@ -25,6 +30,7 @@ export const cards: readonly KindSpec[] = [
   {
     kinds: ['skillProf'],
     add: 'Skill',
+    does: 'Proficiency or expertise in a skill',
     make: () => ({ kind: 'skillProf', skill: 'Perception', level: 1 }),
     fields: [
       {
@@ -49,6 +55,7 @@ export const cards: readonly KindSpec[] = [
   {
     kinds: ['saveProf'],
     add: 'Save proficiency',
+    does: 'Proficiency in a saving throw',
     make: () => ({ kind: 'saveProf', ability: 'wis' }),
     fields: [{ key: 'ability', label: 'Ability', type: 'pick', options: ABILITY }],
     line: (e) => `Proficiency in ${word(ABILITY, e.ability)} saving throws`,
@@ -57,6 +64,7 @@ export const cards: readonly KindSpec[] = [
   {
     kinds: ['language'],
     add: 'Language',
+    does: 'A language you speak, read and write',
     make: () => ({ kind: 'language', name: 'Elvish' }),
     fields: [{ key: 'name', label: 'Language', type: 'text' }],
     line: (e) => `You know ${String(e.name)}`,
@@ -64,6 +72,7 @@ export const cards: readonly KindSpec[] = [
   {
     kinds: ['toolProf'],
     add: 'Tool',
+    does: 'Proficiency with a tool or instrument',
     make: () => ({ kind: 'toolProf', name: "Thieves' Tools" }),
     fields: [{ key: 'name', label: 'Tool', type: 'text' }],
     line: (e) => `Proficiency with ${String(e.name)}`,
@@ -71,6 +80,7 @@ export const cards: readonly KindSpec[] = [
   {
     kinds: ['weaponProf'],
     add: 'Weapon',
+    does: 'Proficiency with a weapon',
     make: () => ({ kind: 'weaponProf', name: 'longsword' }),
     fields: [{ key: 'name', label: 'Weapon', type: 'text' }],
     line: (e) => `Proficiency with ${String(e.name)}`,

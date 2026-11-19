@@ -35,10 +35,14 @@ const CONDITION: Options = [
   'Unconscious',
 ].map((c) => [c, c] as const);
 
+/** The heading its cards are listed under on the add sheet. */
+export const group = 'Defenses and hit points';
+
 export const cards: readonly KindSpec[] = [
   {
     kinds: ['acBonus'],
     add: 'Armor Class',
+    does: 'Raises or lowers Armor Class',
     make: () => ({ kind: 'acBonus', amount: 1 }),
     fields: [amountField],
     line: (e) => `${amount(e.amount)} to Armor Class`,
@@ -46,6 +50,7 @@ export const cards: readonly KindSpec[] = [
   {
     kinds: ['maxHpBonus'],
     add: 'Hit points',
+    does: 'Raises or lowers your hit point maximum',
     make: () => ({ kind: 'maxHpBonus', amount: 1 }),
     fields: [amountField],
     line: (e) => `${amount(e.amount)} to your hit point maximum`,
@@ -53,6 +58,7 @@ export const cards: readonly KindSpec[] = [
   {
     kinds: ['hpPerLevel'],
     add: 'Hit points per level',
+    does: 'Raises your hit point maximum for each level',
     make: () => ({ kind: 'hpPerLevel', amount: 1 }),
     fields: [amountField],
     line: (e) => `${amount(e.amount)} hit point maximum for each level`,
@@ -60,6 +66,7 @@ export const cards: readonly KindSpec[] = [
   {
     kinds: ['resist', 'immune', 'vulnerable'],
     add: 'Resistance',
+    does: 'Resistance, immunity or vulnerability to a damage type',
     make: () => ({ kind: 'resist', damageType: 'fire' }),
     fields: [
       {
@@ -81,6 +88,7 @@ export const cards: readonly KindSpec[] = [
   {
     kinds: ['conditionImmune'],
     add: 'Condition immunity',
+    does: 'Immunity to a condition, such as Frightened or Poisoned',
     make: () => ({ kind: 'conditionImmune', condition: 'Frightened' }),
     fields: [{ key: 'condition', label: 'Condition', type: 'pick', options: CONDITION }],
     line: (e) => `Immune to the ${String(e.condition)} condition`,

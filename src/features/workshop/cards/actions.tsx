@@ -516,10 +516,14 @@ const naming = (p: { effect: Eff; title: string; onChange: (next: Eff) => void }
   <NamingFields effect={p.effect} title={p.title} onChange={p.onChange} />
 );
 
+/** The heading its cards are listed under on the add sheet. */
+export const group = 'Uses, actions and picks';
+
 export const cards: readonly KindSpec[] = [
   {
     kinds: ['resource'],
     add: 'Uses per rest',
+    does: 'A number of uses that come back on a rest',
     make: () => ({ kind: 'resource', key: 'uses', label: 'Uses', max: 1, reset: 'long' }),
     fields: [
       { key: 'label', label: 'Name', type: 'text' },
@@ -548,6 +552,7 @@ export const cards: readonly KindSpec[] = [
   {
     kinds: ['action'],
     add: 'Action',
+    does: 'An action, bonus action or reaction on the sheet, and what it costs',
     make: () => ({ kind: 'action', economy: 'action', label: 'New action' }),
     fields: [
       {
@@ -582,6 +587,7 @@ export const cards: readonly KindSpec[] = [
     // Its id is set as it is added (`EffectCards`), one the entry's other picks do not have.
     kinds: ['pick'],
     add: 'Pick',
+    does: 'Asks the player to choose, such as a skill or a damage type',
     make: () => NEW_PICK,
     fields: [],
     line: pickWords,

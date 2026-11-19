@@ -10,10 +10,14 @@ const KINDS_SENSE: Options = [
   ['truesight', 'Truesight'],
 ];
 
+/** The heading its cards are listed under on the add sheet. */
+export const group = 'Speed, senses and initiative';
+
 export const cards: readonly KindSpec[] = [
   {
     kinds: ['initiativeBonus'],
     add: 'Initiative',
+    does: 'Raises or lowers Initiative',
     make: () => ({ kind: 'initiativeBonus', amount: 1 }),
     fields: [amountField],
     line: (e) =>
@@ -27,6 +31,7 @@ export const cards: readonly KindSpec[] = [
   {
     kinds: ['speedBonus'],
     add: 'Speed',
+    does: 'Raises or lowers your walking speed',
     make: () => ({ kind: 'speedBonus', amount: 5 }),
     fields: [amountField],
     line: (e) => `${amount(e.amount)} ft to your Speed`,
@@ -34,6 +39,7 @@ export const cards: readonly KindSpec[] = [
   {
     kinds: ['moveSpeed'],
     add: 'Fly, swim or climb',
+    does: 'A flying, swimming or climbing speed',
     make: () => ({ kind: 'moveSpeed', mode: 'fly', speed: 'walk' }),
     fields: [
       {
@@ -54,6 +60,7 @@ export const cards: readonly KindSpec[] = [
   {
     kinds: ['sense'],
     add: 'Sense',
+    does: 'Darkvision, blindsight, tremorsense or truesight',
     make: () => ({ kind: 'sense', sense: 'darkvision', range: 60 }),
     fields: [
       { key: 'sense', label: 'Sense', type: 'pick', options: KINDS_SENSE },

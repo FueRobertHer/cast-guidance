@@ -77,6 +77,11 @@ export interface KindSpec {
   is?: (e: Eff) => boolean;
   /** What the add list calls it. */
   add: string;
+  /**
+   * What it does, in a player's words: the line under its name on the add
+   * sheet, and what that sheet's search reads, so name what a player would type.
+   */
+  does: string;
   make: () => Eff;
   /**
    * A whole one, as the reader takes it, when a new card is not (Cast a spell
