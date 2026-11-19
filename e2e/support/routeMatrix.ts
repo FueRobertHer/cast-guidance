@@ -287,6 +287,52 @@ export const ROUTES: readonly RouteCase[] = [
         link('Go to the homebrew list'),
       ),
   },
+  // The Workshop reads only what is on the device for its shelves, so each
+  // page is itself at every level, game data or none.
+  {
+    name: 'workshop',
+    frame: appNav,
+    path: () => '/workshop',
+    at: () => content(title('Workshop'), heading('Workshop')),
+  },
+  {
+    name: 'workshop collections',
+    frame: appNav,
+    path: () => '/workshop?shelf=collections',
+    at: () =>
+      content(title('Workshop'), (page) =>
+        page.getByRole('main').getByRole('link', { name: new RegExp(`^${HOMEBREW_NAME}\\s*,`) }),
+      ),
+  },
+  {
+    name: 'workshop collection',
+    frame: appNav,
+    path: (m) => `/workshop/collection/${m.homebrewId}`,
+    at: () => content(title(HOMEBREW_NAME, 'Workshop'), heading(HOMEBREW_NAME)),
+  },
+  {
+    name: 'workshop collection that does not exist',
+    frame: appNav,
+    path: () => '/workshop/collection/missing',
+    at: () =>
+      notFound(
+        title('Collection not found', 'Workshop'),
+        text('This collection is no longer on this device.'),
+        link('Back to the Workshop'),
+      ),
+  },
+  {
+    name: 'workshop rules',
+    frame: appNav,
+    path: () => '/workshop/rules',
+    at: () => content(title('Rules', 'Workshop'), heading('Rules')),
+  },
+  {
+    name: 'workshop make your own',
+    frame: button('Back'),
+    path: () => '/workshop/new',
+    at: () => content(title('Make your own', 'Workshop'), heading('Make your own')),
+  },
   {
     name: 'settings',
     frame: appNav,

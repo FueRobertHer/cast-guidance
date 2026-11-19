@@ -94,5 +94,21 @@
   "toast-data-update": {},
   "toast-data-update@light": {},
   "toast-offline-ready": {},
-  "toast-offline-ready@light": {}
+  "toast-offline-ready@light": {},
+  "workshop": {},
+  "workshop-collection": {},
+  "workshop-collection@light": {},
+  "workshop-collections": {},
+  "workshop-collections@light": {},
+  "workshop-empty": {},
+  "workshop-empty@light": {},
+  "workshop-make": {},
+  "workshop-make@light": {},
+  "workshop-rules": {},
+  "workshop-rules-page": {},
+  "workshop-rules-page@light": {},
+  "workshop-rules@light": {},
+  "workshop-search": {},
+  "workshop-search@light": {},
+  "workshop@light": {}
 }

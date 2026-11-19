@@ -17,8 +17,10 @@ function renderAt(path: string) {
         children: [
           { index: true, element: null },
           { path: 'library', element: null },
+          { path: 'workshop/*', element: null },
           { path: 'homebrew', element: null },
           { path: 'settings', element: null },
+          { path: '*', element: null },
         ],
       },
     ],
@@ -37,5 +39,26 @@ describe('AppNav current section', () => {
     expect(marked.map((l) => l.textContent)).toEqual(['Library']);
     expect(marked[0]?.getAttribute('aria-current')).toBe('page');
     expect(marked[0]?.className).toContain('font-bold');
+  });
+
+  it.each([
+    '/workshop',
+    '/workshop/collection/abc',
+    '/workshop/rules',
+    '/homebrew',
+  ])('names the Workshop, with its Hammer, the section open at %s', (path) => {
+    const nav = renderAt(path);
+    const current = nav.getAllByRole('link').filter((l) => l.getAttribute('aria-current'));
+    expect(current.map((l) => [l.textContent, l.getAttribute('aria-current')])).toEqual([
+      ['Workshop', 'page'],
+    ]);
+    expect(current[0]?.querySelector('[data-indicator]')).not.toBeNull();
+    expect(current[0]?.querySelector('svg.lucide-hammer')).not.toBeNull();
+    expect(current[0]?.getAttribute('href')).toBe('/workshop');
+  });
+
+  it('marks no tab on a page none of them is for', () => {
+    const nav = renderAt('/settings-old');
+    expect(nav.getAllByRole('link').filter((l) => l.getAttribute('aria-current'))).toEqual([]);
   });
 });

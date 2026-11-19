@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
-// The Workshop page over the app's routes: what its home names, and which
+// The Workshop page over the app's routes: what Make your own names, and which
 // file an entry opens from and saves to when two files hold one by the same
 // name and book.
 import 'fake-indexeddb/auto';
-import { fireEvent, screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { HomebrewFileRow } from '@/db/db';
 import { homebrewRepo } from '@/db/homebrewRepo';
@@ -54,21 +54,27 @@ async function giftText(fileId: string): Promise<unknown> {
   return isRecord(gift) ? gift.entries : undefined;
 }
 
-describe('the Workshop home', () => {
+describe('Make your own, until the Make sheet', () => {
   it('names every control, each way to make one by its kind', async () => {
     const sheet = await renderSheet(sorcerer());
-    await sheet.visit('/workshop');
-    const heading = await screen.findByRole(
-      'heading',
-      { name: 'Make your own' },
-      { timeout: WAIT },
-    );
+    await sheet.visit('/workshop/new');
+    expect(
+      await screen.findByRole('heading', { level: 1, name: 'Make your own' }, { timeout: WAIT }),
+    ).toBeTruthy();
     expect(namelessControls()).toEqual([]);
-    const list = heading.parentElement?.querySelector('ul');
-    if (!list) throw new Error('no list under Make your own');
-    expect(within(list).getByRole('link', { name: 'Feats' }).getAttribute('href')).toBe(
+    expect(screen.getByRole('link', { name: 'Feats' }).getAttribute('href')).toBe(
       '/workshop/new/feat',
     );
+    expect(document.title).toBe('Make your own · Workshop · Cast Guidance');
+  });
+
+  it("is where the home's Make your own goes", async () => {
+    const sheet = await renderSheet(sorcerer());
+    await sheet.visit('/workshop');
+    fireEvent.click(await screen.findByRole('link', { name: 'Make your own' }, { timeout: WAIT }));
+    expect(
+      await screen.findByRole('heading', { level: 1, name: 'Make your own' }, { timeout: WAIT }),
+    ).toBeTruthy();
   });
 });
 

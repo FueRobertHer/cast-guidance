@@ -2,7 +2,8 @@
  * The Workshop (ADR-001): where a player makes their own entries and edits
  * copies of official ones, saved to their homebrew file on this device.
  *
- * - `/workshop`: what they have made, and a way to make each kind;
+ * - `/workshop/new`: each kind there is to make, until the Make sheet
+ *   (ADR-002, U2) takes its place; the Workshop's home is `WorkshopHome`;
  * - `/workshop/new/:type`: a new entry;
  * - `/workshop/copy/:type/:uid`: a copy of a Library entry (`name|source`);
  * - `/workshop/edit/:type/:uid`: one of theirs, found in the files they own.
@@ -11,7 +12,7 @@
  * frame around them, and the saving.
  */
 import { useLiveQuery } from 'dexie-react-hooks';
-import { ArrowLeft, GitFork, Info, Plus } from 'lucide-react';
+import { ArrowLeft, Info, Plus } from 'lucide-react';
 import { type ReactNode, useEffect, useState } from 'react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router';
 import { useRegistryState, useTypePacks } from '@/data5e/hooks';
@@ -25,7 +26,6 @@ import {
   homebrewRepo,
   WORKSHOP_SOURCE,
 } from '@/db/homebrewRepo';
-import { TYPE_LABELS } from '@/features/library/browseTypes';
 import { findEntity } from '@/features/library/findEntity';
 import { useBack } from '@/lib/useBack';
 import { usePageTitle } from '@/lib/usePageTitle';
@@ -48,6 +48,7 @@ import { EditorShell } from './EditorShell';
 import { EDITORS, type EditorSpec, type Json } from './editorTypes';
 import { Field } from './fields';
 import { EntryPicks } from './pickIds';
+import { editPath, entriesOf, inFile, labelOf, type Mine } from './yours';
 
 const NOTE = 'text-body text-ink-muted';
 const ICON =
@@ -56,120 +57,41 @@ const LINK =
   'text-caption font-semibold text-ink-muted underline decoration-line-strong underline-offset-3 hover:text-ink';
 const BOX = 'flex items-start gap-2 rounded-control bg-surface-raised px-3 py-2 text-caption';
 
-const keyOf = (name: string, source: string) => encodeURIComponent(`${name}|${source}`);
-const labelOf = (type: string) => TYPE_LABELS.get(type) ?? type;
-/** Where one of the player's entries opens: two files can hold one by the same name and book. */
-const editPath = (type: string, name: string, source: string) =>
-  `/workshop/edit/${type}/${keyOf(name, source)}`;
-const inFile = (fileId: string) => `?file=${encodeURIComponent(fileId)}`;
 /** The file `?file=` names, as written. */
 const fileParam = (search: string) => new URLSearchParams(search).get('file');
-
-/** One of the player's entries, where it is kept. */
-interface Mine {
-  type: string;
-  entry: Json;
-  fileId: string;
-}
-
-/** Every entry of a kind the Workshop edits, in the files the player owns. */
-function entriesOf(files: readonly HomebrewFile[]): Mine[] {
-  const out: Mine[] = [];
-  for (const file of files) {
-    for (const type of EDITORS.keys()) {
-      const list = file.json[type];
-      if (!Array.isArray(list)) continue;
-      for (const entry of list) {
-        if (typeof entry === 'object' && entry !== null && typeof (entry as Json).name === 'string')
-          out.push({ type, entry: entry as Json, fileId: file.id });
-      }
-    }
-  }
-  return out;
-}
 
 const matches = (e: Json, key: EntryKey) =>
   String(e.name).toLowerCase() === key.name.toLowerCase() &&
   String(e.source).toLowerCase() === key.source.toLowerCase();
 
-function Home() {
-  usePageTitle('Workshop');
-  const back = useBack('/library');
-  const owned = useLiveQuery(() => homebrewRepo.ownedSafe(), []);
-  const mine = owned === undefined ? undefined : entriesOf(owned.files);
+/**
+ * Each kind there is to make, at `/workshop/new`: where the home's Make your
+ * own goes until the Make sheet (U2) opens over the home instead.
+ */
+function MakeList() {
+  usePageTitle('Make your own', 'Workshop');
+  const back = useBack('/workshop');
   return (
-    <main className="mx-auto flex w-full max-w-2xl flex-1 flex-col gap-5 px-4 pt-3 pb-6">
-      <header className="flex items-start gap-1">
-        <button type="button" aria-label="Back" onClick={back} className={ICON}>
-          <ArrowLeft size={20} aria-hidden />
-        </button>
-        <div className="min-w-0 flex-1 pt-1.5">
-          <h1 className="font-display text-title-page">Workshop</h1>
-          <p className="text-caption text-ink-muted">
-            Make your own, or edit a copy of anything in the Library. Everything is saved to your
-            homebrew file on this device.
-          </p>
-        </div>
-      </header>
-      <section className="flex flex-col gap-2">
-        <h2 className="text-overline text-ink-muted uppercase">Make your own</h2>
-        <ul className={listClass}>
-          {[...EDITORS.keys()].map((type) => (
-            <li key={type}>
-              <Link
-                to={`/workshop/new/${type}`}
-                className={`${listRowClass} hover:bg-surface-raised`}
-              >
-                <span className="min-w-0 flex-1 text-body-strong">{labelOf(type)}</span>
-                <Plus size={18} aria-hidden className="text-ink-muted" />
-              </Link>
-            </li>
-          ))}
-        </ul>
-      </section>
-      <section className="flex flex-col gap-2">
-        <h2 className="text-overline text-ink-muted uppercase">Yours</h2>
-        {mine === undefined ? (
-          <p className={NOTE}>Loading…</p>
-        ) : mine.length === 0 ? (
-          <p className={NOTE}>
-            Nothing yet. Make one above, or open an entry in the{' '}
-            <Link to="/library" className={LINK}>
-              Library
-            </Link>{' '}
-            and choose Edit a copy.
-          </p>
-        ) : (
-          <ul className={listClass}>
-            {mine.map(({ type, entry, fileId }) => {
-              const from = copiedFrom(entry);
-              return (
-                <li key={`${fileId}:${type}:${String(entry.name)}|${String(entry.source)}`}>
-                  <Link
-                    to={`${editPath(type, String(entry.name), String(entry.source))}${inFile(fileId)}`}
-                    className={`${listRowClass} hover:bg-surface-raised`}
-                  >
-                    <span className="flex min-w-0 flex-1 flex-col">
-                      <span className="text-body-strong break-words">{String(entry.name)}</span>
-                      <span className="text-caption text-ink-muted">
-                        {labelOf(type)}
-                        {from !== undefined && (
-                          <>
-                            {', '}
-                            <GitFork size={12} aria-hidden className="inline align-[-1px]" /> based
-                            on {from.name}
-                          </>
-                        )}
-                      </span>
-                    </span>
-                  </Link>
-                </li>
-              );
-            })}
-          </ul>
-        )}
-      </section>
-    </main>
+    <Frame back={back}>
+      <h1 className="font-display text-title-page">Make your own</h1>
+      <p className={NOTE}>
+        Pick what to make. It is saved to My homebrew on this device, and works on your characters
+        as soon as you save it.
+      </p>
+      <ul className={listClass}>
+        {[...EDITORS.keys()].map((type) => (
+          <li key={type}>
+            <Link
+              to={`/workshop/new/${type}`}
+              className={`${listRowClass} hover:bg-surface-raised`}
+            >
+              <span className="min-w-0 flex-1 text-body-strong">{labelOf(type)}</span>
+              <Plus size={18} aria-hidden className="text-ink-muted" />
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </Frame>
   );
 }
 
@@ -681,8 +603,9 @@ function EditorRoute({ action, type, uid }: { action: string; type: string; uid:
 
 export function Component() {
   const { action, type, uid } = useParams();
-  if (action === undefined) return <Home />;
+  if (action === 'new' && type === undefined) return <MakeList />;
   if (
+    action === undefined ||
     type === undefined ||
     !isEntityType(type) ||
     !EDITORS.has(type) ||

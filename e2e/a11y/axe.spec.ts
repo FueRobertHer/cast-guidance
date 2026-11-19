@@ -487,6 +487,66 @@ test.describe('axe: pages and overlays', () => {
     await scanState(page, 'homebrew-builder-unknown');
   });
 
+  test('workshop: its home and shelves, search, a collection and the rules', async ({ page }) => {
+    await gotoRosterSettled(page);
+    await gotoHeading(page, '/workshop', 'Workshop');
+    await expect(page.getByRole('heading', { level: 2, name: 'Make it yours' })).toBeVisible();
+    await scanState(page, 'workshop-empty');
+
+    // Something of the player's own, and an imported collection beside it.
+    await page.getByRole('link', { name: 'Make your own', exact: true }).click();
+    await expect(page.getByRole('heading', { level: 1, name: 'Make your own' })).toBeVisible();
+    await animationsSettled(page);
+    await scanState(page, 'workshop-make');
+    await page.getByRole('link', { name: 'Feats', exact: true }).click();
+    await page.getByRole('textbox', { name: 'Name', exact: true }).fill('Fire Gift');
+    await page.getByRole('button', { name: 'Save', exact: true }).click();
+    await page.waitForURL(/\/workshop\/edit\/feat\//);
+    await gotoHeading(page, '/homebrew', 'Homebrew');
+    await importHomebrewFile(page, HOMEBREW);
+    await answerImportPreview(page, 'Import "axe-brew.json"?');
+
+    await gotoHeading(page, '/workshop', 'Workshop');
+    await expect(page.getByRole('link', { name: /^Fire Gift/ })).toBeVisible();
+    await animationsSettled(page);
+    await scanState(page, 'workshop');
+
+    const shelf = (name: string) =>
+      page.getByRole('group', { name: 'Shelf' }).getByRole('button', { name, exact: true });
+    await shelf('Collections').click();
+    const brew = page.getByRole('link', { name: /^axe-brew\.json\s*,/ });
+    await expect(brew).toBeVisible();
+    await animationsSettled(page);
+    await scanState(page, 'workshop-collections');
+
+    await brew.click();
+    await expect(page.getByRole('heading', { level: 1, name: 'axe-brew.json' })).toBeVisible();
+    await animationsSettled(page);
+    await scanState(page, 'workshop-collection');
+
+    await page.goBack();
+    await shelf('Rules').click();
+    const crit = page.getByRole('link', { name: /^Critical hits/ });
+    await expect(crit).toBeVisible();
+    await animationsSettled(page);
+    await scanState(page, 'workshop-rules');
+
+    await crit.click();
+    await expect(page.getByRole('heading', { level: 1, name: 'Rules' })).toBeVisible();
+    await animationsSettled(page);
+    await scanState(page, 'workshop-rules-page');
+
+    // Theirs first, then the books.
+    await gotoHeading(page, '/workshop', 'Workshop');
+    await page.getByRole('searchbox', { name: /^Search your content/ }).fill('fire');
+    await expect(page.getByRole('region', { name: 'Yours' })).toBeVisible();
+    await expect(
+      page.getByRole('region', { name: 'In the books' }).getByRole('link', { name: /^Fireball/ }),
+    ).toBeVisible();
+    await animationsSettled(page);
+    await scanState(page, 'workshop-search');
+  });
+
   test('settings, the creator and the not-found page', async ({ page }) => {
     await gotoRosterSettled(page);
     await gotoHeading(page, '/settings', 'Settings');

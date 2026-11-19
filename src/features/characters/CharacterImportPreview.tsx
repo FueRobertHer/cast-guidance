@@ -140,7 +140,8 @@ function fileStatus(f: EmbeddedFilePreview): { tone: Tone; status: string; detai
             status: 'Already here, turned off.',
             detail:
               'The same file is on this device, so it is skipped, but it is turned off, so its ' +
-              'entries are not used. Turn it on in Homebrew to use them.',
+              'entries are not used. Turn it on in the Workshop, under Collections, to use ' +
+              'them.',
           }
         : {
             tone: 'good',
@@ -164,7 +165,8 @@ function fileStatus(f: EmbeddedFilePreview): { tone: Tone; status: string; detai
             status: 'The book is here, turned off.',
             detail:
               'This device has every entry of this book the file brings, so it is skipped, but ' +
-              'the book is turned off, so its entries are not used. Turn it on in Homebrew to use them.',
+              'the book is turned off, so its entries are not used. Turn it on in the ' +
+              'Workshop, under Collections, to use them.',
           }
         : {
             tone: 'good',
@@ -181,7 +183,7 @@ function fileStatus(f: EmbeddedFilePreview): { tone: Tone; status: string; detai
             detail:
               `The book here, from the same file, lacks ${entries} the character uses, so ` +
               'importing adds them to it, but the book is turned off, so its entries are not ' +
-              'used. Turn it on in Homebrew to use them.',
+              'used. Turn it on in the Workshop, under Collections, to use them.',
           }
         : {
             tone: 'good',
@@ -252,7 +254,9 @@ export default function CharacterImportPreview({
     ...p.disabledSources.map((id) => ({
       id,
       tone: 'warn' as const,
-      text: 'is in a homebrew file that is turned off. Turn it on in Homebrew to use it here.',
+      text:
+        'is in a homebrew file that is turned off. Turn it on in the Workshop, under ' +
+        'Collections, to use it here.',
     })),
   ];
 
