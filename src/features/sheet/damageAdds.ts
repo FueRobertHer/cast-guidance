@@ -382,3 +382,20 @@ export function castBuff(
   const minutes = unit === 'minute' ? amount : unit === 'hour' ? amount * 60 : undefined;
   return { ...damage, ...(minutes === undefined ? {} : { minutes }) };
 }
+
+/**
+ * Is a spell cast now for damage that comes later, on hits while it lasts?
+ * A concentration spell whose dice ride on hits (Hex, Hunter's Mark, a 2014
+ * smite, Spirit Shroud), or one that puts damage on weapon hits once cast
+ * (2024 Divine Favor). Its dice mean nothing as it is cast, so casting it rolls
+ * none. An instantaneous spell (Booming Blade) is cast with its attack.
+ */
+export function castsLater(entity: unknown): boolean {
+  if (entity === null || typeof entity !== 'object') return false;
+  if (castBuff(entity) !== undefined) return true;
+  const duration = (entity as { duration?: unknown }).duration;
+  const first = Array.isArray(duration)
+    ? (duration[0] as { concentration?: unknown } | undefined)
+    : undefined;
+  return first?.concentration === true && hitSpell(entity, true)?.how === 'running';
+}

@@ -434,10 +434,15 @@ describe('a spell that puts its dice on every weapon hit as it is cast', () => {
     ],
   });
   /** Casts Divine Favor from its row's dice chip, on the slot the prompt starts on. */
+  /**
+   * Casts it from its row's Cast: its die rides on later hits, so casting rolls
+   * nothing (no faces are set up, so a stray roll would throw).
+   */
   const castFavor = () => {
-    nextFaces(2);
-    fireEvent.click(screen.getByTitle('Divine Favor Radiant damage'));
+    nextFaces();
+    fireEvent.click(screen.getByRole('button', { name: 'Cast Divine Favor' }));
     castHeld();
+    expect(rolls().some((r) => r.label === 'Divine Favor Radiant damage')).toBe(false);
   };
 
   it('starts an effect named for it, whose die rides on a weapon’s damage and not a punch', async () => {
