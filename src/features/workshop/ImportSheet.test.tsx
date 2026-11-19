@@ -415,6 +415,57 @@ describe('the Import sheet', () => {
     expect(await stored()).toEqual([]);
   });
 
+  it('keeps the preview up while it is stored: a second press or Cancel does nothing', async () => {
+    const real = homebrewRepo.commit.bind(homebrewRepo);
+    let open: () => void = () => undefined;
+    const gate = new Promise<void>((r) => {
+      open = r;
+    });
+    const commit = vi.spyOn(homebrewRepo, 'commit').mockImplementation(async (...args) => {
+      await gate;
+      return real(...args);
+    });
+    renderSheet();
+    await bringIn('Text', grimoire());
+    const preview = await findDialog(`Import "${NAME}"?`);
+    fireEvent.click(within(preview).getByRole('button', { name: 'Import' }));
+    await waitFor(() => expect(commit).toHaveBeenCalledTimes(1), { timeout: WAIT });
+    fireEvent.click(within(preview).getByRole('button', { name: 'Import' }));
+    fireEvent.click(within(preview).getByRole('button', { name: 'Cancel' }));
+    expect(screen.getByRole('dialog', { name: `Import "${NAME}"?` })).toBe(preview);
+    expect(done).toEqual([]);
+    open();
+    await waitFor(
+      () => expect(done).toEqual([{ message: `Imported "${NAME}" (1 spell)`, landed: true }]),
+      {
+        timeout: WAIT,
+      },
+    );
+    expect(commit).toHaveBeenCalledTimes(1);
+    expect(await stored()).toHaveLength(1);
+  });
+
+  it('brings the sheet back with the reason when storing fails, and lands nothing', async () => {
+    vi.spyOn(homebrewRepo, 'commit').mockRejectedValue(new Error('the disk is full'));
+    renderSheet();
+    await bringIn('Text', grimoire());
+    const preview = await findDialog(`Import "${NAME}"?`);
+    fireEvent.click(within(preview).getByRole('button', { name: 'Import' }));
+    const s = await sheet();
+    await waitFor(
+      () =>
+        expect(s.querySelector('[data-import-status] p')?.textContent).toMatch(/^Import failed: /),
+      { timeout: WAIT },
+    );
+    // What was given is still there, to try again.
+    expect(
+      (within(s).getByRole('textbox', { name: /^Paste a homebrew file/ }) as HTMLTextAreaElement)
+        .value,
+    ).toBe(JSON.stringify(grimoire()));
+    expect(done).toEqual([]);
+    expect(await stored()).toEqual([]);
+  });
+
   it('cancels from the preview without landing anything', async () => {
     const out = await land('Text', grimoire(), `Import "${NAME}"?`, 'Cancel');
     expect(out).toEqual({ message: 'Import canceled. Nothing was added.', landed: false });
