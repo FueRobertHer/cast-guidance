@@ -33,7 +33,7 @@ export interface CommittedBooks {
 /**
  * Build a content-hashed homebrew row from a raw 5etools homebrew file object.
  * Identity (`id`) and all metadata (`sourceIds`, `counts`, `key`) are
- * recomputed from the content, never taken from a caller — so an importer
+ * recomputed from the content, never taken from a caller, so an importer
  * cannot forge an id to collide with unrelated local content or misrepresent
  * what a file holds. Imported files are never `editable` (that flag belongs to
  * in-app originals), and never hold a `pack` or a `role`: those are this
@@ -716,7 +716,7 @@ export const homebrewRepo = {
   },
 
   /**
-   * New in-app editable homebrew file (uuid id — edits don't change identity).
+   * New in-app editable homebrew file (uuid id: edits don't change identity).
    * It gets a source of its own: `abbreviation`, or the first free one after
    * it when another file here declares it already (`freeSource`). The row
    * returned says which.

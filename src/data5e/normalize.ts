@@ -434,7 +434,7 @@ const HOMEBREW_TYPES: EntityType[] = [
 
 /**
  * Merge homebrew files into a built registry. Homebrew flows through the SAME
- * copy/mod machinery — `_copy` targets may be official entities. `packs` is
+ * copy/mod machinery: `_copy` targets may be official entities. `packs` is
  * each rule pack's Apply to and order by file id, from the stored rows: a
  * pack with none reaches nobody.
  */
