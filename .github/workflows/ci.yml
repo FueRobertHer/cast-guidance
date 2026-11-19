@@ -8,8 +8,9 @@ name: CI
 # Playwright project each (`bun run e2e:ci` runs them all locally).
 #
 # Every job starts at once, so a run takes as long as its slowest job: the
-# unit tests here, or the slowest e2e project. That is why the unit tests have
-# a job of their own and the browser suite is split across four.
+# slowest e2e project, or the unit shards plus the coverage merge that waits on
+# them. That is why the unit tests are split across three jobs and the browser
+# suite across four.
 on:
   push:
     branches: [main]
@@ -90,6 +91,63 @@ jobs:
           if-no-files-found: warn
 
   unit:
+    # The suite was the longest job in the run by a wide margin, so it is split
+    # across shards that each run a slice and write a blob report;
+    # `unit-coverage` merges those into one coverage verdict. `--shard` counts
+    # from `strategy.job-total`, so adding a shard to the matrix is the whole
+    # change. Three measured at about 80 s each against the 4m47s the suite
+    # took in one job; more would not shorten the run, which is then as long
+    # as the slowest e2e project. Splitting rather than more workers per job:
+    # a runner has 4 vCPUs and `maxWorkers` is already at them (see
+    # vite.config.ts), so the only way left is more runners.
+    name: unit (shard ${{ matrix.shard }})
+    runs-on: ubuntu-latest
+    strategy:
+      # A red shard does not cancel the others, so one run shows every failure.
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies (frozen lockfile)
+        run: bun install --frozen-lockfile
+
+      - name: Unit tests
+        # Coverage is collected but neither reported nor gated here: this shard
+        # runs a slice of the suite, so every floor belongs to the merge job.
+        # The blob report carries both its results and its coverage there.
+        env:
+          COVERAGE_COLLECT_ONLY: '1'
+        run: |
+          bun run test:coverage -- \
+            --shard=${{ matrix.shard }}/${{ strategy.job-total }} \
+            --reporter=blob \
+            --outputFile=blob-report/unit-${{ matrix.shard }}.json
+
+      - name: Upload blob report
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-blob-${{ matrix.shard }}
+          path: blob-report
+          # Only `unit-coverage` reads these, in the same run.
+          retention-days: 1
+          if-no-files-found: error
+
+  unit-coverage:
+    # The shards' coverage, merged: the blob reports carry what each shard
+    # covered, so the floors in vite.config.ts are measured against the whole
+    # suite exactly as they were when it ran in one job. No test runs here.
+    # `needs: unit` holds it until every shard is green, so a failing test
+    # shows in its own shard and never as a coverage error here.
+    name: unit coverage
+    needs: unit
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -103,9 +161,18 @@ jobs:
       - name: Install dependencies (frozen lockfile)
         run: bun install --frozen-lockfile
 
-      - name: Unit tests + coverage gate
+      - name: Download the shards' blob reports
+        uses: actions/download-artifact@v4
+        with:
+          # Every shard's report into one directory, which is what
+          # `--mergeReports` reads.
+          pattern: unit-blob-*
+          merge-multiple: true
+          path: blob-report
+
+      - name: Coverage gate
         # Fails when any global coverage metric drops under its threshold.
-        run: bun run test:coverage
+        run: bun run test:coverage -- --mergeReports=blob-report
 
       - name: Coverage summary
         if: always()
@@ -122,7 +189,7 @@ jobs:
                   '.total[$m] | "| \($m) | \(.covered) | \(.total) | \(.pct) |"' "$summary"
               done
             else
-              echo "_No coverage summary: the test step did not produce one._"
+              echo "_No coverage summary: the merge step did not produce one._"
             fi
           } >> "$GITHUB_STEP_SUMMARY"
 
