@@ -170,6 +170,12 @@ const RULES = 'underline decoration-line-strong decoration-dashed';
  */
 const ROW = 'flex flex-wrap items-center gap-x-2 gap-y-1';
 const ROW_NAME = 'flex min-w-0 flex-1 basis-26 items-center gap-2';
+/**
+ * ROW_NAME beside an item's name in place of an ability's three letters (a
+ * spell an item grants): sized by its content, so the chips drop under it
+ * before the item's name squeezes the spell's to a letter.
+ */
+const ROW_NAME_WIDE = 'flex min-w-0 grow items-center gap-2';
 const ROW_ACTIONS = 'ml-auto flex max-w-full shrink-0 flex-wrap items-center justify-end';
 /**
  * A row's name: one line cut short while its list is at least 15rem wide, and
@@ -2593,7 +2599,7 @@ export function Component() {
                   key={`${g.name}|${g.source}|${g.resourceKey ?? ''}|${g.added ? 'added' : ''}`}
                   className={`min-h-11 ${ROW} border-line border-b py-1.5 last:border-b-0`}
                 >
-                  <div className={ROW_NAME}>
+                  <div className={g.ability !== undefined ? ROW_NAME : ROW_NAME_WIDE}>
                     <SpellInfoSheet
                       name={g.name}
                       source={g.source}

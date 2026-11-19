@@ -20,10 +20,11 @@ const item = (name: string, source: string, more: Record<string, unknown> = {}):
 });
 
 /** The test world, with these items and packs, and the rule sets the app ships. */
-function world(items: DataEntity[], packs: DataEntity[] = []): EngineContext {
+function world(items: DataEntity[], packs: DataEntity[] = [], feats?: DataEntity[]): EngineContext {
   const base = makeTestContext();
   const of: Record<string, readonly DataEntity[]> = {
     item: items,
+    ...(feats === undefined ? {} : { feat: feats }),
     [RULE_SET_TYPE]: BUILT_IN_RULE_SETS,
     [RULE_PACK_TYPE]: packs,
   };
@@ -361,6 +362,18 @@ describe('the numbers an item grant casts with', () => {
       { name: 'Web', usage: 'charges', dc: 15, attack: 7, mod: 3 }, // As its effect names it.
       { name: 'shield', usage: '1/day', dc: 15, attack: 7, mod: 3 },
     ]);
+  });
+
+  it("are an item's alone: another grant with no ability casts with none", () => {
+    const gift: DataEntity = {
+      name: 'Spark Gift',
+      source: 'TST',
+      additionalSpells: [{ innate: { _: { daily: { '1': ['light'] } } } }],
+      entries: ['A spark.'],
+    };
+    const doc = mage();
+    doc.feats = [{ ref: { name: 'Spark Gift', source: 'TST' }, instanceId: 'f1' }];
+    expect(grants(doc, world([], [], [gift]))).toEqual([{ name: 'light', usage: '1/day' }]);
   });
 
   it('keep a row each for two items whose numbers differ, and one for two alike', () => {

@@ -791,7 +791,7 @@ function Charges(props: EditorProps) {
           <p className="text-caption text-ink-muted">
             {byFields === undefined
               ? 'The sheet does not count these yet, so nothing can spend them.'
-              : fieldSpells.length > 0 && row === undefined
+              : fieldSpells.length > 0
                 ? `The sheet counts these, and they cast the ${fieldSpells.length === 1 ? 'spell' : `${fieldSpells.length} spells`} the item's data lists.`
                 : 'The sheet counts these, and they cast no spells yet.'}
             {row !== undefined &&
