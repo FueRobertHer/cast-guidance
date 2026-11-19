@@ -307,10 +307,13 @@ work:
   keep the old identity; references inside the player's own entries (`_copy`,
   `basedOn`, a background's `feats`, `additionalSpells`, `{@spell}` and
   `{@classFeature}` tags) and imported files' subclasses and subraces of a
-  moved or renamed class or race are not followed or listed; on a rename, picks keyed by a name alone
-  (`:feature:` segments, an optional feature's label) and one turn's marks
-  are lost; an open tab with unsaved edits that keeps its own copy after the
-  save conflict brings the old identity back.
+  moved or renamed class or race are not followed or listed; on a rename,
+  picks keyed by a name alone (`:feature:` segments, an optional feature's
+  label) and one turn's marks are lost, while a pack change naming a feature
+  by its class's name alone (`Second Wind|Fighter`) and names in play (a
+  condition, a concentration) follow it even when they meant another book's
+  entry of that name; an open tab with unsaved edits that keeps its own copy
+  after the save conflict brings the old identity back.
 
 ### Maintainability and diagnostics
 
