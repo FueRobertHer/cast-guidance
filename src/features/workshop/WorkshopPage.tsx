@@ -555,7 +555,7 @@ function Editor({
     } catch (err) {
       setFailure(
         err instanceof EntryClash
-          ? `You already have a ${spec.noun} called ${name}. Choose another name.`
+          ? `You already have ${/^[aeiou]/.test(spec.noun) ? 'an' : 'a'} ${spec.noun} called ${name}. Choose another name.`
           : `Could not save ${name}: ${errorText(err)}. Nothing was changed on this device.`,
       );
     } finally {

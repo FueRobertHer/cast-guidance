@@ -284,17 +284,23 @@ describe('the Save bar', () => {
   });
 
   it('says why Save did not happen, with the file shown', async () => {
-    await homebrewRepo.saveEntry('feat', { name: 'Stand Fast', source: WORKSHOP_SOURCE });
     const sheet = await renderSheet(sorcerer());
-    await sheet.visit('/workshop/new/feat');
-    await screen.findByLabelText('Name', {}, { timeout: WAIT });
-    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Stand Fast' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Show as a file' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
-    expect((await screen.findByRole('alert', {}, { timeout: WAIT })).textContent).toBe(
-      'You already have a feat called Stand Fast. Choose another name.',
-    );
-    expect(screen.getByRole('textbox', { name: 'The file' })).toBeTruthy();
+    for (const [type, said] of [
+      ['feat', 'a feat'],
+      ['item', 'an item'],
+    ] as const) {
+      await homebrewRepo.saveEntry(type, { name: 'Stand Fast', source: WORKSHOP_SOURCE });
+      await sheet.visit(`/workshop/new/${type}`);
+      fireEvent.change(await screen.findByLabelText('Name', {}, { timeout: WAIT }), {
+        target: { value: 'Stand Fast' },
+      });
+      fireEvent.click(screen.getByRole('button', { name: 'Show as a file' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+      expect((await screen.findByRole('alert', {}, { timeout: WAIT })).textContent).toBe(
+        `You already have ${said} called Stand Fast. Choose another name.`,
+      );
+      expect(screen.getByRole('textbox', { name: 'The file' })).toBeTruthy();
+    }
   });
 
   it("saves into another collection of the player's when picked", async () => {
