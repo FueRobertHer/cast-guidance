@@ -53,6 +53,31 @@ describe('Try it on', () => {
     expect(tryOn(ctx, hild(), 'item', grip)).toMatchObject({ already: false });
   });
 
+  it('changes nothing else about how a character holds what they already have', () => {
+    // Carried, not worn: the result is not the gloves going on.
+    const ctx = withEntry(makeTestContext(), 'item', grip);
+    const carried = hild();
+    carried.equipment = [
+      {
+        id: 'g',
+        ref: { name: "Ogre's Grip", source: 'MyHomebrew' },
+        qty: 1,
+        equipped: false,
+        attuned: false,
+      },
+    ];
+    expect(tryOn(ctx, carried, 'item', grip)).toMatchObject({ state: 'none', already: true });
+    // Their own species keeps its subrace.
+    const blue = hild();
+    blue.race = { name: 'Dragonborn', source: 'TST' };
+    blue.subrace = { name: 'Dragonborn (Blue)', source: 'TST' };
+    const dragonborn = makeTestContext().get('race', 'Dragonborn', 'TST') ?? {};
+    expect(tryOn(makeTestContext(), blue, 'race', dragonborn)).toMatchObject({
+      state: 'none',
+      already: true,
+    });
+  });
+
   it('says nothing changes for a character whose own score is higher', () => {
     const strong = hild();
     strong.abilities.base.str = 20;

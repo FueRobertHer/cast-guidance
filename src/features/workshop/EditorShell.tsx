@@ -72,6 +72,7 @@ export function EditorShell({
   problems = [],
   savesTo,
   saved,
+  failure,
   file,
   saveLabel = 'Save',
   saving,
@@ -94,6 +95,8 @@ export function EditorShell({
   savesTo?: ReactNode;
   /** What the last save did, with a way to take it back. */
   saved?: { text: string; onUndo?: () => void; undoing?: boolean };
+  /** Why the last Save or Undo did not happen, in the Save bar whatever is shown above. */
+  failure?: string;
   /** The file view, shown in place of the form while `shown`. */
   file?: { shown: boolean; onToggle: () => void; view: ReactNode };
   saveLabel?: string;
@@ -156,6 +159,11 @@ export function EditorShell({
               </ul>
             )}
           </div>
+          {failure !== undefined && (
+            <p role="alert" className="rounded-control bg-danger-soft px-3 py-2 text-caption">
+              {failure}
+            </p>
+          )}
           {saved !== undefined && (
             <div className="flex items-center gap-2 rounded-control bg-surface-raised px-3 py-1.5">
               <p className="min-w-0 flex-1 text-caption">{saved.text}</p>

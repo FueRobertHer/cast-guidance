@@ -2,8 +2,10 @@
 // Make your own (board 2) over the app's routes: what is being made, then the
 // three starts, each ending in the kind's editor with nothing saved.
 import 'fake-indexeddb/auto';
-import { fireEvent, screen, waitFor, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { createMemoryRouter, RouterProvider } from 'react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { routes } from '@/app/routes';
 import { ensureSourcesVisible } from '@/data5e/sourceFilter';
 import { homebrewRepo, WORKSHOP_SOURCE } from '@/db/homebrewRepo';
 import { namelessControls } from '../../../tests-fixtures/a11y';
@@ -13,6 +15,7 @@ import {
   resetSheetHarness,
   sorcerer,
 } from '../../../tests-fixtures/sheetHarness';
+import { EDITORS } from './editorTypes';
 
 vi.mock('@/data5e/loader', () =>
   import('../../../tests-fixtures/sheetHarnessMocks').then((m) => m.loaderStub),
@@ -111,6 +114,22 @@ describe('Make your own', () => {
     await step('A new feat: start from');
     expect(sheet.router.state.location.search).toBe('?kind=feat');
   });
+
+  it("goes up to the Workshop from the first step when it was the tab's first page", async () => {
+    // The harness seeds the world; then a tab whose first page is the Make sheet.
+    await renderSheet(sorcerer());
+    cleanup();
+    const router = createMemoryRouter(routes, { initialEntries: ['/workshop/new?kind=feat'] });
+    render(<RouterProvider router={router} />);
+    await step('A new feat: start from');
+    // Stepping back replaces the address; Back after it still knows where it began.
+    fireEvent.click(screen.getByRole('button', { name: 'Back a step' }));
+    await step('What are you making?');
+    fireEvent.click(screen.getByRole('button', { name: 'Back' }));
+    await waitFor(() => expect(router.state.location.pathname).toBe('/workshop'), {
+      timeout: WAIT,
+    });
+  });
 });
 
 describe('Make your own, like something that exists', () => {
@@ -128,8 +147,11 @@ describe('Make your own, like something that exists', () => {
     const tough = within(books).getByRole('link', { name: /^Tough/ });
     expect(tough.getAttribute('href')).toBe('/workshop/new?kind=feat&from=like&pick=Tough%7CPHB');
 
+    tough.focus();
     fireEvent.click(tough);
-    await step('A new feat, based on Tough');
+    // The keyboard lands on the step, though its data loads after the address changes.
+    const based = await step('A new feat, based on Tough');
+    await waitFor(() => expect(document.activeElement).toBe(based));
     const name = screen.getByLabelText('Name');
     expect((name as HTMLInputElement).value).toBe('Tough');
     expect(screen.getByText(/Same name as the one you copied/)).toBeTruthy();
@@ -145,8 +167,16 @@ describe('Make your own, like something that exists', () => {
     expect(await homebrewRepo.ownedSafe()).toMatchObject({ files: [] });
   });
 
-  it("lists the player's own first, apart from the books", async () => {
+  it("lists the player's own first, apart from a friend's and the books", async () => {
     await homebrewRepo.saveEntry('feat', { name: 'Tough as Nails', source: WORKSHOP_SOURCE });
+    // A friend's Workshop file, imported: the same book, not the player's own.
+    await homebrewRepo.importJson(
+      {
+        _meta: { sources: [{ json: WORKSHOP_SOURCE, full: 'My homebrew' }] },
+        feat: [{ name: 'Tough Friend', source: WORKSHOP_SOURCE, entries: ['Theirs.'] }],
+      },
+      'friend.json',
+    );
     await ensureSourcesVisible([WORKSHOP_SOURCE]);
     const sheet = await renderSheet(sorcerer());
     await sheet.visit('/workshop/new?kind=feat&from=like');
@@ -160,6 +190,12 @@ describe('Make your own, like something that exists', () => {
         .getAllByRole('link')
         .map((l) => l.textContent),
     ).toEqual([expect.stringMatching(/^Tough as Nails/)]);
+    const theirs = screen.getByRole('region', { name: 'In your collections' });
+    expect(
+      within(theirs)
+        .getAllByRole('link')
+        .map((l) => l.textContent),
+    ).toEqual([expect.stringMatching(/^Tough Friend/)]);
     const books = screen.getByRole('region', { name: 'In the books' });
     expect(
       within(books)
@@ -216,6 +252,36 @@ describe('Make your own, from text you paste', () => {
       await screen.findByRole('heading', { level: 1, name: 'New spell' }, { timeout: WAIT }),
     ).toBeTruthy();
     expect(await homebrewRepo.ownedSafe()).toMatchObject({ files: [] });
+  });
+
+  it('says when the spell reader could not load, and tries again when asked', async () => {
+    const get = EDITORS.get.bind(EDITORS);
+    const offline = vi
+      .spyOn(EDITORS, 'get')
+      .mockImplementation((type) =>
+        type === 'spell' ? () => Promise.reject(new Error('You are offline')) : get(type),
+      );
+    const sheet = await renderSheet(sorcerer());
+    await sheet.visit('/workshop/new?kind=spell&from=text');
+    expect(
+      await screen.findByText(
+        /^The spell reader could not load: You are offline/,
+        {},
+        { timeout: WAIT },
+      ),
+    ).toBeTruthy();
+    // The text can still go to the editor, into Text.
+    fireEvent.change(screen.getByLabelText('Paste the text'), { target: { value: BOLT } });
+    expect(
+      screen.getByRole('button', { name: 'Open in the editor' }).hasAttribute('disabled'),
+    ).toBe(false);
+
+    offline.mockRestore();
+    fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+    expect(
+      await screen.findByRole('checkbox', { name: /^4d6 radiant damage/ }, { timeout: WAIT }),
+    ).toBeTruthy();
+    expect(screen.queryByText(/could not load/)).toBeNull();
   });
 
   it('puts the text of any other kind into Text, and fills nothing else', async () => {

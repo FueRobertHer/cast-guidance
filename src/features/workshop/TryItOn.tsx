@@ -94,8 +94,9 @@ export function wearing(doc: CharacterDoc, type: string, entry: Json): Character
         next.feats.push({ ref, instanceId: 'try-it-on' });
       return next;
     case 'race':
+      // Their own species keeps its subrace; another one starts without.
+      if (!sameRef(next.race, ref)) delete next.subrace;
       next.race = ref;
-      delete next.subrace;
       return next;
     case 'background':
       next.background = ref;
@@ -309,12 +310,14 @@ export function tryOn(ctx: EngineContext, doc: CharacterDoc, type: string, entry
   try {
     const on = wearing(doc, type, entry);
     if (on === undefined) return { state: 'failed', text: 'this kind cannot be tried on yet' };
-    const was = deriveSheet(doc, ctx);
+    // One they already hold is worn the same way before and after, so the
+    // result is the saved one against the changes alone.
+    const already = holds(doc, type, entry);
+    const was = deriveSheet(already ? on : doc, ctx);
     const withIt = withEntry(ctx, type, entry);
     const now = deriveSheet(on, withIt);
     const missing = hasMissingData(missingCharacterData(on, withIt));
     const changes = changesOn(was, now);
-    const already = holds(doc, type, entry);
     return changes.length === 0
       ? { state: 'none', missing, already }
       : { state: 'changed', changes, missing, already };
@@ -369,7 +372,7 @@ export function TryItOn({
     [ctx, who, type, seen],
   );
   if (!TRY_ON_TYPES.has(type) || who === undefined || tried === undefined) return null;
-  const name = who.key.startsWith('try-it-on') ? 'the sample' : who.label;
+  const name = who.doc.id.startsWith('try-it-on') ? 'the sample' : who.label;
   const changes = tried.state === 'changed' ? tried.changes : [];
   return (
     <Section title="Try it on">

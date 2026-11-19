@@ -336,6 +336,8 @@ interface Undoable {
   created: boolean;
   /** The file's content before the save, to put back. */
   before?: Json;
+  /** The file's content just after it: anything else since, and Undo stops. */
+  after?: Json;
   key: EntryKey;
   owned: number;
   /** Where the editor stood before the save. */
@@ -509,6 +511,9 @@ function Editor({
       if (saved.created) {
         await ensureSourcesVisible([WORKSHOP_SOURCE]).catch(() => undefined);
       }
+      // What this save left, so Undo can tell a later write (another tab) and keep it.
+      const after =
+        before === undefined ? undefined : (await homebrewRepo.getSafe(saved.fileId)).file?.json;
       const key = { name: entry.name, source: entry.source };
       const into = files.find((f) => f.id === saved.fileId);
       const title = into !== undefined ? (madeName(into.json) ?? into.fileName) : MY_HOMEBREW;
@@ -521,6 +526,7 @@ function Editor({
               fileId: saved.fileId,
               created: saved.created,
               before,
+              after,
               key,
               owned: owned?.length ?? 0,
               was: {
@@ -563,6 +569,15 @@ function Editor({
           await homebrewRepo.removeEntry(undo.fileId, type, undo.key);
         else await homebrewRepo.delete(undo.fileId);
       } else if (undo.before !== undefined) {
+        // Putting the whole file back would lose anything written to it since.
+        const { file } = await homebrewRepo.getSafe(undo.fileId);
+        if (file === undefined || undo.after === undefined || !same(file.json, undo.after)) {
+          setUndo(undefined);
+          setFailure(
+            'The collection changed after this save (in another tab?), so Undo would lose that. Nothing was taken back.',
+          );
+          return;
+        }
         await homebrewRepo.saveEditable(undo.fileId, undo.before);
       }
       invalidateRegistry();
@@ -756,6 +771,7 @@ function Editor({
       saved={
         undo === undefined ? undefined : { text: undo.text, onUndo: () => void takeBack(), undoing }
       }
+      failure={failure}
       file={{ shown: asFile, onToggle: () => setAsFile((v) => !v), view: fileView }}
       saving={saving}
       canSave={!blocked}
@@ -782,11 +798,6 @@ function Editor({
       </EntryPicks>
       {!readOnly && TRY_ON_TYPES.has(type) && (
         <TryItOn type={type} entry={trying} registry={registry} />
-      )}
-      {failure !== undefined && (
-        <p role="alert" className="rounded-control bg-danger-soft px-3 py-2 text-caption">
-          {failure}
-        </p>
       )}
     </EditorShell>
   );

@@ -225,6 +225,49 @@ describe('the Save bar', () => {
     });
   });
 
+  it('takes nothing back when the collection changed after the save', async () => {
+    const sheet = await renderSheet(sorcerer());
+    await sheet.visit('/workshop/new/feat');
+    await screen.findByLabelText('Name', {}, { timeout: WAIT });
+    nameAndSave('Stand Fast');
+    await screen.findByText(/My homebrew is made/, {}, { timeout: WAIT });
+    const [file] = (await homebrewRepo.ownedSafe()).files;
+    const id = file?.id ?? '';
+    nameAndSave('Hold Fast');
+    await screen.findByText('Saved to My homebrew.', {}, { timeout: WAIT });
+    await waitFor(async () => expect(await featNames(id)).toEqual(['Hold Fast']));
+
+    // Another tab saves into the same collection.
+    await homebrewRepo.saveEntry(
+      'feat',
+      { name: 'Third', source: WORKSHOP_SOURCE },
+      { fileId: id },
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
+    expect((await screen.findByRole('alert', {}, { timeout: WAIT })).textContent).toMatch(
+      /^The collection changed after this save/,
+    );
+    expect(await featNames(id)).toEqual(['Hold Fast', 'Third']);
+    expect(screen.queryByRole('button', { name: 'Undo' })).toBeNull();
+    await waitFor(() =>
+      expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Save' })),
+    );
+  });
+
+  it('says why Save did not happen, with the file shown', async () => {
+    await homebrewRepo.saveEntry('feat', { name: 'Stand Fast', source: WORKSHOP_SOURCE });
+    const sheet = await renderSheet(sorcerer());
+    await sheet.visit('/workshop/new/feat');
+    await screen.findByLabelText('Name', {}, { timeout: WAIT });
+    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Stand Fast' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Show as a file' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    expect((await screen.findByRole('alert', {}, { timeout: WAIT })).textContent).toBe(
+      'You already have a feat called Stand Fast. Choose another name.',
+    );
+    expect(screen.getByRole('textbox', { name: 'The file' })).toBeTruthy();
+  });
+
   it("saves into another collection of the player's when picked", async () => {
     const mine = await homebrewRepo.createEditable('Mine', 'MINE');
     const sheet = await renderSheet(sorcerer());
@@ -285,6 +328,16 @@ describe('the file view', () => {
       },
       { timeout: WAIT },
     );
+  });
+});
+
+describe('Try it on', () => {
+  it('names a sample as the sample', async () => {
+    const sheet = await renderSheet(sorcerer());
+    await sheet.visit('/workshop/new/feat');
+    expect(
+      await screen.findByText(/^Nothing on the sample’s sheet changes\./, {}, { timeout: WAIT }),
+    ).toBeTruthy();
   });
 });
 

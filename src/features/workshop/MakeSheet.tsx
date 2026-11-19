@@ -44,15 +44,15 @@ import { sourceName } from '@/data5e/sourceNames';
 import { homebrewRepo } from '@/db/homebrewRepo';
 import { findEntity } from '@/features/library/findEntity';
 import { textToEntries } from '@/lib/entriesText';
-import { useBack } from '@/lib/useBack';
 import { usePageTitle } from '@/lib/usePageTitle';
+import { errorText } from '@/stores/notices';
 import { buttonClass } from '@/ui/Button';
 import { listClass, listRowClass } from '@/ui/surfaces';
 import { fieldClass } from '@/ui/TextField';
 import { EDITORS, type EditorSpec, type Json } from './editorTypes';
 import { Field } from './fields';
 import { type Finding, readSpellText } from './textReader';
-import { kindOf, labelOf } from './yours';
+import { entriesOf, kindOf, labelOf } from './yours';
 
 const NOTE = 'text-body text-ink-muted';
 const CAPTION = 'text-caption text-ink-muted';
@@ -189,7 +189,14 @@ export function MakeSheet() {
   const [params, setParams] = useSearchParams();
   const location = useLocation();
   const navigate = useNavigate();
-  const leave = useBack('/workshop');
+  // Opened as the tab's first page (a link from outside), Back on the first
+  // step goes up to the Workshop. Read once: stepping back here replaces the
+  // address, and a replace gives even the first entry a new key.
+  const firstEntry = useRef(location.key === 'default');
+  const leave = () => {
+    if (firstEntry.current) void navigate('/workshop', { replace: true });
+    else void navigate(-1);
+  };
   const step = stepOf(params);
   const parent = parentOf(step);
   const heading = useRef<HTMLHeadingElement>(null);
@@ -369,20 +376,25 @@ function FromText({ heading, step }: { heading: HeadingRef; step: Step }) {
   const [text, setText] = useState('');
   const [off, setOff] = useState<ReadonlySet<string>>(new Set());
   const [spec, setSpec] = useState<EditorSpec>();
+  const [specError, setSpecError] = useState<string>();
+  const [specTry, setSpecTry] = useState(0);
   const boxId = useId();
   // The spell's own start (its level and the rest), as From nothing has it.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: specTry asks for the chunk again after Try again.
   useEffect(() => {
     if (kind !== 'spell') return;
     let live = true;
+    setSpecError(undefined);
     EDITORS.get('spell')?.()
       .then((m) => live && setSpec(m.editor))
-      .catch(() => undefined);
+      .catch((err: unknown) => live && setSpecError(errorText(err)));
     return () => {
       live = false;
     };
-  }, [kind]);
+  }, [kind, specTry]);
   const entries = useMemo(() => textToEntries(text), [text]);
-  const reads = kind === 'spell';
+  // Without the reader (its chunk did not load), the text still goes into Text.
+  const reads = kind === 'spell' && specError === undefined;
   const read = useMemo(
     () => (reads && spec !== undefined ? readPasted(spec, entries, off) : undefined),
     [reads, spec, entries, off],
@@ -408,7 +420,21 @@ function FromText({ heading, step }: { heading: HeadingRef; step: Step }) {
           className={`${fieldClass} min-h-48 py-3`}
         />
       </div>
-      {reads && read === undefined ? (
+      {specError !== undefined ? (
+        <div className="flex flex-col items-start gap-2">
+          <p className={NOTE}>
+            The spell reader could not load: {specError}. The text still goes into Text, and you can
+            fill in the rest in the editor.
+          </p>
+          <button
+            type="button"
+            onClick={() => setSpecTry((n) => n + 1)}
+            className={buttonClass({ variant: 'outline', size: 'sm' })}
+          >
+            Try again
+          </button>
+        </div>
+      ) : reads && read === undefined ? (
         <p className={NOTE}>Loading the spell reader…</p>
       ) : read !== undefined ? (
         <section className="flex flex-col gap-2" aria-labelledby={`${boxId}-found`}>
@@ -505,9 +531,17 @@ function Like({ heading, step }: { heading: HeadingRef; step: Step }) {
   const owned = useLiveQuery(() => homebrewRepo.ownedSafe(), []);
   const [q, setQ] = useState('');
   const searchId = useId();
+  // The player's own entries by name and book, as the Workshop's Yours lists
+  // them. Not by book alone: every device's Workshop file is MyHomebrew, so a
+  // friend's imported one shares the book.
   const mine = useMemo(
-    () => new Set((owned?.files ?? []).flatMap((f) => f.sourceIds.map((s) => s.toLowerCase()))),
-    [owned],
+    () =>
+      new Set(
+        entriesOf(owned?.files ?? [])
+          .filter((m) => m.type === kind)
+          .map((m) => uidOf(m.entry).toLowerCase()),
+      ),
+    [owned, kind],
   );
   const words = useMemo(() => q.toLowerCase().split(/\s+/).filter(Boolean), [q]);
   const registry = reg.registry;
@@ -524,7 +558,7 @@ function Like({ heading, step }: { heading: HeadingRef; step: Step }) {
       .map(({ e, i }) => {
         const source = String(e.source ?? '');
         const shelf: Shelf =
-          i < official ? 'books' : mine.has(source.toLowerCase()) ? 'yours' : 'collections';
+          i < official ? 'books' : mine.has(uidOf(e).toLowerCase()) ? 'yours' : 'collections';
         return { e, shelf, source };
       });
   }, [registry, kind, mine, words]);
@@ -613,7 +647,13 @@ function Based({ heading, step }: { heading: HeadingRef; step: Step }) {
   const shown = name ?? pickedName;
   const nameId = useId();
   if (reg.registry === null || packs.status === 'loading') {
-    return <p className={NOTE}>Loading…</p>;
+    // The heading is there from the start, so it can take the keyboard.
+    return (
+      <>
+        <StepHeading heading={heading}>{`A new ${one}, based on ${pickedName}`}</StepHeading>
+        <p className={NOTE}>Loading…</p>
+      </>
+    );
   }
   if (picked === undefined) {
     return (
