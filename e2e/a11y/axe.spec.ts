@@ -499,6 +499,7 @@ test.describe('axe: pages and overlays', () => {
     await animationsSettled(page);
     await scanState(page, 'workshop-make');
     await page.getByRole('link', { name: 'Feats', exact: true }).click();
+    await page.getByRole('link', { name: 'From nothing', exact: true }).click();
     await page.getByRole('textbox', { name: 'Name', exact: true }).fill('Fire Gift');
     await page.getByRole('button', { name: 'Save', exact: true }).click();
     await page.waitForURL(/\/workshop\/edit\/feat\//);

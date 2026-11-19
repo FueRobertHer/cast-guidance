@@ -3,12 +3,12 @@
 // file an entry opens from and saves to when two files hold one by the same
 // name and book.
 import 'fake-indexeddb/auto';
-import { fireEvent, screen, waitFor } from '@testing-library/react';
+import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { characterRepo } from '@/db/characterRepo';
 import type { HomebrewFileRow } from '@/db/db';
-import { homebrewRepo } from '@/db/homebrewRepo';
+import { homebrewRepo, WORKSHOP_SOURCE } from '@/db/homebrewRepo';
 import { isRecord } from '@/engine/castGuidance';
-import { namelessControls } from '../../../tests-fixtures/a11y';
 import {
   HARNESS_TIMEOUT,
   renderSheet,
@@ -53,30 +53,6 @@ async function giftText(fileId: string): Promise<unknown> {
   const gift = feats.find((f) => isRecord(f) && f.name === 'Gift');
   return isRecord(gift) ? gift.entries : undefined;
 }
-
-describe('Make your own, until the Make sheet', () => {
-  it('names every control, each way to make one by its kind', async () => {
-    const sheet = await renderSheet(sorcerer());
-    await sheet.visit('/workshop/new');
-    expect(
-      await screen.findByRole('heading', { level: 1, name: 'Make your own' }, { timeout: WAIT }),
-    ).toBeTruthy();
-    expect(namelessControls()).toEqual([]);
-    expect(screen.getByRole('link', { name: 'Feats' }).getAttribute('href')).toBe(
-      '/workshop/new/feat',
-    );
-    expect(document.title).toBe('Make your own · Workshop · Cast Guidance');
-  });
-
-  it("is where the home's Make your own goes", async () => {
-    const sheet = await renderSheet(sorcerer());
-    await sheet.visit('/workshop');
-    fireEvent.click(await screen.findByRole('link', { name: 'Make your own' }, { timeout: WAIT }));
-    expect(
-      await screen.findByRole('heading', { level: 1, name: 'Make your own' }, { timeout: WAIT }),
-    ).toBeTruthy();
-  });
-});
 
 describe('two entries with one name and book, in two files', () => {
   it('open each from its own row in Yours', async () => {
@@ -144,6 +120,259 @@ describe('two entries with one name and book, in two files', () => {
     const { file } = await homebrewRepo.getSafe(id);
     const feats = Array.isArray(file?.json.feat) ? file.json.feat : [];
     expect(feats.map((f) => isRecord(f) && f.name)).toEqual(['Present']);
+  });
+});
+
+/** The feats a file holds now, by name. */
+async function featNames(fileId: string): Promise<unknown[]> {
+  const { file } = await homebrewRepo.getSafe(fileId);
+  const feats = Array.isArray(file?.json.feat) ? file.json.feat : [];
+  return feats.map((f) => isRecord(f) && f.name);
+}
+
+/** Name the open editor's entry, and save it. */
+function nameAndSave(name: string): void {
+  fireEvent.change(screen.getByLabelText('Name'), { target: { value: name } });
+  fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+}
+
+describe('the Save bar', () => {
+  it('lists what holds Save back, and takes the keyboard to the name', async () => {
+    const sheet = await renderSheet(sorcerer());
+    await sheet.visit('/workshop/new/feat');
+    const name = await screen.findByLabelText('Name', {}, { timeout: WAIT });
+    const list = screen.getByRole('list', { name: 'Before you save' });
+    const problem = within(list).getByRole('button', { name: 'Give it a name to save it.' });
+    expect(screen.getByRole('button', { name: 'Save' }).hasAttribute('disabled')).toBe(true);
+    fireEvent.click(problem);
+    await waitFor(() => expect(document.activeElement).toBe(name));
+
+    fireEvent.change(name, { target: { value: 'Half|Way' } });
+    expect(within(list).getByRole('button', { name: 'A name cannot have | in it.' })).toBeTruthy();
+    fireEvent.change(name, { target: { value: 'Halfway' } });
+    expect(screen.queryByRole('list', { name: 'Before you save' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Save' }).hasAttribute('disabled')).toBe(false);
+  });
+
+  it('makes My homebrew on the first save, and Undo takes it away again', async () => {
+    const sheet = await renderSheet(sorcerer());
+    await sheet.visit('/workshop/new/feat');
+    await screen.findByLabelText('Name', {}, { timeout: WAIT });
+    expect(screen.getByText(/made the first time you save/)).toBeTruthy();
+    expect(screen.getByText('Feat, your own. Not saved yet')).toBeTruthy();
+    nameAndSave('Stand Fast');
+
+    expect(
+      await screen.findByText('Saved. My homebrew is made, on this device.', {}, { timeout: WAIT }),
+    ).toBeTruthy();
+    expect(screen.getByText('Feat, your own. Saved')).toBeTruthy();
+    const { files } = await homebrewRepo.ownedSafe();
+    expect(files.map((f) => f.sourceIds)).toEqual([[WORKSHOP_SOURCE]]);
+
+    const undo = screen.getByRole('button', { name: 'Undo' });
+    undo.focus();
+    fireEvent.click(undo);
+    await waitFor(async () => expect((await homebrewRepo.ownedSafe()).files).toEqual([]), {
+      timeout: WAIT,
+    });
+    // Its row goes, and the keyboard goes on to Save rather than the page.
+    await waitFor(() =>
+      expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Save' })),
+    );
+    expect(
+      await screen.findByText('Feat, your own. Not saved yet', {}, { timeout: WAIT }),
+    ).toBeTruthy();
+    await waitFor(() => expect(sheet.router.state.location.pathname).toBe('/workshop/new/feat'));
+    expect(screen.getByDisplayValue('Stand Fast')).toBeTruthy();
+
+    // Saved again, it is made again, with the one entry.
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(
+      async () => {
+        const [file] = (await homebrewRepo.ownedSafe()).files;
+        expect(file === undefined ? [] : await featNames(file.id)).toEqual(['Stand Fast']);
+      },
+      { timeout: WAIT },
+    );
+  });
+
+  it('puts the file back as it was before a later save, under the name it had', async () => {
+    const sheet = await renderSheet(sorcerer());
+    await sheet.visit('/workshop/new/feat');
+    await screen.findByLabelText('Name', {}, { timeout: WAIT });
+    nameAndSave('Stand Fast');
+    await screen.findByText(/My homebrew is made/, {}, { timeout: WAIT });
+    const [file] = (await homebrewRepo.ownedSafe()).files;
+    const id = file?.id ?? '';
+
+    nameAndSave('Hold Fast');
+    expect(await screen.findByText('Saved to My homebrew.', {}, { timeout: WAIT })).toBeTruthy();
+    await waitFor(async () => expect(await featNames(id)).toEqual(['Hold Fast']));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
+    await waitFor(async () => expect(await featNames(id)).toEqual(['Stand Fast']), {
+      timeout: WAIT,
+    });
+    await waitFor(() =>
+      expect(sheet.router.state.location.pathname).toBe(
+        `/workshop/edit/feat/Stand%20Fast%7C${WORKSHOP_SOURCE}`,
+      ),
+    );
+    // The editor still has the new name, and saving it again replaces the old one.
+    expect(screen.getByDisplayValue('Hold Fast')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(async () => expect(await featNames(id)).toEqual(['Hold Fast']), {
+      timeout: WAIT,
+    });
+  });
+
+  it('puts a character back on the old name when it takes a rename back', async () => {
+    const doc = sorcerer();
+    doc.feats = [{ ref: { name: 'Stand Fast', source: WORKSHOP_SOURCE }, instanceId: 'f1' }];
+    const sheet = await renderSheet(doc);
+    await sheet.visit('/workshop/new/feat');
+    await screen.findByLabelText('Name', {}, { timeout: WAIT });
+    nameAndSave('Stand Fast');
+    await screen.findByText(/My homebrew is made/, {}, { timeout: WAIT });
+    const [file] = (await homebrewRepo.ownedSafe()).files;
+    const id = file?.id ?? '';
+    const held = async () => (await characterRepo.get(doc.id))?.feats.map((f) => f.ref.name);
+    const { file: first } = await homebrewRepo.getSafe(id);
+
+    // The rename takes the character with it.
+    nameAndSave('Hold Fast');
+    await screen.findByText('Saved to My homebrew.', {}, { timeout: WAIT });
+    await waitFor(async () => expect(await held()).toEqual(['Hold Fast']), { timeout: WAIT });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
+    // The Undo row goes once both writes are done.
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Undo' })).toBeNull(), {
+      timeout: WAIT,
+    });
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(await held()).toEqual(['Stand Fast']);
+    expect((await homebrewRepo.getSafe(id)).file?.json).toEqual(first?.json);
+  });
+
+  it('takes nothing back when the collection changed after the save', async () => {
+    const sheet = await renderSheet(sorcerer());
+    await sheet.visit('/workshop/new/feat');
+    await screen.findByLabelText('Name', {}, { timeout: WAIT });
+    nameAndSave('Stand Fast');
+    await screen.findByText(/My homebrew is made/, {}, { timeout: WAIT });
+    const [file] = (await homebrewRepo.ownedSafe()).files;
+    const id = file?.id ?? '';
+    nameAndSave('Hold Fast');
+    await screen.findByText('Saved to My homebrew.', {}, { timeout: WAIT });
+    await waitFor(async () => expect(await featNames(id)).toEqual(['Hold Fast']));
+
+    // Another tab saves into the same collection.
+    await homebrewRepo.saveEntry(
+      'feat',
+      { name: 'Third', source: WORKSHOP_SOURCE },
+      { fileId: id },
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
+    expect((await screen.findByRole('alert', {}, { timeout: WAIT })).textContent).toMatch(
+      /^The collection changed after this save/,
+    );
+    expect(await featNames(id)).toEqual(['Hold Fast', 'Third']);
+    expect(screen.queryByRole('button', { name: 'Undo' })).toBeNull();
+    await waitFor(() =>
+      expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Save' })),
+    );
+  });
+
+  it('says why Save did not happen, with the file shown', async () => {
+    const sheet = await renderSheet(sorcerer());
+    for (const [type, said] of [
+      ['feat', 'a feat'],
+      ['item', 'an item'],
+    ] as const) {
+      await homebrewRepo.saveEntry(type, { name: 'Stand Fast', source: WORKSHOP_SOURCE });
+      await sheet.visit(`/workshop/new/${type}`);
+      fireEvent.change(await screen.findByLabelText('Name', {}, { timeout: WAIT }), {
+        target: { value: 'Stand Fast' },
+      });
+      fireEvent.click(screen.getByRole('button', { name: 'Show as a file' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+      expect((await screen.findByRole('alert', {}, { timeout: WAIT })).textContent).toBe(
+        `You already have ${said} called Stand Fast. Choose another name.`,
+      );
+      expect(screen.getByRole('textbox', { name: 'The file' })).toBeTruthy();
+    }
+  });
+
+  it("saves into another collection of the player's when picked", async () => {
+    const mine = await homebrewRepo.createEditable('Mine', 'MINE');
+    const sheet = await renderSheet(sorcerer());
+    await sheet.visit('/workshop/new/feat');
+    await screen.findByLabelText('Name', {}, { timeout: WAIT });
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Saves to My homebrew. Pick another collection' }),
+    );
+    const dialog = await screen.findByRole('dialog', { name: 'Saves to' }, { timeout: WAIT });
+    fireEvent.click(within(dialog).getByRole('button', { name: /^Mine/ }));
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: 'Saves to Mine. Pick another collection' }),
+      ).toBeTruthy(),
+    );
+    nameAndSave('Stand Fast');
+    await waitFor(async () => expect(await featNames(mine.id)).toEqual(['Stand Fast']), {
+      timeout: WAIT,
+    });
+    expect((await homebrewRepo.ownedSafe()).files.map((f) => f.id)).toEqual([mine.id]);
+    expect(await screen.findByText('Saved to Mine.', {}, { timeout: WAIT })).toBeTruthy();
+  });
+});
+
+describe('the file view', () => {
+  it('shows the entry as Save writes it, and an edit there comes back to the form', async () => {
+    const sheet = await renderSheet(sorcerer());
+    await sheet.visit('/workshop/new/feat');
+    fireEvent.change(await screen.findByLabelText('Name', {}, { timeout: WAIT }), {
+      target: { value: 'Stand Fast' },
+    });
+    const toggle = screen.getByRole('button', { name: 'Show as a file' });
+    fireEvent.click(toggle);
+    expect(toggle.getAttribute('aria-pressed')).toBe('true');
+    const box = screen.getByRole('textbox', { name: 'The file' }) as HTMLTextAreaElement;
+    const shown: unknown = JSON.parse(box.value);
+    expect(shown).toMatchObject({ name: 'Stand Fast', source: WORKSHOP_SOURCE });
+
+    // Half typed, the form keeps the last that read.
+    fireEvent.change(box, { target: { value: '{ "name": "Hold' } });
+    expect(screen.getByText(/^Not read yet/)).toBeTruthy();
+    // The source is the collection's, whatever the file says.
+    fireEvent.change(box, {
+      target: { value: JSON.stringify({ name: 'Hold Fast', source: 'ELSE', entries: ['Hold.'] }) },
+    });
+    expect(screen.queryByText(/^Not read yet/)).toBeNull();
+    expect(screen.getByRole('heading', { level: 1, name: 'Hold Fast' })).toBeTruthy();
+    fireEvent.click(toggle);
+    expect(screen.getByDisplayValue('Hold Fast')).toBeTruthy();
+    nameAndSave('Hold Fast');
+    await waitFor(
+      async () => {
+        const [file] = (await homebrewRepo.ownedSafe()).files;
+        const { file: saved } = await homebrewRepo.getSafe(file?.id ?? '');
+        expect(saved?.json.feat).toEqual([
+          expect.objectContaining({ name: 'Hold Fast', source: WORKSHOP_SOURCE }),
+        ]);
+      },
+      { timeout: WAIT },
+    );
+  });
+});
+
+describe('Try it on', () => {
+  it('names a sample as the sample', async () => {
+    const sheet = await renderSheet(sorcerer());
+    await sheet.visit('/workshop/new/feat');
+    expect(
+      await screen.findByText(/^Nothing on the sample’s sheet changes\./, {}, { timeout: WAIT }),
+    ).toBeTruthy();
   });
 });
 
