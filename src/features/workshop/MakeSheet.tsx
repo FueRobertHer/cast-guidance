@@ -194,14 +194,12 @@ export function MakeSheet() {
   const parent = parentOf(step);
   const heading = useRef<HTMLHeadingElement>(null);
   const where = query(step);
-  const first = useRef(true);
-  // Each step's heading takes the keyboard, so the next step is where it is.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: where is the step that changed.
+  // Each step's heading takes the keyboard when the step changes, so the next
+  // step is where it is; arriving on the page leaves focus as the app has it.
+  const shown = useRef(where);
   useEffect(() => {
-    if (first.current) {
-      first.current = false;
-      return;
-    }
+    if (shown.current === where) return;
+    shown.current = where;
     heading.current?.focus();
   }, [where]);
 

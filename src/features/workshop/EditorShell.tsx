@@ -15,8 +15,8 @@ import {
   GitFork,
   Layers,
 } from 'lucide-react';
-import type { ReactNode } from 'react';
-import { Button } from '@/ui/Button';
+import { type ReactNode, useEffect, useRef } from 'react';
+import { Button, buttonClass } from '@/ui/Button';
 
 const ICON = 'tap shrink-0 rounded-control text-ink-muted hover:bg-surface-raised hover:text-ink';
 
@@ -102,6 +102,15 @@ export function EditorShell({
   onSave: () => void;
 }) {
   const sorted = [...problems].sort((a, b) => Number(b.blocks) - Number(a.blocks));
+  const saveButton = useRef<HTMLButtonElement>(null);
+  // Undo takes its own row away: the keyboard goes on to Save, not the page.
+  const undid = useRef(false);
+  const undone = saved === undefined;
+  useEffect(() => {
+    if (!undone || !undid.current) return;
+    undid.current = false;
+    saveButton.current?.focus();
+  }, [undone]);
   return (
     <main className="flex min-h-dvh flex-col">
       <div className="mx-auto flex w-full max-w-2xl flex-1 flex-col gap-4 px-4 pt-3 pb-6">
@@ -154,8 +163,12 @@ export function EditorShell({
                 <Button
                   variant="outline"
                   size="sm"
-                  disabled={saved.undoing === true}
-                  onClick={saved.onUndo}
+                  aria-disabled={saved.undoing === true || undefined}
+                  onClick={() => {
+                    if (saved.undoing === true) return;
+                    undid.current = true;
+                    saved.onUndo?.();
+                  }}
                 >
                   Undo
                 </Button>
@@ -167,9 +180,17 @@ export function EditorShell({
               <Layers size={16} aria-hidden className="shrink-0" />
               <div className="min-w-0 flex-1">{savesTo}</div>
             </div>
-            <Button variant="brand" size="lg" disabled={!canSave || saving} onClick={onSave}>
+            {/* Not disabled while saving: a disabled button drops the keyboard to the page. */}
+            <button
+              ref={saveButton}
+              type="button"
+              disabled={!canSave}
+              aria-disabled={saving || undefined}
+              onClick={saving ? undefined : onSave}
+              className={buttonClass({ variant: 'brand', size: 'lg' })}
+            >
               {saving ? 'Saving…' : saveLabel}
-            </Button>
+            </button>
           </div>
           {footnote !== undefined && <p className="text-caption text-ink-muted">{footnote}</p>}
         </div>

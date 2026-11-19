@@ -109,6 +109,28 @@ export function wearing(doc: CharacterDoc, type: string, entry: Json): Character
   }
 }
 
+/**
+ * `doc` already holds an entry by this name and book: the sheet before is
+ * worked out with the saved one, so the result is what the changes do.
+ */
+export function holds(doc: CharacterDoc, type: string, entry: Json): boolean {
+  const ref = { name: String(entry.name ?? ''), source: String(entry.source ?? '') };
+  switch (type) {
+    case 'item':
+      return doc.equipment.some((e) => sameRef(e.ref, ref));
+    case 'feat':
+      return doc.feats.some((f) => sameRef(f.ref, ref));
+    case 'race':
+      return sameRef(doc.race, ref);
+    case 'background':
+      return sameRef(doc.background, ref);
+    case 'condition':
+      return doc.play.conditions.some((c) => lower(c.id) === lower(ref.name));
+    default:
+      return false;
+  }
+}
+
 /** How the entry is held, as the result says it. */
 const HELD: Readonly<Record<string, (entry: Json) => string>> = {
   item: (e) => (needsAttunement(e) ? 'Worn and attuned.' : 'Worn.'),
@@ -279,8 +301,8 @@ export function samplesOf(ctx: Pick<EngineContext, 'byType'>): Wearer[] {
 
 /** What trying `entry` on `doc` shows. */
 export type Tried =
-  | { state: 'changed'; changes: Change[]; missing: boolean }
-  | { state: 'none'; missing: boolean }
+  | { state: 'changed'; changes: Change[]; missing: boolean; already: boolean }
+  | { state: 'none'; missing: boolean; already: boolean }
   | { state: 'failed'; text: string };
 
 export function tryOn(ctx: EngineContext, doc: CharacterDoc, type: string, entry: Json): Tried {
@@ -292,9 +314,10 @@ export function tryOn(ctx: EngineContext, doc: CharacterDoc, type: string, entry
     const now = deriveSheet(on, withIt);
     const missing = hasMissingData(missingCharacterData(on, withIt));
     const changes = changesOn(was, now);
+    const already = holds(doc, type, entry);
     return changes.length === 0
-      ? { state: 'none', missing }
-      : { state: 'changed', changes, missing };
+      ? { state: 'none', missing, already }
+      : { state: 'changed', changes, missing, already };
   } catch (err) {
     return { state: 'failed', text: errorText(err) };
   }
@@ -362,14 +385,20 @@ export function TryItOn({
       <div className="flex flex-col gap-2 rounded-card bg-surface p-3 ring-1 ring-line ring-inset">
         <p className="text-caption text-ink-muted">
           {HELD[type]?.(entry)} {who.note}
+          {tried.state !== 'failed' &&
+            tried.already &&
+            ` ${name} already has it as saved: this is what your changes since do.`}
         </p>
         {tried.state === 'failed' && (
           <p className="text-body">The sheet could not be worked out with it: {tried.text}.</p>
         )}
         {tried.state === 'none' && (
           <p className="text-body">
-            Nothing on {name}&rsquo;s sheet changes. An effect that counts only at some times (Only
-            while, Counts when) shows on the sheet then.
+            {tried.already
+              ? `Your changes move nothing on ${name}’s sheet.`
+              : `Nothing on ${name}’s sheet changes.`}{' '}
+            An effect that counts only at some times (Only while, Counts when) shows on the sheet
+            then.
           </p>
         )}
         {changes.length > 0 && (

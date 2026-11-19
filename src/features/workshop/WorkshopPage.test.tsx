@@ -168,10 +168,16 @@ describe('the Save bar', () => {
     const { files } = await homebrewRepo.ownedSafe();
     expect(files.map((f) => f.sourceIds)).toEqual([[WORKSHOP_SOURCE]]);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
+    const undo = screen.getByRole('button', { name: 'Undo' });
+    undo.focus();
+    fireEvent.click(undo);
     await waitFor(async () => expect((await homebrewRepo.ownedSafe()).files).toEqual([]), {
       timeout: WAIT,
     });
+    // Its row goes, and the keyboard goes on to Save rather than the page.
+    await waitFor(() =>
+      expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Save' })),
+    );
     expect(
       await screen.findByText('Feat, your own. Not saved yet', {}, { timeout: WAIT }),
     ).toBeTruthy();

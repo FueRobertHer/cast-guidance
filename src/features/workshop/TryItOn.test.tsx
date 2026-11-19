@@ -36,6 +36,23 @@ describe('Try it on', () => {
     expect(changes).toContainEqual({ label: 'Athletics', now: '+4', was: '−1', way: 'up' });
   });
 
+  it('shows what the changes do for a character who already wears the saved one', () => {
+    const saved = {
+      ...grip,
+      castGuidance: { v: 1, effects: [{ kind: 'abilityMin', ability: 'str', min: 17 }] },
+    };
+    const ctx = withEntry(makeTestContext(), 'item', saved);
+    const wears = wearing(hild(), 'item', saved) ?? hild();
+    const tried = tryOn(ctx, wears, 'item', grip);
+    expect(tried).toMatchObject({ state: 'changed', already: true });
+    expect(tried.state === 'changed' && tried.changes[0]).toMatchObject({
+      label: 'Strength',
+      now: '19',
+      was: '17',
+    });
+    expect(tryOn(ctx, hild(), 'item', grip)).toMatchObject({ already: false });
+  });
+
   it('says nothing changes for a character whose own score is higher', () => {
     const strong = hild();
     strong.abilities.base.str = 20;
