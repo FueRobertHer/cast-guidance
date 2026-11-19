@@ -21,6 +21,17 @@ vi.mock('@/data5e/hooks', () => ({
 }));
 vi.mock('@/db/characterRepo', () => ({ characterRepo: {} }));
 vi.mock('@/db/homebrewRepo', () => ({ homebrewRepo: {} }));
+// A character whose view cannot be built, to see the roster skip that row alone.
+vi.mock('@/data5e/engineAdapter', async (importOriginal) => {
+  const real = await importOriginal<typeof import('@/data5e/engineAdapter')>();
+  return {
+    ...real,
+    engineContextFor: (...args: Parameters<typeof real.engineContextFor>) => {
+      if (args[2]?.id === 'broken') throw new Error('this view cannot be built');
+      return real.engineContextFor(...args);
+    },
+  };
+});
 
 import { Component as CharacterListPage } from './CharacterListPage';
 
@@ -113,5 +124,18 @@ describe('the roster’s HP', () => {
     // d12 at level 1 with Constitution 14: 14; the change adds 2.
     expect(screen.getByText('Hild')).toBeTruthy();
     expect(hpLines()).toEqual(['10 / 14 HP', '10 / 16 HP']);
+  });
+
+  it('skips a character whose view cannot be built, and keeps the others', () => {
+    live.registry = registryWithChange();
+    live.characters = [barbarian('broken', 'Brok'), barbarian('maren', 'Maren')];
+    dataStatusStore.setState({ phase: 'done' });
+    render(
+      <RouterProvider
+        router={createMemoryRouter([{ path: '/', element: <CharacterListPage /> }])}
+      />,
+    );
+    expect(screen.getByText('Brok')).toBeTruthy();
+    expect(hpLines()).toEqual(['10 / 16 HP']);
   });
 });

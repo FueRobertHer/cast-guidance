@@ -88,12 +88,14 @@ const packFile = (code = 'TBL') => ({
 });
 
 interface Build {
-  changes?: boolean;
+  changes?: boolean | Entity[];
   pack?: PackAppliesTo;
   off?: DeviceOffFile[];
+  /** More files switched on for the device, after its pack: what a view of them switched off must match. */
+  on?: DeviceOffFile[];
 }
 
-function shared({ changes = true, pack, off = [] }: Build = {}): EntityRegistry {
+function shared({ changes = true, pack, off = [], on = [] }: Build = {}): EntityRegistry {
   const reg = normalizeDataset(release());
   reg.setRuleSets([{ name: 'Base', source: 'APP' }]);
   // An imported collection's content, after the books', so the official part is not the whole list.
@@ -103,17 +105,24 @@ function shared({ changes = true, pack, off = [] }: Build = {}): EntityRegistry 
       { _meta: { sources: [{ json: 'HB' }] }, spell: [{ name: 'Lucky Find', source: 'HB' }] },
     ],
   ]);
+  const packs = new Map(pack === undefined ? [] : [['pack', { appliesTo: pack }]]);
   if (pack !== undefined) files.set('pack', packFile());
-  if (changes) files.set('changes', changesFile({ spell: [aidChange()] }));
-  mergeHomebrew(
-    reg,
-    files,
-    new Map(pack === undefined ? [] : [['pack', { appliesTo: pack }]]),
-    new Set(changes ? ['changes'] : []),
-  );
+  for (const f of on) {
+    files.set(f.id, structuredClone(f.json));
+    if (f.pack !== undefined) packs.set(f.id, f.pack);
+  }
+  const changeFiles = new Set(on.filter((f) => f.role === 'changes').map((f) => f.id));
+  if (changes !== false) {
+    files.set('changes', changesFile({ spell: changes === true ? [aidChange()] : changes }));
+    changeFiles.add('changes');
+  }
+  mergeHomebrew(reg, files, packs, changeFiles);
   setDeviceOffFiles(reg, off);
   return reg;
 }
+
+/** The registry with these files switched on for the device. */
+const deviceOn = (build: Build) => shared(build);
 
 const hild = { id: 'hild', sourceSwitches: { off: ['MyChanges'] } };
 const maren = { id: 'maren' };
@@ -148,7 +157,10 @@ describe('a character with Changes to the books off', () => {
   });
 
   it('holds everything else the shared registry holds, as it holds it', () => {
-    const reg = shared();
+    const reg = shared({ pack: { characters: ['maren'] } });
+    reg.setRuleSets(reg.byType(RULE_SET_TYPE), true);
+    reg.warnings.push({ entity: 'Lost|HB', message: 'a warning of the shared build' });
+    expect(reg.byType(RULE_PACK_TYPE)).toHaveLength(1);
     const hers = registryViewFor(reg, hild);
     const sharedAid = reg.get('spell', 'Aid', 'XPHB');
     expect(hers.counts()).toEqual(reg.counts());
@@ -164,8 +176,9 @@ describe('a character with Changes to the books off', () => {
     expect(hers.rulesBooks).toBe(reg.rulesBooks);
     expect(hers.byType(RULE_PACK_TYPE)).toEqual(reg.byType(RULE_PACK_TYPE));
     expect(hers.byType(RULE_SET_TYPE)).toEqual(reg.byType(RULE_SET_TYPE));
-    expect(hers.ruleSetsFailed).toBe(reg.ruleSetsFailed);
+    expect(hers.ruleSetsFailed).toBe(true);
     expect(hers.warnings).toEqual(expect.arrayContaining(reg.warnings));
+    expect(hers.warnings).toContainEqual(expect.objectContaining({ entity: 'Lost|HB' }));
   });
 });
 
@@ -244,10 +257,12 @@ describe('a collection switched off on the device', () => {
     const his = registryViewFor(reg, osk);
     expect(his.get('feat', 'Ogre’s Grip', 'KIB')?.entries).toEqual(['You grip.']);
     expect(his.byType('feat').filter((f) => f.source === 'KIB')).toHaveLength(1);
-    // Its copies resolve against his view, the player's change included.
-    expect((his.get('spell', 'Kindly Aid', 'KIB')?.entries as string[])[1]).toContain(
-      'increase by 10',
-    );
+    // Its copies read the book, as they would with the file on for the
+    // device: no copy finds a change (E3).
+    const copied = (r: EntityRegistry) =>
+      (r.get('spell', 'Kindly Aid', 'KIB')?.entries as string[])[1];
+    expect(copied(his)).toBe(AID_TEXT);
+    expect(copied(his)).toBe(copied(deviceOn({ on: [kibbles()] })));
     expect(his.sourceCounts().get('KIB')).toBe(2);
     // The changes it picks as the shared registry does are the shared registry's own.
     expect(his.get('spell', 'Aid', 'XPHB')).toBe(reg.get('spell', 'Aid', 'XPHB'));
@@ -274,6 +289,51 @@ describe('a collection switched off on the device', () => {
     const reg = shared({ pack: { characters: ['maren'] }, off: [offPack] });
     const his = registryViewFor(reg, { id: 'osk', sourceSwitches: { on: ['OFF'] } });
     expect(his.byType(RULE_PACK_TYPE).map((p) => p.source)).toEqual(['TBL', 'OFF']);
+  });
+
+  /** A pack setting Aid's level, which replaces the book's for the characters it applies to. */
+  const levelPack = (level: number, appliesTo: PackAppliesTo): DeviceOffFile => ({
+    id: 'offpack',
+    json: {
+      _meta: {
+        sources: [{ json: 'OFF' }],
+        castGuidance: { v: 1, replaces: [{ type: 'spell', name: 'Aid', source: 'XPHB' }] },
+      },
+      spell: [{ name: 'Aid', source: 'XPHB', level, _copy: { name: 'Aid', source: 'XPHB' } }],
+    },
+    pack: { appliesTo },
+  });
+  const levelChange = (level: number) => {
+    const aid = bookAid();
+    return [writeChange('spell', aid, { ...aid, level })];
+  };
+  const levelOf = (reg: EntityRegistry) => reg.get('spell', 'Aid', 'XPHB')?.level;
+  const aidRecords = (reg: EntityRegistry) =>
+    reg.changedEntries().filter((r) => r.base.name === 'Aid');
+  const turnsOn = (id: string) => ({ id, sourceSwitches: { on: ['OFF'] } });
+
+  it('stacks its pack’s changes under the player’s own, as the device would', () => {
+    const every = { characters: [], appDefault: true };
+    const reg = shared({ changes: levelChange(3), off: [levelPack(4, every)] });
+    const his = registryViewFor(reg, turnsOn('osk'));
+    const device = deviceOn({ changes: levelChange(3), on: [levelPack(4, every)] });
+    expect(levelOf(device)).toBe(3);
+    expect(levelOf(his)).toBe(levelOf(device));
+    expect(aidRecords(his)).toHaveLength(1);
+    expect(aidRecords(his)[0]?.layers.map((l) => l.from.kind)).toEqual(['pack', 'changes']);
+    expect(aids(his)).toHaveLength(1);
+  });
+
+  it('gives its pack’s changes to the characters its Apply to names, as the device would', () => {
+    const reg = shared({ changes: false, off: [levelPack(9, { characters: ['osk'] })] });
+    const device = deviceOn({ changes: false, on: [levelPack(9, { characters: ['osk'] })] });
+    expect(levelOf(registryViewFor(device, { id: 'osk' }))).toBe(9);
+    expect(levelOf(registryViewFor(reg, turnsOn('osk')))).toBe(9);
+    // Ula turns it on too, after Osk, but the pack does not name her.
+    const hers = registryViewFor(reg, turnsOn('ula'));
+    expect(levelOf(hers)).toBe(2);
+    expect(hers.get('spell', 'Aid', 'XPHB')).toBe(reg.get('spell', 'Aid', 'XPHB'));
+    expect(registryViewFor(reg, turnsOn('osk'))).not.toBe(hers);
   });
 
   it('as Changes to the books, places its changes rather than adding a second Aid', () => {

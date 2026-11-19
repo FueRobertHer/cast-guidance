@@ -331,9 +331,8 @@ work:
   out: a file switched off on the device merges after the files switched on,
   so it loses a name tie with them, and an entry it shares with one is listed
   twice in that character's pickers; such a file's rule pack lists after the
-  device's packs, and its `replaces` reach a character only when the pack
-  applies to every character; copies of a changed entry keep the version they
-  were copied from (E3), whatever the character's switch.
+  device's packs; copies of a changed entry keep the version they were copied
+  from (E3), whatever the character's switch.
 
 ### Maintainability and diagnostics
 

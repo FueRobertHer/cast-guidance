@@ -18,7 +18,7 @@
  * built from, so characters picking alike share one.
  */
 import { RULE_PACK_TYPE, RULE_SET_TYPE } from '@/engine/castGuidance';
-import { withReplaceBudget } from './copyMod';
+import { type Entity, withReplaceBudget } from './copyMod';
 import {
   type ChangedEntry,
   type ChangeLayer,
@@ -91,16 +91,21 @@ export function registryViewFor(
   const switches = characterSourceSwitches(character.sourceSwitches);
   const off = new Set(switches.off.map(lower));
   const on = new Set(switches.on.map(lower));
+  const picks = (l: ChangeLayer) => reaches(l, character.id, off);
   const records = shared.changedEntries();
-  const picks = records.map((r) => r.layers.filter((l) => reaches(l, character.id, off)));
+  const picked = records.map((r) => r.layers.filter(picks));
   const extras = (OFF_FILES.get(shared) ?? []).filter((f) =>
     declared(f.json).some((s) => on.has(s)),
   );
-  if (extras.length === 0 && records.every((r, i) => sameAsShared(r, picks[i] ?? [])))
+  if (extras.length === 0 && records.every((r, i) => sameAsShared(r, picked[i] ?? [])))
     return shared;
   const key = [
-    ...records.map((r, i) => r.layers.map((l) => (picks[i]?.includes(l) ? 1 : 0)).join('')),
-    ...extras.map((f) => f.id),
+    ...records.map((r, i) => r.layers.map((l) => (picked[i]?.includes(l) ? 1 : 0)).join('')),
+    // A file switched off brings changes of its own, which its pack's Apply to
+    // and the switches pick: a view with one is that character's own.
+    ...(extras.length === 0
+      ? []
+      : ['|', ...extras.map((f) => f.id), `@${character.id}`, [...off].sort().join('+')]),
   ].join(',');
   let views = VIEWS.get(shared);
   if (views === undefined) VIEWS.set(shared, (views = new Map()));
@@ -114,21 +119,12 @@ export function registryViewFor(
 }
 
 /**
- * A registry holding what `shared` holds, through its own public surface, with
- * each changed entry stacked from the layers picked for it, then the device-off
- * files merged on top. A record with no layer picked leaves its base in place
- * and unrecorded, so the character's sheet shows no change there.
+ * Fill `view` with what `from` holds, through its public surface, each entry
+ * `back` names put back as the entry below its changes.
  */
-function buildView(
-  shared: EntityRegistry,
-  records: readonly ChangedEntry[],
-  picks: readonly (readonly ChangeLayer[])[],
-  extras: readonly DeviceOffFile[],
-): EntityRegistry {
-  const view = new EntityRegistry();
-  const base = new Map(records.map((r) => [r.placed, r.base]));
-  const lists = (Object.keys(shared.counts()) as EntityType[]).map(
-    (t) => [t, shared.byType(t).map((e) => base.get(e) ?? e), shared.officialCount(t)] as const,
+function copyInto(view: EntityRegistry, from: EntityRegistry, back: Map<Entity, Entity>): void {
+  const lists = (Object.keys(from.counts()) as EntityType[]).map(
+    (t) => [t, from.byType(t).map((e) => back.get(e) ?? e), from.officialCount(t)] as const,
   );
   // Official first and sealed, so `officialCount` reads as the shared one does.
   for (const [t, list, official] of lists) view.addAll(t, list.slice(0, official));
@@ -136,36 +132,76 @@ function buildView(
   for (const [t, list, official] of lists) {
     if (list.length > official) view.addAll(t, list.slice(official));
   }
-  for (const w of shared.warnings) view.warnings.push(w);
-  view.rulesBooks = shared.rulesBooks;
-  view.setRulePacks(shared.byType(RULE_PACK_TYPE));
-  view.setRuleSets(shared.byType(RULE_SET_TYPE), shared.ruleSetsFailed);
-  withReplaceBudget(() => {
-    records.forEach((r, i) => {
-      const layers = picks[i] ?? [];
-      if (layers.length === 0) return;
-      const placed = sameAsShared(r, layers)
-        ? r.placed
-        : stackChanges(
-            r.type,
-            r.base,
-            layers.map((l) => l.entry),
-            view.warnings,
-          );
-      view.placeChange({ ...r, layers, placed });
-    });
-  });
+  for (const w of from.warnings) view.warnings.push(w);
+  view.rulesBooks = from.rulesBooks;
+  view.setRulePacks(from.byType(RULE_PACK_TYPE));
+  view.setRuleSets(from.byType(RULE_SET_TYPE), from.ruleSetsFailed);
+}
+
+/**
+ * A registry holding what `shared` holds, with each changed entry stacked from
+ * the layers picked for it. A record with no layer picked leaves its base in
+ * place and unrecorded, so the character's sheet shows no change there.
+ *
+ * The device-off files merge as the device would merge them switched on:
+ * into the entries below every change, so their copies read the books (no copy
+ * finds a change, E3), and their changes stack with the shared ones, every
+ * pack's first and the player's own on top.
+ */
+function buildView(
+  shared: EntityRegistry,
+  records: readonly ChangedEntry[],
+  picks: (layer: ChangeLayer) => boolean,
+  extras: readonly DeviceOffFile[],
+): EntityRegistry {
+  let from = shared;
+  let back = new Map(records.map((r) => [r.placed, r.base]));
+  let theirs: readonly ChangedEntry[] = [];
   if (extras.length > 0) {
-    const packs = view.byType(RULE_PACK_TYPE);
+    const merged = new EntityRegistry();
+    copyInto(merged, shared, back);
+    const packs = merged.byType(RULE_PACK_TYPE);
     mergeHomebrew(
-      view,
+      merged,
       // A copy each time: the merge resolves an entry's copy in place.
       new Map(extras.map((f) => [f.id, structuredClone(f.json)])),
       new Map(extras.flatMap((f) => (f.pack === undefined ? [] : [[f.id, f.pack] as const]))),
       new Set(extras.filter((f) => f.role === 'changes').map((f) => f.id)),
     );
     // The merge lists the packs of the files it was given; the device's come first.
-    view.setRulePacks([...packs, ...view.byType(RULE_PACK_TYPE)]);
+    merged.setRulePacks([...packs, ...merged.byType(RULE_PACK_TYPE)]);
+    // The changes placed there are the off files' alone: put their entries
+    // back, to stack each with the shared changes over the same entry.
+    theirs = merged.changedEntries();
+    back = new Map(theirs.map((x) => [x.placed, x.base]));
+    from = merged;
   }
+  const view = new EntityRegistry();
+  copyInto(view, from, back);
+  const over = new Map(theirs.map((x) => [x.base, x]));
+  const all = [
+    ...records.map((r) => [r, over.get(r.base)] as const),
+    ...theirs.filter((x) => !records.some((r) => r.base === x.base)).map((x) => [x] as const),
+  ];
+  withReplaceBudget(() => {
+    for (const [r, x] of all) {
+      const every = [...r.layers, ...(x?.layers ?? [])];
+      const layers = [
+        ...every.filter((l) => l.from.kind === 'pack'),
+        ...every.filter((l) => l.from.kind !== 'pack'),
+      ].filter(picks);
+      if (layers.length === 0) continue;
+      const placed =
+        x === undefined && sameAsShared(r, layers)
+          ? r.placed
+          : stackChanges(
+              r.type,
+              r.base,
+              layers.map((l) => l.entry),
+              view.warnings,
+            );
+      view.placeChange({ ...r, layers, placed });
+    }
+  });
   return view;
 }

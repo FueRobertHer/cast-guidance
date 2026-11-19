@@ -344,9 +344,9 @@ export function Component() {
     if (registry === null) return map;
     for (const c of characters) {
       if (classesOf(c).length === 0) continue;
-      // Each character's own view of the data: the versions its switches pick.
-      const ctx = engineContextFor(registry, undefined, c);
       try {
+        // Each character's own view of the data: the versions its switches pick.
+        const ctx = engineContextFor(registry, undefined, c);
         // No numbers from files that have not arrived (see `missingCharacterData`).
         // Once the whole compendium is here, what is still missing is not coming,
         // and the row says what the sheet says.
