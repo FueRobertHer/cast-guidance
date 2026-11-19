@@ -236,11 +236,16 @@ function olderChargesUpgrade(entry: DataEntity): DataEntity | undefined {
   // Nothing else may name the pool, by its key or the card's name, which the
   // new one does not stand in for: a `charges` effect already there names it
   // by its kind, a use with no price spends the pool sharing its name, and a
-  // moment finds one by key or name. An action may where the sheet moves it
-  // to the new pool (`movedOut`). Nor may an action be named by level, in
-  // words no check here reads.
-  if (typeof pool.label !== 'string') return undefined;
-  const names = new Set([ITEM_CHARGES, pool.label.trim().toLowerCase()]);
+  // moment finds one by key or name. Nor the new pool by its name ("<item>
+  // charges", as `collectItems` names it), which nothing found before. An
+  // action may where the sheet moves it to the new pool (`movedOut`). Nor may
+  // an action be named by level, in words no check here reads.
+  if (typeof pool.label !== 'string' || typeof entry.name !== 'string') return undefined;
+  const names = new Set([
+    ITEM_CHARGES,
+    pool.label.trim().toLowerCase(),
+    `${entry.name} charges`.trim().toLowerCase(),
+  ]);
   const { effects: _effects, ...outside } = g;
   const others = effects.filter((e) => e !== pool && !spends(e)).map(movedOut);
   if (others.some((e) => namesPool(e, names)) || namesPool(outside, names)) return undefined;

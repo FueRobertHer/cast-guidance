@@ -282,6 +282,8 @@ describe('upgradeOlderCharges: what is left as it was', () => {
       ],
     ],
     ['a card with no name', [{ ...POOL, label: undefined }, CARD]],
+    // The new pool's name, which nothing found before.
+    ['an action named as the new pool', [POOL, CARD, { ...UNPRICED, label: 'OLD WAND charges ' }]],
   ])('%s', (_why, effects) => {
     expect(converted(older(effects))).toBe(undefined);
   });
