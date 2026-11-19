@@ -1,7 +1,20 @@
-/** Board 4's armor, hit points and defenses: Armor Class, the hit point maximum, damage and conditions. */
+/**
+ * Board 4's armor, hit points and defenses: Armor Class and other ways to work
+ * it out, the hit point maximum, damage and conditions.
+ */
 
+import { AbilityTicks } from './kit/abilityTicks';
 import type { KindSpec, Options } from './kit/types';
-import { amount, amountField, byAnswerWords, isByAnswer } from './kit/words';
+import {
+  ABILITY,
+  amount,
+  amountField,
+  byAnswerWords,
+  isByAnswer,
+  listed,
+  omit,
+  word,
+} from './kit/words';
 
 const DAMAGE: Options = [
   'acid',
@@ -26,6 +39,7 @@ const CONDITION: Options = [
   'Frightened',
   'Grappled',
   'Incapacitated',
+  'Invisible',
   'Paralyzed',
   'Petrified',
   'Poisoned',
@@ -34,6 +48,15 @@ const CONDITION: Options = [
   'Stunned',
   'Unconscious',
 ].map((c) => [c, c] as const);
+
+/** How much of the Dexterity modifier an AC worked out another way counts (`dexMax`). */
+const DEX_MAX: Options = [
+  ['', 'In full'],
+  ['0', 'Not at all'],
+  ['1', 'Up to +1'],
+  ['2', 'Up to +2'],
+  ['3', 'Up to +3'],
+];
 
 /** The heading its cards are listed under on the add sheet. */
 export const group = 'Defenses and hit points';
@@ -92,5 +115,47 @@ export const cards: readonly KindSpec[] = [
     make: () => ({ kind: 'conditionImmune', condition: 'Frightened' }),
     fields: [{ key: 'condition', label: 'Condition', type: 'pick', options: CONDITION }],
     line: (e) => `Immune to the ${String(e.condition)} condition`,
+  },
+  {
+    kinds: ['acFormula'],
+    add: 'Another way to work out AC',
+    does: 'Armor Class worked out another way, such as 13 plus Dexterity, as natural armor or Unarmored Defense gives',
+    make: () => ({ kind: 'acFormula', base: 13, addAbilities: ['dex'] }),
+    fields: [
+      { key: 'base', label: 'Base', type: 'amount' },
+      {
+        key: 'dexMax',
+        label: 'Dexterity counts',
+        type: 'pick',
+        options: DEX_MAX,
+        apply: (e, v) =>
+          v === '' ? omit(e, ['dexMax']) : { ...e, dexMax: /^\d+$/.test(v) ? Number(v) : v },
+      },
+    ],
+    line: (e) => {
+      const plus = Array.isArray(e.addAbilities) ? e.addAbilities : [];
+      const capped =
+        e.dexMax !== undefined && plus.includes('dex')
+          ? ` (Dexterity ${e.dexMax === 0 ? 'not counted' : `up to +${String(e.dexMax)}`})`
+          : '';
+      return `Armor Class is ${amount(e.base, false)}${plus.length > 0 ? ` plus ${listed(plus.map((a) => word(ABILITY, a)))}` : ''}${capped}`;
+    },
+    boxes: (p) => (
+      <AbilityTicks
+        effect={p.effect}
+        field="addAbilities"
+        legend="Plus the modifier of"
+        title={p.title}
+        onChange={p.onChange}
+      />
+    ),
+  },
+  {
+    kinds: ['acMin'],
+    add: 'Armor Class is at least',
+    does: 'Sets a minimum for Armor Class, as Barkskin does',
+    make: () => ({ kind: 'acMin', min: 16 }),
+    fields: [{ key: 'min', label: 'At least', type: 'amount' }],
+    line: (e) => `Armor Class is at least ${amount(e.min, false)}`,
   },
 ];

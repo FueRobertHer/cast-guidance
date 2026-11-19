@@ -1,7 +1,28 @@
-/** Board 4's abilities and proficiencies: scores, skills, saves, tools, weapons, languages. */
+/** Board 4's abilities and proficiencies: scores, skills, saves, tools, armor, weapons, languages. */
 import { SKILLS } from '@/engine/types';
-import type { KindSpec } from './kit/types';
-import { ABILITY, amount, amountField, word } from './kit/words';
+import { AbilityTicks } from './kit/abilityTicks';
+import type { KindSpec, Options } from './kit/types';
+import { ABILITY, amount, amountField, listed, omit, word } from './kit/words';
+
+/** How high a bonus may take a score (`max`); with none, 20. */
+const LIMITS: Options = [
+  ['', 'Up to 20'],
+  ...Array.from({ length: 10 }, (_, i) => [String(21 + i), `Up to ${21 + i}`] as const),
+];
+
+/**
+ * Armor training, in the data's own words, so it is the same training a class
+ * gives (`class.ts`) and a feat's "proficiency with heavy armor" sees it.
+ */
+const ARMOR: Options = [
+  ['light', 'Light armor'],
+  ['medium', 'Medium armor'],
+  ['heavy', 'Heavy armor'],
+  ['shield', 'Shields'],
+];
+
+/** A picked value as stored: a whole number stays a number, anything else as picked. */
+const whole = (v: string): unknown => (/^\d+$/.test(v) ? Number(v) : v);
 
 /** The heading its cards are listed under on the add sheet. */
 export const group = 'Abilities and proficiencies';
@@ -10,10 +31,21 @@ export const cards: readonly KindSpec[] = [
   {
     kinds: ['abilityBonus'],
     add: 'Ability score',
-    does: 'Raises or lowers an ability score',
+    does: 'Raises or lowers an ability score, past 20 where it says how far',
     make: () => ({ kind: 'abilityBonus', ability: 'str', amount: 1 }),
-    fields: [{ key: 'ability', label: 'Ability', type: 'pick', options: ABILITY }, amountField],
-    line: (e) => `${amount(e.amount)} ${word(ABILITY, e.ability)}`,
+    fields: [
+      { key: 'ability', label: 'Ability', type: 'pick', options: ABILITY },
+      amountField,
+      {
+        key: 'max',
+        label: 'Limit',
+        type: 'pick',
+        options: LIMITS,
+        apply: (e, v) => (v === '' ? omit(e, ['max']) : { ...e, max: whole(v) }),
+      },
+    ],
+    line: (e) =>
+      `${amount(e.amount)} ${word(ABILITY, e.ability)}${e.max === undefined ? '' : `, up to ${String(e.max)}`}`,
     picks: (ask) => (ask === 'save' ? 'ability' : undefined),
   },
   {
@@ -84,5 +116,70 @@ export const cards: readonly KindSpec[] = [
     make: () => ({ kind: 'weaponProf', name: 'longsword' }),
     fields: [{ key: 'name', label: 'Weapon', type: 'text' }],
     line: (e) => `Proficiency with ${String(e.name)}`,
+  },
+  {
+    kinds: ['armorProf'],
+    add: 'Armor training',
+    does: 'Proficiency with light, medium or heavy armor, or with shields',
+    make: () => ({ kind: 'armorProf', name: 'heavy' }),
+    fields: [{ key: 'name', label: 'Armor', type: 'pick', options: ARMOR }],
+    line: (e) =>
+      `Trained with ${ARMOR.find(([v]) => v === e.name)?.[1].toLowerCase() ?? String(e.name)}`,
+    notInPlay: true,
+  },
+  {
+    kinds: ['weaponMastery'],
+    add: 'Weapon mastery',
+    does: "The mastery property of a kind of weapon you are proficient with, such as a longsword's Sap",
+    make: () => ({ kind: 'weaponMastery', name: 'longsword' }),
+    // The kind of weapon as the data names its base item: one weapon, in the singular.
+    fields: [{ key: 'name', label: 'Kind of weapon', type: 'text' }],
+    line: (e) => `You can use the mastery property of the ${String(e.name)}`,
+    notInPlay: true,
+  },
+  {
+    kinds: ['halfProf'],
+    add: 'Half proficiency',
+    does: 'Half your proficiency bonus on checks that lack it, as Jack of All Trades gives',
+    make: () => ({ kind: 'halfProf', round: 'down' }),
+    fields: [
+      {
+        key: 'round',
+        label: 'Rounded',
+        type: 'pick',
+        options: [
+          ['down', 'Down'],
+          ['up', 'Up'],
+        ],
+        // A file that leaves it out rounds down.
+        value: (e) => (e.round === undefined ? 'down' : String(e.round)),
+      },
+      {
+        key: 'skillsOnly',
+        label: 'On',
+        type: 'pick',
+        options: [
+          ['', 'Every check'],
+          ['true', 'Skill checks only'],
+        ],
+        value: (e) => (e.skillsOnly === true ? 'true' : ''),
+        apply: (e, v) => (v === 'true' ? { ...e, skillsOnly: true } : omit(e, ['skillsOnly'])),
+      },
+    ],
+    line: (e) => {
+      const of = Array.isArray(e.abilities) ? e.abilities.map((a) => word(ABILITY, a)) : [];
+      const checks = `${e.skillsOnly === true ? 'skill ' : ''}checks`;
+      return `Half your proficiency bonus, rounded ${e.round === 'up' ? 'up' : 'down'}, on ${of.length > 0 ? `${listed(of)} ` : ''}${checks} without it`;
+    },
+    boxes: (p) => (
+      <AbilityTicks
+        effect={p.effect}
+        field="abilities"
+        legend="Only checks of"
+        title={p.title}
+        onChange={p.onChange}
+      />
+    ),
+    notInPlay: true,
   },
 ];
