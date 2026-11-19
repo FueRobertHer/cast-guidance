@@ -6,6 +6,7 @@ import type { WeaponFeat } from './damageAdds';
 import {
   actionKey,
   againstOf,
+  castBuff,
   damageAdds,
   damageParts,
   entriesText,
@@ -514,7 +515,7 @@ describe('weaponFeats', () => {
     ]);
   });
 
-  it('reads 2014 Savage Attacker as a melee savage feat', () => {
+  it('reads 2014 Savage Attacker as a melee savage feat, decided once the damage shows', () => {
     const savage = {
       name: 'Savage Attacker',
       entries: [
@@ -522,7 +523,7 @@ describe('weaponFeats', () => {
       ],
     };
     expect(weaponFeats([savage])).toEqual([
-      { kind: 'savage', source: 'Savage Attacker', need: 'melee' },
+      { kind: 'savage', source: 'Savage Attacker', need: 'melee', after: true },
     ]);
   });
 
@@ -616,5 +617,82 @@ describe('featReaches', () => {
     const savage: WeaponFeat = { kind: 'savage', source: 'Savage Attacker', need: 'any' };
     expect(featReaches(savage, row({ ranged: false }))).toBe(true);
     expect(featReaches(savage, row({ ranged: true }))).toBe(true);
+  });
+});
+
+describe('castBuff', () => {
+  const DIVINE_FAVOR_TEXT =
+    'Until the spell ends, your attacks with weapons deal an extra {@damage 1d4} Radiant damage on a hit.';
+
+  function spell(
+    over: { range?: unknown; duration?: unknown; entries?: unknown } = {},
+  ): Record<string, unknown> {
+    return {
+      name: 'Divine Favor',
+      level: 1,
+      range: over.range ?? { type: 'point', distance: { type: 'self' } },
+      duration: over.duration ?? [{ type: 'timed', duration: { type: 'minute', amount: 1 } }],
+      entries: over.entries ?? [DIVINE_FAVOR_TEXT],
+    };
+  }
+
+  it('reads a self, non-concentration weapon buff into dice, damage type and minutes', () => {
+    expect(castBuff(spell())).toEqual({ dice: '1d4', damageType: 'radiant', minutes: 1 });
+  });
+
+  it('gives undefined for a concentration buff', () => {
+    const concentrating = spell({
+      duration: [{ type: 'timed', concentration: true, duration: { type: 'minute', amount: 1 } }],
+    });
+    expect(castBuff(concentrating)).toBeUndefined();
+  });
+
+  it('gives undefined when the range is not self', () => {
+    const touch = spell({ range: { type: 'point', distance: { type: 'touch' } } });
+    expect(castBuff(touch)).toBeUndefined();
+  });
+
+  it('gives minutes 60 for a one-hour duration', () => {
+    const hour = spell({
+      duration: [{ type: 'timed', duration: { type: 'hour', amount: 1 } }],
+    });
+    expect(castBuff(hour)).toEqual({ dice: '1d4', damageType: 'radiant', minutes: 60 });
+  });
+
+  it('leaves out minutes when the duration has no duration object', () => {
+    const instant = spell({ duration: [{ type: 'instant' }] });
+    const result = castBuff(instant);
+    expect(result).toEqual({ dice: '1d4', damageType: 'radiant' });
+    expect(result).not.toHaveProperty('minutes');
+  });
+
+  it('gives undefined when the text lacks "until the spell ends"', () => {
+    const noUntil = spell({
+      entries: ['Your weapon attacks deal an extra {@damage 1d4} radiant damage on a hit.'],
+    });
+    expect(castBuff(noUntil)).toBeUndefined();
+  });
+
+  it('gives undefined when the text has no {@damage} tag', () => {
+    const noTag = spell({
+      entries: [
+        'Until the spell ends, your attacks with weapons deal an extra 1d4 Radiant damage on a hit.',
+      ],
+    });
+    expect(castBuff(noTag)).toBeUndefined();
+  });
+
+  it('gives undefined for spell attacks only, with no "weapon"', () => {
+    const spellAttacks = spell({
+      entries: [
+        'Until the spell ends, your spell attacks deal an extra {@damage 1d4} radiant damage on a hit.',
+      ],
+    });
+    expect(castBuff(spellAttacks)).toBeUndefined();
+  });
+
+  it('gives undefined for null or a string', () => {
+    expect(castBuff(null)).toBeUndefined();
+    expect(castBuff('Divine Favor')).toBeUndefined();
   });
 });

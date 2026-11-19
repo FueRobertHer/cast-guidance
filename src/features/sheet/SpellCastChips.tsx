@@ -1,6 +1,13 @@
 import { useEffect, useRef } from 'react';
 import { useCastLevel } from '@/stores/castLevels';
-import { cancelHeldCast, castFrom, refreshHeldCast } from '@/stores/heldRoll';
+import {
+  attackInPlay,
+  cancelHeldCast,
+  castFrom,
+  type DamageAsk,
+  refreshHeldCast,
+  spellDamageAsk,
+} from '@/stores/heldRoll';
 import { type ChipWear, NOT_WORN } from '@/ui/ChipFace';
 import { RollChip } from '@/ui/RollChip';
 import { CastButton } from './CastButton';
@@ -16,6 +23,7 @@ import {
   usedUpTitle,
 } from './castPlan';
 import type { D20Ask } from './d20Tests';
+import type { SpellRollAction } from './spellRolls';
 
 /**
  * A spell row's dice and Cast (DS-001 SpellRow, with the rolls canvas's
@@ -87,6 +95,18 @@ export function SpellCastChips({
       : { onRolled: () => castNow(cast) }
     : {};
   const withAttack = attack === undefined ? undefined : { by: doc.id, of: info.name };
+  /**
+   * A spell attack's damage asked as a weapon's is (the damage prompt): its
+   * dice as the chip shows them, twice when this spell's attack in play crit.
+   */
+  const damageAsk = (roll: SpellRollAction) => (): DamageAsk => {
+    const struck = attackInPlay();
+    const crit = struck?.crit === true && struck.by === doc.id && struck.of === info.name;
+    return spellDamageAsk({ expr: roll.expr, label: roll.label, kind: 'damage' }, crit);
+  };
+  // What a hit offers: the spell's damage (a cantrip's at the character's level).
+  // A spell cast through the prompt offers its own at the level picked instead.
+  const hitDamage = rolls.find((r) => r.variant === 'damage');
   return (
     <>
       {attack !== undefined && (
@@ -98,6 +118,16 @@ export function SpellCastChips({
           roller={attack.roller}
           wear={wear}
           {...castChip}
+          {...(hitDamage === undefined
+            ? {}
+            : {
+                damageAfter: {
+                  expr: hitDamage.expr,
+                  label: hitDamage.label,
+                  withAttack,
+                  ask: damageAsk(hitDamage),
+                },
+              })}
         />
       )}
       {rolls.map((action, index) => {
@@ -111,6 +141,10 @@ export function SpellCastChips({
             label={shown.label}
             variant={shown.variant}
             withAttack={withAttack}
+            // An attack spell's damage asks first, as a weapon's does.
+            {...(attack !== undefined && shown.variant === 'damage'
+              ? { damagePrompt: damageAsk(shown) }
+              : {})}
             {...(first ? castChip : {})}
             wear={first ? (casts ? castWear : NOT_WORN) : undefined}
           />

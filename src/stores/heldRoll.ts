@@ -236,6 +236,12 @@ export interface DamageAsk {
   next?: (() => NextAttack | undefined) | undefined;
   /** The attack it follows, in words, set as the prompt opens: "Longsword attack: 17". */
   after?: string | undefined;
+  /**
+   * A reroll of the weapon's own dice the result offers once it shows, the
+   * higher total kept (2014 Savage Attacker, once a turn), and what paying for
+   * it marks.
+   */
+  reroll?: { source: string; pay: () => void } | undefined;
 }
 
 /** A roll made and not yet landed: what the control does then, and what making it put off. */
@@ -302,6 +308,9 @@ export interface HeldRoll {
         onLanded: Landed | undefined;
         face: RollFace | undefined;
         from: HTMLElement | null;
+        /** The attack it goes with, by name, and its label: a cast spell's own damage is asked at the level picked. */
+        of?: string | undefined;
+        label?: string | undefined;
       }
     | undefined;
 }
@@ -317,7 +326,22 @@ export const followUpStore = createStore<{
   offer: { id: string; expr: string; go: () => void; from: HTMLElement | null } | null;
   /** The next attack of the Attack action, offered on the roll `id` (a miss, or the damage). */
   next?: { id: string; words: string; go: () => void; from: HTMLElement | null } | null;
-}>(() => ({ offer: null, next: null }));
+  /**
+   * A reroll of the weapon's dice the roll `id` offers (2014 Savage Attacker):
+   * on the damage `target`, itself or shown under its attack. Its first
+   * `terms` are the weapon's own, coming to `total`, and `weapon` rolls them
+   * again.
+   */
+  reroll?: {
+    id: string;
+    target: string;
+    source: string;
+    terms: number;
+    total: number;
+    weapon: () => RollResult;
+    pay: () => void;
+  } | null;
+}>(() => ({ offer: null, next: null, reroll: null }));
 
 /** The log takes it, what making it put off happens, then what the control does. */
 function land({ result, onLanded, effects }: Pending): void {
@@ -539,7 +563,16 @@ export function damageFrom(
   from: HTMLElement | null,
   make: () => DamageAsk,
   onLanded?: Landed,
-  { face }: { face?: RollFace } = {},
+  {
+    face,
+    of,
+    label,
+  }: {
+    face?: RollFace;
+    /** The attack it goes with, by name, and its label (a spell's own damage, `queued`). */
+    of?: string | undefined;
+    label?: string | undefined;
+  } = {},
 ): void {
   const { held } = heldRollStore.getState();
   if (held !== null && from !== null && held.from === from) {
@@ -547,7 +580,9 @@ export function damageFrom(
     return;
   }
   if (held?.ask?.attack === true) {
-    heldRollStore.setState({ held: { ...held, queued: { make, onLanded, face, from } } });
+    heldRollStore.setState({
+      held: { ...held, queued: { make, onLanded, face, from, of, label } },
+    });
     announce('Damage asks once the attack hits.', { key: 'roll', repeat: true });
     return;
   }
@@ -688,24 +723,27 @@ export function withDice(
  * spends it. Every roll after the first goes with it (`meta.withRoll`), or
  * with the attack `withRoll` when it rolled with one.
  */
+/** The weapon's own damage: its dice twice on a crit, the crit's own dice after (Savage Attacks). */
+function weaponRoll(hit: DamageAsk): RollResult {
+  const r = roll(hit.expr, {
+    label: hit.label,
+    kind: 'damage',
+    ...(hit.crit ? { critical: true } : {}),
+  });
+  return hit.crit && hit.critDice !== undefined
+    ? withDice(r, hit.critDice.dice, hit.critDice.source)
+    : r;
+}
+
 function rollDamage(
   hit: DamageAsk,
   on: readonly boolean[],
   cast: HeldCast | undefined,
   picked: string | null,
   withRoll?: string,
-): RollResult[] {
+): { rolls: RollResult[]; weapon: { terms: number; total: number } } {
   const id = crypto.randomUUID();
-  const weapon = (): RollResult => {
-    const r = roll(hit.expr, {
-      label: hit.label,
-      kind: 'damage',
-      ...(hit.crit ? { critical: true } : {}),
-    });
-    return hit.crit && hit.critDice !== undefined
-      ? withDice(r, hit.critDice.dice, hit.critDice.source)
-      : r;
-  };
+  const weapon = () => weaponRoll(hit);
   let head: RollResult = { ...weapon(), id };
   // The weapon's own dice twice, the higher kept (Savage Attacker); the extras roll once.
   const best = hit.extras.find((x, i) => on[i] === true && x.best === true);
@@ -721,6 +759,8 @@ function rollDamage(
       },
     };
   }
+  // The weapon's own part, before the extras of its type roll into it: what a reroll replaces.
+  const weaponPart = { terms: head.terms.length, total: head.total };
   const apart: RollResult[] = [];
   const isOn = (key: string) => hit.extras.some((y, j) => y.key === key && on[j] === true);
   hit.extras.forEach((x, i) => {
@@ -744,7 +784,7 @@ function rollDamage(
       );
   });
   const goesWith = withRoll ?? id;
-  return [
+  const rolls = [
     withRoll === undefined ? head : { ...head, meta: { ...head.meta, withRoll } },
     ...apart.map((r) => ({
       ...r,
@@ -752,6 +792,7 @@ function rollDamage(
       meta: { ...r.meta, withRoll: goesWith },
     })),
   ];
+  return { rolls, weapon: weaponPart };
 }
 
 /** Offers the next attack of the Attack action on the roll `id`, if one is left. */
@@ -993,7 +1034,13 @@ export function rollHeld(): void {
   if (queued !== undefined && !missed) {
     // Damage tapped while the attack waited asks now, the crit known; with
     // nothing to choose it rolls with the attack, and shows with it.
-    const hit = { ...queued.make(), after: attackWords(result) };
+    // The cast spell's own damage, at the level picked; its chip's dice when it has no roll of that label.
+    const own =
+      cast !== undefined && queued.of === cast.spell
+        ? (cast.dice(picked, queued.label) ?? castDamage)
+        : undefined;
+    const asked = own !== undefined ? spellDamageAsk(own, crit) : queued.make();
+    const hit = { ...asked, after: attackWords(result) };
     if (!asksAnything(hit)) {
       const on = hit.extras.map(startsOn);
       landDamage(hit, on, undefined, null, queued.onLanded, held.from, id);
@@ -1018,9 +1065,9 @@ export function rollHeld(): void {
     followUpStore.setState({
       offer: { id, expr: crit ? critDice(after.expr) : after.expr, go, from: held.from },
     });
-    return;
   }
-  // A miss, or a hit with nothing to offer: the Attack action's next attack.
+  // The Attack action's next attack, hit or miss: the table may say a hit missed
+  // its AC, and the next swing should not wait on damage that never comes.
   offerNext(held.next, id, held.from);
 }
 
@@ -1028,7 +1075,7 @@ export function rollHeld(): void {
  * A spell attack's damage at the level cast, asked as a weapon's is: its dice,
  * twice on a crit, and what the player adds for this roll alone.
  */
-function spellDamageAsk(dice: CastDice, crit: boolean): DamageAsk {
+export function spellDamageAsk(dice: CastDice, crit: boolean): DamageAsk {
   return {
     kind: 'damage',
     label: dice.label,
@@ -1080,7 +1127,7 @@ function landDamage(
 ): void {
   // Read before the damage lands: past it, damage is the newest roll, and the attack stays in play.
   const next = hit.next ?? nextAfterAttackInPlay();
-  const rolls = rollDamage(hit, on, cast, picked, withRoll);
+  const { rolls, weapon } = rollDamage(hit, on, cast, picked, withRoll);
   const total = rolls.reduce((n, r) => n + r.total, 0);
   rolls.forEach((r, i) => {
     land({
@@ -1089,7 +1136,24 @@ function landDamage(
       effects: [],
     });
   });
-  offerNext(next, withRoll ?? rolls[0]?.id, from);
+  // A reroll the result offers on the weapon's damage, shown as the toast's own
+  // roll or under the attack it rolled with.
+  const head = rolls[0];
+  const { reroll } = hit;
+  if (reroll !== undefined && head?.id !== undefined) {
+    followUpStore.setState({
+      reroll: {
+        id: withRoll ?? head.id,
+        target: head.id,
+        source: reroll.source,
+        terms: weapon.terms,
+        total: weapon.total,
+        weapon: () => weaponRoll(hit),
+        pay: reroll.pay,
+      },
+    });
+  }
+  offerNext(next, withRoll ?? head?.id, from);
 }
 
 // A roll that lands from anywhere else (the dice tray, the Build page) lets

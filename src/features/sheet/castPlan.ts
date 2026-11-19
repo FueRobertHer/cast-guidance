@@ -12,8 +12,9 @@ import {
   itemChargeKey,
   itemChargesOf,
 } from '@/engine/curated/itemCharges';
-import type { HpLimits } from '@/engine/effectLife';
+import { applyEffect, type HpLimits } from '@/engine/effectLife';
 import type { CharacterDoc, DerivedSheet, SpellcastingBlock } from '@/engine/types';
+import { randomId } from '@/lib/randomId';
 import { rememberCastLevel } from '@/stores/castLevels';
 import type { DocUpdater } from '@/stores/characterSession';
 import type { CastDice, HeldCast } from '@/stores/heldRoll';
@@ -32,6 +33,7 @@ import {
   type UseWay,
   upcastEffectSummary,
 } from './castResources';
+import { castBuff } from './damageAdds';
 import { castGrantedAsking, castSpellAsking } from './namedStarts';
 import { type SpellRollAction, spellRollActions } from './spellRolls';
 
@@ -378,8 +380,42 @@ export function castPlan(c: SpellCast): HeldCast {
       const resource = resourceOf(id) ?? { kind: 'none', level: c.level };
       rememberCastLevel(castRowId(c), resource.level);
       castSpellAsking(c.update, c.hp, c.block, c.level, c.info, resource);
+      startBuff(c);
     },
   };
+}
+
+/**
+ * Puts in play what a spell does to the character's weapon hits for its
+ * duration, with no concentration to hold it (2024 Divine Favor's d4): an
+ * effect named for the spell, so its dice roll with every weapon's damage, and
+ * it ends on a rest or by hand as other effects do.
+ */
+function startBuff(c: SpellCast): void {
+  const buff = castBuff(c.entity);
+  if (buff === undefined) return;
+  c.update(
+    (d) =>
+      void applyEffect(
+        d.play,
+        {
+          id: randomId(),
+          name: c.info.name,
+          parts: [
+            {
+              kind: 'damageDie',
+              scope: 'all',
+              dice: buff.dice,
+              ...(buff.damageType === undefined ? {} : { damageType: buff.damageType }),
+              weaponsOnly: true,
+            },
+          ],
+          ...(buff.minutes === undefined ? {} : { lasts: { minutes: buff.minutes } }),
+        },
+        c.hp,
+      ),
+    `Started ${c.info.name}`,
+  );
 }
 
 /**
@@ -398,4 +434,5 @@ export function castNow(c: SpellCast): void {
   } else {
     castSpellAsking(c.update, c.hp, c.block, c.level, c.info);
   }
+  startBuff(c);
 }
