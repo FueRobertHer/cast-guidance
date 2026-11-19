@@ -5,8 +5,11 @@
  * Condition immunity card. Each is worked through its boxes, read back from
  * what it wrote, and counted on a sheet beside one without it.
  */
-import { cleanup, fireEvent, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { useState } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { conditionMechanics } from '@/engine/conditions';
+import { readMoments } from '@/engine/moments';
 import {
   boxValue,
   change,
@@ -15,6 +18,7 @@ import {
   renderCards,
   sheetWith,
 } from '../../../../tests-fixtures/cardSheet';
+import { EffectCards, moreKinds } from '../EffectCards';
 import { cards } from './defenses';
 
 vi.mock('@/ui/dialogs', () => ({ askChoice: () => Promise.resolve(undefined) }));
@@ -111,5 +115,82 @@ describe('Condition immunity', () => {
       s.conditionImmunities.map((c) => c.condition);
     expect(immune(sheetWith(cards.written()))).toContain('Invisible');
     expect(immune(sheetWith(undefined))).not.toContain('Invisible');
+  });
+});
+
+describe('Temporary HP each turn', () => {
+  const TITLE = 'Temporary HP each turn';
+  const NOTE = /^This counts only in play/;
+  const FOUR = { kind: 'tempHpEachTurn', amount: 4 };
+
+  it('starts as a whole one, writes its amount, and reads it back', () => {
+    const start = make(TITLE);
+    noProblems([start]);
+    const cards = renderCards([start]);
+    expect(screen.getByText('5 temporary hit points at the start of each turn')).toBeTruthy();
+    change(`${TITLE}: Amount`, '4');
+    expect(cards.written()).toEqual([FOUR]);
+    expect(screen.getByText('4 temporary hit points at the start of each turn')).toBeTruthy();
+    noProblems(cards.written());
+
+    cleanup();
+    renderCards(cards.written());
+    expect(boxValue(`${TITLE}: Amount`)).toBe('4');
+  });
+
+  it("says on an entry's own list that it counts only in play", () => {
+    renderCards([FOUR]);
+    expect(screen.getByText(NOTE)).toBeTruthy();
+  });
+
+  it("says nothing of it on a spell's while-it-lasts list, where it counts", () => {
+    renderCards([FOUR], { inPlay: true });
+    expect(screen.getByText('4 temporary hit points at the start of each turn')).toBeTruthy();
+    expect(screen.queryByText(NOTE)).toBeNull();
+    expect(moreKinds({ inPlay: true, spells: true })).toContain(TITLE);
+  });
+
+  it('says nothing of it on a condition, which never gives it, so More does not offer it', () => {
+    // As the condition editor asks (`countsOnACondition`).
+    const counts = (e: unknown) =>
+      conditionMechanics({ castGuidance: { v: 1, effects: [e] } }).problems.length === 0;
+    expect(counts(FOUR)).toBe(false);
+    // One a file already holds is still drawn, without the note.
+    renderCards([FOUR], { inPlay: true, counts });
+    expect(screen.getByText('4 temporary hit points at the start of each turn')).toBeTruthy();
+    expect(screen.queryByText(NOTE)).toBeNull();
+    expect(moreKinds({ inPlay: true, spells: false, counts })).not.toContain(TITLE);
+  });
+
+  it('drops the note once Counts when puts it on at a moment', () => {
+    let held: unknown[] = [];
+    function Host() {
+      const [effects, setEffects] = useState<unknown[]>([FOUR]);
+      const [moments, setMoments] = useState<unknown[]>([]);
+      return (
+        <EffectCards
+          effects={effects}
+          readOnly={false}
+          onChange={setEffects}
+          moments={moments}
+          onMoments={(next, list) => {
+            held = next;
+            setMoments(next);
+            if (list !== undefined) setEffects(list);
+          }}
+          momentName="Card Feat"
+        />
+      );
+    }
+    render(<Host />);
+    expect(screen.getByText(NOTE)).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Counts when' }));
+    change(`${TITLE}: Put on when`, 'zeroHp');
+    expect(screen.queryByText(NOTE)).toBeNull();
+    expect(held).toEqual([
+      { at: 'zeroHp', do: [{ kind: 'addEffect', name: 'Card Feat', effects: [FOUR] }] },
+    ]);
+    // The moment reader takes it: once the moment comes it is in play.
+    expect(readMoments(held, 'Card Feat').problems).toEqual([]);
   });
 });

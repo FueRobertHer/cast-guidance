@@ -87,6 +87,25 @@ export const cards: readonly KindSpec[] = [
     line: (e) => `${amount(e.amount)} hit point maximum for each level`,
   },
   {
+    kinds: ['tempHpEachTurn'],
+    add: 'Temporary HP each turn',
+    does: 'Temporary hit points at the start of each of your turns, as Heroism gives',
+    make: () => ({ kind: 'tempHpEachTurn', amount: 5 }),
+    fields: [amountField],
+    line: (e) => `${amount(e.amount, false)} temporary hit points at the start of each turn`,
+    // The sheet gives them at a turn's start from an effect in play alone
+    // (`effectLife.ts`, `play.activeEffects`), so on an entry's own list the
+    // card says how to make it count.
+    boxes: (p) =>
+      p.inPlay === false &&
+      p.atMoment !== true && (
+        <p className="col-span-2 text-caption text-ink-muted">
+          This counts only in play: put it on with Counts when, or give it from a spell while it
+          lasts.
+        </p>
+      ),
+  },
+  {
     kinds: ['resist', 'immune', 'vulnerable'],
     add: 'Resistance',
     does: 'Resistance, immunity or vulnerability to a damage type',

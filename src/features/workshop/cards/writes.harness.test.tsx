@@ -136,6 +136,7 @@ const SEEDS: ReadonlyArray<readonly [string, Json[]]> = [
   ['speedMultiplier', [{ kind: 'speedMultiplier', factor: 2 }]],
   ['speedMultiplier part', [{ kind: 'speedMultiplier', factor: 1.5 }]],
   ['passivePerceptionBonus', [{ kind: 'passivePerceptionBonus', amount: 5 }]],
+  ['tempHpEachTurn', [{ kind: 'tempHpEachTurn', amount: 5 }]],
   ['speedBonus', [{ kind: 'speedBonus', amount: 5 }]],
   ['speedBonus noArmor', [{ kind: 'speedBonus', amount: 10, while: 'noArmor' }]],
   ['moveSpeed walk', [{ kind: 'moveSpeed', mode: 'fly', speed: 'walk' }]],
