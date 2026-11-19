@@ -544,46 +544,53 @@ export function EffectCards({
     for (let n = 2; taken.includes(name.trim().toLowerCase()); n++) name = `${named} (${n})`;
     return name;
   };
+  // Effects have no id of their own, so each card is given one, kept by the
+  // effect and passed on to what it is edited into. What is open on a card
+  // goes with the card, not with its place on the page.
+  const ids = useRef(new WeakMap<object, number>());
+  const lastId = useRef(0);
+  const idOf = (x: object): number => {
+    let id = ids.current.get(x);
+    if (id === undefined) {
+      id = ++lastId.current;
+      ids.current.set(x, id);
+    }
+    return id;
+  };
+  const edited = (from: object, to: object) => {
+    if (from !== to) ids.current.set(to, idOf(from));
+  };
+  /** Each card's key: its id, or its id and place where one effect is on the page twice. */
+  const keysOf = (xs: readonly object[], used: Set<string>) =>
+    xs.map((x, j) => {
+      const id = String(idOf(x));
+      const key = used.has(id) ? `${id} ${j}` : id;
+      used.add(key);
+      return key;
+    });
   // The list's order as this session has seen it, the cards since put on at
   // a moment among them, so Counts when taken away puts a card back where it
-  // stood, however many are out. Cards are known by the effect itself,
-  // followed through their edits (`became`); one this session never saw on
-  // the list goes last.
-  const home = useRef<object[]>([]);
-  const became = useRef(new WeakMap<object, object>());
-  const edited = (from: object, to: object) => {
-    if (from !== to) became.current.set(from, to);
-  };
-  const now = (x: object): object => {
-    let at = x;
-    // A host that hands an older effect back could close a loop: follow it once round at most.
-    const seen = new Set<object>([at]);
-    for (let next = became.current.get(at); next !== undefined && !seen.has(next); ) {
-      at = next;
-      seen.add(at);
-      next = became.current.get(at);
-    }
-    return at;
-  };
+  // stood, however many are out. One this session never saw on the list goes last.
+  const home = useRef<number[]>([]);
   /** The order with every card now on the list in it, each just after the one before it. */
-  const placed = (): object[] => {
-    const order = home.current.map(now);
+  const placed = (): number[] => {
+    const order = [...home.current];
     list.forEach((x, j) => {
-      if (order.includes(x)) return;
-      const before = j === 0 ? -1 : order.indexOf(list[j - 1] as object);
-      order.splice(before + 1, 0, x);
+      if (order.includes(idOf(x))) return;
+      const before = j === 0 ? -1 : order.indexOf(idOf(list[j - 1] as object));
+      order.splice(before + 1, 0, idOf(x));
     });
     home.current = order;
     return order;
   };
   const putBack = (effect: Eff): Eff[] => {
     const order = placed();
-    const at = order.indexOf(effect);
+    const at = order.indexOf(idOf(effect));
     if (at === -1) return [...list, effect];
     // After the last card on the list that stood before it.
     let after = -1;
     list.forEach((x, j) => {
-      if (order.indexOf(x) < at) after = j;
+      if (order.indexOf(idOf(x)) < at) after = j;
     });
     return [...list.slice(0, after + 1), effect, ...list.slice(after + 1)];
   };
@@ -678,6 +685,10 @@ export function EffectCards({
       ),
     });
     const effects = list.map((x, j) => (j === i ? next : renamed(x, `effect ${j}`)));
+    // A renamed card is still the same card.
+    list.forEach((x, j) => {
+      edited(x, effects[j] as Eff);
+    });
     const amended =
       onAmend === undefined || amends.length === 0
         ? undefined
@@ -714,6 +725,11 @@ export function EffectCards({
     const spec = KINDS.find((k) => k.add === id);
     if (spec !== undefined) add(spec);
   };
+  const listKeys = keysOf(list, new Set());
+  const momentKeys = keysOf(
+    drawnCards.map((d) => d.effect),
+    new Set(),
+  );
   return (
     <div className="flex flex-col gap-2">
       {inherits !== undefined && (
@@ -742,9 +758,7 @@ export function EffectCards({
       {list.map((effect, i) =>
         hide?.(effect) === true ? null : (
           <Card
-            // Effects have no id of their own; a card is its place in the list.
-            // biome-ignore lint/suspicious/noArrayIndexKey: see above
-            key={i}
+            key={listKeys[i]}
             effect={effect}
             list={list}
             pools={resources ?? []}
@@ -779,7 +793,7 @@ export function EffectCards({
           />
         ),
       )}
-      {drawnCards.map(({ m, mi, effect, k }) => {
+      {drawnCards.map(({ m, mi, effect, k }, n) => {
         const place: MomentPlace = {
           moment: m,
           outcome: m.do[0],
@@ -788,8 +802,7 @@ export function EffectCards({
         };
         return (
           <Card
-            // Moments have no id of their own either; a card is its place in them.
-            key={`moment ${mi} ${k}`}
+            key={momentKeys[n]}
             effect={effect}
             list={list}
             pools={resources ?? []}

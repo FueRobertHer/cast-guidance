@@ -119,6 +119,17 @@ describe('askChoice', () => {
     await expect(answer()).resolves.toBe('note');
   });
 
+  it('says nothing matches in a live region there from the start, so it is announced', () => {
+    ask({ title: 'Add', options: OPTIONS, search: 'Search' });
+    const status = screen.getByRole('status');
+    expect(status.textContent).toBe('');
+    type('teleport');
+    expect(screen.getByRole('status')).toBe(status);
+    expect(status.textContent).toBe('Nothing matches "teleport".');
+    type('');
+    expect(status.textContent).toBe('');
+  });
+
   it('says nothing matches when the ask gives no words for it', () => {
     ask({ title: 'Add', options: OPTIONS, search: 'Search' });
     type('teleport');

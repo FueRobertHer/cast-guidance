@@ -256,17 +256,6 @@ export function Modifiers({
 }: ModifierProps) {
   const [open, setOpen] = useState<Partial<Record<ModifierId, boolean>>>({});
   const [note, setNote] = useState('');
-  // A card is its place in the list, so another card can take its place (one
-  // put on at a moment leaves it): what was open leaves with it.
-  const leave = () => {
-    setOpen({});
-    setNote('');
-  };
-  const [kind, setKind] = useState(e.kind);
-  if (kind !== e.kind) {
-    setKind(e.kind);
-    leave();
-  }
   // An effect a moment puts on is in play: it holds for as long as it lasts,
   // under the rules it is put on under.
   const played = inPlay || place !== undefined;
@@ -335,10 +324,8 @@ export function Modifiers({
     if (!set[id]) return;
     if (id === 'while' || id === 'edition') onChange(omit(e, [id]));
     else if (id === 'level' && key !== undefined) onChange({ ...e, [key]: firstRow(e[key]) });
-    else if (id === 'when') {
-      leave();
-      place?.out();
-    } else if (id === 'lasts' && place !== undefined) {
+    else if (id === 'when') place?.out();
+    else if (id === 'lasts' && place !== undefined) {
       place.set({ ...place.moment, do: [omit(place.outcome as Eff, ['lasts'])] });
     }
   };
@@ -392,20 +379,7 @@ export function Modifiers({
         </Select>
       </Field>
     ),
-    when: () => (
-      <MomentFields
-        title={title}
-        place={place}
-        toMoment={
-          toMoment === undefined
-            ? undefined
-            : (at) => {
-                leave();
-                toMoment(at);
-              }
-        }
-      />
-    ),
+    when: () => <MomentFields title={title} place={place} toMoment={toMoment} />,
     lasts: () => (place === undefined ? null : <LastsFields title={title} place={place} />),
   };
   return (

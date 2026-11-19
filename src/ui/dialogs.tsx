@@ -171,7 +171,8 @@ function ChoiceList({
     if (at === undefined) groups.push([o.group, [o]]);
     else at[1].push(o);
   }
-  const none = shown.length === 0 && q !== '' ? req.noMatch?.(q) : undefined;
+  const nothing = shown.length === 0 && q !== '';
+  const none = nothing ? req.noMatch?.(q) : undefined;
   const instead = none?.choice;
   const list = (
     <>
@@ -191,16 +192,6 @@ function ChoiceList({
             ))}
           </div>
         ),
-      )}
-      {shown.length === 0 && q !== '' && (
-        <div className="flex flex-col items-start gap-2">
-          <p role="status" className="text-body text-ink-muted">
-            {none?.say ?? `Nothing matches "${q}".`}
-          </p>
-          {instead !== undefined && (
-            <Button onClick={() => pick(instead.id)}>{instead.label}</Button>
-          )}
-        </div>
       )}
     </>
   );
@@ -226,7 +217,18 @@ function ChoiceList({
         placeholder={req.search}
         className={`${fieldClass} shrink-0`}
       />
-      <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto pb-1">{list}</div>
+      <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto pb-1">
+        {list}
+        {/* There from the start, so a search that finds nothing is announced. */}
+        <p role="status" className={nothing ? 'text-body text-ink-muted' : 'sr-only'}>
+          {nothing ? (none?.say ?? `Nothing matches "${q}".`) : ''}
+        </p>
+        {instead !== undefined && (
+          <Button className="self-start" onClick={() => pick(instead.id)}>
+            {instead.label}
+          </Button>
+        )}
+      </div>
     </div>
   );
 }

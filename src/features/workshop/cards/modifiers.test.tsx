@@ -52,6 +52,13 @@ const chip = (title: string, label: string, pressed?: boolean) =>
     ...(pressed === undefined ? {} : { pressed }),
   });
 
+/** A modifier chip on the `n`th card titled `title`, where several share it. */
+const pressedChip = (n: number, title: string, label: string) =>
+  within(screen.getAllByRole('group', { name: `${title}: modifiers` })[n] as HTMLElement).getByRole(
+    'button',
+    { name: label },
+  );
+
 /** The modifiers a card offers: those whose chip is not marked as refused. */
 function offered(title: string): string[] {
   const row = screen.getByRole('group', { name: `${title}: modifiers` });
@@ -506,6 +513,114 @@ describe('Counts when and Lasts', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Remove +1 to Armor Class' }));
     expect(chip('Speed', 'Counts when', false)).toBeTruthy();
     expect(screen.queryByLabelText('Speed: Put on when')).toBeNull();
+  });
+
+  // Cards of one kind side by side: a reset on a change of kind cannot tell them apart.
+  const pressed = (title: string, label: string) =>
+    screen
+      .getAllByRole('group', { name: `${title}: modifiers` })
+      .map((row) => within(row).getByRole('button', { name: label }).getAttribute('aria-pressed'));
+
+  it('leaves what was open on a card taken away, beside one of the same kind', () => {
+    featWith({
+      v: 1,
+      effects: [
+        { kind: 'acBonus', amount: 1 },
+        { kind: 'acBonus', amount: 2 },
+      ],
+    });
+    fireEvent.click(pressedChip(0, 'Armor Class', 'Counts when'));
+    expect(screen.getAllByLabelText('Armor Class: Put on when')).toHaveLength(1);
+    fireEvent.click(screen.getByRole('button', { name: 'Remove +1 to Armor Class' }));
+    expect(screen.queryByLabelText('Armor Class: Put on when')).toBeNull();
+    expect(pressed('Armor Class', 'Counts when')).toEqual(['false']);
+  });
+
+  it('keeps what is open on each card as one of the same kind before it moves to a moment', () => {
+    featWith({
+      v: 1,
+      effects: [
+        { kind: 'acBonus', amount: 1 },
+        { kind: 'acBonus', amount: 2 },
+        { kind: 'acBonus', amount: 3 },
+      ],
+    });
+    fireEvent.click(pressedChip(1, 'Armor Class', 'Counts when'));
+    fireEvent.click(pressedChip(0, 'Armor Class', 'Counts when'));
+    fireEvent.change(screen.getAllByLabelText('Armor Class: Put on when')[0] as HTMLElement, {
+      target: { value: 'zeroHp' },
+    });
+    // +2 and +3 on the list, then +1 at its moment.
+    expect(screen.getAllByText(/^\+\d to Armor Class$/).map((p) => p.textContent)).toEqual([
+      '+2 to Armor Class',
+      '+3 to Armor Class',
+      '+1 to Armor Class',
+    ]);
+    expect(pressed('Armor Class', 'Counts when')).toEqual(['true', 'false', 'true']);
+  });
+
+  it('leaves what was open on a moment card taken away, beside one of the same kind', () => {
+    const put = (amount: number, name: string) => ({
+      at: 'zeroHp',
+      do: [{ kind: 'addEffect', name, effects: [{ kind: 'acBonus', amount }] }],
+    });
+    featWith({ v: 1, moments: [put(1, 'Fury Feat'), put(2, 'Fury Feat (2)')] });
+    fireEvent.click(pressedChip(0, 'Armor Class', 'Lasts'));
+    expect(screen.getAllByLabelText('Armor Class: Lasts')).toHaveLength(1);
+    fireEvent.click(screen.getByRole('button', { name: 'Remove +1 to Armor Class' }));
+    expect(screen.queryByLabelText('Armor Class: Lasts')).toBeNull();
+    expect(pressed('Armor Class', 'Lasts')).toEqual(['false']);
+  });
+
+  it('keeps what a card hid when its own kind changes', () => {
+    featWith({ v: 1, effects: [{ kind: 'resist', damageType: 'fire' }] });
+    expect(chip('Resistance', 'Only while', true)).toBeTruthy();
+    fireEvent.click(chip('Resistance', 'Only while'));
+    expect(chip('Resistance', 'Only while', false)).toBeTruthy();
+    fireEvent.change(screen.getByLabelText('Resistance: Kind'), { target: { value: 'immune' } });
+    expect(screen.getByText('Immunity to fire damage')).toBeTruthy();
+    expect(chip('Resistance', 'Only while', false)).toBeTruthy();
+  });
+
+  it('keeps a card, its open chips and the box typed in, as it is typed in', () => {
+    featWith({ v: 1, effects: [{ kind: 'acBonus', amount: 1 }] });
+    fireEvent.click(chip('Armor Class', 'Counts when'));
+    const amount = screen.getByRole('textbox', { name: 'Armor Class: Amount' });
+    amount.focus();
+    fireEvent.change(amount, { target: { value: '3' } });
+    expect(screen.getByText('+3 to Armor Class')).toBeTruthy();
+    expect(document.activeElement).toBe(amount);
+    expect(screen.getByLabelText('Armor Class: Put on when')).toBeTruthy();
+  });
+
+  const POOL = { kind: 'resource', key: 'uses', label: 'Uses', max: 1, reset: 'long' };
+
+  it('keeps what is open on a card as a pool beside it is renamed', () => {
+    featWith({ v: 1, effects: [POOL, { kind: 'acBonus', amount: 1 }] });
+    fireEvent.click(chip('Armor Class', 'Counts when'));
+    fireEvent.change(screen.getByLabelText('Uses per rest: Name'), { target: { value: 'Fury' } });
+    expect(screen.getByLabelText('Armor Class: Put on when')).toBeTruthy();
+  });
+
+  it('puts a card back in its place after a pool on the list is renamed', () => {
+    const guidance = featWith({
+      v: 1,
+      effects: [POOL, { kind: 'acBonus', amount: 1 }, { kind: 'speedBonus', amount: 10 }],
+    });
+    fireEvent.click(chip('Armor Class', 'Counts when'));
+    fireEvent.change(screen.getByLabelText('Armor Class: Put on when'), {
+      target: { value: 'zeroHp' },
+    });
+    fireEvent.change(screen.getByLabelText('Uses per rest: Name'), { target: { value: 'Fury' } });
+    fireEvent.click(chip('Armor Class', 'Counts when', true));
+    expect(guidance()).toEqual({
+      v: 1,
+      effects: [
+        { ...POOL, key: 'fury', label: 'Fury' },
+        { kind: 'acBonus', amount: 1 },
+        { kind: 'speedBonus', amount: 10 },
+      ],
+    });
   });
 
   it('grows a number by level on a card a moment puts on, as the moment reader takes it', () => {
