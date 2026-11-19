@@ -203,8 +203,8 @@ describe('upgradeOlderCharges: what is left as it was', () => {
     ],
     ['a charges effect already', [POOL, { kind: 'charges', charges: 5, regain: 'all' }]],
     ['an effect that is not one', [POOL, CARD, 'note']],
-    // An action's charges move only from where the Workshop names them, as the
-    // sheet reads them, ends trimmed. It never offers a buy-back paid in them.
+    // An action's charges move only from `ACTION_CHARGE_PLACES`, as the sheet
+    // reads them, ends trimmed: a buy-back paid in them stays on the card.
     ['an action naming the pool elsewhere', [POOL, { ...STRIKE, note: { resource: 'charges' } }]],
     [
       'an action paying a buy-back with the pool',
@@ -213,6 +213,29 @@ describe('upgradeOlderCharges: what is left as it was', () => {
     [
       'an effect naming the pool with spaces',
       [POOL, CARD, { kind: 'resourceRegain', key: ' charges\n', amount: 1 }],
+    ],
+    [
+      'an effect naming the pool in another case',
+      [POOL, CARD, { kind: 'resourceRegain', key: 'Charges', amount: 1 }],
+    ],
+    [
+      'a pick filling in words',
+      [
+        POOL,
+        CARD,
+        {
+          kind: 'pick',
+          ask: 'option',
+          id: 'pool',
+          options: [
+            {
+              id: 'sparks',
+              label: 'Sparks',
+              gives: [{ ...STRIKE, cost: { resource: '{pick}', amount: 1 } }],
+            },
+          ],
+        },
+      ],
     ],
     // A use with no price spends the pool its name shares, which the new one
     // does not: as the sheet reads names, any case and ends trimmed, at any depth.
@@ -243,6 +266,21 @@ describe('upgradeOlderCharges: what is left as it was', () => {
         },
       ],
     ],
+    [
+      'a pick giving an action named by level',
+      [
+        POOL,
+        CARD,
+        {
+          kind: 'pick',
+          ask: 'option',
+          id: 'mode',
+          options: [
+            { id: 'zap', label: 'Zap', gives: [{ ...UNPRICED, label: { byLevel: { 1: 'Zap' } } }] },
+          ],
+        },
+      ],
+    ],
     ['a card with no name', [{ ...POOL, label: undefined }, CARD]],
   ])('%s', (_why, effects) => {
     expect(converted(older(effects))).toBe(undefined);
@@ -262,6 +300,20 @@ describe('upgradeOlderCharges: what is left as it was', () => {
     const e = older([POOL, CARD]);
     (e.castGuidance as Record<string, unknown>).amend = [{ label: 'Zap', resource: 'charges' }];
     expect(converted(e)).toBe(undefined);
+  });
+
+  it("has a moment spending the pool, which finds one by key or by the card's name in any case", () => {
+    const spending = (resource: string, label = 'Charges') => {
+      const e = older([{ ...POOL, label }, CARD]);
+      (e.castGuidance as Record<string, unknown>).moments = [
+        { at: 'turnStart', do: [{ kind: 'spend', resource, amount: 1 }] },
+      ];
+      return converted(e);
+    };
+    expect(spending('CHARGES')).toBe(undefined);
+    expect(spending('sparks', 'Sparks')).toBe(undefined);
+    // A moment spending another pool leaves it to convert.
+    expect(spending('grit')).toBeDefined();
   });
 
   it('has no guidance, or no effects list', () => {

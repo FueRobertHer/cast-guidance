@@ -519,26 +519,6 @@ describe('charges that only actions spend', () => {
     expect(JSON.stringify(rod.castGuidance)).toContain('"own":"charges"');
   });
 
-  it("pays a buy-back from each copy's own pool, its own action's or a pack's", () => {
-    const sparks = { kind: 'resource', key: 'sparks', label: 'Sparks', max: 2, reset: 'long' };
-    const paid = (label: string) => ({
-      ...STRIKE,
-      label,
-      cost: { resource: 'sparks', amount: 1 },
-      buyBack: { resource: 'charges', amount: 2, own: 'sparks' },
-    });
-    const rod = item('Rod of Knocks', 'HB', [COUNTED, sparks, paid('Strike')]);
-    const adds = pack('Adds', [{ target: 'Rod of Knocks|HB', add: [paid('Smite')] }]);
-    const ctx = world([rod], [adds]);
-    const paidFrom = (id: string) =>
-      deriveSheet(carrying({ id, name: 'Rod of Knocks', source: 'HB' }), ctx)
-        .actions.filter((a) => a.label === 'Strike' || a.label === 'Smite')
-        .map((a) => `${a.label} ${a.buyBack?.resource}`)
-        .sort();
-    expect(paidFrom('a')).toEqual(['Smite item-charges:a', 'Strike item-charges:a']);
-    expect(paidFrom('b')).toEqual(['Smite item-charges:b', 'Strike item-charges:b']);
-  });
-
   it("refills each copy's own pool for an action that regains its charges or turns a slot into them", () => {
     const regains = {
       kind: 'action',
@@ -585,42 +565,36 @@ describe('charges that only actions spend', () => {
     expect(said).toContain('"regains":{"resource":"charges"');
   });
 
-  it("spends each copy's own pool for a spell card that spends its charges, its own or a pack's", () => {
-    const card = (spell: string) => ({
+  it('leaves a spell card and a buy-back paid under its key to a Uses card of its own', () => {
+    // The Workshop offers a Uses card named Charges, keyed as the item's
+    // charges are, to a spell card and as a buy-back's price, and the item's
+    // charges to an action's cost alone (`PriceFields`).
+    const uses = { kind: 'resource', key: 'charges', label: 'Charges', max: 2, reset: 'long' };
+    const zap = {
+      ...STRIKE,
+      label: 'Zap',
+      buyBack: { resource: 'charges', amount: 1 },
+    };
+    const shield = {
       kind: 'grantSpell',
-      spell,
+      spell: 'Shield|XPHB',
       usage: '1/day',
       resourceKey: 'charges',
-    });
-    // Cards that spend another pool, or uses of their own, are left to them.
-    const sparks = { kind: 'resource', key: 'sparks', label: 'Sparks', max: 2, reset: 'long' };
-    const rod = item('Rod of Knocks', 'HB', [
-      COUNTED,
-      sparks,
-      card('Shield|XPHB'),
-      { ...card('Light|XPHB'), resourceKey: 'sparks' },
-      { kind: 'grantSpell', spell: 'Bless|XPHB', usage: '1/day' },
+    };
+    const rod = item('Rod of Knocks', 'HB', [COUNTED, uses, zap, shield]);
+    const sheet = deriveSheet(
+      carrying({ id: 'a', name: 'Rod of Knocks', source: 'HB' }),
+      world([rod]),
+    );
+    expect(sheet.resources.map((r) => r.key).filter((k) => k.includes('charges'))).toEqual([
+      'charges',
+      'item-charges:a',
     ]);
-    const adds = pack('Adds', [{ target: 'Rod of Knocks|HB', add: [card('Fireball|XPHB')] }]);
-    const ctx = world([rod], [adds]);
-    const spends = (id: string) =>
-      deriveSheet(carrying({ id, name: 'Rod of Knocks', source: 'HB' }), ctx)
-        .grantedSpells.filter((s) => s.origin === 'Rod of Knocks')
-        .map((s) => `${s.name} ${s.resourceKey}`)
-        .sort();
-    expect(spends('a')).toEqual([
-      'Bless undefined',
-      'Fireball item-charges:a',
-      'Light sparks',
-      'Shield item-charges:a',
+    const action = sheet.actions.find((a) => a.label === 'Zap');
+    expect([action?.cost?.resource, action?.buyBack?.resource]).toEqual([
+      'item-charges:a',
+      'charges',
     ]);
-    expect(spends('b')).toEqual([
-      'Bless undefined',
-      'Fireball item-charges:b',
-      'Light sparks',
-      'Shield item-charges:b',
-    ]);
-    // What the item says is left as it was written.
-    expect(JSON.stringify(rod.castGuidance)).toContain('"resourceKey":"charges"');
+    expect(sheet.grantedSpells.find((s) => s.name === 'Shield')?.resourceKey).toBe('charges');
   });
 });

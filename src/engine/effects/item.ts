@@ -153,13 +153,11 @@ export function collectItems(col: Collector): void {
       if (charged !== undefined) {
         const key = itemChargeKey(entry.id);
         // Its actions that spend its charges or give them back (a buy-back, a
-        // slot turned into them, a regain, `ACTION_CHARGE_PLACES`), and its
-        // spells that spend them, spend or restore this copy's pool. Each is a
-        // copy of what the item says (`emit`), and each part of an action a new
-        // object, so the next copy's is its own.
+        // slot turned into them, a regain, `ACTION_CHARGE_PLACES`) spend or
+        // restore this copy's pool. Each is a copy of what the item says
+        // (`emit`), and each part a new object, so the next copy's is its own.
         for (let i = from; i < col.effects.length; i++) {
           const x = col.effects[i];
-          if (x?.kind === 'grantSpell' && x.resourceKey === ITEM_CHARGES) x.resourceKey = key;
           if (x?.kind !== 'action') continue;
           const parts = x as unknown as Record<string, Record<string, unknown> | undefined>;
           for (const [part, field] of ACTION_CHARGE_PLACES) {
