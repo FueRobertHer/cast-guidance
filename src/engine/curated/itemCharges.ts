@@ -80,13 +80,14 @@ const fromFields = new WeakMap<DataEntity, ItemCharges | null>();
  * starts from nothing (`replace`), so inherits none, or it counts them its own
  * way, with a `charges` effect (one that does not read yet too, which says
  * why) or the Workshop's older pool, a `resource` keyed `charges`, whose cards
- * spend it. Read from the stored object as it is, so a guidance that does not
- * read as a whole says the same.
+ * spend it. Its effects are looked at as stored, so a guidance that does not
+ * read as a whole says the same; its `replace` counts only where it reads, as
+ * everything else it would leave out (`mechanicsOf`).
  */
 function ownChargesStand(raw: unknown): boolean {
   if (typeof raw !== 'object' || raw === null) return false;
+  if (readMechanics(raw).replace) return true;
   const g = raw as Record<string, unknown>;
-  if (g.replace === true) return true;
   const effects = Array.isArray(g.effects) ? (g.effects as unknown[]) : [];
   return effects.some((e) => {
     if (typeof e !== 'object' || e === null) return false;

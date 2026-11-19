@@ -164,7 +164,8 @@ describe('itemChargesOf: the fields below every other source', () => {
     expect(held(world([item('Rod of Tests', 'TST', { ...fields, castGuidance: plain })]))).toBe(3);
     const broken = { v: 1, effects: [{ kind: 'nothing at all' }] };
     expect(held(world([item('Rod of Tests', 'TST', { ...fields, castGuidance: broken })]))).toBe(3);
-    const late = { v: 99, effects: [{ kind: 'acBonus', amount: 1 }] };
+    // A replace in a guidance that does not read leaves out nothing, as it leaves nothing else out.
+    const late = { v: 99, replace: true, effects: [{ kind: 'acBonus', amount: 1 }] };
     expect(held(world([item('Rod of Tests', 'TST', { ...fields, castGuidance: late })]))).toBe(3);
   });
 
@@ -250,6 +251,17 @@ describe('the pool its fields make', () => {
     expect(its.resources.find((r) => r.key === 'item-charges:r')?.regainRoll).toBe('0');
     longRestRecovery(ring.play, its, HP, { rollTotal: (d) => Number(d) });
     expect(ring.play.resources.find((r) => r.key === 'item-charges:r')?.used).toBe(1);
+  });
+
+  it('is made for a mundane item too, as the release writes a Robot Controller', () => {
+    const controller = item('Robot Controller', 'QftIS', { rarity: 'none', type: 'G', charges: 3 });
+    const doc = carrying({ id: 'c', name: 'Robot Controller', source: 'QftIS' });
+    doc.equipment = doc.equipment.map((e) => ({ ...e, attuned: false }));
+    const sheet = deriveSheet(doc, world([controller]));
+    expect(sheet.resources.find((r) => r.key === 'item-charges:c')).toMatchObject({
+      max: 3,
+      regainRoll: '0',
+    });
   });
 
   it('is idle while the item is put away, with the same roll', () => {
