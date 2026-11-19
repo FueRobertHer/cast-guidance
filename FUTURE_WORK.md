@@ -337,7 +337,11 @@ work:
   editor still reads a stored copy's features against the table's version
   (U5c). Changes to the books holds one change per name and book: a second
   feature of one name and book (each class's Ability Score Improvement) is
-  refused with a line saying why.
+  refused with a line saying why, until `homebrewRepo.saveEntry` matches a
+  change by its identity. A condition the app counts by its own rules
+  (Poisoned) is not offered: a change would not reach the sheet. The
+  Workshop's list of your entries shows only kinds with an editor, so a
+  change to a class feature is found again from its Library page alone.
 
 ### Maintainability and diagnostics
 

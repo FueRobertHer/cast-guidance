@@ -255,6 +255,10 @@ describe('Change for your table', () => {
     const saved = JSON.stringify(await changesOf('spell'));
     expect(saved).toContain('Saved text.');
     expect(saved).not.toContain('Typed after.');
+    // Undo takes the save back and, as the Workshop editor's, keeps what was typed.
+    fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
+    await waitFor(() => expect(changesOf('spell')).resolves.toEqual([]), { timeout: WAIT });
+    expect(screen.getByDisplayValue('Typed after.')).toBeTruthy();
   });
 
   it('is not offered for a condition the app counts by its own rules', async () => {

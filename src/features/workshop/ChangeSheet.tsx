@@ -239,7 +239,11 @@ interface Undoable {
   before?: Json;
   after?: Json;
   key: EntryKey;
-  was: { draft: Json; clean: Json; stored?: Json; fileId?: string };
+  /**
+   * As it was before. `draft` only when the editor was reset to the book's: a
+   * save's Undo, as the Workshop editor's, keeps what was typed since.
+   */
+  was: { draft?: Json; clean: Json; stored?: Json; fileId?: string };
 }
 
 function ChangeEditor({
@@ -339,7 +343,7 @@ function ChangeEditor({
             before,
             after,
             key,
-            was: { draft, clean, stored, fileId },
+            was: { ...(next.reset === true ? { draft } : {}), clean, stored, fileId },
           }
         : undefined,
     );
@@ -430,7 +434,7 @@ function ChangeEditor({
         await homebrewRepo.saveEditable(undo.fileId, undo.before);
       }
       invalidateRegistry();
-      setDraft(undo.was.draft);
+      if (undo.was.draft !== undefined) setDraft(undo.was.draft);
       setClean(undo.was.clean);
       setStored(undo.was.stored);
       setFileId(undo.was.fileId);
