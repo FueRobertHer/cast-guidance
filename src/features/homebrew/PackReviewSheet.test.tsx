@@ -282,6 +282,27 @@ describe('packs on the Homebrew page', () => {
     ]);
   });
 
+  it('applies an update to nobody when the pack it kept the Apply to of is gone first', async () => {
+    await characterRepo.put(newCharacterDoc('hild', 'Hild', 'tag'));
+    renderPage();
+    await addThroughPage('gritty-table.json', grittyTable, 'Add Gritty Table?');
+    const { file: first } = await storedPack('Gritty Table');
+    if (first === undefined) throw new Error('not stored');
+    await savePackLocal(first.id, (local) => ({ ...local, appliesTo: { characters: ['hild'] } }));
+
+    const changed = structuredClone(grittyTable) as { _meta: { castGuidance: Json } };
+    changed._meta.castGuidance.tableRules = { restLength: 'heroic' };
+    chooseFile('gritty-table.json', changed);
+    const dialog = await findDialog('Update Gritty Table?');
+    // Deleted from another tab while the dialog asks nothing of its own.
+    await homebrewRepo.delete(first.id);
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Update' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+
+    const { files } = await homebrewRepo.listSafe();
+    expect(files.map((f) => f.pack)).toEqual([{ appliesTo: { characters: [] } }]);
+  });
+
   it('leaves a newer Apply to alone when a sheet open before it closes unchanged', async () => {
     await characterRepo.put(newCharacterDoc('hild', 'Hild', 'tag'));
     renderPage();

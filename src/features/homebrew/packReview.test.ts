@@ -325,6 +325,10 @@ describe('where packs disagree', () => {
     expect(held && describeIncomingConflict(held, 'In')).toBe(
       'Sets rest length, which Gritty also sets. Gritty would still win, as it is applied to those characters.',
     );
+    // An update keeps the place of the pack it updates, which need not be last.
+    expect(clash && describeIncomingConflict(clash, 'In', true)).toBe(
+      'Sets rest length, which Gritty also sets. In would win, as it comes later in your pack order.',
+    );
   });
 });
 

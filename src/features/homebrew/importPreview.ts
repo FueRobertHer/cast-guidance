@@ -1326,13 +1326,21 @@ export function describeConflict(c: PackConflict): string {
   return `${names(c.packs)} ${all} set ${c.what}. ${c.winner} wins: ${why}.`;
 }
 
-/** A clash a pack being added would join, worded from its side. */
-export function describeIncomingConflict(c: PackConflict, incomingId: string): string {
+/**
+ * A clash a pack being added would join, worded from its side. One that
+ * `updates` a pack here takes that one's place in the order, not the last.
+ */
+export function describeIncomingConflict(
+  c: PackConflict,
+  incomingId: string,
+  updates = false,
+): string {
   const others = c.packs.filter((_, i) => c.ids[i] !== incomingId);
   const incoming = c.packs[c.ids.indexOf(incomingId)] ?? 'This pack';
+  const place = updates ? 'it comes later in your pack order' : 'it goes last in your pack order';
   const win =
     c.winnerId === incomingId
-      ? `${incoming} would win, as ${c.why === 'chosen' ? 'it is applied to those characters' : 'it goes last in your pack order'}.`
+      ? `${incoming} would win, as ${c.why === 'chosen' ? 'it is applied to those characters' : place}.`
       : `${c.winner} would still win, as ${c.why === 'chosen' ? 'it is applied to those characters' : 'it comes later in your pack order'}.`;
   return `Sets ${c.what}, which ${names(others)} also ${others.length === 1 ? 'sets' : 'set'}. ${win}`;
 }

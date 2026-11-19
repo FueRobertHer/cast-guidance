@@ -217,7 +217,15 @@ db.version(5)
  * bound to another id came with the file from another device and reached
  * nobody, so it stays as it came. Content is read for files stored whole
  * only: a book of a converted compendium is never a pack, and the books are
- * the megabytes. What lands on the row is checked where every row is read.
+ * the megabytes, and only a file a block comes out of is written back, so
+ * the upgrade needs no room beyond the packs' own small files. What lands on
+ * the row is checked where every row is read.
+ *
+ * Content is read with a cursor, not `modify`: `modify` writes back every row
+ * its callback does not refuse, and one that writes nothing leaves Dexie's
+ * per-transaction read cache (keyed by primary keys alone, whatever the
+ * table) in place, so the `modify` of `homebrewFiles` after it, over the same
+ * ids, would be handed the content rows.
  */
 db.version(6)
   .stores({})
@@ -226,14 +234,18 @@ db.version(6)
     const rows = await files.toArray();
     const whole = rows.filter((r) => typeof r.id === 'string' && r.book === undefined);
     const packs = new Map<string, PackLocal>();
-    await tx
-      .table<HomebrewJsonRow>('homebrewJson')
+    const bodies = tx.table<HomebrewJsonRow>('homebrewJson');
+    const taken: HomebrewJsonRow[] = [];
+    await bodies
       .where('id')
       .anyOf(whole.map((r) => r.id))
-      .modify((body) => {
+      .each((body) => {
         const local = takeOldPackLocal(body.id, body.json);
-        if (local !== undefined) packs.set(body.id, local);
+        if (local === undefined) return;
+        packs.set(body.id, local);
+        taken.push(body);
       });
+    if (taken.length > 0) await bodies.bulkPut(taken);
     await files.toCollection().modify((row) => {
       // A row the version 5 upgrade missed still carries its content.
       const local = packs.get(row.id) ?? takeOldPackLocal(row.id, row.json);

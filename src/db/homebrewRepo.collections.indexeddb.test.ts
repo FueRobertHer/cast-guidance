@@ -4,6 +4,7 @@
 import 'fake-indexeddb/auto';
 import Dexie from 'dexie';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { injectIdbFault } from '../../tests-fixtures/idbFaults';
 import { db } from './db';
 import { homebrewRepo, putHomebrewRow } from './homebrewRepo';
 
@@ -181,11 +182,78 @@ describe('the changes role', () => {
   it('never comes from a file: an import claiming it stores none', async () => {
     const prepared = await homebrewRepo.prepare(file('EMB', ['Ember Lance']), 'ember.json');
     const { row } = await homebrewRepo.commit({ ...prepared, role: 'changes' });
-    expect((await homebrewRepo.getSafe(row.id)).file).not.toHaveProperty('role');
+    // On the stored row itself: the reader drops a role off an imported row anyway.
+    expect(await db.homebrewFiles.get(row.id)).not.toHaveProperty('role');
   });
 });
 
+/** A database as version 5 left it, written by `fill`, and closed. */
+async function oldDevice(fill: (old: Dexie) => Promise<void>): Promise<void> {
+  db.close();
+  await Dexie.delete('cast-guidance');
+  const old = new Dexie('cast-guidance');
+  old.version(5).stores(V5);
+  await fill(old);
+  old.close();
+}
+
+/** A pack's file with Apply to as version 5 kept it, written for the file `file`. */
+function oldPack(file: string) {
+  return {
+    _meta: {
+      sources: [{ json: 'GT', full: 'Gritty Table' }],
+      castGuidance: { v: 1, tableRules: { restLength: 'gritty' } },
+      castGuidanceLocal: { file, appliesTo: { characters: ['hild'] }, order: 2 },
+    },
+  };
+}
+
 describe('the version 6 upgrade', () => {
+  it('writes no file content it takes nothing out of, so it needs no room for the books', async () => {
+    const before = await homebrewRepo.prepare(file('EMB', ['Ember Lance']), 'ember.json');
+    await oldDevice(async (old) => {
+      const { json, key: _, ...meta } = before;
+      await old.table('homebrewFiles').put(meta);
+      await old.table('homebrewJson').put({ id: before.id, json });
+    });
+    // Any write of content during the upgrade fails, as on a device out of room.
+    const fault = await injectIdbFault(db, { tables: ['homebrewJson'], ops: ['put'] });
+    try {
+      expect(fault.attempts).toBe(0);
+      expect((await db.homebrewFiles.get(before.id))?.key).toBe('file:emb|ember');
+    } finally {
+      await fault();
+    }
+  });
+
+  it('leaves Apply to written for another file in it, and takes one off a row version 5 missed', async () => {
+    const elsewhere = { id: 'pack-a', json: oldPack('another-device') };
+    const missed = { id: 'pack-b', json: oldPack('pack-b') };
+    await oldDevice(async (old) => {
+      for (const p of [elsewhere, missed]) {
+        await old.table('homebrewFiles').put({
+          id: p.id,
+          fileName: `${p.id}.json`,
+          enabled: true,
+          editable: false,
+          sourceIds: ['GT'],
+          counts: {},
+          addedAt: 1,
+          // Version 5 moved content off every row, but a reader still takes it from one.
+          ...(p === missed ? { json: p.json } : {}),
+        });
+      }
+      await old.table('homebrewJson').put(elsewhere);
+    });
+    await db.open();
+    const a = await db.homebrewFiles.get('pack-a');
+    expect(a?.pack).toBeUndefined();
+    expect((await db.homebrewJson.get('pack-a'))?.json).toEqual(oldPack('another-device'));
+    const b = await db.homebrewFiles.get('pack-b');
+    expect(b?.pack).toEqual({ appliesTo: { characters: ['hild'] }, order: 2 });
+    expect((b?.json as { _meta: object })._meta).not.toHaveProperty('castGuidanceLocal');
+  });
+
   it('keys each imported file, so its first import again updates it', async () => {
     db.close();
     await Dexie.delete('cast-guidance');

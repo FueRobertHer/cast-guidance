@@ -302,16 +302,20 @@ export function ApplyTo({
 export const appliesToAnyone = (to: PackAppliesTo): boolean =>
   to.appDefault === true || to.characters.length > 0;
 
-/** The clash lines for one pack, worded from its side or as the page says them. */
+/**
+ * The clash lines for one pack, worded from its side or as the page says them.
+ * `updates`: the pack coming in takes the place of one here.
+ */
 export function clashLines(
   packs: readonly PackInPlay[],
   id: string,
   incoming: boolean,
   app: AppTableRules = {},
+  updates = false,
 ): string[] {
   const lines = packConflicts(packs, app)
     .filter((c) => c.ids.includes(id))
-    .map((c) => (incoming ? describeIncomingConflict(c, id) : describeConflict(c)));
+    .map((c) => (incoming ? describeIncomingConflict(c, id, updates) : describeConflict(c)));
   // Two packs may share a name, so two clashes can read the same: each is said once.
   return [...new Set(lines)];
 }

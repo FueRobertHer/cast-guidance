@@ -223,6 +223,13 @@ export async function commitHomebrewImport(
     if (replaced.some((r) => r.pack !== undefined)) {
       return { ok: true, message: `Updated "${name}". It applies to whoever it did before.` };
     }
+    // An update keeps the switch of the pack it updates.
+    if (!row.enabled) {
+      return {
+        ok: true,
+        message: `Updated "${name}". It stays off, as it was: turn it on to use it.`,
+      };
+    }
     return {
       ok: true,
       message: appliesToAnyone(row.pack?.appliesTo ?? { characters: [] })
@@ -500,7 +507,9 @@ export default function HomebrewImportPreview({
               { label: 'Cancel', onClick: onCancel },
               {
                 label: update === undefined ? 'Add and turn on' : 'Update',
-                onClick: () => onImport(undefined, applyTo),
+                // Only an Apply to the player chose: one never shown must not
+                // land if the pack it updates is gone by the time this commits.
+                onClick: () => onImport(undefined, asks ? applyTo : undefined),
                 primary: true,
                 disabled: asks && !appliesToAnyone(applyTo),
               },
@@ -516,7 +525,9 @@ export default function HomebrewImportPreview({
           ? p.packsAfter.map((x) => (x.id === packIn.id ? { ...x, appliesTo: applyTo } : x))
           : p.packsAfter;
   const clashes =
-    packIn === undefined || refused ? [] : clashLines(packsThen, packIn.id, true, appRules);
+    packIn === undefined || refused
+      ? []
+      : clashLines(packsThen, packIn.id, true, appRules, update !== undefined);
 
   return (
     <ImportPreviewDialog

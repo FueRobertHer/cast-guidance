@@ -279,6 +279,23 @@ describe('a changed pack imported again (ADR-002, D4)', () => {
     expect(deriveSheet(warrior('hild'), ctx).initiative.value).toBe(4);
     expect(deriveSheet(warrior('bram'), ctx).initiative.value).toBe(8);
   });
+
+  it('says it stays off when the pack here was off and applied to nobody yet', async () => {
+    // As a character's import brings a pack in: no Apply to of its own.
+    const here = await homebrewRepo.prepare(packFile(), 'gritty-table.json');
+    await db.transaction('rw', db.homebrewFiles, db.homebrewJson, () =>
+      putHomebrewRow({ ...here, enabled: false }),
+    );
+    const next = await homebrewRepo.prepare(changedPack(), 'gritty-table.json');
+    const everyone = { characters: [], appDefault: true };
+    const result = await commitHomebrewImport({ row: next }, undefined, everyone);
+    expect(result).toEqual({
+      ok: true,
+      message: 'Updated "Gritty Table". It stays off, as it was: turn it on to use it.',
+    });
+    const { files } = await homebrewRepo.listSafe();
+    expect(files.map((f) => [f.enabled, f.pack])).toEqual([[false, { appliesTo: everyone }]]);
+  });
 });
 
 describe('a pack applied on a device from before the version 6 upgrade', () => {
