@@ -487,7 +487,7 @@ export function Component() {
     return out;
   }, [owned]);
   // What the last import did, on screen and said once (A11Y-002).
-  const [outcome, setOutcome] = useState<{ text: string; failed: boolean }>();
+  const [outcome, setOutcome] = useState<string>();
   const importing = params.has(IMPORT_PARAM);
   const page = useRef<HTMLElement>(null);
   const closedImport = useRef(false);
@@ -525,11 +525,8 @@ export function Component() {
       </header>
       {/* Said through the announcer when it is set, so this is no live region. */}
       {outcome !== undefined && (
-        <p
-          data-import-status=""
-          className={`text-caption ${outcome.failed ? 'text-danger' : 'text-ink-muted'}`}
-        >
-          {outcome.text}
+        <p data-import-status="" className="text-caption text-ink-muted">
+          {outcome}
         </p>
       )}
       <div className="relative">
@@ -575,11 +572,11 @@ export function Component() {
         <Suspense fallback={null}>
           <ImportSheet
             onClose={() => closeImport()}
-            onDone={(text, failed) => {
-              setOutcome({ text, failed });
+            onDone={(text, landed) => {
+              setOutcome(text);
               announce(text, { key: 'import', repeat: true });
-              // What came in is a collection: the shelf it is on.
-              closeImport(failed ? undefined : 'collections');
+              // What came in is a collection: the shelf it is on. Nothing else moves the page.
+              closeImport(landed ? 'collections' : undefined);
             }}
           />
         </Suspense>

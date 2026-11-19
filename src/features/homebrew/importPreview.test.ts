@@ -927,12 +927,19 @@ describe('a rule pack’s replaces in the preview (ADR-002, D2)', () => {
     expect(lands({ official: book(false), existing: [] })[2]).toBe(
       "Not found yet: not all game data is on this device, so it may replace the book's once the rest is",
     );
-    // A collection that is off, or another pack's own change, is nothing to land over.
+    // A collection that is off, another pack's own change, or the player's
+    // Changes to the books is nothing to land over: none of them is content.
     const off = { ...grimoire(), enabled: false };
     const otherPack = local('other', pack([ref('Riptide', 'TWG')], [spell('Riptide', 'TWG')]));
-    expect(lands({ official: book(), existing: [off, otherPack] })[1]).toBe(
-      'Nothing here has it, so it replaces nothing until it is here',
-    );
+    const mine: HomebrewFile = {
+      ...local('mine', { _meta: meta(['MyChanges']), spell: [spell('Riptide', 'TWG')] }),
+      role: 'changes',
+    };
+    for (const existing of [[off], [otherPack], [mine]]) {
+      expect(lands({ official: book(), existing })[1]).toBe(
+        'Nothing here has it, so it replaces nothing until it is here',
+      );
+    }
   });
 
   it('claims no clash for an entry it replaces, and keeps the rest’s', () => {
@@ -959,10 +966,11 @@ describe('a rule pack’s replaces in the preview (ADR-002, D2)', () => {
       ],
     ]);
     const twg = grimoire();
-    // Another pack here lists Fireball: its Fireball is no content to stand on.
+    // Another pack here, ahead of the grimoire, lists Riptide: its Riptide is
+    // no content to stand on, so the grimoire's is what the new pack's is over.
     const other = local(
       'other',
-      pack([ref('Fireball', 'XPHB')], [spell('Fireball', 'XPHB', { level: 9 })]),
+      pack([ref('Riptide', 'TWG')], [spell('Riptide', 'TWG', { level: 9 })]),
       { addedAt: 0 },
     );
     const json = pack(
@@ -997,7 +1005,8 @@ describe('a rule pack’s replaces in the preview (ADR-002, D2)', () => {
     const placed = after
       .changedEntries()
       .filter((c) => c.layers.some((l) => l.from.fileId === 'new-file'))
-      .map((c) => [identityKey(c.type, c.base), c.base.source]);
+      .map((c) => [identityKey(c.type, c.base), c.base.source])
+      .sort();
     expect(placed).toEqual([
       ['aid|xphb', 'XPHB'],
       ['riptide|twg', 'TWG'],
@@ -1011,7 +1020,7 @@ describe('a rule pack’s replaces in the preview (ADR-002, D2)', () => {
     ]);
     // Each entry the preview says it lands over is one the merge changed, and no other.
     const landsOver = read.filter((_, i) => rows[i]?.startsWith("The pack's own version"));
-    expect(landsOver.map((r) => r.identity)).toEqual(placed.map(([id]) => id));
+    expect(landsOver.map((r) => r.identity).sort()).toEqual(placed.map(([id]) => id));
   });
 
   it('names them on an Update of a pack that keeps its Apply to', () => {

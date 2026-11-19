@@ -88,8 +88,11 @@ export default function ImportSheet({
 }: {
   /** Closed with nothing to report (swiped away, or Close). */
   onClose: () => void;
-  /** Closed with an outcome for the home to show: imported, kept, canceled. */
-  onDone: (message: string, failed: boolean) => void;
+  /**
+   * Closed with an outcome for the home to show: imported or updated
+   * (`landed`, so the home shows Collections), or kept or canceled.
+   */
+  onDone: (message: string, landed: boolean) => void;
 }) {
   const navigate = useNavigate();
   const [way, setWay] = useState<Way>('file');
@@ -99,16 +102,26 @@ export default function ImportSheet({
   const [kind, setKind] = useState('spell');
   const [status, setStatusState] = useState<{ text: string; failed: boolean }>();
   const [refused, setRefused] = useState<{ url: string; reason: string }>();
-  const [checking, setChecking] = useState(false);
+  /** The way a read in progress came, so Stop follows it, not the way picked since. */
+  const [checking, setChecking] = useState<Way>();
   const [pending, setPending] = useState<Pending>();
   const reading = useRef<AbortController>(undefined);
   // Which read is the newest: an older one that finishes late is dropped.
   const latest = useRef(0);
+  // A store in progress: Cancel cannot take it back, and a second press is not a second store.
+  const committing = useRef(false);
   const fileInput = useRef<HTMLInputElement>(null);
+  const stop = useRef<HTMLButtonElement>(null);
   const ids = useId();
 
-  // A read no one will see the end of is stopped.
-  useEffect(() => () => reading.current?.abort(), []);
+  // A read no one will see the end of is stopped, and says nothing once the sheet is gone.
+  useEffect(
+    () => () => {
+      latest.current += 1;
+      reading.current?.abort();
+    },
+    [],
+  );
 
   /** A message in the sheet, said once (A11Y-002); a check's line has a key of its own. */
   const setStatus = (words: string, failed = false, key = 'import') => {
@@ -119,7 +132,7 @@ export default function ImportSheet({
 
   const words = way === 'text' && pastedKind(text) === 'words';
   const ready =
-    !checking &&
+    checking === undefined &&
     (way === 'file' ? file !== undefined : way === 'link' ? url.trim() !== '' : text.trim() !== '');
 
   /** Read what was given, the same way whichever it is, and preview it. */
@@ -132,7 +145,7 @@ export default function ImportSheet({
     const request = latest.current;
     const from = way;
     setRefused(undefined);
-    setChecking(true);
+    setChecking(from);
     setStatus(
       from === 'file' && file !== undefined
         ? `Checking "${file.name}"…`
@@ -148,6 +161,10 @@ export default function ImportSheet({
         text: `Converting… ${Math.min(99, Math.floor((done / total) * 100))}%`,
         failed: false,
       });
+    };
+    // Stop works at every step, not only while a file is read or converted.
+    const stopIfStopped = () => {
+      if (run.signal.aborted) throw new ImportCancelledError();
     };
     try {
       let got: Read;
@@ -168,8 +185,11 @@ export default function ImportSheet({
       } else {
         got = await parseImportPaste(text, { onProgress, signal: run.signal });
       }
+      stopIfStopped();
       const prepared = await prepareHomebrewImport(got.raw, got.fileName, got.conversion, got.url);
+      stopIfStopped();
       const preview = await buildHomebrewPreview(prepared, got.bytes, got.limitBytes);
+      stopIfStopped();
       if (request !== latest.current) return;
       cancelAnnouncement('import-check');
       setStatusState(undefined);
@@ -205,7 +225,12 @@ export default function ImportSheet({
       }
     } finally {
       if (request === latest.current) {
-        setChecking(false);
+        // Stop goes away with the read: focus on it goes back to Read it.
+        const here = stop.current;
+        if (here !== null && document.activeElement === here) {
+          here.closest('form')?.querySelector<HTMLElement>('button[type="submit"]')?.focus();
+        }
+        setChecking(undefined);
         reading.current = undefined;
       }
     }
@@ -214,17 +239,23 @@ export default function ImportSheet({
   /** Import or Update pressed: store what the preview showed, through the one path. */
   const confirm = async (chosen?: ReadonlySet<string>, applyTo?: PackAppliesTo) => {
     const p = pending;
-    if (p === undefined) return;
-    setPending(undefined);
+    if (p === undefined || committing.current) return;
+    // The preview stays up while it is stored, so nothing else can be read or pressed.
+    committing.current = true;
     const result = await commitHomebrewImport(p.prepared, chosen, applyTo);
+    committing.current = false;
+    if (result.ok) {
+      onDone(result.message, true);
+      return;
+    }
     // A failure keeps the sheet and what was given, so it can be tried again.
-    if (result.ok) onDone(result.message, false);
-    else setStatus(result.message, true);
+    setPending(undefined);
+    setStatus(result.message, true);
   };
 
   const keepExisting = () => {
     const p = pending;
-    if (p === undefined) return;
+    if (p === undefined || committing.current) return;
     setPending(undefined);
     onDone(
       `Kept the existing "${p.preview.duplicateOf?.fileName ?? p.prepared.row.fileName}". Nothing was added.`,
@@ -243,6 +274,8 @@ export default function ImportSheet({
         {...(pending.conversion === undefined ? {} : { conversion: pending.conversion })}
         onImport={(chosen, applyTo) => void confirm(chosen, applyTo)}
         onCancel={() => {
+          // Once it is being stored, it lands: the home says so when it has.
+          if (committing.current) return;
           setPending(undefined);
           onDone('Import canceled. Nothing was added.', false);
         }}
@@ -363,7 +396,13 @@ export default function ImportSheet({
         )}
 
         <div className="flex flex-col gap-1.5">
-          <Button type="submit" variant="brand" block aria-disabled={!ready} aria-busy={checking}>
+          <Button
+            type="submit"
+            variant="brand"
+            block
+            aria-disabled={!ready}
+            aria-busy={checking !== undefined}
+          >
             {words ? 'Open in the editor' : 'Read it'}
           </Button>
           <p className={NOTE}>Nothing is saved yet.</p>
@@ -374,8 +413,14 @@ export default function ImportSheet({
           {status !== undefined && (
             <p className={status.failed ? 'text-danger' : 'text-ink-muted'}>{status.text}</p>
           )}
-          {checking && way !== 'link' && (
-            <button type="button" onClick={() => reading.current?.abort()} className={LINK}>
+          {/* A link's read cannot be stopped part way: the fetch takes no signal. */}
+          {checking !== undefined && checking !== 'link' && (
+            <button
+              ref={stop}
+              type="button"
+              onClick={() => reading.current?.abort()}
+              className={LINK}
+            >
               Stop reading
             </button>
           )}

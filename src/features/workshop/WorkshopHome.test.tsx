@@ -225,6 +225,35 @@ describe('the Workshop home', () => {
     );
   });
 
+  it('stays on the shelf when the preview is canceled, and says nothing was added', async () => {
+    const router = await visit('/workshop');
+    fireEvent.click(
+      await screen.findByRole('link', { name: 'Import a file or a link' }, { timeout: WAIT }),
+    );
+    const sheet = await screen.findByRole('dialog', { name: 'Import' }, { timeout: WAIT });
+    fireEvent.click(within(sheet).getByRole('button', { name: 'Text' }));
+    fireEvent.change(within(sheet).getByRole('textbox', { name: /^Paste a homebrew file/ }), {
+      target: {
+        value: JSON.stringify({
+          _meta: { sources: [{ json: 'TWG', full: 'Tidewater Grimoire' }] },
+          spell: [{ name: 'Riptide', source: 'TWG', level: 1, entries: ['Pull.'] }],
+        }),
+      },
+    });
+    fireEvent.click(within(sheet).getByRole('button', { name: 'Read it' }));
+    const preview = await screen.findByRole(
+      'dialog',
+      { name: 'Import "Tidewater Grimoire.json"?' },
+      { timeout: WAIT },
+    );
+    fireEvent.click(within(preview).getByRole('button', { name: 'Cancel' }));
+    expect(
+      await screen.findByText('Import canceled. Nothing was added.', {}, { timeout: WAIT }),
+    ).toBeTruthy();
+    expect(router.state.location.search).toBe('');
+    expect(screen.getByRole('button', { name: 'Yours' }).getAttribute('aria-pressed')).toBe('true');
+  });
+
   it('lands a pasted file as a collection, says so, and shows it under Collections', async () => {
     const router = await visit('/workshop');
     fireEvent.click(

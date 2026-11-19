@@ -41,7 +41,7 @@ vi.mock('@/data5e/registry', async () => {
 
 import { db } from '@/db/db';
 import { homebrewRepo } from '@/db/homebrewRepo';
-import { resetAnnouncer } from '@/stores/announcer';
+import { getAnnouncerState, resetAnnouncer } from '@/stores/announcer';
 import { namelessControls } from '../../../tests-fixtures/a11y';
 import ImportSheet from './ImportSheet';
 
@@ -86,7 +86,7 @@ function grimoire(changed = false): Json {
 }
 
 /** What the sheet reported when it closed with an outcome. */
-let done: { message: string; failed: boolean }[] = [];
+let done: { message: string; landed: boolean }[] = [];
 let closed = 0;
 
 /** The editor a text hands its words to: where it went and what it carried. */
@@ -107,7 +107,7 @@ function renderSheet() {
             onClose={() => {
               closed += 1;
             }}
-            onDone={(message, failed) => done.push({ message, failed })}
+            onDone={(message, landed) => done.push({ message, landed })}
           />
         ),
       },
@@ -119,8 +119,10 @@ function renderSheet() {
   return router;
 }
 
-const sheet = () => screen.findByRole('dialog', { name: 'Import' }, { timeout: 5000 });
-const findDialog = (name: string) => screen.findByRole('dialog', { name }, { timeout: 5000 });
+/** Reads hash the file and build a registry: slow when the machine is busy. */
+const WAIT = 5000;
+const sheet = () => screen.findByRole('dialog', { name: 'Import' }, { timeout: WAIT });
+const findDialog = (name: string) => screen.findByRole('dialog', { name }, { timeout: WAIT });
 
 /** Bring `content` in one way, as a person would, and press Read it. */
 async function bringIn(way: Way, content: Json) {
@@ -153,7 +155,7 @@ async function land(way: Way, content: Json, title: string, answer: string) {
   await bringIn(way, content);
   const preview = await findDialog(title);
   fireEvent.click(within(preview).getByRole('button', { name: answer }));
-  await waitFor(() => expect(done).toHaveLength(1));
+  await waitFor(() => expect(done).toHaveLength(1), { timeout: WAIT });
   cleanup();
   return done[0];
 }
@@ -179,7 +181,7 @@ describe('the Import sheet', () => {
 
   it('lands the same file as the same collection whichever way it comes', async () => {
     const first = await land('A file', grimoire(), `Import "${NAME}"?`, 'Import');
-    expect(first).toEqual({ message: `Imported "${NAME}" (1 spell)`, failed: false });
+    expect(first).toEqual({ message: `Imported "${NAME}" (1 spell)`, landed: true });
     const [row] = await stored();
     expect(row).toMatchObject({ fileName: NAME, json: grimoire() });
 
@@ -192,7 +194,10 @@ describe('the Import sheet', () => {
         `"${NAME}" is already here`,
         'Keep the existing file',
       );
-      expect(again?.message).toBe(`Kept the existing "${NAME}". Nothing was added.`);
+      expect(again).toEqual({
+        message: `Kept the existing "${NAME}". Nothing was added.`,
+        landed: false,
+      });
       expect((await stored()).map((f) => f.id)).toEqual([row?.id]);
     }
   });
@@ -214,8 +219,9 @@ describe('the Import sheet', () => {
         'It stays off. Turn it on under Collections to use it.',
       );
       fireEvent.click(within(preview).getByRole('button', { name: 'Update' }));
-      await waitFor(() =>
-        expect(done).toEqual([{ message: `Updated "${NAME}" (2 spell)`, failed: false }]),
+      await waitFor(
+        () => expect(done).toEqual([{ message: `Updated "${NAME}" (2 spell)`, landed: true }]),
+        { timeout: WAIT },
       );
 
       const after = await stored();
@@ -336,8 +342,10 @@ describe('the Import sheet', () => {
       target: { value: 'https://example.com/brew.json' },
     });
     fireEvent.click(within(s).getByRole('button', { name: 'Read it' }));
-    await waitFor(() =>
-      expect(s.textContent).toContain('For other sites, open the file, save it to this device'),
+    await waitFor(
+      () =>
+        expect(s.textContent).toContain('For other sites, open the file, save it to this device'),
+      { timeout: WAIT },
     );
     expect(fetchSpy).not.toHaveBeenCalled();
     fireEvent.click(within(s).getByRole('button', { name: 'Bring it in as a file' }));
@@ -347,17 +355,69 @@ describe('the Import sheet', () => {
   });
 
   it('says why text that is no homebrew file cannot be read, and adds nothing', async () => {
+    const status = () => document.querySelector('[data-import-status] p')?.textContent;
     renderSheet();
     await bringIn('Text', {} as Json);
+    await waitFor(() => expect(status()).toMatch(/^Import failed/), { timeout: WAIT });
+    // Text that starts as JSON but is none says so, not that an import failed.
     const s = await sheet();
-    await waitFor(() =>
-      expect(document.querySelector('[data-import-status] p')?.textContent).toMatch(
-        /^Import failed/,
-      ),
-    );
-    expect(s).toBeTruthy();
+    fireEvent.change(within(s).getByRole('textbox', { name: /^Paste a homebrew file/ }), {
+      target: { value: '{ "spell": [ ' },
+    });
+    fireEvent.click(within(s).getByRole('button', { name: 'Read it' }));
+    await waitFor(() => expect(status()).toMatch(/^That text is not a homebrew file: /), {
+      timeout: WAIT,
+    });
     expect(await stored()).toEqual([]);
     expect(done).toEqual([]);
     expect(closed).toBe(0);
+  });
+
+  it('stops a read part way, after the text is read, and adds nothing', async () => {
+    renderSheet();
+    await bringIn('Text', grimoire());
+    const s = await sheet();
+    const stop = within(s).getByRole('button', { name: 'Stop reading' });
+    stop.focus();
+    fireEvent.click(stop);
+    await waitFor(
+      () =>
+        expect(document.querySelector('[data-import-status] p')?.textContent).toBe(
+          'Stopped. Nothing was added.',
+        ),
+      { timeout: WAIT },
+    );
+    expect(screen.queryByRole('dialog', { name: `Import "${NAME}"?` })).toBeNull();
+    expect(within(s).queryByRole('button', { name: 'Stop reading' })).toBeNull();
+    // Focus on Stop, which went with the read, is not dropped on the page.
+    expect(document.activeElement).toBe(within(s).getByRole('button', { name: 'Read it' }));
+    expect(await stored()).toEqual([]);
+  });
+
+  it('offers Stop for the read in progress, not the way picked since', async () => {
+    renderSheet();
+    await bringIn('Text', grimoire());
+    const s = await sheet();
+    fireEvent.click(within(s).getByRole('button', { name: 'A link' }));
+    expect(within(s).getByRole('button', { name: 'Stop reading' })).toBeTruthy();
+    await findDialog(`Import "${NAME}"?`);
+  });
+
+  it('says nothing more once closed part way through a read', async () => {
+    renderSheet();
+    await bringIn('Text', grimoire());
+    cleanup();
+    // Long enough for the read to have finished, had it gone on.
+    await new Promise((r) => setTimeout(r, 1000));
+    expect(getAnnouncerState().messages.map((m) => m.text)).not.toContain(
+      'Stopped. Nothing was added.',
+    );
+    expect(await stored()).toEqual([]);
+  });
+
+  it('cancels from the preview without landing anything', async () => {
+    const out = await land('Text', grimoire(), `Import "${NAME}"?`, 'Cancel');
+    expect(out).toEqual({ message: 'Import canceled. Nothing was added.', landed: false });
+    expect(await stored()).toEqual([]);
   });
 });
