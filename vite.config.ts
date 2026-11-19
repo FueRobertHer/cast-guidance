@@ -26,6 +26,13 @@ const shippedModules = shippedModulesCollector(__dirname);
 // The built-in rule sets' folder, as Rolldown spells a module id (forward slashes).
 const RULES_DIR = `${path.resolve(__dirname, 'src/rules').replaceAll('\\', '/')}/`;
 
+// CI splits the unit tests across shards and merges their blob reports in one
+// last job (see .github/workflows/ci.yml). A shard runs a slice of the suite,
+// so it collects coverage but reports none and gates none: the floors below
+// are measured against the merged whole, which is the only place they mean
+// anything. A shard holding a third of the code would fail every floor.
+const collectOnly = process.env.COVERAGE_COLLECT_ONLY === '1';
+
 export default defineConfig({
   build: {
     license: { fileName: '.vite/licenses.json' },
@@ -77,9 +84,11 @@ export default defineConfig({
     testTimeout: 15_000,
     // CI's runners have 4 vCPUs, and Vitest's default of one worker per CPU
     // but one leaves a CPU to the main process, which mostly waits once the
-    // modules are transformed. Pinned to 4 CPUs, 3 workers took 105 s and 4
-    // took 86 s. More ran faster still (72 s at 6), but they slow each test
-    // toward the 1 s `waitFor` default and the e2e jobs take longer anyway.
+    // modules are transformed. 4 is as fast as one runner goes: measured on 4
+    // CPUs with coverage, 4, 6 and 8 workers each took about 200 s, since the
+    // extra workers only contend for the same cores and push every test
+    // toward the 1 s `waitFor` default. The suite is split across CI jobs
+    // instead; see .github/workflows/ci.yml.
     maxWorkers: process.env.CI ? 4 : undefined,
     // Node 25 and later define their own `localStorage` (undefined without
     // `--localstorage-file`) and `sessionStorage`. Vitest's jsdom environment
@@ -104,8 +113,11 @@ export default defineConfig({
     coverage: {
       provider: 'v8',
       // `json-summary` writes coverage/coverage-summary.json, which CI turns
-      // into the step summary.
-      reporter: ['text', 'text-summary', 'json-summary', 'html', 'lcov'],
+      // into the step summary. A shard writes its coverage into its blob
+      // report and nothing else: the merge job writes the reports.
+      reporter: collectOnly
+        ? ['text-summary']
+        : ['text', 'text-summary', 'json-summary', 'html', 'lcov'],
       reportsDirectory: './coverage',
       include: ['src/**/*.{ts,tsx}'],
       // Bootstrap, ambient types, and test files aren't meaningful to cover.
@@ -114,12 +126,14 @@ export default defineConfig({
       // total rounded down (87.79 / 79.37 / 82.94 / 89.48 at the last
       // measure), so `test:coverage` fails when coverage falls. Raise them as
       // coverage grows; do not use `autoUpdate`, which rewrites this file.
-      thresholds: {
-        statements: 86,
-        branches: 78,
-        functions: 81,
-        lines: 88,
-      },
+      thresholds: collectOnly
+        ? undefined
+        : {
+            statements: 86,
+            branches: 78,
+            functions: 81,
+            lines: 88,
+          },
     },
     // No `passWithNoTests`: the suite has real tests, so a run that matches
     // zero files means test discovery broke and should fail loudly.
