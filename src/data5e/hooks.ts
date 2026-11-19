@@ -1,12 +1,6 @@
-import {
-  useContext,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  useSyncExternalStore,
-} from 'react';
+import { useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { useDataStatus } from '@/stores/dataStatus';
+import { RegistryViewContext } from '@/stores/registryViewContext';
 import { getRevision, markDataChanged, subscribeRevision } from './landing';
 import { ensureTypePacks, repairTypePacks } from './loader';
 import type { EntityRegistry } from './normalize';
@@ -21,7 +15,6 @@ import {
   subscribeRegistryRefreshing,
 } from './registry';
 import { registryViewFor } from './registryView';
-import { RegistryViewContext } from './registryViewContext';
 import { ensureSearchIndex, onSearchIndexLost } from './search/client';
 
 export type AsyncStatus = 'loading' | 'ready' | 'error';

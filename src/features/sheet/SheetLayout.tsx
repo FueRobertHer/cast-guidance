@@ -25,7 +25,6 @@ import {
   useParams,
   useResolvedPath,
 } from 'react-router';
-import { RegistryViewProvider } from '@/data5e/registryViewContext';
 import { DiceTray } from '@/features/dice/DiceTray';
 import { useBack } from '@/lib/useBack';
 import { usePageTitle } from '@/lib/usePageTitle';
@@ -33,6 +32,7 @@ import { useStickyHeight } from '@/lib/useStickyHeight';
 import { announce } from '@/stores/announcer';
 import { useCharacterSession } from '@/stores/characterSession';
 import { notifyFailure } from '@/stores/notices';
+import { RegistryViewProvider } from '@/stores/registryViewContext';
 import { Banner } from '@/ui/Banner';
 import { Button, ButtonCount, buttonClass } from '@/ui/Button';
 import { GameDataProblem } from '@/ui/GameDataProblem';
