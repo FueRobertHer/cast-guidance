@@ -360,10 +360,11 @@ describe('2014 Savage Attacker', () => {
     noButton(reroll);
     expect((await sheet.saved()).play.turn?.once).toEqual(['feat:savage attacker']);
 
-    // Once a turn: the next damage offers no reroll.
+    // Once a turn: the next damage still offers it, said used, since the sheet
+    // cannot see whose turn it is (an opportunity attack has its own once).
     nextFaces(4, 1);
     rollDamage('Longsword', 'slashing');
-    noButton(reroll);
+    expect(button(reroll).textContent).toBe('Reroll weapon dice, Savage Attacker· used this turn');
   });
 
   it('keeps the first roll when the reroll is lower, and says so', async () => {
