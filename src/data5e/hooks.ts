@@ -1,5 +1,4 @@
 import {
-  createContext,
   useContext,
   useEffect,
   useMemo,
@@ -21,7 +20,8 @@ import {
   registrySignature,
   subscribeRegistryRefreshing,
 } from './registry';
-import { registryViewFor, type ViewCharacter } from './registryView';
+import { registryViewFor } from './registryView';
+import { RegistryViewContext } from './registryViewContext';
 import { ensureSearchIndex, onSearchIndexLost } from './search/client';
 
 export type AsyncStatus = 'loading' | 'ready' | 'error';
@@ -46,15 +46,6 @@ export interface RegistryState {
 export function useRegistryRefreshing(): boolean {
   return useSyncExternalStore(subscribeRegistryRefreshing, isRegistryRefreshing, () => false);
 }
-
-const ViewOf = createContext<ViewCharacter | undefined>(undefined);
-
-/**
- * The character whose view of the registry every registry hook under it reads
- * (ADR-002, D3): its sheet, its pickers and its info sheets see the versions
- * its collection switches pick. Outside one, the shared registry.
- */
-export const RegistryViewProvider = ViewOf.Provider;
 
 /**
  * Registry hook with explicit status (ERR-001): ensures the given packs,
@@ -115,7 +106,7 @@ export function useRegistryState(packs: readonly PackId[] = []): RegistryState {
     };
   }, [key, phase, revision, nonce]);
 
-  const character = useContext(ViewOf);
+  const character = useContext(RegistryViewContext);
   const view = useMemo(
     () => (registry === null ? null : registryViewFor(registry, character)),
     [registry, character],

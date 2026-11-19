@@ -25,7 +25,7 @@ import {
   useParams,
   useResolvedPath,
 } from 'react-router';
-import { RegistryViewProvider } from '@/data5e/hooks';
+import { RegistryViewProvider } from '@/data5e/registryViewContext';
 import { DiceTray } from '@/features/dice/DiceTray';
 import { useBack } from '@/lib/useBack';
 import { usePageTitle } from '@/lib/usePageTitle';
