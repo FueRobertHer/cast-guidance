@@ -318,6 +318,13 @@ work:
   whole collection, so when only one of the two moves the other's picks can
   be lost; an open tab with unsaved edits that keeps its own copy
   after the save conflict brings the old identity back.
+- Changes to the books (ADR-002 E3) take the place of the entry they change in
+  the registry, from Changes to the books and from a rule pack's `replaces`.
+  Left out: official entries that copy a changed one, and the expanded
+  versions of a changed race or subrace, still read the book's; Aid's
+  + Effect amount is the catalog's, not the spell's. The import preview and
+  the pack review do not name a pack's `replaces` yet (U7), so a pack applied
+  to every character changes the entries it lists with no line saying so.
 
 ### Maintainability and diagnostics
 

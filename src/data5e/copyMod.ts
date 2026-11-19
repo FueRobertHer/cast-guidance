@@ -33,8 +33,12 @@ export function uidOf(e: Entity): string {
   return `${textOf(e.name ?? '?')}|${textOf(e.source ?? '?')}`.toLowerCase();
 }
 
-/** Meta keys that do NOT carry over from a copy target unless `_preserve`d. */
-const DELETE_ON_COPY = [
+/**
+ * Meta keys that do NOT carry over from a copy target unless `_preserve`d. A
+ * change to the books gets them back from the entry it changes, since it is
+ * that entry (`normalize.ts`).
+ */
+export const DELETE_ON_COPY = [
   'reprintedAs',
   '_versions',
   'srd',
@@ -515,7 +519,17 @@ export interface CopyRef extends Entity {
   _preserve?: Record<string, unknown>;
 }
 
-function applyCopy(e: Entity, target: Entity, warnings: CopyModWarning[], label: string): void {
+/**
+ * Copy `target` into `e` by `e._copy` (its `_mod`, `_preserve`), in place. Throws
+ * when the copy machinery cannot read what `e` holds, and `e` may then be partly
+ * changed (the lists it shares with the copy), so call it on a clone to drop.
+ */
+export function applyCopy(
+  e: Entity,
+  target: Entity,
+  warnings: CopyModWarning[],
+  label: string,
+): void {
   const copy = e._copy as CopyRef;
   const preserve = (copy._preserve ?? {}) as Record<string, unknown>;
   const base = structuredClone(target);
