@@ -17,7 +17,7 @@ import { editionOf } from '@/data5e/rulesVersion';
 import { storedInPlay } from '@/engine/activeEffects';
 import { isRecord } from '@/engine/castGuidance';
 import { SPELL_SCHOOLS } from '@/engine/spellQuery';
-import { castingTime, spellDuration, spellRange } from '@/features/library/fmt';
+import { castingTime, spellComponents, spellDuration, spellRange } from '@/features/library/fmt';
 import { spellMeta, spellSaves } from '@/features/sheet/spellMeta';
 import { spellRollActions } from '@/features/sheet/spellRolls';
 import { entriesToText, textToEntries } from '@/lib/entriesText';
@@ -859,7 +859,8 @@ function About(props: EditorProps) {
       />
       {given(comp.r) && (
         <Reads>
-          Royalty is kept in the file. The Library’s Components line does not show it yet.
+          Its components read “{spellComponents(comp, level)}” in the Library and on its rules
+          sheet: royalty costs a gold piece a spell level.
         </Reads>
       )}
       {material !== undefined && (
@@ -930,8 +931,8 @@ function About(props: EditorProps) {
             }}
           />
           <Reads>
-            Kept in the file as 5etools writes it. The Spells tab does not read a subclass’s list
-            from your own spells yet.
+            On the Spells tab, a character with that subclass finds it on the subclass’s own list
+            (an Eldritch Knight’s, say), beside the book’s spells.
           </Reads>
         </>
       )}

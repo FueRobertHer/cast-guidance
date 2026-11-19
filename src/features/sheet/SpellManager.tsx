@@ -15,6 +15,7 @@ import {
   classSpellUidsFromEntities,
   type SpellClassLookup,
   subclassSpellUids,
+  subclassSpellUidsFromEntities,
 } from '@/data5e/spellLookup';
 import { basedOn } from '@/engine/effects/mechanics';
 import {
@@ -190,19 +191,24 @@ function ClassSpells({
 
   // Homebrew spells carry classes.fromClassList inline — union them in.
   // A subclass caster's block is named for the subclass, so only a class's own
-  // block reads the original's name.
-  const homebrewUids = useMemo(
-    () =>
-      registry !== null
-        ? classSpellUidsFromEntities(
-            registry.byType('spell'),
-            copied !== undefined && subclassOf === undefined
-              ? [block.className, copied]
-              : block.className,
-          )
-        : new Set<string>(),
-    [registry, block.className, copied, subclassOf],
-  );
+  // block reads the original's name. A subclass caster also reads the spells
+  // whose `fromSubclass` names it, by its full name or its short one.
+  const homebrewUids = useMemo(() => {
+    if (registry === null) return new Set<string>();
+    const spells = registry.byType('spell');
+    const own = classSpellUidsFromEntities(
+      spells,
+      copied !== undefined && subclassOf === undefined
+        ? [block.className, copied]
+        : block.className,
+    );
+    if (subclassOf === undefined || subclassShort === undefined) return own;
+    const also = copied !== undefined ? [subclassOf, copied] : subclassOf;
+    return new Set([
+      ...own,
+      ...subclassSpellUidsFromEntities(spells, also, [subclassShort, block.className]),
+    ]);
+  }, [registry, block.className, copied, subclassOf, subclassShort]);
 
   // What an expanded list adds (a patron's, Divine Soul's, a dragonmark's), as
   // a primitive key: the block is rebuilt on every derive.

@@ -5,6 +5,7 @@ import {
   classSpellUidsFromEntities,
   type SpellClassLookup,
   subclassSpellUids,
+  subclassSpellUidsFromEntities,
 } from './spellLookup';
 
 describe('classSpellUidsFromEntities (homebrew inline lists)', () => {
@@ -94,6 +95,43 @@ describe('subclassSpellUids (generated lookup)', () => {
     expect(subclassSpellUids(lookup, ['Warden', 'Fighter'], 'Eldritch Knight')).toEqual(
       new Set(['shield|phb', 'shield|xphb']),
     );
+  });
+});
+
+describe('subclassSpellUidsFromEntities (homebrew inline subclass lists)', () => {
+  const on = (name: string, className: string, subclass: Record<string, unknown>) => ({
+    name,
+    source: 'HB',
+    classes: { fromSubclass: [{ class: { name: className }, subclass }] },
+  });
+  const spells = [
+    on('Rune Spark', 'Fighter', { name: 'Eldritch Knight', shortName: 'Eldritch Knight' }),
+    on('Hum', 'Bard', { name: 'College of Spellsong', shortName: 'Spellsong' }),
+    on('Full Hum', 'Bard', { name: 'College of Spellsong' }),
+    on('Short Hum', 'Bard', { name: 'Spellsong' }),
+    on('Wrong Bard', 'Wizard', { name: 'College of Spellsong' }),
+    { name: 'Class Only', source: 'HB', classes: { fromClassList: [{ name: 'Fighter' }] } },
+    { name: 'Odd', source: 'HB', classes: { fromSubclass: [null, 'x', { class: 'Bard' }] } },
+  ];
+
+  it('matches the class and either name the subclass goes by', () => {
+    expect(
+      subclassSpellUidsFromEntities(spells, 'Bard', ['Spellsong', 'College of Spellsong']),
+    ).toEqual(new Set(['hum|hb', 'full hum|hb', 'short hum|hb']));
+    expect([...subclassSpellUidsFromEntities(spells, 'fighter', ['eldritch knight'])]).toEqual([
+      'rune spark|hb',
+    ]);
+  });
+
+  it('needs the class too, and reads no class list', () => {
+    expect(subclassSpellUidsFromEntities(spells, 'Fighter', ['Spellsong']).size).toBe(0);
+    expect(subclassSpellUidsFromEntities(spells, 'Rogue', ['Eldritch Knight']).size).toBe(0);
+  });
+
+  it("reads a Workshop copy's subclass caster under its original's name too", () => {
+    expect([
+      ...subclassSpellUidsFromEntities(spells, ['Warden', 'Fighter'], ['Eldritch Knight']),
+    ]).toEqual(['rune spark|hb']);
   });
 });
 

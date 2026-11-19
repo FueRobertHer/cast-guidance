@@ -61,6 +61,17 @@ describe('spellComponents', () => {
     expect(spellComponents({ m: { text: 'a diamond' } })).toBe('M (a diamond)');
     expect(spellComponents({ m: true })).toBe('M');
   });
+  it('shows royalty last, priced at a gold piece a spell level as 5etools does', () => {
+    expect(spellComponents({ v: true, m: 'a coin', r: true }, 3)).toBe('V, M (a coin), R (3 gp)');
+    expect(spellComponents({ r: true }, 0)).toBe('R (0 gp)');
+    // With no level to price it by, the letter alone.
+    expect(spellComponents({ s: true, r: true })).toBe('S, R');
+    expect(spellComponents({ s: true, r: false }, 2)).toBe('S');
+  });
+  it('reads royalty on the Library and rules sheet facts, at the spell level', () => {
+    const facts = headerFacts('spell', { level: 2, components: { v: true, r: true } });
+    expect(facts).toContainEqual(['Components', 'V, R (2 gp)']);
+  });
   it('shows an em dash for no components and ? for non-objects', () => {
     expect(spellComponents({})).toBe('—');
     expect(spellComponents(undefined)).toBe('?');

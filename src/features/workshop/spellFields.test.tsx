@@ -23,7 +23,7 @@ vi.mock('@/ui/dialogs', () => ({
   },
 }));
 
-import { classSpellUidsFromEntities } from '@/data5e/spellLookup';
+import { classSpellUidsFromEntities, subclassSpellUidsFromEntities } from '@/data5e/spellLookup';
 import { headerFacts } from '@/features/library/fmt';
 import { spellMeta } from '@/features/sheet/spellMeta';
 import { readStored, writeEntry } from './copyWriter';
@@ -208,7 +208,7 @@ describe('the R component (board 5)', () => {
     const draft = mount({ name: 'Tithe', ...spell.blank() });
     fireEvent.click(chip('Components', 'Royalty'));
     expect(draft().components).toEqual({ v: true, s: true, r: true });
-    expect(screen.getByText(/Royalty is kept in the file/)).toBeTruthy();
+    expect(screen.getByText(/Its components read “V, S, R \(1 gp\)” in the Library/)).toBeTruthy();
     // Before board 5 a toggle rebuilt the components from V, S and M, and dropped R.
     fireEvent.click(chip('Components', 'Verbal'));
     expect(draft().components).toEqual({ s: true, r: true });
@@ -218,8 +218,12 @@ describe('the R component (board 5)', () => {
 
     const saved = save(draft());
     expect(saved.components).toEqual({ s: true, m: 'a gold coin', r: true });
-    // Nothing on the sheet reads it yet, as the editor says.
-    expect(headerFacts('spell', saved)).toContainEqual(['Components', 'S, M (a gold coin)']);
+    // The Library and the rules sheet show it, as the editor says.
+    expect(headerFacts('spell', saved)).toContainEqual([
+      'Components',
+      'S, M (a gold coin), R (1 gp)',
+    ]);
+    expect(screen.getByText(/“S, M \(a gold coin\), R \(1 gp\)”/)).toBeTruthy();
     cleanup();
     mount(saved);
     expect(pressed('Components')).toEqual(['Somatic', 'Material', 'Royalty']);
@@ -329,10 +333,14 @@ describe("a subclass's own list (board 5)", () => {
     });
     const saved = save(draft());
     expect(saved.classes).toEqual(draft().classes);
-    // The Spells tab reads only `fromClassList` from a player's spell, as the editor says.
-    expect(screen.getByText(/does not read a subclass’s list/)).toBeTruthy();
+    // The Spells tab reads each list where the editor says: the class's, and
+    // the subclass caster's own.
+    expect(screen.getByText(/finds it on the subclass’s own list/)).toBeTruthy();
     expect([...classSpellUidsFromEntities([saved], 'Wizard')]).toEqual(['rune spark|myhomebrew']);
-    expect([...classSpellUidsFromEntities([saved], 'Eldritch Knight')]).toEqual([]);
+    expect([...subclassSpellUidsFromEntities([saved], 'Fighter', ['Eldritch Knight'])]).toEqual([
+      'rune spark|myhomebrew',
+    ]);
+    expect(subclassSpellUidsFromEntities([saved], 'Wizard', ['Eldritch Knight']).size).toBe(0);
 
     cleanup();
     const back = mount(saved, knights());

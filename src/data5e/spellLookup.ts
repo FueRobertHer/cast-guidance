@@ -44,6 +44,39 @@ export function classSpellUidsFromEntities(
 }
 
 /**
+ * Homebrew spells on a subclass caster's own list, declared inline:
+ * `classes: { fromSubclass: [{ class: { name: "Fighter" }, subclass: { name:
+ * "Eldritch Knight", shortName: "Eldritch Knight" } }] }`. A file may give the
+ * subclass by its full name or its short one, so either of `subclassNames`
+ * (the caster's own) matches either name the entry gives.
+ */
+export function subclassSpellUidsFromEntities(
+  spells: readonly Record<string, unknown>[],
+  className: ClassNames,
+  subclassNames: readonly string[],
+): Set<string> {
+  const out = new Set<string>();
+  const targets = namesOf(className);
+  const subs = namesOf(subclassNames);
+  const nameOf = (v: unknown) => (typeof v === 'string' ? v.toLowerCase() : undefined);
+  for (const s of spells) {
+    const list = (s.classes as { fromSubclass?: unknown } | undefined)?.fromSubclass;
+    if (!Array.isArray(list)) continue;
+    const listed = list.some((e) => {
+      if (typeof e !== 'object' || e === null) return false;
+      const { class: c, subclass: sub } = e as { class?: { name?: unknown }; subclass?: unknown };
+      const cls = nameOf(c?.name);
+      if (cls === undefined || !targets.has(cls)) return false;
+      if (typeof sub !== 'object' || sub === null) return false;
+      const { name, shortName } = sub as { name?: unknown; shortName?: unknown };
+      return [nameOf(name), nameOf(shortName)].some((n) => n !== undefined && subs.has(n));
+    });
+    if (listed) out.add(`${String(s.name)}|${String(s.source)}`.toLowerCase());
+  }
+  return out;
+}
+
+/**
  * Spell uids on a subclass caster's list (the Eldritch Knight's), any source:
  * `subclass[CLASS_SOURCE][ClassName][SUBCLASS_SOURCE][SubclassShortName]`.
  */
