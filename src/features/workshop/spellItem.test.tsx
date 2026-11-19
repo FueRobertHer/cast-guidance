@@ -945,6 +945,34 @@ describe('ItemEditor', () => {
     ).toBeNull();
   });
 
+  it("writes out the DC of the official item a copied copy's original is based on", () => {
+    const registry = new EntityRegistry();
+    registry.setRuleSets(BUILT_IN_RULE_SETS);
+    registry.addAll('spell', [
+      { name: 'Fireball', source: 'XPHB', level: 3 },
+    ] as unknown as Entity[]);
+    const copied = (basedOn: string | undefined): Json => ({
+      name: 'My Wand',
+      source: 'HB',
+      type: 'WD|XDMG',
+      charges: 7,
+      recharge: 'dawn',
+      attachedSpells: { charges: { '1': ['fireball|xphb'] } },
+      entries: [],
+      ...(basedOn === undefined ? {} : { castGuidance: { v: 1, basedOn } }),
+    });
+    const written = (basedOn: string | undefined) => {
+      const original = copied(basedOn);
+      const draft = mount(item, structuredClone(original), registry, original);
+      press('Change the spells they cast');
+      const effects = (draft().castGuidance as Json).effects as Json[];
+      cleanup();
+      return effects[0]?.dc;
+    };
+    expect(written('Wand of Fireballs|XDMG')).toBe(15);
+    expect(written(undefined)).toBeUndefined();
+  });
+
   it('says the sheet counts the charges its fields say, and writes them out to give them spells', () => {
     const draft = mount(item, { name: 'Odd Rod', type: 'RD', entries: [], charges: 2 });
     expect(screen.getByText(/The sheet counts these, and they cast no spells yet/)).toBeTruthy();

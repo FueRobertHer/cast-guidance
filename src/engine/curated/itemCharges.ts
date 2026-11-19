@@ -18,6 +18,7 @@ import { isRecord, RULE_PACK_TYPE, RULE_SET_LIMITS, RULE_SET_TYPE } from '../cas
 import { parseSpellRef } from '../effects/additionalSpells';
 import { lookupItem } from '../effects/item';
 import {
+  basedOn,
   builtInRuleIn,
   type ChargeSpell,
   type FixedCast,
@@ -47,9 +48,29 @@ export function itemChargesIn(
   return builtInRuleIn(ruleSets, 'charges', [refUid(ref)])?.charges;
 }
 
-/** The save DC and attack bonus an item's text fixes for its spells, by its equipment entry's ref (`itemDc` rows). */
-export function itemDcIn(ruleSets: readonly DataEntity[], ref: EntityRef): FixedCast | undefined {
-  return builtInRuleIn(ruleSets, 'itemDc', [refUid(ref)])?.itemDc;
+/**
+ * The keys an item's `itemDc` and `itemSpells` rows are found under: its own
+ * `name|source`, then that of the official item a Workshop copy (`entry`) is
+ * `basedOn`, so a copy casts as the item it copies.
+ */
+export function itemRowKeys(ref: EntityRef, entry: DataEntity | undefined): string[] {
+  const own = refUid(ref);
+  const based = basedOn(entry);
+  const copied = based === undefined ? own : refUid(based);
+  return copied === own ? [own] : [own, copied];
+}
+
+/**
+ * The save DC and attack bonus an item's text fixes for its spells (`itemDc`
+ * rows), by its equipment entry's ref, or the item a copy of it (`entry`)
+ * copies (`itemRowKeys`).
+ */
+export function itemDcIn(
+  ruleSets: readonly DataEntity[],
+  ref: EntityRef,
+  entry?: DataEntity,
+): FixedCast | undefined {
+  return builtInRuleIn(ruleSets, 'itemDc', itemRowKeys(ref, entry))?.itemDc;
 }
 
 /**
@@ -323,25 +344,44 @@ function olderChargesUpgrade(entry: DataEntity): DataEntity | undefined {
  * the fields out (`fieldChargesOf`); the row stands outside both, so only a
  * pack's charges or the item's own come before it. A pack's or the item's own
  * effect says the DC its spells cast with; the row's and the fields' take the
- * item's `itemDc` row's.
+ * item's `itemDc` row's (or, for a Workshop copy, the row of the item it
+ * copies: `itemRowKeys`).
  */
 export function itemChargesOf(
   lookup: ChargeLookup,
   characterId: string,
   ref: EntityRef,
 ): ItemCharges | undefined {
+  return itemChargesFrom(lookup, characterId, ref)?.charges;
+}
+
+/** Where `itemChargesOf` found an item's charges: a pack's effect, its own, its built-in row, its fields. */
+export type ChargesFrom = 'pack' | 'own' | 'row' | 'fields';
+
+/** `itemChargesOf`, and where it found them (`ChargesFrom`). */
+export function itemChargesFrom(
+  lookup: ChargeLookup,
+  characterId: string,
+  ref: EntityRef,
+): { charges: ItemCharges; from: ChargesFrom } | undefined {
   const uid = refUid(ref);
   const packs = packChargesOf(lookup.byType(RULE_PACK_TYPE), characterId, uid);
-  if (packs.charges !== undefined) return packs.charges;
+  if (packs.charges !== undefined) return { charges: packs.charges, from: 'pack' };
   const entry = packs.replaced ? undefined : lookupItem({ ctx: lookup }, ref.name, ref.source);
   const raw = entry === undefined ? undefined : entry.castGuidance;
   const mine = raw === undefined ? undefined : readMechanics(raw);
-  if (mine?.readable === true && mine.charges !== undefined) return mine.charges;
+  if (mine?.readable === true && mine.charges !== undefined) {
+    return { charges: mine.charges, from: 'own' };
+  }
   const sets = lookup.byType(RULE_SET_TYPE);
-  const held =
-    itemChargesIn(sets, ref) ?? (entry === undefined ? undefined : fieldChargesOf(entry));
-  const fixed = held === undefined ? undefined : itemDcIn(sets, ref);
-  return fixed === undefined || held === undefined ? held : { ...held, ...fixed };
+  const row = itemChargesIn(sets, ref);
+  const held = row ?? (entry === undefined ? undefined : fieldChargesOf(entry));
+  if (held === undefined) return undefined;
+  const fixed = itemDcIn(sets, ref, entry);
+  return {
+    charges: fixed === undefined ? held : { ...held, ...fixed },
+    from: row === undefined ? 'fields' : 'row',
+  };
 }
 
 /**

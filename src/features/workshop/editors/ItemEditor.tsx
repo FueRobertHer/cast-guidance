@@ -235,13 +235,15 @@ export function rowSpells(
  * What an official item's spells cast with that its own effect would lose: the
  * DC and attack bonus its built-in `itemDc` row fixes, which a written-out
  * effect says itself (`itemChargesOf` takes an effect's numbers as they are).
+ * An original that is a copy itself has those of the item it copies.
  */
 export function fixedOfOriginal(registry: EntityRegistry, original: Json | undefined): Json {
   if (original === undefined) return {};
-  const fixed = itemDcIn(registry.byType(RULE_SET_TYPE) as readonly DataEntity[], {
-    name: String(original.name),
-    source: String(original.source),
-  });
+  const fixed = itemDcIn(
+    registry.byType(RULE_SET_TYPE) as readonly DataEntity[],
+    { name: String(original.name), source: String(original.source) },
+    original as DataEntity,
+  );
   return { ...fixed };
 }
 
