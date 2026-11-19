@@ -183,6 +183,8 @@ function regiven(
   };
 }
 
+const isObject = (x: unknown): x is object => typeof x === 'object' && x !== null;
+
 /** A price's fields that name a pool, for its cost and its buy-back. */
 const PRICE_KEYS = [
   ['cost', ['resource', 'slotRefills']],
@@ -557,40 +559,58 @@ export function EffectCards({
     }
     return id;
   };
-  const edited = (from: object, to: object) => {
-    if (from !== to) ids.current.set(to, idOf(from));
+  const edited = (from: unknown, to: unknown) => {
+    if (isObject(from) && isObject(to) && from !== to) ids.current.set(to, idOf(from));
   };
-  /** Each card's key: its id, or its id and place where one effect is on the page twice. */
-  const keysOf = (xs: readonly object[], used: Set<string>) =>
-    xs.map((x, j) => {
-      const id = String(idOf(x));
-      const key = used.has(id) ? `${id} ${j}` : id;
+  /**
+   * What stands at `j` of `xs`: a card by its id, and an entry that is not an
+   * object (a file's text or number) by its value and how many of it stand before.
+   */
+  const tokenOf = (xs: readonly unknown[], j: number): string => {
+    const x = xs[j];
+    if (isObject(x)) return `#${idOf(x)}`;
+    const said = (y: unknown) => JSON.stringify(y) ?? String(y);
+    const v = said(x);
+    return `=${v} ${xs.slice(0, j).filter((y) => !isObject(y) && said(y) === v).length}`;
+  };
+  /** Each card's key: what stands there, and its place where one effect is on the page twice. */
+  const keysOf = (xs: readonly unknown[]) => {
+    const used = new Set<string>();
+    return xs.map((_, j) => {
+      const at = tokenOf(xs, j);
+      const key = used.has(at) ? `${at} ${j}` : at;
       used.add(key);
       return key;
     });
+  };
   // The list's order as this session has seen it, the cards since put on at
   // a moment among them, so Counts when taken away puts a card back where it
-  // stood, however many are out. One this session never saw on the list goes last.
-  const home = useRef<number[]>([]);
-  /** The order with every card now on the list in it, each just after the one before it. */
-  const placed = (): number[] => {
+  // stood, however many are out.
+  const home = useRef<string[]>([]);
+  /**
+   * The order with all that is now on the list in it. One this session never
+   * saw goes just before the next on the list it has seen, or last: a card
+   * added while others are at a moment comes after them, as it was added.
+   */
+  const placed = (): string[] => {
     const order = [...home.current];
-    list.forEach((x, j) => {
-      if (order.includes(idOf(x))) return;
-      const before = j === 0 ? -1 : order.indexOf(idOf(list[j - 1] as object));
-      order.splice(before + 1, 0, idOf(x));
+    const now = list.map((_, j) => tokenOf(list, j));
+    now.forEach((t, j) => {
+      if (order.includes(t)) return;
+      const next = now.slice(j + 1).find((u) => order.includes(u));
+      order.splice(next === undefined ? order.length : order.indexOf(next), 0, t);
     });
     home.current = order;
     return order;
   };
   const putBack = (effect: Eff): Eff[] => {
     const order = placed();
-    const at = order.indexOf(idOf(effect));
+    const at = order.indexOf(tokenOf([effect], 0));
     if (at === -1) return [...list, effect];
-    // After the last card on the list that stood before it.
+    // After the last on the list that stood before it.
     let after = -1;
-    list.forEach((x, j) => {
-      if (order.indexOf(idOf(x)) < at) after = j;
+    list.forEach((_, j) => {
+      if (order.indexOf(tokenOf(list, j)) < at) after = j;
     });
     return [...list.slice(0, after + 1), effect, ...list.slice(after + 1)];
   };
@@ -672,18 +692,25 @@ export function EffectCards({
             ...list.flatMap((x, j) => naming(x, `effect ${j}`, from)),
             ...amends.flatMap((a, k) => naming(a, `amend ${k}`, from, true)),
           ]);
-    const renamed = (x: Eff, place: string): Eff => ({
-      ...x,
-      ...regiven(x, (g, at, k) => (isRecord(g) ? renamed(g as Eff, `${place} ${at} ${k}`) : g)),
-      ...(at.has(`${place} key`) ? { key: to, label: next.label } : {}),
-      ...(at.has(`${place} resourceKey`) ? { resourceKey: to } : {}),
-      ...Object.assign(
-        {},
-        ...PRICE_KEYS.map(([key]) =>
-          renamedIn(key, x[key], to, (f) => at.has(`${place} ${key} ${f}`)),
+    const renamed = (x: Eff, place: string): Eff => {
+      // A file's text or number in the list names no pool.
+      if (!isRecord(x)) return x;
+      const out: Eff = {
+        ...x,
+        ...regiven(x, (g, at, k) => (isRecord(g) ? renamed(g as Eff, `${place} ${at} ${k}`) : g)),
+        ...(at.has(`${place} key`) ? { key: to, label: next.label } : {}),
+        ...(at.has(`${place} resourceKey`) ? { resourceKey: to } : {}),
+        ...Object.assign(
+          {},
+          ...PRICE_KEYS.map(([key]) =>
+            renamedIn(key, x[key], to, (f) => at.has(`${place} ${key} ${f}`)),
+          ),
         ),
-      ),
-    });
+      };
+      // What the rename leaves alone stays the same object, so its card (and
+      // a card a pick of it gives) stays the same card.
+      return JSON.stringify(out) === JSON.stringify(x) ? x : out;
+    };
     const effects = list.map((x, j) => (j === i ? next : renamed(x, `effect ${j}`)));
     // A renamed card is still the same card.
     list.forEach((x, j) => {
@@ -725,11 +752,8 @@ export function EffectCards({
     const spec = KINDS.find((k) => k.add === id);
     if (spec !== undefined) add(spec);
   };
-  const listKeys = keysOf(list, new Set());
-  const momentKeys = keysOf(
-    drawnCards.map((d) => d.effect),
-    new Set(),
-  );
+  const listKeys = keysOf(list);
+  const momentKeys = keysOf(drawnCards.map((d) => d.effect));
   return (
     <div className="flex flex-col gap-2">
       {inherits !== undefined && (

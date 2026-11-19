@@ -683,6 +683,109 @@ describe('Counts when and Lasts', () => {
   });
 });
 
+describe('cards known by their effects', () => {
+  const AC = { kind: 'acBonus', amount: 1 };
+  const SPEED = { kind: 'speedBonus', amount: 10 };
+  const effects = (g: Json | undefined) => (g as { effects: unknown[] }).effects;
+
+  it('draws the cards beside an entry that is not an effect', () => {
+    for (const odd of ['darkvision 60', 5, true]) {
+      render(<EffectCards effects={[odd, AC]} readOnly={false} onChange={() => {}} />);
+      expect(screen.getByText('+1 to Armor Class')).toBeTruthy();
+      cleanup();
+    }
+  });
+
+  it('moves a card into a moment and back around an entry that is not an effect', () => {
+    const start = { v: 1, effects: ['darkvision 60', AC, SPEED] };
+    const guidance = featWith(structuredClone(start));
+    fireEvent.click(chip('Armor Class', 'Counts when'));
+    fireEvent.change(screen.getByLabelText('Armor Class: Put on when'), {
+      target: { value: 'zeroHp' },
+    });
+    expect(effects(guidance())).toEqual(['darkvision 60', SPEED]);
+    fireEvent.click(chip('Armor Class', 'Counts when', true));
+    expect(guidance()).toEqual(start);
+  });
+
+  it('leaves an entry that is not an effect as it is, as a pool is renamed', () => {
+    const guidance = featWith({
+      v: 1,
+      effects: ['darkvision 60', { kind: 'resource', key: 'uses', label: 'Uses', max: 1 }],
+    });
+    fireEvent.change(screen.getByLabelText('Uses per rest: Name'), { target: { value: 'Fury' } });
+    expect(effects(guidance())).toEqual([
+      'darkvision 60',
+      { kind: 'resource', key: 'fury', label: 'Fury', max: 1 },
+    ]);
+  });
+
+  it('keeps what is hidden on a card a pick gives, as a pool beside the pick is renamed', () => {
+    featWith({
+      v: 1,
+      effects: [
+        { kind: 'resource', key: 'uses', label: 'Uses', max: 1, reset: 'long' },
+        {
+          kind: 'pick',
+          id: 'gift',
+          ask: 'damage',
+          gives: [{ kind: 'resist', damageType: '{pick}' }],
+        },
+      ],
+    });
+    const hidden = () =>
+      within(
+        screen.getAllByRole('group', { name: /Resistance: modifiers$/ })[0] as HTMLElement,
+      ).getByRole('button', { name: 'Only while' });
+    fireEvent.click(hidden());
+    expect(hidden().getAttribute('aria-pressed')).toBe('false');
+    fireEvent.change(screen.getByLabelText('Uses per rest: Name'), { target: { value: 'Fury' } });
+    expect(hidden().getAttribute('aria-pressed')).toBe('false');
+  });
+
+  it.each([
+    ['one card', ['Speed']],
+    ['both cards', ['Armor Class', 'Speed']],
+  ])('puts back %s out while another is added after them', (_, out) => {
+    const guidance = featWith({ v: 1, effects: [AC, SPEED] });
+    for (const title of out) {
+      fireEvent.click(chip(title, 'Counts when'));
+      fireEvent.change(screen.getByLabelText(`${title}: Put on when`), {
+        target: { value: 'longRest' },
+      });
+    }
+    fireEvent.click(screen.getByRole('button', { name: 'Skill' }));
+    for (const title of out) fireEvent.click(chip(title, 'Counts when', true));
+    expect(effects(guidance()).map((e) => (e as Eff).kind)).toEqual([
+      'acBonus',
+      'speedBonus',
+      'skillProf',
+    ]);
+  });
+
+  it('keeps a card a moment puts on, its open chips and the box typed in, as it is typed in', () => {
+    featWith({
+      v: 1,
+      moments: [{ at: 'zeroHp', do: [{ kind: 'addEffect', name: 'Fury Feat', effects: [AC] }] }],
+    });
+    fireEvent.click(chip('Armor Class', 'Lasts'));
+    const amount = screen.getByRole('textbox', { name: 'Armor Class: Amount' });
+    amount.focus();
+    fireEvent.change(amount, { target: { value: '3' } });
+    expect(screen.getByText('+3 to Armor Class')).toBeTruthy();
+    expect(document.activeElement).toBe(amount);
+    expect(screen.getByLabelText('Armor Class: Lasts')).toBeTruthy();
+  });
+
+  it('draws one effect listed twice as two cards, each with a key of its own', () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    render(<EffectCards effects={[AC, AC]} readOnly={false} onChange={() => {}} />);
+    expect(screen.getAllByText('+1 to Armor Class')).toHaveLength(2);
+    expect(error.mock.calls.flat().join(' ')).not.toMatch(/same key/);
+    error.mockRestore();
+  });
+});
+
 describe('a feat written with Counts when, on a sheet', () => {
   function world(extra: Record<string, DataEntity[]>): EngineContext {
     const base = makeTestContext();
