@@ -37,15 +37,25 @@ export const labelOf = (type: string) => TYPE_LABELS.get(type) ?? type;
 
 /** One of a kind, as a row says what an entry is ("Feat"). */
 const ONE: Readonly<Record<string, string>> = {
+  action: 'Action',
   background: 'Background',
+  baseitem: 'Equipment',
+  book: 'Book',
   class: 'Class',
   condition: 'Condition',
+  disease: 'Disease',
   feat: 'Feat',
   item: 'Item',
+  language: 'Language',
   optionalfeature: 'Optional feature',
   race: 'Species',
+  sense: 'Sense',
+  skill: 'Skill',
   spell: 'Spell',
+  status: 'Status',
   subclass: 'Subclass',
+  subrace: 'Subrace',
+  variantrule: 'Rule',
 };
 export const kindOf = (type: string) => ONE[type] ?? labelOf(type);
 

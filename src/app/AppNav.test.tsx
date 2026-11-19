@@ -57,6 +57,20 @@ describe('AppNav current section', () => {
     expect(current[0]?.getAttribute('href')).toBe('/workshop');
   });
 
+  // The routes match regardless of case, as NavLink's tabs did.
+  it.each([
+    ['/Library', 'Library'],
+    ['/WORKSHOP/Rules', 'Workshop'],
+  ])('lights the tab at %s, whatever its case', (path, tab) => {
+    const nav = renderAt(path);
+    expect(
+      nav
+        .getAllByRole('link')
+        .filter((l) => l.getAttribute('aria-current') === 'page')
+        .map((l) => l.textContent),
+    ).toEqual([tab]);
+  });
+
   it('marks no tab on a page none of them is for', () => {
     const nav = renderAt('/settings-old');
     expect(nav.getAllByRole('link').filter((l) => l.getAttribute('aria-current'))).toEqual([]);

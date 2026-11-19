@@ -7,7 +7,10 @@ import { StrictMode } from 'react';
 import { createMemoryRouter, RouterProvider } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { routes } from '@/app/routes';
+import { markDataChanged } from '@/data5e/landing';
+import { invalidateRegistry } from '@/data5e/registry';
 import { homebrewRepo } from '@/db/homebrewRepo';
+import { getAnnouncerState, resetAnnouncer } from '@/stores/announcer';
 import { setAppTableRule } from '@/stores/tableRules';
 import { namelessControls } from '../../../tests-fixtures/a11y';
 import {
@@ -22,35 +25,31 @@ vi.mock('@/data5e/loader', () =>
 vi.mock('@/app/AppShell', () =>
   import('../../../tests-fixtures/sheetHarnessMocks').then((m) => m.appShellStub),
 );
-// jsdom runs no worker, so the index answers as the Library's would: one
-// official spell, one from an imported file, one from the player's own.
-const search = vi.hoisted(() => ({ ready: true }));
+/** A hit as the index gives one. */
+const hit = (type: string, name: string, source: string) => {
+  const uid = `${name}|${source}`.toLowerCase();
+  return { id: `${type}:${uid}`, type, uid, name, source };
+};
+
+// jsdom runs no worker, so the index answers as the Library's would: by
+// default one official spell, one from an imported file, one from the
+// player's own.
+const HITS = [
+  hit('spell', 'Glimmer', 'PHB'),
+  hit('feat', 'Glimmer', 'IMP'),
+  hit('feat', 'Gift', 'HB'),
+];
+const search = vi.hoisted(() => ({ ready: true, hits: [] as unknown[], asked: 0 }));
 vi.mock('@/data5e/search/client', async (importOriginal) => {
   const real = await importOriginal<typeof import('@/data5e/search/client')>();
   return {
     ...real,
     ensureSearchIndex: () =>
       search.ready ? Promise.resolve() : Promise.reject(new Error('no worker')),
-    searchAll: async () => ({
-      hits: [
-        {
-          id: 'spell:glimmer|phb',
-          type: 'spell',
-          uid: 'glimmer|phb',
-          name: 'Glimmer',
-          source: 'PHB',
-        },
-        {
-          id: 'feat:glimmer|imp',
-          type: 'feat',
-          uid: 'glimmer|imp',
-          name: 'Glimmer',
-          source: 'IMP',
-        },
-        { id: 'feat:gift|hb', type: 'feat', uid: 'gift|hb', name: 'Gift', source: 'HB' },
-      ],
-      hiddenCount: 0,
-    }),
+    searchAll: async () => {
+      search.asked++;
+      return { hits: search.hits, hiddenCount: 0 };
+    },
   };
 });
 
@@ -58,8 +57,12 @@ vi.setConfig({ testTimeout: HARNESS_TIMEOUT });
 
 beforeEach(() => {
   search.ready = true;
+  search.hits = HITS;
+  search.asked = 0;
+  resetAnnouncer();
 });
 afterEach(resetSheetHarness);
+afterEach(resetAnnouncer);
 
 /** How long a lazily loaded page or an IndexedDB write may take on a loaded runner. */
 const WAIT = 30_000;
@@ -270,6 +273,75 @@ describe('the Workshop home', () => {
     expect(
       within(screen.getByRole('region', { name: 'Yours' })).getByRole('link', { name: /^Gift/ }),
     ).toBeTruthy();
+  });
+
+  it("finds a friend's Workshop file under their collections, though it shares the player's source", async () => {
+    // Every device's Workshop file is `MyHomebrew`; a character brought in
+    // from a friend brings theirs with it.
+    const theirs = await homebrewRepo.createEditable('Lantern Coast', 'MyHomebrew');
+    await homebrewRepo.saveEditable(theirs.id, {
+      ...(theirs.json as Record<string, unknown>),
+      feat: [{ name: 'Ember Gift', source: 'MyHomebrew', entries: ['Mine.'] }],
+    });
+    await homebrewRepo.importJson(
+      {
+        _meta: { sources: [{ json: 'MyHomebrew', full: 'My homebrew' }] },
+        feat: [{ name: 'Ember Ward', source: 'MyHomebrew', entries: ["A friend's."] }],
+      },
+      'My_homebrew.json',
+    );
+    search.hits = [
+      hit('feat', 'Ember Gift', 'MyHomebrew'),
+      hit('feat', 'Ember Ward', 'MyHomebrew'),
+    ];
+    await visit('/workshop');
+    await screen.findByRole('link', { name: /^Ember Gift/ }, { timeout: WAIT });
+    fireEvent.change(screen.getByRole('searchbox', { name: /^Search/ }), {
+      target: { value: 'ember' },
+    });
+    const collected = await screen.findByRole(
+      'region',
+      { name: 'In your collections' },
+      { timeout: WAIT },
+    );
+    expect(
+      within(collected)
+        .getAllByRole('link')
+        .map((l) => l.getAttribute('href')),
+    ).toEqual(['/library/feat/ember%20ward%7Cmyhomebrew']);
+    // The player's own is listed once, under Yours.
+    expect(
+      within(screen.getByRole('region', { name: 'Yours' }))
+        .getAllByRole('link')
+        .map((l) => l.textContent),
+    ).toEqual([expect.stringMatching(/^Ember Gift/)]);
+  });
+
+  it('asks again when the index is rebuilt behind the same query, and says nothing new', async () => {
+    search.hits = [hit('spell', 'Glimmer', 'PHB')];
+    await visit('/workshop');
+    fireEvent.change(screen.getByRole('searchbox', { name: /^Search/ }), {
+      target: { value: 'gli' },
+    });
+    const books = await screen.findByRole('region', { name: 'In the books' }, { timeout: WAIT });
+    await waitFor(() => expect(getAnnouncerState().emitted).toBe(1), { timeout: WAIT });
+    resetAnnouncer();
+    const asked = search.asked;
+
+    // More of the books land, and the index is built again.
+    search.hits = [hit('spell', 'Glimmer', 'PHB'), hit('item', 'Glimmering Orb', 'PHB')];
+    act(() => {
+      invalidateRegistry();
+      markDataChanged();
+    });
+    await within(books).findByRole('link', { name: /^Glimmering Orb/ }, { timeout: WAIT });
+    expect(search.asked).toBeGreaterThan(asked);
+    expect(within(books).getByRole('link', { name: /^Glimmering Orb/ }).textContent).toContain(
+      'Item, ',
+    );
+    // Past the announcer's settle: the count is not said again.
+    await new Promise((resolve) => setTimeout(resolve, 1_200));
+    expect(getAnnouncerState().emitted).toBe(0);
   });
 
   it('lights the Workshop tab on the Homebrew page it still links to', async () => {

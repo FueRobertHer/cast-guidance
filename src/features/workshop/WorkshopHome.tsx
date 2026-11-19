@@ -13,7 +13,7 @@
  */
 import { useLiveQuery } from 'dexie-react-hooks';
 import { ChevronRight, FileUp, Plus, Search } from 'lucide-react';
-import { type ReactNode, useEffect, useMemo, useState } from 'react';
+import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router';
 import { useRegistry, useRegistryState, useSearchState } from '@/data5e/hooks';
 import { getActiveTag } from '@/data5e/loader';
@@ -331,29 +331,41 @@ function ResultGroup({ id, head, rows }: { id: string; head: string; rows: reado
   );
 }
 
+/** An entry as the index and the player's files both name it. */
+const entryKey = (type: string, name: string, source: string) =>
+  `${type}|${name.toLowerCase()}|${source.toLowerCase()}`;
+
 /**
  * The search: theirs from the files they made, as typed; their collections
- * and the books from the Library's index, once it is ready. Their own files
- * are in the index too, so its hits from those are left to Yours.
+ * and the books from the Library's index, once it is ready. Their own entries
+ * are in the index too, so its hits for those are left to Yours. Only those:
+ * a friend's Workshop file shares the player's source (every device's is
+ * `MyHomebrew`), and its entries are a collection's.
  */
 function SearchResults({
   query,
   yours,
+  own,
   rows,
 }: {
   query: string;
   yours: readonly Found[];
+  /** Every entry of the player's own, by {@link entryKey}. */
+  own: ReadonlySet<string>;
   rows: readonly HomebrewFileMeta[] | undefined;
 }) {
   const reg = useRegistryState();
-  const { status } = useSearchState(reg.registry);
+  const { status, indexVersion } = useSearchState(reg.registry);
   const policy = useSourcePolicy();
   const [result, setResult] = useState<{ query: string; found: SearchResult }>();
   const sources = policyForSearch(policy);
   const sourcesKey = sources === undefined ? '' : JSON.stringify(sources);
   const ready = status === 'ready';
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: sourcesKey stands in for the sources object
+  // The index rebuilds behind a `ready` status as game data lands or a
+  // collection is turned on, so `indexVersion` asks again after each build,
+  // as the Library's search does.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: sourcesKey stands in for the sources object; indexVersion re-asks after a rebuild
   useEffect(() => {
     if (!ready) return;
     let alive = true;
@@ -366,31 +378,37 @@ function SearchResults({
       alive = false;
       clearTimeout(t);
     };
-  }, [query, ready, sourcesKey]);
+  }, [query, ready, sourcesKey, indexVersion]);
 
-  const { theirs, brews } = useMemo(() => {
-    const theirs = new Set<string>();
-    const brews = new Set<string>();
-    for (const r of rows ?? [])
-      for (const s of r.sourceIds) (r.editable ? theirs : brews).add(s.toLowerCase());
-    return { theirs, brews };
-  }, [rows]);
+  // Any file's sources, the player's included: an entry of theirs the
+  // Workshop does not edit is still in one of their collections.
+  const brews = useMemo(
+    () => new Set((rows ?? []).flatMap((r) => r.sourceIds.map((s) => s.toLowerCase()))),
+    [rows],
+  );
   const hits = result?.query === query ? result.found.hits : [];
-  const mine = hits.filter((h) => !theirs.has(h.source.toLowerCase()));
-  const collected = mine.filter((h) => brews.has(h.source.toLowerCase())).map(hitRow);
-  const books = mine.filter((h) => !brews.has(h.source.toLowerCase())).map(hitRow);
+  const others = hits.filter((h) => !own.has(entryKey(h.type, h.name, h.source)));
+  const collected = others.filter((h) => brews.has(h.source.toLowerCase())).map(hitRow);
+  const books = others.filter((h) => !brews.has(h.source.toLowerCase())).map(hitRow);
   const settled = result?.query === query || status === 'error' || reg.error !== null;
   const total = yours.length + collected.length + books.length;
 
+  // Said once a query settles. A rebuild behind the same query is not news,
+  // so it stays quiet, as in the Library.
+  const spokenFor = useRef<string | null>(null);
   useEffect(() => {
     if (!settled) return;
+    const asked = `${query}
+${sourcesKey}`;
+    if (spokenFor.current === asked) return;
+    spokenFor.current = asked;
     announce(
       total === 0
         ? `Nothing called ${query}`
         : `${total} ${total === 1 ? 'result' : 'results'} for ${query}`,
       { key: 'workshop-search', settleMs: 750, repeat: true },
     );
-  }, [settled, total, query]);
+  }, [settled, total, query, sourcesKey]);
   useEffect(() => () => cancelAnnouncement('workshop-search'), []);
 
   return (
@@ -422,7 +440,14 @@ export function Component() {
   const [q, setQ] = useState('');
   const owned = useLiveQuery(() => homebrewRepo.ownedSafe(), []);
   const meta = useLiveQuery(() => homebrewRepo.listMetaSafe(), []);
-  const mine = owned === undefined ? undefined : entriesOf(owned.files);
+  const mine = useMemo(() => (owned === undefined ? undefined : entriesOf(owned.files)), [owned]);
+  const own = useMemo(
+    () =>
+      new Set(
+        (mine ?? []).map((m) => entryKey(m.type, String(m.entry.name), String(m.entry.source))),
+      ),
+    [mine],
+  );
   const names = useMemo(() => {
     const out = new Map<string, string>();
     for (const f of owned?.files ?? []) out.set(f.id, madeName(f.json) ?? f.fileName);
@@ -461,7 +486,7 @@ export function Component() {
         />
       </div>
       {searching ? (
-        <SearchResults query={query} yours={found} rows={meta?.files} />
+        <SearchResults query={query} yours={found} own={own} rows={meta?.files} />
       ) : (
         <>
           <SegmentedControl

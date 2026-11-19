@@ -12,6 +12,7 @@ import { db } from '@/db/db';
 import { homebrewRepo } from '@/db/homebrewRepo';
 import { namelessControls } from '../../../tests-fixtures/a11y';
 import { HARNESS_TIMEOUT, resetSheetHarness } from '../../../tests-fixtures/sheetHarness';
+import { collectionsOf } from './collections';
 
 vi.mock('@/data5e/loader', () =>
   import('../../../tests-fixtures/sheetHarnessMocks').then((m) => m.loaderStub),
@@ -84,9 +85,12 @@ describe('a collection page', () => {
     );
     await homebrewRepo.commitBooks(books);
     const rows = await db.homebrewFiles.toArray();
-    const frost = rows.find((r) => r.book === 'Frost Codex');
-    if (frost === undefined) throw new Error('no Frost Codex');
-    visit(`/workshop/collection/${frost.id}`);
+    // The book whose id is not the collection's own, so the page finds it
+    // through the group and not by chance.
+    const [collection] = collectionsOf(rows);
+    const other = rows.find((r) => r.id !== collection?.id);
+    if (collection === undefined || other?.book === undefined) throw new Error('no second book');
+    visit(`/workshop/collection/${other.id}`);
     await screen.findByRole('heading', { level: 1, name: 'all.xml' }, { timeout: WAIT });
     const list = screen.getByRole('list', { name: 'Its books' });
     expect(
@@ -94,8 +98,8 @@ describe('a collection page', () => {
         .getAllByRole('button')
         .map((b) => b.getAttribute('aria-label')),
     ).toEqual(expect.arrayContaining(['Use Ember Codex', 'Use Frost Codex']));
-    fireEvent.click(within(list).getByRole('button', { name: 'Use Frost Codex' }));
-    await waitFor(async () => expect(await enabled(frost.id)).toBe(false), { timeout: WAIT });
+    fireEvent.click(within(list).getByRole('button', { name: `Use ${other.book}` }));
+    await waitFor(async () => expect(await enabled(other.id)).toBe(false), { timeout: WAIT });
     expect(await screen.findByText(/1 of 2 books on/, {}, { timeout: WAIT })).toBeTruthy();
   });
 

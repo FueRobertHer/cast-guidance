@@ -45,7 +45,8 @@ function TabPill({ active, children }: { active: boolean; children: ReactNode })
  * Focused flows (creator, sheet, homebrew editor) stay outside this layout.
  */
 export function AppNavLayout() {
-  const { pathname } = useLocation();
+  // Routes match regardless of case, so `/Library` is the Library's page too.
+  const pathname = useLocation().pathname.toLowerCase();
   return (
     <>
       {/* Clears the tab bar: `tabbar` and its hairline, plus the inset. */}
