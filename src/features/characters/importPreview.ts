@@ -10,7 +10,7 @@
  */
 import type { PreparedCharacterImport } from '@/db/characterRepo';
 import { bookHolders, mergeBook, sameBookCopy } from '@/db/homebrewBooks';
-import { compareMergeOrder } from '@/db/homebrewOrder';
+import { compareMergeOrder, sameCollection } from '@/db/homebrewOrder';
 import type { HomebrewFile } from '@/db/homebrewRepo';
 import {
   type OfficialCoverage,
@@ -46,7 +46,14 @@ export type EmbeddedFileStatus =
    * entries: importing adds those to that copy (`adds` of them), so the
    * book is still stored once.
    */
-  | 'adds-to-book';
+  | 'adds-to-book'
+  /**
+   * Another version of a file here, from the same link, or with the same
+   * first source and file name (ADR-002, D4): importing takes its place
+   * (`updates` names it), keeping its switch, its place in the merge order
+   * and who a pack applies to, whichever version is newer.
+   */
+  | 'updates';
 
 export interface EmbeddedFilePreview {
   fileName: string;
@@ -64,12 +71,15 @@ export interface EmbeddedFilePreview {
   /**
    * For `already-here`: whether the copy here is turned on; for `book-here`,
    * whether a file holding the book is; for `adds-to-book`, whether the copy
-   * taking the entries in is. A turned-off copy is skipped like any other,
+   * taking the entries in is; for `updates`, whether the file it takes the
+   * place of is, which it stays. A turned-off copy is skipped like any other,
    * but its entries are not in use until it is turned back on.
    */
   existingEnabled?: boolean;
   /** For `adds-to-book`: how many entries the copy here takes in. */
   adds?: number;
+  /** For `updates`: the file here it takes the place of. */
+  updates?: string;
 }
 
 export interface CharacterPreview {
@@ -121,6 +131,12 @@ export function previewCharacterImport(input: CharacterPreviewInput): CharacterP
       existingIds.has(row.id) || holders.length > 0 || row.book === undefined
         ? undefined
         : existing.find((f) => sameBookCopy(f, row));
+    // The copies of its collection here, which a file stored whole replaces
+    // (`characterRepo.commitImport`), the first in merge order being the one it updates.
+    const updated =
+      existingIds.has(row.id) || row.book !== undefined
+        ? []
+        : existing.filter((f) => sameCollection(f, row)).sort(compareMergeOrder);
     const base = {
       // A book of a converted file goes by the book's name: every book shares the file's.
       fileName: row.book ?? row.fileName,
@@ -164,6 +180,19 @@ export function previewCharacterImport(input: CharacterPreviewInput): CharacterP
               adds,
             },
       );
+    } else if (updated[0] !== undefined) {
+      const first = updated[0];
+      const gone = new Set(updated.map((f) => f.id));
+      files.push({
+        ...base,
+        status: 'updates',
+        // It takes the first copy's place, so only a file imported before that one wins over it.
+        localFiles: listed(
+          sharing.filter((f) => !gone.has(f.id) && compareMergeOrder(f, first) < 0),
+        ),
+        existingEnabled: updated.some((f) => f.enabled),
+        updates: first.fileName,
+      });
     } else {
       const status = sharing.some((f) => f.enabled) ? 'other-version' : 'new';
       files.push({ ...base, status });

@@ -32,7 +32,23 @@ describe('partitionHomebrewRows keeps a good row intact', () => {
       counts: { spell: 2 },
       addedAt: 10,
       rev: 3,
+      // Written before keys: keyed as its fields say.
+      key: 'url:https://x/y.json',
     });
+  });
+
+  it('keeps a stored key, a pack’s settings read as data, and a role only the app could set', () => {
+    const pack = { appliesTo: { characters: ['hild', 7] }, order: 'first' };
+    const [imported, owned] = partitionHomebrewRows([
+      row({ key: 'file:hb|old name', pack, role: 'changes' }),
+      row({ id: 'mine', editable: true, key: 'file:hb|brews', role: 'changes' }),
+    ]).files;
+    expect(imported?.key).toBe('file:hb|old name');
+    expect(imported?.pack).toEqual({ appliesTo: { characters: ['hild'] } });
+    // No file can claim the changes role, and an import never matches a file the player owns.
+    expect(imported).not.toHaveProperty('role');
+    expect(owned?.role).toBe('changes');
+    expect(owned).not.toHaveProperty('key');
   });
 });
 

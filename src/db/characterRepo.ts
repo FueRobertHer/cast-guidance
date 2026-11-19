@@ -23,6 +23,7 @@ import {
 import {
   buildHomebrewRow,
   type HomebrewFileMeta,
+  landHomebrewRow,
   partitionHomebrewMeta,
   putHomebrewRow,
   withContent,
@@ -268,8 +269,27 @@ export const characterRepo = {
           now: () => new Date().toISOString(),
         });
         // Stamped at commit, as `homebrewRepo.commit` does: merge order counts
-        // an import from when it lands.
-        for (const row of plan.homebrewToAdd) await putHomebrewRow({ ...row, addedAt }, 'add');
+        // an import from when it lands. A file stored whole lands as a homebrew
+        // import does, taking the place of the copies of its collection here
+        // (ADR-002, D4); a book takes its copy in below instead.
+        let whole = plan.homebrewToAdd.some((r) => r.book === undefined)
+          ? partitionHomebrewMeta(await db.homebrewFiles.toArray()).files
+          : [];
+        let homebrewUpdated = 0;
+        for (const row of plan.homebrewToAdd) {
+          if (row.book !== undefined) {
+            await putHomebrewRow({ ...row, addedAt }, 'add');
+            continue;
+          }
+          const landed = await landHomebrewRow({ ...row, addedAt }, whole, 'add');
+          if (landed.replaced.length > 0) homebrewUpdated += 1;
+          // A second copy in the same export finds the one this landed.
+          const gone = new Set(landed.replaced.map((r) => r.id));
+          whole = [
+            ...whole.filter((f) => !gone.has(f.id)),
+            ...partitionHomebrewMeta([landed.row]).files,
+          ];
+        }
         // A copy taken into the one here keeps that copy's id, switch and place.
         for (const merge of plan.homebrewToMerge) {
           const here = await db.homebrewFiles.get(merge.id);
@@ -286,7 +306,7 @@ export const characterRepo = {
           });
         }
         await db.characters.put({ ...plan.finalDoc, revision: randomId() });
-        return plan.summary;
+        return homebrewUpdated === 0 ? plan.summary : { ...plan.summary, homebrewUpdated };
       },
     );
 
@@ -420,6 +440,12 @@ export interface ImportSummary {
   /** True when the character id collided locally and a fresh id was assigned. */
   renamed: boolean;
   homebrewAdded: number;
+  /**
+   * Of `homebrewAdded`, the files that took the place of a copy of their
+   * collection here (ADR-002, D4), keeping its switch and place. Absent when
+   * none did.
+   */
+  homebrewUpdated?: number;
   /** Books here that took in what a copy from the same file had and they lacked. */
   homebrewMerged: number;
   /**

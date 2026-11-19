@@ -191,6 +191,30 @@ function fileStatus(f: EmbeddedFilePreview): { tone: Tone; status: string; detai
               'importing adds them to it. The book stays one copy.',
           };
     }
+    case 'updates': {
+      const name = `"${f.updates ?? f.fileName}"`;
+      const ahead =
+        enabledLocal.length === 0
+          ? ''
+          : ` ${enabledLocal.join(', ')} ${many ? 'were' : 'was'} imported before it, so ${
+              many ? 'their' : 'its'
+            } entries still win where they match.`;
+      return f.existingEnabled === false
+        ? {
+            tone: 'warn',
+            status: `Updates ${name}, turned off.`,
+            detail:
+              `This is another version of ${name}, so importing takes its place. It keeps its ` +
+              `switch and its place in the order, so it stays off until you turn it on.${ahead}`,
+          }
+        : {
+            tone: 'good',
+            status: `Updates ${name}.`,
+            detail:
+              `This is another version of ${name}, so importing takes its place. It keeps its ` +
+              `switch and its place in the order.${ahead}`,
+          };
+    }
     default:
       return { tone: 'new', status: 'New.', detail: 'Importing adds it to your homebrew.' };
   }

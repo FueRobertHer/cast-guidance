@@ -15,7 +15,7 @@ import {
   uidOf,
   withReplaceBudget,
 } from './copyMod';
-import { rulePackEntries } from './rulePack';
+import { type PackLocal, rulePackEntries } from './rulePack';
 
 /**
  * The list and the union are one declaration, so a type added to one cannot go
@@ -434,16 +434,23 @@ const HOMEBREW_TYPES: EntityType[] = [
 
 /**
  * Merge homebrew files into a built registry. Homebrew flows through the SAME
- * copy/mod machinery — `_copy` targets may be official entities.
+ * copy/mod machinery — `_copy` targets may be official entities. `packs` is
+ * each rule pack's Apply to and order by file id, from the stored rows: a
+ * pack with none reaches nobody.
  */
 export function mergeHomebrew(
   reg: EntityRegistry,
   homebrew: ReadonlyMap<string, Record<string, unknown>>,
+  packs: ReadonlyMap<string, PackLocal> = new Map(),
 ): void {
   // Every replaceTxt in every file draws on one budget, so the merge as a
   // whole is bounded rather than each operation on its own.
   withReplaceBudget(() => mergeHomebrewFiles(reg, homebrew));
-  reg.setRulePacks(rulePackEntries(homebrew) as unknown as Entity[]);
+  const files = [...homebrew].map(([id, json]) => {
+    const pack = packs.get(id);
+    return pack === undefined ? { id, json } : { id, json, pack };
+  });
+  reg.setRulePacks(rulePackEntries(files) as unknown as Entity[]);
 }
 
 /**

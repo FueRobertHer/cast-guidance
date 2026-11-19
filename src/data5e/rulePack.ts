@@ -5,10 +5,12 @@
  * It may hold content too, which merges as any homebrew file's does.
  *
  * Who a pack reaches, and its place among the player's packs, belong to this
- * device: they are kept on the stored file under `_meta.castGuidanceLocal`,
- * bound to the file's own id, and dropped whenever a file leaves (Share,
- * Download, a character's export). A file that arrives holding them already is
- * bound to another id, so it reaches nobody until the player applies it here.
+ * device: they are kept on the stored file's row (`HomebrewFileRow.pack`),
+ * never in its JSON, so the file stays what came from its link, an update of
+ * it keeps them (ADR-002, D4), and nothing that leaves the device carries
+ * them. Before that they were kept in the file's `_meta.castGuidanceLocal`;
+ * a file that arrives holding such a block is read as any other, so it
+ * reaches nobody until the player applies it here.
  *
  * Pure, as `normalize.ts` is: the registry reads packs through `rulePackEntries`.
  */
@@ -22,16 +24,24 @@ import {
 } from '../engine/castGuidance';
 import { parseFormula } from '../engine/formula';
 
-/** Where in `_meta` a stored pack keeps what is this device's alone. */
+/**
+ * Where in `_meta` a pack's Apply to was kept before it moved onto the row.
+ * Nothing reads it now; a file leaving the device is still sent without it.
+ */
 export const PACK_LOCAL_KEY = 'castGuidanceLocal';
 
 /** A pack's Apply to and its place in the player's list, on this device. */
 export interface PackLocal {
-  /** The stored file's id: the block counts only on the file it was written for. */
-  file: string;
   appliesTo: PackAppliesTo;
   /** Its place among the packs, the later winning; absent, after every placed one. */
   order?: number;
+}
+
+/** A stored file as the packs are read from it: its id, its content and its row's settings. */
+export interface PackFile {
+  id: string;
+  json: unknown;
+  pack?: PackLocal;
 }
 
 function metaOf(json: unknown): Record<string, unknown> | undefined {
@@ -63,10 +73,13 @@ export function packName(json: unknown, fallback = 'A rule pack'): string {
   return (full ?? id ?? fallback).slice(0, L.labelLength);
 }
 
-/** This device's Apply to and place for a pack, when they were written here for `fileId`. */
-export function packLocal(json: unknown, fileId: string): PackLocal | undefined {
-  const raw = own(metaOf(json) ?? {}, PACK_LOCAL_KEY);
-  if (!isRecord(raw) || own(raw, 'file') !== fileId || fileId === '') return undefined;
+/**
+ * A stored row's pack settings, read as every stored value is: each character
+ * a label, at most a pack's worth, and an order only when it is a number.
+ * Undefined for a row with none.
+ */
+export function readPackLocal(raw: unknown): PackLocal | undefined {
+  if (!isRecord(raw)) return undefined;
   const to = own(raw, 'appliesTo');
   const listed = isRecord(to) ? own(to, 'characters') : undefined;
   const characters = Array.isArray(listed)
@@ -76,7 +89,6 @@ export function packLocal(json: unknown, fileId: string): PackLocal | undefined 
     : [];
   const order = own(raw, 'order');
   return {
-    file: fileId,
     appliesTo: {
       characters,
       ...(isRecord(to) && own(to, 'appDefault') === true ? { appDefault: true } : {}),
@@ -89,25 +101,9 @@ export function packLocal(json: unknown, fileId: string): PackLocal | undefined 
 export const reachesAnyone = (to: PackAppliesTo | undefined): boolean =>
   to !== undefined && (to.appDefault === true || to.characters.length > 0);
 
-/** `json` holding this device's Apply to and place for it. `json` itself is left as it is. */
-export function withPackLocal(
-  json: Record<string, unknown>,
-  local: PackLocal,
-): Record<string, unknown> {
-  const block = {
-    file: local.file,
-    appliesTo: {
-      characters: [...local.appliesTo.characters],
-      ...(local.appliesTo.appDefault === true ? { appDefault: true } : {}),
-    },
-    ...(local.order === undefined ? {} : { order: local.order }),
-  };
-  return { ...json, _meta: { ...metaOf(json), [PACK_LOCAL_KEY]: block } };
-}
-
 /**
  * A file as it leaves this device (Share, Download, a character's export):
- * without who its pack is applied to here, which means nothing anywhere else.
+ * without a `_meta.castGuidanceLocal` block, which means nothing anywhere else.
  */
 export function sharedFile<T>(json: T): T {
   const meta = metaOf(json);
@@ -255,25 +251,22 @@ export interface StoredPack {
   /** Its book's id, as the registry names a pack's source. */
   source: string;
   guidance: Record<string, unknown>;
-  /** This device's Apply to and place, when written here for this file. */
+  /** This device's Apply to and place, from the file's row. */
   local?: PackLocal;
   /** The limits it breaks (`packRefusals`); while any, it reaches nobody. */
   refusals: string[];
 }
 
 /**
- * The packs among homebrew files (id to content, in merge order), in the
- * player's order: a placed pack by its place and the rest after them as they
- * merged, so a pack added later wins.
+ * The packs among homebrew files (in merge order), in the player's order: a
+ * placed pack by its place and the rest after them as they merged, so a pack
+ * added later wins.
  */
-export function packsInOrder(
-  files: Iterable<readonly [string, Record<string, unknown>]>,
-): StoredPack[] {
+export function packsInOrder(files: Iterable<PackFile>): StoredPack[] {
   const found: Array<{ at: number; pack: StoredPack }> = [];
-  for (const [id, json] of files) {
+  for (const { id, json, pack: local } of files) {
     const guidance = packGuidance(json);
     if (guidance === undefined) continue;
-    const local = packLocal(json, id);
     found.push({
       at: found.length,
       pack: {
@@ -299,9 +292,7 @@ export const packReach = (pack: StoredPack): PackAppliesTo | undefined =>
  * The packs as the registry lists them (`RULE_PACK_TYPE`), in the player's
  * order. A pack reaches only who this device applied it to.
  */
-export function rulePackEntries(
-  files: Iterable<readonly [string, Record<string, unknown>]>,
-): RulePackEntry[] {
+export function rulePackEntries(files: Iterable<PackFile>): RulePackEntry[] {
   return packsInOrder(files).map((p) => {
     const to = packReach(p);
     return {

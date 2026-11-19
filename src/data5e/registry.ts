@@ -18,6 +18,7 @@ import {
 } from './loader';
 import { type EntityRegistry, mergeHomebrew, normalizeDataset } from './normalize';
 import type { PackId } from './packs';
+import type { PackLocal } from './rulePack';
 import { setRulesBooks } from './rulesVersion';
 import { setHomebrewSourceNames } from './sourceNames';
 
@@ -225,8 +226,13 @@ async function rebuild({
   // Outside the rollback above on purpose: a broken homebrew file says
   // nothing about the official release, and going back would not fix it.
   const brewMap = new Map<string, Record<string, unknown>>();
-  for (const b of brews) brewMap.set(b.id, b.json);
-  mergeHomebrew(reg, brewMap);
+  const packs = new Map<string, PackLocal>();
+  for (const b of brews) {
+    brewMap.set(b.id, b.json);
+    // A pack's Apply to is on its row, not in the file (ADR-002, D4).
+    if (b.pack !== undefined) packs.set(b.id, b.pack);
+  }
+  mergeHomebrew(reg, brewMap, packs);
   // Only if nothing invalidated the registry while this was reading. The
   // caller still gets what was built, which is the best answer available to
   // it; what it must not do is leave that answer behind as the current one.

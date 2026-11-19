@@ -13,11 +13,11 @@
 import { type ReactNode, useState } from 'react';
 import { type ConversionReport, convertedTotal, type EntryNote, notesWith } from '@/convert/types';
 import { invalidateRegistry } from '@/data5e/registry';
-import { packGuidance, packName, packRefusals, sharedFile, withPackLocal } from '@/data5e/rulePack';
+import { packGuidance, packName, packRefusals } from '@/data5e/rulePack';
 import { ensureSourcesVisible } from '@/data5e/sourceFilter';
 import { characterRepo } from '@/db/characterRepo';
 import type { HomebrewFileRow } from '@/db/db';
-import { sameBookCopy } from '@/db/homebrewBooks';
+import { sameCollection } from '@/db/homebrewOrder';
 import { homebrewRepo } from '@/db/homebrewRepo';
 import type { PackAppliesTo } from '@/engine/castGuidance';
 import { jsonByteSize } from '@/lib/byteSize';
@@ -105,9 +105,9 @@ function totalCounts(rows: readonly HomebrewFileRow[]): Record<string, number> {
  * Why the browser clearly has no room for `rows`, or undefined. Asked before
  * writing a byte: a compendium runs to tens of megabytes, and a write that
  * fails part way costs the wait for nothing. "Clearly": only what comes in
- * new is counted, not a file already here or a book that takes the place of
- * its own older copy, and a browser that cannot say how much room it has is
- * never refused.
+ * new is counted, not a file already here or one that takes the place of an
+ * older copy of its collection (a book's included), and a browser that cannot
+ * say how much room it has is never refused.
  */
 async function roomProblem(rows: readonly HomebrewFileRow[]): Promise<string | undefined> {
   const free = await freeStorage();
@@ -116,7 +116,7 @@ async function roomProblem(rows: readonly HomebrewFileRow[]): Promise<string | u
   const ids = new Set(stored.map((r) => r.id));
   let need = 0;
   for (const r of rows) {
-    if (ids.has(r.id) || stored.some((s) => sameBookCopy(s, r))) continue;
+    if (ids.has(r.id) || stored.some((s) => sameCollection(s, r))) continue;
     need += jsonByteSize(r.json);
   }
   if (need <= free) return undefined;
@@ -164,8 +164,9 @@ async function commitBooks(
 /**
  * Import pressed: store the file the preview described, and say what
  * happened. The commit decides again inside its transaction, so a copy another
- * tab imported meanwhile is reported rather than written twice. For a file
- * stored a book at a time, `chosen` holds the books ticked; left out, all.
+ * tab imported meanwhile is reported rather than written twice, and a file of
+ * a collection here updates it. For a file stored a book at a time, `chosen`
+ * holds the books ticked; left out, all.
  */
 export async function commitHomebrewImport(
   prepared: PreparedImport,
@@ -182,18 +183,12 @@ export async function commitHomebrewImport(
       message: `"${packName(prepared.row.json)}" was not added: ${refusals.join('; ')}.`,
     };
   }
-  // A pack is stored with who it applies to here, bound to its id; whatever
-  // Apply to it arrived with was written for another device, and is dropped.
-  const toStore =
+  // The file is stored as it came; who a pack applies to here is on its row.
+  // An update keeps the Apply to of the pack it updates over this one.
+  const toStore: HomebrewFileRow =
     pack === undefined
       ? prepared.row
-      : {
-          ...prepared.row,
-          json: withPackLocal(sharedFile(prepared.row.json as Record<string, unknown>), {
-            file: prepared.row.id,
-            appliesTo: applyTo ?? { characters: [] },
-          }),
-        };
+      : { ...prepared.row, pack: { appliesTo: applyTo ?? { characters: [] } } };
   let committed: Awaited<ReturnType<typeof homebrewRepo.commit>>;
   try {
     const noRoom = await roomProblem([toStore]);
@@ -202,7 +197,7 @@ export async function commitHomebrewImport(
   } catch (err) {
     return { ok: false, message: `Import failed: ${storageErrorText(err)}` };
   }
-  const { row, duplicate } = committed;
+  const { row, duplicate, replaced } = committed;
   // The row is stored, so the registry must see it even if showing its
   // sources fails below.
   if (!duplicate) invalidateRegistry();
@@ -219,13 +214,20 @@ export async function commitHomebrewImport(
       message: `"${row.fileName}" was already on this device, so nothing was added.`,
     };
   }
+  const updated = replaced.length > 0;
+  if (updated && pack === undefined) {
+    return { ok: true, message: `Updated "${row.fileName}" (${countsText(row.counts)})` };
+  }
   if (pack !== undefined) {
     const name = packName(row.json);
+    if (replaced.some((r) => r.pack !== undefined)) {
+      return { ok: true, message: `Updated "${name}". It applies to whoever it did before.` };
+    }
     return {
       ok: true,
-      message: appliesToAnyone(applyTo ?? { characters: [] })
-        ? `Added "${name}" and turned it on.`
-        : `Added "${name}". It applies to nobody until you choose who, from Review.`,
+      message: appliesToAnyone(row.pack?.appliesTo ?? { characters: [] })
+        ? `${updated ? 'Updated' : 'Added'} "${name}" and turned it on.`
+        : `${updated ? 'Updated' : 'Added'} "${name}". It applies to nobody until you choose who, from Review.`,
     };
   }
   return { ok: true, message: `Imported "${row.fileName}" (${countsText(row.counts)})` };
@@ -464,12 +466,19 @@ export default function HomebrewImportPreview({
   );
   const pack = dup === undefined ? p.pack : undefined;
   const [applyTo, setApplyTo] = useState<PackAppliesTo>({ characters: [], appDefault: true });
+  // A file of a collection here updates it, keeping who its pack applies to.
+  const update = dup === undefined ? p.updates : undefined;
+  const kept = update?.appliesTo;
   // What Import would store: ticked books not already here.
   const storing = books?.filter((b) => chosen.has(b.id) && b.status !== 'same').length;
   const picking = books !== undefined && books.length > 1;
   const importAction =
     books === undefined || !picking
-      ? { label: 'Import', onClick: () => onImport(), primary: true }
+      ? {
+          label: update === undefined ? 'Import' : 'Update',
+          onClick: () => onImport(),
+          primary: true,
+        }
       : {
           label: storing === 0 ? 'Import' : `Import ${booksText(storing ?? 0)}`,
           onClick: () => onImport(chosen),
@@ -478,6 +487,8 @@ export default function HomebrewImportPreview({
         };
 
   const refused = pack !== undefined && pack.refusals.length > 0;
+  // An update keeps the Apply to it had, so only a new pack asks.
+  const asks = !refused && kept === undefined;
   const actions =
     dup !== undefined
       ? [{ label: 'Keep the existing file', onClick: onKeepExisting, primary: true }]
@@ -488,39 +499,44 @@ export default function HomebrewImportPreview({
           : [
               { label: 'Cancel', onClick: onCancel },
               {
-                label: 'Add and turn on',
+                label: update === undefined ? 'Add and turn on' : 'Update',
                 onClick: () => onImport(undefined, applyTo),
                 primary: true,
-                disabled: !appliesToAnyone(applyTo),
+                disabled: asks && !appliesToAnyone(applyTo),
               },
             ];
   const packIn = p.packIn;
   const appRules = useAppTableRules();
-  const clashes =
-    packIn === undefined || refused
+  const packsThen =
+    packIn === undefined
       ? []
-      : clashLines(
-          [...(p.packsOn ?? []), { ...packIn, appliesTo: applyTo }],
-          packIn.id,
-          true,
-          appRules,
-        );
+      : p.packsAfter === undefined
+        ? [...(p.packsOn ?? []), { ...packIn, appliesTo: applyTo }]
+        : kept === undefined
+          ? p.packsAfter.map((x) => (x.id === packIn.id ? { ...x, appliesTo: applyTo } : x))
+          : p.packsAfter;
+  const clashes =
+    packIn === undefined || refused ? [] : clashLines(packsThen, packIn.id, true, appRules);
 
   return (
     <ImportPreviewDialog
       title={
         dup !== undefined
           ? `"${p.fileName}" is already here`
-          : pack !== undefined
-            ? `Add ${pack.name}?`
-            : `Import "${p.fileName}"?`
+          : update !== undefined
+            ? `Update ${pack !== undefined ? pack.name : `"${p.fileName}"`}?`
+            : pack !== undefined
+              ? `Add ${pack.name}?`
+              : `Import "${p.fileName}"?`
       }
       description={
         dup !== undefined
           ? 'Nothing new would be added.'
           : pack !== undefined
             ? PACK_SAFE_LINE
-            : 'Nothing is added until you choose Import.'
+            : update !== undefined
+              ? 'Nothing changes until you choose Update.'
+              : 'Nothing is added until you choose Import.'
       }
       onDismiss={dup !== undefined ? onKeepExisting : onCancel}
       actions={actions}
@@ -537,11 +553,34 @@ export default function HomebrewImportPreview({
             </PreviewList>
           )}
           <PackDetails review={pack} />
-          {!refused && <ApplyTo value={applyTo} onChange={setApplyTo} />}
-          {!refused && !appliesToAnyone(applyTo) && (
+          {asks && <ApplyTo value={applyTo} onChange={setApplyTo} />}
+          {asks && !appliesToAnyone(applyTo) && (
             <p className="text-ink-muted">Choose a character, or Every character, to add it.</p>
           )}
         </>
+      )}
+      {update !== undefined && (
+        <PreviewSection heading="Updates a collection here">
+          <PreviewList>
+            <StatusItem tone="good" status={`"${update.fileName}"`}>
+              {`imported on ${new Date(update.addedAt).toLocaleDateString()}. This version takes its place and keeps its switch, its place in the order${
+                kept === undefined ? '' : ' and who it applies to'
+              }.`}
+            </StatusItem>
+            {update.copies > 1 && (
+              <StatusItem tone="info">
+                {`It also replaces ${update.copies - 1} older ${
+                  update.copies === 2 ? 'copy' : 'copies'
+                } of it imported beside it.`}
+              </StatusItem>
+            )}
+            {!update.enabled && (
+              <StatusItem tone="warn" status="Turned off.">
+                It stays off. Turn it on in your list below to use it.
+              </StatusItem>
+            )}
+          </PreviewList>
+        </PreviewSection>
       )}
       <PreviewFacts
         facts={[

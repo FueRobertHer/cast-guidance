@@ -310,3 +310,44 @@ describe('previewCharacterImport of part of a book', () => {
     expect(file?.localFiles.map((f) => f.fileName)).toEqual(['Ember Codex']);
   });
 });
+
+describe('previewCharacterImport of a file of a collection here (ADR-002, D4)', () => {
+  const key = 'file:hb|brew';
+  const keyed = <T extends HomebrewFileRow>(f: T, addedAt = 1): T => ({ ...f, key, addedAt });
+  const run = (existing: HomebrewFile[], row = keyed(brew('incoming', ['HB']))) =>
+    previewCharacterImport({
+      prepared: prepared([row]),
+      existing,
+      official: officialPhb(),
+      characterExists: false,
+    }).files;
+
+  it('says it updates the first copy here, keeping its switch, and names no copy as a rival', () => {
+    const old = keyed(local('old', ['HB'], false), 5);
+    const twin = keyed(local('twin', ['HB'], false), 7);
+    const before = { ...local('before', ['HB']), addedAt: 2 };
+    const after = { ...local('after', ['HB']), addedAt: 9 };
+    expect(run([twin, after, old, before])).toEqual([
+      expect.objectContaining({
+        status: 'updates',
+        updates: 'old.json',
+        existingEnabled: false,
+        // Only a file imported before the copy it takes the place of wins over it.
+        localFiles: [{ id: 'before', fileName: 'before.json', enabled: true }],
+      }),
+    ]);
+  });
+
+  it('is on when any copy it takes the place of is', () => {
+    const files = run([keyed(local('old', ['HB'], false), 5), keyed(local('twin', ['HB']), 7)]);
+    expect(files[0]?.existingEnabled).toBe(true);
+  });
+
+  it('never updates a file the player owns, the same file, or one under another key', () => {
+    const mine = { ...local('mine', ['HB']), editable: true, key };
+    const other = { ...local('other', ['HB']), key: 'file:hb|other' };
+    expect(run([mine, other])[0]?.status).toBe('other-version');
+    const same = keyed(local('incoming', ['HB']));
+    expect(run([same])[0]?.status).toBe('already-here');
+  });
+});
