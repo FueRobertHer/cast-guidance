@@ -42,7 +42,6 @@ export const cards: readonly KindSpec[] = [
     make: () => ({ kind: 'acBonus', amount: 1 }),
     fields: [amountField],
     line: (e) => `${amount(e.amount)} to Armor Class`,
-    stateful: true,
   },
   {
     kinds: ['maxHpBonus'],
@@ -50,8 +49,6 @@ export const cards: readonly KindSpec[] = [
     make: () => ({ kind: 'maxHpBonus', amount: 1 }),
     fields: [amountField],
     line: (e) => `${amount(e.amount)} to your hit point maximum`,
-    stateful: true,
-    early: true,
   },
   {
     kinds: ['hpPerLevel'],
@@ -79,7 +76,6 @@ export const cards: readonly KindSpec[] = [
     ],
     line: (e) =>
       `${e.kind === 'immune' ? 'Immunity' : e.kind === 'vulnerable' ? 'Vulnerability' : 'Resistance'} ${isByAnswer(e.damageType) ? byAnswerWords(e.damageType) : `to ${String(e.damageType)} damage`}`,
-    stateful: true,
     picks: (ask) => (ask === 'damage' ? 'damageType' : undefined),
   },
   {
@@ -88,6 +84,5 @@ export const cards: readonly KindSpec[] = [
     make: () => ({ kind: 'conditionImmune', condition: 'Frightened' }),
     fields: [{ key: 'condition', label: 'Condition', type: 'pick', options: CONDITION }],
     line: (e) => `Immune to the ${String(e.condition)} condition`,
-    stateful: true,
   },
 ];

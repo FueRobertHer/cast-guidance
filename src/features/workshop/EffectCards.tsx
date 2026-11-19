@@ -11,25 +11,25 @@
  */
 import { CircleAlert, Plus, X } from 'lucide-react';
 import { useContext, useRef } from 'react';
-import { isRecord, type StoredState } from '@/engine/castGuidance';
+import { isRecord, MOMENTS, type MomentId } from '@/engine/castGuidance';
 import { pickGivesProblems, readStoredEffects } from '@/engine/effects/mechanics';
 import type { PickFill } from '@/engine/effects/picks';
+import { readMoments } from '@/engine/moments';
 import { Chip } from '@/ui/Chip';
 import { askChoice } from '@/ui/dialogs';
 import { fieldClass } from '@/ui/TextField';
 import { AmendCards } from './cards/actions';
+import { Modifiers, type MomentPlace, momentWords } from './cards/kit/modifiers';
 import type { CardProps, Eff, FieldSpec, KindSpec, Options, SpellOption } from './cards/kit/types';
 import {
   asWritten,
   EDITIONS,
-  editionBox,
   editionOf,
   offering,
   PICKED,
   pickedWords,
   STATES,
   shown,
-  stateBox,
   stored,
   word,
 } from './cards/kit/words';
@@ -197,6 +197,25 @@ function renamedIn(
   };
 }
 
+type Drawn = Record<string, unknown> & {
+  at: MomentId;
+  do: [Record<string, unknown> & { effects: Eff[] }];
+};
+
+/** A moment the cards draw: at a moment the app sees, it puts one effect on, and only that. */
+function drawn(m: unknown): m is Drawn {
+  if (!isRecord(m) || !MOMENTS.includes(m.at as MomentId)) return false;
+  const [o, ...more] = Array.isArray(m.do) ? m.do : [];
+  return (
+    more.length === 0 &&
+    isRecord(o) &&
+    o.kind === 'addEffect' &&
+    Array.isArray(o.effects) &&
+    o.effects.length > 0 &&
+    o.effects.every((x) => isRecord(x) && typeof x.kind === 'string')
+  );
+}
+
 /** A problem in a player's words, where the reader's are not. */
 function problemWords(spec: KindSpec | undefined, p: string): string {
   return (
@@ -219,6 +238,8 @@ function Card({
   picked,
   inPick = false,
   charges = false,
+  place,
+  toMoment,
 }: {
   effect: Eff;
   problems: string[];
@@ -238,6 +259,10 @@ function Card({
   inPick?: boolean;
   /** An action's cost can spend the item's charges (`EffectCards`' `holdsCharges`). */
   charges?: boolean;
+  /** Where it sits in a moment, for a card a moment puts on. */
+  place?: MomentPlace;
+  /** Puts it on at a moment instead, where the list keeps moments. */
+  toMoment?: (at: MomentId) => void;
 }) {
   const spec = specOf(effect);
   const name = spec?.add ?? effect.kind;
@@ -276,7 +301,6 @@ function Card({
     if (done !== undefined) onChange(done.next, done.renamed);
     else onChange({ ...effect, [f.key]: v });
   };
-  const when = stateBox(effect, spec?.early === true);
   return (
     <div className="flex flex-col gap-2 rounded-control bg-surface py-2.5 pr-1 pl-3 ring-1 ring-line ring-inset">
       <div className="flex items-center gap-2">
@@ -335,56 +359,24 @@ function Card({
             </Field>
           ))}
           {spec.boxes?.(props)}
-          {/* An effect in play holds for as long as it lasts, with no When of its
-              own: its box shows only while a file sets one, to take it away. */}
-          {spec.stateful === true && (!inPlay || effect.while !== undefined) && (
-            <Field label="When">
-              <Select
-                aria-label={`${title}: When`}
-                value={when.value}
-                onChange={(e) => {
-                  const { while: _, ...rest } = effect;
-                  onChange(
-                    e.target.value === ''
-                      ? (rest as Eff)
-                      : { ...rest, while: e.target.value as StoredState },
-                  );
-                }}
-              >
-                {when.options
-                  .filter(([v]) => !inPlay || v === '' || v === when.value)
-                  .map(([v, text]) => (
-                    <option key={v} value={v}>
-                      {text}
-                    </option>
-                  ))}
-              </Select>
-            </Field>
-          )}
           {spec.beforeRules?.(props)}
-          {/* An effect in play holds under the sheet's rules: its box shows only
-              while a file sets one, to take it away. */}
-          {(!inPlay || effect.edition !== undefined) && (
-            <Field label="Rules">
-              <Select
-                aria-label={`${title}: Rules`}
-                value={editionBox(effect).value}
-                onChange={(e) => {
-                  const { edition: _, ...rest } = effect;
-                  const v = e.target.value;
-                  onChange(v === '' ? (rest as Eff) : { ...rest, edition: v as typeof edition });
-                }}
-              >
-                {editionBox(effect).options.map(([v, text]) => (
-                  <option key={v} value={v}>
-                    {text}
-                  </option>
-                ))}
-              </Select>
-            </Field>
-          )}
           {spec.after?.(props)}
         </div>
+      )}
+      {spec !== undefined && editable && (
+        <Modifiers
+          spec={spec}
+          effect={effect}
+          title={title}
+          inPlay={inPlay}
+          inPick={inPick}
+          onChange={onChange}
+          place={place}
+          toMoment={toMoment}
+        />
+      )}
+      {place !== undefined && readOnly && (
+        <span className="text-caption text-ink-muted">{momentWords(place)}</span>
       )}
       {state !== '' && readOnly && (
         <span className="text-caption text-ink-muted">{word(STATES, state)}</span>
@@ -453,6 +445,9 @@ export function EffectCards({
   fills,
   picked,
   counts,
+  moments,
+  onMoments,
+  momentName,
 }: {
   effects: unknown;
   /** The effects, and the prices (`amend`) when renaming a pool moved them too. */
@@ -501,6 +496,17 @@ export function EffectCards({
    * never counts as made, so a host offering it needs more than the reader.
    */
   counts?: (e: Eff) => boolean;
+  /**
+   * What happens at moments (`castGuidance.moments`), where the list's host
+   * keeps them (`onMoments`): a card can be put on at a moment (Counts when)
+   * for a time (Lasts). A moment that puts one effect on is drawn as its
+   * cards; every other is kept as written. `onMoments` is given the moments,
+   * and the effects too when a card moved between them.
+   */
+  moments?: unknown;
+  onMoments?: (moments: unknown[], effects?: Eff[]) => void;
+  /** The name what a moment puts on goes on the sheet under: the entry's. */
+  momentName?: string;
 }) {
   const list: Eff[] = Array.isArray(effects) ? (effects as Eff[]) : [];
   const amends: Eff[] = Array.isArray(amend) ? (amend as Eff[]) : [];
@@ -514,6 +520,35 @@ export function EffectCards({
     problems
       .filter((p) => p.startsWith(`effect ${i + 1}:`) || p.startsWith(`effect ${i + 1} (`))
       .map((p) => p.replace(/^effect \d+( \([^)]*\))?: /, ''));
+  const held: unknown[] = onMoments !== undefined && Array.isArray(moments) ? moments : [];
+  const named = momentName ?? 'Effect';
+  const momentProblems = held.length > 0 ? readMoments(held, named).problems : [];
+  /** What the reader says of a drawn moment's card `k`, and of the moment itself. */
+  const problemsAt = (mi: number, k: number) =>
+    momentProblems.flatMap((p) => {
+      const hit =
+        /^moment (\d+)(?: \([^)]*\))?(?:, outcome 1(?: \([^)]*\))?)?: (?:effect (\d+)(?: \([^)]*\))?: )?(.*)$/.exec(
+          p,
+        );
+      if (hit === null || Number(hit[1]) !== mi + 1) return [];
+      return hit[2] === undefined || Number(hit[2]) === k + 1 ? [hit[3] ?? p] : [];
+    });
+  const withEffects = (m: Drawn, effects: Eff[]): Drawn => ({
+    ...m,
+    do: [{ ...m.do[0], effects }],
+  });
+  /** The moments without moment `mi`'s card `k`, and without the moment once it puts nothing on. */
+  const without = (mi: number, k: number): unknown[] => {
+    const m = held[mi] as Drawn;
+    const rest = m.do[0].effects.filter((_, j) => j !== k);
+    return rest.length === 0
+      ? held.filter((_, j) => j !== mi)
+      : held.map((x, j) => (j === mi ? withEffects(m, rest) : x));
+  };
+  const drawnCards = held.flatMap((m, mi) =>
+    drawn(m) ? m.do[0].effects.map((effect, k) => ({ m, mi, effect, k })) : [],
+  );
+  const kept = held.filter((m) => !drawn(m)).length;
   // What follows a pool being renamed: what names it as its name starts to
   // change, kept while it changes. On the way to Kindle its key is ki for a
   // moment, and what spends the class's Ki (or a pool of the entry's own named
@@ -645,6 +680,18 @@ export function EffectCards({
             picked={picked}
             inPick={inPick}
             charges={charges}
+            toMoment={
+              onMoments === undefined
+                ? undefined
+                : (at) =>
+                    onMoments(
+                      [
+                        ...held,
+                        { at, do: [{ kind: 'addEffect', name: named, effects: [effect] }] },
+                      ],
+                      list.filter((_, j) => j !== i),
+                    )
+            }
             onRemove={() => onChange(list.filter((_, j) => j !== i))}
             onChange={(next, renamed) =>
               renamed === undefined
@@ -654,7 +701,48 @@ export function EffectCards({
           />
         ),
       )}
-      {list.filter((e) => hide?.(e) !== true).length === 0 && (
+      {drawnCards.map(({ m, mi, effect, k }) => {
+        const place: MomentPlace = {
+          moment: m,
+          outcome: m.do[0],
+          set: (next) => onMoments?.(held.map((x, j) => (j === mi ? next : x))),
+          out: () => onMoments?.(without(mi, k), [...list, effect]),
+        };
+        return (
+          <Card
+            // Moments have no id of their own either; a card is its place in them.
+            key={`moment ${mi} ${k}`}
+            effect={effect}
+            list={list}
+            pools={resources ?? []}
+            spells={spells}
+            problems={problemsAt(mi, k)}
+            inPlay={inPlay}
+            readOnly={readOnly}
+            place={place}
+            onRemove={() => onMoments?.(without(mi, k))}
+            onChange={(next) =>
+              onMoments?.(
+                held.map((x, j) =>
+                  j === mi
+                    ? withEffects(
+                        m,
+                        m.do[0].effects.map((y, i) => (i === k ? next : y)),
+                      )
+                    : x,
+                ),
+              )
+            }
+          />
+        );
+      })}
+      {kept > 0 && (
+        <p className="text-caption text-ink-muted">
+          {kept === 1 ? 'One moment does' : `${kept} moments do`} more than put an effect on:{' '}
+          {kept === 1 ? 'it is' : 'they are'} kept as written.
+        </p>
+      )}
+      {list.filter((e) => hide?.(e) !== true).length === 0 && drawnCards.length === 0 && (
         <p className="text-caption text-ink-muted">
           {inPick
             ? 'Nothing yet.'
@@ -730,6 +818,16 @@ export function EntryEffects({
         }
         amend={g.amend}
         onAmend={(amend) => set(amendPatch(amend))}
+        moments={g.moments}
+        momentName={
+          typeof draft.name === 'string' && draft.name.trim() !== '' ? draft.name : undefined
+        }
+        onMoments={(moments, effects) =>
+          set({
+            moments: moments.length > 0 ? moments : undefined,
+            ...(effects === undefined ? {} : { effects: effects.length > 0 ? effects : undefined }),
+          })
+        }
       />
     </Section>
   );

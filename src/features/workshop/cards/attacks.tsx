@@ -48,7 +48,6 @@ export const cards: readonly KindSpec[] = [
       everyAttack(e)
         ? `${amount(e.amount)} to every attack roll, weapon and spell`
         : `${amount(e.amount)} to ${e.scope === 'all' || e.scope === undefined ? '' : `${String(e.scope)} `}attack rolls`,
-    stateful: true,
   },
   {
     kinds: ['damageBonus'],
@@ -57,6 +56,5 @@ export const cards: readonly KindSpec[] = [
     fields: [amountField, { key: 'scope', label: 'Which', type: 'pick', options: SCOPE }],
     line: (e) =>
       `${amount(e.amount)} to ${e.scope === 'all' || e.scope === undefined ? '' : `${String(e.scope)} `}damage rolls`,
-    stateful: true,
   },
 ];

@@ -78,6 +78,11 @@ export interface KindSpec {
   /** What the add list calls it. */
   add: string;
   make: () => Eff;
+  /**
+   * A whole one, as the reader takes it, when a new card is not (Cast a spell
+   * names no spell yet): what the kind may take is asked of it (`Modifiers`).
+   */
+  sample?: () => Eff;
   fields: readonly FieldSpec[];
   /** The card's sentence, as the sheet reads it. */
   line: (e: Eff) => string;
@@ -91,10 +96,6 @@ export interface KindSpec {
   after?: (p: CardProps) => ReactNode;
   /** A field set from its box, when that does more than store it; undefined stores it. */
   set?: (e: Eff, key: string, v: unknown, text: string) => FieldSet | undefined;
-  /** It may hold only while a state lasts (H10). */
-  stateful?: boolean;
-  /** Its number folds before hit points are known, so it cannot wait for bloodied. */
-  early?: boolean;
   /** It never goes in play: a condition's or a spell's card does not offer it. */
   notInPlay?: boolean;
   /** What a pick gives is not built with it; one a file gives is kept as written. */

@@ -751,7 +751,6 @@ export const cards: readonly KindSpec[] = [
         ? `${amount(e.amount)} to ${listed(e.abilities.map((a) => word(ABILITY, a)))} saving throws`
         : `${amount(e.amount)} to every saving throw`,
     boxes: (p) => <SaveFields effect={p.effect} title={p.title} onChange={p.onChange} />,
-    stateful: true,
   },
   {
     kinds: ['rollAdvantage'],
@@ -777,7 +776,6 @@ export const cards: readonly KindSpec[] = [
       key === 'mode' && v === 'dis' ? { next: { ...omit(e, ['when']), mode: v } } : undefined,
     boxes: (p) => <RollFields effect={p.effect} title={p.title} onChange={p.onChange} />,
     after: (p) => <ClaimField effect={p.effect} title={p.title} onChange={p.onChange} />,
-    stateful: true,
   },
   {
     kinds: ['rollDie'],
@@ -786,7 +784,6 @@ export const cards: readonly KindSpec[] = [
     fields: [{ key: 'dice', label: 'Dice', type: 'dice' }],
     line: (e) => `+${String(e.dice)} to ${rollWords(e)}`,
     boxes: (p) => <RollFields effect={p.effect} title={p.title} onChange={p.onChange} />,
-    stateful: true,
   },
   {
     kinds: ['rollPaid'],
@@ -801,7 +798,6 @@ export const cards: readonly KindSpec[] = [
       </>
     ),
     after: paidClaim,
-    stateful: true,
     notInPlay: true,
   },
   {
@@ -817,7 +813,6 @@ export const cards: readonly KindSpec[] = [
       </>
     ),
     after: paidClaim,
-    stateful: true,
     notInPlay: true,
   },
 ];

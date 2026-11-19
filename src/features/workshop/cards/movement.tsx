@@ -23,7 +23,6 @@ export const cards: readonly KindSpec[] = [
     // An amount typed in takes the place of the proficiency bonus.
     set: (e, key, v) =>
       key === 'amount' ? { next: { ...omit(e, ['profBonus']), amount: v } } : undefined,
-    stateful: true,
   },
   {
     kinds: ['speedBonus'],
@@ -31,7 +30,6 @@ export const cards: readonly KindSpec[] = [
     make: () => ({ kind: 'speedBonus', amount: 5 }),
     fields: [amountField],
     line: (e) => `${amount(e.amount)} ft to your Speed`,
-    stateful: true,
   },
   {
     kinds: ['moveSpeed'],
@@ -52,7 +50,6 @@ export const cards: readonly KindSpec[] = [
     ],
     line: (e) =>
       `A ${String(e.mode)} speed ${e.speed === 'walk' ? 'equal to your Speed' : `of ${amount(e.speed, false)} ft`}`,
-    stateful: true,
   },
   {
     kinds: ['sense'],
@@ -63,6 +60,5 @@ export const cards: readonly KindSpec[] = [
       { key: 'range', label: 'Range in feet', type: 'amount' },
     ],
     line: (e) => `${word(KINDS_SENSE, e.sense)} ${amount(e.range, false)} ft`,
-    stateful: true,
   },
 ];

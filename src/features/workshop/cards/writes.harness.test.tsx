@@ -21,7 +21,7 @@
  * More asks are listed when they differ, for a person to judge.
  */
 import { readFileSync, writeFileSync } from 'node:fs';
-import { act, cleanup, fireEvent, render } from '@testing-library/react';
+import { act, cleanup, fireEvent, type RenderResult, render } from '@testing-library/react';
 import type { ComponentProps } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -38,7 +38,7 @@ vi.mock('@/ui/dialogs', () => ({
   askText: () => Promise.resolve(null),
 }));
 
-import { EffectCards } from '../EffectCards';
+import { EffectCards, EntryEffects } from '../EffectCards';
 
 type Json = Record<string, unknown>;
 type Props = ComponentProps<typeof EffectCards>;
@@ -604,6 +604,138 @@ const HOSTS: readonly Host[] = [
   },
 ];
 
+/**
+ * Entries' own `castGuidance` as a feat's editor holds it (`EntryEffects`),
+ * with moments of every shape: what the cards draw and what they must keep as
+ * written, beside what else the guidance holds (`drop`, `basedOn`).
+ */
+const ENTRY_DRAFTS: ReadonlyArray<readonly [string, Json]> = [
+  ['plain', { v: 1, effects: [{ kind: 'acBonus', amount: 1 }] }],
+  ['nothing', { v: 1 }],
+  [
+    'condition at zero',
+    {
+      v: 1,
+      effects: [{ kind: 'acBonus', amount: 1 }],
+      moments: [{ at: 'zeroHp', do: [{ kind: 'addCondition', condition: 'Exhaustion' }] }],
+    },
+  ],
+  [
+    'effect at long rest',
+    {
+      v: 1,
+      moments: [
+        {
+          at: 'longRest',
+          do: [
+            { kind: 'addEffect', name: 'Rested', effects: [{ kind: 'speedBonus', amount: 10 }] },
+          ],
+        },
+      ],
+    },
+  ],
+  [
+    'effect on a natural 20, a minute',
+    {
+      v: 1,
+      effects: [{ kind: 'skillProf', skill: 'stealth' }],
+      moments: [
+        {
+          at: 'natural20',
+          rolls: ['attack'],
+          do: [
+            {
+              kind: 'addEffect',
+              name: 'Fury',
+              effects: [{ kind: 'damageBonus', amount: 2, scope: 'all' }],
+              lasts: { minutes: 1 },
+            },
+          ],
+        },
+      ],
+    },
+  ],
+  [
+    'two outcomes',
+    {
+      v: 1,
+      moments: [
+        {
+          at: 'turnStart',
+          do: [
+            {
+              kind: 'addEffect',
+              name: 'Wary',
+              effects: [{ kind: 'initiativeBonus', amount: 2 }],
+              lasts: { rest: 'short', concentration: true },
+            },
+            { kind: 'cue', text: 'Roar', tone: 'warn' },
+          ],
+        },
+      ],
+    },
+  ],
+  [
+    'cast at level, two effects',
+    {
+      v: 1,
+      drop: [{ kind: 'resist' }],
+      basedOn: 'Alert|XPHB',
+      basedOnFingerprint: 'abc',
+      moments: [
+        {
+          at: 'castAtLevel',
+          level: 3,
+          do: [
+            {
+              kind: 'addEffect',
+              name: 'Surge',
+              effects: [
+                { kind: 'acBonus', amount: 1 },
+                { kind: 'resist', damageType: 'fire' },
+              ],
+              lasts: { minutes: 10, endsWhen: 'incapacitated' },
+            },
+          ],
+        },
+      ],
+    },
+  ],
+  [
+    'when frightened, beside one kept',
+    {
+      v: 1,
+      effects: [{ kind: 'speedBonus', amount: 5 }],
+      moments: [
+        { at: 'shortRest', do: [{ kind: 'regain', resource: 'ki', amount: 1 }] },
+        {
+          at: 'conditionAdded',
+          condition: 'frightened',
+          do: [{ kind: 'addEffect', name: 'Bold', effects: [{ kind: 'saveBonus', amount: 1 }] }],
+        },
+      ],
+    },
+  ],
+  [
+    'a moment the reader refuses',
+    {
+      v: 1,
+      moments: [
+        {
+          at: 'zeroHp',
+          do: [
+            {
+              kind: 'addEffect',
+              name: 'Odd',
+              effects: [{ kind: 'acBonus', amount: 1, while: 'bloodied' }],
+            },
+          ],
+        },
+      ],
+    },
+  ],
+];
+
 const SAMPLES = [
   '',
   '3',
@@ -713,6 +845,49 @@ async function work(el: Element, action: string) {
   await flush();
 }
 
+/**
+ * One list's record under `at`: what each control shows and offers, the list
+ * read only, and what working each control one at a time on a fresh list writes.
+ */
+async function recordList(
+  record: Record<string, unknown>,
+  at: string,
+  show: (writes: Write[], readOnly: boolean) => RenderResult,
+) {
+  const first = show([], false);
+  const controls = controlsIn(first.container);
+  const views: Record<string, unknown> = {};
+  for (const c of controls) {
+    const el = find(first.container, c.key);
+    if (el !== undefined) views[c.key] = viewOf(el);
+  }
+  // Read back: the line a Remove names, and the list read only.
+  cleanup();
+  const shown = show([], true);
+  record[`${at} | read only`] = shown.container.textContent;
+  cleanup();
+  record[`${at} | view`] = views;
+  for (const c of controls) {
+    const probe = show([], false);
+    const el = find(probe.container, c.key);
+    const actions = el === undefined ? [] : actionsFor(el);
+    cleanup();
+    for (const action of actions) {
+      const writes: Write[] = [];
+      asked.current = undefined;
+      choice.current = undefined;
+      const r = show(writes, false);
+      const target = find(r.container, c.key);
+      if (target !== undefined) await work(target, action);
+      record[`${at} | ${c.key} | ${action}`] = {
+        writes,
+        ...(asked.current !== undefined ? { asked: asked.current } : {}),
+      };
+      cleanup();
+    }
+  }
+}
+
 describe.skipIf(OUT === undefined)('what every effect card writes', () => {
   afterEach(cleanup);
 
@@ -723,39 +898,13 @@ describe.skipIf(OUT === undefined)('what every effect card writes', () => {
       for (const [seed, base] of SEEDS) {
         if (host.seeds !== undefined && !host.seeds(seed, base)) continue;
         const effects = host.around?.(base) ?? base;
-        const at = `${host.name} | ${seed}`;
-        const first = mount(host, effects, []);
-        const controls = controlsIn(first.container);
-        const views: Record<string, unknown> = {};
-        for (const c of controls) {
-          const el = find(first.container, c.key);
-          if (el !== undefined) views[c.key] = viewOf(el);
-        }
-        // Read back: the line a Remove names, and the list read only.
-        cleanup();
-        const shown = mount({ ...host, props: { ...host.props, readOnly: true } }, effects, []);
-        record[`${at} | read only`] = shown.container.textContent;
-        cleanup();
-        record[`${at} | view`] = views;
-        for (const c of controls) {
-          const probe = mount(host, effects, []);
-          const el = find(probe.container, c.key);
-          const actions = el === undefined ? [] : actionsFor(el);
-          cleanup();
-          for (const action of actions) {
-            const writes: Write[] = [];
-            asked.current = undefined;
-            choice.current = undefined;
-            const r = mount(host, effects, writes);
-            const target = find(r.container, c.key);
-            if (target !== undefined) await work(target, action);
-            record[`${at} | ${c.key} | ${action}`] = {
-              writes,
-              ...(asked.current !== undefined ? { asked: asked.current } : {}),
-            };
-            cleanup();
-          }
-        }
+        await recordList(record, `${host.name} | ${seed}`, (writes, readOnly) =>
+          mount(
+            readOnly ? { ...host, props: { ...host.props, readOnly: true } } : host,
+            effects,
+            writes,
+          ),
+        );
       }
       // The add list: what each add button adds, and what More offers and adds.
       for (const start of [[], [{ kind: 'pick', id: 'choice', ask: 'skill' }]] as Json[][]) {
@@ -803,6 +952,20 @@ describe.skipIf(OUT === undefined)('what every effect card writes', () => {
             cleanup();
           }
         }
+      }
+    }
+    // A feat's editor, whose guidance holds moments: what it hands `change`.
+    if (ONLY === undefined || ONLY.includes('entryDraft')) {
+      for (const [name, g] of ENTRY_DRAFTS) {
+        await recordList(record, `entryDraft | ${name}`, (writes, readOnly) =>
+          render(
+            <EntryEffects
+              draft={{ name: 'Fury Feat', source: 'Mine', castGuidance: structuredClone(g) }}
+              change={(patch) => writes.push(['change', patch])}
+              readOnly={readOnly}
+            />,
+          ),
+        );
       }
     }
     if (OUT !== undefined) writeFileSync(OUT, `${JSON.stringify(record, null, 1)}\n`);

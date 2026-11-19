@@ -138,7 +138,6 @@ export const cards: readonly KindSpec[] = [
     make: () => ({ kind: 'attackBonus', amount: 1, attack: 'spell' }),
     fields: [amountField],
     line: (e) => `${amount(e.amount)} to spell attack rolls`,
-    stateful: true,
   },
   {
     kinds: ['spellDcBonus'],
@@ -151,6 +150,7 @@ export const cards: readonly KindSpec[] = [
     kinds: ['grantSpell'],
     add: 'Cast a spell',
     make: () => ({ kind: 'grantSpell', spell: '' }),
+    sample: () => ({ kind: 'grantSpell', spell: 'Misty Step|XPHB' }),
     fields: [],
     line: (e) => {
       const name = String(e.spell ?? '').split('|')[0] || 'a spell';

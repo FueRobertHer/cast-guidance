@@ -134,11 +134,15 @@ export const amountField: FieldSpec = { key: 'amount', label: 'Amount', type: 'a
 /**
  * A When box's value and choices. A state a file gives that the box has no
  * choice for (at 0 hit points, while an effect lasts) shows as written, so
- * "Always" is a change that takes it away. A kind that folds before hit points
- * are known (`early`) cannot wait for bloodied.
+ * "Always" is a change that takes it away. It offers the states the reader
+ * `accepts` for it: a kind that folds before hit points are known cannot wait
+ * for bloodied.
  */
-export function stateBox(e: Eff, early = false): { value: string; options: Options } {
-  const options = STATES.filter(([v]) => !(v === 'bloodied' && early));
+export function stateBox(
+  e: Eff,
+  accepts: (state: string) => boolean = () => true,
+): { value: string; options: Options } {
+  const options = STATES.filter(([v]) => v === '' || accepts(v));
   if (e.while === undefined) return { value: '', options };
   if (typeof e.while === 'string' && options.some(([v]) => v === e.while)) {
     return { value: e.while, options };
