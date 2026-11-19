@@ -5,7 +5,7 @@
  * finds what the original did).
  */
 import type { ReactNode } from 'react';
-import { Link } from 'react-router';
+import { Link, useLocation, useParams } from 'react-router';
 import { subraceBelongsTo } from '@/data5e/subraceOptions';
 import { isRecord } from '@/engine/castGuidance';
 import { listClass } from '@/ui/surfaces';
@@ -121,7 +121,8 @@ export function withSpeed(
 export function abilityShape(
   ability: unknown,
 ): { fixed: Json; choose?: { count?: number; amount?: number; from?: unknown } } | undefined {
-  if (absent(ability)) return { fixed: {} };
+  // A subrace copy's `[]` is "none of its own" (SubraceEditor.tsx).
+  if (absent(ability) || (Array.isArray(ability) && ability.length === 0)) return { fixed: {} };
   if (!Array.isArray(ability) || ability.length !== 1 || !isRecord(ability[0])) return undefined;
   const { choose, ...fixed } = ability[0];
   const whole = (v: unknown) => v === undefined || (Number.isInteger(v) && (v as number) > 0);
@@ -239,19 +240,23 @@ function DefensePicks({
 
 /**
  * Speeds and senses as feet; one written with a condition is kept as it is.
- * A subrace's (`sub`) that it leaves empty are its species'.
+ * A subrace's (`sub`) that it leaves out are its species'. A copy cannot leave
+ * out what its original sets: emptied, it stores null, which a sheet reads as
+ * none at all, the species' taken away too, so its boxes say None.
  */
 function Movement({ draft, change, original, readOnly, sub }: EditorProps & { sub: boolean }) {
   const speed = isRecord(draft.speed) ? draft.speed : {};
   const block = isRecord(original?.speed);
+  const theirs = (key: string) =>
+    sub && draft[key] === undefined && (original === undefined || original[key] === undefined);
   // A subrace's speed takes the place of its species' speeds, all of them.
-  const theirs = sub && absent(draft.speed);
+  const walk = theirs('speed') ? 'As the species' : sub ? 'None' : undefined;
   return (
     <div className="grid grid-cols-2 gap-2">
       <NumberField
         label="Speed in feet"
         value={walkSpeed(draft.speed)}
-        placeholder={theirs ? 'As the species' : undefined}
+        placeholder={walk}
         disabled={readOnly}
         onChange={(walk) => change({ speed: withWalkSpeed(draft.speed, walk) })}
       />
@@ -264,7 +269,7 @@ function Movement({ draft, change, original, readOnly, sub }: EditorProps & { su
             label={label}
             value={typeof v === 'number' ? v : undefined}
             // `true` is as fast as the character walks, until a number is typed.
-            placeholder={v === true ? 'As walking' : theirs ? 'As the species' : 'None'}
+            placeholder={v === true ? 'As walking' : theirs('speed') ? 'As the species' : 'None'}
             disabled={readOnly}
             onChange={(feet) =>
               change({
@@ -283,7 +288,7 @@ function Movement({ draft, change, original, readOnly, sub }: EditorProps & { su
           key={sense}
           label={`${sense[0]?.toUpperCase()}${sense.slice(1)} in feet`}
           value={typeof draft[sense] === 'number' ? (draft[sense] as number) : undefined}
-          placeholder={sub ? 'As the species' : 'None'}
+          placeholder={theirs(sense) ? 'As the species' : 'None'}
           disabled={readOnly}
           onChange={(d) => change({ [sense]: d === 0 ? undefined : d })}
         />
@@ -300,7 +305,7 @@ const ON_SHEET = {
   ],
   ability: [
     'the ability scores, a choice asked when the character is built.',
-    "the ability scores, added to the species', a choice asked when built.",
+    "the ability scores, beside the species' (a score or a choice both give is the subrace's); a choice asked when built.",
   ],
   defenses: [
     'defenses, on the Stats tab.',
@@ -308,7 +313,7 @@ const ON_SHEET = {
   ],
   proficiencies: [
     'proficiencies and languages, on the Stats tab; a choice is asked when built.',
-    "the Stats tab, skills and languages beside the species' own, tools, weapons and armor in their place.",
+    "the Stats tab, skills and languages beside the species' own (a skill or a choice of skills both give is the subrace's), tools, weapons and armor in their place.",
   ],
   spells: [
     'the Spells tab, each from the character level it names.',
@@ -423,16 +428,21 @@ export function OriginParts(
  * The species' own subraces, each found by the species it names, and Add a
  * subrace, which opens a new one already naming it. Only for a species saved
  * under the name it has: a subrace finds its species by that name and book.
- * A copy not saved yet still has its original's book, so it is not one: its
- * subraces would be the original's, which the Workshop cannot open as theirs.
+ *
+ * That is the one the page's address names (`/workshop/edit/race/name|book`):
+ * a draft has no book until it is saved, and a copy's still names its
+ * original's. A new subrace goes to the species' own collection (`?file=`).
  */
-function Subraces({ draft, original, registry }: EditorProps) {
-  const name = typeof draft.name === 'string' ? draft.name : '';
-  const source = typeof draft.source === 'string' ? draft.source : '';
-  const unsavedCopy = original !== undefined && source === String(original.source);
-  if (name === '' || unsavedCopy || registry.get('race', name, source) === undefined) {
+function Subraces({ registry }: EditorProps) {
+  const { action, uid } = useParams();
+  const { search } = useLocation();
+  const cut = uid?.lastIndexOf('|') ?? -1;
+  if (action !== 'edit' || uid === undefined || cut < 1) {
     return <p className="text-caption text-ink-muted">Save the species to add a subrace to it.</p>;
   }
+  const name = uid.slice(0, cut);
+  const source = uid.slice(cut + 1);
+  const file = new URLSearchParams(search).get('file');
   const own = registry
     .byType('subrace')
     .filter((s) => typeof s.name === 'string' && subraceBelongsTo(s, { name, source }));
@@ -453,7 +463,7 @@ function Subraces({ draft, original, registry }: EditorProps) {
         </ul>
       )}
       <Link
-        to="/workshop/new/subrace"
+        to={`/workshop/new/subrace${file === null ? '' : `?file=${encodeURIComponent(file)}`}`}
         state={{ seed: { raceName: name, raceSource: source } }}
         className="tap self-start text-body-strong underline underline-offset-2"
       >

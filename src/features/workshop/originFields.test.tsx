@@ -801,22 +801,69 @@ describe('subraces', () => {
     expect(box('Strength +')).toBe('1');
   });
 
-  it('a species lists its own subraces, and Add a subrace opens one naming it', () => {
-    const deep = { name: 'Deepfolk', source: 'HB', raceName: 'Lanternfolk', raceSource: 'HB' };
-    const other = { name: 'Hillfolk', source: 'HB', raceName: 'Dwarf', raceSource: 'HB' };
-    const registry = withEntries({ race: [LANTERNFOLK], subrace: [deep, other] });
+  it("a score both raise is the subrace's, as its caption says", () => {
+    const deep = {
+      name: 'Deepfolk',
+      source: 'HB',
+      raceName: 'Lanternfolk',
+      raceSource: 'HB',
+      ability: [{ dex: 1 }],
+    };
+    expect(asSubrace(deep).sheet.abilities.dex.value).toBe(17);
+    mount(subrace, deep);
+    expect(screen.getByText(/a score or a choice both give is the subrace's/)).toBeTruthy();
+  });
+
+  it("a copy's emptied fields: what it adds goes, what it replaces is none at all", () => {
+    const original = {
+      name: 'Deepfolk',
+      source: 'HB',
+      raceName: 'Lanternfolk',
+      raceSource: 'HB',
+      ability: [{ cha: 1 }],
+      darkvision: 120,
+      languageProficiencies: [{ elvish: true }],
+      entries: [],
+    };
+    const at = mount(subrace, { ...structuredClone(original), name: 'Deep Copy' }, original);
+    type('Charisma +', '');
+    chip('Languages', 'Elvish');
+    type('Darkvision in feet', '');
+    // A copy cannot leave a field out: emptied, it is none, the species' too.
+    expect(screen.getByLabelText('Darkvision in feet').getAttribute('placeholder')).toBe('None');
+    expect(at.draft()).toMatchObject({ ability: [], languageProficiencies: [] });
+    const stored = writeEntry({ draft: at.draft(), original, source: 'HB', mode: 'changes' });
+    const read = readStored(stored, original).entry;
+    const { sheet } = asSubrace(read);
+    // The species' own +2 Dexterity and Common stay; the copy adds nothing of its own.
+    expect(sheet.abilities.dex.value).toBe(18);
+    expect(sheet.abilities.cha.value).toBe(10);
+    expect(sheet.languages).toEqual(['Common']);
+    expect(sheet.senses).toEqual([]);
+    cleanup();
+    const again = mount(subrace, read, original);
+    expect(again.changes()).toBe(0);
+    expect(box('Charisma +')).toBe('');
+    expect(pressed('Languages', 'Elvish')).toBe('false');
+  });
+
+  /** The species editor at `path`, as the Workshop page shows it there. */
+  function atAddress(path: string, draft: Json, extra: Extra, original?: Json) {
+    const registry = withEntries(extra);
     function Seen() {
-      return <p>{JSON.stringify(useLocation().state)}</p>;
+      const { pathname, search, state } = useLocation();
+      return <p>{`${pathname}${search} ${JSON.stringify(state)}`}</p>;
     }
     render(
-      <MemoryRouter initialEntries={['/edit']}>
+      <MemoryRouter initialEntries={[path]}>
         <Routes>
           <Route
-            path="/edit"
+            path="/workshop/:action/:type?/:uid?"
             element={
               <species.Body
-                draft={LANTERNFOLK}
+                draft={draft}
                 change={() => {}}
+                original={original}
                 registry={registry}
                 readOnly={false}
               />
@@ -826,29 +873,74 @@ describe('subraces', () => {
         </Routes>
       </MemoryRouter>,
     );
+  }
+
+  const DEEP = { name: 'Deepfolk', source: 'HB', raceName: 'Lanternfolk', raceSource: 'HB' };
+  const HILL = { name: 'Hillfolk', source: 'HB', raceName: 'Dwarf', raceSource: 'HB' };
+
+  it('a saved species lists its own subraces, and Add a subrace opens one naming it', () => {
+    // Just saved: the draft has no book, the address has.
+    const { source: _, ...draft } = LANTERNFOLK;
+    atAddress('/workshop/edit/race/Lanternfolk%7CHB?file=f1', draft, {
+      race: [LANTERNFOLK],
+      subrace: [DEEP, HILL],
+    });
     const list = within(screen.getByRole('list', { name: 'Subraces' }));
     expect(list.getAllByRole('link').map((l) => l.textContent)).toEqual(['Deepfolk']);
     fireEvent.click(screen.getByRole('link', { name: 'Add a subrace' }));
-    expect(
-      screen.getByText(JSON.stringify({ seed: { raceName: 'Lanternfolk', raceSource: 'HB' } })),
-    ).toBeTruthy();
+    const seed = { seed: { raceName: 'Lanternfolk', raceSource: 'HB' } };
+    expect(screen.getByText(`/workshop/new/subrace?file=f1 ${JSON.stringify(seed)}`)).toBeTruthy();
   });
 
-  it('a species not saved yet says to save it first', () => {
-    mount(species, NEW_SPECIES);
-    expect(screen.getByText('Save the species to add a subrace to it.')).toBeTruthy();
-    expect(screen.queryByRole('link', { name: 'Add a subrace' })).toBeNull();
-  });
-
-  it("a copy not saved yet lists none of its original's subraces", () => {
+  it("a saved copy's subraces are its own, not its original's", () => {
     const official = { ...LANTERNFOLK, source: 'TST' };
-    const theirs = { name: 'Deepfolk', source: 'TST', raceName: 'Lanternfolk', raceSource: 'TST' };
-    mount(species, structuredClone(official), official, {
-      race: [official],
-      subrace: [theirs],
-    });
-    expect(screen.getByText('Save the species to add a subrace to it.')).toBeTruthy();
+    const theirs = { ...DEEP, source: 'TST', raceSource: 'TST' };
+    // Saved under the player's book; the draft still names the original's.
+    atAddress(
+      '/workshop/edit/race/Lanternfolk%7CHB',
+      structuredClone(official),
+      {
+        race: [official, LANTERNFOLK],
+        subrace: [theirs],
+      },
+      official,
+    );
     expect(screen.queryByRole('list', { name: 'Subraces' })).toBeNull();
-    expect(screen.queryByRole('link', { name: 'Add a subrace' })).toBeNull();
+    fireEvent.click(screen.getByRole('link', { name: 'Add a subrace' }));
+    expect(screen.getByText(/"raceSource":"HB"/)).toBeTruthy();
+  });
+
+  it('a species not saved yet, new or a copy, says to save it first', () => {
+    for (const path of ['/workshop/new/race', '/workshop/copy/race/Lanternfolk%7CTST']) {
+      atAddress(path, LANTERNFOLK, { race: [LANTERNFOLK], subrace: [DEEP] });
+      expect(screen.getByText('Save the species to add a subrace to it.')).toBeTruthy();
+      expect(screen.queryByRole('list', { name: 'Subraces' })).toBeNull();
+      expect(screen.queryByRole('link', { name: 'Add a subrace' })).toBeNull();
+      cleanup();
+    }
+  });
+});
+
+describe("an item's spell ability (the second U5b review)", () => {
+  it('stays while its only spell is typed again', () => {
+    const at = mount(item, {
+      ...NEW_ITEM,
+      attachedSpells: { will: ['Guidance|TST'], ability: 'wis' },
+    });
+    type('Spell 1', '');
+    type('Spell 1', 'Aid');
+    expect(at.draft().attachedSpells).toEqual({ will: ['Aid|TST'], ability: 'wis' });
+  });
+
+  it('stays while the item casts spells with its charges', () => {
+    const charges = { '1': ['Aid|TST'] };
+    const at = mount(item, { ...NEW_ITEM, attachedSpells: { charges, ability: 'int' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Add a spell' }));
+    expect(at.draft().attachedSpells).toEqual({ charges, ability: 'int' });
+    cleanup();
+    const was = { will: ['Guidance|TST'], charges, ability: 'int' };
+    const again = mount(item, { ...NEW_ITEM, attachedSpells: was });
+    fireEvent.click(screen.getByRole('button', { name: 'Remove spell 1' }));
+    expect(again.draft().attachedSpells).toEqual({ charges, ability: 'int' });
   });
 });

@@ -144,7 +144,8 @@ export function grantShape(
   raw: unknown,
   anyKey?: string,
 ): { names: string[]; any?: number } | undefined {
-  if (absent(raw)) return { names: [] };
+  // A subrace copy's `[]` is "none of its own" (SubraceEditor.tsx).
+  if (absent(raw) || (Array.isArray(raw) && raw.length === 0)) return { names: [] };
   if (!Array.isArray(raw) || raw.length !== 1 || !isRecord(raw[0])) return undefined;
   const names: string[] = [];
   let any: number | undefined;
@@ -406,10 +407,15 @@ export function attachedRows(raw: unknown): SpellRow[] | undefined {
 export function attachedWith(raw: unknown, rows: readonly SpellRow[], ability: unknown): unknown {
   const { will: _, daily: __, rest: ___, ability: ____, ...kept } = isRecord(raw) ? raw : {};
   const lists = bucketOf(rows.filter((r) => r.spell.trim() !== ''));
+  // The ability goes with the last spell: not while a row is being retyped,
+  // and not while the item casts spells with its charges.
+  const charged =
+    isRecord(kept.charges) &&
+    Object.values(kept.charges).some((v) => Array.isArray(v) && v.length > 0);
   const next: Json = {
     ...kept,
     ...lists,
-    ...(ability !== undefined && Object.keys(lists).length > 0 ? { ability } : {}),
+    ...(ability !== undefined && (rows.length > 0 || charged) ? { ability } : {}),
   };
   return Object.keys(next).length > 0 ? next : undefined;
 }
