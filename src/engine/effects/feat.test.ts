@@ -56,27 +56,21 @@ describe("a feat's benefits", () => {
     );
   });
 
-  it('ask their picks each under its own name, apart from the feat', () => {
-    const pick = [
-      {
-        kind: 'pick',
-        id: 'choice',
-        ask: 'skill',
-        gives: [{ kind: 'skillProf', skill: '{pick}', level: 1 }],
-      },
+  it("ask their picks under the feat's own ids, which a renamed benefit keeps", () => {
+    const pickOf = (id: string) => [
+      { kind: 'pick', id, ask: 'skill', gives: [{ kind: 'skillProf', skill: '{pick}', level: 1 }] },
     ];
     const doc = newCharacterDoc('c', 'H', 't');
     doc.choices = {
-      'feat:testfeat|tst:i1:sea legs:pick-choice': ['Athletics'],
-      'feat:testfeat|tst:i1:keen eye:pick-choice': ['Perception'],
+      'feat:testfeat|tst:i1:pick-choice': ['Athletics'],
+      'feat:testfeat|tst:i1:pick-choice-2': ['Perception'],
     };
     const col = new Collector(doc, makeTestContext());
-    collectFeatEntity(
-      col,
-      { name: 'Harbour Hand', entries: [benefit('Sea Legs', pick), benefit('Keen Eye', pick)] },
-      'testfeat|tst',
-      'i1',
-    );
+    const parts = [
+      benefit('Sea Legs Renamed', pickOf('choice')),
+      benefit('Keen Eye', pickOf('choice-2')),
+    ];
+    collectFeatEntity(col, { name: 'Harbour Hand', entries: parts }, 'testfeat|tst', 'i1');
     for (const fn of col.afterAll.splice(0)) fn();
     const skills = col.effects.flatMap((e) => (e.kind === 'skillProf' ? [e.skill] : []));
     expect(skills).toEqual(expect.arrayContaining(['Athletics', 'Perception']));
