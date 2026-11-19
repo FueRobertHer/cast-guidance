@@ -14,7 +14,13 @@ import { CircleAlert } from 'lucide-react';
 import { useId, useRef, useState } from 'react';
 import { useTypePacks } from '@/data5e/hooks';
 import { isRecord, RULE_SET_TYPE, type StoredEffect } from '@/engine/castGuidance';
-import { fieldChargesOf, ITEM_CHARGES, itemChargesIn } from '@/engine/curated/itemCharges';
+import {
+  fieldChargesOf,
+  ITEM_CHARGES,
+  itemChargesIn,
+  rechargeWords,
+  regainOf,
+} from '@/engine/curated/itemCharges';
 import { type ItemCharges, readOwnEffects } from '@/engine/effects/mechanics';
 import { ABILITIES, type Ability, type DataEntity } from '@/engine/types';
 import {
@@ -138,18 +144,6 @@ const rechargeIn = (v: unknown): string | undefined =>
   typeof v === 'string' && v !== '' ? v : undefined;
 
 /**
- * What comes back at dawn, as an item's `charges` effect says it, from the
- * standard fields: none without a recharge, all without an amount, else the
- * number or the dice (words the effect cannot take are kept, and say so).
- */
-export function regainOf(recharge: unknown, amount: unknown): string | number {
-  if (rechargeIn(recharge) === undefined) return 'none';
-  const words = (rechargeWords(amount) ?? '').replace(/\s+/g, '');
-  if (words === '') return 'all';
-  return /^\d+$/.test(words) ? Number(words) : words;
-}
-
-/**
  * The patch for an item's charges: `patch` to its standard fields (`charges`,
  * `recharge`, `rechargeAmount`) and the `charges` effect the sheet counts them
  * by, made from them, with what `own` sets (its spells, the ability they cast
@@ -213,14 +207,6 @@ export function rowSpells(row: ItemCharges, options: readonly SpellOption[]): Js
   });
 }
 
-/** A weapon's properties with `code` on or off, written as the others are (`F|XPHB` beside `L|XPHB`). */
-/** How many charges come back, as words: the data tags a roll (`{@dice 1d6 + 1}`). */
-export function rechargeWords(amount: unknown): string | undefined {
-  if (typeof amount === 'number') return String(amount);
-  if (typeof amount !== 'string') return undefined;
-  return amount.replace(/\{@dice ([^{}|]+)(?:\|[^{}]*)?\}/g, '$1');
-}
-
 /** What was typed, stored as the data has it: a number, a tagged roll, or the words. */
 export function rechargeValue(typed: string | undefined): string | number | undefined {
   if (typed === undefined) return undefined;
@@ -230,6 +216,7 @@ export function rechargeValue(typed: string | undefined): string | number | unde
   return typed;
 }
 
+/** A weapon's properties with `code` on or off, written as the others are (`F|XPHB` beside `L|XPHB`). */
 export function withProperty(draft: Json, code: string, on: boolean): unknown {
   const refs = list(draft.property).filter((p): p is string => typeof p === 'string');
   if (!on) {
@@ -635,7 +622,8 @@ function Charges(props: EditorProps) {
   // A file written by hand may say them in the effect alone.
   const n = draft.charges ?? counted?.charges;
   const charges = typeof n === 'number' ? n : undefined;
-  // The recharge the fields say; an empty one is none, as `regainOf` reads it.
+  // The recharge the fields say; an empty one is none, as `regainOf` reads it
+  // (and a time no long rest covers, such as `special`, gives none back).
   const recharge = rechargeIn(draft.recharge);
   // What comes back as the effect says it, shown while no recharge field says it.
   // (A number or words: none, in any case, is no regain, as the reader takes it.)

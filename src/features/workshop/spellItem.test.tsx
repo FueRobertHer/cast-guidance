@@ -7,7 +7,7 @@ import { MemoryRouter } from 'react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Entity } from '@/data5e/copyMod';
 import { EntityRegistry } from '@/data5e/normalize';
-import { ITEM_CHARGES } from '@/engine/curated/itemCharges';
+import { ITEM_CHARGES, rechargeWords, regainOf } from '@/engine/curated/itemCharges';
 import { readOwnEffects, readStoredEffects } from '@/engine/effects/mechanics';
 import { BUILT_IN_RULE_SETS } from '../../../tests-fixtures/testWorld';
 
@@ -18,14 +18,7 @@ vi.mock('@/data5e/hooks', () => ({
 vi.mock('@/ui/dialogs', () => ({ askChoice: () => Promise.resolve(choice.current) }));
 
 import { EffectCards } from './EffectCards';
-import {
-  editor as item,
-  rechargeValue,
-  rechargeWords,
-  regainOf,
-  withCharges,
-  withProperty,
-} from './editors/ItemEditor';
+import { editor as item, rechargeValue, withCharges, withProperty } from './editors/ItemEditor';
 import {
   damageRolls,
   healRolls,
@@ -462,6 +455,11 @@ describe('item fields', () => {
     expect(regainOf('dusk', '{@dice 1d6 + 1}')).toBe('1d6+1');
     expect(regainOf('dawn', 3)).toBe(3);
     expect(regainOf('dawn', 'all')).toBe('all');
+    // Only a time a long rest covers gives anything back, as the sheet reads the fields.
+    expect(regainOf('Midnight', 2)).toBe(2);
+    expect(regainOf('restLong', '{@dice 1d4}')).toBe('1d4');
+    expect(regainOf('special', '{@dice 1d6 + 1}')).toBe('none');
+    expect(regainOf('restShort', 2)).toBe('none');
   });
 
   it('writes a property as the others are written', () => {

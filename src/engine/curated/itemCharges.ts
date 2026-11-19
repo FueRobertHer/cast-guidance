@@ -47,12 +47,29 @@ export function itemChargesIn(
  */
 const LONG_REST_RECHARGE: ReadonlySet<string> = new Set(['dawn', 'dusk', 'midnight', 'restlong']);
 
-/** What `rechargeAmount` says comes back: a dice tag's dice, a number, or a number written as text. */
-function amountOf(v: unknown): unknown {
-  if (typeof v !== 'string') return v;
-  const tag = /^\{@dice ([^}|]+)(?:\|[^}]*)?\}$/.exec(v.trim());
-  const said = (tag?.[1] ?? v).replace(/\s+/g, '');
-  return /^\d+$/.test(said) ? Number(said) : said;
+/** A `rechargeAmount` as words: a number's digits, or the text with each dice tag's dice in its place. */
+export function rechargeWords(amount: unknown): string | undefined {
+  if (typeof amount === 'number') return String(amount);
+  if (typeof amount !== 'string') return undefined;
+  return amount.replace(/\{@dice ([^{}|]+)(?:\|[^{}]*)?\}/g, '$1');
+}
+
+/**
+ * What comes back at dawn, as an item's `charges` effect says it, from its
+ * standard fields: nothing unless `recharge` is a time a long rest covers
+ * (`LONG_REST_RECHARGE`: none, an empty one, `special` or a short rest give
+ * nothing back, even beside an amount); then all of them with no amount, else
+ * its number or its dice, spaces taken out (words the effect cannot take are
+ * kept, and say so). The sheet reads an item's fields by it (`fieldChargesOf`)
+ * and the Workshop writes them out by it, so the two say the same.
+ */
+export function regainOf(recharge: unknown, amount: unknown): string | number {
+  if (typeof recharge !== 'string' || !LONG_REST_RECHARGE.has(recharge.toLowerCase())) {
+    return 'none';
+  }
+  const words = (rechargeWords(amount) ?? '').replace(/\s+/g, '');
+  if (words === '') return 'all';
+  return /^\d+$/.test(words) ? Number(words) : words;
 }
 
 /** Each item's `fieldChargesOf`, read once (`null`: its fields count none). */
@@ -60,27 +77,24 @@ const fromFields = new WeakMap<DataEntity, ItemCharges | null>();
 
 /**
  * The charges an item's own data fields say (`charges`, `recharge`,
- * `rechargeAmount`), read as its own `charges` effect would be: a long rest
- * (dawn, dusk, midnight) gives back the amount, or all of them when none is
- * said; an amount with no `recharge` comes back at dawn too (a Robe of Stars),
- * and any other recharge (none, an empty one, `special`) gives nothing back.
- * They cast no spells here. Absent when the fields do not read as a whole
- * (a dice count of charges, an amount the roller cannot roll).
+ * `rechargeAmount`), read as its own `charges` effect would be, with what
+ * comes back as `regainOf` says it. They cast no spells here. Absent when the
+ * fields do not read as a whole (a dice count of charges, an amount the roller
+ * cannot roll).
  */
 export function fieldChargesOf(entry: DataEntity): ItemCharges | undefined {
   const known = fromFields.get(entry);
   if (known !== undefined) return known ?? undefined;
-  const read = entry.charges === undefined ? undefined : readFields(entry);
+  const read =
+    entry.charges === undefined
+      ? undefined
+      : readItemCharges({
+          charges: entry.charges,
+          regain: regainOf(entry.recharge, entry.rechargeAmount),
+          spells: [],
+        });
   fromFields.set(entry, read ?? null);
   return read;
-}
-
-function readFields(entry: DataEntity): ItemCharges | undefined {
-  const recharge = typeof entry.recharge === 'string' ? entry.recharge.toLowerCase() : undefined;
-  const amount = entry.rechargeAmount;
-  const back = recharge === undefined ? amount !== undefined : LONG_REST_RECHARGE.has(recharge);
-  const regain = !back ? 'none' : amount === undefined ? 'all' : amountOf(amount);
-  return readItemCharges({ charges: entry.charges, regain, spells: [] });
 }
 
 /**

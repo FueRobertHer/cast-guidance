@@ -78,14 +78,20 @@ describe('fieldChargesOf: what the charge fields count', () => {
   });
 
   it('gives nothing back with no recharge, an empty one, or one the text tells', () => {
-    // A Ring of Three Wishes; the Workshop's "Never"; Helm of Devil Command.
+    // A Ring of Three Wishes; an empty one; Helm of Devil Command; a short rest.
     expect(counted({ charges: 3 })).toEqual([3, 'none', 0]);
     expect(counted({ charges: 3, recharge: '', rechargeAmount: 2 })).toEqual([3, 'none', 0]);
     expect(counted({ charges: 3, recharge: 'special' })).toEqual([3, 'none', 0]);
+    expect(counted({ charges: 3, recharge: 'restShort', rechargeAmount: 1 })).toEqual([
+      3,
+      'none',
+      0,
+    ]);
   });
 
-  it('gives an amount with no recharge back at dawn, as a Robe of Stars does', () => {
-    expect(counted({ charges: 6, rechargeAmount: '{@dice 1d6}' })).toEqual([6, '1d6', 0]);
+  it("gives an amount with no recharge nothing back, as the Workshop's Never leaves it", () => {
+    // A Robe of Stars's data says no recharge; its text says dawn.
+    expect(counted({ charges: 6, rechargeAmount: '{@dice 1d6}' })).toEqual([6, 'none', 0]);
   });
 
   it('reads a number written as text, and a whole number taken away', () => {
@@ -160,42 +166,42 @@ describe('itemChargesOf: the fields below every other source', () => {
 });
 
 describe('the pool its fields make', () => {
-  const robe = item('Robe of Stars', 'DMG', {
-    type: undefined,
-    wondrous: true,
-    reqAttune: true,
-    charges: 6,
-    rechargeAmount: '{@dice 1d6}',
+  // As the release writes a Wand of Web (DMG): no effect and no row.
+  const wand = item('Wand of Web', 'DMG', {
+    reqAttune: 'by a spellcaster',
+    charges: 7,
+    recharge: 'dawn',
+    rechargeAmount: '{@dice 1d6 + 1}',
   });
 
   it('is one per carried copy, while its magic works, rolled back at dawn', () => {
     const doc = carrying(
-      { id: 'a', name: 'Robe of Stars', source: 'DMG' },
-      { id: 'b', name: 'Robe of Stars', source: 'DMG' },
+      { id: 'a', name: 'Wand of Web', source: 'DMG' },
+      { id: 'b', name: 'Wand of Web', source: 'DMG' },
     );
-    const sheet = deriveSheet(doc, world([robe]));
+    const sheet = deriveSheet(doc, world([wand]));
     expect(sheet.warnings).toEqual([]);
     expect(sheet.resources.filter((r) => r.key.startsWith('item-charges:'))).toEqual([
       expect.objectContaining({
         key: 'item-charges:a',
-        label: 'Robe of Stars charges',
-        max: 6,
+        label: 'Wand of Web charges',
+        max: 7,
         resetOn: 'long',
-        regainRoll: '1d6',
-        origin: 'Robe of Stars',
+        regainRoll: '1d6+1',
+        origin: 'Wand of Web',
       }),
-      expect.objectContaining({ key: 'item-charges:b', max: 6 }),
+      expect.objectContaining({ key: 'item-charges:b', max: 7 }),
     ]);
     doc.equipment = doc.equipment.map((e) => ({ ...e, attuned: false }));
     expect(
-      deriveSheet(doc, world([robe])).resources.some((r) => r.key.startsWith('item-charges:')),
+      deriveSheet(doc, world([wand])).resources.some((r) => r.key.startsWith('item-charges:')),
     ).toBe(false);
   });
 
   it('comes back by its roll on a long rest, and never when nothing does', () => {
-    const doc = carrying({ id: 'a', name: 'Robe of Stars', source: 'DMG' });
+    const doc = carrying({ id: 'a', name: 'Wand of Web', source: 'DMG' });
     doc.play.resources = [{ key: 'item-charges:a', used: 5 }];
-    const sheet = deriveSheet(doc, world([robe]));
+    const sheet = deriveSheet(doc, world([wand]));
     longRestRecovery(doc.play, sheet, HP, { rollTotal: () => 3 });
     expect(doc.play.resources.find((r) => r.key === 'item-charges:a')?.used).toBe(2);
 
@@ -209,17 +215,17 @@ describe('the pool its fields make', () => {
   });
 
   it('is idle while the item is put away, with the same roll', () => {
-    const doc = carrying({ id: 'a', name: 'Robe of Stars', source: 'DMG', on: false });
-    const ctx = world([robe]);
+    const doc = carrying({ id: 'a', name: 'Wand of Web', source: 'DMG', on: false });
+    const ctx = world([wand]);
     const sheet = deriveSheet(doc, ctx);
     expect(idleChargePools(doc, sheet.resources, ctx)).toEqual([
       {
         key: 'item-charges:a',
-        label: 'Robe of Stars charges',
-        max: 6,
+        label: 'Wand of Web charges',
+        max: 7,
         resetOn: 'long',
-        origin: 'Robe of Stars',
-        regainRoll: '1d6',
+        origin: 'Wand of Web',
+        regainRoll: '1d6+1',
       },
     ]);
   });
