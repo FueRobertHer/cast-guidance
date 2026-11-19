@@ -22,6 +22,7 @@ import {
   readStoredEffects,
 } from '@/engine/effects/mechanics';
 import type { DataEntity } from '@/engine/types';
+import { namelessControls } from '../../../tests-fixtures/a11y';
 import { BUILT_IN_RULE_SETS } from '../../../tests-fixtures/testWorld';
 
 const { choice } = vi.hoisted(() => ({ choice: { current: undefined as string | undefined } }));
@@ -35,6 +36,7 @@ import {
   editor as item,
   rechargeValue,
   rowPoolFields,
+  rowSpells,
   unsaidFixed,
   withCharges,
   withProperty,
@@ -570,6 +572,24 @@ describe('item fields', () => {
     expect(unsaidFixed(fixed, { kind: 'charges', attack: 3 })).toStrictEqual({ dc: 15 });
     expect(unsaidFixed(fixed, { kind: 'charges', dc: 17, attack: 3 })).toStrictEqual({});
     expect(unsaidFixed({}, { kind: 'charges', dc: 17 })).toStrictEqual({});
+  });
+
+  it("names a row's spell with its book, the data's, else the one the row names", () => {
+    const row = {
+      charges: 3,
+      regain: 'all',
+      spells: [
+        { spell: 'fireball', cost: 3 },
+        { spell: 'frost lance', cost: 1, ref: { name: 'frost lance', source: 'hb' } },
+        { spell: 'unheard of', cost: 1 },
+      ],
+    } as ItemCharges;
+    expect(rowSpells(row, [{ name: 'Fireball', source: 'XPHB' }])).toEqual([
+      { spell: 'Fireball|XPHB', cost: 3 },
+      { spell: 'frost lance|hb', cost: 1 },
+      // No book anywhere: its name alone, which the effect does not read.
+      { spell: 'unheard of', cost: 1 },
+    ]);
   });
 
   it('writes a property as the others are written', () => {
@@ -1248,6 +1268,105 @@ describe('ItemEditor', () => {
       { name: 'Bellows of Strangulation', source: 'AU' },
     );
     expect(counted(readMechanics({ v: 1, effects: written }).charges)).toEqual(counted(before));
+  });
+
+  it('writes out a spell its fields name from a book the data lacks with that book, so its charges still count', () => {
+    // Suspected 4: written by name alone, one spell left the whole pool unread.
+    const registry = new EntityRegistry();
+    registry.addAll('spell', [
+      { name: 'Fireball', source: 'PHB', level: 3 },
+    ] as unknown as Entity[]);
+    const start: Json = {
+      name: 'Odd Staff',
+      type: 'ST',
+      entries: [],
+      charges: 9,
+      recharge: 'dawn',
+      attachedSpells: { charges: { '3': ['fireball', 'frost lance|hb'] } },
+    };
+    const draft = mount(item, start, registry);
+    expect(fieldChargesOf(start as DataEntity)?.spells).toHaveLength(2);
+    press('Change the spells they cast');
+    const written = (draft().castGuidance as Json).effects as Json[];
+    expect(written[0]?.spells).toEqual([
+      { spell: 'Fireball|PHB', cost: 3 },
+      { spell: 'frost lance|hb', cost: 3 },
+    ]);
+    const read = readMechanics({ v: 1, effects: written });
+    expect(read.problems).toEqual([]);
+    expect(read.charges?.charges).toBe(9);
+    expect(read.charges?.spells.map((s) => s.spell)).toEqual(['fireball', 'frost lance']);
+    expect(screen.queryByText(/does not count yet/)).toBeNull();
+  });
+
+  it('turns off what the original does with the prices it set on it', () => {
+    // Bug 13: the prices stayed in the file, priced nothing and warned on the sheet.
+    const original: Json = { name: 'Lantern', source: 'PHB', type: 'G', entries: [] };
+    const draft = mount(
+      item,
+      {
+        ...original,
+        source: 'MyHomebrew',
+        castGuidance: {
+          v: 1,
+          effects: [{ kind: 'note', text: 'Sheds light.' }],
+          amend: [{ cost: { amount: 2 } }],
+        },
+      },
+      new EntityRegistry(),
+      original,
+    );
+    fireEvent.click(screen.getByRole('checkbox', { name: /Also does what Lantern does/ }));
+    expect(draft().castGuidance).toEqual({
+      v: 1,
+      effects: [{ kind: 'note', text: 'Sheds light.' }],
+      replace: true,
+    });
+    // Back on, it does what the original does again, with no price.
+    fireEvent.click(screen.getByRole('checkbox', { name: /Also does what Lantern does/ }));
+    expect(draft().castGuidance).toEqual({
+      v: 1,
+      effects: [{ kind: 'note', text: 'Sheds light.' }],
+    });
+  });
+
+  it('names every box, checkbox and button it shows', () => {
+    // Bug 10, struck: each is named by the label around it, which the browser
+    // tool that reported it does not read.
+    const registry = new EntityRegistry();
+    registry.addAll('spell', [
+      { name: 'Fireball', source: 'PHB', level: 3 },
+    ] as unknown as Entity[]);
+    const original: Json = { name: 'Flame Blade', source: 'PHB', type: 'M', entries: [] };
+    mount(
+      item,
+      {
+        ...original,
+        source: 'MyHomebrew',
+        property: ['V', 'T'],
+        reqAttune: 'by a wizard',
+        charges: 3,
+        recharge: 'dawn',
+        additionalSpells: [{ innate: { _: { daily: { '1e': ['light'] } } } }],
+        castGuidance: {
+          v: 1,
+          effects: [{ kind: 'charges', charges: 3, regain: 'all', spells: [] }],
+        },
+      },
+      registry,
+      original,
+    );
+    press('Add a spell its charges cast');
+    type('Charge spell 1', 'fireball');
+    type('Charge spell 1: up to level', '5');
+    for (const name of [
+      'Requires attunement',
+      'Also does what Flame Blade does on the sheet',
+      'Charge spell 1: only at that level',
+    ]) {
+      expect(screen.getByRole('checkbox', { name })).toBeTruthy();
+    }
+    expect(namelessControls()).toEqual([]);
   });
 
   it('writes out a spell its fields cast at one level, and keeps it at one level when retyped', () => {

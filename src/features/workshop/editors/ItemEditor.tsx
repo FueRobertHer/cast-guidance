@@ -205,7 +205,8 @@ export function withCharges(draft: Json, patch: Json, own?: Json): Json {
 /**
  * The spells a built-in `charges` row prices, written as an item's own effect
  * names them: each with its book, the first of `options` by its name (the
- * item's edition first), or its name alone when the data has none.
+ * item's edition first), else the book its fields name, or its name alone
+ * when nothing names one (which the effect does not read).
  */
 export function rowSpells(
   row: ItemCharges,
@@ -222,8 +223,10 @@ export function rowSpells(
       typeof named?.name === 'string' && typeof named.source === 'string'
         ? { name: named.name, source: named.source }
         : options.find((o) => o.name.toLowerCase() === s.spell.toLowerCase());
+    // A book the data lacks (a collection turned off) is still that spell's.
+    const book = s.ref?.source ? `${s.ref.name}|${s.ref.source}` : s.spell;
     return {
-      spell: hit === undefined ? s.spell : `${hit.name}|${hit.source}`,
+      spell: hit === undefined ? book : `${hit.name}|${hit.source}`,
       cost: s.cost,
       ...(s.upTo === undefined ? {} : { upTo: s.upTo }),
       ...(s.at === undefined ? {} : { at: s.at }),
@@ -692,49 +695,58 @@ function ChargeSpell({
   const levelBox = fixedAt ? spell.at : spell.upTo;
   return (
     <div className="flex flex-col">
-      <div className="grid grid-cols-[1fr_4.5rem_4.5rem_auto] items-end gap-2">
-        <Field label="Spell">
-          <input
-            aria-label={`Charge spell ${n}`}
-            list={listId}
-            value={typed}
-            placeholder="Fireball"
-            disabled={disabled}
-            onChange={(e) => {
-              setHeld(e.target.value);
-              onChange({ ...spell, spell: resolve(e.target.value) });
-            }}
-            className={fieldClass}
-          />
-        </Field>
-        <Field label="Costs">
-          <input
-            aria-label={`Charge spell ${n}: costs`}
-            inputMode="numeric"
-            value={typeof spell.cost === 'number' ? spell.cost : ''}
-            disabled={disabled}
-            onChange={(e) => onChange({ ...spell, cost: whole(e.target.value) })}
-            className={fieldClass}
-          />
-        </Field>
-        <Field label={fixedAt ? 'At level' : 'Up to level'}>
-          <input
-            aria-label={`Charge spell ${n}: ${fixedAt ? 'at level' : 'up to level'}`}
-            inputMode="numeric"
-            value={typeof levelBox === 'number' ? levelBox : ''}
-            placeholder="Its own"
-            disabled={disabled}
-            onChange={(e) => {
-              const to = whole(e.target.value);
-              if (to === undefined) setHeldAt(fixedAt ? ref : undefined);
-              onChange(to === undefined ? rest : { ...rest, [fixedAt ? 'at' : 'upTo']: to });
-            }}
-            className={fieldClass}
-          />
-        </Field>
+      {/* One line on most phones; on a narrower screen or with large text the
+          boxes wrap, keeping the spell readable and Remove at the right. */}
+      <div className="flex flex-wrap items-end gap-2">
+        <div className="min-w-24 flex-1">
+          <Field label="Spell">
+            <input
+              aria-label={`Charge spell ${n}`}
+              list={listId}
+              value={typed}
+              placeholder="Fireball"
+              disabled={disabled}
+              onChange={(e) => {
+                setHeld(e.target.value);
+                onChange({ ...spell, spell: resolve(e.target.value) });
+              }}
+              className={fieldClass}
+            />
+          </Field>
+        </div>
+        <div className="w-18">
+          <Field label="Costs">
+            <input
+              aria-label={`Charge spell ${n}: costs`}
+              inputMode="numeric"
+              value={typeof spell.cost === 'number' ? spell.cost : ''}
+              disabled={disabled}
+              onChange={(e) => onChange({ ...spell, cost: whole(e.target.value) })}
+              className={fieldClass}
+            />
+          </Field>
+        </div>
+        <div className="w-18">
+          <Field label={fixedAt ? 'At level' : 'Up to level'}>
+            <input
+              aria-label={`Charge spell ${n}: ${fixedAt ? 'at level' : 'up to level'}`}
+              inputMode="numeric"
+              value={typeof levelBox === 'number' ? levelBox : ''}
+              placeholder="Its own"
+              disabled={disabled}
+              onChange={(e) => {
+                const to = whole(e.target.value);
+                if (to === undefined) setHeldAt(fixedAt ? ref : undefined);
+                onChange(to === undefined ? rest : { ...rest, [fixedAt ? 'at' : 'upTo']: to });
+              }}
+              className={fieldClass}
+            />
+          </Field>
+        </div>
         <Button
           variant="ghost"
           size="sm"
+          className="ml-auto"
           aria-label={`Remove charge spell ${n}`}
           disabled={disabled}
           onClick={onRemove}
@@ -1105,7 +1117,10 @@ function Effects(props: EditorProps) {
         readOnly={readOnly}
         inherits={original !== undefined ? String(original.name) : undefined}
         replace={g.replace === true}
-        onReplace={(replace) => set({ replace: replace ? true : undefined })}
+        // Its prices on what the original does go with what they priced.
+        onReplace={(replace) =>
+          set(replace ? { replace: true, amend: undefined } : { replace: undefined })
+        }
         spells={spellOptions(props)}
         hide={isCharges}
         holdsCharges
