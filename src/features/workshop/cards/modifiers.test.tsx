@@ -444,6 +444,37 @@ describe('Counts when and Lasts', () => {
     });
   });
 
+  it.each([
+    ['in the order they left', ['Armor Class', 'Speed'], ['Armor Class', 'Speed']],
+    ['in the other order', ['Armor Class', 'Speed'], ['Speed', 'Armor Class']],
+    ['the later one first out', ['Speed', 'Armor Class'], ['Speed', 'Armor Class']],
+    [
+      'the later one first, back in the other order',
+      ['Speed', 'Armor Class'],
+      ['Armor Class', 'Speed'],
+    ],
+  ])('puts two cards back where they stood, %s', (_, out, back) => {
+    const start = {
+      v: 1,
+      effects: [
+        { kind: 'skillProf', skill: 'stealth' },
+        { kind: 'acBonus', amount: 1 },
+        { kind: 'speedBonus', amount: 10 },
+        { kind: 'initiativeBonus', amount: 1 },
+      ],
+    };
+    const guidance = featWith(structuredClone(start));
+    for (const title of out) {
+      fireEvent.click(chip(title, 'Counts when'));
+      fireEvent.change(screen.getByLabelText(`${title}: Put on when`), {
+        target: { value: 'longRest' },
+      });
+    }
+    expect((guidance() as { effects: unknown[] }).effects).toHaveLength(2);
+    for (const title of back) fireEvent.click(chip(title, 'Counts when', true));
+    expect(guidance()).toEqual(start);
+  });
+
   it('leaves what was open on a card with it, not with the card that takes its place', () => {
     featWith({
       v: 1,
@@ -582,6 +613,56 @@ describe('a feat written with Counts when, on a sheet', () => {
     knockedOut(p, { maxHp: sheet.maxHp.value, edition: '2024', moments: sheet.moments });
     expect(p.activeEffects?.map((e) => [e.name, e.parts])).toEqual([
       ['Fury Feat', [{ kind: 'acBonus', amount: 2 }]],
+    ]);
+  });
+
+  it.each([
+    [4, 1],
+    [6, 2],
+  ])('puts a number grown by level on at the level the character is (level %i: %i)', (levels, ac) => {
+    const castGuidance = {
+      v: 1,
+      moments: [
+        {
+          at: 'zeroHp',
+          do: [
+            {
+              kind: 'addEffect',
+              name: 'Fury Feat',
+              effects: [{ kind: 'acBonus', amount: { byLevel: { 1: 1, 5: 2 } } }],
+            },
+          ],
+        },
+      ],
+    };
+    const entity = {
+      name: 'Fury Feat',
+      source: 'HB',
+      entries: ['Fury.'],
+      castGuidance,
+    } as DataEntity;
+    const d = newCharacterDoc('hero', 'Hero', 'test');
+    d.classes = [
+      {
+        ref: { name: 'Warrior', source: 'TST' },
+        levels,
+        hp: Array.from({ length: levels }, () => 'avg' as const),
+      },
+    ];
+    d.play.hpInitialized = true;
+    d.play.currentHp = 20;
+    d.feats = [{ ref: { name: 'Fury Feat', source: 'HB' }, instanceId: 'f0' }];
+    const sheet = deriveSheet(d, world({ feat: [entity] }));
+    expect(sheet.warnings.filter((w) => w.startsWith('Fury Feat'))).toEqual([]);
+    const p = d.play;
+    const change = knockedOut(p, {
+      maxHp: sheet.maxHp.value,
+      edition: '2024',
+      moments: sheet.moments,
+    });
+    expect(JSON.stringify(change)).not.toContain('cannot hold it');
+    expect(p.activeEffects?.map((e) => [e.name, e.parts])).toEqual([
+      ['Fury Feat', [{ kind: 'acBonus', amount: ac }]],
     ]);
   });
 

@@ -72,9 +72,13 @@ function compareRecords(before: Record<string, unknown>, after: Record<string, u
         if (!(box in (was as Record<string, unknown>))) out.added.push(`${k} | ${box}`);
       }
     } else if (!same(was, after[k])) {
-      const isWrite =
-        (typeof was === 'object' && was !== null && 'writes' in was) || Array.isArray(was);
-      (isWrite && !k.endsWith(' | buttons') ? out.writes : out.other).push(k);
+      // A click that asks holds the ask beside its writes: a new ask with the
+      // same writes is shown or asked differently, not written differently.
+      const asked = typeof was === 'object' && was !== null && 'writes' in was;
+      const isWrite = asked
+        ? !same((was as { writes: unknown }).writes, (after[k] as { writes?: unknown }).writes)
+        : Array.isArray(was) && !k.endsWith(' | buttons');
+      (isWrite ? out.writes : out.other).push(k);
     }
   }
   for (const k of Object.keys(after)) if (!(k in before)) out.added.push(k);

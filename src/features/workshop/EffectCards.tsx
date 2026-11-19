@@ -544,13 +544,48 @@ export function EffectCards({
     for (let n = 2; taken.includes(name.trim().toLowerCase()); n++) name = `${named} (${n})`;
     return name;
   };
-  // Where each card a moment now puts on stood in the list, so Counts when
-  // taken away puts it back there. Kept by the effect itself, and passed on
-  // as the card is edited; one this session did not move goes last.
-  const cameFrom = useRef(new WeakMap<object, number>());
+  // The list's order as this session has seen it, the cards since put on at
+  // a moment among them, so Counts when taken away puts a card back where it
+  // stood, however many are out. Cards are known by the effect itself,
+  // followed through their edits (`became`); one this session never saw on
+  // the list goes last.
+  const home = useRef<object[]>([]);
+  const became = useRef(new WeakMap<object, object>());
+  const edited = (from: object, to: object) => {
+    if (from !== to) became.current.set(from, to);
+  };
+  const now = (x: object): object => {
+    let at = x;
+    // A host that hands an older effect back could close a loop: follow it once round at most.
+    const seen = new Set<object>([at]);
+    for (let next = became.current.get(at); next !== undefined && !seen.has(next); ) {
+      at = next;
+      seen.add(at);
+      next = became.current.get(at);
+    }
+    return at;
+  };
+  /** The order with every card now on the list in it, each just after the one before it. */
+  const placed = (): object[] => {
+    const order = home.current.map(now);
+    list.forEach((x, j) => {
+      if (order.includes(x)) return;
+      const before = j === 0 ? -1 : order.indexOf(list[j - 1] as object);
+      order.splice(before + 1, 0, x);
+    });
+    home.current = order;
+    return order;
+  };
   const putBack = (effect: Eff): Eff[] => {
-    const at = cameFrom.current.get(effect);
-    return at === undefined ? [...list, effect] : [...list.slice(0, at), effect, ...list.slice(at)];
+    const order = placed();
+    const at = order.indexOf(effect);
+    if (at === -1) return [...list, effect];
+    // After the last card on the list that stood before it.
+    let after = -1;
+    list.forEach((x, j) => {
+      if (order.indexOf(x) < at) after = j;
+    });
+    return [...list.slice(0, after + 1), effect, ...list.slice(after + 1)];
   };
   const momentProblems = held.length > 0 ? readMoments(held, named).problems : [];
   /** What the reader says of a drawn moment's card `k`, and of the moment itself. */
@@ -725,7 +760,7 @@ export function EffectCards({
               onMoments === undefined || !movable
                 ? undefined
                 : (at) => {
-                    cameFrom.current.set(effect, i);
+                    placed();
                     onMoments(
                       [
                         ...held,
@@ -736,11 +771,11 @@ export function EffectCards({
                   }
             }
             onRemove={() => onChange(list.filter((_, j) => j !== i))}
-            onChange={(next, renamed) =>
-              renamed === undefined
-                ? onChange(list.map((x, j) => (j === i ? next : x)))
-                : onChange(...follow(i, next, renamed))
-            }
+            onChange={(next, renamed) => {
+              edited(effect, next);
+              if (renamed === undefined) onChange(list.map((x, j) => (j === i ? next : x)));
+              else onChange(...follow(i, next, renamed));
+            }}
           />
         ),
       )}
@@ -765,8 +800,7 @@ export function EffectCards({
             place={place}
             onRemove={() => onMoments?.(without(mi, k))}
             onChange={(next) => {
-              const from = cameFrom.current.get(effect);
-              if (from !== undefined) cameFrom.current.set(next, from);
+              edited(effect, next);
               onMoments?.(
                 held.map((x, j) =>
                   j === mi
