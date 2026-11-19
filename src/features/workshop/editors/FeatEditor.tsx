@@ -18,6 +18,7 @@ import {
 } from '../fields';
 import {
   ARMOR_WORDS,
+  absent,
   GrantField,
   LANGUAGE_WORDS,
   OnSheet,
@@ -31,7 +32,7 @@ const SENSES = ['darkvision', 'blindsight', 'tremorsense', 'truesight'] as const
 
 /** A feat's senses (`[{ darkvision: 60 }]`) as feet, when that is all the list says. */
 export function sensesShape(senses: unknown): Json | undefined {
-  if (senses === undefined) return {};
+  if (absent(senses)) return {};
   if (!Array.isArray(senses) || senses.length !== 1 || !isRecord(senses[0])) return undefined;
   return Object.values(senses[0]).every((v) => typeof v === 'number') ? senses[0] : undefined;
 }
@@ -39,6 +40,26 @@ export function sensesShape(senses: unknown): Json | undefined {
 function Senses({ draft, change, readOnly }: EditorProps) {
   const shape = sensesShape(draft.senses);
   if (shape === undefined) return <Kept label="Senses">more than one list, kept as it is.</Kept>;
+  const others = Object.keys(shape).filter((k) => !(SENSES as readonly string[]).includes(k));
+  return (
+    <>
+      {others.length > 0 && (
+        <Kept label="Senses">{`also ${others.join(', ')}, kept as it is.`}</Kept>
+      )}
+      <SenseBoxes shape={shape} change={change} readOnly={readOnly} />
+    </>
+  );
+}
+
+function SenseBoxes({
+  shape,
+  change,
+  readOnly,
+}: {
+  shape: Json;
+  change: EditorProps['change'];
+  readOnly: boolean;
+}) {
   return (
     <div className="grid grid-cols-2 gap-2">
       {SENSES.map((sense) => (

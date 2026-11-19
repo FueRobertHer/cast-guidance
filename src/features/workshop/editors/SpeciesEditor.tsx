@@ -9,7 +9,9 @@ import type { EditorProps, EditorSpec, Json } from '../editorTypes';
 import { ABILITY_WORDS, ChipPicks, Kept, NumberField, Section, TextBlocks } from '../fields';
 import {
   ARMOR_WORDS,
+  absent,
   GrantField,
+  HeldNumber,
   LANGUAGE_WORDS,
   OnSheet,
   SKILL_WORDS,
@@ -113,8 +115,8 @@ export function withSpeed(
  */
 export function abilityShape(
   ability: unknown,
-): { fixed: Json; choose?: { count?: number; amount?: number } } | undefined {
-  if (ability === undefined) return { fixed: {} };
+): { fixed: Json; choose?: { count?: number; amount?: number; from?: unknown } } | undefined {
+  if (absent(ability)) return { fixed: {} };
   if (!Array.isArray(ability) || ability.length !== 1 || !isRecord(ability[0])) return undefined;
   const { choose, ...fixed } = ability[0];
   const whole = (v: unknown) => v === undefined || (Number.isInteger(v) && (v as number) > 0);
@@ -138,10 +140,14 @@ function AbilityScores({ draft, change, readOnly }: EditorProps) {
     change({ ability: Object.keys(next).length > 0 ? [next] : undefined });
   };
   const choose = shape.choose ?? {};
+  // A choice that names no count is a choice of one, as the sheet asks it.
+  const count = choose.count ?? (shape.choose !== undefined ? 1 : undefined);
+  const from = Array.isArray(choose.from) ? (choose.from as unknown[]) : undefined;
   const pick = (k: 'count' | 'amount', n: number | undefined) => {
+    if (k === 'count' && n === undefined) return put('choose', undefined);
     const next: Json = { ...choose, [k]: n };
     if (n === undefined) delete next[k];
-    put('choose', next.count === undefined ? undefined : next);
+    put('choose', next);
   };
   return (
     <>
@@ -160,20 +166,26 @@ function AbilityScores({ draft, change, readOnly }: EditorProps) {
       <div className="grid grid-cols-2 gap-2">
         <NumberField
           label="Abilities of their choice"
-          value={choose.count}
+          value={count}
           placeholder="None"
           disabled={readOnly}
           onChange={(n) => pick('count', n === 0 ? undefined : n)}
         />
-        {choose.count !== undefined && (
-          <NumberField
+        {count !== undefined && (
+          <HeldNumber
             label="Each raised by"
             value={choose.amount ?? 1}
+            min={1}
             disabled={readOnly}
-            onChange={(n) => pick('amount', n === undefined || n <= 1 ? undefined : n)}
+            onChange={(n) => pick('amount', n <= 1 ? undefined : n)}
           />
         )}
       </div>
+      {from !== undefined && (
+        <Kept label="Abilities of their choice">
+          {`from ${from.map((a) => String(a).toUpperCase()).join(', ')} only, kept as it is.`}
+        </Kept>
+      )}
       <OnSheet>the ability scores, a choice asked when the character is built.</OnSheet>
     </>
   );
@@ -203,16 +215,21 @@ function DefensePicks({
   // A name the chips do not offer stays, after them.
   const others = picks.filter((p) => !options.some(([k]) => k === p));
   return (
-    <ChipPicks
-      label={label}
-      options={options}
-      value={picks}
-      disabled={readOnly}
-      onChange={(next) => {
-        const all = [...next.filter((p) => !others.includes(p)), ...others];
-        change({ [field]: all.length === 0 ? undefined : all });
-      }}
-    />
+    <div className="flex flex-col gap-2">
+      <ChipPicks
+        label={label}
+        options={options}
+        value={picks}
+        disabled={readOnly}
+        onChange={(next) => {
+          const all = [...next.filter((p) => !others.includes(p)), ...others];
+          change({ [field]: all.length === 0 ? undefined : all });
+        }}
+      />
+      {others.length > 0 && (
+        <Kept label={label}>{`also ${others.join(', ')}, kept as it is.`}</Kept>
+      )}
+    </div>
   );
 }
 

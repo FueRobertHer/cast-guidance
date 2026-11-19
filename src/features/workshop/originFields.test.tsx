@@ -622,3 +622,108 @@ describe('item fields', () => {
     expect(screen.queryByText(/This counts only in play/)).toBeNull();
   });
 });
+
+describe('fields at their edges (the U5b review)', () => {
+  it('a copy that took a field out can fill it again: null reads as empty', () => {
+    const book = { ...NEW_SPECIES, source: 'TST' };
+    mount(species, {
+      ...book,
+      skillProficiencies: null,
+      ability: null,
+      additionalSpells: null,
+    });
+    expect(screen.queryByText(/kept as/)).toBeNull();
+    chip('Skills', 'Stealth');
+    cleanup();
+    mount(feat, { ...NEW_FEAT, senses: null, prerequisite: null });
+    expect(screen.queryByText(/kept as/)).toBeNull();
+    expect(screen.getByLabelText('Species')).toBeTruthy();
+    expect(screen.getByLabelText('Darkvision in feet')).toBeTruthy();
+  });
+
+  it('a count of their choice and the spell ability clear when emptied', () => {
+    const at = mount(feat, { ...NEW_FEAT, skillProficiencies: [{ stealth: true, any: 1 }] });
+    type('Skills of their choice', '');
+    expect(at.draft().skillProficiencies).toEqual([{ stealth: true }]);
+    cleanup();
+    const spells = [{ ability: 'wis', innate: { _: { will: ['Guidance|TST'] } } }];
+    const it2 = mount(feat, { ...NEW_FEAT, additionalSpells: spells });
+    pick('Their attack and DC from', '');
+    expect(it2.draft().additionalSpells).toEqual([{ innate: { _: { will: ['Guidance|TST'] } } }]);
+  });
+
+  it('spells that come to share a "1" count each keep their own', () => {
+    const spells = [
+      {
+        innate: { '3': { daily: { '1': ['Aid|TST'] } }, '5': { daily: { '1': ['Guidance|TST'] } } },
+      },
+    ];
+    const at = mount(species, { ...NEW_SPECIES, additionalSpells: spells });
+    type('Spell 2: from level', '3');
+    expect(at.draft().additionalSpells).toEqual([
+      { innate: { '3': { daily: { '1e': ['Aid|TST', 'Guidance|TST'] } } } },
+    ]);
+    expect(screen.queryByText(/kept as/)).toBeNull();
+  });
+
+  it('a list of names holds what is typed while a name is edited', () => {
+    const at = mount(feat, { ...NEW_FEAT, toolProficiencies: [{ alpha: true, beta: true }] });
+    type('Tools', 'alphax, beta');
+    expect(box('Tools')).toBe('alphax, beta');
+    expect(at.draft().toolProficiencies).toEqual([{ beta: true, alphax: true }]);
+    type('Tools', 'a, a');
+    expect(box('Tools')).toBe('a, a');
+  });
+
+  it("an item's last spell takes its ability with it", () => {
+    const at = mount(item, {
+      ...NEW_ITEM,
+      attachedSpells: { will: ['Guidance|TST'], ability: 'wis' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Remove spell 1' }));
+    expect(at.draft()).not.toHaveProperty('attachedSpells');
+  });
+
+  it('a value the boxes do not offer is named as kept', () => {
+    mount(feat, { ...NEW_FEAT, prerequisite: [{ proficiency: [{ armor: 'shields' }] }] });
+    expect(screen.queryByLabelText('Armor training')).toBeNull();
+    expect(screen.getByText(/a proficiency, kept as it is/)).toBeTruthy();
+    cleanup();
+    mount(feat, { ...NEW_FEAT, senses: [{ darkvision: 60, echolocation: 30 }] });
+    expect(screen.getByText(/also echolocation, kept as it is/)).toBeTruthy();
+    cleanup();
+    mount(species, { ...NEW_SPECIES, conditionImmune: ['disease'] });
+    expect(screen.getByText(/also disease, kept as it is/)).toBeTruthy();
+    cleanup();
+    mount(item, { ...NEW_ITEM, attachedSpells: { will: ['Guidance|TST'], ritual: ['alarm'] } });
+    expect(screen.getByText(/also its ritual list, kept as it is/)).toBeTruthy();
+  });
+
+  it('a box that is never empty can be emptied while a number is typed', () => {
+    const at = mount(feat, { ...NEW_FEAT, prerequisite: [{ ability: [{ str: 13 }] }] });
+    type('At least', '');
+    expect(box('At least')).toBe('');
+    expect(at.draft().prerequisite).toEqual([{ ability: [{ str: 13 }] }]);
+    type('At least', '15');
+    expect(at.draft().prerequisite).toEqual([{ ability: [{ str: 15 }] }]);
+    fireEvent.blur(screen.getByLabelText('At least'));
+    expect(box('At least')).toBe('15');
+  });
+
+  it('a choice of abilities that names no count is a choice of one, from the ones it names', () => {
+    const at = mount(species, { ...NEW_SPECIES, ability: [{ choose: { from: ['str', 'dex'] } }] });
+    expect(box('Abilities of their choice')).toBe('1');
+    expect(screen.getByText(/from STR, DEX only, kept as it is/)).toBeTruthy();
+    type('Each raised by', '2');
+    expect(at.draft().ability).toEqual([{ choose: { from: ['str', 'dex'], amount: 2 } }]);
+  });
+
+  it('spells open again by level, any level first', () => {
+    const rows = [
+      { spell: 'Aid|TST', how: 'known' as const, level: '3' },
+      { spell: 'Guidance|TST', how: 'known' as const, level: '_' },
+    ];
+    const read = grantRows(grantsOf(rows, undefined));
+    expect(read?.rows.map((r) => r.spell)).toEqual(['Guidance|TST', 'Aid|TST']);
+  });
+});

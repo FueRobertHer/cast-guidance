@@ -51,6 +51,57 @@ const split = (text: string) =>
     .map((s) => s.trim())
     .filter((s) => s !== '');
 
+/** A field with nothing in it: a copy stores `null` for a field it takes out. */
+export const absent = (v: unknown): v is undefined | null => v === undefined || v === null;
+
+/** The same names, in any order, a name typed twice counted once. */
+function sameNames(a: readonly string[], b: readonly string[]): boolean {
+  const x = new Set(a);
+  const y = new Set(b);
+  return x.size === y.size && [...x].every((s) => y.has(s));
+}
+
+/**
+ * A number box for a value that is never empty (a count, a minimum score).
+ * Emptied, or below `min`, it shows what was typed while the field keeps its
+ * last number, until a number is typed or the box is left.
+ */
+export function HeldNumber({
+  label,
+  value,
+  min,
+  onChange,
+  disabled,
+}: {
+  label: string;
+  value: number;
+  min: number;
+  onChange: (n: number) => void;
+  disabled?: boolean;
+}) {
+  const [typed, setTyped] = useState<string | undefined>(undefined);
+  return (
+    <Field label={label}>
+      <input
+        inputMode="numeric"
+        value={typed ?? String(value)}
+        disabled={disabled}
+        onChange={(e) => {
+          const n = Number.parseInt(e.target.value, 10);
+          if (Number.isNaN(n) || n < min) {
+            setTyped(e.target.value.replace(/\D/g, ''));
+            return;
+          }
+          setTyped(undefined);
+          onChange(Math.min(999, n));
+        }}
+        onBlur={() => setTyped(undefined)}
+        className={fieldClass}
+      />
+    </Field>
+  );
+}
+
 /** Names in one box, a comma between each, held as typed so a comma can be typed. */
 export function NamesBox({
   label,
@@ -66,7 +117,8 @@ export function NamesBox({
   disabled?: boolean;
 }) {
   const [typed, setTyped] = useState(value.join(', '));
-  const shown = split(typed).join('\n') === value.join('\n') ? typed : value.join(', ');
+  // The list keeps its keys where they were, so a name edited can move: compare as names.
+  const shown = sameNames(split(typed), value) ? typed : value.join(', ');
   return (
     <Field label={label}>
       <input
@@ -92,7 +144,7 @@ export function grantShape(
   raw: unknown,
   anyKey?: string,
 ): { names: string[]; any?: number } | undefined {
-  if (raw === undefined) return { names: [] };
+  if (absent(raw)) return { names: [] };
   if (!Array.isArray(raw) || raw.length !== 1 || !isRecord(raw[0])) return undefined;
   const names: string[] = [];
   let any: number | undefined;
@@ -146,7 +198,7 @@ export function GrantField({
 }) {
   const shape = grantShape(raw, anyKey);
   if (shape === undefined) return <Kept label={label}>a choice, kept as it is.</Kept>;
-  const set = (names: readonly string[], any = shape.any) =>
+  const set = (names: readonly string[], any: number | undefined) =>
     onChange(grantWith(raw, names, any, anyKey));
   // The chips are keyed in lower case; a name the file capitalised is written back as it was.
   const asWritten = new Map(shape.names.map((n) => [n.toLowerCase(), n]));
@@ -160,7 +212,12 @@ export function GrantField({
           options={options}
           value={shape.names.map((n) => n.toLowerCase())}
           disabled={readOnly}
-          onChange={(v) => set(v.map((k) => asWritten.get(k) ?? k))}
+          onChange={(v) =>
+            set(
+              v.map((k) => asWritten.get(k) ?? k),
+              shape.any,
+            )
+          }
         />
       ) : (
         <NamesBox
@@ -168,7 +225,7 @@ export function GrantField({
           value={shape.names}
           placeholder={placeholder}
           disabled={readOnly}
-          onChange={(v) => set(v)}
+          onChange={(v) => set(v, shape.any)}
         />
       )}
       {options !== undefined && others.length > 0 && (
@@ -255,8 +312,23 @@ function bucketOf(rows: readonly SpellRow[]): Json {
     const counts = (out[r.how] ?? {}) as Record<string, string[]>;
     out[r.how] = { ...counts, [key]: [...(counts[key] ?? []), r.spell] };
   }
+  // A count read as "1" held one spell alone. Spells that come to share it each
+  // keep their own count ("1e"): under "1" they would share one use.
+  for (const how of ['daily', 'rest'] as const) {
+    const counts = out[how] as Record<string, string[]> | undefined;
+    if (counts === undefined) continue;
+    const own: Record<string, string[]> = {};
+    for (const [key, list] of Object.entries(counts)) {
+      const k = key.endsWith('e') || list.length === 1 ? key : `${Number.parseInt(key, 10)}e`;
+      own[k] = [...(own[k] ?? []), ...list];
+    }
+    out[how] = own;
+  }
   return out;
 }
+
+/** Any level first, then by level: the order rows are read in, whatever order the keys are. */
+const levelOrder = (key: string) => (key === '_' ? 0 : Number.parseInt(key, 10) || 0);
 
 const LEVEL_KEY = /^(_|[1-9]\d*)$/;
 
@@ -266,7 +338,7 @@ const LEVEL_KEY = /^(_|[1-9]\d*)$/;
  * for more (alternatives, a choice of spell, an expanded list).
  */
 export function grantRows(raw: unknown): { rows: SpellRow[]; ability: unknown } | undefined {
-  if (raw === undefined) return { rows: [], ability: undefined };
+  if (absent(raw)) return { rows: [], ability: undefined };
   if (!Array.isArray(raw) || raw.length !== 1 || !isRecord(raw[0])) return undefined;
   const { ability, known, innate, ...rest } = raw[0];
   if (Object.keys(rest).length > 0) return undefined;
@@ -279,7 +351,9 @@ export function grantRows(raw: unknown): { rows: SpellRow[]; ability: unknown } 
   );
   for (const [list, how] of lists) {
     if (!isRecord(list)) return undefined;
-    for (const [level, v] of Object.entries(list)) {
+    // An object lists number keys first, so "3" is stored before "_" whichever was made first.
+    const byLevel = Object.entries(list).sort(([a], [b]) => levelOrder(a) - levelOrder(b));
+    for (const [level, v] of byLevel) {
       if (!LEVEL_KEY.test(level)) return undefined;
       const read =
         how === 'known'
@@ -321,20 +395,27 @@ export function grantsOf(rows: readonly SpellRow[], ability: unknown): unknown {
 
 /** An item's `attachedSpells` lists the sheet grants (`will`, `daily`, `rest`) as rows. */
 export function attachedRows(raw: unknown): SpellRow[] | undefined {
-  if (raw === undefined) return [];
+  if (absent(raw)) return [];
   return isRecord(raw) ? bucketRows(raw, undefined, true) : undefined;
 }
 
-/** `raw` with those lists for `rows`; its other keys (`charges`, `ability`) as they were. */
+/**
+ * `raw` with those lists for `rows`; its other keys (`charges`) as they were.
+ * The ability goes with the last spell: with none left it would cast nothing.
+ */
 export function attachedWith(raw: unknown, rows: readonly SpellRow[], ability: unknown): unknown {
   const { will: _, daily: __, rest: ___, ability: ____, ...kept } = isRecord(raw) ? raw : {};
+  const lists = bucketOf(rows.filter((r) => r.spell.trim() !== ''));
   const next: Json = {
     ...kept,
-    ...bucketOf(rows.filter((r) => r.spell.trim() !== '')),
-    ...(ability !== undefined ? { ability } : {}),
+    ...lists,
+    ...(ability !== undefined && Object.keys(lists).length > 0 ? { ability } : {}),
   };
   return Object.keys(next).length > 0 ? next : undefined;
 }
+
+/** What `attachedSpells` holds that the rows and the Charges section edit. */
+const ATTACHED_OWN = new Set(['will', 'daily', 'rest', 'ability', 'charges']);
 
 /** A spell typed, as the data's `name|source` when the data has one of that name. */
 function spellRef(typed: string, spells: ReadonlyArray<{ name: string; source: string }>) {
@@ -402,11 +483,12 @@ function SpellLine({
       </div>
       {counted && (
         <div className="w-18">
-          <NumberField
+          <HeldNumber
             label={`Spell ${n}: times`}
             value={row.uses ?? 1}
+            min={1}
             disabled={disabled}
-            onChange={(u) => onChange({ ...row, uses: u === undefined || u < 1 ? 1 : u })}
+            onChange={(uses) => onChange({ ...row, uses })}
           />
         </div>
       )}
@@ -469,7 +551,7 @@ function SpellRows({
   // Written from elsewhere (the file view, Undo): what the field holds is shown.
   const shown = same(write(held, ability), raw) ? held : rows;
   const spells = onePerName(registry.byType('spell'), draft);
-  const set = (next: SpellRow[], ab = ability) => {
+  const set = (next: SpellRow[], ab: unknown) => {
     setHeld(next);
     onChange(write(next, ab));
   };
@@ -488,8 +570,18 @@ function SpellRows({
           levels={levels}
           hows={hows}
           disabled={readOnly}
-          onChange={(r) => set(shown.map((x, j) => (j === i ? r : x)))}
-          onRemove={() => set(shown.filter((_, j) => j !== i))}
+          onChange={(r) =>
+            set(
+              shown.map((x, j) => (j === i ? r : x)),
+              ability,
+            )
+          }
+          onRemove={() =>
+            set(
+              shown.filter((_, j) => j !== i),
+              ability,
+            )
+          }
         />
       ))}
       <datalist id={listId}>
@@ -521,7 +613,7 @@ function SpellRows({
           variant="outline"
           size="sm"
           className="self-start"
-          onClick={() => set([...shown, { spell: '', how: levels ? 'known' : 'will' }])}
+          onClick={() => set([...shown, { spell: '', how: levels ? 'known' : 'will' }], ability)}
         >
           Add a spell
         </Button>
@@ -580,18 +672,24 @@ export function SpellsAttached({
   if (rows === undefined)
     return <Kept label="Spells it casts">a list with no limits, kept as it is.</Kept>;
   const ability = isRecord(raw) ? raw.ability : undefined;
+  const others = isRecord(raw) ? Object.keys(raw).filter((k) => !ATTACHED_OWN.has(k)) : [];
   return (
-    <SpellRows
-      rows={rows}
-      ability={ability}
-      write={(r, ab) => attachedWith(raw, r, ab)}
-      raw={raw}
-      registry={registry}
-      draft={draft}
-      levels={false}
-      readOnly={readOnly}
-      onChange={onChange}
-    />
+    <div className="flex flex-col gap-2">
+      <SpellRows
+        rows={rows}
+        ability={ability}
+        write={(r, ab) => attachedWith(raw, r, ab)}
+        raw={raw}
+        registry={registry}
+        draft={draft}
+        levels={false}
+        readOnly={readOnly}
+        onChange={onChange}
+      />
+      {others.length > 0 && (
+        <Kept label="Spells it casts">also its {others.join(', ')} list, kept as it is.</Kept>
+      )}
+    </div>
   );
 }
 
@@ -648,16 +746,15 @@ function abilityNeed(v: unknown): { ability?: string; score?: number } | undefin
     : undefined;
 }
 
-/** The armor training asked for (`[{ armor: "medium" }]`), when that is all it asks. */
+/**
+ * The armor training asked for (`[{ armor: "medium" }]`), when that is all it
+ * asks and the box offers it; null for anything else, which is kept.
+ */
 function armorNeed(v: unknown): string | undefined | null {
   if (v === undefined) return undefined;
-  return Array.isArray(v) &&
-    v.length === 1 &&
-    isRecord(v[0]) &&
-    Object.keys(v[0]).join() === 'armor' &&
-    typeof v[0].armor === 'string'
-    ? v[0].armor
-    : null;
+  const one = Array.isArray(v) && v.length === 1 && isRecord(v[0]) ? v[0] : undefined;
+  const armor = one !== undefined && Object.keys(one).join() === 'armor' ? one.armor : undefined;
+  return typeof armor === 'string' && ARMOR_WORDS.some(([k]) => k === armor) ? armor : null;
 }
 
 /**
@@ -667,7 +764,7 @@ function armorNeed(v: unknown): string | undefined | null {
  * ("this or that") are kept as they are, with the level box as before.
  */
 export function Prerequisites({
-  value,
+  value: given,
   onChange,
   readOnly,
 }: {
@@ -675,6 +772,8 @@ export function Prerequisites({
   onChange: (next: unknown) => void;
   readOnly: boolean;
 }) {
+  // A copy that took its prerequisite out holds null: it needs nothing.
+  const value = given === null ? undefined : given;
   const one = value === undefined || (Array.isArray(value) && value.length === 1);
   const alt = Array.isArray(value) ? value[0] : {};
   if (!one || !isRecord(alt) || !prerequisiteLevel(value).editable)
@@ -740,11 +839,12 @@ export function Prerequisites({
             </Select>
           </Field>
           {ability.ability !== undefined && (
-            <NumberField
+            <HeldNumber
               label="At least"
-              value={ability.score}
+              value={ability.score ?? 13}
+              min={1}
               disabled={readOnly}
-              onChange={(n) => put('ability', [{ [ability.ability as string]: n ?? 13 }])}
+              onChange={(n) => put('ability', [{ [ability.ability as string]: n }])}
             />
           )}
         </div>
