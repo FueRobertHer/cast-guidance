@@ -6,6 +6,7 @@ import { assertJsonWithinLimits, IMPORT_LIMITS, ValidationError } from '@/lib/gu
 import { isQuotaError } from '@/lib/storageErrors';
 import { injectIdbFault, removeIdbFaults } from '../../tests-fixtures/idbFaults';
 import { db } from './db';
+import { collectionIdOf, withCollectionId } from './homebrewOrder';
 import { buildHomebrewRow, homebrewRepo, putHomebrewRow } from './homebrewRepo';
 
 function file(sourceId: string, spells: string[] = []) {
@@ -254,7 +255,12 @@ describe('homebrew content apart from its metadata', () => {
     await homebrewRepo.saveEditable(brew.id, file('BREW', ['Zap']));
 
     expect((await db.homebrewFiles.get(brew.id))?.rev).toBe(1);
-    expect((await homebrewRepo.getSafe(brew.id)).file?.json).toEqual(file('BREW', ['Zap']));
+    // With the id the file was stamped with when it was made.
+    const id = collectionIdOf(brew.json);
+    expect(id).toMatch(/^[0-9a-f-]{36}$/);
+    expect((await homebrewRepo.getSafe(brew.id)).file?.json).toEqual(
+      withCollectionId(file('BREW', ['Zap']), id ?? ''),
+    );
   });
 
   it('reads a row that still carries its content', async () => {

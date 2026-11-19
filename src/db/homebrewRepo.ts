@@ -7,7 +7,18 @@ import {
 } from '@/lib/guards';
 import { db, type HomebrewFileRow, type HomebrewMetaRow } from './db';
 import { bookOf, mayBeOldWholeImport, oldWholeImports, splitBooks } from './homebrewBooks';
-import { collectionKey, compareMergeOrder, sameCollection } from './homebrewOrder';
+import {
+  CHANGES_SOURCE,
+  COLLECTION_ID_KEY,
+  collectionIdOf,
+  collectionKey,
+  compareMergeOrder,
+  sameCollection,
+  WORKSHOP_SOURCE,
+  withCollectionId,
+} from './homebrewOrder';
+
+export { CHANGES_SOURCE, WORKSHOP_SOURCE };
 
 /** A file to be stored a book at a time, as {@link homebrewRepo.prepareBooks} gives it. */
 export interface PreparedBooks {
@@ -52,6 +63,13 @@ export async function buildHomebrewRow(
   // comes from: an import, a download of it, or a character's export.
   const book = bookOf(json);
   const sourceIds = meta.sources.map((s) => s.json);
+  const key = collectionKey({
+    url,
+    sourceIds,
+    fileName,
+    book: book.book,
+    made: collectionIdOf(json),
+  });
   return {
     id,
     fileName,
@@ -63,7 +81,7 @@ export async function buildHomebrewRow(
     counts: homebrewEntityCounts(json),
     addedAt: Date.now(),
     ...book,
-    key: collectionKey({ url, sourceIds, fileName, book: book.book }),
+    ...(key === undefined ? {} : { key }),
   };
 }
 
@@ -157,13 +175,16 @@ function readHomebrewMeta(row: unknown): HomebrewFileMeta | HomebrewReadError {
     ...(row.subset === true ? { subset: true as const } : {}),
   };
   const pack = readPackLocal(row.pack);
+  // A row written without its key (by a test, or before keys) is keyed as its
+  // fields say. An imported file has one unless the app made it before stamps.
+  const key = editable
+    ? undefined
+    : typeof row.key === 'string' && row.key !== ''
+      ? row.key
+      : collectionKey(meta);
   return {
     ...meta,
-    // An imported file is always one collection; a row written without its
-    // key (by a test, or before keys) is keyed as its fields say.
-    ...(editable
-      ? {}
-      : { key: typeof row.key === 'string' && row.key !== '' ? row.key : collectionKey(meta) }),
+    ...(key === undefined ? {} : { key }),
     ...(pack === undefined ? {} : { pack }),
     // The app's to set, on a file the player owns: never one an import stored.
     ...(editable && row.role === 'changes' ? { role: 'changes' as const } : {}),
@@ -295,21 +316,10 @@ function freeSource(wanted: string, stored: readonly HomebrewFileMeta[]): string
   }
 }
 
-/**
- * The book the Workshop keeps the player's own entries in: one file per
- * device, made on the first save. Its entries are `name|MyHomebrew`, apart
- * from every official printing of the same name.
- */
-export const WORKSHOP_SOURCE = 'MyHomebrew';
+/** The title of the Workshop file (`WORKSHOP_SOURCE`). */
 const WORKSHOP_TITLE = 'My homebrew';
 
-/**
- * The file the player's changes to the books are kept in (ADR-002, D2): one
- * per device, made on the first change saved, and known by its row's
- * `role`, which only the app sets. Its entries keep the book's own name and
- * source; the file declares this source of its own beside them.
- */
-export const CHANGES_SOURCE = 'MyChanges';
+/** The title of the file of the player's changes to the books (`CHANGES_SOURCE`). */
 const CHANGES_TITLE = 'Changes to the books';
 
 /** An entry's identity in a file: its name and its book, compared without case. */
@@ -438,7 +448,11 @@ function withoutOwned(json: Row, type: string, owner: unknown, others: readonly 
   if (Array.isArray(list)) json[own.type] = list.filter((e) => !isRecord(e) || !own.owns(owner, e));
 }
 
-/** A new file the player owns, with no entries yet. */
+/**
+ * A new file the player owns, with no entries yet, stamped with an id of its
+ * own (`COLLECTION_ID_KEY`): what another device knows it by when it comes
+ * there, in a character's export or as a file.
+ */
 function editableRow(fullName: string, abbreviation: string): HomebrewFileRow {
   return {
     id: crypto.randomUUID(),
@@ -448,6 +462,7 @@ function editableRow(fullName: string, abbreviation: string): HomebrewFileRow {
         sources: [
           { json: abbreviation, abbreviation, full: fullName, authors: [], version: '1.0.0' },
         ],
+        [COLLECTION_ID_KEY]: crypto.randomUUID(),
       },
     },
     enabled: true,
@@ -462,8 +477,17 @@ function editableRow(fullName: string, abbreviation: string): HomebrewFileRow {
  * Write new content to a file the player owns, bumping `rev` so the registry
  * and the search index notice a change under the same id. The caller holds a
  * transaction over both tables. False when the row is gone.
+ *
+ * The file keeps the id it was stamped with, whatever `json` says (the
+ * builder hands back the content it opened, which can be older than the
+ * stamp). A file made before stamps is stamped on its first save here.
  */
-async function rewrite(id: string, json: Record<string, unknown>): Promise<boolean> {
+async function rewrite(id: string, next: Record<string, unknown>): Promise<boolean> {
+  const stored = await db.homebrewJson.get(id);
+  const json = withCollectionId(
+    next,
+    collectionIdOf(stored?.json) ?? collectionIdOf(next) ?? crypto.randomUUID(),
+  );
   const count = await db.homebrewFiles
     .where('id')
     .equals(id)

@@ -5,7 +5,8 @@ import 'fake-indexeddb/auto';
 import Dexie from 'dexie';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { injectIdbFault } from '../../tests-fixtures/idbFaults';
-import { db } from './db';
+import { db, type HomebrewFileRow } from './db';
+import { collectionIdOf, withCollectionId } from './homebrewOrder';
 import { homebrewRepo, putHomebrewRow } from './homebrewRepo';
 
 /** The schema as version 5 left it. */
@@ -155,6 +156,121 @@ describe('a collection made in the app', () => {
   });
 });
 
+describe('the id a collection made in the app is stamped with', () => {
+  const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+  const stampOf = async (id: string) => collectionIdOf((await homebrewRepo.getSafe(id)).file?.json);
+
+  it('is given when it is made, one of its own, whichever way it is made', async () => {
+    const made = await homebrewRepo.createEditable('Ember', 'EMB');
+    const workshop = await homebrewRepo.saveEntry('spell', {
+      name: 'Ember Lance',
+      source: 'MyHomebrew',
+    });
+    const changes = await homebrewRepo.saveEntry(
+      'spell',
+      { name: 'Fireball', source: 'PHB', level: 3 },
+      { role: 'changes' },
+    );
+    const ids = [made.id, workshop.fileId, changes.fileId];
+    const stamps = await Promise.all(ids.map(stampOf));
+    for (const s of stamps) expect(s).toMatch(UUID);
+    expect(new Set(stamps).size).toBe(3);
+    expect(collectionIdOf(made.json)).toBe(stamps[0]);
+  });
+
+  it('is given to a file made before stamps on its first save, and kept by every save after', async () => {
+    // A file the player made before files were stamped.
+    const old: HomebrewFileRow = {
+      id: 'mine',
+      fileName: 'Ember.json',
+      json: file('EMB'),
+      enabled: true,
+      editable: true,
+      sourceIds: ['EMB'],
+      counts: {},
+      addedAt: 1,
+    };
+    await db.transaction('rw', db.homebrewFiles, db.homebrewJson, () => putHomebrewRow(old));
+    expect(await stampOf('mine')).toBeUndefined();
+
+    await homebrewRepo.saveEntry(
+      'spell',
+      { name: 'Ember Lance', source: 'EMB' },
+      { fileId: 'mine' },
+    );
+    const stamp = await stampOf('mine');
+    expect(stamp).toMatch(UUID);
+    // The builder hands back the content it opened, from before the stamp.
+    await homebrewRepo.saveEditable('mine', file('EMB', ['Ember Ward']));
+    expect(await stampOf('mine')).toBe(stamp);
+    // Nor does content carrying another id move it.
+    await homebrewRepo.saveEditable('mine', withCollectionId(file('EMB'), 'another'));
+    expect(await stampOf('mine')).toBe(stamp);
+    await homebrewRepo.saveEntry(
+      'spell',
+      { name: 'Ember Bolt', source: 'EMB' },
+      { fileId: 'mine' },
+    );
+    await homebrewRepo.removeEntry('mine', 'spell', { name: 'Ember Bolt', source: 'EMB' });
+    expect(await stampOf('mine')).toBe(stamp);
+  });
+
+  it('keys the file it is in, wherever it is imported, so one player’s newer copy updates theirs', async () => {
+    const first = withCollectionId(file('MyHomebrew', ['Osk Lance']), 'osk');
+    const row = await homebrewRepo.importJson(first, 'My_homebrew.json');
+    expect(row.key).toBe('made:osk');
+    // Another player's Workshop file: one name and source, another id.
+    const bram = withCollectionId(file('MyHomebrew', ['Bram Ward']), 'bram');
+    await homebrewRepo.importJson(bram, 'My_homebrew.json');
+    const newer = withCollectionId(file('MyHomebrew', ['Osk Lance', 'Osk Ward']), 'osk');
+    const { replaced } = await homebrewRepo.commit(
+      await homebrewRepo.prepare(newer, 'My_homebrew (1).json'),
+    );
+    expect(replaced.map((r) => r.id)).toEqual([row.id]);
+    const { files } = await homebrewRepo.listSafe();
+    expect(files.map((f) => f.json)).toEqual(expect.arrayContaining([newer, bram]));
+    expect(files).toHaveLength(2);
+  });
+
+  it('leaves the books of a stamped file keyed each by its own book', async () => {
+    const both = withCollectionId(
+      {
+        _meta: {
+          sources: [
+            { json: 'EMB', full: 'Ember Book' },
+            { json: 'ASH', full: 'Ash Book' },
+          ],
+        },
+        spell: [
+          { name: 'Ember Lance', source: 'EMB', level: 1 },
+          { name: 'Ash Ward', source: 'ASH', level: 1 },
+        ],
+      },
+      'one-id',
+    );
+    const { books } = await homebrewRepo.prepareBooks(both, 'compendium.json');
+    expect(books.map((b) => b.key)).toEqual(['book:emb|compendium', 'book:ash|compendium']);
+  });
+
+  it('is missing from a file under the app’s source from before stamps, which lands beside', async () => {
+    const workshop = (spells: string[]) => file('MyHomebrew', spells);
+    const osk = await homebrewRepo.importJson(workshop(['Osk Lance']), 'My_homebrew.json');
+    expect(osk).not.toHaveProperty('key');
+    await homebrewRepo.importJson(workshop(['Bram Ward']), 'My_homebrew.json');
+    const { files } = await homebrewRepo.listSafe();
+    expect(files).toHaveLength(2);
+    expect(files.every((f) => f.key === undefined)).toBe(true);
+  });
+
+  it('is missing from a file under a source the player chose, which is keyed as any file is', async () => {
+    // Made before stamps, it looks like any other file here: a known gap, in the hand-over.
+    await homebrewRepo.importJson(file('HB', ['Osk Lance']), 'Homebrew.json');
+    await homebrewRepo.importJson(file('HB', ['Bram Ward']), 'Homebrew.json');
+    const { files } = await homebrewRepo.listSafe();
+    expect(files.map((f) => f.json)).toEqual([file('HB', ['Bram Ward'])]);
+  });
+});
+
 describe('the changes role', () => {
   it('is set by the app on the file of changes it makes on the first save, and kept', async () => {
     const fireball = { name: 'Fireball', source: 'PHB', level: 3 };
@@ -252,6 +368,20 @@ describe('the version 6 upgrade', () => {
     const b = await db.homebrewFiles.get('pack-b');
     expect(b?.pack).toEqual({ appliesTo: { characters: ['hild'] }, order: 2 });
     expect((b?.json as { _meta: object })._meta).not.toHaveProperty('castGuidanceLocal');
+  });
+
+  it('gives a Workshop file another device made no key, so the next one lands beside it', async () => {
+    const osk = await homebrewRepo.prepare(file('MyHomebrew', ['Osk Lance']), 'My_homebrew.json');
+    await oldDevice(async (old) => {
+      const { json, key: _, ...meta } = osk;
+      await old.table('homebrewFiles').put(meta);
+      await old.table('homebrewJson').put({ id: osk.id, json });
+    });
+    await db.open();
+    expect(await db.homebrewFiles.get(osk.id)).not.toHaveProperty('key');
+
+    await homebrewRepo.importJson(file('MyHomebrew', ['Bram Ward']), 'My_homebrew.json');
+    expect((await homebrewRepo.listSafe()).files).toHaveLength(2);
   });
 
   it('keys each imported file, so its first import again updates it', async () => {

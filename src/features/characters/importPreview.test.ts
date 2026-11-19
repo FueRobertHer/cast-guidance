@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import type { PreparedCharacterImport } from '@/db/characterRepo';
 import type { HomebrewFileRow } from '@/db/db';
-import type { HomebrewFile } from '@/db/homebrewRepo';
+import { withCollectionId } from '@/db/homebrewOrder';
+import { buildHomebrewRow, type HomebrewFile } from '@/db/homebrewRepo';
 import { newCharacterDoc } from '@/engine/types';
 import type { OfficialIndex } from '@/features/homebrew/importPreview';
 import { previewCharacterImport } from './importPreview';
@@ -373,6 +374,37 @@ describe('previewCharacterImport of a file of a collection here (ADR-002, D4)', 
       ['a.json', 'updates', 'here.json'],
       ['b.json', 'other-version', undefined],
     ]);
+  });
+
+  it('updates a Workshop file with a newer one from its maker, never one from another player', async () => {
+    const workshop = (stamp: string | undefined, spell: string) => {
+      const json = {
+        _meta: { sources: [{ json: 'MyHomebrew', full: 'My homebrew' }] },
+        spell: [{ name: spell, source: 'MyHomebrew', level: 1 }],
+      };
+      return buildHomebrewRow(
+        stamp === undefined ? json : withCollectionId(json, stamp),
+        'My_homebrew.json',
+      );
+    };
+    const here = (row: HomebrewFileRow): HomebrewFile => ({
+      ...row,
+      json: row.json as Record<string, unknown>,
+    });
+    const osk = here(await workshop('osk', 'Osk Lance'));
+    const status = async (existing: HomebrewFile[], stamp: string | undefined) =>
+      previewCharacterImport({
+        prepared: prepared([await workshop(stamp, 'Osk Ward')]),
+        existing,
+        official: officialPhb(),
+        characterExists: false,
+      }).files.map((f) => [f.status, f.updates]);
+    expect(await status([osk], 'osk')).toEqual([['updates', 'My_homebrew.json']]);
+    expect(await status([osk], 'bram')).toEqual([['other-version', undefined]]);
+    // Made before stamps, either one: beside.
+    expect(await status([osk], undefined)).toEqual([['other-version', undefined]]);
+    const old = here(await workshop(undefined, 'Osk Lance'));
+    expect(await status([old], 'osk')).toEqual([['other-version', undefined]]);
   });
 
   it('never updates a file the player owns, the same file, or one under another key', () => {

@@ -250,7 +250,11 @@ db.version(6)
       // A row the version 5 upgrade missed still carries its content.
       const local = packs.get(row.id) ?? takeOldPackLocal(row.id, row.json);
       if (local !== undefined) row.pack = local;
-      if (row.editable !== true && typeof row.key !== 'string') row.key = storedKey(row);
+      if (row.editable !== true && typeof row.key !== 'string') {
+        // A Workshop file another device made has none: no file is stamped yet.
+        const key = storedKey(row);
+        if (key !== undefined) row.key = key;
+      }
     });
   });
 
@@ -275,7 +279,7 @@ function takeOldPackLocal(id: string, json: unknown): PackLocal | undefined {
 }
 
 /** A stored row's key, from its fields read as `homebrewRepo` reads them. */
-function storedKey(row: HomebrewMetaRow): string {
+function storedKey(row: HomebrewMetaRow): string | undefined {
   const r = row as unknown as Record<string, unknown>;
   return collectionKey({
     url: typeof r.url === 'string' ? r.url : undefined,

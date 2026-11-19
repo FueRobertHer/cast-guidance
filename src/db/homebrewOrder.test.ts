@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { collectionKey, compareMergeOrder, sameCollection } from './homebrewOrder';
+import {
+  COLLECTION_ID_KEY,
+  collectionIdOf,
+  collectionKey,
+  compareMergeOrder,
+  sameCollection,
+  withCollectionId,
+} from './homebrewOrder';
 
 describe('compareMergeOrder', () => {
   it('puts the earliest import first and breaks a same-millisecond tie on the id', () => {
@@ -24,6 +31,28 @@ describe('collectionKey and sameCollection (ADR-002, D4)', () => {
     );
   });
 
+  it('keys a collection made in the app by its id, over its link and file, but not a book', () => {
+    const parts = { sourceIds: ['MyHomebrew'], fileName: 'My_homebrew.json', made: 'id-1' };
+    expect(collectionKey(parts)).toBe('made:id-1');
+    expect(collectionKey({ ...parts, url: 'https://x/e.json' })).toBe('made:id-1');
+    expect(collectionKey({ ...parts, sourceIds: ['EMB'] })).toBe('made:id-1');
+    // Every book of a file has its `_meta`, so its id: a book is keyed as one.
+    expect(collectionKey({ ...parts, book: 'My homebrew' })).toBe('book:myhomebrew|my_homebrew');
+  });
+
+  it('gives a file under the app’s own source with no id no key, so it lands beside', () => {
+    for (const source of ['MyHomebrew', 'myhomebrew', 'MyChanges']) {
+      expect(collectionKey({ sourceIds: [source], fileName: 'My_homebrew.json' })).toBeUndefined();
+      expect(
+        collectionKey({ sourceIds: [source], fileName: 'x.json', url: 'https://x/e.json' }),
+      ).toBeUndefined();
+    }
+    // A source the player chose looks like anyone's: keyed by its file.
+    expect(collectionKey({ sourceIds: ['HB', 'MyHomebrew'], fileName: 'Brew.json' })).toBe(
+      'file:hb|brew',
+    );
+  });
+
   it('matches imported files of one key only, never a file the player owns', () => {
     const key = 'file:emb|ember';
     expect(sameCollection({ editable: false, key }, { editable: false, key })).toBe(true);
@@ -34,5 +63,32 @@ describe('collectionKey and sameCollection (ADR-002, D4)', () => {
     // Even one carrying a key: no import writes over the player's own file.
     expect(sameCollection({ editable: true, key }, { editable: false, key })).toBe(false);
     expect(sameCollection({ editable: false, key }, { editable: true, key })).toBe(false);
+  });
+});
+
+describe('collectionIdOf and withCollectionId', () => {
+  const meta = { sources: [{ json: 'MyHomebrew' }] };
+
+  it('reads the id a file is stamped with, and stamps one', () => {
+    const json = withCollectionId({ _meta: meta, spell: [] }, 'id-1');
+    expect(json).toEqual({ _meta: { ...meta, [COLLECTION_ID_KEY]: 'id-1' }, spell: [] });
+    expect(collectionIdOf(json)).toBe('id-1');
+    expect(collectionIdOf(withCollectionId(json, 'id-2'))).toBe('id-2');
+  });
+
+  it('reads anything else as no id: it comes in with imported files', () => {
+    const stamp = (id: unknown) => ({ _meta: { ...meta, [COLLECTION_ID_KEY]: id } });
+    for (const id of ['', '  ', 'x'.repeat(65), 7, null, ['id'], { id: 'id' }]) {
+      expect(collectionIdOf(stamp(id))).toBeUndefined();
+    }
+    expect(collectionIdOf(stamp('x'.repeat(64)))).toBe('x'.repeat(64));
+    expect(collectionIdOf({ _meta: Object.create({ [COLLECTION_ID_KEY]: 'id' }) })).toBeUndefined();
+    expect(collectionIdOf({ _meta: 'id' })).toBeUndefined();
+    expect(collectionIdOf(undefined)).toBeUndefined();
+  });
+
+  it('leaves a file with no `_meta` object as it is', () => {
+    const json = { _meta: ['x'], spell: [] };
+    expect(withCollectionId(json, 'id-1')).toBe(json);
   });
 });
