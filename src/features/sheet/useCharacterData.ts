@@ -50,7 +50,7 @@ export function useCharacterData(
   const needs = useMemo(
     () =>
       doc !== null && registry !== null
-        ? missingCharacterData(doc, engineContextFor(registry))
+        ? missingCharacterData(doc, engineContextFor(registry, undefined, doc))
         : undefined,
     [doc, registry, rev],
   );
@@ -68,7 +68,7 @@ export function useCharacterData(
       .then(() => getRegistry())
       .then((fresh) => {
         if (!alive) return;
-        const still = missingCharacterData(doc, engineContextFor(fresh));
+        const still = missingCharacterData(doc, engineContextFor(fresh, undefined, doc));
         setAttempt({ key, error: null, offline: false, exhausted: JSON.stringify(still) === key });
       })
       .catch((e: unknown) => {

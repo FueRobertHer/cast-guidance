@@ -342,9 +342,10 @@ export function Component() {
   const vitals = useMemo(() => {
     const map = new Map<string, Vitals>();
     if (registry === null) return map;
-    const ctx = engineContextFor(registry);
     for (const c of characters) {
       if (classesOf(c).length === 0) continue;
+      // Each character's own view of the data: the versions its switches pick.
+      const ctx = engineContextFor(registry, undefined, c);
       try {
         // No numbers from files that have not arrived (see `missingCharacterData`).
         // Once the whole compendium is here, what is still missing is not coming,
