@@ -20,6 +20,13 @@ import { Section, TextBlocks } from '../fields';
 
 const BOX = 'flex items-start gap-2 rounded-control bg-surface-raised px-3 py-2 text-caption';
 
+/**
+ * Whether a condition counts one effect, as the sheet reads a condition: the
+ * cards offer only these, so none is added that then does nothing.
+ */
+const countsOnACondition = (e: unknown) =>
+  conditionMechanics({ castGuidance: { v: 1, effects: [e] } }).problems.length === 0;
+
 function ConditionBody({ draft, change, original, readOnly }: EditorProps) {
   const g = isRecord(draft.castGuidance) ? draft.castGuidance : {};
   const effects = Array.isArray(g.effects) ? g.effects : [];
@@ -76,7 +83,13 @@ function ConditionBody({ draft, change, original, readOnly }: EditorProps) {
             </div>
           </div>
         )}
-        <EffectCards effects={effects} readOnly={readOnly} onChange={setEffects} inPlay />
+        <EffectCards
+          effects={effects}
+          readOnly={readOnly}
+          onChange={setEffects}
+          inPlay
+          counts={countsOnACondition}
+        />
         {problems.length > 0 && (
           <ul className="flex flex-col gap-1" aria-label="What does not count on a condition">
             {problems.map((p) => (

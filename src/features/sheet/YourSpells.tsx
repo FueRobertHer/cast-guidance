@@ -52,6 +52,7 @@ import { NoSpellsCue, raging, SaveDcBadge } from './spellcastingMarks';
 import { findSpell, useSpellData } from './spellData';
 import { spellMeta, spellSaves } from './spellMeta';
 import { countPrepared, spellLimits } from './spellTrim';
+import { useConditionEntry } from './useConditionEntry';
 
 /** A modifier for a dice expression, whose parser reads a hyphen; on screen, see `signed`. */
 const fmt = (n: number) => `${n >= 0 ? '+' : ''}${n}`;
@@ -126,6 +127,8 @@ interface RowContext {
   dcLoweredBy: (block: SpellcastingBlock) => string[];
   /** The registry's lookups: what a carried item's charges cast (`SpellCast.entities`). */
   entities: SpellCast['entities'];
+  /** Finds a homebrew condition's entry, so one a cast's moment adds settles HP (`hpLimits`). */
+  conditionEntry: (name: string) => unknown;
 }
 
 const hasSpellAttack = (entity: Entity | undefined) =>
@@ -215,7 +218,7 @@ function SlotSpellRow({
     doc,
     sheet,
     update,
-    hp: hpLimits(sheet, doc.rulesVersion),
+    hp: hpLimits(sheet, doc.rulesVersion, ctx.conditionEntry),
     info: {
       name,
       source,
@@ -292,7 +295,11 @@ function SlotSpellRow({
             }
           />
           {concentrating && (
-            <EndButton name={name} update={update} hp={hpLimits(sheet, doc.rulesVersion)} />
+            <EndButton
+              name={name}
+              update={update}
+              hp={hpLimits(sheet, doc.rulesVersion, ctx.conditionEntry)}
+            />
           )}
         </>
       }
@@ -328,7 +335,7 @@ function InnateSpellRow({
     doc,
     sheet,
     update,
-    hp: hpLimits(sheet, doc.rulesVersion),
+    hp: hpLimits(sheet, doc.rulesVersion, ctx.conditionEntry),
     info: {
       name,
       source,
@@ -409,7 +416,11 @@ function InnateSpellRow({
             castTitle={limited === undefined ? 'Cast (no slot)' : 'Cast: choose how to cast it'}
           />
           {concentrating && (
-            <EndButton name={name} update={update} hp={hpLimits(sheet, doc.rulesVersion)} />
+            <EndButton
+              name={name}
+              update={update}
+              hp={hpLimits(sheet, doc.rulesVersion, ctx.conditionEntry)}
+            />
           )}
         </>
       }
@@ -656,6 +667,7 @@ export function YourSpells({
   );
   const ignore = useIgnoreOnce(JSON.stringify(doc.play.conditions));
   const [filter, setFilter] = useState('');
+  const conditionEntry = useConditionEntry(registry, doc.rulesVersion);
 
   // One the character is immune to is held off, as one switched off is.
   const conditions = conditionsInForce(doc.play.conditions, sheet.conditionImmunities);
@@ -701,6 +713,7 @@ export function YourSpells({
     doc,
     sheet,
     update,
+    conditionEntry,
     rollAttack,
     wear: rollWear(conditions, attackEffects, ignore.armed('attack'), limits.noActions),
     castWear: conditionWear(conditions, limits.noActions),

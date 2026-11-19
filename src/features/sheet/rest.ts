@@ -72,13 +72,16 @@ export function restWith(
     before,
     idle = [],
     rollTotal = (dice) => roll(dice).total,
+    conditionEntry,
   }: {
     before?: EffectChange;
     idle?: readonly DerivedResource[];
     rollTotal?: (dice: string) => number;
+    /** Finds a homebrew condition's entry, so one a rest's moment adds settles HP. */
+    conditionEntry?: (name: string) => unknown;
   } = {},
 ): RestDone {
-  return takeRest(play, sheet, rest, hpLimits(sheet, edition), {
+  return takeRest(play, sheet, rest, hpLimits(sheet, edition, conditionEntry), {
     hpOnLongRest: sheetRules(sheet, edition).hpOnLongRest,
     rollTotal,
     idle,

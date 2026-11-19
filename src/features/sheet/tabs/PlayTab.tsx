@@ -139,6 +139,7 @@ import { NoSpellsCue, raging, SaveDcBadge } from '../spellcastingMarks';
 import { findSpell, useSpellData } from '../spellData';
 import { spellSaves } from '../spellMeta';
 import type { CharacterSheetState } from '../useCharacterSheet';
+import { useConditionEntry } from '../useConditionEntry';
 import { attackSubtitle, damageLabel, weaponInfoEntries } from '../weaponInfo';
 
 /** A modifier for a dice expression, whose parser reads a hyphen; on screen, see `signed`. */
@@ -418,6 +419,7 @@ export function Component() {
   // button changes under the finger, so a second tap within a second is the
   // same tap, not an undo.
   const startedAt = useRef(new Map<string, number>());
+  const conditionEntry = useConditionEntry(registry, doc?.rulesVersion ?? '2024');
   if (sheet === null || doc === null) return <p className="text-body text-ink-muted">Deriving…</p>;
 
   const spellEntity = (name: string, source: string) =>
@@ -434,7 +436,7 @@ export function Component() {
   const play = doc.play;
   const rules = sheetRules(sheet, doc.rulesVersion);
   // What ending or switching effects needs, to keep current HP within the maximum.
-  const hpNow = hpLimits(sheet, doc.rulesVersion);
+  const hpNow = hpLimits(sheet, doc.rulesVersion, conditionEntry);
   const inPlay = effectsInPlay(play);
   /**
    * Take a rest, ending the effects ticked first, so Aid's +5 does not outlive
@@ -448,6 +450,7 @@ export function Component() {
         done = restWith(d.play, sheet, rest, doc.rulesVersion, {
           before: endEffects(d.play, ends, hpNow),
           idle: idleChargePools(d, sheet.resources, entities),
+          conditionEntry,
         });
         // A table that heals less on a long rest can leave it short of full.
         full = d.play.currentHp >= hpNow.maxHp + done.change.maxHpChange;

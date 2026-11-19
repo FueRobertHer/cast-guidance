@@ -18,10 +18,14 @@
 import { countingEffects, readActiveEffects } from './activeEffects';
 import type { MomentId } from './castGuidance';
 import {
+  type ActiveCondition,
   type ConditionImmunity,
   conditionMaxHp,
   type Edition,
+  hasHomebrewCondition,
   heldOff,
+  homebrewConditionEffects,
+  isBuiltInCondition,
   outOfAction,
 } from './conditions';
 import {
@@ -50,13 +54,23 @@ type RestLength = keyof typeof REST_MINUTES;
 
 /** What changing effects needs to know of the sheet, to keep current HP within the maximum. */
 export interface HpLimits {
-  /** `DerivedSheet.maxHp.value`: the maximum with the effects in play now, before conditions. */
+  /**
+   * `DerivedSheet.maxHp.value`: the maximum with the effects in play and the
+   * homebrew conditions in force now, before a built-in condition halves it.
+   */
   maxHp: number;
   edition: Edition;
   /** `DerivedSheet.conditionImmunities`: an exhaustion held off halves nothing. */
   immune?: ReadonlyArray<ConditionImmunity>;
   /** The character's moments (`momentsInForce`). Absent, no moment fires. */
   moments?: MomentsInForce;
+  /**
+   * Finds a homebrew condition's entry by name, in the character's edition
+   * (`conditionEntries`), so current HP follows a maximum one moves as it
+   * comes on, comes off or is switched (`conditionsMoved`). Absent, a homebrew
+   * condition moves no hit points here.
+   */
+  conditionEntry?: (name: string) => unknown;
 }
 
 /** What a change to the effects in play did. */
@@ -115,6 +129,73 @@ function settleHp(play: PlayState, change: number, hp: HpLimits, raise: boolean)
     if (wasDown && play.currentHp > 0) play.deathSaves = { success: 0, fail: 0 };
   }
   if (change < 0 && play.currentHp > max) play.currentHp = max;
+}
+
+/** The ids of the homebrew conditions in a stored list, lowercased. */
+function homebrewIds(conditions: unknown): string[] {
+  const list = Array.isArray(conditions) ? Array.from(conditions as unknown[]) : [];
+  return list.flatMap((c) => {
+    const id = c !== null && typeof c === 'object' ? (c as { id?: unknown }).id : undefined;
+    return typeof id === 'string' && !isBuiltInCondition(id) ? [lower(id)] : [];
+  });
+}
+
+/**
+ * What the effects in play and the homebrew conditions in `conditions` add to
+ * the HP maximum, counted together as derive counts them (one name counts
+ * once). The condition named `without` counts all but its own change to the
+ * maximum: what it holds off stays held off.
+ */
+function maxHpWith(
+  play: PlayState,
+  conditions: unknown,
+  entryOf: (name: string) => unknown,
+  immune: ReadonlyArray<ConditionImmunity>,
+  without?: string,
+): number {
+  const brew = homebrewConditionEffects(conditions, entryOf, { immune }).effects.map((e) =>
+    without !== undefined && lower(e.name) === lower(without)
+      ? { ...e, parts: e.parts.filter((p) => p.kind !== 'maxHpBonus') }
+      : e,
+  );
+  const { inputs } = countingEffects([...readActiveEffects(play.activeEffects).effects, ...brew]);
+  return inputs.reduce((n, e) => n + (e.kind === 'maxHpBonus' ? e.amount : 0), 0);
+}
+
+/**
+ * Homebrew conditions came on, came off or were switched: `before` is the
+ * list as it was, `play.conditions` as it is now. Current HP follows the HP
+ * maximum they moved: down under one that fell, and up by as much as `came`
+ * (the condition that came on) raises it by its own effect, as casting Aid
+ * does. What else moved, a penalty it holds off or one coming off or switched,
+ * gives back the maximum alone. Held off by an immunity, one counts nothing
+ * either way. Nothing moves without `hp.conditionEntry`.
+ */
+export function conditionsMoved(
+  play: PlayState,
+  before: ReadonlyArray<ActiveCondition>,
+  hp: HpLimits,
+  came?: string,
+): EffectChange {
+  const entryOf = hp.conditionEntry;
+  if (
+    entryOf === undefined ||
+    (!hasHomebrewCondition(before) && !hasHomebrewCondition(play.conditions))
+  ) {
+    return { ended: [], maxHpChange: 0 };
+  }
+  // The sheet's immunities include those its homebrew conditions give, which
+  // `homebrewConditionEffects` settles itself, before and after alike.
+  const brewed = new Set([...homebrewIds(before), ...homebrewIds(play.conditions)]);
+  const immune = (hp.immune ?? []).filter((i) => !brewed.has(lower(i.origin)));
+  const was = maxHpWith(play, before, entryOf, immune);
+  const now = maxHpWith(play, play.conditions, entryOf, immune);
+  // Settled in two steps: what the change held off or let count again, which
+  // heals nothing, then the raise `came` gives of its own.
+  const others = came === undefined ? now : maxHpWith(play, play.conditions, entryOf, immune, came);
+  settleHp(play, others - was, hp, false);
+  settleHp(play, now - others, { ...hp, maxHp: hp.maxHp + others - was }, true);
+  return { ended: [], maxHpChange: now - was };
 }
 
 /**
@@ -294,19 +375,30 @@ function endOutOfAction(
  * off ends nothing. Only `id` counts: what the player kept up under a
  * condition already on (the sheet warns, never blocks) stays.
  *
+ * A homebrew one that moves the HP maximum settles current HP
+ * (`conditionsMoved`): added, its own raise lifts it by as much; switched back
+ * on (`came`), it heals nothing, as switching Aid back on does not.
+ *
  * Then the `conditionAdded` moments for it fire, unless it is switched off or
  * held off. Switching one back on is no new condition: the strip passes limits
  * with no moments for that, as switching one off fires nothing either.
  */
-export function conditionEndings(play: PlayState, id: string, hp: HpLimits): EffectChange {
-  return conditionCame(play, id, hp, newChain());
+export function conditionEndings(
+  play: PlayState,
+  id: string,
+  hp: HpLimits,
+  came: 'added' | 'switchedOn' = 'added',
+): EffectChange {
+  return conditionCame(play, id, hp, newChain(), came === 'added');
 }
 
+/** `raise`: it was added, so its own raise to the maximum lifts current HP. */
 function conditionCame(
   play: PlayState,
   id: string,
   hp: HpLimits,
   chain: MomentChain,
+  raise: boolean,
 ): EffectChange {
   const came = play.conditions.filter((c) => c.id === id);
   const out = outOfAction(came, hp.edition, { immune: hp.immune });
@@ -315,6 +407,15 @@ function conditionCame(
     { incapacitated: out.incapacitated.length > 0, unconscious: out.unconscious },
     hp,
   );
+  joinChanges(
+    change,
+    conditionsMoved(
+      play,
+      play.conditions.filter((c) => c.id !== id),
+      { ...hp, maxHp: hp.maxHp + change.maxHpChange },
+      raise ? id : undefined,
+    ),
+  );
   const applied = came.filter((c) => c.ignored !== true);
   if (applied.length === 0 || heldOff(applied, { immune: hp.immune }).length > 0) return change;
   return fire(play, 'conditionAdded', { condition: id }, hp, chain, change);
@@ -322,13 +423,22 @@ function conditionCame(
 
 /**
  * The condition `id` came off (removed, whether or not it was switched off):
- * its `conditionEnded` moments fire, unless the character could not have it.
- * Call it after taking the condition out.
+ * a homebrew one that moved the HP maximum gives it back, and current HP
+ * comes under a maximum that fell but rises with none that rose
+ * (`conditionsMoved`). `before` is the list as it was, in its order (of two
+ * that hold each other off, the first on counts); left out, `id` was last and
+ * on. Then its `conditionEnded` moments fire, unless the character could not
+ * have it. Call it after taking the condition out.
  */
-export function conditionEnded(play: PlayState, id: string, hp: HpLimits): EffectChange {
-  const none: EffectChange = { ended: [], maxHpChange: 0 };
-  if (heldOff([{ id }], { immune: hp.immune }).length > 0) return none;
-  return fire(play, 'conditionEnded', { condition: id }, hp, newChain(), none);
+export function conditionEnded(
+  play: PlayState,
+  id: string,
+  hp: HpLimits,
+  before: ReadonlyArray<ActiveCondition> = [...play.conditions, { id }],
+): EffectChange {
+  const moved = conditionsMoved(play, before, hp);
+  if (heldOff([{ id }], { immune: hp.immune }).length > 0) return moved;
+  return fire(play, 'conditionEnded', { condition: id }, hp, newChain(), moved);
 }
 
 /**
@@ -545,7 +655,7 @@ function addCondition(
   const level = Math.min(most, levels);
   play.conditions.push(most === 1 ? { id: name } : { id: name, level });
   report.done.push({ text: most === 1 ? name : `${name} ${level}`, from });
-  return joinChanges(none, conditionCame(play, name, hp, chain));
+  return joinChanges(none, conditionCame(play, name, hp, chain, true));
 }
 
 /**

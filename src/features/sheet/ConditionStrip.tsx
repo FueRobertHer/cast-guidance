@@ -28,6 +28,7 @@ import {
   applyEffect,
   conditionEnded,
   conditionEndings,
+  conditionsMoved,
   endEffect,
   type HpLimits,
   keepHigherTemp,
@@ -64,6 +65,7 @@ import {
 import { exhaustionLevel, setExhaustionLevel } from './exhaustion';
 import { forget, keepOn } from './keptList';
 import { answersTo, STARTERS, starterEffect } from './namedStarts';
+import { useConditionEntry } from './useConditionEntry';
 
 type Condition = CharacterDoc['play']['conditions'][number];
 
@@ -122,10 +124,15 @@ const CHIP_X =
  * (concentration, Rage; see `conditionEndings`), its moments fire, and the
  * notice says so. Null when nothing ended and no moment did anything.
  */
-function settleCondition(d: CharacterDoc, id: string, hp: HpLimits | null): Notice | null {
+function settleCondition(
+  d: CharacterDoc,
+  id: string,
+  hp: HpLimits | null,
+  came: 'added' | 'switchedOn' = 'added',
+): Notice | null {
   if (hp === null) return null;
   const focus = d.play.concentratingOn?.label;
-  const { ended, moments } = conditionEndings(d.play, id, hp);
+  const { ended, moments } = conditionEndings(d.play, id, hp, came);
   const gone = ended.length === 0 ? [] : [`Ended ${andList(ended)}`];
   if (focus !== undefined && d.play.concentratingOn === undefined) {
     const notice: Notice = {
@@ -141,18 +148,23 @@ function settleCondition(d: CharacterDoc, id: string, hp: HpLimits | null): Noti
 }
 
 /**
- * The condition `was` just came off in this draft: its moments fire, switched
- * off or not, as its `conditionAdded` ones fired when it was added. The notice
- * says what they did, or null.
+ * The condition `was` just came off in this draft (`before` is the list as it
+ * was): the maximum it moved comes back, and its moments fire, switched off or
+ * not, as its `conditionAdded` ones fired when it was added. The notice says
+ * what they did, or null.
  */
 function settleEnded(
   d: CharacterDoc,
   was: Condition | undefined,
   hp: HpLimits | null,
+  before: readonly Condition[],
 ): Notice | null {
   if (hp === null || was === undefined) return null;
-  return withMoments(null, conditionEnded(d.play, was.id, hp).moments);
+  return withMoments(null, conditionEnded(d.play, was.id, hp, before).moments);
 }
+
+/** The conditions as they are, kept before a change to the draft. */
+const snapshot = (d: CharacterDoc): Condition[] => d.play.conditions.map((x) => ({ ...x }));
 
 /** The limits with no moments in force. */
 function withoutMoments(hp: HpLimits): HpLimits {
@@ -317,7 +329,8 @@ export function ConditionStrip({
     return () => watch.disconnect();
   }, [measure]);
 
-  const limits = () => (sheet === null ? null : hpLimits(sheet, edition));
+  const conditionEntry = useConditionEntry(registry, edition);
+  const limits = () => (sheet === null ? null : hpLimits(sheet, edition, conditionEntry));
   const toggle = (id: string) => {
     const has = conditions.some((x) => x.id === id);
     const by = immunityTo(id, immune);
@@ -339,8 +352,9 @@ export function ConditionStrip({
         d.play.conditions.push({ id });
         notice = settleCondition(d, id, hp);
       } else {
+        const before = snapshot(d);
         const [was] = d.play.conditions.splice(idx, 1);
-        notice = settleEnded(d, was, hp);
+        notice = settleEnded(d, was, hp, before);
       }
     });
     if (notice !== null) notify(notice);
@@ -350,9 +364,10 @@ export function ConditionStrip({
     const hp = limits();
     let notice: Notice | null = null;
     update((d) => {
+      const before = snapshot(d);
       const was = d.play.conditions.find((x) => x.id === id);
       d.play.conditions = d.play.conditions.filter((x) => x.id !== id);
-      notice = settleEnded(d, was, hp);
+      notice = settleEnded(d, was, hp, before);
     });
     if (notice !== null) notify(notice);
   };
@@ -445,13 +460,13 @@ export function ConditionStrip({
     const hp = limits();
     let notice: Notice | null = null;
     update((d) => {
-      const was = d.play.conditions.find((x) => x.id === 'Exhaustion');
-      const wasOn = was === undefined ? undefined : { ...was };
+      const before = snapshot(d);
+      const wasOn = before.find((x) => x.id === 'Exhaustion');
       setExhaustionLevel(d.play.conditions, level);
       const on = d.play.conditions.some((x) => x.id === 'Exhaustion');
       // Coming on from none, or going to none, is a condition added or ended.
       if (wasOn === undefined && on) notice = settleCondition(d, 'Exhaustion', hp);
-      else if (wasOn !== undefined && !on) notice = settleEnded(d, wasOn, hp);
+      else if (wasOn !== undefined && !on) notice = settleEnded(d, wasOn, hp, before);
     });
     if (notice !== null) notify(notice);
   };
@@ -463,9 +478,15 @@ export function ConditionStrip({
       if (c === undefined) return;
       if (applied) {
         delete c.ignored;
-        // Switched back on, it is no new condition: what it ends goes, no moment fires.
-        notice = settleCondition(d, id, hp === null ? null : withoutMoments(hp));
-      } else c.ignored = true;
+        // Switched back on, it is no new condition: what it ends goes, no
+        // moment fires, and a maximum it raises heals nothing.
+        notice = settleCondition(d, id, hp === null ? null : withoutMoments(hp), 'switchedOn');
+      } else {
+        const before = snapshot(d);
+        c.ignored = true;
+        // Current HP comes under a maximum it raised; one it lowered comes back.
+        if (hp !== null) conditionsMoved(d.play, before, hp);
+      }
     });
     if (notice !== null) notify(notice);
   };

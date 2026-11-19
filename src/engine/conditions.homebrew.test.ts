@@ -204,7 +204,6 @@ describe('homebrewConditionEffects', () => {
     const read = conditionMechanics(
       dazed([
         { kind: 'tempHpEachTurn', amount: 3 },
-        { kind: 'maxHpBonus', amount: -5 },
         { kind: 'rollOffer', dice: '1d4', on: { rolls: ['attack'] }, once: true },
         { kind: 'rollOffer', dice: '1d4', on: { rolls: ['save'] } },
       ]),
@@ -212,9 +211,13 @@ describe('homebrewConditionEffects', () => {
     expect(read.parts).toEqual([{ kind: 'rollOffer', dice: '1d4', on: { rolls: ['save'] } }]);
     expect(read.problems).toEqual([
       { place: 1, why: 'a condition gives no temporary hit points at the start of a turn' },
-      { place: 2, why: 'a condition cannot change the hit point maximum' },
-      { place: 3, why: 'a condition cannot offer a die just once, only on every roll' },
+      { place: 2, why: 'a condition cannot offer a die just once, only on every roll' },
     ]);
+  });
+
+  it('reads a change to the hit point maximum', () => {
+    const read = conditionMechanics(dazed([{ kind: 'maxHpBonus', amount: -5 }]));
+    expect(read).toEqual({ parts: [{ kind: 'maxHpBonus', amount: -5 }], problems: [] });
   });
 
   it('counts one of a name once', () => {
@@ -383,6 +386,19 @@ describe('deriveSheet with a homebrew condition', () => {
     const sheet = deriveSheet(warrior([{ id: 'Dazed' }, { id: 'Steeled' }]), ctx);
     expect(sheet.ac.value).toBe(base);
     expect(sheet.conditionImmunities).toEqual([{ condition: 'Dazed', origin: 'Steeled' }]);
+  });
+
+  it('moves the hit point maximum, never under 1', () => {
+    const { ctx } = withConditions(dazed([{ kind: 'maxHpBonus', amount: -5 }]), {
+      ...dazed([{ kind: 'maxHpBonus', amount: -999 }]),
+      name: 'Drained',
+    });
+    const base = deriveSheet(warrior(), ctx).maxHp.value;
+    const dazedSheet = deriveSheet(warrior([{ id: 'Dazed' }]), ctx);
+    expect(dazedSheet.maxHp.value).toBe(base - 5);
+    expect(dazedSheet.maxHp.parts.at(-1)).toMatchObject({ label: 'Dazed', amount: -5 });
+    expect(deriveSheet(warrior([{ id: 'Drained' }]), ctx).maxHp.value).toBe(1);
+    expect(deriveSheet(warrior([{ id: 'Dazed', ignored: true }]), ctx).maxHp.value).toBe(base);
   });
 
   it('warns about what does not count, and counts the rest', () => {

@@ -524,13 +524,13 @@ export interface ConditionMechanics {
 
 /**
  * What an effect in play can hold but a condition cannot: the sheet gives
- * turn-start temporary hit points, settles hit points when the maximum moves,
- * and spends a die offered once, only for an effect in play.
+ * turn-start temporary hit points and spends a die offered once only for an
+ * effect in play. A change to the hit point maximum counts on both: current HP
+ * follows it as the condition comes and goes (`conditionsMoved`).
  */
 function conditionRefuses(part: EffectPart): string | undefined {
   if (part.kind === 'tempHpEachTurn')
     return 'a condition gives no temporary hit points at the start of a turn';
-  if (part.kind === 'maxHpBonus') return 'a condition cannot change the hit point maximum';
   if (part.kind === 'rollOffer' && part.once === true)
     return 'a condition cannot offer a die just once, only on every roll';
   return undefined;
