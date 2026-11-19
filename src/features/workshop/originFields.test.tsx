@@ -158,6 +158,16 @@ describe('species fields', () => {
     type('Climb speed', '');
     const stored = writeEntry({ original, draft: at.draft(), source: 'HB', mode: 'changes' });
     expect(stored).not.toHaveProperty('speed');
+    // An original whose speed is a block keeps it one.
+    cleanup();
+    const blocked = { ...original, speed: { walk: 30 } };
+    const again = mount(species, structuredClone(blocked), blocked);
+    type('Climb speed', '20');
+    type('Climb speed', '');
+    expect(again.draft().speed).toEqual({ walk: 30 });
+    expect(
+      writeEntry({ original: blocked, draft: again.draft(), source: 'HB', mode: 'changes' }),
+    ).not.toHaveProperty('speed');
   });
 
   it('keeps a speed "as fast as walking" until a number is typed', () => {
