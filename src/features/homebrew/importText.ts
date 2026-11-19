@@ -128,6 +128,66 @@ export async function parseImportFile(
   return parsed;
 }
 
+/**
+ * What pasted text is: a homebrew file (JSON, which starts with `{`, or
+ * another app's XML), or words for one entry, which the Workshop's editor
+ * takes instead (ADR-002 board 7: text is one spell, item or feat).
+ */
+export function pastedKind(text: string): 'empty' | 'file' | 'words' {
+  const first = text.search(/\S/);
+  if (first === -1) return 'empty';
+  return text[first] === '{' || looksLikeXml(text) ? 'file' : 'words';
+}
+
+/** A name for a file that came in as text, made from what it is, at most this long. */
+const PASTED_NAME_LENGTH = 80;
+
+/**
+ * The file name pasted text is stored under. A collection is keyed by its
+ * first source and its file name (`collectionKey`), so the name comes from
+ * the content alone, never the time: the same file pasted again, changed, is
+ * the same collection, and offers to update it. JSON goes by its first
+ * source's title (a rule pack's name), a compendium by what it is.
+ */
+export function pastedFileName(raw: unknown, conversion?: ConversionReport): string {
+  if (conversion !== undefined) return 'Pasted compendium.xml';
+  const meta = isRecord(raw) && isRecord(raw._meta) ? raw._meta : undefined;
+  const sources = meta !== undefined && Array.isArray(meta.sources) ? meta.sources : [];
+  const first: unknown = sources[0];
+  const named = (v: unknown) => (typeof v === 'string' && v.trim() !== '' ? v.trim() : undefined);
+  const name =
+    (isRecord(first) ? (named(first.full) ?? named(first.json)) : undefined) ?? 'Pasted homebrew';
+  // Kept to what a file name may hold on any system, so a Download names it the same.
+  const safe = name
+    .replace(/[\\/:*?"<>|\p{Cc}]+/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, PASTED_NAME_LENGTH);
+  return `${safe === '' ? 'Pasted homebrew' : safe}.json`;
+}
+
+function isRecord(v: unknown): v is Record<string, unknown> {
+  return typeof v === 'object' && v !== null && !Array.isArray(v);
+}
+
+/**
+ * Read pasted text into homebrew JSON, as a file's text is read, with the
+ * name it is stored under ({@link pastedFileName}). Held to the JSON limit
+ * whatever it is: text is pasted whole into the page, so a compendium too
+ * large for it comes in as a file.
+ */
+export async function parseImportPaste(
+  text: string,
+  options: ImportOptions = {},
+): Promise<ParsedImport & { fileName: string; bytes: number }> {
+  const bytes = new TextEncoder().encode(text).length;
+  const limit = IMPORT_LIMITS.maxImportBytes;
+  if (bytes > limit) throw new ResponseTooLargeError(limit, bytes, 'text');
+  const parsed = await parseImportText(text, 'Pasted compendium.xml', options);
+  stopIfCancelled(options.signal);
+  return { ...parsed, fileName: pastedFileName(parsed.raw, parsed.conversion), bytes };
+}
+
 async function convertXml(
   source: Blob | string,
   fileName: string,
