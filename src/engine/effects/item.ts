@@ -133,10 +133,10 @@ export function collectItems(col: Collector): void {
           readWornTags(col, e, origin);
         },
       });
-      // Charges that cast spells (a built-in `charges` row, or the item's own
-      // or a pack's `charges` effect, under the entry's ref as the cast prompt
-      // finds them): a pool of its own, outside what the item inherits, which
-      // the cast prompt spends and a long rest (dawn) refills by its roll.
+      // Its charges (its own charge fields, a built-in `charges` row, or the
+      // item's own or a pack's `charges` effect, under the entry's ref as the
+      // cast prompt finds them): a pool of its own, which the cast prompt and
+      // the item's actions spend and a long rest (dawn) refills by its roll.
       const charged = itemChargesOf(col.ctx, col.doc.id, entry.ref);
       if (charged !== undefined) {
         const key = itemChargeKey(entry.id);

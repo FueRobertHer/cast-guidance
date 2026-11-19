@@ -1,14 +1,16 @@
 /**
- * Items whose charges cast spells (the rolls canvas, "Every way to cast"): how
- * many charges each holds, what comes back at dawn, and what each spell costs.
- * The data's `attachedSpells.charges` says only one fixed cost per spell, and
- * not always that: a Staff of Healing's Cure Wounds is one charge a spell
- * level, up to 4th, and the 2024 staff's data lists it as at will. So an
- * official item's is a built-in `charges` row (`src/rules/cast-guidance/items.json`),
- * read from the item's own text, and a homebrew item says its own in a
- * `charges` effect (`StoredItemCharges`), which a pack's patch can say too.
- * Each is found under the `name|source` its equipment entry names
- * (`refUid(entry.ref)`), as every reader here and the item call site look it up.
+ * Items with charges, and those whose charges cast spells (the rolls canvas,
+ * "Every way to cast"): how many charges each holds, what comes back at dawn,
+ * and what each spell costs. Every item's own data fields count its charges
+ * (`fieldChargesOf`). The data's `attachedSpells.charges` says only one fixed
+ * cost per spell, and not always that: a Staff of Healing's Cure Wounds is one
+ * charge a spell level, up to 4th, and the 2024 staff's data lists it as at
+ * will. So the spells an official item's charges cast are a built-in `charges`
+ * row (`src/rules/cast-guidance/items.json`), read from the item's own text,
+ * and a homebrew item says its own in a `charges` effect (`StoredItemCharges`),
+ * which a pack's patch can say too. Each is found under the `name|source` its
+ * equipment entry names (`refUid(entry.ref)`), as every reader here and the
+ * item call site look it up.
  */
 import { RULE_PACK_TYPE, RULE_SET_TYPE } from '../castGuidance';
 import { lookupItem } from '../effects/item';
@@ -16,6 +18,7 @@ import {
   builtInRuleIn,
   type ItemCharges,
   packChargesOf,
+  readItemCharges,
   readMechanics,
 } from '../effects/mechanics';
 import {
@@ -39,11 +42,91 @@ export function itemChargesIn(
 }
 
 /**
- * The charges a carried item casts spells with: the last of its built-in row,
- * its own `charges` effect and the packs applied to the character
- * (`packChargesOf`) that says them. A pack that replaces the
- * item's effects replaces its own charges too; the row stands outside what
- * the item inherits, so only a pack's charges or the item's own come before it.
+ * `recharge` values whose charges come back with a long rest, in lower case:
+ * at dawn, at dusk, at midnight, or on the rest itself.
+ */
+const LONG_REST_RECHARGE: ReadonlySet<string> = new Set(['dawn', 'dusk', 'midnight', 'restlong']);
+
+/** A `rechargeAmount` as words: a number's digits, or the text with each dice tag's dice in its place. */
+export function rechargeWords(amount: unknown): string | undefined {
+  if (typeof amount === 'number') return String(amount);
+  if (typeof amount !== 'string') return undefined;
+  return amount.replace(/\{@dice ([^{}|]+)(?:\|[^{}]*)?\}/g, '$1');
+}
+
+/**
+ * What comes back at dawn, as an item's `charges` effect says it, from its
+ * standard fields: nothing unless `recharge` is a time a long rest covers
+ * (`LONG_REST_RECHARGE`: none, an empty one, `special` or a short rest give
+ * nothing back, even beside an amount); then all of them with no amount, else
+ * its number or its dice, spaces taken out (words the effect cannot take are
+ * kept, and say so). The sheet reads an item's fields by it (`fieldChargesOf`)
+ * and the Workshop writes them out by it, so the two say the same.
+ */
+export function regainOf(recharge: unknown, amount: unknown): string | number {
+  if (typeof recharge !== 'string' || !LONG_REST_RECHARGE.has(recharge.toLowerCase())) {
+    return 'none';
+  }
+  const words = (rechargeWords(amount) ?? '').replace(/\s+/g, '');
+  if (words === '') return 'all';
+  return /^\d+$/.test(words) ? Number(words) : words;
+}
+
+/** Each item's `fieldChargesOf`, read once (`null`: its fields count none). */
+const fromFields = new WeakMap<DataEntity, ItemCharges | null>();
+
+/**
+ * Whether an item's own `castGuidance` leaves its fields' charges out: it
+ * starts from nothing (`replace`), so inherits none, or it counts them its own
+ * way, with a `charges` effect (one that does not read yet too, which says
+ * why) or the Workshop's older pool, a `resource` keyed `charges`, whose cards
+ * spend it. Its effects are looked at as stored, so a guidance that does not
+ * read as a whole says the same; its `replace` counts only where it reads, as
+ * everything else it would leave out (`mechanicsOf`).
+ */
+function ownChargesStand(raw: unknown): boolean {
+  if (typeof raw !== 'object' || raw === null) return false;
+  if (readMechanics(raw).replace) return true;
+  const g = raw as Record<string, unknown>;
+  const effects = Array.isArray(g.effects) ? (g.effects as unknown[]) : [];
+  return effects.some((e) => {
+    if (typeof e !== 'object' || e === null) return false;
+    const { kind, key } = e as Record<string, unknown>;
+    return kind === 'charges' || (kind === 'resource' && key === ITEM_CHARGES);
+  });
+}
+
+/**
+ * The charges an item's own data fields say (`charges`, `recharge`,
+ * `rechargeAmount`), read as its own `charges` effect would be, with what
+ * comes back as `regainOf` says it. They cast no spells here. Absent when the
+ * fields do not read as a whole (a dice count of charges, an amount the roller
+ * cannot roll), and when the item's own guidance leaves them out
+ * (`ownChargesStand`).
+ */
+export function fieldChargesOf(entry: DataEntity): ItemCharges | undefined {
+  const known = fromFields.get(entry);
+  if (known !== undefined) return known ?? undefined;
+  const read =
+    entry.charges === undefined || ownChargesStand(entry.castGuidance)
+      ? undefined
+      : readItemCharges({
+          charges: entry.charges,
+          regain: regainOf(entry.recharge, entry.rechargeAmount),
+          spells: [],
+        });
+  fromFields.set(entry, read ?? null);
+  return read;
+}
+
+/**
+ * The charges a carried item holds: the last of its own fields
+ * (`fieldChargesOf`), its built-in row, its own `charges` effect and the packs
+ * applied to the character (`packChargesOf`) that says them. A pack that
+ * replaces the item's effects replaces its own charges and its fields too, as
+ * it does everything the item inherits, and the item's own guidance can leave
+ * the fields out (`fieldChargesOf`); the row stands outside both, so only a
+ * pack's charges or the item's own come before it.
  */
 export function itemChargesOf(
   lookup: ChargeLookup,
@@ -53,13 +136,14 @@ export function itemChargesOf(
   const uid = refUid(ref);
   const packs = packChargesOf(lookup.byType(RULE_PACK_TYPE), characterId, uid);
   if (packs.charges !== undefined) return packs.charges;
-  if (!packs.replaced) {
-    const entry = lookupItem({ ctx: lookup }, ref.name, ref.source);
-    const raw = entry === undefined ? undefined : entry.castGuidance;
-    const mine = raw === undefined ? undefined : readMechanics(raw);
-    if (mine?.readable === true && mine.charges !== undefined) return mine.charges;
-  }
-  return itemChargesIn(lookup.byType(RULE_SET_TYPE), ref);
+  const entry = packs.replaced ? undefined : lookupItem({ ctx: lookup }, ref.name, ref.source);
+  const raw = entry === undefined ? undefined : entry.castGuidance;
+  const mine = raw === undefined ? undefined : readMechanics(raw);
+  if (mine?.readable === true && mine.charges !== undefined) return mine.charges;
+  return (
+    itemChargesIn(lookup.byType(RULE_SET_TYPE), ref) ??
+    (entry === undefined ? undefined : fieldChargesOf(entry))
+  );
 }
 
 /**
