@@ -28,6 +28,7 @@ import { invalidateRegistry } from '@/data5e/registry';
 import { sourceName } from '@/data5e/sourceNames';
 import { EntryClash, type EntryKey, type HomebrewFile, homebrewRepo } from '@/db/homebrewRepo';
 import { isRecord } from '@/engine/castGuidance';
+import { isBuiltInCondition } from '@/engine/conditions';
 import { readMechanics } from '@/engine/effects/mechanics';
 import { findEntity } from '@/features/library/findEntity';
 import { useBack } from '@/lib/useBack';
@@ -67,6 +68,14 @@ export function canChange(type: string): boolean {
   );
 }
 
+/**
+ * Whether this entry can be changed for the table: not a condition the app
+ * counts by its own rules (Poisoned), which no change would reach on a sheet.
+ * LibraryPage asks the same.
+ */
+const changeOffered = (type: string, e: Json): boolean =>
+  !(type === 'condition' && isBuiltInCondition(String(e.name)));
+
 /** The entry an address names: by its identity, else by `name|source` alone. */
 export function entryAt(registry: EntityRegistry, type: string, uid: string): Entity | undefined {
   const key = uid.toLowerCase();
@@ -105,8 +114,11 @@ interface ChangeSubject {
   draft: Json;
   /** The player's change as stored, when there is one. */
   stored?: Json;
-  /** A stored change that no longer reads over the entry: the draft shows the entry without it. */
-  lost: boolean;
+  /**
+   * A stored change that no longer reads over the entry: `all`, and the draft
+   * shows the entry without it; `part`, and it shows the rest.
+   */
+  lost: 'all' | 'part' | false;
   fileId?: string;
   /**
    * Another change in the file shares this one's name and book (each class's
@@ -130,6 +142,12 @@ function resolveChange(
   const placed = entryAt(registry, type, uid);
   const [name = uid] = uid.split('|');
   if (placed === undefined) return { state: 'gone', text: `Nothing here is called ${name}.` };
+  if (!changeOffered(type, placed)) {
+    return {
+      state: 'gone',
+      text: `${String(placed.name)} is counted by the app's own rules, so a change to it would not reach the sheets. Make one like it under a name of its own instead.`,
+    };
+  }
   const identity = identityKey(type, placed);
   const holds = (list: unknown) =>
     Array.isArray(list) && list.some((x) => isRecord(x) && identityKey(type, x) === identity);
@@ -151,11 +169,12 @@ function resolveChange(
     (x) => isRecord(x) && sameKey(x, keyOf(original)) && changeKey(type, x) !== identity,
   );
   let draft: Json = structuredClone(original);
-  let lost = false;
+  let lost: ChangeSubject['lost'] = false;
   if (stored !== undefined) {
     const warnings: CopyModWarning[] = [];
     const stacked = withReplaceBudget(() => stackChanges(type, original, [stored], warnings));
-    lost = stacked === original || warnings.length > 0;
+    // A `_mod` step that misses its text only warns: the rest still reads.
+    lost = stacked === original ? 'all' : warnings.length > 0 ? 'part' : false;
     draft = structuredClone(stacked) as Json;
   }
   if (spec?.open !== undefined && spec.write === undefined) {
@@ -289,10 +308,14 @@ function ChangeEditor({
     });
   const blocked = problems.some((p) => p.blocks);
 
-  /** Write the change file through `write`, keeping what it held before for Undo. */
+  /**
+   * Write the change file through `write`, keeping what it held before for
+   * Undo. `next.draft` is what is now saved; with `reset` the editor shows it
+   * too, else what the player typed while it saved stays, unsaved.
+   */
   const commit = async (
     write: () => Promise<{ fileId: string; created: boolean }>,
-    next: { draft: Json; stored?: Json },
+    next: { draft: Json; stored?: Json; reset?: boolean },
     key: EntryKey,
     text: string,
   ) => {
@@ -322,7 +345,7 @@ function ChangeEditor({
     );
     setFileId(done.fileId);
     setStored(next.stored);
-    setDraft(next.draft);
+    if (next.reset === true) setDraft(next.draft);
     setClean(next.draft);
   };
 
@@ -367,7 +390,7 @@ function ChangeEditor({
             throw new Error('your change is no longer in the file');
           return { fileId: at, created: false };
         },
-        { draft: structuredClone(original) },
+        { draft: structuredClone(original), reset: true },
         key,
         `The book's ${name} is back for your table.`,
       );
@@ -480,11 +503,13 @@ function ChangeEditor({
               {stored === undefined ? ' Their sheets use yours once you save.' : ''}
             </span>
           </p>
-          {subject.lost && (
+          {subject.lost !== false && (
             <p className={BOX}>
               <Info size={16} aria-hidden className="mt-px shrink-0 text-ink-muted" />
               <span>
-                Your saved change no longer reads over the book's {name}, so it is not shown here.
+                {subject.lost === 'all'
+                  ? `Your saved change no longer reads over the book's ${name}, so it is not shown here.`
+                  : `Part of your saved change no longer finds its place in the book's ${name}, so that part is not shown here.`}{' '}
                 Saving writes what is shown.
               </span>
             </p>

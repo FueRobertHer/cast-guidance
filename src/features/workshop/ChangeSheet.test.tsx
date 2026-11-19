@@ -239,6 +239,45 @@ describe('Change for your table', () => {
     expect(screen.queryByText(/already holds a change to another Grit/)).toBeNull();
   });
 
+  it('keeps what is typed while a save is under way, unsaved', async () => {
+    const sheet = await renderSheet(sorcerer());
+    await sheet.visit('/workshop/change/spell/aid%7Ctst');
+    const text = await screen.findByDisplayValue('Boost max HP.', {}, { timeout: WAIT });
+    fireEvent.change(text, { target: { value: 'Saved text.' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save for your table' }));
+    // Typed before the save lands.
+    fireEvent.change(screen.getByDisplayValue('Saved text.'), {
+      target: { value: 'Typed after.' },
+    });
+    await screen.findByText(/Saved\. Every character at your table/, {}, { timeout: WAIT });
+    expect(screen.getByDisplayValue('Typed after.')).toBeTruthy();
+    // What was saved is what Save was pressed on.
+    const saved = JSON.stringify(await changesOf('spell'));
+    expect(saved).toContain('Saved text.');
+    expect(saved).not.toContain('Typed after.');
+  });
+
+  it('is not offered for a condition the app counts by its own rules', async () => {
+    const condition = (name: string): Entity => ({
+      name,
+      source: 'TST',
+      entries: [`${name}, as the book says.`],
+    });
+    const sheet = await renderSheet(sorcerer(), {
+      extra: { condition: [condition('Poisoned'), condition('Dazed')] },
+    });
+    // A homebrew-named condition of a book can be changed.
+    await sheet.visit('/library/condition/dazed%7Ctst');
+    await screen.findByRole('link', { name: /^Change for your table/ }, { timeout: WAIT });
+    // Poisoned is the app's: no change would reach a sheet, so only a copy is offered.
+    await sheet.visit('/library/condition/poisoned%7Ctst');
+    await screen.findByRole('link', { name: /^Make one like it/ }, { timeout: WAIT });
+    expect(screen.queryByRole('link', { name: /^Change for your table/ })).toBeNull();
+    await sheet.visit('/workshop/change/condition/poisoned%7Ctst');
+    await screen.findByText(/counted by the app's own rules/, {}, { timeout: WAIT });
+    expect(screen.queryByRole('button', { name: 'Save for your table' })).toBeNull();
+  });
+
   it('refuses to save over another change of the same name and book', async () => {
     const { at } = await gritChangedAt(4);
     const sheet = await renderSheet(sorcerer());

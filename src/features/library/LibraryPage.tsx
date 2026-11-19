@@ -24,6 +24,7 @@ import { applySourcePolicy, policyForSearch, useSourcePolicy } from '@/data5e/so
 import { sourceName } from '@/data5e/sourceNames';
 import { compareMergeOrder } from '@/db/homebrewOrder';
 import { homebrewRepo } from '@/db/homebrewRepo';
+import { isBuiltInCondition } from '@/engine/conditions';
 import { hasEditor } from '@/features/workshop/editorTypes';
 import { useBack } from '@/lib/useBack';
 import { useOnReconnect } from '@/lib/useOnline';
@@ -78,7 +79,8 @@ const NOUNS: Readonly<Record<string, string>> = {
  * Whether Change for your table is offered, as the Change sheet's `canChange`
  * decides (that module is the Workshop's own chunk): a type with an editor, or
  * a class or subclass feature; not a class or subclass whole, whose features
- * are entries of their own.
+ * are entries of their own. Nor a condition the app counts by its own rules
+ * (Poisoned), which no change would reach on a sheet: `MakeItYours` asks that.
  */
 const canChange = (type: string) =>
   FEATURE_TYPES.has(type) || (hasEditor(type) && type !== 'class' && type !== 'subclass');
@@ -1080,7 +1082,7 @@ function MakeItYours({
         Make it yours
       </h2>
       <div className="grid gap-2 sm:grid-cols-2">
-        {canChange(type) && (
+        {canChange(type) && !(type === 'condition' && isBuiltInCondition(String(entity.name))) && (
           <Link
             to={`/workshop/change/${type}/${encodeURIComponent(identityKey(type, entity))}`}
             className={CHOICE}
