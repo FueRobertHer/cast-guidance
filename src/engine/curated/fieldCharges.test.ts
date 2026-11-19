@@ -157,11 +157,42 @@ describe('itemChargesOf: the fields below every other source', () => {
     expect(held(world([item('Rod of Tests', 'TST', { ...fields, castGuidance: plain })]))).toBe(3);
     const broken = { v: 1, effects: [{ kind: 'nothing at all' }] };
     expect(held(world([item('Rod of Tests', 'TST', { ...fields, castGuidance: broken })]))).toBe(3);
+    const late = { v: 99, effects: [{ kind: 'acBonus', amount: 1 }] };
+    expect(held(world([item('Rod of Tests', 'TST', { ...fields, castGuidance: late })]))).toBe(3);
   });
 
-  it("are dropped with the rest of what it inherits by a pack's replacement", () => {
+  it('stand aside for its own charges effect, even one that does not read yet, as the Workshop says', () => {
+    for (const half of [
+      { kind: 'charges', charges: 0, regain: 'all' },
+      { kind: 'charges', charges: 3, regain: 'lots' },
+      { kind: 'charges' },
+    ]) {
+      const own = item('Rod of Tests', 'TST', {
+        ...fields,
+        castGuidance: { v: 1, effects: [half] },
+      });
+      expect(held(world([own])), JSON.stringify(half)).toBe(undefined);
+      expect(fieldChargesOf(own)).toBe(undefined);
+    }
+    // In a guidance that does not read as a whole, too.
+    const late = { v: 99, effects: [{ kind: 'charges', charges: 3, regain: 'all' }] };
+    expect(held(world([item('Rod of Tests', 'TST', { ...fields, castGuidance: late })]))).toBe(
+      undefined,
+    );
+  });
+
+  it("are dropped with the rest of what it inherits by a pack's replacement, or its own", () => {
     const replaces = pack({ effects: [{ kind: 'acBonus', amount: 1 }] });
     expect(held(world([item('Rod of Tests', 'TST', fields)], [replaces]))).toBe(undefined);
+    const fresh = { v: 1, replace: true, effects: [{ kind: 'acBonus', amount: 1 }] };
+    const own = item('Rod of Tests', 'TST', { ...fields, castGuidance: fresh });
+    expect(held(world([own]))).toBe(undefined);
+    expect(fieldChargesOf(own)).toBe(undefined);
+    // Its own charges still count, and the row stands outside it, as it does a pack's.
+    const counts = { ...fresh, effects: [effect] };
+    expect(held(world([item('Rod of Tests', 'TST', { ...fields, castGuidance: counts })]))).toBe(5);
+    const wand = item('Wand of Fireballs', 'XDMG', { ...fields, castGuidance: fresh });
+    expect(itemChargesOf(world([wand]), 'hero', wand as never)?.charges).toBe(7);
   });
 });
 
@@ -230,7 +261,7 @@ describe('the pool its fields make', () => {
     ]);
   });
 
-  it('stands beside a pool an older Workshop item counts the same charges in, whose card spends the older one', () => {
+  it('is not made beside the pool an older Workshop item counts them in, which its cards and actions spend', () => {
     const old = item('Old Wand', 'HB', {
       charges: 5,
       recharge: 'dawn',
@@ -239,6 +270,12 @@ describe('the pool its fields make', () => {
         effects: [
           { kind: 'resource', key: 'charges', label: 'Charges', max: 5, reset: 'long' },
           { kind: 'grantSpell', spell: 'Fireball|XPHB', usage: '1/day', resourceKey: 'charges' },
+          {
+            kind: 'action',
+            economy: 'bonus',
+            label: 'Strike',
+            cost: { resource: 'charges', amount: 1 },
+          },
         ],
       },
     });
@@ -246,7 +283,10 @@ describe('the pool its fields make', () => {
     const sheet = deriveSheet(doc, world([old]));
     expect(sheet.warnings).toEqual([]);
     expect(sheet.resources.find((r) => r.key === 'charges')?.max).toBe(5);
-    expect(sheet.resources.find((r) => r.key === 'item-charges:a')?.max).toBe(5);
+    expect(sheet.resources.some((r) => r.key.startsWith('item-charges:'))).toBe(false);
     expect(sheet.grantedSpells.map((g) => g.resourceKey)).toEqual(['charges']);
+    expect(sheet.actions.filter((a) => a.label === 'Strike').map((a) => a.cost?.resource)).toEqual([
+      'charges',
+    ]);
   });
 });

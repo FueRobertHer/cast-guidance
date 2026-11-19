@@ -76,17 +76,38 @@ export function regainOf(recharge: unknown, amount: unknown): string | number {
 const fromFields = new WeakMap<DataEntity, ItemCharges | null>();
 
 /**
+ * Whether an item's own `castGuidance` leaves its fields' charges out: it
+ * starts from nothing (`replace`), so inherits none, or it counts them its own
+ * way, with a `charges` effect (one that does not read yet too, which says
+ * why) or the Workshop's older pool, a `resource` keyed `charges`, whose cards
+ * spend it. Read from the stored object as it is, so a guidance that does not
+ * read as a whole says the same.
+ */
+function ownChargesStand(raw: unknown): boolean {
+  if (typeof raw !== 'object' || raw === null) return false;
+  const g = raw as Record<string, unknown>;
+  if (g.replace === true) return true;
+  const effects = Array.isArray(g.effects) ? (g.effects as unknown[]) : [];
+  return effects.some((e) => {
+    if (typeof e !== 'object' || e === null) return false;
+    const { kind, key } = e as Record<string, unknown>;
+    return kind === 'charges' || (kind === 'resource' && key === ITEM_CHARGES);
+  });
+}
+
+/**
  * The charges an item's own data fields say (`charges`, `recharge`,
  * `rechargeAmount`), read as its own `charges` effect would be, with what
  * comes back as `regainOf` says it. They cast no spells here. Absent when the
  * fields do not read as a whole (a dice count of charges, an amount the roller
- * cannot roll).
+ * cannot roll), and when the item's own guidance leaves them out
+ * (`ownChargesStand`).
  */
 export function fieldChargesOf(entry: DataEntity): ItemCharges | undefined {
   const known = fromFields.get(entry);
   if (known !== undefined) return known ?? undefined;
   const read =
-    entry.charges === undefined
+    entry.charges === undefined || ownChargesStand(entry.castGuidance)
       ? undefined
       : readItemCharges({
           charges: entry.charges,
@@ -102,7 +123,8 @@ export function fieldChargesOf(entry: DataEntity): ItemCharges | undefined {
  * (`fieldChargesOf`), its built-in row, its own `charges` effect and the packs
  * applied to the character (`packChargesOf`) that says them. A pack that
  * replaces the item's effects replaces its own charges and its fields too, as
- * it does everything the item inherits; the row stands outside that, so only a
+ * it does everything the item inherits, and the item's own guidance can leave
+ * the fields out (`fieldChargesOf`); the row stands outside both, so only a
  * pack's charges or the item's own come before it.
  */
 export function itemChargesOf(

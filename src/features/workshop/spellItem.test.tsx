@@ -7,8 +7,13 @@ import { MemoryRouter } from 'react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Entity } from '@/data5e/copyMod';
 import { EntityRegistry } from '@/data5e/normalize';
-import { ITEM_CHARGES, rechargeWords, regainOf } from '@/engine/curated/itemCharges';
-import { readOwnEffects, readStoredEffects } from '@/engine/effects/mechanics';
+import {
+  fieldChargesOf,
+  ITEM_CHARGES,
+  rechargeWords,
+  regainOf,
+} from '@/engine/curated/itemCharges';
+import { readMechanics, readOwnEffects, readStoredEffects } from '@/engine/effects/mechanics';
 import { BUILT_IN_RULE_SETS } from '../../../tests-fixtures/testWorld';
 
 const { choice } = vi.hoisted(() => ({ choice: { current: undefined as string | undefined } }));
@@ -811,8 +816,9 @@ describe('ItemEditor', () => {
     };
     const draft = mount(item, structuredClone(old));
     expect(screen.getByText(/counts these the older way/)).toBeTruthy();
-    // Its fields count them too, until the card is gone.
-    expect(screen.getByText(/as these fields say too, a second time/)).toBeTruthy();
+    // Its fields stand aside for the card, so the sheet counts them once.
+    expect(screen.queryByText(/a second time/)).toBeNull();
+    expect(screen.queryByText(/The sheet counts these/)).toBeNull();
     // Its pool is a card like any other, there to change or remove.
     expect(screen.getByLabelText('Uses per rest: Name')).toHaveProperty('value', 'Charges');
     expect(screen.queryByRole('button', { name: 'Count them on the sheet' })).toBeNull();
@@ -909,6 +915,46 @@ describe('ItemEditor', () => {
       { kind: 'charges', charges: 2, regain: 'lots' },
     ]);
     expect(screen.getByText(/This does not count yet/)).toBeTruthy();
+  });
+
+  it('says the sheet does not count the fields of an item that starts from nothing', () => {
+    const draft = mount(item, {
+      name: 'Odd Rod',
+      type: 'RD',
+      entries: [],
+      charges: 2,
+      castGuidance: { v: 1, replace: true },
+    });
+    expect(screen.getByText(/The sheet does not count these yet/)).toBeTruthy();
+    press('Count them on the sheet');
+    expect(draft().castGuidance).toEqual({
+      v: 1,
+      replace: true,
+      effects: [{ kind: 'charges', charges: 2, regain: 'none' }],
+    });
+  });
+
+  it('writes out what comes back as the sheet counts it from the fields', () => {
+    const shapes: Json[] = [
+      { recharge: 'dawn', rechargeAmount: '{@dice 1d6 + 1}' },
+      { recharge: 'dawn', rechargeAmount: 3 },
+      { recharge: 'dawn' },
+      { recharge: 'Midnight', rechargeAmount: 2 },
+      { recharge: 'restLong', rechargeAmount: '{@dice 1d4 - 1}' },
+      { recharge: 'dusk', rechargeAmount: '5' },
+      {},
+      { recharge: '', rechargeAmount: 2 },
+      { recharge: 'special', rechargeAmount: 2 },
+      { recharge: 'restShort', rechargeAmount: 1 },
+      { rechargeAmount: '{@dice 1d6}' },
+    ];
+    for (const shape of shapes) {
+      const draft: Json = { name: 'Odd Rod', type: 'RD', entries: [], charges: 7, ...shape };
+      const sheet = fieldChargesOf(draft as never);
+      expect(sheet, JSON.stringify(shape)).toBeDefined();
+      const written = withCharges(draft, {}, {});
+      expect(readMechanics(written.castGuidance).charges, JSON.stringify(shape)).toEqual(sheet);
+    }
   });
 
   it('keeps the granted spell box while its name is cleared and typed again', () => {

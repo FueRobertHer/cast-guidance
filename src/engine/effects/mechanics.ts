@@ -2564,10 +2564,11 @@ const CHARGE_DIE = /^(\d{0,3})d(\d{1,3})$/;
  * numbers added, or whole numbers taken away while the lowest roll stays at 0
  * or more (a Ring of Puzzler's Wit's 1d4-1), so the roll never gives back
  * less than nothing. Each die has 2 sides or more and a count of 1 to 100,
- * which the roller needs.
+ * which the roller needs. Spaces and tabs are the only gaps the roller skips,
+ * so any other (a non-breaking space) does not read.
  */
 function regainDice(s: string): boolean {
-  if (s.length > 40) return false;
+  if (s.length > 40 || !/^[\dd+\- \t]+$/.test(s)) return false;
   const [first = '', ...rest] = s.split(/(?=[+-])/).map((t) => t.trim());
   // How many dice it rolls, or undefined when `t` is not a die.
   const dice = (t: string) => {

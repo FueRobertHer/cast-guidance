@@ -144,6 +144,11 @@ describe('a charges row, read', () => {
     }
   });
 
+  it('reads a tab between its terms, which the roller skips', () => {
+    expect(read({ regain: '1d4\t+ 1' }).rows[0]?.charges?.regain).toBe('1d4\t+ 1');
+    expect(roll('1d4\t+ 1').total).toBeGreaterThanOrEqual(2);
+  });
+
   it('takes a whole number back, up to what it holds, and "all" or "none"', () => {
     expect(read({ regain: 1 }).rows[0]?.charges?.regain).toBe('1');
     expect(read({ regain: 5 }).rows[0]?.charges?.regain).toBe('5');
@@ -178,6 +183,8 @@ describe('a charges row, read', () => {
     ['a roll that can go below nothing', { regain: '1d4 - 2' }, '"regain" is what comes back'],
     ['more taken away later', { regain: '2d4 + 1 - 4' }, '"regain" is what comes back'],
     ['nothing taken away', { regain: '1d6 -' }, '"regain" is what comes back'],
+    ['a gap the roller does not skip', { regain: '1d6\u00a0+ 1' }, '"regain" is what comes back'],
+    ['a line between its terms', { regain: '1d6\n+ 1' }, '"regain" is what comes back'],
     ['a number in quotes', { regain: '4' }, '"regain" is what comes back'],
     ['no charges back', { regain: 0 }, '"regain" is what comes back'],
     ['more back than it holds', { regain: 6 }, '"regain" is what comes back'],

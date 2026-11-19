@@ -736,11 +736,8 @@ function Charges(props: EditorProps) {
       {charges !== undefined && old && (
         <p className="text-caption text-ink-muted">
           The Charges card under What it does on the sheet counts these the older way, all back on a
-          long rest.
-          {byFields !== undefined &&
-            ' The sheet counts them as these fields say too, a second time.'}{' '}
-          Remove the card, and the Cast a spell cards that spend it, to count them here alone, where
-          each spell costs its charges by level.
+          long rest. Remove the card, and the Cast a spell cards that spend it, to count them here
+          alone, where each spell costs its charges by level.
         </p>
       )}
       {charges !== undefined && !old && counted === undefined && !readOnly && (
