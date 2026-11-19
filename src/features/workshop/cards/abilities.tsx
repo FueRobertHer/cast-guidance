@@ -15,11 +15,14 @@ const LIMITS: Options = [
  * gives (`class.ts`) and a feat's "proficiency with heavy armor" sees it.
  */
 const ARMOR: Options = [
-  ['light', 'Light armor'],
-  ['medium', 'Medium armor'],
-  ['heavy', 'Heavy armor'],
+  ['light', 'Light'],
+  ['medium', 'Medium'],
+  ['heavy', 'Heavy'],
   ['shield', 'Shields'],
 ];
+/** Armor training as a sentence says it: "heavy armor", "shields", or as written. */
+const armorWords = (v: unknown) =>
+  v === 'shield' ? 'shields' : ARMOR.some(([k]) => k === v) ? `${String(v)} armor` : String(v);
 
 /** A picked value as stored: a whole number stays a number, anything else as picked. */
 const whole = (v: string): unknown => (/^\d+$/.test(v) ? Number(v) : v);
@@ -123,8 +126,7 @@ export const cards: readonly KindSpec[] = [
     does: 'Proficiency with light, medium or heavy armor, or with shields',
     make: () => ({ kind: 'armorProf', name: 'heavy' }),
     fields: [{ key: 'name', label: 'Armor', type: 'pick', options: ARMOR }],
-    line: (e) =>
-      `Trained with ${ARMOR.find(([v]) => v === e.name)?.[1].toLowerCase() ?? String(e.name)}`,
+    line: (e) => `Trained with ${armorWords(e.name)}`,
     notInPlay: true,
   },
   {
@@ -154,17 +156,6 @@ export const cards: readonly KindSpec[] = [
         // A file that leaves it out rounds down.
         value: (e) => (e.round === undefined ? 'down' : String(e.round)),
       },
-      {
-        key: 'skillsOnly',
-        label: 'On',
-        type: 'pick',
-        options: [
-          ['', 'Every check'],
-          ['true', 'Skill checks only'],
-        ],
-        value: (e) => (e.skillsOnly === true ? 'true' : ''),
-        apply: (e, v) => (v === 'true' ? { ...e, skillsOnly: true } : omit(e, ['skillsOnly'])),
-      },
     ],
     line: (e) => {
       const of = Array.isArray(e.abilities) ? e.abilities.map((a) => word(ABILITY, a)) : [];
@@ -172,13 +163,31 @@ export const cards: readonly KindSpec[] = [
       return `Half your proficiency bonus, rounded ${e.round === 'up' ? 'up' : 'down'}, on ${of.length > 0 ? `${listed(of)} ` : ''}${checks} without it`;
     },
     boxes: (p) => (
-      <AbilityTicks
-        effect={p.effect}
-        field="abilities"
-        legend="Only checks of"
-        title={p.title}
-        onChange={p.onChange}
-      />
+      <>
+        <label className="col-span-2 flex min-h-tap items-center gap-2.5 text-body">
+          <input
+            type="checkbox"
+            className="size-4.5 accent-ink"
+            aria-label={`${p.title}: Skill checks only`}
+            checked={p.effect.skillsOnly === true}
+            onChange={(x) =>
+              p.onChange(
+                x.target.checked
+                  ? { ...p.effect, skillsOnly: true }
+                  : omit(p.effect, ['skillsOnly']),
+              )
+            }
+          />
+          Skill checks only
+        </label>
+        <AbilityTicks
+          effect={p.effect}
+          field="abilities"
+          legend="Only checks of"
+          title={p.title}
+          onChange={p.onChange}
+        />
+      </>
     ),
     notInPlay: true,
   },

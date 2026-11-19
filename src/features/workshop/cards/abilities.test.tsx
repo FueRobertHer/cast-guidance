@@ -154,7 +154,7 @@ describe('Half proficiency', () => {
       screen.getByText('Half your proficiency bonus, rounded down, on checks without it'),
     ).toBeTruthy();
     change('Half proficiency: Rounded', 'up');
-    change('Half proficiency: On', 'true');
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Half proficiency: Skill checks only' }));
     fireEvent.click(screen.getByRole('checkbox', { name: 'Half proficiency: Strength' }));
     expect(cards.written()).toEqual([
       { kind: 'halfProf', round: 'up', skillsOnly: true, abilities: ['str'] },
@@ -169,11 +169,12 @@ describe('Half proficiency', () => {
     cleanup();
     const again = renderCards(cards.written());
     expect(boxValue('Half proficiency: Rounded')).toBe('up');
-    expect(boxValue('Half proficiency: On')).toBe('true');
+    const skills = screen.getByRole('checkbox', { name: 'Half proficiency: Skill checks only' });
+    expect((skills as HTMLInputElement).checked).toBe(true);
     const strength = screen.getByRole('checkbox', { name: 'Half proficiency: Strength' });
     expect((strength as HTMLInputElement).checked).toBe(true);
     // Every check again, of every ability: the fields go.
-    change('Half proficiency: On', '');
+    fireEvent.click(skills);
     fireEvent.click(strength);
     expect(again.written()).toEqual([{ kind: 'halfProf', round: 'up' }]);
   });

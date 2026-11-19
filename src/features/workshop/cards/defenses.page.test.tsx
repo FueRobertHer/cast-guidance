@@ -38,7 +38,13 @@ const type = (label: string, value: string) =>
 function wearer() {
   const doc = testCharacter('Orla', [classEntry('Warrior', 5)], { dex: 16, con: 14 });
   doc.equipment = [
-    { id: 'g1', ref: { name: 'Bark Charm', source: 'MyHomebrew' }, qty: 1, equipped: true },
+    {
+      id: 'g1',
+      ref: { name: 'Bark Charm', source: 'MyHomebrew' },
+      qty: 1,
+      equipped: true,
+      attuned: false,
+    },
   ];
   return doc;
 }

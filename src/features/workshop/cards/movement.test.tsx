@@ -6,7 +6,7 @@
  * is worked through its boxes, read back from what it wrote, and counted on a
  * sheet beside one without it.
  */
-import { cleanup, screen } from '@testing-library/react';
+import { cleanup, fireEvent, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   boxValue,
@@ -28,7 +28,11 @@ const make = (add: string) => makeCard(cards, add);
 describe('Initiative, with the proficiency bonus', () => {
   it('puts the proficiency bonus in the amount’s place, and a number back', () => {
     const cards = renderCards([{ kind: 'initiativeBonus', amount: 2 }]);
-    change('Initiative: Adds', 'prof');
+    const tick = () =>
+      screen.getByRole('checkbox', {
+        name: 'Initiative: Your proficiency bonus instead',
+      }) as HTMLInputElement;
+    fireEvent.click(tick());
     expect(cards.written()).toEqual([{ kind: 'initiativeBonus', profBonus: true }]);
     expect(
       screen.getByText('Your proficiency bonus to Initiative, once however many add it'),
@@ -38,14 +42,14 @@ describe('Initiative, with the proficiency bonus', () => {
 
     cleanup();
     const again = renderCards(cards.written());
-    expect(boxValue('Initiative: Adds')).toBe('prof');
-    change('Initiative: Adds', '');
+    expect(tick().checked).toBe(true);
+    fireEvent.click(tick());
     expect(again.written()).toEqual([{ kind: 'initiativeBonus', amount: 1 }]);
     // An amount typed in takes the proficiency bonus's place, as before.
-    change('Initiative: Adds', 'prof');
+    fireEvent.click(tick());
     change('Initiative: Amount', '3');
     expect(again.written()).toEqual([{ kind: 'initiativeBonus', amount: 3 }]);
-    expect(boxValue('Initiative: Adds')).toBe('');
+    expect(tick().checked).toBe(false);
   });
 
   it('adds the proficiency bonus to Initiative on a sheet', () => {

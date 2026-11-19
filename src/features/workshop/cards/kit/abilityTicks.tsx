@@ -33,19 +33,22 @@ export function AbilityTicks({
   return (
     <fieldset className="col-span-2 flex min-w-0 flex-col gap-1.5">
       <legend className="mb-1.5 text-label text-ink-muted">{legend}</legend>
-      <div className="grid grid-cols-3 gap-x-2">
-        {ABILITY.map(([v, text]) => (
-          <label key={v} className="flex min-h-tap items-center gap-2 text-body">
-            <input
-              type="checkbox"
-              className="size-4.5 accent-ink"
-              aria-label={`${title}: ${text}`}
-              checked={held.includes(v)}
-              onChange={() => toggle(v)}
-            />
-            {text}
-          </label>
-        ))}
+      {/* Two to a row on a phone, where "Constitution" would run past a third column. */}
+      <div className="@container">
+        <div className="grid grid-cols-2 gap-x-2 @min-[24rem]:grid-cols-3">
+          {ABILITY.map(([v, text]) => (
+            <label key={v} className="flex min-h-tap items-center gap-2 text-body">
+              <input
+                type="checkbox"
+                className="size-4.5 accent-ink"
+                aria-label={`${title}: ${text}`}
+                checked={held.includes(v)}
+                onChange={() => toggle(v)}
+              />
+              {text}
+            </label>
+          ))}
+        </div>
       </div>
     </fieldset>
   );
