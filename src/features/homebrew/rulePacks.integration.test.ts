@@ -347,6 +347,33 @@ describe('a rule pack in a character file (ADR-002, D4)', () => {
     expect((await homebrewRepo.listSafe()).files).toHaveLength(2);
   });
 
+  it('updates the plain copy of a key that also has a pack beside it, and only that', async () => {
+    const plain = (spell: string) => {
+      const json = { _meta: packFile()._meta as Record<string, unknown>, spell: [] as unknown[] };
+      delete (json._meta as Record<string, unknown>).castGuidance;
+      json.spell.push({ name: spell, source: 'GT', level: 1 });
+      return json;
+    };
+    const here = await homebrewRepo.importJson(plain('Gritty Bolt'), 'gritty-table.json');
+    // A pack of that key, from a character file, landed beside it.
+    await characterRepo.importFromText(
+      exportOf(warrior('osk'), [{ fileName: 'gritty-table.json', json: changedPack() }]),
+    );
+    const pack = (await homebrewRepo.listSafe()).files.find((f) => f.id !== here.id);
+
+    const summary = await characterRepo.importFromText(
+      exportOf(warrior('bram'), [{ fileName: 'gritty-table.json', json: plain('Gritty Ward') }]),
+    );
+
+    expect(summary).toMatchObject({ homebrewUpdated: 1 });
+    const { files } = await homebrewRepo.listSafe();
+    expect(files.map((f) => f.json)).toEqual(
+      expect.arrayContaining([changedPack(), plain('Gritty Ward')]),
+    );
+    expect(files).toHaveLength(2);
+    expect((await homebrewRepo.getSafe(pack?.id ?? '')).file?.json).toEqual(changedPack());
+  });
+
   it('never makes a file here a pack: a pack of its key lands beside it', async () => {
     const plain = { _meta: packFile()._meta as Record<string, unknown>, spell: [] as unknown[] };
     delete (plain._meta as Record<string, unknown>).castGuidance;

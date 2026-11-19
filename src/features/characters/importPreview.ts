@@ -51,10 +51,11 @@ export type EmbeddedFileStatus =
    */
   | 'adds-to-book'
   /**
-   * Another version of a file here, from the same link, or with the same
-   * first source and file name (ADR-002, D4): importing takes its place
-   * (`updates` names it), keeping its switch, its place in the merge order
-   * and who a pack applies to, whichever version is newer.
+   * Another version of a file here, by its collection key (ADR-002, D4: the
+   * id a collection made in the app is stamped with, else the same link, or
+   * the same first source and file name): importing takes its place
+   * (`updates` names it), keeping its switch and its place in the merge
+   * order, whichever version is newer. Never a rule pack, on either side.
    */
   | 'updates';
 
