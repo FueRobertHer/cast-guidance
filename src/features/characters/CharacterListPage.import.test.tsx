@@ -257,7 +257,7 @@ describe('character import preview', () => {
     expect(items).toEqual([
       // The character's own spelling, not the lowercased comparison key.
       'GoneBrew is not on this device. What the character uses from it will show as missing until you import it.',
-      'OFF is in a homebrew file that is turned off. Turn it on in Homebrew to use it here.',
+      'OFF is in a homebrew file that is turned off. Turn it on in the Workshop, under Collections, to use it here.',
     ]);
     // Guidance, not gatekeeping: Import is still there.
     expect(within(dialog).getByRole('button', { name: 'Import' })).toBeTruthy();
@@ -297,7 +297,7 @@ describe('character import preview', () => {
     expect(
       within(dialog).getByRole('region', { name: 'Homebrew in this file' }).textContent,
     ).toContain(
-      'Already here, turned off. brews.json (1 spell). The same file is on this device, so it is skipped, but it is turned off, so its entries are not used. Turn it on in Homebrew to use them.',
+      'Already here, turned off. brews.json (1 spell). The same file is on this device, so it is skipped, but it is turned off, so its entries are not used. Turn it on in the Workshop, under Collections, to use them.',
     );
   });
 
@@ -333,6 +333,44 @@ describe('character import preview', () => {
       expect(outcome()).toBe('Imported Brin. Added entries to 1 book already here'),
     );
     expect(await db.homebrewFiles.count()).toBe(1);
+  });
+
+  it.each([
+    [
+      'has every entry it brings',
+      'Ember Ward',
+      'The book is here, turned off. Ember Codex (1 spell). This device has every entry of this book the file brings, so it is skipped, but the book is turned off, so its entries are not used. Turn it on in the Workshop, under Collections, to use them.',
+    ],
+    [
+      'lacks one it brings',
+      'Ember Lance',
+      'Adds 1 entry to the book here, turned off. Ember Codex (1 spell). The book here, from the same file, lacks 1 entry the character uses, so importing adds them to it, but the book is turned off, so its entries are not used. Turn it on in the Workshop, under Collections, to use them.',
+    ],
+  ])('says where to turn on a book here that is turned off and %s', async (_, spell, said) => {
+    const meta = {
+      sources: [{ json: 'FCEmber', full: 'Ember Codex' }],
+      convertedFrom: { format: 'fc5-compendium', fileName: 'all.xml' },
+    };
+    const { books } = await homebrewRepo.prepareBooks(
+      { _meta: meta, spell: [{ name: 'Ember Ward', source: 'FCEmber', level: 1 }] },
+      'all.xml',
+    );
+    await homebrewRepo.commitBooks(books);
+    const [book] = await db.homebrewFiles.toArray();
+    await homebrewRepo.setEnabled(book?.id ?? '', false);
+    const doc = hero();
+    doc.spellcasting = { wizard: { known: [{ name: spell, source: 'FCEmber' }], prepared: [] } };
+    const part = {
+      _meta: { ...meta, convertedFrom: { ...meta.convertedFrom, subset: true } },
+      spell: [{ name: spell, source: 'FCEmber', level: 1 }],
+    };
+    renderRoster();
+    chooseFile({ ...exported(doc), homebrew: [{ fileName: 'all.xml', json: part }] });
+
+    const dialog = await findDialog('Import Brin?');
+    expect(
+      within(dialog).getByRole('region', { name: 'Homebrew in this file' }).textContent,
+    ).toContain(said);
   });
 
   // Shapes the old flow imported: the preview must read them, not throw.

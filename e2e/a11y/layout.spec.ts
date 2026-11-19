@@ -1,6 +1,7 @@
 import type { Locator, Page } from '@playwright/test';
 import { CONDITIONS } from '../../src/features/sheet/conditionEffects.ts';
 import { casterFile } from '../fixtures/caster.ts';
+import { jsonFile } from '../fixtures/characterFile.ts';
 import { manySpells } from '../fixtures/manySpells.ts';
 import {
   animationsSettled,
@@ -15,6 +16,7 @@ import {
   gotoSheetTab,
   importButton,
   importCharacterFile,
+  importHomebrewFile,
   keepGettingStarted,
   newCharacterButton,
   SHEET_PAGES,
@@ -58,6 +60,11 @@ async function gotoHeading(page: Page, url: string, heading: string | RegExp): P
 }
 
 const tabBar = (page: Page) => page.getByRole('navigation', { name: 'Character sheet' });
+
+/** The Workshop home's shelves, each a button in its Shelf group. */
+const WORKSHOP_SHELVES = ['Yours', 'Collections', 'Rules'] as const;
+const shelfButton = (page: Page, name: string) =>
+  page.getByRole('group', { name: 'Shelf' }).getByRole('button', { name, exact: true });
 
 const sheetTab = (tab: SheetPage): Route => ({
   name: `sheet ${tab}`,
@@ -145,6 +152,54 @@ const ROUTES: Route[] = [
       page.getByRole('button', { name: 'Import file', exact: true }),
       page.getByRole('button', { name: 'Create your own homebrew' }),
     ],
+  },
+  {
+    name: 'workshop',
+    open: async (page) => {
+      await gotoHeading(page, '/workshop', 'Workshop');
+      await expect(page.getByRole('heading', { level: 2, name: 'Make it yours' })).toBeVisible();
+    },
+    primary: (page) => [
+      page.getByRole('link', { name: 'Make your own', exact: true }),
+      page.getByRole('searchbox', { name: /^Search your content/ }),
+      ...WORKSHOP_SHELVES.map((name) => shelfButton(page, name)),
+      page.getByRole('link', { name: 'Import a file or a link', exact: true }),
+    ],
+  },
+  {
+    name: 'workshop collections',
+    open: async (page) => {
+      await gotoHeading(page, '/workshop?shelf=collections', 'Workshop');
+      await expect(page.getByRole('link', { name: /^The books\s*,/ })).toBeVisible();
+    },
+    primary: (page) => [
+      page.getByRole('link', { name: 'Import or manage files', exact: true }),
+      page.getByRole('link', { name: /^The books\s*,/ }),
+    ],
+  },
+  {
+    name: 'workshop rules',
+    open: async (page) => {
+      await gotoHeading(page, '/workshop?shelf=rules', 'Workshop');
+      await expect(page.getByRole('link', { name: /^Critical hits/ })).toBeVisible();
+    },
+    primary: (page) => [
+      page.getByRole('link', { name: /^Critical hits/ }),
+      page.getByRole('link', { name: /^Guidance and Bardic Inspiration/ }),
+    ],
+  },
+  {
+    name: 'workshop rules page',
+    open: (page) => gotoHeading(page, '/workshop/rules', 'Rules'),
+    primary: (page) => [
+      page.getByRole('link', { name: 'Open Settings', exact: true }),
+      page.getByRole('link', { name: 'Open the Homebrew page', exact: true }),
+    ],
+  },
+  {
+    name: 'workshop make your own',
+    open: (page) => gotoHeading(page, '/workshop/new', 'Make your own'),
+    primary: (page) => [page.getByRole('link', { name: 'Optional features', exact: true })],
   },
   {
     name: 'settings',
@@ -363,6 +418,134 @@ test.describe('text at 200%', () => {
       }
     });
   }
+});
+
+/** A collection with a long file name, as one shared from a friend might have. */
+/** A feat whose name runs long, to measure the room a Yours row leaves it. */
+const LONG_FEAT = 'Gift of the Unending Lantern-Lit Harbour Night';
+
+const LONG_BREW = jsonFile('a-very-long-homebrew-file-name-shared-by-a-friend.json', {
+  _meta: { sources: [{ json: 'LONGBREW', full: 'Long Brew' }] },
+  feat: [{ name: 'Lanternbearer of the Western Coast', source: 'LONGBREW', entries: ['Glow.'] }],
+});
+
+/**
+ * The Workshop with something in each shelf: two feats of the player's (a
+ * long name among them) and an imported file with a long name, so every row,
+ * chip and card has words to fit.
+ */
+async function setUpWorkshop(page: Page): Promise<void> {
+  await skipOfflineReadyNotice(page);
+  await gotoRosterSettled(page);
+  for (const name of ['Fire Gift', LONG_FEAT]) {
+    await page.goto('/workshop/new/feat');
+    await page.getByRole('textbox', { name: 'Name', exact: true }).fill(name);
+    await page.getByRole('button', { name: 'Save', exact: true }).click();
+    await page.waitForURL(/\/workshop\/edit\/feat\//);
+  }
+  await page.goto('/workshop/new/spell');
+  await page.getByRole('textbox', { name: 'Name', exact: true }).fill('Fire Spark');
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
+  await page.waitForURL(/\/workshop\/edit\/spell\//);
+  await gotoHeading(page, '/homebrew', 'Homebrew');
+  await importHomebrewFile(page, LONG_BREW);
+  await answerImportPreview(page, `Import "${LONG_BREW.name}"?`);
+}
+
+/** The Workshop's states with content, each opened from the home. */
+const WORKSHOP: readonly Route[] = [
+  {
+    name: 'workshop yours',
+    open: async (page) => {
+      await gotoHeading(page, '/workshop', 'Workshop');
+      await expect(page.getByRole('link', { name: /^Gift of the Unending/ })).toBeVisible();
+    },
+    primary: (page) => [
+      page.getByRole('link', { name: 'Make your own', exact: true }),
+      ...WORKSHOP_SHELVES.map((name) => shelfButton(page, name)),
+      page.getByRole('group', { name: 'Show' }).getByRole('button', { name: 'Spells, 1' }),
+      page.getByRole('link', { name: /^Gift of the Unending/ }),
+    ],
+    // The name itself, not its row: the row is always as wide as the list.
+    keepsRoom: (page) => [
+      page
+        .getByRole('link', { name: /^Gift of the Unending/ })
+        .getByText(LONG_FEAT, { exact: true }),
+    ],
+  },
+  {
+    name: 'workshop collections',
+    open: async (page) => {
+      await gotoHeading(page, '/workshop?shelf=collections', 'Workshop');
+      await expect(page.getByRole('link', { name: /^a-very-long-homebrew/ })).toBeVisible();
+    },
+    primary: (page) => [
+      page.getByRole('link', { name: 'Import or manage files', exact: true }),
+      page.getByRole('link', { name: /^The books\s*,/ }),
+    ],
+    // With text at 200% the long name's card is taller than the screen, so it
+    // cannot be whole in view; what matters is that the name itself keeps room.
+    keepsRoom: (page) => [
+      page
+        .getByRole('link', { name: /^a-very-long-homebrew/ })
+        .getByText(LONG_BREW.name, { exact: true }),
+    ],
+  },
+  {
+    name: 'workshop collection',
+    open: async (page) => {
+      await gotoHeading(page, '/workshop?shelf=collections', 'Workshop');
+      await page.getByRole('link', { name: /^a-very-long-homebrew/ }).click();
+      await expect(page.getByRole('heading', { level: 1, name: LONG_BREW.name })).toBeVisible();
+    },
+    primary: (page) => [
+      page.getByRole('button', { name: 'Back', exact: true }),
+      page.getByRole('button', { name: `Use ${LONG_BREW.name}`, exact: true }),
+      page.getByRole('link', { name: 'Open the Homebrew page', exact: true }),
+    ],
+  },
+  {
+    name: 'workshop search',
+    open: async (page) => {
+      await gotoHeading(page, '/workshop', 'Workshop');
+      await page.getByRole('searchbox', { name: /^Search your content/ }).fill('fire');
+      await expect(page.getByRole('region', { name: 'In the books' })).toBeVisible();
+    },
+    primary: (page) => [
+      page.getByRole('region', { name: 'Yours' }).getByRole('link', { name: /^Fire Gift/ }),
+      page.getByRole('region', { name: 'In the books' }).getByRole('link', { name: /^Fireball/ }),
+    ],
+  },
+];
+
+test.describe('the Workshop with content, in both themes', () => {
+  test.use({ viewport: { width: 320, height: 640 } });
+
+  test('does not scroll sideways at 320 px, and keeps its controls whole with text at 200%', async ({
+    page,
+  }) => {
+    await setUpWorkshop(page);
+    for (const theme of ['dark', 'light']) {
+      for (const extra of ['', 'html { font-size: 200% !important; }']) {
+        for (const route of WORKSHOP) {
+          await route.open(page, '');
+          await page.evaluate((t) => document.documentElement.setAttribute('data-theme', t), theme);
+          await applyMeasuredFont(page, extra);
+          await animationsSettled(page);
+          const at = { ...route, name: `${route.name} (${theme}${extra === '' ? '' : ', 200%'})` };
+          await expectNoSidewaysScroll(page, at);
+          for (const control of route.primary(page)) {
+            await control.scrollIntoViewIfNeeded();
+            await expect(control, `${at.name}: ${control}`).toBeInViewport({ ratio: 1 });
+          }
+          for (const text of route.keepsRoom?.(page) ?? []) {
+            const { width } = await box(text);
+            expect(width, `${at.name}: ${text} keeps room to be read`).toBeGreaterThanOrEqual(80);
+          }
+        }
+      }
+    }
+  });
 });
 
 test.describe('the condition strip, every condition on', () => {

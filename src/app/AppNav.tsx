@@ -1,18 +1,28 @@
-import { FlaskConical, LibraryBig, Settings, Users } from 'lucide-react';
+import { Hammer, LibraryBig, Settings, Users } from 'lucide-react';
 import type { ReactNode } from 'react';
-import { NavLink, Outlet } from 'react-router';
+import { Link, Outlet, useLocation } from 'react-router';
 
+/**
+ * The sections, each with the paths it is the tab for: `end` for the roster,
+ * which owns `/` alone. The Homebrew page is reached from the Workshop's
+ * Collections until the Workshop takes over its jobs (ADR-002, D1), so the
+ * Workshop is the tab lit there.
+ */
 const items = [
-  { to: '/', label: 'Characters', icon: Users, end: true },
-  { to: '/library', label: 'Library', icon: LibraryBig, end: false },
-  { to: '/homebrew', label: 'Homebrew', icon: FlaskConical, end: false },
-  { to: '/settings', label: 'Settings', icon: Settings, end: false },
+  { to: '/', label: 'Characters', icon: Users, end: true, also: [] },
+  { to: '/library', label: 'Library', icon: LibraryBig, end: false, also: [] },
+  { to: '/workshop', label: 'Workshop', icon: Hammer, end: false, also: ['/homebrew'] },
+  { to: '/settings', label: 'Settings', icon: Settings, end: false, also: [] },
 ] as const;
+
+/** Whether `pathname` is `base` or a page under it. */
+const under = (pathname: string, base: string) =>
+  pathname === base || pathname.startsWith(`${base}/`);
 
 /**
  * The pill behind a tab's icon, filled `surface-raised` for the current tab
  * (DS-001). With the label's bold weight it marks the open tab by more than
- * colour alone (A11Y-002). Decorative: NavLink reports the page through
+ * colour alone (A11Y-002). Decorative: the link reports the page through
  * `aria-current`. On the side rail the whole row takes the fill instead.
  * The sheet's tab bar draws the same one. Sharing a module between the two
  * pulled the data registry chunk into the entry bundle (+140 KB), so each
@@ -35,6 +45,8 @@ function TabPill({ active, children }: { active: boolean; children: ReactNode })
  * Focused flows (creator, sheet, homebrew editor) stay outside this layout.
  */
 export function AppNavLayout() {
+  // Routes match regardless of case, so `/Library` is the Library's page too.
+  const pathname = useLocation().pathname.toLowerCase();
   return (
     <>
       {/* Clears the tab bar: `tabbar` and its hairline, plus the inset. */}
@@ -50,31 +62,28 @@ export function AppNavLayout() {
         <span className="hidden px-3 pb-3 font-display text-title-card lg:block">
           Cast Guidance
         </span>
-        {items.map(({ to, label, icon: Icon, end }) => (
-          <NavLink
-            key={to}
-            to={to}
-            end={end}
-            className={({ isActive }) =>
-              `flex flex-1 flex-col items-center gap-[3px] pt-[6px] text-tab lg:min-h-tap lg:flex-none lg:flex-row lg:gap-2.5 lg:rounded-control lg:px-3 lg:text-label ${
-                isActive
-                  ? 'font-bold text-ink lg:bg-surface-raised'
-                  : 'text-ink-muted hover:text-ink'
-              }`
-            }
-          >
-            {({ isActive }) => (
-              <>
-                {/* The current tab is marked by weight and a pill, not by
-                    colour alone (A11Y-002); NavLink sets aria-current. */}
-                <TabPill active={isActive}>
-                  <Icon size={20} aria-hidden className="lg:size-4.5" />
-                </TabPill>
-                {label}
-              </>
-            )}
-          </NavLink>
-        ))}
+        {items.map(({ to, label, icon: Icon, end, also }) => {
+          const active = end
+            ? pathname === to
+            : [to, ...also].some((base: string) => under(pathname, base));
+          return (
+            <Link
+              key={to}
+              to={to}
+              aria-current={active ? 'page' : undefined}
+              className={`flex flex-1 flex-col items-center gap-[3px] pt-[6px] text-tab lg:min-h-tap lg:flex-none lg:flex-row lg:gap-2.5 lg:rounded-control lg:px-3 lg:text-label ${
+                active ? 'font-bold text-ink lg:bg-surface-raised' : 'text-ink-muted hover:text-ink'
+              }`}
+            >
+              {/* The current tab is marked by weight and a pill, not by
+                  colour alone (A11Y-002), and named by aria-current. */}
+              <TabPill active={active}>
+                <Icon size={20} aria-hidden className="lg:size-4.5" />
+              </TabPill>
+              {label}
+            </Link>
+          );
+        })}
       </nav>
     </>
   );

@@ -50,14 +50,21 @@ test.describe('import preview', () => {
   }) => {
     // Every pack in first, so the preview checks against all official data,
     // then on to Homebrew in the same page load, where the download queue
-    // has already said it is done.
+    // has already said it is done: by the Workshop tab and its Collections
+    // shelf, where the Homebrew page is reached until the Workshop imports.
     await page.goto('/');
     await expect.poll(() => countDataFiles(page, PINNED_TAG)).toBe(MIRROR_PATHS.length);
     await expectDataSettled(page);
     await page
       .getByRole('navigation', { name: 'Main' })
-      .getByRole('link', { name: 'Homebrew' })
+      .getByRole('link', { name: 'Workshop', exact: true })
       .click();
+    await expect(page.getByRole('heading', { level: 1, name: 'Workshop' })).toBeVisible();
+    await page
+      .getByRole('group', { name: 'Shelf' })
+      .getByRole('button', { name: 'Collections', exact: true })
+      .click();
+    await page.getByRole('link', { name: 'Import or manage files', exact: true }).click();
     await expect(page.getByRole('heading', { level: 1, name: 'Homebrew' })).toBeVisible();
 
     await importHomebrewFile(page, jsonFile('brew.json', BREW));
