@@ -458,9 +458,10 @@ export interface StoredReplacedEntry {
  * A rule pack file's `_meta.castGuidance`. Data only: nothing in it is run, and a
  * formula is read by the app's own small grammar (`formula.ts`). A cue at a moment
  * shows when that moment happens, as a moment's `cue` outcome does. `replaces`
- * names the entries of its content that take a book entry's place, which the
- * import preview names one by one; an entry of its content it does not name
- * merges as any homebrew file's does, and never takes a book entry's place.
+ * names the entries of its content that take a book entry's place for the
+ * characters the pack applies to (the import preview does not name them yet;
+ * see FUTURE_WORK.md); an entry of its content it does not name merges as any
+ * homebrew file's does, and never takes a book entry's place.
  */
 export interface StoredPackGuidance {
   v: number;

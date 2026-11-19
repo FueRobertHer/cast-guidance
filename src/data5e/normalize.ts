@@ -15,6 +15,7 @@ import {
   RULE_SET_TYPE,
 } from '../engine/castGuidance';
 import {
+  applyCopy,
   type CopyModWarning,
   type CopyRef,
   DELETE_ON_COPY,
@@ -25,7 +26,7 @@ import {
   uidOf,
   withReplaceBudget,
 } from './copyMod';
-import { fieldPrint } from './fingerprint';
+import { fieldPrint, OWN_GUIDANCE } from './fingerprint';
 import {
   type PackFile,
   type PackLocal,
@@ -150,6 +151,18 @@ export class EntityRegistry {
   /** The change record of `e`, when it is a changed entry or the entry below one. */
   changeOf(e: Entity): ChangedEntry | undefined {
     return this.changeIndex.get(e);
+  }
+
+  /**
+   * What the player's own change to `e` is read against: the entry below it,
+   * with the shared packs' changes, or `e` itself before the first change.
+   * A change is written against this (`writeChange`), never against the
+   * entry below every change, or a pack's text would be baked into it.
+   */
+  belowOwnChange(e: Entity): Entity {
+    const record = this.changeIndex.get(e);
+    if (record === undefined) return e;
+    return record.layers.find((l) => l.from.kind === 'changes')?.below ?? record.placed;
   }
 
   /**
@@ -550,6 +563,8 @@ export interface ChangeLayer {
   from: ChangeFrom;
   /** The change as its file holds it, its `_copy` unresolved: `stackChanges` reads it. */
   entry: Entity;
+  /** The entry it is read against: the base with the shared layers under it. */
+  below: Entity;
   /**
    * Whether the shared registry's version holds it: the player's changes do,
    * and a pack's when it applies to every character. A pack applied to some
@@ -706,21 +721,68 @@ function needsLookOf(change: Entity, below: Entity): string[] {
 const RESTORED = [...DELETE_ON_COPY, 'bookEdition'] as const;
 
 /**
+ * A change's guidance over the guidance of the entry below it: the parts the
+ * change holds take those parts' place, an empty one clears its part, and
+ * every other part is the entry's. So a change to an imported entry's text
+ * leaves its effects to the collection, and an update to them comes through.
+ */
+function guidanceOver(below: unknown, change: unknown): Record<string, unknown> | undefined {
+  const out: Record<string, unknown> = isRecord(below) ? { ...below } : {};
+  if (isRecord(change)) {
+    for (const part of OWN_GUIDANCE) {
+      if (!Object.hasOwn(change, part)) continue;
+      const v = change[part];
+      if (v === false || v === null || (Array.isArray(v) && v.length === 0)) delete out[part];
+      else out[part] = v;
+    }
+    if (!isRecord(below) && Object.keys(out).length > 0) out.v = change.v;
+  }
+  return isRecord(below) || Object.keys(out).length > 0 ? out : undefined;
+}
+
+/**
  * One change over the entry below it: its `_copy`, of itself, read against that
  * entry (never against itself, which it would wait on forever), or the change
  * as it is when written whole. A change is the entry it changes, so what a
  * copy leaves behind comes back from below: its book's edition, its reprints,
- * its versions, its page.
+ * its versions, its page; and so does its identity, exactly as below has it.
+ *
+ * Undefined, with a warning, when it cannot stand for that entry: its `_copy`
+ * is no reference or cannot be read (never a stub of the entry), or its `_mod`
+ * gives it another name, source, class or level. A `_mod` step that no longer
+ * finds its text is only a warning: the rest of the change still holds.
  */
 function applyChange(
   type: string,
   below: Entity,
   change: Entity,
   warnings: CopyModWarning[],
-): Entity {
+): Entity | undefined {
+  const label = `change to ${type}`;
+  const leftOut = (why: string) => {
+    warnings.push({ entity: uidOf(change), message: `${label}: ${why}, so it is left out` });
+    return undefined;
+  };
   const working = structuredClone(change);
-  if (working._copy !== undefined) {
-    warnings.push(...resolveCopies([working], () => below, `change to ${type}`));
+  const copy = own(working, '_copy');
+  if (copy !== undefined) {
+    if (!isRecord(copy)) return leftOut('its _copy is not a reference');
+    try {
+      applyCopy(working, below, warnings, label);
+    } catch (err) {
+      return leftOut(`its _copy could not be read (${err instanceof Error ? err.message : err})`);
+    }
+    delete working._copy;
+    const guidance = guidanceOver(own(below, 'castGuidance'), own(change, 'castGuidance'));
+    if (guidance === undefined) delete working.castGuidance;
+    else working.castGuidance = guidance;
+  }
+  if (identityKey(type, working) !== identityKey(type, below)) {
+    return leftOut('it no longer stands for the entry it changes');
+  }
+  const parents = Object.hasOwn(ENTRY_PARENT_KEYS, type) ? ENTRY_PARENT_KEYS[type] : undefined;
+  for (const key of ['name', 'source', ...(parents ?? [])]) {
+    if (Object.hasOwn(below, key)) working[key] = below[key];
   }
   for (const key of RESTORED) {
     if (Object.hasOwn(working, key) || !Object.hasOwn(below, key)) continue;
@@ -733,8 +795,11 @@ function applyChange(
 
 /**
  * `base` with `layers` over it, lowest first: what a view holding those changes
- * gives in the base's place. Pure; the shared registry stacks its shared
- * layers with it, and a per-character view (E4) may stack another set.
+ * gives in the base's place. A layer that cannot stand for the entry is left
+ * out, as the shared registry leaves it out. Pure; the shared registry stacks
+ * its shared layers the same way, and a per-character view (E4) may stack
+ * another set. Outside a merge, wrap the calls in `withReplaceBudget`, or each
+ * text replacement gets a budget of its own.
  */
 export function stackChanges(
   type: string,
@@ -743,7 +808,7 @@ export function stackChanges(
   warnings: CopyModWarning[] = [],
 ): Entity {
   let entry = base;
-  for (const change of layers) entry = applyChange(type, entry, change, warnings);
+  for (const change of layers) entry = applyChange(type, entry, change, warnings) ?? entry;
   return entry;
 }
 
@@ -788,12 +853,19 @@ function placeChanges(reg: EntityRegistry, type: EntityType, found: FoundChange[
     }
     changes.sort((a, b) => a.replacer.rank - b.replacer.rank);
     let current = base;
-    const layers: ChangeLayer[] = changes.map((c) => {
-      const needsLook = needsLookOf(c.entry, current);
-      if (c.replacer.shared) current = applyChange(type, current, c.entry, reg.warnings);
-      return { from: c.replacer.from, entry: c.entry, shared: c.replacer.shared, needsLook };
-    });
-    reg.placeChange({ type, base, layers, placed: current });
+    const layers: ChangeLayer[] = [];
+    for (const c of changes) {
+      const below = current;
+      if (c.replacer.shared) {
+        const applied = applyChange(type, below, c.entry, reg.warnings);
+        if (applied === undefined) continue;
+        current = applied;
+      }
+      const needsLook = needsLookOf(c.entry, below);
+      const { from, shared } = c.replacer;
+      layers.push({ from, entry: c.entry, below, shared, needsLook });
+    }
+    if (layers.length > 0) reg.placeChange({ type, base, layers, placed: current });
   }
 }
 

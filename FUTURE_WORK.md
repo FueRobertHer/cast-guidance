@@ -322,7 +322,9 @@ work:
   the registry, from Changes to the books and from a rule pack's `replaces`.
   Left out: official entries that copy a changed one, and the expanded
   versions of a changed race or subrace, still read the book's; Aid's
-  + Effect amount is the catalog's, not the spell's.
+  + Effect amount is the catalog's, not the spell's. The import preview and
+  the pack review do not name a pack's `replaces` yet (U7), so a pack applied
+  to every character changes the entries it lists with no line saying so.
 
 ### Maintainability and diagnostics
 

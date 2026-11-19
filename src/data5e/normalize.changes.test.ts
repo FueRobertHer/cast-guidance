@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest';
 import type { PackAppliesTo } from '@/engine/castGuidance';
 import { writeChange } from '@/features/workshop/copyWriter';
 import type { Entity } from './copyMod';
+import { fieldPrint } from './fingerprint';
 import {
   type EntityRegistry,
   identityKey,
@@ -267,10 +268,20 @@ describe('a change to the books', () => {
   });
 
   it('that says its own edition is printed under it, not its book’s', () => {
-    const stored = { ...aidChange(), edition: 'classic' };
-    const aid = withChanges({ spell: [stored] }).get('spell', 'Aid', 'XPHB');
-    expect(aid?.edition).toBe('classic');
-    expect(aid).not.toHaveProperty('bookEdition');
+    const aid = bookAid();
+    expect(aid.bookEdition).toBe('one');
+    const stored = writeChange('spell', aid, { ...aid, edition: 'classic' });
+    expect(stored.edition).toBe('classic');
+    const placed = withChanges({ spell: [stored] }).get('spell', 'Aid', 'XPHB');
+    expect(placed?.edition).toBe('classic');
+    expect(placed).not.toHaveProperty('bookEdition');
+  });
+
+  it('carries no edition when the draft keeps the one its book gives', () => {
+    const aid = bookAid();
+    expect(writeChange('spell', aid, { ...aid, edition: 'one', level: 3 })).not.toHaveProperty(
+      'edition',
+    );
   });
 
   it('is read against the entry below it, never a copy of itself', () => {
@@ -329,7 +340,10 @@ describe('who may replace', () => {
 });
 
 describe('a rule pack’s replaced entries', () => {
-  const packFile = (replaces: unknown, extra: Record<string, unknown> = {}) => ({
+  const feet = (amount: number) => ({ type: 'point', distance: { type: 'feet', amount } });
+  const rangeOf = (e: Entity | undefined) =>
+    (e?.range as { distance: { amount: number } } | undefined)?.distance.amount;
+  const packFile = (replaces: unknown, extra: Record<string, unknown> = {}, range = 90) => ({
     _meta: {
       sources: [{ json: 'TBL', full: 'Our Table' }],
       castGuidance: { v: 1, replaces },
@@ -338,6 +352,7 @@ describe('a rule pack’s replaced entries', () => {
       {
         name: 'Aid',
         source: 'XPHB',
+        range: feet(range),
         _copy: {
           name: 'Aid',
           source: 'XPHB',
@@ -411,8 +426,54 @@ describe('a rule pack’s replaced entries', () => {
     });
     expect(text(reg)[1]).toContain('increase by 10');
     expect(text(reg)).toContain('At our table, it lasts a day.');
+    // Both set the range: the player's, on top, wins.
+    expect(rangeOf(reg.get('spell', 'Aid', 'XPHB'))).toBe(60);
     const layers = reg.changeOf(reg.get('spell', 'Aid', 'XPHB') as Entity)?.layers ?? [];
     expect(layers.map((l) => l.from.kind)).toEqual(['pack', 'changes']);
+  });
+
+  it('stack in the player’s pack order', () => {
+    const files: Build['files'] = [
+      ['low', packFile(listsAid, {}, 90)],
+      ['high', packFile(listsAid, {}, 120)],
+    ];
+    const one = build({
+      files,
+      packs: [
+        ['low', everyone, 0],
+        ['high', everyone, 1],
+      ],
+    });
+    expect(rangeOf(one.get('spell', 'Aid', 'XPHB'))).toBe(120);
+    expect(one.changedEntries()[0]?.layers.map((l) => l.from.fileId)).toEqual(['low', 'high']);
+    const other = build({
+      files,
+      packs: [
+        ['low', everyone, 1],
+        ['high', everyone, 0],
+      ],
+    });
+    expect(rangeOf(other.get('spell', 'Aid', 'XPHB'))).toBe(90);
+  });
+
+  it('are the entry below the player’s change, which a second edit is written against', () => {
+    const packOnly = build({ files: [['pack', packFile(listsAid)]], packs: [['pack', everyone]] });
+    const shown = packOnly.get('spell', 'Aid', 'XPHB') as Entity;
+    expect(packOnly.belowOwnChange(shown)).toBe(shown);
+    const reg = build({
+      files: [
+        ['changes', changesFile({ spell: [aidChange()] })],
+        ['pack', packFile(listsAid)],
+      ],
+      changes: ['changes'],
+      packs: [['pack', everyone]],
+    });
+    const below = reg.belowOwnChange(reg.get('spell', 'Aid', 'XPHB') as Entity);
+    expect(rangeOf(below)).toBe(90);
+    expect(below.entries).toContain('At our table, it lasts a day.');
+    expect((below.entries as string[])[1]).toContain('increase by 5');
+    const fireball = reg.get('spell', 'Fireball', 'XPHB') as Entity;
+    expect(reg.belowOwnChange(fireball)).toBe(fireball);
   });
 
   it('are what the player’s change is read against for Needs a look', () => {
@@ -523,6 +584,216 @@ describe('a change to an imported entry', () => {
     expect(marks.range).not.toBe(
       (older.castGuidance as { basedOnFields: Record<string, string> }).basedOnFields.range,
     );
+  });
+
+  it('reads no more marks than the limit', () => {
+    const twenty = { type: 'point', distance: { type: 'feet', amount: 20 } };
+    const older = writeChange('spell', { ...bookAid(), range: twenty }, bookAid());
+    const g = older.castGuidance as { basedOnFields: Record<string, string> };
+    const filler = Object.fromEntries(
+      Array.from({ length: 64 }, (_, i) => [`x${i}`, fieldPrint(bookAid(), `x${i}`)]),
+    );
+    const late = {
+      ...older,
+      castGuidance: { ...g, basedOnFields: { ...filler, ...g.basedOnFields } },
+    };
+    expect(withChanges({ spell: [late] }).changedEntries()[0]?.layers[0]?.needsLook).toEqual([]);
+    const early = {
+      ...older,
+      castGuidance: { ...g, basedOnFields: { ...g.basedOnFields, ...filler } },
+    };
+    expect(withChanges({ spell: [early] }).changedEntries()[0]?.layers[0]?.needsLook).toEqual([
+      'range',
+    ]);
+  });
+});
+
+describe('a change’s guidance', () => {
+  const lance = (effects: unknown[] | undefined, more: Record<string, unknown> = {}) => ({
+    _meta: { sources: [{ json: 'HB' }] },
+    spell: [
+      {
+        name: 'Ember Lance',
+        source: 'HB',
+        level: 1,
+        entries: ['A lance of embers.'],
+        ...(effects === undefined ? {} : { castGuidance: { v: 1, effects, ...more } }),
+      },
+    ],
+  });
+  const speed = (amount: number) => [{ kind: 'speedBonus', amount }];
+  const shown = (file: Record<string, unknown>) =>
+    structuredClone(build({ files: [['hb', file]] }).get('spell', 'Ember Lance', 'HB') as Entity);
+  const placed = (stored: Entity, file: Record<string, unknown>) =>
+    withChanges({ spell: [stored] }, [['hb', file]]).get('spell', 'Ember Lance', 'HB');
+  const guidance = (e: Entity | undefined) =>
+    e?.castGuidance as Record<string, unknown> | undefined;
+
+  it('holds only the parts the player changed, so an update to the others comes through', () => {
+    const was = shown(lance(speed(10)));
+    const stored = writeChange('spell', was, { ...was, entries: ['A lance of white embers.'] });
+    expect(guidance(stored)).not.toHaveProperty('effects');
+    const after = placed(stored, lance(speed(30)));
+    expect(after?.entries).toEqual(['A lance of white embers.']);
+    expect(guidance(after)?.effects).toEqual(speed(30));
+  });
+
+  it('changes the part the player changed, and keeps the rest', () => {
+    const was = shown(lance(speed(10), { drop: ['Ember'] }));
+    const stored = writeChange('spell', was, {
+      ...was,
+      castGuidance: { ...guidance(was), effects: speed(20) },
+    });
+    const after = placed(stored, lance(speed(10), { drop: ['Lance'] }));
+    expect(guidance(after)).toMatchObject({ effects: speed(20), drop: ['Lance'] });
+  });
+
+  it('clears a part the player emptied', () => {
+    const was = shown(lance(speed(10), { replace: true }));
+    const stored = writeChange('spell', was, {
+      ...was,
+      castGuidance: { ...guidance(was), effects: [], replace: false },
+    });
+    const after = guidance(placed(stored, lance(speed(10), { replace: true })));
+    expect(after).not.toHaveProperty('effects');
+    expect(after).not.toHaveProperty('replace');
+  });
+
+  it('leaves no guidance of its own on an entry that had none', () => {
+    const aid = withChanges({ spell: [aidChange()] }).get('spell', 'Aid', 'XPHB');
+    expect(aid).not.toHaveProperty('castGuidance');
+  });
+
+  it('is taken whole from a change written whole', () => {
+    const everyone: PackAppliesTo = { characters: [], appDefault: true };
+    const pack = {
+      _meta: {
+        sources: [{ json: 'TBL' }],
+        castGuidance: { v: 1, replaces: [{ type: 'spell', name: 'Ember Lance', source: 'HB' }] },
+      },
+      spell: [{ name: 'Ember Lance', source: 'HB', level: 1, entries: ['Whole.'] }],
+    };
+    const reg = build({
+      files: [
+        ['hb', lance(speed(10))],
+        ['pack', pack],
+      ],
+      packs: [['pack', everyone]],
+    });
+    expect(reg.get('spell', 'Ember Lance', 'HB')).not.toHaveProperty('castGuidance');
+  });
+});
+
+describe('a change that cannot stand for what it changes', () => {
+  const everyone: PackAppliesTo = { characters: [], appDefault: true };
+  const viaPack = (entry: Entity, type = 'spell') => ({
+    _meta: {
+      sources: [{ json: 'TBL' }],
+      castGuidance: {
+        v: 1,
+        replaces: [
+          {
+            type,
+            name: entry.name,
+            source: entry.source,
+            ...(type === 'classFeature'
+              ? { className: 'Barbarian', classSource: 'XPHB', level: 1 }
+              : {}),
+          },
+        ],
+      },
+    },
+    [type]: [entry],
+  });
+  const packed = (entry: Entity, type = 'spell') =>
+    build({ files: [['pack', viaPack(entry, type)]], packs: [['pack', everyone]] });
+  const aidMod = (mod: unknown) => ({
+    name: 'Aid',
+    source: 'XPHB',
+    _copy: { name: 'Aid', source: 'XPHB', _mod: mod },
+  });
+  const said = (reg: EntityRegistry) => reg.warnings.map((w) => w.message).join('\n');
+
+  it('is left out when its _mod renames it', () => {
+    const reg = packed(aidMod({ name: 'Fireball' }));
+    expect(aids(reg)).toHaveLength(1);
+    expect(reg.get('spell', 'Aid', 'XPHB')?.entries).toEqual(bookAid().entries);
+    expect(reg.byType('spell').filter((s) => s.name === 'Fireball')).toHaveLength(1);
+    expect(said(reg)).toContain('left out');
+  });
+
+  it('is left out when its _mod moves it to another class or level', () => {
+    const rage = {
+      name: 'Rage',
+      source: 'XPHB',
+      className: 'Barbarian',
+      classSource: 'XPHB',
+      level: 1,
+      _copy: {
+        name: 'Rage',
+        source: 'XPHB',
+        className: 'Barbarian',
+        classSource: 'XPHB',
+        level: 1,
+        _mod: { level: 3, className: 'Fighter' },
+      },
+    };
+    const reg = packed(rage, 'classFeature');
+    expect(feature(reg, 'Rage', 'Barbarian', 1)?.entries).toEqual(bookRage().entries);
+    expect(feature(reg, 'Rage', 'Fighter', 3)).toBeUndefined();
+  });
+
+  it('keeps the exact name and source of what it changes', () => {
+    const reg = withChanges({ spell: [{ ...aidChange(), source: 'xphb', name: ['Aid'] }] });
+    const aid = aids(reg)[0];
+    expect(aid).toMatchObject({ name: 'Aid', source: 'XPHB' });
+    expect((aid?.entries as string[])[1]).toContain('increase by 10');
+    expect([...reg.sourceCounts()]).toEqual([...BOOK.sourceCounts()]);
+  });
+
+  it('never leaves a _copy on the entry', () => {
+    const reg = packed(aidMod({ _copy: { name: 'Fireball', source: 'XPHB' } }));
+    expect(reg.get('spell', 'Aid', 'XPHB')).not.toHaveProperty('_copy');
+  });
+
+  it('is left out, not a stub, when its copy cannot be read', () => {
+    const broken = aidMod({ entries: { mode: 'removeArr', names: [{ toString: 1 }] } });
+    const reg = packed(broken);
+    expect(reg.get('spell', 'Aid', 'XPHB')?.entries).toEqual(bookAid().entries);
+    expect(reg.changedEntries()).toEqual([]);
+    // A view stacking it (E4) leaves it out the same way.
+    expect(stackChanges('spell', bookAid(), [broken]).entries).toEqual(bookAid().entries);
+    for (const odd of ['Aid', null, ['Aid']]) {
+      const malformed = packed({ name: 'Aid', source: 'XPHB', _copy: odd, entries: ['Odd.'] });
+      expect(malformed.get('spell', 'Aid', 'XPHB')?.entries).toEqual(bookAid().entries);
+    }
+  });
+
+  it('leaves the player’s change standing over a pack change that cannot be read', () => {
+    const reg = build({
+      files: [
+        ['changes', changesFile({ spell: [aidChange()] })],
+        ['pack', viaPack(aidMod({ entries: { mode: 'removeArr', names: [{ toString: 1 }] } }))],
+      ],
+      changes: ['changes'],
+      packs: [['pack', everyone]],
+    });
+    const aid = reg.get('spell', 'Aid', 'XPHB');
+    expect((aid?.entries as string[])[1]).toContain('increase by 10');
+    expect(aid?.level).toBe(2);
+  });
+
+  it('stays, with a warning, when one of its changes no longer finds its text', () => {
+    const reg = packed(
+      aidMod({
+        entries: [
+          { mode: 'replaceArr', replace: 'Not in Aid.', items: ['Never.'] },
+          { mode: 'appendArr', items: ['Still added.'] },
+        ],
+      }),
+    );
+    expect(reg.get('spell', 'Aid', 'XPHB')?.entries).toContain('Still added.');
+    expect(reg.warnings.length).toBeGreaterThan(0);
   });
 });
 

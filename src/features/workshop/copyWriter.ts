@@ -198,20 +198,28 @@ export function writeEntry({ original, draft, source, mode }: WriteInput): Json 
  * - For a type known by its parent too (`ENTRY_PARENT_KEYS`: a feature's class
  *   and level), those fields go on it and in its `_copy`, so a change to Rage
  *   is the Barbarian's Rage at level 1 and no other class's.
- * - Its guidance marks each field it changes as the original had it
- *   (`basedOnFields`), so an update under one of them sends it to Needs a look.
+ * - Its guidance holds only the parts the draft changes, and marks each field
+ *   it changes as the original had it (`basedOnFields`), so an update under
+ *   one of them sends it to Needs a look and an update to the rest comes through.
  * - It is printed in the original's book, so it carries no edition of its own
- *   where the original took one from its book: the registry gives it back.
+ *   where the original took one from its book (the registry gives it back),
+ *   unless the draft says another.
  *
- * `original` is the entry below the change, never a change itself: to change
- * an entry already changed, pass the registry's `changeOf(e).base` with the
- * draft, so what is stored is still read against the entry below.
+ * `original` is what the player's change is read against, never the change
+ * itself: the registry's `belowOwnChange(e)`, which is the entry below with a
+ * shared pack's changes, or `e` before the first change. A stored change is
+ * shown over it with `stackChanges`, which lays its guidance part by part.
  */
 export function writeChange(type: string, original: Json, draft: Json): Json {
   const out = writeEntry({ original, draft, source: String(original.source), mode: 'changes' });
   // The original's, untrimmed: a name is never one of the fields a change changes.
   out.name = original.name;
-  if (own(original, 'edition') === undefined) delete out.edition;
+  if (own(original, 'edition') === undefined) {
+    // `writeEntry` writes the book's edition over the draft's: a change keeps the draft's own.
+    const edition = own(draft, 'edition');
+    if (edition === undefined || edition === own(original, 'bookEdition')) delete out.edition;
+    else out.edition = edition;
+  }
   const copy = out._copy as Json;
   const parents = Object.hasOwn(ENTRY_PARENT_KEYS, type) ? (ENTRY_PARENT_KEYS[type] ?? []) : [];
   for (const key of parents) {
@@ -226,12 +234,41 @@ export function writeChange(type: string, original: Json, draft: Json): Json {
   }
   const mod = own(copy, '_mod');
   if (isRecord(mod)) for (const key of Object.keys(mod)) fields[key] = fieldPrint(original, key);
-  if (fieldPrint(original, 'castGuidance') !== fieldPrint(draft, 'castGuidance')) {
-    fields.castGuidance = fieldPrint(original, 'castGuidance');
+  const parts = changedGuidance(own(original, 'castGuidance'), own(draft, 'castGuidance'));
+  if (Object.keys(parts).length > 0) fields.castGuidance = fieldPrint(original, 'castGuidance');
+  // What it is based on, as a copy says it, with the changed parts alone.
+  const g: Json = { v: CAST_GUIDANCE_VERSION };
+  const written = own(out, 'castGuidance');
+  for (const key of ['basedOn', 'basedOnFingerprint']) {
+    const v = isRecord(written) ? own(written, key) : undefined;
+    if (v !== undefined) g[key] = v;
   }
-  if (Object.keys(fields).length > 0) {
-    const g = isRecord(out.castGuidance) ? out.castGuidance : { v: CAST_GUIDANCE_VERSION };
-    out.castGuidance = { ...g, basedOnFields: fields };
+  Object.assign(g, parts);
+  if (Object.keys(fields).length > 0) g.basedOnFields = fields;
+  if (Object.keys(g).length > 1) out.castGuidance = g;
+  else delete out.castGuidance;
+  return out;
+}
+
+/** A guidance part as `guidanceFor` writes it: a list with something in it, or `replace` on. */
+function partOf(g: unknown, part: (typeof OWN_GUIDANCE)[number]): unknown {
+  const v = isRecord(g) ? own(g, part) : undefined;
+  if (part === 'replace') return v === true ? true : undefined;
+  return Array.isArray(v) && v.length > 0 ? v : undefined;
+}
+
+/**
+ * The guidance parts the draft changes, each whole: the registry lays them over
+ * the entry's own guidance part by part, so the parts left alone follow the
+ * entry below as it updates. A part the draft empties is stored empty, which
+ * clears it there.
+ */
+function changedGuidance(was: unknown, now: unknown): Json {
+  const out: Json = {};
+  for (const part of OWN_GUIDANCE) {
+    const a = partOf(was, part);
+    const b = partOf(now, part);
+    if (!same(a, b)) out[part] = b ?? (part === 'replace' ? false : []);
   }
   return out;
 }

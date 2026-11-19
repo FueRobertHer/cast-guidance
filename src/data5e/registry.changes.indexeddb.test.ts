@@ -199,6 +199,7 @@ describe('a stored change to the books', () => {
   });
 
   it('takes a pack’s patch on top, as the book’s entry does', async () => {
+    const bookSheet = await sheetOf(barbarian('maren'));
     await saveChange('classFeature', rageWith([{ kind: 'speedBonus', amount: 10 }]));
     await importFile(
       {
@@ -220,7 +221,10 @@ describe('a stored change to the books', () => {
     const base = barbarian('maren');
     const osk = await sheetOf(barbarian('osk'));
     const maren = await sheetOf(base);
-    expect(osk.initiative.value).toBe(maren.initiative.value + 3);
-    expect(osk.speedWalk.value).toBe(maren.speedWalk.value);
+    // Both hold the change; only Osk, whom the pack applies to, gets its patch.
+    expect(maren.speedWalk.value).toBe(bookSheet.speedWalk.value + 10);
+    expect(osk.speedWalk.value).toBe(bookSheet.speedWalk.value + 10);
+    expect(maren.initiative.value).toBe(bookSheet.initiative.value);
+    expect(osk.initiative.value).toBe(bookSheet.initiative.value + 3);
   });
 });
