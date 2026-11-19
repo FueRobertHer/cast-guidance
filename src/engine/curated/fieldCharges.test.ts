@@ -153,7 +153,14 @@ describe('itemChargesOf: the fields below every other source', () => {
   });
 
   it('count when its own effects say no charges, or cannot be read', () => {
-    const plain = { v: 1, effects: [{ kind: 'acBonus', amount: 1 }] };
+    const plain = {
+      v: 1,
+      replace: false,
+      effects: [
+        { kind: 'acBonus', amount: 1 },
+        { kind: 'resource', key: 'sparks', label: 'Sparks', max: 2, reset: 'long' },
+      ],
+    };
     expect(held(world([item('Rod of Tests', 'TST', { ...fields, castGuidance: plain })]))).toBe(3);
     const broken = { v: 1, effects: [{ kind: 'nothing at all' }] };
     expect(held(world([item('Rod of Tests', 'TST', { ...fields, castGuidance: broken })]))).toBe(3);
