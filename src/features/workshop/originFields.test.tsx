@@ -419,6 +419,40 @@ describe('feat fields', () => {
     expect((screen.getByLabelText('Spell 1: how') as HTMLSelectElement).value).toBe('will');
   });
 
+  it("a benefit's cards save in the benefit and count for the feat", () => {
+    const sea = {
+      type: 'entries',
+      name: 'Sea Legs',
+      entries: ['Steady on deck.'],
+      castGuidance: { v: 1, effects: [{ kind: 'acBonus', amount: 1 }] },
+    };
+    const at = mount(feat, { ...NEW_FEAT, entries: ['A feat.', sea] });
+    const row = within(screen.getByRole('list', { name: 'Benefits' }));
+    expect(row.getByText('What it does on the sheet')).toBeTruthy();
+    const stored = save(at.draft());
+    expect((stored.entries as Json[])[1]).toEqual(sea);
+    const without = asFeat(save({ ...NEW_FEAT, entries: ['A feat.'] })).sheet.ac.value;
+    expect(asFeat(stored).sheet.ac.value).toBe(without + 1);
+    reopen(feat, stored);
+  });
+
+  it("a copy's benefits offer no inherited part: the feat inherits as a whole", () => {
+    const book = {
+      ...NEW_FEAT,
+      source: 'TST',
+      entries: [{ type: 'entries', name: 'Sea Legs', entries: ['x'] }],
+    };
+    mount(feat, structuredClone(book), book);
+    const modes = screen.getByRole('group', { name: 'Sea Legs: keep, change or remove' });
+    fireEvent.click(within(modes).getByText('Change'));
+    expect(
+      within(screen.getByRole('list', { name: 'Benefits' })).getByText('What it does on the sheet'),
+    ).toBeTruthy();
+    expect(
+      within(screen.getByRole('list', { name: 'Benefits' })).queryByText(/Also does what/),
+    ).toBeNull();
+  });
+
   it('senses save as feet and count', () => {
     const at = mount(feat, NEW_FEAT);
     type('Darkvision in feet', '60');

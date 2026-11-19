@@ -226,7 +226,10 @@ function FeatBody(props: EditorProps) {
           source={original !== undefined ? String(original.source) : undefined}
           readOnly={readOnly}
           onChange={(entries) => change({ entries })}
+          withEffects
+          inheritsOwn={false}
         />
+        <OnSheet>each benefit's cards count with the feat's own.</OnSheet>
       </Section>
       <EntryEffects draft={draft} change={change} original={original} readOnly={readOnly} />
     </>

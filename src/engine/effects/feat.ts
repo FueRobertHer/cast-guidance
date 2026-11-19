@@ -182,6 +182,22 @@ export function collectFeatEntity(
       linkSpend(col, uids, origin.label, origin);
     },
   });
+  // Each named benefit's own effects (its cards in the Workshop). What the feat
+  // inherits, its curated row and the scan of its text, is read once above for
+  // the whole feat, so a benefit inherits nothing: no rule keys, no scan. Each
+  // asks its picks under its own name, so two benefits' picks of one id, or a
+  // benefit's and the feat's, keep their own answers.
+  for (const part of asEntityArray(e.entries)) {
+    const name = str(part.name);
+    if (name === undefined) continue;
+    mechanicsOf(col, {
+      entry: part,
+      label: `${origin.label}: ${name}`,
+      origin,
+      target: `${name}|${origin.label}`,
+      pickBase: `${idBase}:${name.toLowerCase()}`,
+    });
+  }
 }
 
 export function collectFeats(col: Collector): void {

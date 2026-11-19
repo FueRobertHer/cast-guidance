@@ -33,6 +33,65 @@ describe('collectFeatEntity', () => {
   });
 });
 
+describe("a feat's benefits", () => {
+  /** A benefit as the Workshop writes one, with its own effects. */
+  const benefit = (name: string, effects: unknown[]) => ({
+    type: 'entries',
+    name,
+    entries: ['Words.'],
+    castGuidance: { v: 1, effects },
+  });
+
+  it('count their own effects, for the feat', () => {
+    const col = collect({
+      name: 'Harbour Hand',
+      entries: ['Intro.', benefit('Sea Legs', [{ kind: 'acBonus', amount: 1 }])],
+    });
+    expect(col.effects).toContainEqual(
+      expect.objectContaining({
+        kind: 'acBonus',
+        amount: 1,
+        origin: expect.objectContaining({ label: 'Harbour Hand' }),
+      }),
+    );
+  });
+
+  it('ask their picks each under its own name, apart from the feat', () => {
+    const pick = [
+      {
+        kind: 'pick',
+        id: 'choice',
+        ask: 'skill',
+        gives: [{ kind: 'skillProf', skill: '{pick}', level: 1 }],
+      },
+    ];
+    const doc = newCharacterDoc('c', 'H', 't');
+    doc.choices = {
+      'feat:testfeat|tst:i1:sea legs:pick-choice': ['Athletics'],
+      'feat:testfeat|tst:i1:keen eye:pick-choice': ['Perception'],
+    };
+    const col = new Collector(doc, makeTestContext());
+    collectFeatEntity(
+      col,
+      { name: 'Harbour Hand', entries: [benefit('Sea Legs', pick), benefit('Keen Eye', pick)] },
+      'testfeat|tst',
+      'i1',
+    );
+    for (const fn of col.afterAll.splice(0)) fn();
+    const skills = col.effects.flatMap((e) => (e.kind === 'skillProf' ? [e.skill] : []));
+    expect(skills).toEqual(expect.arrayContaining(['Athletics', 'Perception']));
+  });
+
+  it('add nothing where a benefit has no effects of its own', () => {
+    const plain = {
+      name: 'Plain',
+      entries: [{ type: 'entries', name: 'Steady', entries: ['Words.'] }],
+    };
+    const bare = { name: 'Plain', entries: [{ type: 'entries', entries: ['Words.'] }] };
+    expect(collect(plain).effects).toEqual(collect(bare).effects);
+  });
+});
+
 describe('a chosen spell, from the feat to the sheet', () => {
   const feat: DataEntity = {
     name: 'Pick Test',
