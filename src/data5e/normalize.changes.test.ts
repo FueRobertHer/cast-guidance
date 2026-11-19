@@ -827,6 +827,48 @@ describe('a change that cannot stand for what it changes', () => {
   });
 });
 
+describe('a change that changes nothing', () => {
+  it('gives back the entry below it', () => {
+    const fireball = bookEntry('spell', (e) => e.name === 'Fireball');
+    const lance = build({
+      files: [
+        [
+          'hb',
+          {
+            _meta: { sources: [{ json: 'HB' }] },
+            spell: [
+              {
+                name: 'Ember Lance',
+                source: 'HB',
+                level: 1,
+                entries: ['A lance of embers.'],
+                castGuidance: { v: 1, effects: [{ kind: 'speedBonus', amount: 10 }] },
+              },
+            ],
+          },
+        ],
+      ],
+    }).get('spell', 'Ember Lance', 'HB') as Entity;
+    const cases: Array<[string, Entity]> = [
+      ['spell', bookAid()],
+      ['spell', fireball],
+      ['classFeature', bookRage()],
+      ['spell', lance],
+    ];
+    for (const [type, e] of cases) {
+      const warnings: unknown[] = [];
+      const again = stackChanges(
+        type,
+        e,
+        [writeChange(type, e, structuredClone(e))],
+        warnings as never,
+      );
+      expect(again).toEqual(e);
+      expect(warnings).toEqual([]);
+    }
+  });
+});
+
 describe('identityKey', () => {
   it('is name and source, then the parent for the types known by one', () => {
     expect(identityKey('spell', { name: 'Aid', source: 'XPHB', level: 2 })).toBe('aid|xphb');
