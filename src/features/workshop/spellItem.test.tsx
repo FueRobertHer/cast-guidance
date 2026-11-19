@@ -945,6 +945,50 @@ describe('ItemEditor', () => {
     ).toBeNull();
   });
 
+  it("writes out the official item's row and DC for a copy of a copy, or of a converted file's item", () => {
+    const registry = new EntityRegistry();
+    registry.setRuleSets(BUILT_IN_RULE_SETS);
+    registry.addAll('spell', [
+      { name: 'Fireball', source: 'XPHB', level: 3 },
+    ] as unknown as Entity[]);
+    // The item copied: a copy itself, a converted file's printing, or neither.
+    const copied = (more: Json): Json => ({
+      name: 'My Wand',
+      source: 'HB',
+      type: 'WD|XDMG',
+      charges: 7,
+      recharge: 'dawn',
+      attachedSpells: { charges: { '1': ['fireball|xphb'] } },
+      entries: [],
+      ...more,
+    });
+    const written = (original: Json, button: string) => {
+      const draft = mount(item, structuredClone(original), registry, original);
+      press(button);
+      const effects = (draft().castGuidance as Json).effects as Json[];
+      cleanup();
+      return effects[0];
+    };
+    const official = {
+      kind: 'charges',
+      charges: 7,
+      regain: 'all',
+      dc: 15,
+      spells: [{ spell: 'Fireball|XPHB', cost: 1, upTo: 5 }],
+    };
+    const copyOfCopy = copied({ castGuidance: { v: 1, basedOn: 'Wand of Fireballs|XDMG' } });
+    expect(written(copyOfCopy, 'Add the spells My Wand casts')).toMatchObject(official);
+    const converted = copied({ printingOf: ['Wand of Fireballs|XDMG'] });
+    expect(written(converted, 'Add the spells My Wand casts')).toMatchObject(official);
+    // Neither: the fields' spells, at the character's numbers.
+    expect(written(copied({}), 'Change the spells they cast')).toEqual({
+      kind: 'charges',
+      charges: 7,
+      regain: 'all',
+      spells: [{ spell: 'Fireball|XPHB', cost: 1 }],
+    });
+  });
+
   it('says the sheet counts the charges its fields say, and writes them out to give them spells', () => {
     const draft = mount(item, { name: 'Odd Rod', type: 'RD', entries: [], charges: 2 });
     expect(screen.getByText(/The sheet counts these, and they cast no spells yet/)).toBeTruthy();

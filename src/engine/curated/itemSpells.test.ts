@@ -408,3 +408,177 @@ describe('the numbers an item grant casts with', () => {
     expect(grants(doc, ctx).map((g) => g.dc)).toEqual([13]);
   });
 });
+
+describe('a Workshop copy of an official item', () => {
+  /** A copy under a book of its own, pointing at `original` as the Workshop saves it, or not. */
+  const copy = (name: string, original: string | undefined, more: Record<string, unknown>) =>
+    item(name, 'HB', {
+      ...more,
+      ...(original === undefined
+        ? {}
+        : { castGuidance: { v: 1, basedOn: original, ...(more.castGuidance as object) } }),
+    });
+  const MINE = (name: string) => ({ name, source: 'HB' });
+  const helmFields = {
+    attachedSpells: { will: ['detect thoughts|xphb'], daily: { '1e': ['suggestion|xphb'] } },
+  };
+
+  it("casts the lists the item it copies casts, at the DC that item's text fixes", () => {
+    const of = (based: string | undefined) =>
+      grants(carrying(mage(), MINE('My Helm')), world([copy('My Helm', based, helmFields)])).map(
+        (g) => [g.name, g.usage, g.dc],
+      );
+    // The 2024 Helm of Telepathy's text: each once a day, at DC 13.
+    expect(of('Helm of Telepathy|XDMG')).toEqual([
+      ['detect thoughts', '1/day', 13],
+      ['suggestion', '1/day', 13],
+    ]);
+    // Not a copy: its own lists, at the character's DC (Wizzo's is 13 too, so
+    // `fixed` says whose numbers they are).
+    expect(of(undefined)).toEqual([
+      ['detect thoughts', undefined, 13],
+      ['suggestion', '1/day', 13],
+    ]);
+    const fixed = (based: string | undefined) =>
+      deriveSheet(
+        carrying(mage(), MINE('My Helm')),
+        world([copy('My Helm', based, helmFields)]),
+      ).grantedSpells.map((g) => g.fixed);
+    expect(fixed('Helm of Telepathy|XDMG')).toEqual([{ dc: 13 }, { dc: 13 }]);
+    expect(fixed(undefined)).toEqual([undefined, undefined]);
+  });
+
+  it("casts its fields' charges at the DC the item it copies fixes", () => {
+    const wand = (based: string | undefined) =>
+      copy('My Wand', based, {
+        charges: 7,
+        recharge: 'dawn',
+        rechargeAmount: '{@dice 1d6+1}',
+        attachedSpells: { charges: { '1': ['fireball|xphb'] } },
+      });
+    const ref = MINE('My Wand');
+    expect(itemChargesOf(world([wand('Wand of Fireballs|XDMG')]), 'm1', ref)?.dc).toBe(15);
+    expect(itemChargesOf(world([wand(undefined)]), 'm1', ref)?.dc).toBeUndefined();
+    const cast = grants(carrying(mage(), ref), world([wand('Wand of Fireballs|XDMG')]));
+    expect(cast.map((g) => [g.name, g.usage, g.dc])).toEqual([['fireball', 'charges', 15]]);
+  });
+
+  it("finds a row under its own name first, then the item's it copies", () => {
+    const mine: DataEntity = {
+      type: RULE_SET_TYPE,
+      v: 1,
+      name: 'Mine',
+      rows: [{ part: 'itemDc', keys: ['my helm|hb'], dc: 18 }],
+    };
+    const ctx = world([copy('My Helm', 'Helm of Telepathy|XDMG', helmFields)]);
+    const sets = {
+      ...ctx,
+      byType: (t: string) => (t === RULE_SET_TYPE ? [...BUILT_IN_RULE_SETS, mine] : ctx.byType(t)),
+    };
+    expect(grants(carrying(mage(), MINE('My Helm')), sets).map((g) => g.dc)).toEqual([18, 18]);
+  });
+
+  describe('of an item whose charges row prices spells its itemSpells row takes out', () => {
+    // The 2024 Staff of Healing's data casts Cure Wounds at will; its text, by
+    // charges, as its charges row prices it, so its itemSpells row takes it out.
+    const staffFields = {
+      charges: 10,
+      recharge: 'dawn',
+      rechargeAmount: '{@dice 1d6+4}',
+      attachedSpells: {
+        will: ['cure wounds|xphb'],
+        charges: { '2': ['lesser restoration|xphb'], '5': ['mass cure wounds|xphb'] },
+      },
+    };
+    const written = {
+      castGuidance: {
+        v: 1,
+        effects: [
+          {
+            kind: 'charges',
+            charges: 10,
+            regain: '1d6+4',
+            spells: [
+              { spell: 'Cure Wounds|XPHB', cost: 1, upTo: 9 },
+              { spell: 'Lesser Restoration|XPHB', cost: 2 },
+              { spell: 'Mass Cure Wounds|XPHB', cost: 5 },
+            ],
+          },
+        ],
+      },
+    };
+    const cast = (staff: DataEntity) =>
+      grants(carrying(mage(), MINE('My Staff')), world([staff])).map((g) => [g.name, g.usage]);
+
+    it("keeps its data's lists while it counts its charges by its fields, so it loses none", () => {
+      expect(cast(copy('My Staff', 'Staff of Healing|XDMG', staffFields))).toEqual([
+        ['cure wounds', undefined],
+        ['lesser restoration', 'charges'],
+        ['mass cure wounds', 'charges'],
+      ]);
+    });
+
+    it('keeps them too while it counts no charges at all', () => {
+      const { charges: _, ...uncounted } = staffFields;
+      expect(cast(copy('My Staff', 'Staff of Healing|XDMG', uncounted))).toEqual([
+        ['cure wounds', undefined],
+      ]);
+    });
+
+    it('takes the row once the Workshop writes its charges out as its own effect', () => {
+      expect(
+        cast(copy('My Staff', 'Staff of Healing|XDMG', { ...staffFields, ...written })),
+      ).toEqual([
+        ['Cure Wounds', 'charges'],
+        ['Lesser Restoration', 'charges'],
+        ['Mass Cure Wounds', 'charges'],
+      ]);
+      // So it does once a pack's effect counts them.
+      const pack: DataEntity = {
+        name: 'Priced',
+        source: 'Priced',
+        appliesTo: { characters: ['m1'] },
+        castGuidance: {
+          v: 1,
+          patches: [
+            {
+              target: 'My Staff|HB',
+              add: (written.castGuidance.effects as unknown[]).slice(0, 1),
+            },
+          ],
+        },
+      };
+      const byPack = grants(
+        carrying(mage(), MINE('My Staff')),
+        world([copy('My Staff', 'Staff of Healing|XDMG', staffFields)], [pack]),
+      ).map((g) => [g.name, g.usage]);
+      expect(byPack).not.toContainEqual(['cure wounds', undefined]);
+      expect(byPack).toContainEqual(['Cure Wounds', 'charges']);
+      // Not a copy: its data's at-will Cure Wounds beside its own effect's.
+      expect(cast(copy('My Staff', undefined, { ...staffFields, ...written }))).toContainEqual([
+        'cure wounds',
+        undefined,
+      ]);
+    });
+
+    it('takes it while the item it copies has no charges row, by its fields or its own effect', () => {
+      // Wave's text casts globe of invulnerability once a day; its data, none.
+      const own = {
+        castGuidance: { v: 1, effects: [{ kind: 'charges', charges: 3, regain: 'all' }] },
+      };
+      const wave = (based: string | undefined, more: Record<string, unknown> = {}) =>
+        copy('My Wave', based, {
+          charges: 3,
+          recharge: 'dawn',
+          attachedSpells: { charges: { '1': ['dominate beast|xphb'] } },
+          ...more,
+        });
+      const of = (staff: DataEntity) =>
+        grants(carrying(mage(), MINE('My Wave')), world([staff])).map((g) => g.name);
+      expect(of(wave('Wave|XDMG'))).toContain('globe of invulnerability');
+      expect(of(wave('Wave|XDMG', own))).toContain('globe of invulnerability');
+      expect(of(wave(undefined))).not.toContain('globe of invulnerability');
+      expect(of(wave(undefined, own))).not.toContain('globe of invulnerability');
+    });
+  });
+});

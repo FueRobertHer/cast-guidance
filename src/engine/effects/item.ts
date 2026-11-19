@@ -1,10 +1,12 @@
 import { isRecord, RULE_SET_TYPE, WORN_TAG_KINDS } from '../castGuidance';
 import {
   ACTION_CHARGE_PLACES,
+  type ChargesFrom,
   ITEM_CHARGES,
   itemChargeKey,
-  itemChargesOf,
+  itemChargesFrom,
   itemDcIn,
+  itemRowKeys,
   regainRollOf,
   upgradeOlderCharges,
 } from '../curated/itemCharges';
@@ -17,6 +19,7 @@ import {
   builtInRuleFor,
   emitRuleRows,
   type FixedCast,
+  type ItemCharges,
   mechanicsOf,
   type RuleRow,
 } from './mechanics';
@@ -137,11 +140,30 @@ export function attachedInnate(attached: unknown): DataEntity | undefined {
  * Its built-in `itemSpells` row stands in for the data's lists and its charge
  * spells costing none, since it is read from the item's text where they
  * misstate it (the 2024 Staff of Healing's Cure Wounds is no cantrip); the
- * ability the data names still counts.
+ * ability the data names still counts. A Workshop copy takes the row of the
+ * item it copies (`itemRowKeys`), save where that item has a `charges` row
+ * too (whose spells such a row takes out of the lists: the 2024 Staff of
+ * Healing's Cure Wounds) and the copy counts its charges by no effect of its
+ * own or a pack's (`from`: by its fields, which cast none of them, or not at
+ * all). Until the Workshop writes the row out as its effect, the copy keeps
+ * its data's lists, so no spell is lost.
  */
-function grantAttached(col: Collector, e: DataEntity, ref: EntityRef, origin: EffectOrigin): void {
+function grantAttached(
+  col: Collector,
+  e: DataEntity,
+  ref: EntityRef,
+  origin: EffectOrigin,
+  from: ChargesFrom | undefined,
+): void {
   const data = isRecord(e.attachedSpells) ? e.attachedSpells : {};
-  const row = builtInRuleFor(col, 'itemSpells', [refUid(ref)])?.itemSpells;
+  const keys = itemRowKeys(ref, e);
+  const copied = keys[1];
+  const priced =
+    copied !== undefined &&
+    from !== 'own' &&
+    from !== 'pack' &&
+    builtInRuleFor(col, 'charges', [copied]) !== undefined;
+  const row = builtInRuleFor(col, 'itemSpells', priced ? keys.slice(0, 1) : keys)?.itemSpells;
   const innate = attachedInnate(row === undefined ? data : { ...row, ability: data.ability });
   if (innate === undefined) return;
   const ability = innate.ability as Ability | undefined;
@@ -195,8 +217,14 @@ export function collectItems(col: Collector): void {
     };
     const ref = entry.ref;
     const from = col.effects.length;
-    let charged: ReturnType<typeof itemChargesOf>;
+    let charged: ItemCharges | undefined;
     if (magicWorks(e, entry.attuned)) {
+      // Its charges (its own charge fields, a built-in `charges` row, or the
+      // item's own or a pack's `charges` effect, under the entry's ref as the
+      // cast prompt finds them), and where they come from, which its lists
+      // need (`grantAttached`).
+      const counted = itemChargesFrom(col.ctx, col.doc.id, ref);
+      charged = counted?.charges;
       // Its magic fields are what it inherits; its own `castGuidance` adds to
       // them, and a pack's patch can replace them, while the magic works.
       mechanicsOf(col, {
@@ -211,14 +239,11 @@ export function collectItems(col: Collector): void {
             col.add({ kind: 'acBonus', amount: bonusAc, origin });
           }
           readWornTags(col, e, origin);
-          grantAttached(col, e, ref, origin);
+          grantAttached(col, e, ref, origin, counted?.from);
         },
       });
-      // Its charges (its own charge fields, a built-in `charges` row, or the
-      // item's own or a pack's `charges` effect, under the entry's ref as the
-      // cast prompt finds them): a pool of its own, which the cast prompt and
-      // the item's actions spend and a long rest (dawn) refills by its roll.
-      charged = itemChargesOf(col.ctx, col.doc.id, ref);
+      // Its charges are a pool of its own, which the cast prompt and the
+      // item's actions spend and a long rest (dawn) refills by its roll.
       if (charged !== undefined) {
         const key = itemChargeKey(entry.id);
         // Its actions that spend its charges or give them back (a buy-back, a
@@ -267,7 +292,8 @@ export function collectItems(col: Collector): void {
     // (`magicWorks`), and its spells do not.
     collectAdditionalSpells(col, e.additionalSpells, origin);
     // Each spell it grants casts at the DC its text fixes: its charges' say it,
-    // else its `itemDc` row (`itemChargesOf` gives a row's and the fields' it).
-    fixGrants(col, from, charged ?? itemDcIn(col.ctx.byType(RULE_SET_TYPE), ref));
+    // else its `itemDc` row, or a copy's original's (`itemChargesOf` gives a
+    // row's and the fields' it).
+    fixGrants(col, from, charged ?? itemDcIn(col.ctx.byType(RULE_SET_TYPE), ref, e));
   }
 }
