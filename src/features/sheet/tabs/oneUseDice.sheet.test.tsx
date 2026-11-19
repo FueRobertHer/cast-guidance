@@ -2,8 +2,9 @@
 // One-use dice in the roll prompt through the real sheet (the rolls canvas):
 // a skill check waits with 2014 Guidance on offer, the die added lands in it
 // and ends the spell, the one left comes back after unless the house rule
-// drops it, and damage tapped while an attack waits lands with it. The
-// prompt's own controls are covered in RollToast.held.
+// drops it, and damage tapped while an attack waits asks once the attack
+// hits, the Bardic die offered on it. The prompt's own controls are covered
+// in RollToast.held.
 import 'fake-indexeddb/auto';
 import { act, fireEvent, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -96,7 +97,7 @@ describe('one-use dice in the roll prompt', () => {
     expect(logged()[0]?.meta?.offers).toBeUndefined();
   });
 
-  it('holds an attack, spends the action only once it lands, and rolls the damage tapped meanwhile with it', async () => {
+  it('holds an attack, spends the action only once it lands, and asks the damage tapped meanwhile once it hits', async () => {
     const doc = warrior([bardicEffect('b1', '2014', 'd8')]);
     doc.oneUseDice = 'before';
     const sheet = await renderSheet(doc);
@@ -105,16 +106,28 @@ describe('one-use dice in the roll prompt', () => {
     expect(held()?.ask?.attack).toBe(true);
     fireEvent.click(screen.getByTitle(/^Unarmed Strike (\w+ )?damage$/));
     expect(logged()).toHaveLength(0);
-    expect(held()?.damage).toHaveLength(1);
+    expect(held()?.damage).toHaveLength(0);
+    expect(held()?.queued).toBeDefined();
     expect((await sheet.saved()).play.turn?.action ?? false).toBe(false);
 
     nextFaces(14);
     act(() => rollHeld());
-    const [dealt, swing] = logged();
+    const [swing] = logged();
+    expect(logged()).toHaveLength(1);
     expect(swing?.label).toBe('Unarmed Strike attack');
-    expect(dealt?.meta?.withRoll).toBe(swing?.id);
     // Nothing added, under the house rule: Bardic is still there, and not offered after either.
     expect(swing?.meta?.offers).toBeUndefined();
+    // The Bardic die could go on the damage (Combat Inspiration), so the damage
+    // tapped meanwhile asks once the attack hits, with the die off.
+    expect(held()?.hit?.extras.map((x) => [x.source, x.kind])).toEqual([
+      ['Bardic Inspiration', 'add'],
+    ]);
+    expect(held()?.hitOn).toEqual([false]);
+    nextFaces(); // the strike's damage is flat, and the die is off: nothing rolls
+    act(() => rollHeld());
+    const [dealt] = logged();
+    expect(dealt?.kind).toBe('damage');
+    expect(dealt?.meta?.from).toBeUndefined();
     const saved = await sheet.saved();
     expect(saved.play.activeEffects?.map((e) => e.id)).toEqual(['b1']);
     expect(saved.play.turn?.action).toBe(true);

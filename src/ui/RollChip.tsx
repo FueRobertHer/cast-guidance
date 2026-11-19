@@ -3,7 +3,15 @@ import { parseDice } from '@/dice/parse';
 import { roll } from '@/dice/roll';
 import type { RollKind, RollResult } from '@/dice/types';
 import { type D20Ask, d20Ask } from '@/features/sheet/d20Tests';
-import { attackInPlay, castFrom, type HeldCast, rollFrom } from '@/stores/heldRoll';
+import {
+  attackInPlay,
+  castFrom,
+  type DamageAsk,
+  damageFrom,
+  type HeldCast,
+  rollFrom,
+  withDice,
+} from '@/stores/heldRoll';
 import { ChipFace, type ChipWear, TOTAL_MS } from './ChipFace';
 import { Lift } from './Lift';
 
@@ -35,9 +43,27 @@ export interface RollChipProps {
   roller?: () => D20Ask;
   /**
    * An attack chip's damage, which its result offers after a hit (the rolls
-   * canvas): rolled as that damage chip rolls it, so a crit doubles it.
+   * canvas): rolled as that damage chip rolls it, so a crit doubles it. With
+   * `ask`, the offer opens the damage prompt instead (`damageFrom`).
    */
-  damageAfter?: { expr: string; label?: string; withAttack?: RollChipProps['withAttack'] };
+  damageAfter?: {
+    expr: string;
+    label?: string;
+    withAttack?: RollChipProps['withAttack'];
+    ask?: (() => DamageAsk) | undefined;
+  };
+  /**
+   * A damage chip's prompt (`damageFrom`): the chip opens it instead of
+   * rolling, with the weapon's riders and what the character may add. Built as
+   * the chip is tapped, so it knows whether the attack in play crit.
+   */
+  damagePrompt?: (() => DamageAsk) | undefined;
+  /**
+   * An attack chip's next attack in the Attack action, in words ("Attack 2 of
+   * 2"), asked once this one misses or its damage lands; undefined when none is
+   * left. Its button opens this chip's prompt again.
+   */
+  nextAttack?: (() => string | undefined) | undefined;
   /**
    * In running text: sized by the line, as WCAG 2.5.8 allows a target in a
    * sentence. Otherwise (a row of controls) the chip is at least 24 by 24.
@@ -123,25 +149,6 @@ function chipRoll(
   return extra === undefined ? result : withDice(result, extra.dice, extra.source);
 }
 
-/** A roll with dice of its own added after its terms, named for what adds them. */
-function withDice(result: RollResult, dice: string, source: string): RollResult {
-  const added = roll(dice);
-  return {
-    ...result,
-    total: result.total + added.total,
-    terms: [...result.terms, ...added.terms],
-    meta: {
-      ...result.meta,
-      from: [
-        ...(result.meta?.from ?? []),
-        ...added.terms.flatMap((t, i) =>
-          t.kind === 'dice' ? [{ term: result.terms.length + i, source }] : [],
-        ),
-      ],
-    },
-  };
-}
-
 /**
  * The kind a chip's roll is logged with, so the toast and the history colour
  * it as the chip does. Plain `dice` have no known use, so they get none.
@@ -188,10 +195,13 @@ export function RollChip({
   loweredBy = [],
   withAttack,
   cast,
+  damagePrompt,
+  nextAttack,
 }: RollChipProps) {
   const [result, setResult] = useState<number | null>(null);
   const [rolls, setRolls] = useState(0);
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const button = useRef<HTMLButtonElement | null>(null);
   const valid = useRef<boolean | null>(null);
 
   if (valid.current === null) valid.current = isDice(expr);
@@ -221,14 +231,20 @@ export function RollChip({
     down: lowered,
     tone: FACE_TONE[variant],
   };
-  const onRoll = (event: MouseEvent<HTMLButtonElement>) => {
+  const onRoll = (event: MouseEvent<HTMLButtonElement>) => open(event.currentTarget);
+  const open = (from: HTMLElement | null) => {
     // A spell with no d20 waits in the prompt with its ways to cast.
     if (cast !== undefined && roller === undefined) {
-      castFrom(event.currentTarget, cast(), landed, { face });
+      castFrom(from, cast(), landed, { face });
+      return;
+    }
+    // Damage asks first: what is in it, and what the character may add.
+    if (damagePrompt !== undefined) {
+      damageFrom(from, damagePrompt, landed, { face });
       return;
     }
     rollFrom(
-      event.currentTarget,
+      from,
       () =>
         roller?.() ??
         (variant === 'd20' && PLAIN_D20.test(expr)
@@ -250,6 +266,17 @@ export function RollChip({
                   rollFrom(null, () =>
                     chipRoll(damageAfter.expr, damageAfter.label, 'damage', damageAfter.withAttack),
                   ),
+                ask: damageAfter.ask,
+              },
+            }),
+        ...(nextAttack === undefined
+          ? {}
+          : {
+              next: () => {
+                const words = nextAttack();
+                return words === undefined
+                  ? undefined
+                  : { words, go: () => open(button.current?.isConnected ? button.current : null) };
               },
             }),
       },
@@ -265,6 +292,7 @@ export function RollChip({
 
   const chip = (
     <button
+      ref={button}
       type="button"
       onClick={onRoll}
       data-inline-target={inline ? '' : undefined}

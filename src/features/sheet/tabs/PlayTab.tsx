@@ -20,6 +20,7 @@ import type { RulesVersion } from '@/data5e/rulesVersion';
 import { parseDice } from '@/dice/parse';
 import { roll } from '@/dice/roll';
 import type { RollResult } from '@/dice/types';
+import { attacksPerAction } from '@/engine/calc/attacksPerAction';
 import type { TableRuleChoices, TableRuleId } from '@/engine/castGuidance';
 import {
   attacksAgainst,
@@ -47,17 +48,29 @@ import type {
   ActionEconomy,
   AttackRow,
   CharacterDoc,
+  DamageRider,
   DerivedSheet,
   PlayState,
   SlotPrice,
+  WeaponExtra,
 } from '@/engine/types';
 import { choiceTitle, RuleSheet } from '@/features/settings/RuleSheet';
 import { randomId } from '@/lib/randomId';
 import { signed } from '@/lib/signed';
 import { announce, cancelAnnouncement } from '@/stores/announcer';
-import { attackInPlay, castFrom, rollFrom } from '@/stores/heldRoll';
+import { characterSessionStore } from '@/stores/characterSession';
+import {
+  attackInPlay,
+  castFrom,
+  type DamageAsk,
+  type DamageExtra,
+  type HeldCast,
+  type OwnDamage,
+  rollFrom,
+} from '@/stores/heldRoll';
 import { type Notice, notify } from '@/stores/notices';
 import { rollLogStore } from '@/stores/rollLog';
+import { rollOffersStore } from '@/stores/rollOffers';
 import { Badge, badgeClass } from '@/ui/Badge';
 import { BannerAction } from '@/ui/Banner';
 import { BreakdownSheet } from '@/ui/BreakdownSheet';
@@ -103,6 +116,7 @@ import {
   type TurnExtra,
   useIgnoreOnce,
 } from '../d20Tests';
+import { type DamageAdd, damageAdds, damageParts, entriesText, oncePerTurn } from '../damageAdds';
 import {
   andList,
   attackDrop,
@@ -679,17 +693,6 @@ export function Component() {
         );
 
   /**
-   * Mark a slice of the action economy used (attacks, casting). `label` names
-   * the deed for history: the diff only shows "action spent", which can't tell
-   * a Longsword swing from a Dodge.
-   */
-  const markUsed = (kind: 'action' | 'bonus' | 'reaction', label?: string) =>
-    update((d) => {
-      const turn = d.play.turn ?? { action: false, bonus: false, reaction: false };
-      turn[kind] = true;
-      d.play.turn = turn;
-    }, label);
-  /**
    * Trigger an action: mark its slice of the turn used (a rider has none) AND
    * spend what it costs, in a single update so the sheet stays honest.
    */
@@ -768,38 +771,42 @@ export function Component() {
     spends: readonly ActionSpend[],
     cost: ActionCost,
     rowKey: string,
-  ) =>
-    castFrom(
-      from,
-      slotPlan({
-        id: `${doc.id}|slot|${rowKey}`,
-        title: label,
-        verb: 'Use',
-        sheet,
-        play,
-        price: cost,
-        dice: cost.slotDice,
-        crit: () => {
-          const attack = attackInPlay();
-          return attack?.crit === true && attack.by === doc.id;
-        },
-        pay: (r) =>
-          update(
-            (d) => {
-              // A slot turned into points needs points spent to come back (Font of Magic),
-              // checked here too: the pool may have refilled behind the waiting prompt.
-              const refill = sheet.resources.find((x) => x.key === cost.slotRefills);
-              const entry = d.play.resources.find((x) => x.key === refill?.key);
-              if (cost.slotRefills !== undefined && (entry === undefined || entry.used <= 0))
-                return;
-              if (!slotLeft(sheet, d.play, r) || !spendUses(d, economy, spends)) return;
-              spendSlot(d.play, r);
-              if (refill !== undefined && entry !== undefined) giveBack(entry, refill.max, r.level);
-            },
-            `Used ${label} with ${slotWords(r)}`,
-          ),
-      }),
-    );
+  ) => castFrom(from, slotUse(label, economy, spends, cost, rowKey));
+  /** What paying with a slot offers and does, as tiles: for its own prompt, or a hit's damage. */
+  const slotUse = (
+    label: string,
+    economy: ActionEconomy,
+    spends: readonly ActionSpend[],
+    cost: ActionCost,
+    rowKey: string,
+  ): HeldCast =>
+    slotPlan({
+      id: `${doc.id}|slot|${rowKey}`,
+      title: label,
+      verb: 'Use',
+      sheet,
+      play,
+      price: cost,
+      dice: cost.slotDice,
+      crit: () => {
+        const attack = attackInPlay();
+        return attack?.crit === true && attack.by === doc.id;
+      },
+      pay: (r) =>
+        update(
+          (d) => {
+            // A slot turned into points needs points spent to come back (Font of Magic),
+            // checked here too: the pool may have refilled behind the waiting prompt.
+            const refill = sheet.resources.find((x) => x.key === cost.slotRefills);
+            const entry = d.play.resources.find((x) => x.key === refill?.key);
+            if (cost.slotRefills !== undefined && (entry === undefined || entry.used <= 0)) return;
+            if (!slotLeft(sheet, d.play, r) || !spendUses(d, economy, spends)) return;
+            spendSlot(d.play, r);
+            if (refill !== undefined && entry !== undefined) giveBack(entry, refill.max, r.level);
+          },
+          `Used ${label} with ${slotWords(r)}`,
+        ),
+    });
   /**
    * Use paid with a Hit Point Die, which heals as the HP card's chip does: at once
    * with one size of die, else the prompt offers a tile a size.
@@ -920,6 +927,208 @@ export function Component() {
     });
 
   const usedOf = (key: string) => play.resources.find((r) => r.key === key)?.used ?? 0;
+
+  /**
+   * The character's play state as it stands now, for what is asked after an
+   * update this render has not seen (an attack counted, a coating put on).
+   */
+  const playNow = (): PlayState => {
+    const fresh = characterSessionStore.getState().doc;
+    return fresh?.id === doc.id ? fresh.play : play;
+  };
+  /** Attacks one Attack action gives (Extra Attack), the most any feature gives. */
+  const perAction = attacksPerAction(sheet.features);
+  /**
+   * A weapon attack made: the first of the turn takes the action, and Extra
+   * Attack's later ones only count, so they spend nothing more of the turn.
+   */
+  const markAttack = (label: string) =>
+    update(
+      (d) => {
+        const turn = d.play.turn ?? { action: false, bonus: false, reaction: false };
+        turn.action = true;
+        turn.attacks = (turn.attacks ?? 0) + 1;
+        d.play.turn = turn;
+      },
+      (d) => {
+        const made = d.play.turn?.attacks ?? 1;
+        return made > 1 && perAction > 1
+          ? `Attacked with ${label} (${String(made)} of ${String(perAction)})`
+          : `Attacked with ${label}`;
+      },
+    );
+  /** The Attack action's next attack, in words, while Extra Attack leaves one: "Attack 2 of 2". */
+  const nextAttack = (): string | undefined => {
+    const made = playNow().turn?.attacks ?? 0;
+    return perAction > 1 && made > 0 && made < perAction
+      ? `Attack ${String(made + 1)} of ${String(perAction)}`
+      : undefined;
+  };
+  /** Marks a once-a-turn extra used this turn (Sneak Attack), by its row key. */
+  const markOnce = (d: CharacterDoc, key: string) => {
+    const turn = d.play.turn ?? { action: false, bonus: false, reaction: false };
+    if (!(turn.once ?? []).includes(key)) turn.once = [...(turn.once ?? []), key];
+    d.play.turn = turn;
+  };
+  /** Where a weapon's own extras are kept: its equipment entry, else the attack's name. */
+  const weaponKey = (a: AttackRow) => a.weaponId ?? a.label;
+  /** Takes the player's extra `id` off the weapon. */
+  const dropOwn = (a: AttackRow, id: string, label: string) =>
+    update((d) => {
+      const all = d.play.weaponExtras ?? {};
+      const kept = (all[weaponKey(a)] ?? []).filter((w) => w.id !== id);
+      if (kept.length > 0) all[weaponKey(a)] = kept;
+      else delete all[weaponKey(a)];
+      if (Object.keys(all).length > 0) d.play.weaponExtras = all;
+      else delete d.play.weaponExtras;
+    }, label);
+  /** A damage roll's type is the weapon's when it says none, so it rolls in the weapon's roll. */
+  const sameType = (a: AttackRow, type: string | undefined) =>
+    type === undefined || type === a.damageType;
+  /** What the player put on the weapon, as the damage prompt offers it: on, and removable. */
+  const ownExtra = (a: AttackRow, w: WeaponExtra): DamageExtra => ({
+    key: `own:${w.id}`,
+    dice: w.dice,
+    source: w.source,
+    damageType: w.damageType,
+    label: w.damageType === undefined ? `${w.source} damage` : `${w.source} ${w.damageType} damage`,
+    kind: 'own',
+    folds: sameType(a, w.damageType),
+    tag: w.once === true ? 'next hit' : 'every hit',
+    note: w.note,
+    ...(w.noCrit === true ? { noCrit: true } : {}),
+    // A coating is gone once the hit it was for lands.
+    ...(w.once === true
+      ? {
+          pay: () => {
+            dropOwn(a, w.id, `Used ${w.source}`);
+            return true;
+          },
+        }
+      : {}),
+    remove: () => dropOwn(a, w.id, `Took ${w.source} off ${a.label}`),
+  });
+  /** Puts what the player typed on the weapon, and offers it. */
+  const keepOwn = (a: AttackRow, own: OwnDamage): DamageExtra => {
+    const w: WeaponExtra = {
+      id: randomId(),
+      source: own.source,
+      dice: own.dice,
+      ...(own.damageType === undefined ? {} : { damageType: own.damageType }),
+      ...(own.once ? { once: true as const } : {}),
+      ...(own.crit ? {} : { noCrit: true as const }),
+      ...(own.note === undefined ? {} : { note: own.note }),
+    };
+    update((d) => {
+      const all = d.play.weaponExtras ?? {};
+      all[weaponKey(a)] = [...(all[weaponKey(a)] ?? []), w];
+      d.play.weaponExtras = all;
+    }, `Put ${own.source} on ${a.label}`);
+    return ownExtra(a, w);
+  };
+  /**
+   * What the character may add, as the damage prompt offers it: off, priced as
+   * its Use is. A damage action spends its uses and marks a once-a-turn one;
+   * one paid with a slot brings its tiles; Bardic Inspiration spends the effect.
+   */
+  const addExtra = (add: DamageAdd, usedThisTurn: readonly string[]): DamageExtra => {
+    const base = {
+      key: `add:${add.key}`,
+      dice: add.dice ?? '',
+      source: add.source,
+      label: add.source,
+      kind: 'add' as const,
+      note: add.note,
+      usedThisTurn: add.oncePerTurn && usedThisTurn.includes(add.key),
+    };
+    const { action, effectId } = add;
+    if (add.kind === 'effect' && effectId !== undefined) {
+      return {
+        ...base,
+        // Its die is the weapon's damage, so it rolls in the weapon's roll.
+        folds: true,
+        tag: 'once',
+        pay: () => {
+          rollOffersStore.getState().spend?.(effectId, true);
+          return true;
+        },
+      };
+    }
+    if (action === undefined) return { ...base, tag: 'add' };
+    const use = actionUse(action, sheet.resources, usedOf, paying);
+    if (add.kind === 'slot' && use.slot !== undefined) {
+      const cost = use.slot;
+      return {
+        ...base,
+        tag: 'slot',
+        slot: () => slotUse(action.label, action.economy, use.spends, cost, add.key),
+      };
+    }
+    const paid = !use.noButton && !use.disabled;
+    return {
+      ...base,
+      tag: add.oncePerTurn ? 'once a turn' : use.disabled ? 'none left' : paid ? 'paid' : 'add',
+      // The dice still roll; only a use it can pay for is spent, as its chip does.
+      pay: () => {
+        if (paid) {
+          triggerAction(action.economy, use.spends, action.label, use.regains, (d) => {
+            if (add.oncePerTurn) markOnce(d, add.key);
+          });
+        } else if (add.oncePerTurn) update((d) => markOnce(d, add.key), `Used ${action.label}`);
+        return true;
+      },
+    };
+  };
+  /** The effects in play whose riders (Enlarge's d4) roll with a weapon's damage chip. */
+  const riderLift = (a: AttackRow, raised: readonly boolean[]) => [
+    ...new Set(
+      a.extraDamage.flatMap((x, i) => (raised[i] === true ? [x.label ?? 'an effect in play'] : [])),
+    ),
+  ];
+  /**
+   * A weapon's damage as the damage prompt asks it: its dice and what is in
+   * them, twice on a crit of this attack, its riders (on), what the player put
+   * on it (on), and what the character may add (off). Built as the chip is
+   * tapped, from what is left then.
+   */
+  const weaponDamage =
+    (a: AttackRow, expr: string, label: string, riders: readonly DamageRider[]) =>
+    (): DamageAsk => {
+      const attack = attackInPlay();
+      const crit = attack?.crit === true && attack.by === doc.id && attack.of === a.label;
+      const now = playNow();
+      const used = now.turn?.once ?? [];
+      const offers = rollEffects(sheet, weaponTest(a)).offers;
+      const extras: DamageExtra[] = [
+        ...riders.map(
+          (x, i): DamageExtra => ({
+            key: `rider:${String(i)}`,
+            dice: x.dice,
+            source: x.label ?? a.label,
+            damageType: x.damageType,
+            label: damageLabel(a.label, x.damageType),
+            kind: 'rider',
+            folds: sameType(a, x.damageType),
+            tag: 'rolls in',
+          }),
+        ),
+        ...(now.weaponExtras?.[weaponKey(a)] ?? []).map((w) => ownExtra(a, w)),
+        ...damageAdds(sheet, a, offers).map((add) => addExtra(add, used)),
+      ];
+      const critDice = extraCritDice(a, expr);
+      return {
+        kind: 'damage',
+        label,
+        expr,
+        damageType: a.damageType,
+        parts: damageParts(a, expr, sheet.abilities),
+        crit,
+        ...(critDice === undefined ? {} : { critDice }),
+        extras,
+        addOwn: (own) => keepOwn(a, own),
+        keeps: true,
+      };
+    };
 
   /** Say where HP ended up, once the taps stop; see {@link HP_SETTLE_MS}. */
   const sayHp = (after: Pick<PlayState, 'currentHp' | 'tempHp'>) =>
@@ -1761,6 +1970,14 @@ export function Component() {
             ] as const
           ).map(([key, label]) => {
             const used = play.turn?.[key] ?? false;
+            // Extra Attack: how many of the Attack action's attacks are made.
+            const made = play.turn?.attacks ?? 0;
+            const attacksWords =
+              perAction > 1 && made > 0 && used
+                ? made <= perAction
+                  ? `${String(made)} of ${String(perAction)} attacks`
+                  : `${String(made)} attacks, ${String(perAction)} an action`
+                : undefined;
             return (
               <button
                 key={key}
@@ -1795,7 +2012,11 @@ export function Component() {
                   aria-hidden="true"
                   className="font-normal text-[0.6875rem] text-ink-muted leading-3.5"
                 >
-                  {used ? 'Used' : 'Ready'}
+                  {key === 'action' && attacksWords !== undefined
+                    ? attacksWords
+                    : used
+                      ? 'Used'
+                      : 'Ready'}
                 </span>
               </button>
             );
@@ -2024,47 +2245,61 @@ export function Component() {
                       wear={attackChipWear}
                       raisedBy={lift.hit ? raisedBy(a.toHit, before?.toHit) : []}
                       loweredBy={drop.hit}
-                      onRolled={() => markUsed('action', `Attacked with ${a.label}`)}
+                      onRolled={() => markAttack(a.label)}
                       damageAfter={{
                         expr: a.damage,
                         label: damageLabel(a.label, a.damageType),
                         withAttack: attackDamage(a.label, extraCritDice(a, a.damage)),
+                        ask: weaponDamage(
+                          a,
+                          a.damage,
+                          damageLabel(a.label, a.damageType),
+                          a.extraDamage,
+                        ),
                       }}
+                      nextAttack={nextAttack}
                     />
+                    {/* Damage asks first (the damage prompt): the riders roll
+                      in there, each type apart, since a target immune to fire
+                      still takes the slashing, so they have no chips of their
+                      own to roll twice by mistake. An effect's rider raises
+                      the chips it rolls with. */}
                     <RollChip
                       expr={a.damage}
                       label={damageLabel(a.label, a.damageType)}
                       variant="damage"
-                      raisedBy={lift.damage ? lift.damageBy : []}
+                      raisedBy={[
+                        ...(lift.damage ? lift.damageBy : []),
+                        ...riderLift(a, lift.riders),
+                      ]}
                       loweredBy={drop.damage}
                       withAttack={attackDamage(a.label, extraCritDice(a, a.damage))}
+                      damagePrompt={weaponDamage(
+                        a,
+                        a.damage,
+                        damageLabel(a.label, a.damageType),
+                        a.extraDamage,
+                      )}
                     />
                     {a.versatileDamage !== undefined && (
                       <RollChip
                         expr={a.versatileDamage}
                         label={`${damageLabel(a.label, a.damageType)} (two-handed)`}
                         variant="damage"
-                        raisedBy={lift.versatile ? lift.damageBy : []}
+                        raisedBy={[
+                          ...(lift.versatile ? lift.damageBy : []),
+                          ...riderLift(a, lift.riders),
+                        ]}
                         loweredBy={drop.versatile}
                         withAttack={attackDamage(a.label, extraCritDice(a, a.versatileDamage))}
+                        damagePrompt={weaponDamage(
+                          a,
+                          a.versatileDamage,
+                          `${damageLabel(a.label, a.damageType)} (two-handed)`,
+                          a.extraDamage,
+                        )}
                       />
                     )}
-                    {/* Each rider rolls on its own: the totals are resisted
-                      separately, so one combined number would be a lie the
-                      moment the target is immune to fire. */}
-                    {/* Keyed by what adds it too: Enlarge's d4 beside another
-                      effect's d4 are two chips. */}
-                    {a.extraDamage.map((x, i) => (
-                      <RollChip
-                        key={`${x.dice}:${x.damageType ?? ''}:${x.label ?? ''}`}
-                        expr={x.dice}
-                        display={`+${x.dice}`}
-                        label={damageLabel(a.label, x.damageType)}
-                        variant="damage"
-                        raisedBy={lift.riders[i] === true ? [x.label ?? 'an effect in play'] : []}
-                        withAttack={attackDamage(a.label)}
-                      />
-                    ))}
                   </div>
                 </div>
               );
@@ -2084,6 +2319,9 @@ export function Component() {
           <div className="flex flex-wrap gap-1.5">
             {sheet.actions.map((a) => {
               const info = findFeatureInfo(sheet.features, a.label, a.origin);
+              // Damage added to a hit once a turn (Sneak Attack): rolled here,
+              // it is marked used for the turn, as the damage prompt marks it.
+              const once = a.roll !== undefined && oncePerTurn(entriesText(info?.entries));
               // What it spends: a use of the pool sharing its name, and the pool
               // its cost names. See `actionUse`.
               const use = actionUse(a, sheet.resources, usedOf, paying);
@@ -2109,7 +2347,13 @@ export function Component() {
                   return;
                 }
                 if (starts === undefined) {
-                  triggerAction(a.economy, use.spends, a.label, use.regains);
+                  triggerAction(
+                    a.economy,
+                    use.spends,
+                    a.label,
+                    use.regains,
+                    once ? (d) => markOnce(d, rowKey) : undefined,
+                  );
                   return;
                 }
                 if (recent()) return;

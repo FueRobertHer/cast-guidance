@@ -327,7 +327,7 @@ export async function resetSheetHarness(): Promise<void> {
   noticeStore.setState({ notice: null, seq: 0 });
   rollLogStore.getState().clear();
   heldRollStore.setState({ held: null });
-  followUpStore.setState({ offer: null });
+  followUpStore.setState({ offer: null, next: null });
   castLevelStore.setState({ levels: {} });
 }
 
