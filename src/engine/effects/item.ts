@@ -1,5 +1,6 @@
 import { WORN_TAG_KINDS } from '../castGuidance';
 import {
+  ACTION_CHARGE_PLACES,
   ITEM_CHARGES,
   itemChargeKey,
   itemChargesOf,
@@ -152,16 +153,19 @@ export function collectItems(col: Collector): void {
       if (charged !== undefined) {
         const key = itemChargeKey(entry.id);
         // Its actions that spend its charges or give them back (a buy-back, a
-        // slot turned into them, a regain) spend or restore this copy's pool.
-        // Each is a copy of what the item says (`emit`), and each price a new
+        // slot turned into them, a regain, `ACTION_CHARGE_PLACES`), and its
+        // spells that spend them, spend or restore this copy's pool. Each is a
+        // copy of what the item says (`emit`), and each part of an action a new
         // object, so the next copy's is its own.
         for (let i = from; i < col.effects.length; i++) {
           const x = col.effects[i];
+          if (x?.kind === 'grantSpell' && x.resourceKey === ITEM_CHARGES) x.resourceKey = key;
           if (x?.kind !== 'action') continue;
-          if (x.cost?.resource === ITEM_CHARGES) x.cost = { ...x.cost, resource: key };
-          if (x.cost?.slotRefills === ITEM_CHARGES) x.cost = { ...x.cost, slotRefills: key };
-          if (x.buyBack?.own === ITEM_CHARGES) x.buyBack = { ...x.buyBack, own: key };
-          if (x.regains?.resource === ITEM_CHARGES) x.regains = { ...x.regains, resource: key };
+          const parts = x as unknown as Record<string, Record<string, unknown> | undefined>;
+          for (const [part, field] of ACTION_CHARGE_PLACES) {
+            const at = parts[part];
+            if (at?.[field] === ITEM_CHARGES) parts[part] = { ...at, [field]: key };
+          }
         }
         const roll = regainRollOf(charged);
         col.add({

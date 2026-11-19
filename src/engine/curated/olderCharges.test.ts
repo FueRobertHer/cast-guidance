@@ -136,6 +136,25 @@ describe('upgradeOlderCharges: what converts', () => {
     expect(converted(older([POOL], { charges: undefined }))?.[0]).toMatchObject({ charges: 5 });
   });
 
+  it('keeps the actions that spend or give back the pool where the sheet moves them', () => {
+    const sparks = { kind: 'resource', key: 'sparks', label: 'Sparks', max: 2, reset: 'long' };
+    const actions = [
+      STRIKE,
+      { ...STRIKE, label: 'Bought', buyBack: { resource: 'sparks', amount: 1, own: 'charges' } },
+      { ...STRIKE, label: 'Mend', cost: undefined, regains: { resource: 'charges', amount: 1 } },
+      {
+        ...STRIKE,
+        label: 'Siphon',
+        cost: { resource: 'spell-slot', amount: 1, slotRefills: 'charges' },
+      },
+    ];
+    expect(converted(older([POOL, sparks, ...actions]))).toEqual([
+      { kind: 'charges', charges: 5, regain: '1d4' },
+      sparks,
+      ...actions,
+    ]);
+  });
+
   it('carries no ability when no card names one, and no spells with no card', () => {
     const { ability: _a, ...plain } = CARD;
     expect(converted(older([POOL, plain]))?.[0]).toEqual({
@@ -174,6 +193,22 @@ describe('upgradeOlderCharges: what is left as it was', () => {
     ],
     ['a charges effect already', [POOL, { kind: 'charges', charges: 5, regain: 'all' }]],
     ['an effect that is not one', [POOL, CARD, 'note']],
+    // The sheet moves an action's price, a buy-back's own use and a regain to
+    // the new pool, and not what a buy-back is paid from.
+    [
+      'an action buying back with the pool',
+      [POOL, CARD, { ...STRIKE, cost: undefined, buyBack: { resource: 'charges', amount: 1 } }],
+    ],
+    ['an action naming the pool elsewhere', [POOL, { ...STRIKE, note: { resource: 'charges' } }]],
+    // A use with no price spends the pool its name shares, which the new one does not.
+    ['an action named as the card', [POOL, CARD, { ...STRIKE, cost: undefined, label: 'charges' }]],
+    [
+      'an action named as a renamed card',
+      [
+        { ...POOL, label: 'Sparks' },
+        { ...STRIKE, label: 'SPARKS' },
+      ],
+    ],
   ])('%s', (_why, effects) => {
     expect(converted(older(effects))).toBe(undefined);
   });

@@ -564,4 +564,25 @@ describe('charges that only actions spend', () => {
     expect(said).toContain('"slotRefills":"charges"');
     expect(said).toContain('"regains":{"resource":"charges"');
   });
+
+  it("spends each copy's own pool for a spell card that spends its charges, its own or a pack's", () => {
+    const card = (spell: string) => ({
+      kind: 'grantSpell',
+      spell,
+      usage: '1/day',
+      resourceKey: 'charges',
+    });
+    const rod = item('Rod of Knocks', 'HB', [COUNTED, card('Shield|XPHB')]);
+    const adds = pack('Adds', [{ target: 'Rod of Knocks|HB', add: [card('Fireball|XPHB')] }]);
+    const ctx = world([rod], [adds]);
+    const spends = (id: string) =>
+      deriveSheet(carrying({ id, name: 'Rod of Knocks', source: 'HB' }), ctx)
+        .grantedSpells.filter((s) => s.name === 'Shield' || s.name === 'Fireball')
+        .map((s) => `${s.name} ${s.resourceKey}`);
+    // The sheet lists granted spells by name.
+    expect(spends('a')).toEqual(['Fireball item-charges:a', 'Shield item-charges:a']);
+    expect(spends('b')).toEqual(['Fireball item-charges:b', 'Shield item-charges:b']);
+    // What the item says is left as it was written.
+    expect(JSON.stringify(rod.castGuidance)).toContain('"resourceKey":"charges"');
+  });
 });

@@ -135,6 +135,32 @@ const OLDER_GRANT_FIELDS: ReadonlySet<string> = new Set([
 const onlyFields = (o: Record<string, unknown>, fields: ReadonlySet<string>): boolean =>
   Object.keys(o).every((k) => fields.has(k));
 
+/**
+ * Where an item's action names its charges (`ITEM_CHARGES`) and the sheet
+ * moves it to the carried copy's pool: its cost, a slot turned into them, the
+ * pool a buy-back restores, a regain. As `[part, field]`.
+ */
+export const ACTION_CHARGE_PLACES: ReadonlyArray<readonly [string, string]> = [
+  ['cost', 'resource'],
+  ['cost', 'slotRefills'],
+  ['buyBack', 'own'],
+  ['regains', 'resource'],
+];
+
+/** An effect less the places an action's charges move from (`ACTION_CHARGE_PLACES`). */
+function movedOut(e: Record<string, unknown>): Record<string, unknown> {
+  if (e.kind !== 'action') return e;
+  const out: Record<string, unknown> = { ...e };
+  for (const [part, field] of ACTION_CHARGE_PLACES) {
+    const at = out[part];
+    if (isRecord(at) && at[field] === ITEM_CHARGES) {
+      const { [field]: _moved, ...rest } = at;
+      out[part] = rest;
+    }
+  }
+  return out;
+}
+
 /** Each item's `upgradeOlderCharges`, made once. */
 const upgraded = new WeakMap<DataEntity, DataEntity>();
 
@@ -151,7 +177,8 @@ const upgraded = new WeakMap<DataEntity, DataEntity>();
  * Only an item that converts without loss: one card, as the Workshop wrote it
  * (a long rest, the item's own count); spell cards as the Workshop wrote them,
  * agreeing on one ability; no other effect, and nothing outside the effects,
- * naming the pool; no recharge the effect cannot say (a short rest,
+ * naming the pool (an action only where the sheet moves it to the new one);
+ * no action named as the card; no recharge the effect cannot say (a short rest,
  * `special`); and an effect that reads (each card's spell as a spell's name
  * and book). Any other item is itself, keeping its older pool, which its
  * fields stand aside for (`ownChargesStand`). The item given is never changed,
@@ -184,11 +211,17 @@ function olderChargesUpgrade(entry: DataEntity): DataEntity | undefined {
   if (abilities.size > 1) return undefined;
   const [ability] = abilities;
   // Nothing else may name the pool, which the new one does not stand in for
-  // (a `charges` effect already there names it by its kind).
+  // (a `charges` effect already there names it by its kind): an action only
+  // where the sheet moves it to the new pool (`ACTION_CHARGE_PLACES`), and
+  // none by the card's name, which a use with no price spends.
   const named = (v: unknown) => JSON.stringify(v).includes(`"${ITEM_CHARGES}"`);
   const { effects: _effects, ...outside } = g;
-  const others = effects.filter((e) => e !== pool && !spends(e) && e.kind !== 'action');
+  const others = effects.filter((e) => e !== pool && !spends(e)).map(movedOut);
   if (others.some(named) || named(outside)) return undefined;
+  const card = String(pool.label).toLowerCase();
+  const byName = (e: Record<string, unknown>) =>
+    e.kind === 'action' && String(e.label).toLowerCase() === card;
+  if (effects.some(byName)) return undefined;
   const recharge = typeof entry.recharge === 'string' ? entry.recharge : '';
   if (recharge !== '' && !LONG_REST_RECHARGE.has(recharge.toLowerCase())) return undefined;
   const effect = {
