@@ -5,6 +5,7 @@
 import 'fake-indexeddb/auto';
 import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { characterRepo } from '@/db/characterRepo';
 import type { HomebrewFileRow } from '@/db/db';
 import { homebrewRepo, WORKSHOP_SOURCE } from '@/db/homebrewRepo';
 import { isRecord } from '@/engine/castGuidance';
@@ -223,6 +224,33 @@ describe('the Save bar', () => {
     await waitFor(async () => expect(await featNames(id)).toEqual(['Hold Fast']), {
       timeout: WAIT,
     });
+  });
+
+  it('puts a character back on the old name when it takes a rename back', async () => {
+    const doc = sorcerer();
+    doc.feats = [{ ref: { name: 'Stand Fast', source: WORKSHOP_SOURCE }, instanceId: 'f1' }];
+    const sheet = await renderSheet(doc);
+    await sheet.visit('/workshop/new/feat');
+    await screen.findByLabelText('Name', {}, { timeout: WAIT });
+    nameAndSave('Stand Fast');
+    await screen.findByText(/My homebrew is made/, {}, { timeout: WAIT });
+    const [file] = (await homebrewRepo.ownedSafe()).files;
+    const id = file?.id ?? '';
+    const held = async () => (await characterRepo.get(doc.id))?.feats.map((f) => f.ref.name);
+
+    // The rename takes the character with it.
+    nameAndSave('Hold Fast');
+    await screen.findByText('Saved to My homebrew.', {}, { timeout: WAIT });
+    await waitFor(async () => expect(await held()).toEqual(['Hold Fast']), { timeout: WAIT });
+    const { file: before } = await homebrewRepo.getSafe(id);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
+    await waitFor(async () => expect(await featNames(id)).toEqual(['Stand Fast']), {
+      timeout: WAIT,
+    });
+    expect(await held()).toEqual(['Stand Fast']);
+    expect(before?.json.feat).toEqual([expect.objectContaining({ name: 'Hold Fast' })]);
+    expect(screen.queryByRole('alert')).toBeNull();
   });
 
   it('takes nothing back when the collection changed after the save', async () => {

@@ -578,6 +578,18 @@ function Editor({
           );
           return;
         }
+        // A save that renamed it took every character holding it along (E5).
+        // Renaming it back takes them back; then the file is put back exactly.
+        const old = undo.was.at.stored;
+        const list = undo.before[type];
+        const was =
+          old !== undefined &&
+          (old.name !== undo.key.name || old.source !== undo.key.source) &&
+          Array.isArray(list)
+            ? list.find((e): e is Json & EntryKey => isRecord(e) && matches(e, old))
+            : undefined;
+        if (was !== undefined)
+          await homebrewRepo.saveEntry(type, was, { fileId: undo.fileId, replaces: undo.key });
         await homebrewRepo.saveEditable(undo.fileId, undo.before);
       }
       invalidateRegistry();
