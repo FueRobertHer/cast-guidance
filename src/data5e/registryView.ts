@@ -146,7 +146,9 @@ function copyInto(view: EntityRegistry, from: EntityRegistry, back: Map<Entity, 
  * The device-off files merge as the device would merge them switched on:
  * into the entries below every change, so their copies read the books (no copy
  * finds a change, E3), and their changes stack with the shared ones, every
- * pack's first and the player's own on top.
+ * pack's first and the player's own on top. One difference: their subraces'
+ * versions read the race below its changes, where the device reads the race
+ * with them.
  */
 function buildView(
   shared: EntityRegistry,
