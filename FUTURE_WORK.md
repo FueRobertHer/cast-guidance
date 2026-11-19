@@ -300,6 +300,17 @@ work:
   Mastery line (Thunderous Greatclub), firearms' Reload (read as Loading), and
   a bonus or defense in a list that a state or a choice heads (a vestige's
   Dormant State).
+- Moving or renaming the player's own entry (ADR-002 E5, `src/db/repoint.ts`)
+  re-points every character, the player's own rule packs and a moved class's
+  or subclass's features in one write, and lists imported packs that still
+  name it. Left: saved history snapshots, the save journal and creator drafts
+  keep the old identity; references inside the player's own entries (`_copy`,
+  `basedOn`, a background's `feats`, `additionalSpells`, `{@spell}` and
+  `{@classFeature}` tags) and imported files' subclasses of a moved class are
+  not followed or listed; on a rename, picks keyed by a name alone
+  (`:feature:` segments, an optional feature's label) and one turn's marks
+  are lost; an open tab with unsaved edits that keeps its own copy after the
+  save conflict brings the old identity back.
 
 ### Maintainability and diagnostics
 
