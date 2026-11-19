@@ -8,7 +8,13 @@
  *   sheet hands its start over in the history state, `seed`);
  * - `/workshop/copy/:type/:uid`: a copy of a Library entry (`name|source`),
  *   under another name when `?name=` gives one;
- * - `/workshop/edit/:type/:uid`: one of theirs, found in the files they own.
+ * - `/workshop/edit/:type/:uid`: one of theirs, found in the files they own;
+ * - `/workshop/change/:type/:uid`: Change for your table (`ChangeSheet.tsx`).
+ *
+ * A copy of an entry the table has changed starts from the table's version
+ * (owner, 2026-11-19), and is written against the entry the registry resolves
+ * a copy against, the one below every change: so the table's change is in the
+ * copy's own diffs, and the sheet shows the copy as the editor did.
  *
  * Each kind's editor is its own chunk (`editorTypes.ts`); this page is the
  * frame around them (board 3): the problems Save would meet, Saves to, Save
@@ -19,7 +25,7 @@ import { ArrowLeft, Info } from 'lucide-react';
 import { lazy, type ReactNode, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router';
 import { useRegistryState, useTypePacks } from '@/data5e/hooks';
-import { type EntityRegistry, isEntityType } from '@/data5e/normalize';
+import { type EntityRegistry, identityKey, isEntityType } from '@/data5e/normalize';
 import { invalidateRegistry } from '@/data5e/registry';
 import { ensureSourcesVisible } from '@/data5e/sourceFilter';
 import {
@@ -57,6 +63,7 @@ import { TRY_ON_TYPES, TryItOn } from './TryItOn';
 import { editPath, entriesOf, inFile, labelOf, type Mine } from './yours';
 
 const MakeSheet = lazy(() => import('./MakeSheet').then((m) => ({ default: m.MakeSheet })));
+const ChangeSheet = lazy(() => import('./ChangeSheet').then((m) => ({ default: m.ChangeSheet })));
 
 const NOTE = 'text-body text-ink-muted';
 const ICON =
@@ -118,8 +125,13 @@ function placeIn(search: string, places: readonly Place[]): Place | undefined {
 /** What an editor opens on, worked out once from the URL and the data. */
 interface Subject {
   draft: Json;
-  /** The entry a copy is made from, as the player's data has it. */
+  /**
+   * The entry a copy is made from, as the player's data has it: below every
+   * change to the books, which is what the registry resolves a copy against.
+   */
   original?: Json;
+  /** The table's version of `original`, when the table changed it: what a new copy starts from. */
+  tables?: Json;
   /** A copy whose original the player's data does not have: its name. */
   missing?: string;
   /** Where the entry is kept, once saved. */
@@ -135,7 +147,13 @@ interface Subject {
 type Resolved =
   | { state: 'loading' }
   | { state: 'gone'; text: string }
+  /** A change to the books, which the Change sheet opens. */
+  | { state: 'moved'; to: string }
   | { state: 'ready'; subject: Subject };
+
+/** The entry a copy of `e` is written against: below every change, as the merge reads it. */
+const copiedBase = (registry: EntityRegistry, e: Json): Json =>
+  (registry.changeOf(e)?.base as Json | undefined) ?? e;
 
 /** What the Make sheet hands a new entry: its text, and what the spell reader found in it. */
 const seedOf = (state: unknown): Json | undefined =>
@@ -148,6 +166,8 @@ function resolve(
   spec: EditorSpec,
   registry: EntityRegistry,
   mine: readonly Mine[],
+  /** The files the player owns: an entry of their changes to the books opens elsewhere. */
+  files: readonly HomebrewFile[],
   /** The file `?file=` names: one of the player's entries is looked for there first. */
   fileId: string | null,
   /** A new entry's start from the Make sheet; a copy's own name (`?name=`). */
@@ -164,16 +184,27 @@ function resolve(
     };
   }
   if (action === 'copy') {
-    const original = findEntity(registry, type as never, uid) as Json | undefined;
-    if (original === undefined)
+    // The table's version, which the Library shows and the copy starts from.
+    const found = findEntity(registry, type as never, uid) as Json | undefined;
+    if (found === undefined)
       return {
         state: 'gone',
         text: `Nothing in ${labelOf(type).toLowerCase()} is called ${uid.split('|')[0]}.`,
       };
-    const draft = structuredClone(original);
+    const original = copiedBase(registry, found);
+    const draft = structuredClone(found);
     const name = start.name?.trim();
     if (name !== undefined && name !== '') draft.name = name;
-    return { state: 'ready', subject: { draft, original, mode: 'changes', stale: false } };
+    return {
+      state: 'ready',
+      subject: {
+        draft,
+        original,
+        ...(found !== original ? { tables: found } : {}),
+        mode: 'changes',
+        stale: false,
+      },
+    };
   }
   const [name = '', source = ''] = uid.split('|');
   const named = (m: Mine) => m.type === type && matches(m.entry, { name, source });
@@ -182,6 +213,13 @@ function resolve(
   const found = mine.find((m) => m.fileId === fileId && named(m)) ?? mine.find(named);
   if (found === undefined)
     return { state: 'gone', text: `You have no ${spec.noun} called ${name} on this device.` };
+  if (files.find((f) => f.id === found.fileId)?.role === 'changes') {
+    const placed = registry.get(type as never, name, source);
+    return {
+      state: 'moved',
+      to: `/workshop/change/${type}/${encodeURIComponent(placed !== undefined ? identityKey(type, placed) : uid)}`,
+    };
+  }
   const stored = found.entry;
   const at = {
     fileId: found.fileId,
@@ -193,7 +231,9 @@ function resolve(
       state: 'ready',
       subject: { draft: structuredClone(stored), mode: 'changes', stale: false, ...at },
     };
-  const original = registry.get(type as never, from.name, from.source) as Json | undefined;
+  const placed = registry.get(type as never, from.name, from.source) as Json | undefined;
+  // As a new copy is written: against the entry below the table's change.
+  const original = placed !== undefined ? copiedBase(registry, placed) : undefined;
   const stale = original !== undefined && originalChanged(stored, original);
   if (!from.changesOnly) {
     return {
@@ -378,7 +418,7 @@ function Editor({
   const navigate = useNavigate();
   const location = useLocation();
   const back = useBack('/workshop');
-  const { original, missing } = subject;
+  const { original, missing, tables } = subject;
   const lost = subject.lost ?? 0;
   const [draft, setDraft] = useState(subject.draft);
   const [clean, setClean] = useState(subject.draft);
@@ -445,6 +485,15 @@ function Editor({
         blocks: true,
         fix: toName,
       });
+    else if (
+      original !== undefined &&
+      name.toLowerCase() === String(original.name).trim().toLowerCase()
+    )
+      problems.push({
+        text: `Same name as ${String(original.name)} in ${String(original.source)}: both show in every picker until you name this one your own.`,
+        blocks: false,
+        fix: toName,
+      });
     const checked = spec.check?.(draft, {
       original: base,
       copied: original,
@@ -470,10 +519,13 @@ function Editor({
     const of = String(original.name);
     if (mode === 'full') return `A full copy of ${of}, readable without ${of} in the data.`;
     if (spec.summary !== undefined) return spec.summary(draft, original, registry);
-    const n = changeCount(original, draft);
+    // Counted from what it started as: the table's version, when the table changed it.
+    const from = tables ?? original;
+    const what = tables !== undefined ? `your table's ${of}` : of;
+    const n = changeCount(from, draft);
     return n === 0
-      ? `No changes from ${of} yet. You can save it as it is.`
-      : `${n} ${n === 1 ? 'change' : 'changes'} from ${of}, saved as changes only.`;
+      ? `No changes from ${what} yet. You can save it as it is.`
+      : `${n} ${n === 1 ? 'change' : 'changes'} from ${what}, saved as changes only.`;
   })();
 
   /** What Save writes: by the editor's own writer for an entry that owns others. */
@@ -768,6 +820,15 @@ function Editor({
               </span>
             </p>
           )}
+          {tables !== undefined && (
+            <p className={BOX}>
+              <Info size={16} aria-hidden className="mt-px shrink-0 text-ink-muted" />
+              <span>
+                Starts from your table's {String(original?.name)}, with your changes to the book's.
+                The book's stays as the book has it, and nobody has this one until they pick it.
+              </span>
+            </p>
+          )}
           {(subject.stale || lost > 0) && (
             <p className={BOX}>
               <Info size={16} aria-hidden className="mt-px shrink-0 text-ink-muted" />
@@ -885,6 +946,7 @@ function EditorRoute({ action, type, uid }: { action: string; type: string; uid:
               spec,
               reg.registry,
               entriesOf(owned.files),
+              owned.files,
               fileParam(location.search),
               {
                 seed: seedOf(location.state),
@@ -897,6 +959,13 @@ function EditorRoute({ action, type, uid }: { action: string; type: string; uid:
           );
 
   usePageTitle(resolved.state === 'gone' ? 'Not found' : null, 'Workshop');
+
+  // A change to the books opens on the Change sheet. `navigate`, not
+  // <Navigate>, which would pull the router's redirect into the entry chunk.
+  const movedTo = resolved.state === 'moved' ? resolved.to : undefined;
+  useEffect(() => {
+    if (movedTo !== undefined) navigate(movedTo, { replace: true });
+  }, [movedTo, navigate]);
 
   const failed =
     specError ??
@@ -921,7 +990,7 @@ function EditorRoute({ action, type, uid }: { action: string; type: string; uid:
       </Frame>
     );
   }
-  if (resolved.state === 'loading') {
+  if (resolved.state === 'loading' || resolved.state === 'moved') {
     return (
       <Frame back={back}>
         <p className={NOTE}>Loading…</p>
@@ -969,6 +1038,13 @@ export function Component() {
     return (
       <Suspense fallback={<Loading />}>
         <MakeSheet />
+      </Suspense>
+    );
+  }
+  if (action === 'change' && type !== undefined && uid !== undefined && isEntityType(type)) {
+    return (
+      <Suspense fallback={<Loading />}>
+        <ChangeSheet type={type} uid={uid} />
       </Suspense>
     );
   }

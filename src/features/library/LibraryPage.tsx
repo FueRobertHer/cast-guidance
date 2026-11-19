@@ -1,6 +1,6 @@
 import { useLiveQuery } from 'dexie-react-hooks';
 import { ArrowLeft, ChevronDown, GitFork, Hammer, Pencil, Plus, Search } from 'lucide-react';
-import { useEffect, useId, useMemo, useRef, useState } from 'react';
+import { Fragment, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router';
 import type { Entity } from '@/data5e/copyMod';
 import { EntriesView } from '@/data5e/entries/renderEntries';
@@ -12,7 +12,12 @@ import {
   useSearchState,
   useTypePacks,
 } from '@/data5e/hooks';
-import { type EntityRegistry, type EntityType, isEntityType } from '@/data5e/normalize';
+import {
+  type EntityRegistry,
+  type EntityType,
+  identityKey,
+  isEntityType,
+} from '@/data5e/normalize';
 import { type SearchResult, searchAll } from '@/data5e/search/client';
 import { DEFAULT_QUERY_LIMIT } from '@/data5e/search/protocol';
 import { applySourcePolicy, policyForSearch, useSourcePolicy } from '@/data5e/sourceFilter';
@@ -48,6 +53,35 @@ import {
   titleKey,
   uidOf,
 } from './printings';
+
+/**
+ * Features, known by their class (and subclass) and level as well as their name
+ * and book (ADR-002, D2): their pages are found by that identity, since each
+ * class has its own Ability Score Improvement, and have no printings to flip.
+ */
+const FEATURE_TYPES: ReadonlyMap<string, string> = new Map([
+  ['classFeature', 'Class features'],
+  ['subclassFeature', 'Subclass features'],
+]);
+
+/** A feature's page: its identity in the address. */
+const featurePath = (type: string, e: Entity) =>
+  `/library/${type}/${encodeURIComponent(identityKey(type, e))}`;
+
+/** What one of a kind is called in a sentence, for Make one like it. */
+const NOUNS: Readonly<Record<string, string>> = {
+  race: 'species',
+  optionalfeature: 'optional feature',
+};
+
+/**
+ * Whether Change for your table is offered, as the Change sheet's `canChange`
+ * decides (that module is the Workshop's own chunk): a type with an editor, or
+ * a class or subclass feature; not a class or subclass whole, whose features
+ * are entries of their own.
+ */
+const canChange = (type: string) =>
+  FEATURE_TYPES.has(type) || (hasEditor(type) && type !== 'class' && type !== 'subclass');
 
 /** Source codes compare case-insensitively; only their display keeps the case. */
 function sourceKey(e: Entity): string {
@@ -667,11 +701,11 @@ function ClassExtras({ registry, entity }: { registry: EntityRegistry; entity: E
         String(f.className).toLowerCase() === name.toLowerCase() &&
         String(f.classSource).toLowerCase() === source.toLowerCase(),
     );
-  const byLevel = new Map<number, string[]>();
+  const byLevel = new Map<number, Entity[]>();
   for (const f of features) {
     const lvl = typeof f.level === 'number' ? f.level : 0;
     const list = byLevel.get(lvl) ?? [];
-    list.push(nameOf(f));
+    list.push(f);
     byLevel.set(lvl, list);
   }
   return (
@@ -700,10 +734,23 @@ function ClassExtras({ registry, entity }: { registry: EntityRegistry; entity: E
           <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-body">
             {[...byLevel.entries()]
               .sort((a, b) => a[0] - b[0])
-              .map(([lvl, names]) => (
+              .map(([lvl, list]) => (
                 <div key={lvl} className="contents">
                   <dt className="text-ink-muted">Lv {lvl}</dt>
-                  <dd>{names.join(', ')}</dd>
+                  {/* Each opens its own page, where it can be changed for the table. */}
+                  <dd>
+                    {list.map((f, i) => (
+                      <Fragment key={identityKey('classFeature', f)}>
+                        {i > 0 && ', '}
+                        <Link
+                          to={featurePath('classFeature', f)}
+                          className="underline decoration-line-strong underline-offset-3 hover:decoration-ink"
+                        >
+                          {nameOf(f)}
+                        </Link>
+                      </Fragment>
+                    ))}
+                  </dd>
                 </div>
               ))}
           </dl>
@@ -835,20 +882,27 @@ function EntityDetail({ type, uid, reg }: { type: EntityType; uid: string; reg: 
   const registry = reg.registry;
 
   const decoded = decodeURIComponent(uid);
-  const entity = registry === null ? undefined : findEntity(registry, type, decoded);
+  const feature = FEATURE_TYPES.has(type);
+  const entity =
+    registry === null
+      ? undefined
+      : feature
+        ? (registry.byType(type).find((e) => identityKey(type, e) === decoded.toLowerCase()) ??
+          (decoded.split('|').length <= 2 ? findEntity(registry, type, decoded) : undefined))
+        : findEntity(registry, type, decoded);
 
   // This title's printings in the player's sources, and the one on screen
   // even from a book they hide: a link can lead there, and the switch has to
   // show where the page is.
   const printings = useMemo(() => {
-    if (registry === null || entity === undefined) return [];
+    if (registry === null || entity === undefined || feature) return [];
     const key = titleKey(type, entity);
     const same = registry.byType(type).filter((e) => titleKey(type, e) === key);
     const mine = applySourcePolicy(same, policy, sourceOf, (e) => uidOf(e) === uidOf(entity));
     return groupTitles(type, mine)[0]?.printings ?? [];
-  }, [registry, type, entity, policy]);
+  }, [registry, type, entity, policy, feature]);
 
-  const typeLabel = TYPE_LABELS.get(type) ?? type;
+  const typeLabel = TYPE_LABELS.get(type) ?? FEATURE_TYPES.get(type) ?? type;
   const failed = reg.error !== null || packs.status === 'error';
   const settled = registry !== null && packs.status !== 'loading' && !refreshing;
   usePageTitle(
@@ -928,9 +982,17 @@ function EntityDetail({ type, uid, reg }: { type: EntityType; uid: string; reg: 
         </div>
         {/* Spelled out here because a tooltip is a desktop-only affordance. */}
         <p className="text-caption text-ink-muted">{sourceName(sourceOf(entity))}</p>
+        {feature && (
+          <p className="text-caption text-ink-muted">
+            {[entity.className, entity.subclassShortName].filter((v) => v !== undefined).join(', ')}
+            {typeof entity.level === 'number' && `, level ${entity.level}`}
+          </p>
+        )}
       </header>
       <PrintingSwitch type={type} printings={printings} current={entity} />
-      {hasEditor(type) && <WorkshopLink type={type} entity={entity} />}
+      {(hasEditor(type) || canChange(type)) && registry !== null && (
+        <MakeItYours type={type} entity={entity} registry={registry} />
+      )}
       {facts.length > 0 && (
         <dl className={`${cardClass} grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-body`}>
           {facts.map(([label, value]) => (
@@ -965,39 +1027,88 @@ function holds(list: unknown, name: string, source: string): boolean {
   );
 }
 
+const CHOICE = `${cardClass} flex items-start gap-3 hover:bg-surface-raised`;
+
 /**
- * Into the Workshop from an entry: Edit a copy of anything, or Edit one in a
- * homebrew file the player made on this device (ADR-001, D3), in that file.
- * Only a file that holds the entry counts: one that merely names its book (a
- * collection called PHB) holds none of the book's entries. An imported file
- * cannot be changed, so its entries are copied like a book's.
+ * Into the Workshop from an entry (board 6, pick C). One of the player's own,
+ * in a collection they made, has Edit, in that collection. A book's entry, or
+ * an imported collection's, has two ways in: Change for your table (every
+ * character holding it gets the player's version, ADR-002 D2) and Make one
+ * like it (today's copy, a new entry under a name of its own). Only a file that
+ * holds the entry counts as theirs: one that merely names its book (a
+ * collection called PHB) holds none of the book's entries, and their Changes
+ * to the books holds changes, not entries of their own.
  */
-function WorkshopLink({ type, entity }: { type: EntityType; entity: Entity }) {
+function MakeItYours({
+  type,
+  entity,
+  registry,
+}: {
+  type: EntityType;
+  entity: Entity;
+  registry: EntityRegistry;
+}) {
   const name = nameOf(entity);
   const source = sourceOf(entity);
   const key = encodeURIComponent(`${name}|${source}`);
+  const headingId = useId();
   const owned = useLiveQuery(() => homebrewRepo.ownedSafe(), []);
-  // Until the files are read the link could be the wrong one, and a tap on
-  // Edit a copy for an entry of their own would make a second one.
+  // Until the files are read the links could be the wrong ones, and a tap on
+  // Make one like it for an entry of their own would make a second one.
   if (owned === undefined) return null;
   // Two files can hold one by this name and book: the one shown is the one
   // the registry keeps, an enabled file's, the oldest first.
   const file = owned.files
-    .filter((f) => holds(f.json[type], name, source))
+    .filter((f) => f.role !== 'changes' && holds(f.json[type], name, source))
     .sort((a, b) => Number(b.enabled) - Number(a.enabled) || compareMergeOrder(a, b))[0];
-  const theirs = file !== undefined;
+  if (file !== undefined) {
+    return hasEditor(type) ? (
+      <Link
+        to={`/workshop/edit/${type}/${key}?file=${encodeURIComponent(file.id)}`}
+        className={`self-start ${buttonClass({ variant: 'outline', size: 'sm' })}`}
+      >
+        <Pencil size={16} aria-hidden />
+        Edit
+      </Link>
+    ) : null;
+  }
+  const changed = registry.changeOf(entity)?.layers.some((l) => l.from.kind === 'changes') === true;
+  const noun = NOUNS[type] ?? type;
   return (
-    <Link
-      to={
-        file !== undefined
-          ? `/workshop/edit/${type}/${key}?file=${encodeURIComponent(file.id)}`
-          : `/workshop/copy/${type}/${key}`
-      }
-      className={`self-start ${buttonClass({ variant: 'outline', size: 'sm' })}`}
-    >
-      {theirs ? <Pencil size={16} aria-hidden /> : <GitFork size={16} aria-hidden />}
-      {theirs ? 'Edit' : 'Edit a copy'}
-    </Link>
+    <section aria-labelledby={headingId} className="flex flex-col gap-2">
+      <h2 id={headingId} className="text-heading">
+        Make it yours
+      </h2>
+      <div className="grid gap-2 sm:grid-cols-2">
+        {canChange(type) && (
+          <Link
+            to={`/workshop/change/${type}/${encodeURIComponent(identityKey(type, entity))}`}
+            className={CHOICE}
+          >
+            <Pencil size={18} aria-hidden className="mt-0.5 shrink-0 text-ink-muted" />
+            <span className="flex flex-col gap-0.5">
+              <span className="text-body-strong">Change for your table</span>
+              <span className="text-caption text-ink-muted">
+                {changed
+                  ? "Your table uses your version. Change it again, or go back to the book's."
+                  : 'Every character at your table uses your version.'}
+              </span>
+            </span>
+          </Link>
+        )}
+        {hasEditor(type) && (
+          <Link to={`/workshop/copy/${type}/${key}`} className={CHOICE}>
+            <GitFork size={18} aria-hidden className="mt-0.5 shrink-0 text-ink-muted" />
+            <span className="flex flex-col gap-0.5">
+              <span className="text-body-strong">Make one like it</span>
+              <span className="text-caption text-ink-muted">
+                A new {noun} that starts as this one, under a name of its own.
+              </span>
+            </span>
+          </Link>
+        )}
+      </div>
+    </section>
   );
 }
 

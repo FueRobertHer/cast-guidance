@@ -325,6 +325,19 @@ work:
   + Effect amount is the catalog's, not the spell's. The import preview and
   the pack review do not name a pack's `replaces` yet (U7), so a pack applied
   to every character changes the entries it lists with no line saying so.
+- Change for your table and Make one like it (ADR-002 U10) are on every
+  Library entry the Workshop can edit, and on class features, which the
+  class page now links. A copy of a changed entry starts from the table's
+  version and keeps it as it was when copied. Left out: a class or subclass
+  is not changed whole (board 6's Berserker, feature by feature), and a
+  subclass's features have no Library page to change them from; the book's
+  own mechanics are one Keep or Remove (the "Also does what" box), not a row
+  each with what the sheet counts; no character count ("Hild has Aid
+  prepared") and no Try it on for a change; a class's or subclass's own
+  editor still reads a stored copy's features against the table's version
+  (U5c). Changes to the books holds one change per name and book: a second
+  feature of one name and book (each class's Ability Score Improvement) is
+  refused with a line saying why.
 
 ### Maintainability and diagnostics
 
