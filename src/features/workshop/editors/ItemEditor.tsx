@@ -56,6 +56,7 @@ import {
   Select,
   TextBlocks,
 } from '../fields';
+import { OnSheet, SpellsAttached } from '../originFields';
 
 type Options = ReadonlyArray<readonly [string, string]>;
 
@@ -1104,6 +1105,22 @@ function spellOptions(props: EditorProps): SpellOption[] {
   return onePerName(props.registry.byType('spell'), props.draft);
 }
 
+/** The spells it casts with no charges: at will, or a number of times a rest. */
+function Attached({ draft, change, registry, readOnly }: EditorProps) {
+  return (
+    <Section title="Spells it casts">
+      <SpellsAttached
+        raw={draft.attachedSpells}
+        registry={registry}
+        draft={draft}
+        readOnly={readOnly}
+        onChange={(attachedSpells) => change({ attachedSpells })}
+      />
+      <OnSheet>the Spells tab, while its magic works.</OnSheet>
+    </Section>
+  );
+}
+
 function Effects(props: EditorProps) {
   const { draft, change, original, readOnly } = props;
   useTypePacks('spell');
@@ -1115,6 +1132,8 @@ function Effects(props: EditorProps) {
       <EffectCards
         effects={g.effects}
         readOnly={readOnly}
+        // A potion's list goes in play when it is drunk, so its cards are the in-play ones.
+        inPlay={baseTypeCode(draft.type) === 'P'}
         inherits={original !== undefined ? String(original.name) : undefined}
         replace={g.replace === true}
         // Its prices on what the original does go with what they priced.
@@ -1139,6 +1158,7 @@ function ItemBody(props: EditorProps) {
       {isWeaponType(draft.type) && <Weapon {...props} />}
       <Bonuses {...props} />
       <Charges {...props} />
+      <Attached {...props} />
       <Section title="Text">
         <TextBlocks
           entries={draft.entries}

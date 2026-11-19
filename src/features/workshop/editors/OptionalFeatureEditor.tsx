@@ -5,7 +5,8 @@
  */
 import { EntryEffects } from '../EffectCards';
 import type { EditorProps, EditorSpec } from '../editorTypes';
-import { ChipPicks, PrerequisiteField, Section, TextBlocks } from '../fields';
+import { ChipPicks, Section, TextBlocks } from '../fields';
+import { OnSheet, Prerequisites } from '../originFields';
 import { PartList } from '../PartList';
 
 const TYPES: ReadonlyArray<readonly [string, string]> = [
@@ -40,11 +41,16 @@ function OptionalFeatureBody({ draft, change, original, readOnly }: EditorProps)
           disabled={readOnly}
           onChange={(v) => change({ featureType: v })}
         />
-        <PrerequisiteField
+      </Section>
+      <Section title="What it needs">
+        <Prerequisites
           value={draft.prerequisite}
           readOnly={readOnly}
           onChange={(prerequisite) => change({ prerequisite })}
         />
+        <OnSheet>
+          its class's pick of options says what it needs, and warns one who may not.
+        </OnSheet>
       </Section>
       <Section title="Text">
         <TextBlocks
