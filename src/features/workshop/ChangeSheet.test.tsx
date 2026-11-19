@@ -236,7 +236,6 @@ describe('Change for your table', () => {
     );
     await screen.findByText(/Changes the book's Grit/, {}, { timeout: WAIT });
     expect(screen.getByDisplayValue('Changed.')).toBeTruthy();
-    expect(screen.queryByText(/already holds a change to another Grit/)).toBeNull();
   });
 
   it('keeps what is typed while a save is under way, unsaved', async () => {
@@ -282,18 +281,35 @@ describe('Change for your table', () => {
     expect(screen.queryByRole('button', { name: 'Save for your table' })).toBeNull();
   });
 
-  it('refuses to save over another change of the same name and book', async () => {
+  it('keeps a change to each of two same-named features, and takes back only its own', async () => {
     const { at } = await gritChangedAt(4);
     const sheet = await renderSheet(sorcerer());
     await sheet.visit(
       `/workshop/change/classFeature/${encodeURIComponent(identityKey('classFeature', at(8)))}`,
     );
-    await screen.findByText(/already holds a change to another Grit/, {}, { timeout: WAIT });
     // The level-8 Grit opens, not the changed one at level 4.
-    expect(screen.getByDisplayValue('Grit at level 8.')).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: 'Speed' }));
-    const save = screen.getByRole('button', { name: 'Save for your table' });
-    expect((save as HTMLButtonElement).disabled).toBe(true);
+    const text = await screen.findByDisplayValue('Grit at level 8.', {}, { timeout: WAIT });
+    fireEvent.change(text, { target: { value: 'Level 8, changed.' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save for your table' }));
+    await screen.findByText(/Saved\. Every character at your table/, {}, { timeout: WAIT });
+    const entriesAt = async (level: number) => {
+      invalidateRegistry();
+      return (await getRegistry())
+        .byType('classFeature')
+        .find((f) => f.name === 'Grit' && f.level === level)?.entries;
+    };
+    expect(await changesOf('classFeature')).toHaveLength(2);
+    expect(await entriesAt(4)).toEqual(['Changed.']);
+    expect(await entriesAt(8)).toEqual(['Level 8, changed.']);
+
+    fireEvent.click(screen.getAllByRole('button', { name: 'More' })[0] as HTMLElement);
+    fireEvent.click(
+      await screen.findByRole('button', { name: /Use the book's Grit again/ }, { timeout: WAIT }),
+    );
+    await screen.findByText(/The book's Grit is back for your table/, {}, { timeout: WAIT });
+    expect(await changesOf('classFeature')).toMatchObject([{ level: 4 }]);
+    expect(await entriesAt(4)).toEqual(['Changed.']);
+    expect(await entriesAt(8)).toEqual(['Grit at level 8.']);
   });
 });
 

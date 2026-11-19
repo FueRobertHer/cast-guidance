@@ -89,12 +89,15 @@ export function entryAt(registry: EntityRegistry, type: string, uid: string): En
 export const changePath = (type: string, e: Entity): string =>
   `/workshop/change/${type}/${encodeURIComponent(identityKey(type, e))}`;
 
-const keyOf = (e: Json): EntryKey => ({ name: String(e.name), source: String(e.source) });
-
-const sameKey = (e: unknown, key: EntryKey): boolean =>
-  isRecord(e) &&
-  String(e.name).toLowerCase() === key.name.toLowerCase() &&
-  String(e.source).toLowerCase() === key.source.toLowerCase();
+/**
+ * A change as the key `homebrewRepo` finds it by in the changes file: the
+ * whole change, whose identity names a feature's class and level too.
+ */
+const keyOf = (e: Json): EntryKey & Json => ({
+  ...e,
+  name: String(e.name),
+  source: String(e.source),
+});
 
 /** How many entries a file holds, of every type. */
 const entryCount = (json: Json) =>
@@ -120,11 +123,6 @@ interface ChangeSubject {
    */
   lost: 'all' | 'part' | false;
   fileId?: string;
-  /**
-   * Another change in the file shares this one's name and book (each class's
-   * Ability Score Improvement): saving by name and book could replace it.
-   */
-  clash?: string;
 }
 
 type Resolved =
@@ -165,9 +163,6 @@ function resolveChange(
   const file = changesFile(files);
   const list = Array.isArray(file?.json[type]) ? (file?.json[type] as unknown[]) : [];
   const stored = list.find((x): x is Json => isRecord(x) && changeKey(type, x) === identity);
-  const other = list.find(
-    (x) => isRecord(x) && sameKey(x, keyOf(original)) && changeKey(type, x) !== identity,
-  );
   let draft: Json = structuredClone(original);
   let lost: ChangeSubject['lost'] = false;
   if (stored !== undefined) {
@@ -189,11 +184,6 @@ function resolveChange(
       stored,
       lost,
       fileId: file?.id,
-      ...(other !== undefined
-        ? {
-            clash: `${CHANGES} already holds a change to another ${String(original.name)} of ${String(original.source)}, which saving here could replace. Change that one from its own page.`,
-          }
-        : {}),
     },
   };
 }
@@ -282,7 +272,6 @@ function ChangeEditor({
 
   const count = changeCount(original, draft);
   const problems: Problem[] = [];
-  if (subject.clash !== undefined) problems.push({ text: subject.clash, blocks: true });
   if (count === 0) {
     problems.push({
       text:
@@ -493,7 +482,7 @@ function ChangeEditor({
       title={name}
       kind={`${noun[0]?.toUpperCase()}${noun.slice(1)}, your table's version. ${saveState}`}
       onBack={() => void leave()}
-      onMore={stored !== undefined && subject.clash === undefined ? () => void more() : undefined}
+      onMore={stored !== undefined ? () => void more() : undefined}
       banner={
         <>
           <span className="inline-flex min-h-8 items-center gap-1.5 self-start rounded-full px-3 text-caption font-semibold text-ink-muted ring-1 ring-line-strong ring-inset">
