@@ -343,8 +343,8 @@ A Workshop copy of an item (its `castGuidance` is `basedOn` the official one,
 as the Workshop saves every copy, in changes or in full) is reached by the
 official one's `itemDc` and `itemSpells` rows, under the official one's
 `name|source` after its own (`itemRowKeys`). It casts what the official one
-casts, whatever its own lists say, and, with no `charges` effect of its own,
-at the DC its text fixes. It is not reached by the official one's `wornTags`
+casts, whatever its own lists say, and, with no `charges` effect of its own
+or a pack's, at the DC its text fixes. It is not reached by the official one's `wornTags`
 or `charges` rows: its tags and charges are its author's (its own `charges`
 effect, "An item's own charges", below), and the Workshop writes the official
 one's charges out for it. Until then a copy counts its charges by its fields,
