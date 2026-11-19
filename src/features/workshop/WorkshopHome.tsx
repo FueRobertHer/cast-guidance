@@ -331,9 +331,12 @@ function ResultGroup({ id, head, rows }: { id: string; head: string; rows: reado
   );
 }
 
-/** An entry as the index and the player's files both name it. */
+/**
+ * An entry as the index ids it (`type:name|source`, lower case). The id keeps
+ * the whole name where a hit's `name` is cut to what is indexed.
+ */
 const entryKey = (type: string, name: string, source: string) =>
-  `${type}|${name.toLowerCase()}|${source.toLowerCase()}`;
+  `${type}:${`${name}|${source}`.toLowerCase()}`;
 
 /**
  * The search: theirs from the files they made, as typed; their collections
@@ -387,7 +390,7 @@ function SearchResults({
     [rows],
   );
   const hits = result?.query === query ? result.found.hits : [];
-  const others = hits.filter((h) => !own.has(entryKey(h.type, h.name, h.source)));
+  const others = hits.filter((h) => !own.has(h.id));
   const collected = others.filter((h) => brews.has(h.source.toLowerCase())).map(hitRow);
   const books = others.filter((h) => !brews.has(h.source.toLowerCase())).map(hitRow);
   const settled = result?.query === query || status === 'error' || reg.error !== null;

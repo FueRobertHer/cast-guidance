@@ -29,15 +29,9 @@ describe('collectionsOf', () => {
     const out = collectionsOf(rows, new Map([['mine', 'My homebrew']]));
     expect(out.map((c) => [c.id, c.name, c.from, c.rows.length, holdsOf(c)])).toEqual([
       ['a', 'all.xml', 'A compendium of 2 books', 2, '3 entries. 1 of 2 books on'],
-      ['mine', 'My homebrew', 'Yours. Made in this app', 1, 'Empty. On for every character'],
-      ['link', 'link.json', 'A homebrew file, from a link', 1, '1 entry. On for every character'],
-      [
-        'part',
-        'Old Codex',
-        'Part of a book, what a character brought',
-        1,
-        '1 entry. On for every character',
-      ],
+      ['mine', 'My homebrew', 'Yours. Made in this app', 1, 'Empty. On'],
+      ['link', 'link.json', 'A homebrew file, from a link', 1, '1 entry. On'],
+      ['part', 'Old Codex', 'Part of a book, what a character brought', 1, '1 entry. On'],
     ]);
   });
 

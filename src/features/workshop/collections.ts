@@ -92,16 +92,16 @@ export function collectionWith(
   return collectionsOf(rows, names).find((c) => c.rows.some((r) => r.id === id));
 }
 
-/** How much a collection holds and where it is on ("2 entries. On"). */
+/**
+ * How much a collection holds and whether this device uses it ("2 entries.
+ * On"). Only the device's switch: a character can turn a collection off for
+ * itself (`sourceSwitches`), so "on" is never "on for every character".
+ */
 export function holdsOf(c: Collection): string {
   const holds = c.entries === 0 ? 'Empty' : `${c.entries} ${c.entries === 1 ? 'entry' : 'entries'}`;
   const on = c.rows.filter((r) => r.enabled).length;
   const where =
-    on === c.rows.length
-      ? 'On for every character'
-      : on === 0
-        ? 'Off'
-        : `${on} of ${c.rows.length} books on`;
+    on === c.rows.length ? 'On' : on === 0 ? 'Off' : `${on} of ${c.rows.length} books on`;
   return `${holds}. ${where}`;
 }
 

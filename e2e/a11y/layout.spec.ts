@@ -421,6 +421,9 @@ test.describe('text at 200%', () => {
 });
 
 /** A collection with a long file name, as one shared from a friend might have. */
+/** A feat whose name runs long, to measure the room a Yours row leaves it. */
+const LONG_FEAT = 'Gift of the Unending Lantern-Lit Harbour Night';
+
 const LONG_BREW = jsonFile('a-very-long-homebrew-file-name-shared-by-a-friend.json', {
   _meta: { sources: [{ json: 'LONGBREW', full: 'Long Brew' }] },
   feat: [{ name: 'Lanternbearer of the Western Coast', source: 'LONGBREW', entries: ['Glow.'] }],
@@ -434,7 +437,7 @@ const LONG_BREW = jsonFile('a-very-long-homebrew-file-name-shared-by-a-friend.js
 async function setUpWorkshop(page: Page): Promise<void> {
   await skipOfflineReadyNotice(page);
   await gotoRosterSettled(page);
-  for (const name of ['Fire Gift', 'Gift of the Unending Lantern-Lit Harbour Night']) {
+  for (const name of ['Fire Gift', LONG_FEAT]) {
     await page.goto('/workshop/new/feat');
     await page.getByRole('textbox', { name: 'Name', exact: true }).fill(name);
     await page.getByRole('button', { name: 'Save', exact: true }).click();
@@ -463,7 +466,12 @@ const WORKSHOP: readonly Route[] = [
       page.getByRole('group', { name: 'Show' }).getByRole('button', { name: 'Spells, 1' }),
       page.getByRole('link', { name: /^Gift of the Unending/ }),
     ],
-    keepsRoom: (page) => [page.getByRole('link', { name: /^Gift of the Unending/ })],
+    // The name itself, not its row: the row is always as wide as the list.
+    keepsRoom: (page) => [
+      page
+        .getByRole('link', { name: /^Gift of the Unending/ })
+        .getByText(LONG_FEAT, { exact: true }),
+    ],
   },
   {
     name: 'workshop collections',
@@ -476,8 +484,12 @@ const WORKSHOP: readonly Route[] = [
       page.getByRole('link', { name: /^The books\s*,/ }),
     ],
     // With text at 200% the long name's card is taller than the screen, so it
-    // cannot be whole in view; what matters is that the name keeps room.
-    keepsRoom: (page) => [page.getByRole('link', { name: /^a-very-long-homebrew/ })],
+    // cannot be whole in view; what matters is that the name itself keeps room.
+    keepsRoom: (page) => [
+      page
+        .getByRole('link', { name: /^a-very-long-homebrew/ })
+        .getByText(LONG_BREW.name, { exact: true }),
+    ],
   },
   {
     name: 'workshop collection',

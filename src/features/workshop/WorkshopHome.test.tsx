@@ -185,9 +185,9 @@ describe('the Workshop home', () => {
       { timeout: WAIT },
     );
     expect(cards.map((c) => c.textContent)).toEqual([
-      'all.xml, A compendium of 2 books, 2 entries. On for every character',
-      'imported.json, A homebrew file you imported, 1 entry. On for every character',
-      'Lantern Coast, Yours. Made in this app, 2 entries. On for every character',
+      'all.xml, A compendium of 2 books, 2 entries. On',
+      'imported.json, A homebrew file you imported, 1 entry. On',
+      'Lantern Coast, Yours. Made in this app, 2 entries. On',
       'The books, Game data harness, Choose which books show, in Settings',
     ]);
     expect(screen.getByRole('link', { name: 'Import or manage files' }).getAttribute('href')).toBe(

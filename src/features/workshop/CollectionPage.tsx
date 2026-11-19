@@ -93,7 +93,7 @@ function Found({ c }: { c: Collection }) {
           <div key={r.id} className={listClass}>
             <div className={`${listRowClass} flex-wrap`}>
               <span className="min-w-0 flex-1 basis-40">
-                {r.enabled ? 'On for every character' : 'Off for every character'}
+                {r.enabled ? 'In use on this device' : 'Turned off on this device'}
               </span>
               <Switch row={r} name={c.name} />
             </div>
