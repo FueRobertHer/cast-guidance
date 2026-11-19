@@ -282,14 +282,42 @@ describe('the pool its fields make', () => {
     ]);
   });
 
-  it('is not made beside the pool an older Workshop item counts them in, which its cards and actions spend', () => {
+  it('is the one an older Workshop item converts to, which its cards and actions spend', () => {
+    const effects = [
+      { kind: 'resource', key: 'charges', label: 'Charges', max: 5, reset: 'long' },
+      { kind: 'grantSpell', spell: 'Fireball|XPHB', usage: '1/day', resourceKey: 'charges' },
+      {
+        kind: 'action',
+        economy: 'bonus',
+        label: 'Strike',
+        cost: { resource: 'charges', amount: 1 },
+      },
+    ];
+    const old = item('Old Wand', 'HB', {
+      charges: 5,
+      recharge: 'dawn',
+      castGuidance: { v: 1, effects },
+    });
+    const doc = carrying({ id: 'a', name: 'Old Wand', source: 'HB' });
+    const sheet = deriveSheet(doc, world([old]));
+    expect(sheet.warnings).toEqual([]);
+    expect(
+      sheet.resources.filter((r) => r.key.includes('charges')).map((r) => [r.key, r.max]),
+    ).toEqual([['item-charges:a', 5]]);
+    expect(sheet.grantedSpells.map((g) => g.resourceKey)).toEqual(['item-charges:a']);
+    expect(sheet.actions.filter((a) => a.label === 'Strike').map((a) => a.cost?.resource)).toEqual([
+      'item-charges:a',
+    ]);
+  });
+
+  it('is not made beside the older pool the conversion leaves, which its cards and actions spend', () => {
     const old = item('Old Wand', 'HB', {
       charges: 5,
       recharge: 'dawn',
       castGuidance: {
         v: 1,
         effects: [
-          { kind: 'resource', key: 'charges', label: 'Charges', max: 5, reset: 'long' },
+          { kind: 'resource', key: 'charges', label: 'Charges', max: 5, reset: 'short' },
           { kind: 'grantSpell', spell: 'Fireball|XPHB', usage: '1/day', resourceKey: 'charges' },
           {
             kind: 'action',

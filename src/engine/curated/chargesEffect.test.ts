@@ -388,17 +388,34 @@ describe('the spells its charges grant', () => {
     ]);
   });
 
-  it("still reads an item in the Workshop's older shape, a pool and a card, as before", () => {
+  it("reads an item in the Workshop's older shape, a pool and a card, as its charges", () => {
+    const card = {
+      kind: 'grantSpell',
+      spell: 'Fireball|XPHB',
+      usage: '1/day',
+      resourceKey: 'charges',
+    };
     const old = item('Old Wand', 'HB', [
       { kind: 'resource', key: 'charges', label: 'Charges', max: 5, reset: 'long' },
-      { kind: 'grantSpell', spell: 'Fireball|XPHB', usage: '1/day', resourceKey: 'charges' },
+      card,
     ]);
     const doc = carrying({ id: 'a', name: 'Old Wand', source: 'HB' });
     const sheet = deriveSheet(doc, world([old]));
     expect(sheet.warnings).toEqual([]);
-    expect(sheet.resources.find((r) => r.key === 'charges')?.max).toBe(5);
-    expect(sheet.resources.some((r) => r.key.startsWith('item-charges:'))).toBe(false);
-    expect(grants(doc, world([old]))).toEqual([['Fireball', '1/day', 'charges', undefined]]);
+    expect(sheet.resources.some((r) => r.key === 'charges')).toBe(false);
+    expect(sheet.resources.find((r) => r.key === 'item-charges:a')?.max).toBe(5);
+    expect(grants(doc, world([old]))).toEqual([
+      ['Fireball', 'charges', 'item-charges:a', undefined],
+    ]);
+    // One whose pool the conversion cannot say (a short rest) reads as before.
+    const short = item('Old Wand', 'HB', [
+      { kind: 'resource', key: 'charges', label: 'Charges', max: 5, reset: 'short' },
+      card,
+    ]);
+    expect(deriveSheet(doc, world([short])).resources.find((r) => r.key === 'charges')?.max).toBe(
+      5,
+    );
+    expect(grants(doc, world([short]))).toEqual([['Fireball', '1/day', 'charges', undefined]]);
   });
 });
 
@@ -454,24 +471,26 @@ describe('charges that only actions spend', () => {
     expect(JSON.stringify(rod.castGuidance)).toContain('"resource":"charges"');
   });
 
-  it("spends them for a pack's action too, and leaves an item with no charges as it was", () => {
+  it("spends them for a pack's action too, and leaves an item that counts its own way as it was", () => {
     const doc = carrying({ id: 'a', name: 'Rod of Knocks', source: 'HB' });
     const adds = pack('Adds', [{ target: 'Rod of Knocks|HB', add: [STRIKE] }]);
     expect(strikes(doc, world([item('Rod of Knocks', 'HB', [COUNTED])], [adds]))).toEqual([
       'item-charges:a',
     ]);
-    // The Workshop's older shape: its own pool under the key `charges`.
+    // The Workshop's older shape, a pool under the key `charges`, which the
+    // conversion leaves as it is (a short rest).
     const old = item('Rod of Knocks', 'HB', [
-      { kind: 'resource', key: 'charges', label: 'Charges', max: 3, reset: 'long' },
+      { kind: 'resource', key: 'charges', label: 'Charges', max: 3, reset: 'short' },
       STRIKE,
     ]);
     expect(strikes(doc, world([old]))).toEqual(['charges']);
   });
 
   it("moves only the counted item's own actions, not those of an item carried before it", () => {
-    // An older-shape wand carried first: its action spends its own `charges` pool.
+    // An older-shape wand carried first, left as it is (a short rest): its
+    // action spends its own `charges` pool.
     const old = item('Old Wand', 'HB', [
-      { kind: 'resource', key: 'charges', label: 'Charges', max: 3, reset: 'long' },
+      { kind: 'resource', key: 'charges', label: 'Charges', max: 3, reset: 'short' },
       { ...STRIKE, label: 'Zap' },
     ]);
     const doc = carrying(

@@ -20,6 +20,7 @@ import {
   itemChargesIn,
   rechargeWords,
   regainOf,
+  upgradeOlderCharges,
 } from '@/engine/curated/itemCharges';
 import { type ItemCharges, readOwnEffects } from '@/engine/effects/mechanics';
 import { ABILITIES, type Ability, type DataEntity } from '@/engine/types';
@@ -735,9 +736,9 @@ function Charges(props: EditorProps) {
       </div>
       {charges !== undefined && old && (
         <p className="text-caption text-ink-muted">
-          The Charges card under What it does on the sheet counts these the older way, all back on a
-          long rest. Remove the card, and the Cast a spell cards that spend it, to count them here
-          alone, where each spell costs its charges by level.
+          The Charges card under What it does on the sheet counts these the older way. Remove the
+          card, and the Cast a spell cards that spend it, to count them here alone, where each spell
+          costs its charges by level.
         </p>
       )}
       {charges !== undefined && !old && counted === undefined && !readOnly && (
@@ -935,4 +936,7 @@ export const editor: EditorSpec = {
   noun: 'item',
   blank: () => ({ type: 'W', rarity: 'uncommon', entries: [] }),
   Body: ItemBody,
+  // One saved before the Charges section counted them opens as the sheet reads
+  // it, so a save writes it so.
+  open: (entry) => upgradeOlderCharges(entry as DataEntity) as Json,
 };

@@ -800,7 +800,7 @@ describe('ItemEditor', () => {
     }
   });
 
-  it('leaves charges counted the older way as they are, and says so', () => {
+  it('opens charges counted the older way as the sheet reads them', () => {
     const old: Json = {
       name: 'Old Wand',
       type: 'WD',
@@ -814,6 +814,43 @@ describe('ItemEditor', () => {
         ],
       },
     };
+    const opened = item.open?.(structuredClone(old), { registry: new EntityRegistry() });
+    expect(opened).toEqual({
+      ...old,
+      castGuidance: {
+        v: 1,
+        effects: [
+          {
+            kind: 'charges',
+            charges: 3,
+            regain: 'all',
+            spells: [{ spell: 'Shield|PHB', cost: 1 }],
+          },
+        ],
+      },
+    });
+    mount(item, opened as Json);
+    expect(screen.queryByText(/counts these the older way/)).toBeNull();
+    expect(screen.getByLabelText('Charge spell 1')).toBeTruthy();
+  });
+
+  it('leaves charges counted the older way that do not convert as they are, and says so', () => {
+    // A short rest, which the Charges section cannot say.
+    const old: Json = {
+      name: 'Old Wand',
+      type: 'WD',
+      entries: [],
+      charges: 3,
+      castGuidance: {
+        v: 1,
+        effects: [
+          { kind: 'resource', key: ITEM_CHARGES, label: 'Charges', max: 3, reset: 'short' },
+          { kind: 'grantSpell', spell: 'Shield|PHB', resourceKey: ITEM_CHARGES, usage: '1/day' },
+        ],
+      },
+    };
+    const opened = item.open?.(old, { registry: new EntityRegistry() });
+    expect(opened).toBe(old);
     const draft = mount(item, structuredClone(old));
     expect(screen.getByText(/counts these the older way/)).toBeTruthy();
     // Its fields stand aside for the card, so the sheet counts them once.

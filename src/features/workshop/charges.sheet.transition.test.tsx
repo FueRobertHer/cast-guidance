@@ -173,3 +173,80 @@ describe("an item's charges from the Workshop to the sheet", () => {
     expect(readMechanics(rod?.castGuidance).problems).toEqual([]);
   });
 });
+
+describe('an item the Workshop wrote before its Charges section counted them', () => {
+  it('is read as its charges on the sheet, opens so in the Workshop, and a save writes it so', async () => {
+    // A pool card keyed `charges` and a Cast a spell card spending one of it.
+    const old = {
+      name: 'Wand of Old',
+      source: 'OLDW',
+      type: 'WD',
+      rarity: 'rare',
+      entries: ['It holds 5 charges.'],
+      charges: 5,
+      recharge: 'dawn',
+      rechargeAmount: '{@dice 1d4}',
+      castGuidance: {
+        v: 1,
+        effects: [
+          { kind: 'resource', key: ITEM_CHARGES, label: 'Charges', max: 5, reset: 'long' },
+          {
+            kind: 'grantSpell',
+            spell: 'Cure Wounds|TST',
+            usage: '1/day',
+            resourceKey: ITEM_CHARGES,
+          },
+        ],
+      },
+    };
+    const meta = {
+      json: 'OLDW',
+      abbreviation: 'OLDW',
+      full: 'Old Wands',
+      authors: [],
+      version: '1.0.0',
+    };
+    const file = await homebrewRepo.createEditable('Old Wands', 'OLDW');
+    await homebrewRepo.saveEditable(file.id, { _meta: { sources: [meta] }, item: [old] });
+    const doc = sorcerer();
+    doc.spellcasting = { 'sorcerer|tst': { known: [], prepared: [] } };
+    // Spent from the older card's pool, which no longer counts.
+    doc.play.resources = [{ key: ITEM_CHARGES, used: 2 }];
+    doc.equipment = [
+      {
+        id: 'w1',
+        ref: { name: 'Wand of Old', source: 'OLDW' },
+        qty: 1,
+        equipped: true,
+        attuned: false,
+      },
+    ];
+    const sheet = await renderSheet(doc, { extra: { spell: [cureWounds] } });
+    expect(grantedSpell('Cure Wounds')).toEqual({
+      alwaysPrepared: false,
+      uses: '5/5 charges',
+      usesTitle: 'charges from Wand of Old',
+    });
+    expect(left('Wand of Old charges use')).toBe(5);
+
+    await sheet.visit('/workshop/edit/item/Wand%20of%20Old%7COLDW');
+    await screen.findByLabelText('Charge spell 1', {}, { timeout: WAIT });
+    expect(screen.queryByText(/counts these the older way/)).toBeNull();
+    expect(screen.queryByLabelText('Uses per rest: Name')).toBeNull();
+    press('Save');
+    await waitFor(() => expect(notice()).toBe('Saved Wand of Old'), { timeout: WAIT });
+    const saved = (await homebrewRepo.ownedSafe()).files.find((f) => f.id === file.id);
+    const [wand] = (saved?.json as { item: Array<Record<string, unknown>> }).item;
+    expect(wand?.castGuidance).toEqual({
+      v: 1,
+      effects: [
+        {
+          kind: 'charges',
+          charges: 5,
+          regain: '1d4',
+          spells: [{ spell: 'Cure Wounds|TST', cost: 1 }],
+        },
+      ],
+    });
+  });
+});

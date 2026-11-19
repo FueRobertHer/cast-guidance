@@ -1,5 +1,11 @@
 import { WORN_TAG_KINDS } from '../castGuidance';
-import { ITEM_CHARGES, itemChargeKey, itemChargesOf, regainRollOf } from '../curated/itemCharges';
+import {
+  ITEM_CHARGES,
+  itemChargeKey,
+  itemChargesOf,
+  regainRollOf,
+  upgradeOlderCharges,
+} from '../curated/itemCharges';
 import type { DataEntity, EffectOrigin } from '../types';
 import { refUid } from '../types';
 import { collectAdditionalSpells } from './additionalSpells';
@@ -31,16 +37,21 @@ export function parseBonus(v: unknown): number {
   return 0;
 }
 
+/**
+ * The item an equipment entry names, as the engine reads it: one the Workshop
+ * wrote before its Charges section counted charges reads as it would write it
+ * now (`upgradeOlderCharges`), so every reader of a carried item sees one shape.
+ */
 export function lookupItem(
   col: Pick<Collector, 'ctx'>,
   name: string,
   source?: string,
 ): DataEntity | undefined {
-  return (
+  const found =
     col.ctx.get('item', name, source) ??
     col.ctx.get('baseitem', name, source) ??
-    col.ctx.get('itemGroup', name, source)
-  );
+    col.ctx.get('itemGroup', name, source);
+  return found === undefined ? undefined : upgradeOlderCharges(found);
 }
 
 /** Whether the item gives nothing until someone attunes to it ("optional" never holds it back). */
