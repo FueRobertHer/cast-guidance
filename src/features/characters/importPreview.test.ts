@@ -407,6 +407,15 @@ describe('previewCharacterImport of a file of a collection here (ADR-002, D4)', 
     expect(await status([old], 'osk')).toEqual([['other-version', undefined]]);
   });
 
+  it('never updates a rule pack, nor with one: a pack lands beside', () => {
+    const asPack = <T extends { json: unknown }>(f: T): T =>
+      ({ ...f, json: { _meta: { sources: [{ json: 'HB' }], castGuidance: { v: 1 } } } }) as T;
+    const plain = keyed(local('plain', ['HB']));
+    expect(run([plain], asPack(keyed(brew('incoming', ['HB']))))[0]?.status).toBe('other-version');
+    expect(run([asPack(plain)])[0]?.status).toBe('other-version');
+    expect(run([plain])[0]?.status).toBe('updates');
+  });
+
   it('never updates a file the player owns, the same file, or one under another key', () => {
     const mine = { ...local('mine', ['HB']), editable: true, key };
     const other = { ...local('other', ['HB']), key: 'file:hb|other' };

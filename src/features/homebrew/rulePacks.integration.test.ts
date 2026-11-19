@@ -8,12 +8,14 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { DATA_TAG } from '@/data5e/config';
 import { getRegistry, invalidateRegistry } from '@/data5e/registry';
 import { PACK_LOCAL_KEY } from '@/data5e/rulePack';
+import { characterRepo } from '@/db/characterRepo';
 import { db } from '@/db/db';
 import { buildHomebrewRow, homebrewRepo, putHomebrewRow } from '@/db/homebrewRepo';
 import { type PackAppliesTo, RULE_PACK_TYPE } from '@/engine/castGuidance';
 import { deriveSheet } from '@/engine/derive';
 import { type CharacterDoc, type EngineContext, newCharacterDoc } from '@/engine/types';
 import { homebrewForExport } from '@/features/characters/homebrewExport';
+import { CHARACTER_EXPORT_FORMAT } from '@/lib/guards';
 import grittyTable from '../../../tests-fixtures/packs/gritty-table.json';
 import { makeTestContext } from '../../../tests-fixtures/testWorld';
 import { commitHomebrewImport } from './HomebrewImportPreview';
@@ -296,6 +298,70 @@ describe('a changed pack imported again (ADR-002, D4)', () => {
     });
     const { files } = await homebrewRepo.listSafe();
     expect(files.map((f) => [f.enabled, f.pack])).toEqual([[false, { appliesTo: everyone }]]);
+  });
+});
+
+describe('a rule pack in a character file (ADR-002, D4)', () => {
+  /** A character's export carrying `homebrew`, as another device writes one. */
+  const exportOf = (doc: CharacterDoc, homebrew: unknown[]) =>
+    JSON.stringify({ $format: CHARACTER_EXPORT_FORMAT, character: doc, homebrew });
+
+  it('never updates the pack here: its rules, switch and Apply to stay as they were', async () => {
+    const { row } = await addPack(packFile(), { characters: ['hild'] });
+    await savePackLocal(row.id, (local) => ({ ...local, order: 2 }));
+    const before = (await homebrewRepo.getSafe(row.id)).file;
+
+    const summary = await characterRepo.importFromText(
+      exportOf(warrior('osk'), [{ fileName: 'gritty-table.json', json: changedPack() }]),
+    );
+
+    expect(summary).toMatchObject({ homebrewAdded: 1 });
+    expect(summary).not.toHaveProperty('homebrewUpdated');
+    expect((await homebrewRepo.getSafe(row.id)).file).toEqual(before);
+    // The copy lands beside, applied to nobody.
+    const beside = (await homebrewRepo.listSafe()).files.filter((f) => f.id !== row.id);
+    expect(beside.map((f) => [f.json, f.pack])).toEqual([[changedPack(), undefined]]);
+    invalidateRegistry();
+    const ctx = await context();
+    expect(deriveSheet(warrior('hild'), ctx).rules?.restLength).toBe('gritty');
+    expect(deriveSheet(warrior('hild'), ctx).initiative.value).toBe(4);
+    expect(deriveSheet(warrior('osk'), ctx).rules).toBeUndefined();
+  });
+
+  it('keeps a turned-off pack here off, and lets no other file of its key take its place', async () => {
+    const { row } = await addPack(packFile(), { characters: ['hild'] });
+    await homebrewRepo.setEnabled(row.id, false);
+    const before = (await homebrewRepo.getSafe(row.id)).file;
+    // The same file name and book, but no longer a pack.
+    const plain = { _meta: packFile()._meta as Record<string, unknown>, spell: [] as unknown[] };
+    delete (plain._meta as Record<string, unknown>).castGuidance;
+    plain.spell.push({ name: 'Gritty Bolt', source: 'GT', level: 1 });
+
+    const summary = await characterRepo.importFromText(
+      exportOf(warrior('osk'), [{ fileName: 'gritty-table.json', json: plain }]),
+    );
+
+    expect(summary).toMatchObject({ homebrewAdded: 1 });
+    expect(summary).not.toHaveProperty('homebrewUpdated');
+    expect((await homebrewRepo.getSafe(row.id)).file).toEqual(before);
+    expect((await homebrewRepo.listSafe()).files).toHaveLength(2);
+  });
+
+  it('never makes a file here a pack: a pack of its key lands beside it', async () => {
+    const plain = { _meta: packFile()._meta as Record<string, unknown>, spell: [] as unknown[] };
+    delete (plain._meta as Record<string, unknown>).castGuidance;
+    plain.spell.push({ name: 'Gritty Bolt', source: 'GT', level: 1 });
+    const here = await homebrewRepo.importJson(plain, 'gritty-table.json');
+    const before = (await homebrewRepo.getSafe(here.id)).file;
+
+    const summary = await characterRepo.importFromText(
+      exportOf(warrior('osk'), [{ fileName: 'gritty-table.json', json: changedPack() }]),
+    );
+
+    expect(summary).not.toHaveProperty('homebrewUpdated');
+    expect((await homebrewRepo.getSafe(here.id)).file).toEqual(before);
+    const beside = (await homebrewRepo.listSafe()).files.filter((f) => f.id !== here.id);
+    expect(beside.map((f) => [f.json, f.pack])).toEqual([[changedPack(), undefined]]);
   });
 });
 

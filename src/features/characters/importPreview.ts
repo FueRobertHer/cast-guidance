@@ -1,13 +1,16 @@
 /**
  * What importing a character export would do, worked out before anything is
  * written (IMP-002). Pure. Its runtime imports are `collectCharacterSources`
- * and the homebrew preview's `officialCoverage`, both loaded with the import
- * flow, so the roster can load it on demand without growing the entry chunk.
+ * (with the pack reader it uses) and the homebrew preview's
+ * `officialCoverage`, both loaded with the import flow, so the roster can
+ * load it on demand without growing the entry chunk.
  *
  * The commit decides again inside its transaction (`characterRepo.commitImport`),
  * so this is a forecast for the player, not a promise: another tab may change
  * the answer in between, and the commit's summary is the one that counts.
  */
+
+import { packGuidance } from '@/data5e/rulePack';
 import type { PreparedCharacterImport } from '@/db/characterRepo';
 import { bookHolders, mergeBook, sameBookCopy } from '@/db/homebrewBooks';
 import { compareMergeOrder, sameCollection } from '@/db/homebrewOrder';
@@ -137,12 +140,19 @@ export function previewCharacterImport(input: CharacterPreviewInput): CharacterP
         ? undefined
         : existing.find((f) => sameBookCopy(f, row));
     // The copies of its collection here, which a file stored whole replaces
-    // (`characterRepo.commitImport`), the first in merge order being the one it updates.
+    // (`characterRepo.commitImport`), the first in merge order being the one
+    // it updates. Never a rule pack, coming in or here: it lands beside.
     const updated =
-      existingIds.has(row.id) || row.book !== undefined
+      existingIds.has(row.id) || row.book !== undefined || packGuidance(row.json) !== undefined
         ? []
         : existing
-            .filter((f) => !carried.has(f.id) && !claimed.has(f.id) && sameCollection(f, row))
+            .filter(
+              (f) =>
+                !carried.has(f.id) &&
+                !claimed.has(f.id) &&
+                sameCollection(f, row) &&
+                packGuidance(f.json) === undefined,
+            )
             .sort(compareMergeOrder);
     for (const f of updated) claimed.add(f.id);
     const base = {
