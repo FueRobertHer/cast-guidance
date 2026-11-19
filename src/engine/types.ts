@@ -191,6 +191,18 @@ export interface ActiveEffect {
 }
 
 /**
+ * A character's collection switches by source code (see
+ * `CharacterDoc.sourceSwitches`). Two lists rather than a map keyed by code,
+ * so a source named "constructor" is only ever a string.
+ */
+export interface SourceSwitches {
+  /** Shown in this character's pickers, whatever the device says. */
+  on?: string[];
+  /** Hidden from this character's pickers, whatever the device says. */
+  off?: string[];
+}
+
+/**
  * An effect the player described and kept to add again: what it does and how
  * long it lasts, and the temporary hit points it gives as it lands.
  */
@@ -252,6 +264,17 @@ export interface CharacterDoc {
   name: string;
   rulesVersion: '2014' | '2024';
   allowedSources: string[];
+  /**
+   * This character's own collection switches, over the device's choice: a
+   * source on `on` shows in its pickers even where this device hides it, one
+   * on `off` drops out of them, and a source on neither follows the device
+   * (or `allowedSources`, when that list is set). Keyed by source code, so a
+   * collection's switch is the switch of the sources its file declares. Like
+   * the device setting it means "everything except these": a book or file
+   * added later shows. Pickers only; picks already made keep counting. A
+   * source on both lists reads as off. Optional; absent switches nothing.
+   */
+  sourceSwitches?: SourceSwitches;
   dataTag: string;
 
   abilities: {

@@ -99,3 +99,29 @@ describe('outOfPolicyPicks (GAME-005)', () => {
     ).toEqual([]);
   });
 });
+
+describe('outOfPolicyPicks under collection switches (ADR-002 E2)', () => {
+  it('names picks from a source switched off, with or without a list', () => {
+    const doc = mixedDoc([]);
+    doc.sourceSwitches = { off: ['tce'] };
+    expect(outOfPolicyPicks(doc, resolved).map((p) => p.label)).toEqual([
+      'Twilight Domain',
+      'Fey Touched',
+      'Telekinetic',
+    ]);
+
+    // Over a list, off goes over it and on lets a book in.
+    const listed = mixedDoc(['PHB', 'TCE', 'XGE', 'WBTW', 'MPMM']);
+    listed.sourceSwitches = { on: ['MTF'], off: ['XGE'] };
+    expect(outOfPolicyPicks(listed, resolved).map((p) => p.label)).toEqual([
+      'Hat of Wizardry',
+      'Toll the Dead',
+    ]);
+  });
+
+  it('finds nothing for switches that only turn sources on', () => {
+    const doc = mixedDoc([]);
+    doc.sourceSwitches = { on: ['TCE'] };
+    expect(outOfPolicyPicks(doc, resolved)).toEqual([]);
+  });
+});

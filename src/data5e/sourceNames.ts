@@ -336,6 +336,21 @@ export function characterSourceList(raw: unknown): string[] {
   return [...out];
 }
 
+/**
+ * A character's `sourceSwitches`, cleaned up the same way as its source list:
+ * each of `on` and `off` read by {@link characterSourceList}. A source on both
+ * reads as off, matched without case, so the two lists never disagree. Junk
+ * (not an object, lists that are not arrays) reads as no switches.
+ */
+export function characterSourceSwitches(raw: unknown): { on: string[]; off: string[] } {
+  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) return { on: [], off: [] };
+  const o = raw as { on?: unknown; off?: unknown };
+  const off = characterSourceList(o.off);
+  const offLower = new Set(off.map((s) => s.toLowerCase()));
+  const on = characterSourceList(o.on).filter((s) => !offLower.has(s.toLowerCase()));
+  return { on, off };
+}
+
 /** Category a source belongs to; unrecognized codes are grouped as 'other'. */
 export function sourceGroup(source: string): SourceGroup {
   return entryFor(source)?.[1] ?? 'other';

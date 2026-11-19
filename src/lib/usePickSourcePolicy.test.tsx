@@ -30,3 +30,29 @@ describe('usePickSourcePolicy', () => {
     expect(result.current.policy).toEqual({ mode: 'only', sources: ['PHB'] });
   });
 });
+
+describe('usePickSourcePolicy with collection switches (ADR-002 E2)', () => {
+  it('keeps the same policy for equal switches, and changes it for different ones', () => {
+    const { result, rerender } = renderHook(({ switches }) => usePickSourcePolicy([], switches), {
+      initialProps: { switches: { off: ['MyHomebrew'] } as unknown },
+    });
+    const first = result.current;
+    expect(first).toEqual({ policy: { mode: 'all', except: ['MyHomebrew'] }, scope: 'character' });
+
+    rerender({ switches: { off: ['MyHomebrew'] } });
+    expect(result.current).toBe(first);
+
+    rerender({ switches: { on: ['MyHomebrew'] } });
+    expect(result.current).toEqual({ policy: ALLOW_ALL, scope: 'device' });
+  });
+
+  it('changes the policy when only the switches turned on change', () => {
+    const { result, rerender } = renderHook(
+      ({ switches }) => usePickSourcePolicy(['PHB'], switches),
+      { initialProps: { switches: { on: ['KIB'] } as unknown } },
+    );
+    expect(result.current.policy).toEqual({ mode: 'only', sources: ['PHB', 'KIB'] });
+    rerender({ switches: { on: ['KIB', 'XGE'] } });
+    expect(result.current.policy).toEqual({ mode: 'only', sources: ['PHB', 'KIB', 'XGE'] });
+  });
+});

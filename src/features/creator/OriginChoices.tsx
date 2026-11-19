@@ -204,7 +204,7 @@ export function OriginChoices({
   /** Enables ⓘ full-description drawers on feat options when provided. */
   registry?: EntityRegistry | null;
 }) {
-  const { policy, scope } = usePickSourcePolicy(doc.allowedSources);
+  const { policy, scope } = usePickSourcePolicy(doc.allowedSources, doc.sourceSwitches);
   const pending = sheet.pending.filter((p) => match(p.origin) && listsPick(p));
   const resolved = sheet.resolvedChoices.filter((r) => match(r.prompt.origin));
   // Which already-made pick is open for editing, if any (by prompt id).

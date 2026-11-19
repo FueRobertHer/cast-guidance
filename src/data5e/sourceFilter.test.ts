@@ -5,6 +5,7 @@ import {
   backToSourcesLabel,
   characterPolicy,
   characterSourceList,
+  characterSourceSwitches,
   hiddenSourcesLabel,
   isPolicyNarrowed,
   parsePolicy,
@@ -15,6 +16,7 @@ import {
   type SourcePolicy,
   sourcesInGroups,
   withSource,
+  withSwitches,
 } from './sourceFilter';
 import { setHomebrewSourceNames } from './sourceNames';
 
@@ -234,5 +236,96 @@ describe("a character's own sources (GAME-005)", () => {
       "3 spells outside this character's sources. Show them anyway",
     );
     expect(backToSourcesLabel('character')).toBe("Back to this character's sources");
+  });
+});
+
+describe("a character's collection switches (ADR-002 E2)", () => {
+  const everything: SourcePolicy = { mode: 'all', except: ['KIB'] };
+  const core: SourcePolicy = { mode: 'only', sources: ['XPHB'] };
+
+  it('switches nothing without switches, so an old character sees what it saw', () => {
+    for (const raw of [undefined, null, 'off', [], {}, { on: [], off: [] }, { on: 'PHB' }]) {
+      const picked = pickPolicy(everything, [], raw);
+      expect(picked.policy).toBe(everything);
+      expect(picked.scope).toBe('device');
+      // An old "only these" list reads exactly as before.
+      expect(pickPolicy(everything, ['PHB', 'XGE'], raw)).toEqual({
+        policy: { mode: 'only', sources: ['PHB', 'XGE'] },
+        scope: 'character',
+      });
+    }
+  });
+
+  it('hides a source switched off for one character only, and still shows a book added later', () => {
+    const osk = pickPolicy(everything, [], { off: ['MyHomebrew'] });
+    const maren = pickPolicy(everything, [], undefined);
+    expect(osk.scope).toBe('character');
+    expect(policyAllows(osk.policy, 'MyHomebrew')).toBe(false);
+    expect(policyAllows(maren.policy, 'MyHomebrew')).toBe(true);
+    // "Everything except these": a source no setting has heard of shows for both.
+    expect(policyAllows(osk.policy, 'BookFromNextYear')).toBe(true);
+    expect(policyAllows(maren.policy, 'BookFromNextYear')).toBe(true);
+    // The device keeps hiding what it hid.
+    expect(policyAllows(osk.policy, 'KIB')).toBe(false);
+    // The library reads the device policy, which the switch never touched.
+    expect(everything).toEqual({ mode: 'all', except: ['KIB'] });
+  });
+
+  it('shows a source switched on over the device, without taking the scope', () => {
+    const fromAll = pickPolicy(everything, [], { on: ['KIB'] });
+    expect(policyAllows(fromAll.policy, 'KIB')).toBe(true);
+    expect(fromAll.scope).toBe('device');
+
+    // Over a preset, the switch adds to it and the preset's other books stay hidden.
+    const fromCore = pickPolicy(core, [], { on: ['KIB'] });
+    expect(fromCore.policy).toEqual({ mode: 'only', sources: ['XPHB', 'KIB'] });
+    expect(policyAllows(fromCore.policy, 'PHB')).toBe(false);
+  });
+
+  it("goes over the character's own list both ways", () => {
+    const picked = pickPolicy(core, ['PHB', 'XGE'], { on: ['KIB'], off: ['XGE'] });
+    expect(picked).toEqual({
+      policy: { mode: 'only', sources: ['PHB', 'KIB'] },
+      scope: 'character',
+    });
+  });
+
+  it('keeps the device in charge when the only switch off hides what it already hides', () => {
+    const picked = pickPolicy(everything, [], { off: ['KIB'] });
+    expect(picked.scope).toBe('device');
+    expect(policyAllows(picked.policy, 'KIB')).toBe(false);
+  });
+
+  it('reads a source on both lists as off, respells ids and drops junk', () => {
+    setHomebrewSourceNames(new Map([['MyBrew', 'My Brew']]));
+    try {
+      expect(
+        characterSourceSwitches({ on: ['phb', 'mybrew', 7, ' ', 'xge'], off: ['MYBREW', null] }),
+      ).toEqual({ on: ['PHB', 'XGE'], off: ['MyBrew'] });
+      expect(characterSourceSwitches({ on: ['constructor', '__proto__'] })).toEqual({
+        on: ['constructor', '__proto__'],
+        off: [],
+      });
+      for (const raw of [undefined, null, 'PHB', ['PHB'], { on: 'PHB', off: {} }]) {
+        expect(characterSourceSwitches(raw)).toEqual({ on: [], off: [] });
+      }
+    } finally {
+      setHomebrewSourceNames(new Map());
+    }
+  });
+
+  it('lays switches over a policy in its own shape', () => {
+    expect(withSwitches(everything, { on: ['KIB'], off: ['A'] })).toEqual({
+      mode: 'all',
+      except: ['A'],
+    });
+    expect(withSwitches(core, { on: [], off: ['XPHB'] })).toEqual({ mode: 'only', sources: [] });
+    expect(withSwitches(core, { on: [], off: [] })).toBe(core);
+  });
+
+  it('reads a source on both lists as off in either shape, even called directly', () => {
+    const both = { on: ['A'], off: ['A'] };
+    expect(policyAllows(withSwitches({ mode: 'only', sources: ['A'] }, both), 'A')).toBe(false);
+    expect(policyAllows(withSwitches({ mode: 'all', except: [] }, both), 'A')).toBe(false);
   });
 });

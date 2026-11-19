@@ -279,3 +279,35 @@ describe('Add item focus on open', () => {
     expect(document.activeElement).not.toBe(content);
   });
 });
+
+describe("InventoryTab item search under a character's collection switches (ADR-002 E2)", () => {
+  it('drops a source switched off for this character, and keeps every other book', () => {
+    const pool = [
+      { name: 'Longsword', source: 'PHB' },
+      { name: 'Sword of Answering', source: 'XGE' },
+      { name: 'Sword of the Tide', source: 'MyHomebrew' },
+    ] as Entity[];
+    registryRef.current = { byType: (t) => (t === 'baseitem' ? pool : []) };
+    const doc = newCharacterDoc('i3', 'Osk', 't');
+    doc.sourceSwitches = { off: ['MyHomebrew'] };
+    const ctx = {
+      doc,
+      sheet: deriveSheet(doc, makeTestContext()),
+      update: () => undefined,
+    } as unknown as CharacterSheetState;
+    const router = createMemoryRouter([
+      {
+        path: '/',
+        element: <Outlet context={ctx} />,
+        children: [{ index: true, element: <InventoryTab /> }],
+      },
+    ]);
+    render(<RouterProvider router={router} />);
+    fireEvent.change(search(), { target: { value: 'sword' } });
+
+    expect(screen.getByRole('button', { name: /Longsword/ })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /Sword of Answering/ })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /Sword of the Tide/ })).toBeNull();
+    expect(screen.getByText(/1 outside this character's sources/)).toBeTruthy();
+  });
+});

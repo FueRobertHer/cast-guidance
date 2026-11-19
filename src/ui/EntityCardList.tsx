@@ -8,6 +8,7 @@ import {
   policyAllows,
 } from '@/data5e/sourceFilter';
 import { sourceName } from '@/data5e/sourceNames';
+import type { CharacterDoc } from '@/engine/types';
 import { usePickSourcePolicy } from '@/lib/usePickSourcePolicy';
 import { Button, buttonClass } from '@/ui/Button';
 import { Chip } from '@/ui/Chip';
@@ -269,6 +270,7 @@ export function EntityCardList({
   infoEntries,
   fill = false,
   sources,
+  switches,
 }: {
   entities: readonly Entity[];
   selectedUid?: string;
@@ -312,12 +314,17 @@ export function EntityCardList({
    * charge. Omit it outside a character (nothing to narrow by).
    */
   sources?: readonly string[];
+  /**
+   * The character's own `sourceSwitches`, laid over whichever of the list or
+   * the device settings applies. Omit it outside a character.
+   */
+  switches?: CharacterDoc['sourceSwitches'];
 }) {
   const [filter, setFilter] = useState('');
   const blurbId = useId();
   const [showAll, setShowAll] = useState(false);
   const [showHiddenSources, setShowHiddenSources] = useState(false);
-  const { policy, scope } = usePickSourcePolicy(sources);
+  const { policy, scope } = usePickSourcePolicy(sources, switches);
   // The printing each switched card shows, by title key. Only what the
   // player switched to is kept: the rest open on the pick or the first book.
   const [shownByTitle, setShownByTitle] = useState<Readonly<Record<string, string>>>({});

@@ -1,4 +1,4 @@
-import { characterSourceList } from '@/data5e/sourceFilter';
+import { characterSourceList, characterSourceSwitches } from '@/data5e/sourceFilter';
 import { canonicalSource } from '@/data5e/sourceNames';
 import { addedSpellsOf } from '@/engine/effects/addedSpells';
 import type { CharacterDoc, DerivedSheet, EntityRef } from '@/engine/types';
@@ -14,25 +14,37 @@ export interface OutOfPolicyPick {
 
 /**
  * Everything already on the character that comes from a book outside its own
- * source list: species, background, classes and subclasses, feats (taken
- * directly or through a choice), optional features, gear and spells.
+ * sources: species, background, classes and subclasses, feats (taken
+ * directly or through a choice), optional features, gear and spells. Its own
+ * sources are its list, with its switches over it: a source switched off is
+ * outside them, one switched on is inside, and with no list every source that
+ * is not switched off is inside (the device's settings are not its own).
  *
- * Read-only on purpose. A character's list narrows what it picks from next; it
- * never takes back a pick, so this only finds them for the Build page to name.
- * Matching ignores case, because choice ids are stored lowercased while refs
- * keep the dataset's spelling. An empty or absent list restricts nothing, so it
- * returns nothing.
+ * Read-only on purpose. A character's list and switches narrow what it picks
+ * from next; they never take back a pick, so this only finds them for the
+ * Build page to name. Matching ignores case, because choice ids are stored
+ * lowercased while refs keep the dataset's spelling. No list and no switch
+ * off restricts nothing, so it returns nothing.
  */
 export function outOfPolicyPicks(
   doc: CharacterDoc,
   resolvedChoices: DerivedSheet['resolvedChoices'],
 ): OutOfPolicyPick[] {
-  const allowed = new Set(characterSourceList(doc.allowedSources).map((s) => s.toLowerCase()));
-  if (allowed.size === 0) return [];
+  const lower = (list: readonly string[]) => new Set(list.map((s) => s.toLowerCase()));
+  const listed = lower(characterSourceList(doc.allowedSources));
+  const switches = characterSourceSwitches(doc.sourceSwitches);
+  const on = lower(switches.on);
+  const off = lower(switches.off);
+  if (listed.size === 0 && off.size === 0) return [];
+  const inside = (source: string) => {
+    const s = source.toLowerCase();
+    if (off.has(s)) return false;
+    return on.has(s) || listed.size === 0 || listed.has(s);
+  };
 
   const out = new Map<string, OutOfPolicyPick>();
   const add = (slot: string, name: string, source: string) => {
-    if (source === '' || allowed.has(source.toLowerCase())) return;
+    if (source === '' || inside(source)) return;
     const key = `${slot}:${name}|${source}`.toLowerCase();
     if (!out.has(key)) out.set(key, { key, label: name, source: canonicalSource(source) });
   };

@@ -42,17 +42,20 @@ const H2 = 'px-1 text-heading';
 export function AddItemDrawer({
   onAdd,
   sources,
+  switches,
 }: {
   onAdd: (entry: EquipmentEntry) => void;
   /** The character's own `allowedSources`; a non-empty list replaces the device settings. */
   sources?: readonly string[];
+  /** The character's own `sourceSwitches`, laid over whichever of those applies. */
+  switches?: CharacterDoc['sourceSwitches'];
 }) {
   const registry = useRegistry();
   const [q, setQ] = useState('');
   const [customName, setCustomName] = useState('');
   const [load, setLoad] = useState<'pending' | 'done' | 'failed'>('pending');
   const [showHiddenSources, setShowHiddenSources] = useState(false);
-  const { policy, scope } = usePickSourcePolicy(sources);
+  const { policy, scope } = usePickSourcePolicy(sources, switches);
 
   const { results, poolSize, sourceHiddenCount } = useMemo(() => {
     if (registry === null) return { results: [], poolSize: 0, sourceHiddenCount: 0 };
@@ -430,6 +433,7 @@ export function Component() {
 
       <AddItemDrawer
         sources={doc.allowedSources}
+        switches={doc.sourceSwitches}
         onAdd={(entry) => update((d) => void d.equipment.push(entry))}
       />
 

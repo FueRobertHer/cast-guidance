@@ -219,10 +219,25 @@ export function assertCharacterDoc(raw: unknown): void {
       throw new ValidationError(`character ${f} must be an array`);
     }
   }
-  for (const f of ['abilities', 'choices', 'spellcasting', 'overrides', 'play'] as const) {
+  for (const f of [
+    'abilities',
+    'choices',
+    'spellcasting',
+    'overrides',
+    'play',
+    'sourceSwitches',
+  ] as const) {
     const v = c[f];
     if (v !== undefined && (v === null || typeof v !== 'object' || Array.isArray(v))) {
       throw new ValidationError(`character ${f} must be an object`);
+    }
+  }
+  // Its two lists, when given, are lists. What is inside them is read
+  // tolerantly (`characterSourceSwitches`), like `allowedSources`.
+  const switches = c.sourceSwitches as Record<string, unknown> | undefined;
+  for (const f of ['on', 'off'] as const) {
+    if (switches?.[f] !== undefined && !Array.isArray(switches[f])) {
+      throw new ValidationError(`character sourceSwitches.${f} must be an array`);
     }
   }
 }

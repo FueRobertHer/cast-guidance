@@ -760,6 +760,7 @@ export function Component() {
                   <div className="pt-2">
                     <EntityCardList
                       sources={doc.allowedSources}
+                      switches={doc.sourceSwitches}
                       entities={subclasses}
                       describe={subclassBlurb}
                       infoType="subclass"
@@ -804,6 +805,7 @@ export function Component() {
             <PackProblem packs={classPacks} what="the class list" />
             <EntityCardList
               sources={doc.allowedSources}
+              switches={doc.sourceSwitches}
               curated
               describe={classBlurb}
               infoType="class"
@@ -842,6 +844,7 @@ export function Component() {
           <div className="pt-2">
             <EntityCardList
               sources={doc.allowedSources}
+              switches={doc.sourceSwitches}
               curated
               describe={raceBlurb}
               infoType="race"
@@ -885,6 +888,7 @@ export function Component() {
             <div className="pt-2">
               <EntityCardList
                 sources={doc.allowedSources}
+                switches={doc.sourceSwitches}
                 entities={subraces}
                 describe={raceBlurb}
                 infoType="subrace"
@@ -1070,6 +1074,7 @@ export function Component() {
           <div className="pt-2">
             <EntityCardList
               sources={doc.allowedSources}
+              switches={doc.sourceSwitches}
               curated
               describe={makeBackgroundBlurb(sheet.skills)}
               infoType="background"

@@ -83,6 +83,43 @@ set on its Build page. It travels inside `character`, so the envelope and
   outside the list stay and derive as before; the Build page names them.
 - **Import never touches the importing device's source settings.**
 
+## The character's collection switches (`sourceSwitches`)
+
+`character.sourceSwitches` turns a collection on or off for this character,
+over the device's choice. It travels inside `character` beside
+`allowedSources`, so the envelope and `schemaVersion` are unchanged.
+
+```jsonc
+"sourceSwitches": { "on": ["KIB"], "off": ["MyHomebrew"] }
+```
+
+- **Missing, or both lists empty**, switches nothing: the character's pickers
+  are exactly what they were without the field. Exports made before it existed
+  read this way.
+- **Keyed by source id**, like `allowedSources`, and cleaned the same way when
+  read: respelled to the dataset's casing, blanks and non-strings ignored, ids
+  this device does not know kept. A collection's switch is the switch of the
+  sources its file declares (`_meta.sources[].json`), so a file with three
+  books is three ids.
+- **`off`** drops that source from this character's pickers, even where the
+  device shows it. **`on`** shows it, even where the device's source settings
+  hide it. A source on both lists reads as off.
+- **Everything except these.** A source on neither list follows the device's
+  settings, or the character's `allowedSources` when that list is set, so a
+  book or file added later shows. The switches go over the list: an `off`
+  source is hidden even when listed, an `on` one shown even when not.
+- **Pickers only, as for the list.** Picks already on the character from a
+  source switched off stay and derive as before; the Build page names them.
+  The library and search keep using the device settings.
+- **`on` cannot bring back a file switched off on this device.** A homebrew
+  file the device has turned off is not loaded at all, so `on` only lifts the
+  device's source settings.
+- **It is a permission, not a dependency.** Switching a homebrew source on does
+  not pull that homebrew into an export.
+- **The guards check the shape only**: `sourceSwitches` must be an object and
+  `on` and `off`, when present, arrays. Anything inside them is read
+  tolerantly, as above.
+
 ## Compatibility policy
 
 - Older exports (same or lower `schemaVersion`, `@1` envelope) import and

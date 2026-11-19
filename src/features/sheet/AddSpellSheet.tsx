@@ -164,7 +164,7 @@ function AddSpellPanel({
 }) {
   const registry = useRegistry();
   const packs = useTypePacks('spell');
-  const { policy, scope } = usePickSourcePolicy(doc.allowedSources);
+  const { policy, scope } = usePickSourcePolicy(doc.allowedSources, doc.sourceSwitches);
   const [q, setQ] = useState('');
   const [showHiddenSources, setShowHiddenSources] = useState(false);
   const [picked, setPicked] = useState<Entity | null>(null);
