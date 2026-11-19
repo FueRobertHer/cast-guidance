@@ -13,6 +13,7 @@ import { CircleAlert, Plus, X } from 'lucide-react';
 import { type ReactNode, useState } from 'react';
 import { DAMAGE_TYPES } from '@/convert/fc5/text';
 import { useTypePacks } from '@/data5e/hooks';
+import { storedInPlay } from '@/engine/activeEffects';
 import { isRecord } from '@/engine/castGuidance';
 import { SPELL_SCHOOLS } from '@/engine/spellQuery';
 import { castingTime, spellDuration, spellRange } from '@/features/library/fmt';
@@ -780,6 +781,17 @@ function DiceField({
   );
 }
 
+/**
+ * Whether + Effect puts one effect on a target, read as it reads a homebrew
+ * spell's (`homebrewLanding`): the cards offer only these, so none is added
+ * that then does nothing. Cast a spell is not among them: a target holds
+ * numbers and rolls, and the list is given no spells to name anyway.
+ */
+function landsOnATarget(e: unknown, draft: Json): boolean {
+  const name = String(draft.name ?? '').trim() || 'This spell';
+  return storedInPlay([e], 'an effect on a target', undefined, name).problems.length === 0;
+}
+
 const ABILITY_NAME: Options = ABILITY_WORDS.map(
   ([k, v]) => [k === 'str' ? 'strength' : v.toLowerCase(), v] as const,
 );
@@ -1018,6 +1030,7 @@ function Cards({ draft, change, readOnly }: EditorProps) {
             effects={effects}
             readOnly={readOnly}
             inPlay
+            counts={(e) => landsOnATarget(e, draft)}
             onChange={(next) =>
               set({
                 castGuidance: guidanceWith(draft.castGuidance, {
