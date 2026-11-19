@@ -35,7 +35,7 @@ import { usePageTitle } from '@/lib/usePageTitle';
 import { errorText, notify } from '@/stores/notices';
 import { askChoice, askConfirm } from '@/ui/dialogs';
 import { cardClass } from '@/ui/surfaces';
-import { changeCount, partName, same, writeChange } from './copyWriter';
+import { changeCount, changeKey, partName, same, writeChange } from './copyWriter';
 import { EditorShell, type Problem } from './EditorShell';
 import { EntryEffects } from './EffectCards';
 import { EDITORS, type EditorProps, type EditorSpec, type Json } from './editorTypes';
@@ -146,9 +146,9 @@ function resolveChange(
   const original = registry.belowOwnChange(placed) as Json;
   const file = changesFile(files);
   const list = Array.isArray(file?.json[type]) ? (file?.json[type] as unknown[]) : [];
-  const stored = list.find((x): x is Json => isRecord(x) && identityKey(type, x) === identity);
+  const stored = list.find((x): x is Json => isRecord(x) && changeKey(type, x) === identity);
   const other = list.find(
-    (x) => isRecord(x) && sameKey(x, keyOf(original)) && identityKey(type, x) !== identity,
+    (x) => isRecord(x) && sameKey(x, keyOf(original)) && changeKey(type, x) !== identity,
   );
   let draft: Json = structuredClone(original);
   let lost = false;

@@ -25,7 +25,7 @@ import { ArrowLeft, Info } from 'lucide-react';
 import { lazy, type ReactNode, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router';
 import { useRegistryState, useTypePacks } from '@/data5e/hooks';
-import { type EntityRegistry, identityKey, isEntityType } from '@/data5e/normalize';
+import { type EntityRegistry, isEntityType } from '@/data5e/normalize';
 import { invalidateRegistry } from '@/data5e/registry';
 import { ensureSourcesVisible } from '@/data5e/sourceFilter';
 import {
@@ -47,6 +47,7 @@ import { fieldClass } from '@/ui/TextField';
 import { madeName } from './collections';
 import {
   changeCount,
+  changeKey,
   copiedFrom,
   missingOriginal,
   originalChanged,
@@ -214,10 +215,10 @@ function resolve(
   if (found === undefined)
     return { state: 'gone', text: `You have no ${spec.noun} called ${name} on this device.` };
   if (files.find((f) => f.id === found.fileId)?.role === 'changes') {
-    const placed = registry.get(type as never, name, source);
+    // By the change's own identity: two features of one name and book are two entries.
     return {
       state: 'moved',
-      to: `/workshop/change/${type}/${encodeURIComponent(placed !== undefined ? identityKey(type, placed) : uid)}`,
+      to: `/workshop/change/${type}/${encodeURIComponent(changeKey(type, found.entry))}`,
     };
   }
   const stored = found.entry;

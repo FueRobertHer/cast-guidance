@@ -190,9 +190,12 @@ describe('Change for your table', () => {
     expect((await sheetOf(osk)).speedWalk.value).toBe(changed);
   });
 
-  it('refuses to save over another change of the same name and book', async () => {
-    // Two features of one class with one name and book, as each class's Ability
-    // Score Improvement, here from an imported collection.
+  /**
+   * Two features of one class with one name and book, as each class's Ability
+   * Score Improvement, here from an imported collection; the one at `changed`
+   * changed for the table.
+   */
+  async function gritChangedAt(changed: number) {
     const grit = (level: number): Entity => ({
       name: 'Grit',
       source: 'HB',
@@ -216,12 +219,28 @@ describe('Change for your table', () => {
       reg.byType('classFeature').find((f) => f.name === 'Grit' && f.level === level) as Entity;
     await homebrewRepo.saveEntry(
       'classFeature',
-      writeChange('classFeature', at(4), { ...at(4), entries: ['Changed.'] }) as Entity & {
-        name: string;
-        source: string;
-      },
+      writeChange('classFeature', at(changed), {
+        ...at(changed),
+        entries: ['Changed.'],
+      }) as Entity & { name: string; source: string },
       { role: 'changes' },
     );
+    return { at };
+  }
+
+  it('opens the second of two same-named features with its own change', async () => {
+    const { at } = await gritChangedAt(8);
+    const sheet = await renderSheet(sorcerer());
+    await sheet.visit(
+      `/workshop/change/classFeature/${encodeURIComponent(identityKey('classFeature', at(8)))}`,
+    );
+    await screen.findByText(/Changes the book's Grit/, {}, { timeout: WAIT });
+    expect(screen.getByDisplayValue('Changed.')).toBeTruthy();
+    expect(screen.queryByText(/already holds a change to another Grit/)).toBeNull();
+  });
+
+  it('refuses to save over another change of the same name and book', async () => {
+    const { at } = await gritChangedAt(4);
     const sheet = await renderSheet(sorcerer());
     await sheet.visit(
       `/workshop/change/classFeature/${encodeURIComponent(identityKey('classFeature', at(8)))}`,

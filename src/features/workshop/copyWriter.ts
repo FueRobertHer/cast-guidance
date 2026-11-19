@@ -21,6 +21,7 @@ import { applyMod, resolveCopies } from '@/data5e/copyMod';
 // no mark reads: its identity and its guidance, written apart, and what the
 // data or the registry keeps about the book an entry is printed in.
 import { fieldPrint, fingerprint, NOT_WRITTEN, OWN_GUIDANCE, same } from '@/data5e/fingerprint';
+import { identityKey } from '@/data5e/normalize';
 import { CAST_GUIDANCE_VERSION, ENTRY_PARENT_KEYS, isRecord, own } from '@/engine/castGuidance';
 import { officialOf } from '@/engine/effects/mechanics';
 
@@ -251,6 +252,15 @@ export function writeChange(type: string, original: Json, draft: Json): Json {
   if (Object.keys(g).length > 1) out.castGuidance = g;
   else delete out.castGuidance;
   return out;
+}
+
+/**
+ * The entry a stored change stands for (`identityKey`), as the merge reads it:
+ * its own name, book and parent keys, with what it leaves to its `_copy`.
+ */
+export function changeKey(type: string, change: Json): string {
+  const copy = isRecord(change._copy) ? change._copy : {};
+  return identityKey(type, { ...copy, ...change });
 }
 
 /** A guidance part as `guidanceFor` writes it: a list with something in it, or `replace` on. */
