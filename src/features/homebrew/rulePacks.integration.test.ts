@@ -260,7 +260,8 @@ describe('a changed pack imported again (ADR-002, D4)', () => {
     });
     expect(result).toEqual({
       ok: true,
-      message: 'Updated "Gritty Table". It applies to whoever it did before.',
+      message:
+        'Updated "Gritty Table". It applies to whoever it did before. It stays off, as it was: turn it on to use it.',
     });
 
     const { files } = await homebrewRepo.listSafe();

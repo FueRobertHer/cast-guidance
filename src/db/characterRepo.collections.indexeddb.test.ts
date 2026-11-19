@@ -49,17 +49,38 @@ describe('a character import of a file of a collection here', () => {
     ]);
   });
 
-  it('folds two copies of one collection in the same export into one', async () => {
-    const newer = brewFile(['Ember Lance', 'Ember Ward']);
+  it('keeps every copy the export carries, so every entry the character came with', async () => {
+    // Two copies side by side on the device it came from, one of them here as it is.
+    const both = brewFile(['Ember Lance', 'Ember Old']);
+    const sibling = brewFile(['Ember Lance', 'Ember Ward']);
+    await homebrewRepo.importJson(both, 'ember.json');
     const summary = await characterRepo.importFromText(
       exportText('osk', [
-        { fileName: 'ember.json', json: brewFile(['Ember Lance']) },
-        { fileName: 'ember (1).json', json: newer },
+        { fileName: 'ember.json', json: both },
+        { fileName: 'ember (1).json', json: sibling },
       ]),
     );
-    expect(summary.homebrewAdded).toBe(2);
+    expect(summary).toMatchObject({ homebrewAdded: 1, homebrewSkipped: 1 });
+    expect(summary).not.toHaveProperty('homebrewUpdated');
     const { files } = await homebrewRepo.listSafe();
-    expect(files.map((f) => f.json)).toEqual([newer]);
+    expect(files.map((f) => f.json)).toEqual(expect.arrayContaining([both, sibling]));
+    expect(files).toHaveLength(2);
+  });
+
+  it('updates a copy here the export does not carry once, landing its other copies beside', async () => {
+    await homebrewRepo.importJson(brewFile(['Ember Lance']), 'ember.json');
+    const a = brewFile(['Ember Lance', 'Ember Old']);
+    const b = brewFile(['Ember Lance', 'Ember Ward']);
+    const summary = await characterRepo.importFromText(
+      exportText('osk', [
+        { fileName: 'ember.json', json: a },
+        { fileName: 'ember (1).json', json: b },
+      ]),
+    );
+    expect(summary).toMatchObject({ homebrewAdded: 2, homebrewUpdated: 1 });
+    const { files } = await homebrewRepo.listSafe();
+    expect(files.map((f) => f.json)).toEqual(expect.arrayContaining([a, b]));
+    expect(files).toHaveLength(2);
   });
 
   it('leaves the same file, and a file the player owns, as they were', async () => {

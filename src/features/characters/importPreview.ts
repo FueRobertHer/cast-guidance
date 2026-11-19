@@ -118,6 +118,11 @@ export function previewCharacterImport(input: CharacterPreviewInput): CharacterP
 
   // The commit skips a file repeated inside the export, so list it once.
   const seen = new Set<string>();
+  // Copies here a file of the export takes the place of. Never one the export
+  // carries as it is, and each once: the export's other copies of that
+  // collection land beside it (`characterRepo.commitImport`).
+  const carried = new Set(prepared.homebrew.map((r) => r.id));
+  const claimed = new Set<string>();
   const files: EmbeddedFilePreview[] = [];
   for (const row of prepared.homebrew) {
     if (seen.has(row.id)) continue;
@@ -136,7 +141,10 @@ export function previewCharacterImport(input: CharacterPreviewInput): CharacterP
     const updated =
       existingIds.has(row.id) || row.book !== undefined
         ? []
-        : existing.filter((f) => sameCollection(f, row)).sort(compareMergeOrder);
+        : existing
+            .filter((f) => !carried.has(f.id) && !claimed.has(f.id) && sameCollection(f, row))
+            .sort(compareMergeOrder);
+    for (const f of updated) claimed.add(f.id);
     const base = {
       // A book of a converted file goes by the book's name: every book shares the file's.
       fileName: row.book ?? row.fileName,
@@ -183,12 +191,13 @@ export function previewCharacterImport(input: CharacterPreviewInput): CharacterP
     } else if (updated[0] !== undefined) {
       const first = updated[0];
       const gone = new Set(updated.map((f) => f.id));
+      // It takes the first copy's place under its own id, so only a file ahead of that wins over it.
+      const place = { addedAt: first.addedAt, id: row.id };
       files.push({
         ...base,
         status: 'updates',
-        // It takes the first copy's place, so only a file imported before that one wins over it.
         localFiles: listed(
-          sharing.filter((f) => !gone.has(f.id) && compareMergeOrder(f, first) < 0),
+          sharing.filter((f) => !gone.has(f.id) && compareMergeOrder(f, place) < 0),
         ),
         existingEnabled: updated.some((f) => f.enabled),
         updates: first.fileName,

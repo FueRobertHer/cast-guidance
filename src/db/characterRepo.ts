@@ -271,9 +271,16 @@ export const characterRepo = {
         // Stamped at commit, as `homebrewRepo.commit` does: merge order counts
         // an import from when it lands. A file stored whole lands as a homebrew
         // import does, taking the place of the copies of its collection here
-        // (ADR-002, D4); a book takes its copy in below instead.
+        // (ADR-002, D4); a book takes its copy in below instead. Only copies
+        // the export does not carry: a copy here that it holds as it is, or
+        // another of its files, stays, so every entry the character came with
+        // stays too (two copies side by side on the device it came from land
+        // side by side here).
+        const carried = new Set(homebrew.map((r) => r.id));
         let whole = plan.homebrewToAdd.some((r) => r.book === undefined)
-          ? partitionHomebrewMeta(await db.homebrewFiles.toArray()).files
+          ? partitionHomebrewMeta(await db.homebrewFiles.toArray()).files.filter(
+              (f) => !carried.has(f.id),
+            )
           : [];
         let homebrewUpdated = 0;
         for (const row of plan.homebrewToAdd) {
@@ -283,12 +290,8 @@ export const characterRepo = {
           }
           const landed = await landHomebrewRow({ ...row, addedAt }, whole, 'add');
           if (landed.replaced.length > 0) homebrewUpdated += 1;
-          // A second copy in the same export finds the one this landed.
           const gone = new Set(landed.replaced.map((r) => r.id));
-          whole = [
-            ...whole.filter((f) => !gone.has(f.id)),
-            ...partitionHomebrewMeta([landed.row]).files,
-          ];
+          whole = whole.filter((f) => !gone.has(f.id));
         }
         // A copy taken into the one here keeps that copy's id, switch and place.
         for (const merge of plan.homebrewToMerge) {

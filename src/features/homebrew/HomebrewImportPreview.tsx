@@ -220,16 +220,15 @@ export async function commitHomebrewImport(
   }
   if (pack !== undefined) {
     const name = packName(row.json);
-    if (replaced.some((r) => r.pack !== undefined)) {
-      return { ok: true, message: `Updated "${name}". It applies to whoever it did before.` };
-    }
     // An update keeps the switch of the pack it updates.
-    if (!row.enabled) {
+    const off = row.enabled ? '' : ' It stays off, as it was: turn it on to use it.';
+    if (replaced.some((r) => r.pack !== undefined)) {
       return {
         ok: true,
-        message: `Updated "${name}". It stays off, as it was: turn it on to use it.`,
+        message: `Updated "${name}". It applies to whoever it did before.${off}`,
       };
     }
+    if (off !== '') return { ok: true, message: `Updated "${name}".${off}` };
     return {
       ok: true,
       message: appliesToAnyone(row.pack?.appliesTo ?? { characters: [] })

@@ -343,6 +343,38 @@ describe('previewCharacterImport of a file of a collection here (ADR-002, D4)', 
     expect(files[0]?.existingEnabled).toBe(true);
   });
 
+  it('names, of copies tied in merge order, those ahead of where it lands under its own id', () => {
+    // One character import stamps its files with one time, so ties break on the id.
+    const old = keyed(local('aaa', ['HB']), 5);
+    const tied = { ...local('bbb', ['HB']), addedAt: 5 };
+    expect(run([old, tied])[0]?.localFiles).toEqual([
+      { id: 'bbb', fileName: 'bbb.json', enabled: true },
+    ]);
+  });
+
+  it('updates neither a copy the export carries nor one another of its files updates', () => {
+    const run2 = (existing: HomebrewFile[], rows: HomebrewFileRow[]) =>
+      previewCharacterImport({
+        prepared: prepared(rows),
+        existing,
+        official: officialPhb(),
+        characterExists: false,
+      }).files.map((f) => [f.fileName, f.status, f.updates]);
+    const here = keyed(local('here', ['HB']));
+    const a = keyed(brew('a', ['HB']));
+    const b = keyed(brew('b', ['HB']));
+    // The copy here comes in as it is: the other lands beside it.
+    expect(run2([here], [keyed(brew('here', ['HB'])), b])).toEqual([
+      ['here.json', 'already-here', undefined],
+      ['b.json', 'other-version', undefined],
+    ]);
+    // A copy here it does not carry: the first takes its place, the next lands beside.
+    expect(run2([here], [a, b])).toEqual([
+      ['a.json', 'updates', 'here.json'],
+      ['b.json', 'other-version', undefined],
+    ]);
+  });
+
   it('never updates a file the player owns, the same file, or one under another key', () => {
     const mine = { ...local('mine', ['HB']), editable: true, key };
     const other = { ...local('other', ['HB']), key: 'file:hb|other' };
