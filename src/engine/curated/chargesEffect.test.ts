@@ -377,10 +377,14 @@ describe('the spells its charges grant', () => {
     expect(grants(doc, world([rod]))).toEqual([]);
   });
 
-  it("grants a pack's, and none of a built-in row's, which only prices", () => {
+  it("grants a built-in row's by name, and a pack's in their place", () => {
     const doc = carrying({ id: 'a', name: 'Wand of Fireballs', source: 'XDMG' });
     const wand = item('Wand of Fireballs', 'XDMG');
-    expect(grants(doc, world([wand]))).toEqual([]);
+    // A row names no book: the sheet finds the spell in the character's rules version.
+    expect(grants(doc, world([wand]))).toEqual([
+      ['fireball', 'charges', 'item-charges:a', undefined],
+    ]);
+    expect(deriveSheet(doc, world([wand])).grantedSpells[0]?.source).toBe('');
     expect(deriveSheet(doc, world([wand])).resources.map((r) => r.key)).toContain('item-charges:a');
     const adds = pack('Adds', [{ target: 'Wand of Fireballs|XDMG', add: [WAND] }]);
     expect(grants(doc, world([wand], [adds]))).toEqual([
@@ -432,7 +436,7 @@ describe('charges that only actions spend', () => {
       .actions.filter((a) => a.label === 'Strike')
       .map((a) => a.cost?.resource ?? null);
 
-  it('makes the pool with no spells, which a built-in row still needs', () => {
+  it('makes the pool with no spells, as a built-in row may say too', () => {
     const read = readMechanics({ v: 1, effects: [COUNTED, { ...COUNTED, spells: [] }] });
     expect(read.charges).toEqual({ charges: 3, regain: 'all', spells: [] });
     expect(read.problems).toEqual([
@@ -452,7 +456,16 @@ describe('charges that only actions spend', () => {
       name: 'Test rules',
       rows: [{ part: 'charges', keys: ['rod|tst'], charges: 5, regain: '1d4', spells: [] }],
     });
-    expect(row.problems.join('; ')).toContain('"spells" lists the spells its charges cast');
+    // A Wand of Wonder's: its charges count, and its spell is the table's roll.
+    expect(row.problems).toEqual([]);
+    expect(row.rows[0]?.charges).toEqual({ charges: 5, regain: '1d4', spells: [] });
+    const written = readRuleSet({
+      type: RULE_SET_TYPE,
+      v: 1,
+      name: 'Test rules',
+      rows: [{ part: 'charges', keys: ['rod|tst'], charges: 5, regain: '1d4' }],
+    });
+    expect(written.problems.join('; ')).toContain('"spells" lists the spells its charges cast');
   });
 
   it("spends each copy's own pool for an action that costs its charges, derive after derive", () => {

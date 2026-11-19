@@ -775,6 +775,12 @@ export type EffectInput = {
        * for its free uses, so a character with no slots to spend has no such row.
        */
       slotsOnly?: boolean;
+      /**
+       * An item's grant only: the save DC and spell attack bonus its text fixes
+       * for the spells it casts (`FixedCast`), set where the item is collected.
+       */
+      dc?: number;
+      attack?: number;
     }
   | { kind: 'note'; text: string }
 );
@@ -1278,6 +1284,24 @@ export interface DerivedSheet {
     className?: string;
     /** The player added it (`CharacterDoc.addedSpells`); nothing in the build grants it. */
     added?: true;
+    /**
+     * An item's grant only: what it casts with. Its save DC and spell attack
+     * bonus are what its text fixes; else, with an `ability`, absent (read by
+     * it, as any grant's); else the character's first spellcasting block's, or
+     * with no spellcasting 8 + proficiency bonus and + proficiency bonus.
+     * `mod` stands in for a spellcasting ability modifier when it has no
+     * `ability`: that block's ability's, or +0.
+     */
+    dc?: number;
+    attack?: number;
+    mod?: number;
+    /**
+     * An item's grant whose text fixes its DC or attack bonus (an `itemDc`
+     * row, a `charges` effect's): those of `dc` and `attack` that it fixes.
+     * Only its own row casts it, as a class's row would cast it at the class's
+     * numbers.
+     */
+    fixed?: { dc?: number; attack?: number };
   }>;
   warnings: string[];
   /**

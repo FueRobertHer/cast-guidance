@@ -491,6 +491,11 @@ export const RULE_SET_TYPE = 'ruleSet';
  * `spellRest` is the spell pools an origin grants that come back on a short
  * rest where its data says a long one (the table that was `SHORT_REST_SPELLS`),
  * found under the granting origin's `type:uid`: the spells, or `every` pool.
+ * `itemDc` is the save DC and spell attack bonus an item's text fixes for the
+ * spells it casts, found under the item's `name|source` as the equipment entry
+ * names it: every spell the item grants casts with them. `itemSpells` is what
+ * an item casts without its charges where its data's lists misstate it, found
+ * there too: its `will`, `daily` and `rest` lists in the data's own shape.
  */
 export const RULE_SET_PARTS = [
   'curated',
@@ -501,6 +506,8 @@ export const RULE_SET_PARTS = [
   'wornTags',
   'charges',
   'spellRest',
+  'itemDc',
+  'itemSpells',
 ] as const;
 
 /**
@@ -534,6 +541,10 @@ export const RULE_SET_LIMITS = {
   chargeSpells: 20,
   /** The most spells a `spellRest` row lists. */
   restSpells: 20,
+  /** The highest save DC an item's spells cast with (`itemDc` rows, a `charges` effect's `dc`). */
+  dc: 30,
+  /** The highest spell attack bonus an item's spells cast with (`itemDc` rows, a `charges` effect's `attack`). */
+  attack: 20,
 } as const;
 
 /** One row of a built-in rule set. */
@@ -564,11 +575,30 @@ export interface StoredRuleRow {
   /** `charges` rows only: what comes back at dawn (`StoredItemCharges.regain`). */
   regain?: string | number;
   /**
-   * `charges` rows: the spells its charges cast, and what each costs.
+   * `charges` rows: the spells its charges cast, and what each costs (none,
+   * for an item whose charges cast no spell of the holder's choosing).
    * `spellRest` rows: the spells, by name in any case, whose pool from the
    * origin comes back on a short rest, or `every` pool the origin grants.
+   * `itemSpells` rows: what the item casts without its charges, in place of
+   * its data's `attachedSpells` lists and its charge spells costing none.
    */
-  spells?: StoredChargeSpell[] | string[] | 'every';
+  spells?: StoredChargeSpell[] | string[] | 'every' | StoredItemSpellLists;
+  /** `itemDc` rows: the save DC the item's spells cast with, 1 to `RULE_SET_LIMITS.dc`. */
+  dc?: number;
+  /** `itemDc` rows: the spell attack bonus the item's spells cast with, 0 to `RULE_SET_LIMITS.attack`. */
+  attack?: number;
+}
+
+/**
+ * What an item casts without its charges, as its data's `attachedSpells`
+ * writes it (an `itemSpells` row's): spells at will; and spells a number of
+ * times a day or a short rest, under that number ("1", one cast between them)
+ * or that number of each ("1e"). Empty: none.
+ */
+export interface StoredItemSpellLists {
+  will?: string[];
+  daily?: Record<string, string[]>;
+  rest?: Record<string, string[]>;
 }
 
 /** One spell an item casts with its charges (a `charges` row's, a `charges` effect's). */
@@ -583,6 +613,11 @@ export interface StoredChargeSpell {
   cost: number;
   /** One more charge for each level above its own, up to this spell level. Absent: its own level only. */
   upTo?: number;
+  /**
+   * The one spell level it casts at, for its `cost` (a Staff of Power's level 5
+   * Fireball), in place of its own; never beside `upTo`. Absent: its own level.
+   */
+  at?: number;
 }
 
 /**
@@ -602,8 +637,19 @@ export interface StoredItemCharges {
    */
   regain: string | number;
   spells: StoredChargeSpell[];
-  /** The ability its spells cast with. Absent: they show no attack or DC, as any grant without one. */
+  /**
+   * The ability its spells cast with. Absent: the character's own spellcasting
+   * (its first), or none, as for any item's spells (`dc`).
+   */
   ability?: 'str' | 'dex' | 'con' | 'int' | 'wis' | 'cha';
+  /**
+   * The save DC every spell the item grants casts with, as its text fixes it.
+   * Absent: by `ability`, or else the character's own spell save DC, or with no
+   * spellcasting 8 + proficiency bonus.
+   */
+  dc?: number;
+  /** The spell attack bonus every spell the item grants casts with, as `dc` is read. */
+  attack?: number;
 }
 
 /**

@@ -55,6 +55,11 @@ export interface SpellCast {
   abilityModifier?: number | undefined;
   /** An innate grant's own pool of uses, which this row casts from. */
   grantPool?: UseWay | undefined;
+  /**
+   * An item's grant's numbers (`grantNumbersKey`): two grants of one spell
+   * cast with other ones are two rows, and two casts (`castRowId`).
+   */
+  numbers?: string | undefined;
   /** It casts with a spell attack: its hit offers the damage, and its d20 is the prompt's. */
   attack: boolean;
   /** The registry's lookups: what a carried item's charges cast (`itemChargesOf`). */
@@ -108,7 +113,14 @@ export function itemChargeWays(
     if (row === undefined || pool === undefined) continue;
     const costs = chargeCosts(row, name, spellLevel);
     if (costs.length === 0) continue;
-    out.push({ key: pool.key, label: pool.origin, max: pool.max, costs });
+    const fixed = row.dc !== undefined || row.attack !== undefined;
+    out.push({
+      key: pool.key,
+      label: pool.origin,
+      max: pool.max,
+      costs,
+      ...(fixed ? { fixed: true as const } : {}),
+    });
   }
   // Two of one item are two pools: number them, so each tile says which.
   return out.map((way) => {
@@ -121,6 +133,7 @@ export function itemChargeWays(
  * The innate and feat grants of `name` with a pool of their own (Infernal
  * Legacy's Hellish Rebuke), so a class row offers them beside its slots. An
  * item's charges are not a use: `itemChargeWays` offers them, priced by level.
+ * Nor is a use of an item whose text fixes its DC (`fixed`): its own row has it.
  */
 export function grantUseWays(sheet: DerivedSheet, name: string): UseWay[] {
   return sheet.grantedSpells.flatMap((g) => {
@@ -128,6 +141,7 @@ export function grantUseWays(sheet: DerivedSheet, name: string): UseWay[] {
       g.usage === 'prepared' ||
       g.resourceKey === undefined ||
       isItemChargeKey(g.resourceKey) ||
+      g.fixed !== undefined ||
       lower(g.name) !== lower(name)
     ) {
       return [];
@@ -147,6 +161,28 @@ function contextOf(c: SpellCast): CastContext {
     characterLevel: c.sheet.totalLevel,
     rulesVersion: c.doc.rulesVersion,
     classes: c.doc.classes,
+  };
+}
+
+/**
+ * What a granted spell casts with: its save DC, its spell attack bonus, and
+ * the ability modifier its dice add. An item's says them (what its text fixes,
+ * or the character's own spellcasting); any other grant's are by its ability,
+ * and absent with none.
+ */
+export function grantCast(
+  g: DerivedSheet['grantedSpells'][number],
+  sheet: Pick<DerivedSheet, 'abilities' | 'profBonus'>,
+): { dc?: number; attack?: number; mod?: number } {
+  const mod = g.ability === undefined ? g.mod : sheet.abilities[g.ability].mod;
+  const byAbility =
+    g.ability === undefined ? undefined : sheet.profBonus.value + sheet.abilities[g.ability].mod;
+  const attack = g.attack ?? byAbility;
+  const dc = g.dc ?? (byAbility === undefined ? undefined : 8 + byAbility);
+  return {
+    ...(dc === undefined ? {} : { dc }),
+    ...(attack === undefined ? {} : { attack }),
+    ...(mod === undefined ? {} : { mod }),
   };
 }
 
@@ -171,7 +207,9 @@ export function castWaysOf(c: SpellCast): CastWay[] {
       : c.grantPool === undefined
         ? []
         : [c.grantPool];
-  return castWays(contextOf(c), { uses, charges });
+  // Another row offers an item's charges only where the item casts with the
+  // character's numbers: one whose text fixes a DC has its own row for them.
+  return castWays(contextOf(c), { uses, charges: charges.filter((w) => w.fixed !== true) });
 }
 
 /**
@@ -224,7 +262,32 @@ export function grantLimitWords(usage: string | undefined): string {
  */
 export function castRowId(c: SpellCast): string {
   const from = c.block?.classUid ?? c.grantPool?.key ?? 'innate';
-  return `${c.doc.id}|${from}|${c.info.name}|${c.info.source}`.toLowerCase();
+  // A class's or a pool's row is one of its kind already; two at-will grants
+  // of one spell are not, without their numbers.
+  const row = from === 'innate' && c.numbers !== undefined ? `|${c.numbers}` : '';
+  return `${c.doc.id}|${from}|${c.info.name}|${c.info.source}${row}`.toLowerCase();
+}
+
+type Grant = DerivedSheet['grantedSpells'][number];
+
+/**
+ * An item's grant's numbers (`DerivedSheet.grantedSpells`) as a key, which
+ * keeps its row apart from another grant of the spell cast with other ones:
+ * those its text fixes (and whether it names an ability), or `own` for the
+ * character's, never their values, which an effect in play moves (the row
+ * would be another, and a cast waiting in the prompt dropped). None for a
+ * grant without numbers.
+ */
+export function grantNumbersKey(g: Grant): string | undefined {
+  if (g.fixed !== undefined) {
+    return `${g.fixed.dc ?? ''}/${g.fixed.attack ?? ''}/${g.ability ?? ''}`;
+  }
+  return g.dc === undefined && g.attack === undefined && g.mod === undefined ? undefined : 'own';
+}
+
+/** A granted spell's row, one of a kind as the sheet lists them (`dedupeGrantedSpells`). */
+export function grantRowKey(g: Grant): string {
+  return `${g.name}|${g.source}|${g.resourceKey ?? ''}|${g.added ? 'added' : ''}|${grantNumbersKey(g) ?? ''}`;
 }
 
 /**

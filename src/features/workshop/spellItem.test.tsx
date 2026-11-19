@@ -10,10 +10,17 @@ import { EntityRegistry } from '@/data5e/normalize';
 import {
   fieldChargesOf,
   ITEM_CHARGES,
+  itemChargesOf,
   rechargeWords,
   regainOf,
 } from '@/engine/curated/itemCharges';
-import { readMechanics, readOwnEffects, readStoredEffects } from '@/engine/effects/mechanics';
+import {
+  type ItemCharges,
+  readMechanics,
+  readOwnEffects,
+  readStoredEffects,
+} from '@/engine/effects/mechanics';
+import type { DataEntity } from '@/engine/types';
 import { BUILT_IN_RULE_SETS } from '../../../tests-fixtures/testWorld';
 
 const { choice } = vi.hoisted(() => ({ choice: { current: undefined as string | undefined } }));
@@ -433,6 +440,17 @@ describe('item fields', () => {
     expect(effects(withCharges(some, { charges: 4 }))).toEqual([{ ...counted, charges: 4 }]);
     expect(effects(withCharges(some, { recharge: 'dawn' }))).toEqual([
       { ...counted, regain: 'all' },
+    ]);
+    // The DC and attack its text fixes stand through every change, as its ability does.
+    const fixed = {
+      charges: 3,
+      castGuidance: { v: 1, effects: [{ ...counted, dc: 15, attack: 7 }] },
+    };
+    expect(effects(withCharges(fixed, { charges: 4 }))).toEqual([
+      { ...counted, charges: 4, dc: 15, attack: 7 },
+    ]);
+    expect(effects(withCharges(fixed, {}, { spells: [], ability: 'wis' }))).toEqual([
+      { kind: 'charges', charges: 3, regain: '1d4', ability: 'wis', dc: 15, attack: 7 },
     ]);
   });
 
@@ -888,6 +906,8 @@ describe('ItemEditor', () => {
         kind: 'charges',
         charges: 7,
         regain: '1d6+1',
+        // Its text's save DC 15, which its own effect says once written out.
+        dc: 15,
         spells: [{ spell: 'Fireball|XPHB', cost: 1, upTo: 5 }],
       },
     ]);
@@ -934,6 +954,81 @@ describe('ItemEditor', () => {
     expect((draft().castGuidance as Json).effects).toEqual([
       { kind: 'charges', charges: 2, regain: 'none' },
     ]);
+  });
+
+  it("writes out the spells its fields cast, each from its book, and the DC the original's text fixes", () => {
+    const registry = new EntityRegistry();
+    registry.setRuleSets(BUILT_IN_RULE_SETS);
+    registry.addAll('spell', [
+      { name: 'Cloudkill', source: 'PHB', level: 5 },
+      { name: 'Cloudkill', source: 'XPHB', level: 5 },
+    ] as unknown as Entity[]);
+    const original: Json = {
+      name: 'Bellows of Strangulation',
+      source: 'AU',
+      type: 'W',
+      charges: 6,
+      recharge: 'dawn',
+      rechargeAmount: '{@dice 1d6 + 1}',
+      attachedSpells: { charges: { '5': ['cloudkill|xphb'] } },
+      entries: [],
+    };
+    const draft = mount(item, structuredClone(original), registry, original);
+    expect(screen.getByText(/they cast the spell the item's data lists/)).toBeTruthy();
+    press('Change the spells they cast');
+    const written = (draft().castGuidance as Json).effects as Json[];
+    expect(written).toEqual([
+      {
+        kind: 'charges',
+        charges: 6,
+        regain: '1d6+1',
+        dc: 17,
+        spells: [{ spell: 'Cloudkill|XPHB', cost: 5 }],
+      },
+    ]);
+    expect(screen.getByText(/Every spell it casts uses save DC 17, as its text says/)).toBeTruthy();
+    // The sheet counts what it did before: its pool, its spells, their DC.
+    const counted = (charges: ItemCharges | undefined) =>
+      charges === undefined
+        ? undefined
+        : {
+            ...charges,
+            spells: charges.spells.map(({ spell, cost, at, upTo }) => ({ spell, cost, at, upTo })),
+          };
+    const before = itemChargesOf(
+      { get: () => original as DataEntity, byType: (t) => registry.byType(t as never) },
+      'hero',
+      { name: 'Bellows of Strangulation', source: 'AU' },
+    );
+    expect(counted(readMechanics({ v: 1, effects: written }).charges)).toEqual(counted(before));
+  });
+
+  it('writes out a spell its fields cast at one level, and shows that level until it is cleared', () => {
+    const registry = new EntityRegistry();
+    registry.addAll('spell', [
+      { name: 'Fireball', source: 'PHB', level: 3 },
+    ] as unknown as Entity[]);
+    const draft = mount(
+      item,
+      {
+        name: 'Odd Staff',
+        type: 'ST',
+        entries: [],
+        charges: 9,
+        recharge: 'dawn',
+        attachedSpells: { charges: { '7': ['fireball#7'] } },
+      },
+      registry,
+    );
+    press('Change the spells they cast');
+    const spell = () =>
+      (((draft().castGuidance as Json).effects as Json[])[0]?.spells as Json[])[0];
+    expect(spell()).toEqual({ spell: 'Fireball|PHB', cost: 7, at: 7 });
+    expect(screen.getByLabelText('Charge spell 1: at level')).toHaveProperty('value', '7');
+    type('Charge spell 1: at level', '');
+    expect(spell()).toEqual({ spell: 'Fireball|PHB', cost: 7 });
+    type('Charge spell 1: up to level', '9');
+    expect(spell()).toEqual({ spell: 'Fireball|PHB', cost: 7, upTo: 9 });
   });
 
   it('says the sheet does not count fields it cannot read, and writes them out to show why', () => {

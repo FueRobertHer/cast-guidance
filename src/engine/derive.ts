@@ -51,6 +51,7 @@ import type {
   NotCounted,
   RollFilter,
   RollRider,
+  SpellcastingBlock,
   SpellDamageBonus,
 } from './types';
 import { ABILITIES, refUid } from './types';
@@ -365,6 +366,7 @@ export function deriveSheet(
       effects,
       spellcasting.some((sc) => sc.pactSlots !== undefined || sc.slots.some((n) => n > 0)),
       doc.classes,
+      itemCastFallback(spellcasting, abilities, profBonus.value),
     ),
     warnings: dedupeWarnings(col.warnings),
     classDataMissing: doc.classes.some(
@@ -713,10 +715,56 @@ function richness(e: {
   );
 }
 
+/** What an item's spell casts with where nothing else says (`DerivedSheet.grantedSpells`). */
+interface ItemCast {
+  dc: number;
+  attack: number;
+  mod: number;
+}
+
+/**
+ * What an item's spells cast with when the item fixes no DC and names no
+ * ability (DMG, "Spells" under Activating an Item): the character's own
+ * spellcasting, its first block's DC and attack with their bonuses and its
+ * ability's modifier; with no spellcasting, a modifier of +0 and the
+ * proficiency bonus.
+ */
+function itemCastFallback(
+  spellcasting: readonly SpellcastingBlock[],
+  abilities: DerivedSheet['abilities'],
+  prof: number,
+): ItemCast {
+  const [block] = spellcasting;
+  if (block === undefined) return { dc: 8 + prof, attack: prof, mod: 0 };
+  return {
+    dc: block.saveDc.value,
+    attack: block.attackMod.value,
+    mod: abilities[block.ability].mod,
+  };
+}
+
+/**
+ * An item's grant's numbers (`DerivedSheet.grantedSpells`): what its text
+ * fixes, then by its own ability (absent here), then `fallback`.
+ */
+function itemCastOf(
+  e: { ability?: Ability; dc?: number; attack?: number },
+  fallback: ItemCast,
+): Partial<ItemCast> {
+  if (e.ability !== undefined) {
+    return {
+      ...(e.dc === undefined ? {} : { dc: e.dc }),
+      ...(e.attack === undefined ? {} : { attack: e.attack }),
+    };
+  }
+  return { dc: e.dc ?? fallback.dc, attack: e.attack ?? fallback.attack, mod: fallback.mod };
+}
+
 function dedupeGrantedSpells(
   effects: readonly EffectInput[],
   hasSlots: boolean,
   classes: CharacterDoc['classes'],
+  itemFallback: ItemCast,
 ): DerivedSheet['grantedSpells'] {
   // A class's and its subclass's grants are that class's spells.
   const classOf = new Map<string, string>();
@@ -732,9 +780,13 @@ function dedupeGrantedSpells(
     // brought its own pool of uses: a wand's 3/day fireball beside a race's
     // 1/day is two rows, or one of the two pools would have nothing to spend it.
     // A spell the player added keeps its own row too, where it can be taken off.
+    // So does an item's that casts with other numbers than a row of it already
+    // there: one row's DC would be wrong for the other.
     const added = e.origin.type === 'added';
+    const cast = e.origin.type === 'item' ? itemCastOf(e, itemFallback) : {};
+    const numbers = `${cast.dc ?? ''}|${cast.attack ?? ''}|${cast.mod ?? ''}`;
     const key =
-      `${e.spell.name}|${e.spell.source}|${e.resourceKey ?? ''}|${added ? 'added' : ''}`.toLowerCase();
+      `${e.spell.name}|${e.spell.source}|${e.resourceKey ?? ''}|${added ? 'added' : ''}|${numbers}`.toLowerCase();
     if (seen.has(key)) continue;
     seen.add(key);
     out.push({
@@ -746,6 +798,15 @@ function dedupeGrantedSpells(
       origin: e.origin.label,
       className: classOf.get(`${e.origin.type}:${e.origin.uid}`),
       ...(added ? { added: true as const } : {}),
+      ...cast,
+      ...(e.origin.type === 'item' && (e.dc !== undefined || e.attack !== undefined)
+        ? {
+            fixed: {
+              ...(e.dc === undefined ? {} : { dc: e.dc }),
+              ...(e.attack === undefined ? {} : { attack: e.attack }),
+            },
+          }
+        : {}),
     });
   }
   return out;

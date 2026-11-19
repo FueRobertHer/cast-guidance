@@ -452,13 +452,41 @@ describe("an item's charges on the Spells tab", () => {
     'Level 4 from Staff of Healing, 4 charges',
   ];
   const staffTiles = () => castTiles().filter((t) => t.includes('Staff of Healing'));
+  /** The rows of a group (its heading's section) whose text has `has`. */
+  const rowsIn = (heading: HTMLElement, has: string) =>
+    [...(heading.closest('section')?.querySelectorAll<HTMLElement>('.min-h-15') ?? [])].filter(
+      (r) => r.textContent?.includes(has),
+    );
+  const granted = () => screen.getByRole('heading', { level: 2, name: 'Innate & granted spells' });
+  const press1d8 = (row: HTMLElement | undefined) => {
+    if (row === undefined) throw new Error('no row');
+    fireEvent.click(within(row).getByRole('button', { name: '1d8' }));
+  };
+
+  it("grants the staff's spells a row each, cast from its charges alone", async () => {
+    // Its built-in row's spells (O2b), found by name in the character's rules version.
+    const doc = carrying(sorcerer());
+    doc.spellcasting = { 'sorcerer|tst': { known: [], prepared: [] } };
+    await renderSheet(doc, { path: 'spells', extra: world });
+
+    const own = rowsIn(granted(), '10/10 charges');
+    expect(own.map((r) => r.querySelector('button')?.textContent)).toEqual([
+      'Cure Wounds',
+      // Not in this world's spells, so named as the row writes them.
+      'lesser restoration',
+      'mass cure wounds',
+    ]);
+    press1d8(own[0]);
+    expect(castTiles()).toEqual(STAFF_TILES);
+  });
 
   it("offers a carried staff's charges on a class spell's row, and spends them", async () => {
     const doc = carrying(sorcerer());
     doc.spellcasting = { 'sorcerer|tst': { known: [ref('Cure Wounds')], prepared: [] } };
     const sheet = await renderSheet(doc, { path: 'spells', extra: world });
 
-    press('1d8');
+    const level1 = screen.getByRole('heading', { level: 3, name: 'Level 1' });
+    press1d8(rowsIn(level1, 'Cure Wounds')[0]);
     expect(staffTiles()).toEqual(STAFF_TILES);
     castHeld('Level 2 from Staff of Healing');
     expect((await sheet.saved()).play.resources).toEqual([{ key: 'item-charges:s1', used: 2 }]);
@@ -470,10 +498,12 @@ describe("an item's charges on the Spells tab", () => {
     doc.feats = [{ ref: { name: "Healer's Spark", source: 'TST' }, instanceId: 'f1' }];
     await renderSheet(doc, { path: 'spells', extra: world });
 
-    const heading = screen.getByRole('heading', { level: 2, name: 'Innate & granted spells' });
-    const group = heading.closest('section');
-    if (group === null) throw new Error('no group');
-    fireEvent.click(within(group).getByRole('button', { name: '1d8' }));
+    // Its own use's row, beside the staff's row of the same spell.
+    const spark = rowsIn(granted(), 'Cure Wounds').filter(
+      (r) => r.textContent?.includes('charges') !== true,
+    );
+    expect(spark).toHaveLength(1);
+    press1d8(spark[0]);
     expect(castTiles().some((t) => t.startsWith("Healer's Spark"))).toBe(true);
     expect(staffTiles()).toEqual(STAFF_TILES);
   });

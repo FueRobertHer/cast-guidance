@@ -26,6 +26,14 @@ const wand = (spell: string, upTo: number): ItemCharges => ({
   regain: '1d6+1',
   spells: [{ spell, cost: 1, upTo }],
 });
+const at1 = (...names: string[]) => names.map((spell) => ({ spell, cost: 1 }));
+const robe: ItemCharges = {
+  charges: 6,
+  regain: '1d6',
+  spells: [{ spell: 'magic missile', cost: 1, at: 5 }],
+};
+const wishes: ItemCharges = { charges: 3, regain: 'none', spells: at1('wish') };
+const wonder: ItemCharges = { charges: 7, regain: '1d6+1', spells: [] };
 const EXPECTED: Record<string, ItemCharges> = {
   'staff of healing|dmg': staff,
   'staff of healing|xdmg': staff,
@@ -35,6 +43,110 @@ const EXPECTED: Record<string, ItemCharges> = {
   'wand of fireballs|xdmg': wand('fireball', 5),
   'wand of lightning bolts|dmg': wand('lightning bolt', 9),
   'wand of lightning bolts|xdmg': wand('lightning bolt', 5),
+  // O2b: items whose charge fields misstate what their text casts.
+  'charred wand of magic missiles|wdh': wand('magic missile', 9),
+  'eyes of charming|xdmg': {
+    charges: 3,
+    regain: 'all',
+    spells: [{ spell: 'charm person', cost: 1, upTo: 3 }],
+  },
+  'failed experiment wand|ai': {
+    charges: 2,
+    regain: '1d6+1',
+    spells: [
+      { spell: 'fireball', cost: 1, upTo: 4 },
+      { spell: 'lightning bolt', cost: 1, upTo: 4 },
+    ],
+  },
+  "tloques' berserker battleaxe|tftyp": {
+    charges: 12,
+    regain: '1d6+4',
+    spells: [
+      { spell: 'burning hands', cost: 1, upTo: 9 },
+      { spell: 'gust of wind', cost: 2 },
+      { spell: 'passwall', cost: 5 },
+    ],
+  },
+  "invincible's reins|icc": {
+    charges: 3,
+    regain: '1d3',
+    spells: [{ spell: 'find steed', cost: 1, at: 5 }],
+  },
+  'robe of stars|dmg': robe,
+  'robe of stars|xdmg': robe,
+  'staff of power|xdmg': {
+    charges: 20,
+    regain: '2d8+4',
+    spells: [
+      ...at1('magic missile', 'ray of enfeeblement'),
+      { spell: 'levitate', cost: 2 },
+      { spell: 'cone of cold', cost: 5 },
+      { spell: 'fireball', cost: 5, at: 5 },
+      { spell: 'hold monster', cost: 5 },
+      { spell: 'lightning bolt', cost: 5, at: 5 },
+      { spell: 'wall of force', cost: 5 },
+      { spell: 'globe of invulnerability', cost: 6 },
+    ],
+  },
+  'staff of the magi|xdmg': {
+    charges: 50,
+    regain: '4d6+2',
+    spells: [
+      ...['flaming sphere', 'invisibility', 'knock', 'web'].map((spell) => ({ spell, cost: 2 })),
+      { spell: 'dispel magic', cost: 3 },
+      { spell: 'ice storm', cost: 4 },
+      { spell: 'wall of fire', cost: 4 },
+      { spell: 'passwall', cost: 5 },
+      { spell: 'telekinesis', cost: 5 },
+      { spell: 'conjure elemental', cost: 7 },
+      { spell: 'fireball', cost: 7, at: 7 },
+      { spell: 'lightning bolt', cost: 7, at: 7 },
+      { spell: 'plane shift', cost: 7 },
+    ],
+  },
+  'ironfang|pota': { charges: 3, regain: '1d3', spells: at1('shatter') },
+  'medallion of thoughts|dmg': { charges: 3, regain: '1d3', spells: at1('detect thoughts') },
+  'jewel of three prayers (awakened)|crcotn': {
+    charges: 5,
+    regain: 'all',
+    spells: at1('invisibility'),
+  },
+  'jewel of three prayers (exalted)|crcotn': {
+    charges: 7,
+    regain: 'all',
+    spells: at1('invisibility'),
+  },
+  'ring of three wishes|dmg': wishes,
+  'ring of three wishes|xdmg': wishes,
+  'spirit board|xdmg': {
+    charges: 3,
+    regain: '1',
+    spells: [
+      { spell: 'augury', cost: 1 },
+      { spell: 'commune', cost: 3 },
+    ],
+  },
+  'staff of charming|dmg': {
+    charges: 10,
+    regain: '1d8+2',
+    spells: at1('charm person', 'command', 'comprehend languages'),
+  },
+  'rod of seven parts|veor': {
+    charges: 7,
+    regain: '1d4+3',
+    spells: at1(
+      'arcane gate',
+      'commune',
+      'find the path',
+      'mirage arcane',
+      'regenerate',
+      'reverse gravity',
+      'simulacrum',
+    ),
+  },
+  'wand of wonder|dmg': wonder,
+  'wand of wonder|xdmg': wonder,
+  'gnomeregan engineering device|wow': { charges: 7, regain: 'none', spells: [] },
 };
 
 const refOf = (key: string) => {
@@ -190,7 +302,7 @@ describe('a charges row, read', () => {
     ['more back than it holds', { regain: 6 }, '"regain" is what comes back'],
     ['a number first', { regain: '4 + 1d6' }, '"regain" is what comes back'],
     ['nothing added', { regain: '1d6 +' }, '"regain" is what comes back'],
-    ['no spells', { spells: [] }, '"spells" lists the spells'],
+    ['no spells field', { spells: undefined }, '"spells" lists the spells'],
     ['spells that are not a list', { spells: 'shield' }, '"spells" lists the spells'],
     ['a spell that is not one', { spells: ['shield'] }, 'spell 1: is not a spell'],
     ['a spell with no name', { spells: [{ cost: 1 }] }, 'spell 1: "spell" is the spell\'s name'],
@@ -218,10 +330,27 @@ describe('a charges row, read', () => {
       'spell 1: "upTo" is a spell level',
     ],
     [
+      'an at below 1st',
+      { spells: [{ spell: 'shield', cost: 1, at: 0 }] },
+      'spell 1: "at" is the spell level it casts at',
+    ],
+    [
+      'an at above 9th',
+      { spells: [{ spell: 'shield', cost: 1, at: 10 }] },
+      'spell 1: "at" is the spell level it casts at',
+    ],
+    [
+      'an at beside an upTo',
+      { spells: [{ spell: 'shield', cost: 1, at: 3, upTo: 5 }] },
+      'spell 1: casts at one level ("at") or up to one ("upTo"), not both',
+    ],
+    [
       'a field a spell has not',
       { spells: [{ spell: 'shield', cost: 1, level: 1 }] },
       'spell 1: "level" is not a field a charged spell has',
     ],
+    ['a DC', { dc: 15 }, '"dc" is not a field a charges row has'],
+    ['an attack bonus', { attack: 7 }, '"attack" is not a field a charges row has'],
     ['a field a row has not', { level: 3 }, '"level" is not a field a charges row has'],
     ['an ability', { ability: 'wis' }, '"ability" is not a field a charges row has'],
     ['effects', { effects: [] }, '"effects" is not a field a charges row has'],
@@ -240,6 +369,25 @@ describe('a charges row, read', () => {
       ],
     });
     expect(set.rows).toEqual([]);
+  });
+
+  it('reads a list of none, whose charges count and cast nothing on demand', () => {
+    // A Wand of Wonder's spell is the table's roll, not the holder's pick.
+    const set = read({ spells: [] });
+    expect(set.problems).toEqual([]);
+    expect(set.rows[0]?.charges).toEqual({ charges: 5, regain: '1d4 + 1', spells: [] });
+  });
+
+  it('keeps a spell cast at one level for its cost, which costs nothing below or above it', () => {
+    const set = read({ spells: [{ spell: 'Magic Missile', cost: 1, at: 5 }] });
+    expect(set.problems).toEqual([]);
+    const charges = set.rows[0]?.charges as ItemCharges;
+    expect(charges.spells).toEqual([{ spell: 'magic missile', cost: 1, at: 5 }]);
+    expect(chargeCosts(charges, 'magic missile', 1)).toEqual([{ level: 5, cost: 1 }]);
+    // One fixed below the spell's own level casts nothing, nor one costing more than it holds.
+    expect(chargeCosts(charges, 'magic missile', 6)).toEqual([]);
+    const dear = read({ spells: [{ spell: 'fireball', cost: 5, at: 7 }] }).rows[0]?.charges;
+    expect(chargeCosts({ ...(dear as ItemCharges), charges: 4 }, 'fireball', 3)).toEqual([]);
   });
 
   it('allows a spell whose cost at its top level is more than the item holds', () => {

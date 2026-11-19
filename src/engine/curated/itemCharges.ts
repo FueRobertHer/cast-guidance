@@ -2,20 +2,25 @@
  * Items with charges, and those whose charges cast spells (the rolls canvas,
  * "Every way to cast"): how many charges each holds, what comes back at dawn,
  * and what each spell costs. Every item's own data fields count its charges
- * (`fieldChargesOf`). The data's `attachedSpells.charges` says only one fixed
- * cost per spell, and not always that: a Staff of Healing's Cure Wounds is one
- * charge a spell level, up to 4th, and the 2024 staff's data lists it as at
- * will. So the spells an official item's charges cast are a built-in `charges`
- * row (`src/rules/cast-guidance/items.json`), read from the item's own text,
- * and a homebrew item says its own in a `charges` effect (`StoredItemCharges`),
- * which a pack's patch can say too. Each is found under the `name|source` its
- * equipment entry names (`refUid(entry.ref)`), as every reader here and the
- * item call site look it up.
+ * and the spells they cast (`fieldChargesOf`). The data's
+ * `attachedSpells.charges` says only one fixed cost per spell, and not always
+ * that: a Staff of Healing's Cure Wounds is one charge a spell level, up to
+ * 4th, and the 2024 staff's data lists it as at will. So where the fields
+ * misstate them, the spells an official item's charges cast are a built-in
+ * `charges` row (`src/rules/cast-guidance/items.json`), read from the item's
+ * own text, and a homebrew item says its own in a `charges` effect
+ * (`StoredItemCharges`), which a pack's patch can say too. The save DC and
+ * attack bonus an item's text fixes for its spells are an `itemDc` row. Each
+ * is found under the `name|source` its equipment entry names
+ * (`refUid(entry.ref)`), as every reader here and the item call site look it up.
  */
-import { isRecord, RULE_PACK_TYPE, RULE_SET_TYPE } from '../castGuidance';
+import { isRecord, RULE_PACK_TYPE, RULE_SET_LIMITS, RULE_SET_TYPE } from '../castGuidance';
+import { parseSpellRef } from '../effects/additionalSpells';
 import { lookupItem } from '../effects/item';
 import {
   builtInRuleIn,
+  type ChargeSpell,
+  type FixedCast,
   type ItemCharges,
   packChargesOf,
   readItemCharges,
@@ -40,6 +45,11 @@ export function itemChargesIn(
   ref: EntityRef,
 ): ItemCharges | undefined {
   return builtInRuleIn(ruleSets, 'charges', [refUid(ref)])?.charges;
+}
+
+/** The save DC and attack bonus an item's text fixes for its spells, by its equipment entry's ref (`itemDc` rows). */
+export function itemDcIn(ruleSets: readonly DataEntity[], ref: EntityRef): FixedCast | undefined {
+  return builtInRuleIn(ruleSets, 'itemDc', [refUid(ref)])?.itemDc;
 }
 
 /**
@@ -101,15 +111,15 @@ function ownChargesStand(raw: unknown): boolean {
 /**
  * The charges an item's own data fields say (`charges`, `recharge`,
  * `rechargeAmount`), read as its own `charges` effect would be, with what
- * comes back as `regainOf` says it. They cast no spells here. Absent when the
- * fields do not read as a whole (a dice count of charges, an amount the roller
- * cannot roll), and when the item's own guidance leaves them out
- * (`ownChargesStand`).
+ * comes back as `regainOf` says it, and the spells they cast
+ * (`fieldChargeSpells`). Absent when the count and regain do not read as a
+ * whole (a dice count of charges, an amount the roller cannot roll), and when
+ * the item's own guidance leaves them out (`ownChargesStand`).
  */
 export function fieldChargesOf(entry: DataEntity): ItemCharges | undefined {
   const known = fromFields.get(entry);
   if (known !== undefined) return known ?? undefined;
-  const read =
+  const counted =
     entry.charges === undefined || ownChargesStand(entry.castGuidance)
       ? undefined
       : readItemCharges({
@@ -117,8 +127,47 @@ export function fieldChargesOf(entry: DataEntity): ItemCharges | undefined {
           regain: regainOf(entry.recharge, entry.rechargeAmount),
           spells: [],
         });
+  const read =
+    counted === undefined
+      ? undefined
+      : { ...counted, spells: fieldChargeSpells(entry.attachedSpells, counted.charges) };
   fromFields.set(entry, read ?? null);
   return read;
+}
+
+/** A spell level an `attachedSpells` name says it casts at (`fireball#5`, `cure wounds|xphb#9`). */
+const CAST_AT = /#([1-9])(?![\d])/;
+
+/**
+ * The spells an item's `attachedSpells.charges` casts, each read on its own, so
+ * one the effect could not take is left out alone and the item keeps the rest
+ * and its pool: a cost of 1 to the item's charges (a cost of 0 is at will, so
+ * granted as one, `attachedInnate`), a name and its book when it names one
+ * (none is found in the character's rules version), and `#N` as the one level
+ * it casts at (`at`). A name the list repeats keeps its first cost; past
+ * `RULE_SET_LIMITS.chargeSpells`, the rest are left out.
+ */
+export function fieldChargeSpells(attached: unknown, charges: number): ChargeSpell[] {
+  if (!isRecord(attached) || !isRecord(attached.charges)) return [];
+  const out: ChargeSpell[] = [];
+  for (const [key, names] of Object.entries(attached.charges)) {
+    const cost = Number(key);
+    if (!Number.isInteger(cost) || cost < 1 || cost > charges || !Array.isArray(names)) continue;
+    for (const written of names) {
+      if (typeof written !== 'string' || out.length >= RULE_SET_LIMITS.chargeSpells) continue;
+      const { name, source } = parseSpellRef(written);
+      const spell = name.toLowerCase();
+      if (spell === '' || out.some((s) => s.spell === spell)) continue;
+      const level = CAST_AT.exec(written)?.[1];
+      out.push({
+        spell,
+        cost,
+        ...(level === undefined ? {} : { at: Number(level) }),
+        ref: { name: spell, source: source.toLowerCase() },
+      });
+    }
+  }
+  return out;
 }
 
 /** The fields the Workshop wrote on its older pool card. */
@@ -272,7 +321,9 @@ function olderChargesUpgrade(entry: DataEntity): DataEntity | undefined {
  * replaces the item's effects replaces its own charges and its fields too, as
  * it does everything the item inherits, and the item's own guidance can leave
  * the fields out (`fieldChargesOf`); the row stands outside both, so only a
- * pack's charges or the item's own come before it.
+ * pack's charges or the item's own come before it. A pack's or the item's own
+ * effect says the DC its spells cast with; the row's and the fields' take the
+ * item's `itemDc` row's.
  */
 export function itemChargesOf(
   lookup: ChargeLookup,
@@ -286,10 +337,11 @@ export function itemChargesOf(
   const raw = entry === undefined ? undefined : entry.castGuidance;
   const mine = raw === undefined ? undefined : readMechanics(raw);
   if (mine?.readable === true && mine.charges !== undefined) return mine.charges;
-  return (
-    itemChargesIn(lookup.byType(RULE_SET_TYPE), ref) ??
-    (entry === undefined ? undefined : fieldChargesOf(entry))
-  );
+  const sets = lookup.byType(RULE_SET_TYPE);
+  const held =
+    itemChargesIn(sets, ref) ?? (entry === undefined ? undefined : fieldChargesOf(entry));
+  const fixed = held === undefined ? undefined : itemDcIn(sets, ref);
+  return fixed === undefined || held === undefined ? held : { ...held, ...fixed };
 }
 
 /**
@@ -349,7 +401,8 @@ export function idleChargePools(
 /**
  * What casting `spellName` from an item of this row costs at each level it
  * can, from the spell's own level up, while the cost fits in the item's
- * charges. Empty when the item does not cast that spell.
+ * charges; or at the one level it casts at (`at`), never below the spell's
+ * own. Empty when the item does not cast that spell.
  */
 export function chargeCosts(
   row: ItemCharges,
@@ -358,6 +411,11 @@ export function chargeCosts(
 ): Array<{ level: number; cost: number }> {
   const spell = row.spells.find((s) => s.spell === spellName.trim().toLowerCase());
   if (spell === undefined) return [];
+  if (spell.at !== undefined) {
+    return spell.at >= spellLevel && spell.cost <= row.charges
+      ? [{ level: spell.at, cost: spell.cost }]
+      : [];
+  }
   const out: Array<{ level: number; cost: number }> = [];
   const top = Math.min(9, spell.upTo ?? spellLevel);
   for (let level = spellLevel; level <= top; level++) {

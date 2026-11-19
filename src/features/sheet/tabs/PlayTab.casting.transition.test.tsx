@@ -4,7 +4,7 @@
 // the pips, the turn tracker and the concentration toggle then show, and with
 // the history row it leaves.
 import 'fake-indexeddb/auto';
-import { fireEvent, screen } from '@testing-library/react';
+import { fireEvent, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { CharacterDoc, DataEntity } from '@/engine/types';
 import { rollLogStore } from '@/stores/rollLog';
@@ -325,12 +325,24 @@ describe("casting from an item's charges", () => {
     return doc;
   };
   const world = { extra: { spell: [cure], item: [staff] } };
+  /** The spell rows of the card titled `title` whose text has `has`. */
+  const rowsIn = (title: string, has: string) =>
+    [
+      ...(screen
+        .getByText(title)
+        .closest('section')
+        ?.querySelectorAll<HTMLElement>('.min-h-10, .min-h-11') ?? []),
+    ].filter((r) => r.textContent?.includes(has));
+  const press1d8 = (row: HTMLElement | undefined) => {
+    if (row === undefined) throw new Error('no row');
+    fireEvent.click(within(row).getByRole('button', { name: '1d8' }));
+  };
 
   it('offers the staff beside the slots, and spends its charges at the level picked', async () => {
     const sheet = await renderSheet(healer(true), world);
     expect(left('Staff of Healing charges use')).toBe(10);
 
-    press('1d8');
+    press1d8(rowsIn('Sorcerer spellcasting', 'Cure Wounds')[0]);
     expect(castTiles()).toEqual([
       'Level 1 slot, 4 left',
       'Level 2 slot, 3 left',
@@ -363,6 +375,26 @@ describe("casting from an item's charges", () => {
     expect(castTiles().some((t) => t.includes('Staff of Healing'))).toBe(false);
   });
 
+  it("grants the staff's spells a row each, cast from its charges alone", async () => {
+    // Its built-in row's spells (O2b), found by name in the character's rules version.
+    const doc = healer(true);
+    doc.spellcasting = { 'sorcerer|tst': { known: [], prepared: [] } };
+    await renderSheet(doc, world);
+    const own = rowsIn('Innate & granted spells', 'Staff of Healing');
+    expect(own.map((r) => r.querySelector('button')?.textContent)).toEqual([
+      'cure wounds10/10 charges',
+      'lesser restoration10/10 charges',
+      'mass cure wounds10/10 charges',
+    ]);
+    press1d8(own[0]);
+    expect(castTiles()).toEqual([
+      'Level 1 from Staff of Healing, 1 charge',
+      'Level 2 from Staff of Healing, 2 charges',
+      'Level 3 from Staff of Healing, 3 charges',
+      'Level 4 from Staff of Healing, 4 charges',
+    ]);
+  });
+
   it("offers the staff on a grant's row with a use of its own, beside that use", async () => {
     /** Grants Cure Wounds once a day, which the staff's charges cast too. */
     const healersSpark: DataEntity = {
@@ -378,7 +410,8 @@ describe("casting from an item's charges", () => {
     doc.feats = [{ ref: { name: "Healer's Spark", source: 'TST' }, instanceId: 'f1' }];
     await renderSheet(doc, { extra: { ...world.extra, feat: [healersSpark] } });
 
-    press('1d8');
+    // Its own use's row (cast with Wisdom), beside the staff's row of the same spell.
+    press1d8(rowsIn('Innate & granted spells', 'WIS')[0]);
     expect(castTiles().some((t) => t.startsWith("Healer's Spark"))).toBe(true);
     expect(castTiles().filter((t) => t.includes('Staff of Healing'))).toEqual([
       'Level 1 from Staff of Healing, 1 charge',
@@ -386,6 +419,84 @@ describe("casting from an item's charges", () => {
       'Level 3 from Staff of Healing, 3 charges',
       'Level 4 from Staff of Healing, 4 charges',
     ]);
+  });
+});
+
+describe('what an item casts as its text says (O2b)', () => {
+  /** Force darts, a die more a slot level. */
+  const missile: DataEntity = {
+    name: 'Magic Missile',
+    source: 'TST',
+    level: 1,
+    school: 'V',
+    time: [{ number: 1, unit: 'action' }],
+    entries: ['Each dart deals {@damage 1d4} force damage.'],
+    entriesHigherLevel: [{ entries: ['One more {@scaledice 1d4|1-9|1d4} a slot above 1st.'] }],
+  };
+  /** A Wisdom save. */
+  const thoughts: DataEntity = {
+    name: 'Detect Thoughts',
+    source: 'TST',
+    level: 2,
+    school: 'D',
+    time: [{ number: 1, unit: 'action' }],
+    savingThrow: ['wisdom'],
+    entries: ['You read a mind.'],
+  };
+  const worn = (name: string, source: string) => {
+    const doc = sorcerer();
+    doc.spellcasting = { 'sorcerer|tst': { known: [], prepared: [] } };
+    doc.equipment = [{ id: 'r1', ref: { name, source }, qty: 1, equipped: true, attuned: true }];
+    return doc;
+  };
+  const rowOf = (has: string) => {
+    const row = [
+      ...(screen
+        .getByText('Innate & granted spells')
+        .closest('section')
+        ?.querySelectorAll<HTMLElement>('.min-h-11') ?? []),
+    ].find((r) => r.textContent?.includes(has));
+    if (row === undefined) throw new Error(`no row with ${has}`);
+    return row;
+  };
+
+  it("casts a Robe of Stars' Magic Missile at 5th for one charge, as the dice say", async () => {
+    const robe: DataEntity = {
+      name: 'Robe of Stars',
+      source: 'DMG',
+      type: 'OTH',
+      rarity: 'very rare',
+      reqAttune: true,
+    };
+    const sheet = await renderSheet(worn('Robe of Stars', 'DMG'), {
+      extra: { spell: [missile], item: [robe] },
+    });
+    expect(left('Robe of Stars charges use')).toBe(6);
+
+    // Its dice are the level it casts at, not the spell's own.
+    fireEvent.click(within(rowOf('Robe of Stars')).getByRole('button', { name: '5d4' }));
+    expect(castTiles()).toEqual(['Level 5 from Robe of Stars, 1 charge']);
+    castHeld('Level 5 from Robe of Stars');
+
+    expect(rollLogStore.getState().rolls.map((r) => [r.expr, r.kind])).toEqual([['5d4', 'damage']]);
+    expect(left('Robe of Stars charges use')).toBe(5);
+    // Named as the row writes it, as any grant the data names in lower case.
+    expect((await sheet.history())[0]).toBe('Cast magic missile (L5 from 1 Robe of Stars charge)');
+  });
+
+  it("shows the DC an item's text fixes, not the character's", async () => {
+    const shards: DataEntity = {
+      name: 'True-Ice Shards (Dagger)',
+      source: 'CoA',
+      type: 'M',
+      rarity: 'artifact',
+      reqAttune: true,
+      attachedSpells: { will: ['detect thoughts'] },
+    };
+    await renderSheet(worn('True-Ice Shards (Dagger)', 'CoA'), {
+      extra: { spell: [thoughts], item: [shards] },
+    });
+    expect(within(rowOf('detect thoughts')).getByText('DC 20')).toBeTruthy();
   });
 });
 

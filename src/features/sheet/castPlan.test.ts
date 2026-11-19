@@ -8,11 +8,16 @@ import {
   castDamageBonuses,
   castDiceAt,
   castNow,
+  castRowId,
   castsByPrompt,
   castWaysOf,
   grantBadgeTitle,
+  grantCast,
   grantLimitWords,
+  grantNumbersKey,
+  grantRowKey,
   grantUsedUp,
+  grantUseWays,
   itemChargeWays,
   type SpellCast,
   usedUpTitle,
@@ -182,6 +187,25 @@ describe("a grant paid in an item's own charges", () => {
     expect(grantUsedUp(cast('Light', 0), 7)).toBe(true);
   });
 
+  it("offers its charges on another grant's row only while the item casts with the character's numbers", () => {
+    const { cast } = holding(0);
+    // A daily Cure Wounds of a feat's, beside the rod's.
+    const daily = {
+      ...cast('Cure Wounds', 1),
+      grantPool: { key: 'spark', label: 'Spark', max: 1 },
+    };
+    const kinds = (c: SpellCast) => castWaysOf(c).map((w) => w.tiles[0]?.resource.kind);
+    expect(kinds(daily)).toEqual(['uses', 'charges']);
+    // A rod whose text fixes its DC casts with it on its own row, and on no other.
+    const effects = rod.castGuidance as { effects: Array<Record<string, unknown>> };
+    const fixed = { ...rod, castGuidance: { v: 1, effects: [{ ...effects.effects[0], dc: 15 }] } };
+    const lookup = { ...entities, get: (type: string) => (type === 'item' ? fixed : undefined) };
+    expect(kinds({ ...daily, entities: lookup } as SpellCast)).toEqual(['uses']);
+    expect(kinds({ ...cast('Cure Wounds', 1), entities: lookup } as SpellCast)).toEqual([
+      'charges',
+    ]);
+  });
+
   it('says its count in charges, and a daily use per day', () => {
     expect(grantLimitWords('charges')).toBe('charges');
     expect(grantLimitWords('1/day')).toBe('per day');
@@ -189,6 +213,122 @@ describe("a grant paid in an item's own charges", () => {
     expect(grantBadgeTitle('charges', 'Rod of Sparks', false)).toBe('charges from Rod of Sparks');
     expect(grantBadgeTitle('charges', 'Rod of Sparks', true)).toBe('No charges left');
     expect(grantBadgeTitle('1/day', 'Fey Step', true)).toBe('No uses left until you rest');
+  });
+});
+
+describe('grantCast: what a granted spell casts with', () => {
+  const sheet = {
+    abilities: { wis: { mod: 3 }, cha: { mod: -1 } },
+    profBonus: { value: 2 },
+  } as unknown as DerivedSheet;
+  const grant = (more: Partial<DerivedSheet['grantedSpells'][number]>) =>
+    ({
+      name: 'Light',
+      source: 'XPHB',
+      origin: 'Orb',
+      ...more,
+    }) as DerivedSheet['grantedSpells'][number];
+
+  it('works its numbers out from the ability it names', () => {
+    expect(grantCast(grant({ ability: 'wis' }), sheet)).toEqual({ dc: 13, attack: 5, mod: 3 });
+    expect(grantCast(grant({ ability: 'cha' }), sheet)).toEqual({ dc: 9, attack: 1, mod: -1 });
+  });
+
+  it("takes an item's, what its text fixes beside its ability", () => {
+    expect(grantCast(grant({ ability: 'wis', dc: 17 }), sheet)).toEqual({
+      dc: 17,
+      attack: 5,
+      mod: 3,
+    });
+    expect(grantCast(grant({ dc: 13, attack: 5, mod: 3 }), sheet)).toEqual({
+      dc: 13,
+      attack: 5,
+      mod: 3,
+    });
+  });
+
+  it('has none with no ability and no numbers of its own', () => {
+    expect(grantCast(grant({}), sheet)).toEqual({});
+  });
+});
+
+describe("a granted spell's row beside another grant of the spell", () => {
+  const grant = (more: Partial<DerivedSheet['grantedSpells'][number]>) =>
+    ({
+      name: 'Suggestion',
+      source: 'XPHB',
+      origin: 'Feat',
+      ...more,
+    }) as DerivedSheet['grantedSpells'][number];
+
+  it("offers a daily use on the class's row, but not an item's whose text fixes its DC", () => {
+    const sheet = {
+      grantedSpells: [
+        grant({ usage: '1/day', resourceKey: 'feat' }),
+        grant({
+          usage: '1/day',
+          resourceKey: 'helm',
+          origin: 'Helm',
+          dc: 13,
+          fixed: { dc: 13 },
+        }),
+        grant({ usage: '1/day', resourceKey: 'orb', origin: 'Orb', dc: 15, attack: 7, mod: 4 }),
+      ],
+      resources: [
+        { key: 'feat', max: 1 },
+        { key: 'helm', max: 1 },
+        { key: 'orb', max: 1 },
+      ],
+    } as unknown as DerivedSheet;
+    // The orb casts with the character's own numbers, so the class row may too.
+    expect(grantUseWays(sheet, 'suggestion').map((w) => w.key)).toEqual(['feat', 'orb']);
+  });
+
+  it("keeps an item's row, cast with other numbers, apart from another's", () => {
+    const race = grant({ name: 'Light', origin: 'Race', ability: 'cha' });
+    // The orb casts with the character's numbers; the wand's text fixes a DC.
+    const orb = grant({ name: 'Light', origin: 'Orb', dc: 13, attack: 5, mod: 3 });
+    const wand = grant({
+      name: 'Light',
+      origin: 'Wand',
+      dc: 15,
+      attack: 5,
+      mod: 3,
+      fixed: { dc: 15 },
+    });
+    expect(grantNumbersKey(race)).toBeUndefined();
+    expect(new Set([race, orb, wand].map(grantRowKey)).size).toBe(3);
+    // At-will rows, cast from no class and no pool of their own.
+    const light = {
+      doc: newCharacterDoc('c1', 'Vela', 't'),
+      info: { name: 'Light', source: 'XPHB' },
+    } as unknown as SpellCast;
+    const ids = [undefined, grantNumbersKey(orb), grantNumbersKey(wand)].map((numbers) =>
+      castRowId({ ...light, numbers }),
+    );
+    expect(new Set(ids).size).toBe(3);
+    // A grant without numbers keeps the id it had.
+    expect(ids[0]).toBe('c1|innate|light|xphb');
+  });
+
+  it("keeps a row's key and cast id while an effect moves the character's numbers", () => {
+    // A cloak casting with the character's DC 13, then 14 under a buff.
+    const before = grant({ usage: '1/day', resourceKey: 'cloak', dc: 13, attack: 5, mod: 3 });
+    const after = { ...before, dc: 14, attack: 6 };
+    expect(grantRowKey(after)).toBe(grantRowKey(before));
+    // A fixed item's row follows the numbers its text fixes, not the rest.
+    const fixed = { ...before, fixed: { dc: 15 } };
+    expect(grantRowKey({ ...fixed, attack: 6 })).toBe(grantRowKey(fixed));
+    // A row with a pool or a class is one of its kind: its id says no numbers,
+    // so the Spells tab's class row for a prepared grant shares it.
+    const base = {
+      doc: newCharacterDoc('c1', 'Vela', 't'),
+      info: { name: 'Suggestion', source: 'XPHB' },
+    } as unknown as SpellCast;
+    const pooled = { ...base, grantPool: { key: 'cloak', label: 'Cloak', max: 1 } };
+    expect(castRowId({ ...pooled, numbers: 'own' })).toBe(castRowId(pooled));
+    const prepared = { ...base, block: { classUid: 'wizard|xphb' } } as unknown as SpellCast;
+    expect(castRowId({ ...prepared, numbers: 'own' })).toBe(castRowId(prepared));
   });
 });
 
