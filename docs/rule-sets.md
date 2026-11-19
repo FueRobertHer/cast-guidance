@@ -333,7 +333,9 @@ printing with no row of its own.
 The first key with a row wins, in the order the call site tries them. A
 subclass has no row of its own. Items have no curated row: their parts are
 `wornTags`, under the item's own `name|source` (`rod of alertness|dmg`), the
-entity found rather than the ref a character saved, and `charges`, `itemDc`
+entity found rather than the ref a character saved, then, for the bonus kinds
+alone, under the official item's a copy or a converted printing stands for
+("Worn tag rows", below); and `charges`, `itemDc`
 and `itemSpells`, under the `name|source` the character's equipment entry
 names (`refUid(entry.ref)`), which the sheet's pool, the cast prompt and the
 long rest all read alike. The two agree for every ref that names its book;
@@ -345,8 +347,11 @@ as the Workshop saves every copy, in changes or in full) is reached by the
 official one's `itemDc` and `itemSpells` rows, under the official one's
 `name|source` after its own (`itemRowKeys`). It casts what the official one
 casts, whatever its own lists say, and, with no `charges` effect of its own
-or a pack's, at the DC its text fixes. It is not reached by the official one's `wornTags`
-or `charges` rows: its tags and charges are its author's (its own `charges`
+or a pack's, at the DC its text fixes. It is reached by the official one's
+`wornTags` row for the bonus fields alone (`attackBonus`, `damageBonus`,
+`spellDcBonus`), "Worn tag rows", below. It is not reached by that row for
+its defense tags, nor by the official one's `charges` row: its tags and
+charges are its author's (its own `charges`
 effect, "An item's own charges", below), and the Workshop writes the official
 one's charges out for it. Until then a copy counts its charges by its fields,
 or not at all, which cast none of the spells an `itemSpells` row takes out
@@ -355,7 +360,8 @@ Thoughts, the 2024 Staff of Healing, the Rod of Seven Parts). So such a copy
 keeps its data's lists until its charges are counted by an effect of its own
 or a pack's, and loses no spell. An effect of its own takes the row, whatever
 it casts. A file converted from another app (`printingOf`) reaches none of
-these rows; a Workshop copy of one is `basedOn` the official item it prints,
+these rows but the `wornTags` row for the bonus fields, which it reaches as a
+copy does; a Workshop copy of one is `basedOn` the official item it prints,
 and reaches them as any copy does.
 
 A `spellRest` row is found under the `type:uid` of the origin granting the
@@ -415,6 +421,14 @@ one. A `wornTags` row says what the item gives instead.
   the Rod of the Pact Keeper's Warlock), to spells cast with one ability
   (`ability`, as the Jester's Mask's Charisma), or to a moment the sheet cannot
   see, which gives nothing (Niko's Mace's summon). 25 rows do so.
+- A copy of the item (`basedOn`) or a converted printing of it (`printingOf`)
+  takes the official item's correction too: for each bonus kind no row under
+  its own `name|source` replaces, the official item's row stands in, so a copy
+  of Bracers of Archery gives a longsword nothing. The row stands in even where
+  the copy's author changed the field (a copy's +2 rod still gives +1, to a
+  Warlock's spells alone); the copy's own `drop` takes the row away, and its own
+  `effects` say what it gives instead. Its defense tags stay its author's, read
+  from its own fields.
 - A potion's tags count once it is drunk, so a potion reads neither tags nor
   row while carried. `bonusAc` is not a tag: a row never touches it.
 - The row is part of what the item inherits, read while its magic works

@@ -26,6 +26,7 @@ import {
   builtInRowsFor,
   builtInRuleFor,
   emitRuleRows,
+  entryKeys,
   type FixedCast,
   type ItemCharges,
   mechanicsOf,
@@ -124,21 +125,33 @@ const strings = (v: unknown): string[] =>
  * bonus, and its bonuses to attacks, damage and the spell save DC
  * (`readBonusField`). A built-in `wornTags` row under the item's own
  * `name|source` stands in for the kinds it `replaces`, its effects where the
- * data's of that kind would be. A potion's last a while once it is drunk, so
- * it gives none while carried. `id` is its equipment entry's.
+ * data's of that kind would be. For the bonus kinds, a copy or a converted
+ * printing (`entryKeys`) then reads the official item's row: its fields are the
+ * official one's, which the row corrects. Its defense tags stay its author's.
+ * A potion's last a while once it is drunk, so it gives none while carried.
+ * `id` is its equipment entry's.
  */
 function readWornTags(col: Collector, e: DataEntity, id: string, origin: EffectOrigin): void {
   if (itemTypeCode(e) === 'P') return;
   const key = refUid({ name: str(e.name) ?? '', source: str(e.source) ?? '' });
   const row = builtInRowsFor(col, 'wornTags', [key])?.[0];
+  const official = entryKeys(e, key).slice(1);
+  const copied = official.length === 0 ? undefined : builtInRowsFor(col, 'wornTags', official)?.[0];
   for (const kind of WORN_TAG_KINDS) {
-    if (row?.replaces?.includes(kind) === true) emitKind(col, row, kind, origin);
+    const bonus = kind === 'attackBonus' || kind === 'damageBonus' || kind === 'spellDcBonus';
+    const standing =
+      row?.replaces?.includes(kind) === true
+        ? row
+        : bonus && copied?.replaces?.includes(kind) === true
+          ? copied
+          : undefined;
+    if (standing !== undefined) emitKind(col, standing, kind, origin);
     else if (kind === 'conditionImmune') {
       for (const condition of strings(e.conditionImmune)) col.add({ kind, condition, origin });
     } else if (kind === 'saveBonus') {
       const amount = parseBonus(e.bonusSavingThrow);
       if (amount !== 0) col.add({ kind, amount, origin });
-    } else if (kind === 'attackBonus' || kind === 'damageBonus' || kind === 'spellDcBonus') {
+    } else if (bonus) {
       readBonusField(col, e, kind, id, origin);
     } else {
       for (const damageType of strings(e[kind])) col.add({ kind, damageType, origin });
