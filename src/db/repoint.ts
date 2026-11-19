@@ -638,6 +638,20 @@ function carryRace(json: Row, x: Change): void {
 }
 
 /**
+ * A class's subclasses and their features, followed: they name their class by
+ * name and source, in whichever of the player's files they are. A rename's
+ * save carries only its own file's; a move has carried them all already.
+ */
+function carryClass(json: Row, x: Change): void {
+  if (x.type !== 'class') return;
+  OWNED.class?.carry?.(
+    json,
+    { name: x.from.name, source: x.from.source },
+    { name: x.to.name, source: x.to.source },
+  );
+}
+
+/**
  * Re-point everything that holds `c`'s old identities, in the caller's
  * transaction over both homebrew tables and the characters: the player's own
  * files (`owned`, written back where changed), imported packs (listed), and
@@ -646,7 +660,10 @@ function carryRace(json: Row, x: Change): void {
 async function repointAll(c: readonly Change[], owned: Map<string, Open>): Promise<RepointReport> {
   const packs: string[] = [];
   for (const f of owned.values()) {
-    for (const x of c) carryRace(f.json, x);
+    for (const x of c) {
+      carryRace(f.json, x);
+      carryClass(f.json, x);
+    }
     if (retargetPack(f.json, c, true).length > 0) packs.push(f.file.id);
   }
   for (const f of owned.values()) {

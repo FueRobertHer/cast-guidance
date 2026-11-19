@@ -741,6 +741,30 @@ async function stored(ids: readonly string[]): Promise<CharacterDoc[]> {
   );
 }
 
+/** Rename one entry in the Workshop, as its editor saves it. */
+async function renameEntry(file: string, type: string, from: string, to: string) {
+  const json = await content(file);
+  const source = String((json._meta as { sources: Array<{ json: string }> }).sources[0]?.json);
+  const entry = (json[type] as Row[]).find((e) => e.name === from) as Row;
+  const opts: Parameters<typeof homebrewRepo.saveEntry>[2] = {
+    fileId: file,
+    replaces: { name: from, source },
+  };
+  let renamed: Row = { ...entry, name: to };
+  if (type === 'class') {
+    // The class editor saves the class's features with it, under its new name.
+    renamed = {
+      ...renamed,
+      classFeatures: [
+        `Hex Bolt|${to}|${source}|1`,
+        { classFeature: `Path Choice|${to}|${source}|1`, gainSubclassFeature: true },
+      ],
+    };
+    opts.owned = (json.classFeature as Row[]).map((f) => ({ ...f, className: to }));
+  }
+  return homebrewRepo.saveEntry(type, renamed as Row & { name: string; source: string }, opts);
+}
+
 describe('a real build, derived before and after', () => {
   it('derives the same once every entry it uses has moved', async () => {
     const ash = await collection('Ash Book', ASH, ashContent());
@@ -811,29 +835,7 @@ describe('a real build, derived before and after', () => {
       ['subclass', 'Way of Coals', 'Way of Cinders'],
     ];
     for (const [type, from, to] of names) {
-      const json = await content(ash);
-      const entry = (json[type] as Row[]).find((e) => e.name === from) as Row;
-      const opts: Parameters<typeof homebrewRepo.saveEntry>[2] = {
-        fileId: ash,
-        replaces: { name: from, source: ASH },
-      };
-      let renamed: Row = { ...entry, name: to };
-      if (type === 'class') {
-        // The class editor saves the class's features with it, under its new name.
-        renamed = {
-          ...renamed,
-          classFeatures: [
-            `Hex Bolt|${to}|${ASH}|1`,
-            { classFeature: `Path Choice|${to}|${ASH}|1`, gainSubclassFeature: true },
-          ],
-        };
-        opts.owned = (json.classFeature as Row[]).map((f) => ({ ...f, className: to }));
-      }
-      const result = await homebrewRepo.saveEntry(
-        type,
-        renamed as Row & { name: string; source: string },
-        opts,
-      );
+      const result = await renameEntry(ash, type, from, to);
       expect(result.repointed?.changes, type).toEqual([
         { type, from: { name: from, source: ASH }, to: { name: to, source: ASH } },
       ]);
@@ -846,5 +848,30 @@ describe('a real build, derived before and after', () => {
       expect(view(sheet), doc.name).toEqual(renamedView(before[i], names));
       holds(doc, sheet, after);
     });
+  });
+
+  it('keeps a subclass in another collection on its class once the class is renamed', async () => {
+    const ash = await collection('Ash Book', ASH, ashContent());
+    const bone = await collection('Bone Book', BONE);
+    await built();
+    await homebrewRepo.moveEntries({
+      from: ash,
+      to: bone,
+      entries: EVERY.filter((e) => e.type === 'subclass'),
+    });
+    const [mira] = await stored(['mira']);
+    const before = view(deriveSheet(mira as CharacterDoc, await context()));
+    expect(before.features).toContain('Coal Heart');
+
+    await renameEntry(ash, 'class', 'Hexer', 'Curser');
+
+    expect((await content(bone)).subclass).toEqual([
+      expect.objectContaining({ className: 'Curser', classSource: ASH, source: BONE }),
+    ]);
+    const [renamed] = await stored(['mira']);
+    const after = await context();
+    const sheet = deriveSheet(renamed as CharacterDoc, after);
+    expect(view(sheet)).toEqual(renamedView(before, [['class', 'Hexer', 'Curser']]));
+    holds(renamed as CharacterDoc, sheet, after);
   });
 });

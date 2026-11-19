@@ -306,8 +306,8 @@ work:
   name it. Left: saved history snapshots, the save journal and creator drafts
   keep the old identity; references inside the player's own entries (`_copy`,
   `basedOn`, a background's `feats`, `additionalSpells`, `{@spell}` and
-  `{@classFeature}` tags) and imported files' subclasses of a moved class are
-  not followed or listed; on a rename, picks keyed by a name alone
+  `{@classFeature}` tags) and imported files' subclasses and subraces of a
+  moved or renamed class or race are not followed or listed; on a rename, picks keyed by a name alone
   (`:feature:` segments, an optional feature's label) and one turn's marks
   are lost; an open tab with unsaved edits that keeps its own copy after the
   save conflict brings the old identity back.
