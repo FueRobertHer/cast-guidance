@@ -202,6 +202,27 @@ describe('the built-in worn tag rows for bonus fields', () => {
     });
   }
 
+  it("stand in on a weapon too: Niko's Mace's own attack gains none of its +9", () => {
+    const mace = (source: string): DataEntity => ({
+      name: "Niko's Mace",
+      source,
+      type: 'M',
+      weaponCategory: 'simple',
+      dmg1: '1d6',
+      dmgType: 'B',
+      rarity: 'rare',
+      bonusWeaponAttack: '+9',
+    });
+    const own = (source: string) =>
+      sheetWith(mace(source), ['Warrior'])
+        .attacks.find((a) => a.label === "Niko's Mace")
+        ?.toHit.parts.filter((p) => p.label === "Niko's Mace")
+        .map((p) => p.amount);
+    expect(own('UtHftLH')).toEqual([]);
+    // The same weapon under another book has no row: its data's bonus counts.
+    expect(own('HB')).toEqual([9]);
+  });
+
   for (const [key, given] of Object.entries(SPELLS)) {
     it(`give ${key}'s spell bonuses to the blocks its text says`, () => {
       const item = fixtureFor(key);

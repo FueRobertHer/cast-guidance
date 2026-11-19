@@ -54,13 +54,41 @@ const speedy = (name: string, source: string, walk: number): DataEntity => ({
     },
   ],
 });
-const RACES = [speedy('Dwarf', 'PHB', 25), speedy('Dwarf', 'HB', 25), speedy('Human', 'PHB', 30)];
+const RACES = [
+  speedy('Dwarf', 'PHB', 25),
+  speedy('Dwarf (Kaladesh)', 'PSK', 25),
+  speedy('Dwarf', 'HB', 25),
+  speedy('Human', 'PHB', 30),
+];
+
+/** A Warrior subclass named as the Armorer is, whose Arcane Armor the built-in row reaches. */
+const ARMORER: DataEntity = {
+  name: 'Armorer',
+  shortName: 'Armorer',
+  source: 'HB',
+  className: 'Warrior',
+  classSource: 'TST',
+  subclassFeatures: ['Arcane Armor|Warrior|TST|Armorer|HB|1'],
+};
+const ARCANE_ARMOR: DataEntity = {
+  name: 'Arcane Armor',
+  source: 'HB',
+  className: 'Warrior',
+  classSource: 'TST',
+  subclassShortName: 'Armorer',
+  subclassSource: 'HB',
+  level: 1,
+  entries: [
+    'If the armor normally has a Strength requirement, the arcane armor lacks this requirement for you.',
+  ],
+};
 
 function sheet(
   strength: number,
   armor: string[],
   feats: DataEntity[] = [],
   race?: { name: string; source: string },
+  armorer = false,
 ): DerivedSheet {
   const base = makeTestContext();
   const items = [LOUD_SCALE, LOUD_PLATE, SHIRT];
@@ -70,11 +98,16 @@ function sheet(
         ? [...base.byType(t), ...items]
         : t === 'feat'
           ? [...base.byType(t), ...feats]
-          : base.byType(t),
+          : t === 'subclass'
+            ? [...base.byType(t), ARMORER]
+            : t === 'subclassFeature'
+              ? [...base.byType(t), ARCANE_ARMOR]
+              : base.byType(t),
     get: (t, n, s) =>
       (t === 'item' ? items.find((i) => i.name === n) : undefined) ??
       (t === 'feat' ? feats.find((f) => f.name === n) : undefined) ??
       (t === 'race' ? RACES.find((r) => r.name === n && r.source === s) : undefined) ??
+      (t === 'subclass' && n === 'Armorer' ? ARMORER : undefined) ??
       base.get(t, n, s),
   };
   const doc = newCharacterDoc('hero', 'Hero', 'test');
@@ -82,7 +115,14 @@ function sheet(
     method: 'manual',
     base: { str: strength, dex: 10, con: 10, int: 10, wis: 10, cha: 10 },
   } as typeof doc.abilities;
-  doc.classes = [{ ref: { name: 'Warrior', source: 'TST' }, levels: 1, hp: ['avg'] }];
+  doc.classes = [
+    {
+      ref: { name: 'Warrior', source: 'TST' },
+      ...(armorer ? { subclass: { name: 'Armorer', source: 'HB' } } : {}),
+      levels: 1,
+      hp: ['avg'],
+    },
+  ];
   if (race !== undefined) doc.race = race;
   doc.equipment = armor.map((name, i) => ({
     id: `a${i}`,
@@ -142,10 +182,12 @@ describe("armor's Strength requirement", () => {
 describe("a 2014 dwarf's Speed trait (its built-in row, by race and book)", () => {
   const scanned = (s: DerivedSheet) => s.resources.find((r) => r.label === 'Speed')?.max;
 
-  it('keeps full speed in chain mail under Strength 13', () => {
+  it('keeps full speed in chain mail under Strength 13, the Kaladesh dwarf too', () => {
     const dwarf = sheet(12, ['Chain Mail'], [], { name: 'Dwarf', source: 'PHB' });
     expect(dwarf.speedWalk.value).toBe(25);
     expect(dwarf.speedWalk.parts.map((p) => p.label)).not.toContain('Chain Mail (Strength 13)');
+    const kaladesh = { name: 'Dwarf (Kaladesh)', source: 'PSK' };
+    expect(sheet(12, ['Chain Mail'], [], kaladesh).speedWalk.value).toBe(25);
   });
 
   it('reaches no other race with a Speed trait: a Dwarf of another book, a Human', () => {
@@ -159,7 +201,15 @@ describe("a 2014 dwarf's Speed trait (its built-in row, by race and book)", () =
     const uses = RACES.map((race) =>
       scanned(sheet(12, [], [], { name: String(race.name), source: String(race.source) })),
     );
-    expect(uses).toEqual([1, 1, 1]);
+    expect(uses).toEqual([1, 1, 1, 1]);
+  });
+});
+
+describe("the Armorer's Arcane Armor (its built-in row)", () => {
+  it('lifts the Strength requirement, and the Stealth disadvantage stays', () => {
+    expect(sheet(8, ['Chain Mail'], [], undefined, true).speedWalk.value).toBe(30);
+    expect(stealthDis(sheet(8, ['Loud Plate'], [], undefined, true))).toBe(1);
+    expect(sheet(8, ['Chain Mail']).speedWalk.value).toBe(20);
   });
 });
 

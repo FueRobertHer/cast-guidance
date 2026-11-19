@@ -324,9 +324,10 @@ export function collectItems(col: Collector): void {
         readWornTags(col, e, entry.id, origin);
         grantAttached(col, e, ref, origin, counted?.from);
       };
-      // A potion's own effects and moments, and a pack's for it, are what it
-      // does once drunk (+ Effect puts them in play, `homebrewLanding`), so
-      // carried or equipped it gives only what its data does.
+      // A potion's own effects are what it does once drunk (+ Effect puts them
+      // in play, `homebrewLanding`), so carried or equipped it gives only what
+      // its data does: neither those, its moments nor a pack's patch for it.
+      // Drinking lands its own effects alone (a moment or a patch, none).
       if (itemTypeCode(e) === 'P') inherited();
       else
         mechanicsOf(col, { entry: e, label: origin.label, origin, target: origin.uid, inherited });
