@@ -11,7 +11,7 @@
  */
 import { useLiveQuery } from 'dexie-react-hooks';
 import { ArrowDown, ArrowUp } from 'lucide-react';
-import { useDeferredValue, useId, useMemo, useState } from 'react';
+import { useDeferredValue, useMemo, useState } from 'react';
 import { engineContextFor } from '@/data5e/engineAdapter';
 import { useTypePacks } from '@/data5e/hooks';
 import type { EntityRegistry } from '@/data5e/normalize';
@@ -314,7 +314,6 @@ export function TryItOn({
   entry: Json;
   registry: EntityRegistry;
 }) {
-  const id = useId();
   // A sample's class may not have downloaded yet on this page.
   useTypePacks('class');
   const roster = useLiveQuery(
@@ -360,12 +359,8 @@ export function TryItOn({
           ))}
         </Select>
       </Field>
-      <div
-        className="flex flex-col gap-2 rounded-card bg-surface p-3 ring-1 ring-line ring-inset"
-        aria-labelledby={`${id}-head`}
-        role="group"
-      >
-        <p id={`${id}-head`} className="text-caption text-ink-muted">
+      <div className="flex flex-col gap-2 rounded-card bg-surface p-3 ring-1 ring-line ring-inset">
+        <p className="text-caption text-ink-muted">
           {HELD[type]?.(entry)} {who.note}
         </p>
         {tried.state === 'failed' && (
