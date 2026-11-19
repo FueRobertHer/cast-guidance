@@ -512,13 +512,19 @@ function Editor({
         await ensureSourcesVisible([WORKSHOP_SOURCE]).catch(() => undefined);
       }
       // What this save left, so Undo can tell a later write (another tab) and keep it.
+      // The save has landed: a failed read here only means Undo will not be offered.
       const after =
-        before === undefined ? undefined : (await homebrewRepo.getSafe(saved.fileId)).file?.json;
+        before === undefined
+          ? undefined
+          : await homebrewRepo
+              .getSafe(saved.fileId)
+              .then((r) => r.file?.json)
+              .catch(() => undefined);
       const key = { name: entry.name, source: entry.source };
       const into = files.find((f) => f.id === saved.fileId);
       const title = into !== undefined ? (madeName(into.json) ?? into.fileName) : MY_HOMEBREW;
       setUndo(
-        saved.created || before !== undefined
+        saved.created || after !== undefined
           ? {
               text: saved.created
                 ? `Saved. ${MY_HOMEBREW} is made, on this device.`

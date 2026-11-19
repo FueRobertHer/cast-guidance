@@ -53,9 +53,14 @@ describe('Try it on', () => {
     expect(tryOn(ctx, hild(), 'item', grip)).toMatchObject({ already: false });
   });
 
-  it('changes nothing else about how a character holds what they already have', () => {
-    // Carried, not worn: the result is not the gloves going on.
-    const ctx = withEntry(makeTestContext(), 'item', grip);
+  it('compares one they already carry worn on both sides, so only the changes show', () => {
+    // Saved at 17, carried, not worn. Trying it on wears it (as its line says),
+    // and the saved one is worn the same way for the sheet before.
+    const saved = {
+      ...grip,
+      castGuidance: { v: 1, effects: [{ kind: 'abilityMin', ability: 'str', min: 17 }] },
+    };
+    const ctx = withEntry(makeTestContext(), 'item', saved);
     const carried = hild();
     carried.equipment = [
       {
@@ -66,16 +71,29 @@ describe('Try it on', () => {
         attuned: false,
       },
     ];
-    expect(tryOn(ctx, carried, 'item', grip)).toMatchObject({ state: 'none', already: true });
-    // Their own species keeps its subrace.
+    expect(tryOn(ctx, carried, 'item', saved)).toMatchObject({ state: 'none', already: true });
+    const tried = tryOn(ctx, carried, 'item', grip);
+    expect(tried.state === 'changed' && tried.changes[0]).toMatchObject({
+      label: 'Strength',
+      now: '19',
+      was: '17',
+    });
+  });
+
+  it('keeps the subrace of a species they already have, and drops it for another', () => {
     const blue = hild();
     blue.race = { name: 'Dragonborn', source: 'TST' };
     blue.subrace = { name: 'Dragonborn (Blue)', source: 'TST' };
-    const dragonborn = makeTestContext().get('race', 'Dragonborn', 'TST') ?? {};
-    expect(tryOn(makeTestContext(), blue, 'race', dragonborn)).toMatchObject({
-      state: 'none',
-      already: true,
-    });
+    const ctx = makeTestContext();
+    const dragonborn = ctx.get('race', 'Dragonborn', 'TST') ?? {};
+    expect(wearing(blue, 'race', dragonborn)?.subrace).toEqual(blue.subrace);
+    expect(wearing(blue, 'race', { name: 'Gnome', source: 'MyHomebrew' })?.subrace).toBeUndefined();
+    expect(tryOn(ctx, blue, 'race', dragonborn)).toMatchObject({ state: 'none', already: true });
+    // The lightning resistance the subrace gives is on both sides.
+    const tried = tryOn(ctx, blue, 'race', { ...dragonborn, entries: ['Changed.'] });
+    expect(tried.state === 'changed' && tried.changes.map((c) => c.label)).not.toContain(
+      'Resistances',
+    );
   });
 
   it('says nothing changes for a character whose own score is higher', () => {

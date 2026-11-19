@@ -122,7 +122,15 @@ describe('Make your own', () => {
     const router = createMemoryRouter(routes, { initialEntries: ['/workshop/new?kind=feat'] });
     render(<RouterProvider router={router} />);
     await step('A new feat: start from');
-    // Stepping back replaces the address; Back after it still knows where it began.
+    // Stepping back replaces the address; Back after it still knows where it began,
+    // even once the sheet is mounted afresh there (back from the editor).
+    fireEvent.click(screen.getByRole('button', { name: 'Back a step' }));
+    await step('What are you making?');
+    fireEvent.click(screen.getByRole('link', { name: 'Feats' }));
+    fireEvent.click(await screen.findByRole('link', { name: 'From nothing' }, { timeout: WAIT }));
+    await screen.findByLabelText('Name', {}, { timeout: WAIT });
+    fireEvent.click(screen.getByRole('button', { name: 'Back' }));
+    await step('A new feat: start from');
     fireEvent.click(screen.getByRole('button', { name: 'Back a step' }));
     await step('What are you making?');
     fireEvent.click(screen.getByRole('button', { name: 'Back' }));

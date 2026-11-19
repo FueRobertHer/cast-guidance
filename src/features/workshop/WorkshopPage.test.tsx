@@ -237,20 +237,21 @@ describe('the Save bar', () => {
     const [file] = (await homebrewRepo.ownedSafe()).files;
     const id = file?.id ?? '';
     const held = async () => (await characterRepo.get(doc.id))?.feats.map((f) => f.ref.name);
+    const { file: first } = await homebrewRepo.getSafe(id);
 
     // The rename takes the character with it.
     nameAndSave('Hold Fast');
     await screen.findByText('Saved to My homebrew.', {}, { timeout: WAIT });
     await waitFor(async () => expect(await held()).toEqual(['Hold Fast']), { timeout: WAIT });
-    const { file: before } = await homebrewRepo.getSafe(id);
 
     fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
-    await waitFor(async () => expect(await featNames(id)).toEqual(['Stand Fast']), {
+    // The Undo row goes once both writes are done.
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Undo' })).toBeNull(), {
       timeout: WAIT,
     });
-    expect(await held()).toEqual(['Stand Fast']);
-    expect(before?.json.feat).toEqual([expect.objectContaining({ name: 'Hold Fast' })]);
     expect(screen.queryByRole('alert')).toBeNull();
+    expect(await held()).toEqual(['Stand Fast']);
+    expect((await homebrewRepo.getSafe(id)).file?.json).toEqual(first?.json);
   });
 
   it('takes nothing back when the collection changed after the save', async () => {

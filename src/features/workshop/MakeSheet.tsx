@@ -183,6 +183,16 @@ const pushed = (state: unknown) =>
   typeof state === 'object' &&
   state !== null &&
   (state as { makeStep?: unknown }).makeStep === true;
+/**
+ * Marks the tab's first entry once a step back has replaced it: a replace
+ * gives even the first entry a new key, and the sheet may be mounted afresh
+ * on it (back from the editor, then a step back), so only the entry can say.
+ */
+const FIRST = { makeFirst: true };
+const first = (state: unknown) =>
+  typeof state === 'object' &&
+  state !== null &&
+  (state as { makeFirst?: unknown }).makeFirst === true;
 
 export function MakeSheet() {
   usePageTitle('Make your own', 'Workshop');
@@ -190,11 +200,10 @@ export function MakeSheet() {
   const location = useLocation();
   const navigate = useNavigate();
   // Opened as the tab's first page (a link from outside), Back on the first
-  // step goes up to the Workshop. Read once: stepping back here replaces the
-  // address, and a replace gives even the first entry a new key.
-  const firstEntry = useRef(location.key === 'default');
+  // step goes up to the Workshop rather than out of the app.
+  const atFirst = location.key === 'default' || first(location.state);
   const leave = () => {
-    if (firstEntry.current) void navigate('/workshop', { replace: true });
+    if (atFirst) void navigate('/workshop', { replace: true });
     else void navigate(-1);
   };
   const step = stepOf(params);
@@ -213,7 +222,11 @@ export function MakeSheet() {
   const back = () => {
     if (parent === undefined) leave();
     else if (pushed(location.state)) navigate(-1);
-    else setParams(new URLSearchParams(query(parent).split('?')[1] ?? ''), { replace: true });
+    else
+      setParams(new URLSearchParams(query(parent).split('?')[1] ?? ''), {
+        replace: true,
+        ...(atFirst ? { state: FIRST } : {}),
+      });
   };
 
   return (
