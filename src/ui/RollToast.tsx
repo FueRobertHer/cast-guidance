@@ -680,15 +680,19 @@ function RollResultToast({
    */
   const rerollWeapon = () => {
     if (damageReroll === null) return;
+    // The damage it rerolls: the toast's own roll, or one shown under its attack.
+    const own = damageReroll.target === visible.id;
+    const base = own ? visible : joined.find((r) => r.id === damageReroll.target);
+    if (base === undefined) return;
     followUpStore.setState({ reroll: null });
     damageReroll.pay();
     const fresh = damageReroll.weapon();
     const { terms: n, total: was } = damageReroll;
-    const rest = visible.terms.slice(n);
+    const rest = base.terms.slice(n);
     const shift = fresh.terms.length - n;
     const from = [
       ...(fresh.meta?.from ?? []),
-      ...(visible.meta?.from ?? [])
+      ...(base.meta?.from ?? [])
         .filter((f) => f.term >= n)
         .map((f) => ({ ...f, term: f.term + shift })),
     ];
@@ -697,13 +701,14 @@ function RollResultToast({
     const cue = `${damageReroll.source}: rolled ${String(was)}, then ${String(fresh.total)}, kept ${String(kept)}`;
     const next: RollResult = better
       ? {
-          ...visible,
+          ...base,
           terms: [...fresh.terms, ...rest],
-          total: visible.total - was + fresh.total,
-          meta: { ...visible.meta, from, cue },
+          total: base.total - was + fresh.total,
+          meta: { ...base.meta, from, cue },
         }
-      : { ...visible, meta: { ...visible.meta, cue } };
-    setVisible(next);
+      : { ...base, meta: { ...base.meta, cue } };
+    if (own) setVisible(next);
+    else setJoined(joined.map((r) => (r.id === next.id ? next : r)));
     rollLogStore.getState().replace(next);
     announce(`${cue}. ${rollAnnouncement(next)}`, { key: 'roll', repeat: true });
   };
@@ -891,6 +896,10 @@ function RollResultToast({
           <span className="min-w-0 truncate text-dice-small text-ink-muted tabular-nums">
             {d.label ?? d.expr}
             {d.meta?.critical === true ? ', critical' : ''}: <RollDetail roll={d} />
+            {/* What changed it once it landed (a Savage Attacker reroll). */}
+            {d.meta?.cue !== undefined && (
+              <span className="block text-caption text-guide">{d.meta.cue}</span>
+            )}
           </span>
           <span className={`shrink-0 text-title-sheet tabular-nums ${ROLL_INK[rollTone(d)]}`}>
             {d.total}

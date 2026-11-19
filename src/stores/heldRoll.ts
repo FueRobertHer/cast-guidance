@@ -327,12 +327,14 @@ export const followUpStore = createStore<{
   /** The next attack of the Attack action, offered on the roll `id` (a miss, or the damage). */
   next?: { id: string; words: string; go: () => void; from: HTMLElement | null } | null;
   /**
-   * A reroll of the weapon's dice the damage `id` offers (2014 Savage
-   * Attacker): its first `terms` are the weapon's own, coming to `total`, and
-   * `weapon` rolls them again.
+   * A reroll of the weapon's dice the roll `id` offers (2014 Savage Attacker):
+   * on the damage `target`, itself or shown under its attack. Its first
+   * `terms` are the weapon's own, coming to `total`, and `weapon` rolls them
+   * again.
    */
   reroll?: {
     id: string;
+    target: string;
     source: string;
     terms: number;
     total: number;
@@ -1134,14 +1136,15 @@ function landDamage(
       effects: [],
     });
   });
-  // A reroll the result offers, on the weapon's damage shown as the toast's own
-  // roll (not one shown under its attack).
+  // A reroll the result offers on the weapon's damage, shown as the toast's own
+  // roll or under the attack it rolled with.
   const head = rolls[0];
   const { reroll } = hit;
-  if (reroll !== undefined && withRoll === undefined && head?.id !== undefined) {
+  if (reroll !== undefined && head?.id !== undefined) {
     followUpStore.setState({
       reroll: {
-        id: head.id,
+        id: withRoll ?? head.id,
+        target: head.id,
         source: reroll.source,
         terms: weapon.terms,
         total: weapon.total,
