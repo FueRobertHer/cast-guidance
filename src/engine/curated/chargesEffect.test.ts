@@ -572,16 +572,34 @@ describe('charges that only actions spend', () => {
       usage: '1/day',
       resourceKey: 'charges',
     });
-    const rod = item('Rod of Knocks', 'HB', [COUNTED, card('Shield|XPHB')]);
+    // Cards that spend another pool, or uses of their own, are left to them.
+    const sparks = { kind: 'resource', key: 'sparks', label: 'Sparks', max: 2, reset: 'long' };
+    const rod = item('Rod of Knocks', 'HB', [
+      COUNTED,
+      sparks,
+      card('Shield|XPHB'),
+      { ...card('Light|XPHB'), resourceKey: 'sparks' },
+      { kind: 'grantSpell', spell: 'Bless|XPHB', usage: '1/day' },
+    ]);
     const adds = pack('Adds', [{ target: 'Rod of Knocks|HB', add: [card('Fireball|XPHB')] }]);
     const ctx = world([rod], [adds]);
     const spends = (id: string) =>
       deriveSheet(carrying({ id, name: 'Rod of Knocks', source: 'HB' }), ctx)
-        .grantedSpells.filter((s) => s.name === 'Shield' || s.name === 'Fireball')
-        .map((s) => `${s.name} ${s.resourceKey}`);
-    // The sheet lists granted spells by name.
-    expect(spends('a')).toEqual(['Fireball item-charges:a', 'Shield item-charges:a']);
-    expect(spends('b')).toEqual(['Fireball item-charges:b', 'Shield item-charges:b']);
+        .grantedSpells.filter((s) => s.origin === 'Rod of Knocks')
+        .map((s) => `${s.name} ${s.resourceKey}`)
+        .sort();
+    expect(spends('a')).toEqual([
+      'Bless undefined',
+      'Fireball item-charges:a',
+      'Light sparks',
+      'Shield item-charges:a',
+    ]);
+    expect(spends('b')).toEqual([
+      'Bless undefined',
+      'Fireball item-charges:b',
+      'Light sparks',
+      'Shield item-charges:b',
+    ]);
     // What the item says is left as it was written.
     expect(JSON.stringify(rod.castGuidance)).toContain('"resourceKey":"charges"');
   });
