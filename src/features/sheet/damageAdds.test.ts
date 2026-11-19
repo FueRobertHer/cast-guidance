@@ -7,6 +7,7 @@ import {
   actionKey,
   againstOf,
   castBuff,
+  castsLater,
   damageAdds,
   damageParts,
   entriesText,
@@ -694,5 +695,111 @@ describe('castBuff', () => {
   it('gives undefined for null or a string', () => {
     expect(castBuff(null)).toBeUndefined();
     expect(castBuff('Divine Favor')).toBeUndefined();
+  });
+});
+
+describe('castsLater', () => {
+  it('is true for a 2014 Hex: concentration, extra damage on each hit', () => {
+    const hex = spell({
+      name: 'Hex',
+      level: 1,
+      range: { type: 'point', distance: { type: 'feet', amount: 90 } },
+      duration: [{ type: 'timed', duration: { type: 'hour', amount: 1 }, concentration: true }],
+      entries: [
+        'Until the spell ends, you deal an extra {@damage 1d6} necrotic damage to the target whenever you hit it with an attack.',
+      ],
+    });
+    expect(castsLater(hex)).toBe(true);
+  });
+
+  it('is false for the same text without concentration, at 90 feet', () => {
+    const noConcentration = spell({
+      name: 'Hex',
+      level: 1,
+      range: { type: 'point', distance: { type: 'feet', amount: 90 } },
+      duration: [{ type: 'timed', duration: { type: 'hour', amount: 1 } }],
+      entries: [
+        'Until the spell ends, you deal an extra {@damage 1d6} necrotic damage to the target whenever you hit it with an attack.',
+      ],
+    });
+    expect(castsLater(noConcentration)).toBe(false);
+  });
+
+  it('is true for a 2014 Searing Smite: concentration, the next melee hit', () => {
+    const searingSmite = spell({
+      name: 'Searing Smite',
+      level: 1,
+      range: { type: 'point', distance: { type: 'self' } },
+      duration: [{ type: 'timed', duration: { type: 'minute', amount: 1 }, concentration: true }],
+      entries: [
+        "The next time you hit a creature with a melee weapon attack during the spell's duration, your weapon flares with white-hot intensity, and the attack deals an extra {@damage 1d6} fire damage to the target.",
+      ],
+    });
+    expect(castsLater(searingSmite)).toBe(true);
+  });
+
+  it('is true for a 2024 Divine Favor through castBuff: self, no concentration', () => {
+    const divineFavor = spell({
+      name: 'Divine Favor',
+      level: 1,
+      time: [{ number: 1, unit: 'bonus' }],
+      range: { type: 'point', distance: { type: 'self' } },
+      duration: [{ type: 'timed', duration: { type: 'minute', amount: 1 } }],
+      entries: [
+        'Until the spell ends, your attacks with weapons deal an extra {@damage 1d4} Radiant damage on a hit.',
+      ],
+    });
+    expect(castsLater(divineFavor)).toBe(true);
+  });
+
+  it('is false for a Booming Blade-like instant cantrip that adds damage with its attack', () => {
+    const boomingBlade = spell({
+      name: 'Booming Blade',
+      level: 0,
+      time: [{ number: 1, unit: 'action' }],
+      range: { type: 'point', distance: { type: 'self' } },
+      duration: [{ type: 'instant' }],
+      entries: [
+        'You brandish the weapon used in the casting of this spell and make a melee attack with it. On a hit, the attack deals an extra {@damage 1d8} thunder damage to the target.',
+      ],
+    });
+    expect(castsLater(boomingBlade)).toBe(false);
+  });
+
+  it('is false for a 2024 cast-on-hit smite, which is cast as the hit lands', () => {
+    const onHitSmite = spell({
+      name: 'Cast-on-Hit Smite',
+      level: 1,
+      time: [
+        {
+          number: 1,
+          unit: 'bonus',
+          condition:
+            'which you take immediately after hitting a target with a Melee weapon or an Unarmed Strike',
+        },
+      ],
+      range: { type: 'point', distance: { type: 'self' } },
+      duration: [{ type: 'timed', duration: { type: 'minute', amount: 1 }, concentration: false }],
+      entries: ['The target takes an extra {@damage 1d6} Fire damage from the attack.'],
+    });
+    expect(castsLater(onHitSmite)).toBe(false);
+  });
+
+  it('is false for a Fireball-like spell that damages creatures on a failed save', () => {
+    const fireball = spell({
+      name: 'Fireball',
+      level: 3,
+      range: { type: 'point', distance: { type: 'feet', amount: 150 } },
+      duration: [{ type: 'instant' }],
+      entries: [
+        'Each creature in a 20-foot-radius sphere takes {@damage 8d6} fire damage on a failed save.',
+      ],
+    });
+    expect(castsLater(fireball)).toBe(false);
+  });
+
+  it('is false for null or a string', () => {
+    expect(castsLater(null)).toBe(false);
+    expect(castsLater('Hex')).toBe(false);
   });
 });
