@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { useRegistry } from '@/data5e/hooks';
 import { setTableCrit } from '@/dice/roll';
 import type { CritDamage, RollResult } from '@/dice/types';
 import { endEffect, naturalRolled } from '@/engine/effectLife';
@@ -12,6 +13,7 @@ import { rollLogStore } from '@/stores/rollLog';
 import { type PaidExtra, rollOffersStore } from '@/stores/rollOffers';
 import { hpLimits, momentLines, withMoments } from './effectsInPlay';
 import { payOffer, refundOffer } from './rollPrice';
+import { useConditionEntry } from './useConditionEntry';
 
 /**
  * Lets the roll toast spend the dice it offers while a sheet is open
@@ -32,8 +34,11 @@ export function useRollOfferSpending(
   sheet: DerivedSheet | null,
   update: DocUpdater,
 ): void {
-  const latest = useRef({ doc, sheet, update });
-  latest.current = { doc, sheet, update };
+  // A homebrew condition a moment adds settles HP (`hpLimits`).
+  const registry = useRegistry();
+  const conditionEntry = useConditionEntry(registry, doc?.rulesVersion ?? '2024');
+  const latest = useRef({ doc, sheet, update, conditionEntry });
+  latest.current = { doc, sheet, update, conditionEntry };
   // Effects a die spent, by id, with their place in the list and the
   // concentration ending them let go of (a Guidance the cleric holds).
   const spent = useRef(
@@ -45,14 +50,14 @@ export function useRollOfferSpending(
 
   useEffect(() => {
     const spend = (effectId: string, taken: boolean) => {
-      const { doc, sheet, update } = latest.current;
+      const { doc, sheet, update, conditionEntry } = latest.current;
       if (doc === null || sheet === null) return;
       if (taken) {
         const list = doc.play.activeEffects ?? [];
         const at = list.findIndex((e) => e.id === effectId);
         const effect = list[at];
         if (effect === undefined) return;
-        const hp = hpLimits(sheet, doc.rulesVersion);
+        const hp = hpLimits(sheet, doc.rulesVersion, conditionEntry);
         let focus: PlayState['concentratingOn'] | undefined;
         update((d) => {
           const held = d.play.concentratingOn;
@@ -162,9 +167,9 @@ export function useRollOfferSpending(
       const test = r.meta?.test;
       if ((natural !== 20 && natural !== 1) || test === undefined) return;
       if (r.meta?.autoFail === true) return;
-      const { doc, sheet, update } = latest.current;
+      const { doc, sheet, update, conditionEntry } = latest.current;
       if (doc === null || sheet === null || doc.id !== docId) return;
-      const hp = hpLimits(sheet, doc.rulesVersion);
+      const hp = hpLimits(sheet, doc.rulesVersion, conditionEntry);
       const at = natural === 20 ? 'natural20' : 'natural1';
       if (hp.moments === undefined || momentsAt(hp.moments, at, { roll: test }).length === 0)
         return;

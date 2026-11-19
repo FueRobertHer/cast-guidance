@@ -113,10 +113,12 @@ describe('ConditionEditor', () => {
     press('More');
     await waitFor(() => expect(asked.current.length).toBeGreaterThan(0));
     const offered = [...chips, ...asked.current];
-    for (const no of ['Hit points', 'Hit points per level', 'Skill', 'Uses per rest', 'Action']) {
+    for (const no of ['Hit points per level', 'Skill', 'Uses per rest', 'Action']) {
       expect(offered).not.toContain(no);
     }
-    expect(offered).toEqual(expect.arrayContaining(['Armor Class', 'Saving throws', 'Advantage']));
+    expect(offered).toEqual(
+      expect.arrayContaining(['Armor Class', 'Saving throws', 'Advantage', 'Hit points']),
+    );
     // Each one offered, added as it comes, counts on a character in it.
     for (const kind of offered) {
       cleanup();

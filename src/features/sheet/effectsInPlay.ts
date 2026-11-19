@@ -44,14 +44,21 @@ const lower = (s: string) => s.trim().toLowerCase();
 
 /**
  * What the effects in play need of the sheet to change hit points with them,
- * and the character's moments (H9), which fire as they change.
+ * and the character's moments (H9), which fire as they change. With
+ * `conditionEntry` (`useConditionEntry`), a homebrew condition that moves the
+ * maximum moves current HP with it too.
  */
-export function hpLimits(sheet: DerivedSheet, edition: Edition): HpLimits {
+export function hpLimits(
+  sheet: DerivedSheet,
+  edition: Edition,
+  conditionEntry?: (name: string) => unknown,
+): HpLimits {
   return {
     maxHp: sheet.maxHp.value,
     edition,
     immune: sheet.conditionImmunities,
     ...(sheet.moments === undefined ? {} : { moments: sheet.moments }),
+    ...(conditionEntry === undefined ? {} : { conditionEntry }),
   };
 }
 
