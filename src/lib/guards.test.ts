@@ -93,6 +93,12 @@ describe('assertCharacterDoc', () => {
     ).not.toThrow();
   });
 
+  it('accepts collection switches, reading what is inside them later', () => {
+    for (const sourceSwitches of [{}, { on: [] }, { on: ['PHB', 7], off: ['KIB'] }]) {
+      expect(() => assertCharacterDoc({ id: 'abc', sourceSwitches })).not.toThrow();
+    }
+  });
+
   const bad: Array<[string, unknown]> = [
     ['not an object', 'nope'],
     ['array', []],
@@ -102,6 +108,11 @@ describe('assertCharacterDoc', () => {
     ['non-number schemaVersion', { id: 'x', schemaVersion: 'v1' }],
     ['non-array classes', { id: 'x', classes: {} }],
     ['non-object play', { id: 'x', play: [] }],
+    ['array sourceSwitches', { id: 'x', sourceSwitches: ['PHB'] }],
+    ['null sourceSwitches', { id: 'x', sourceSwitches: null }],
+    ['string sourceSwitches', { id: 'x', sourceSwitches: 'PHB' }],
+    ['non-array sourceSwitches.on', { id: 'x', sourceSwitches: { on: 'PHB' } }],
+    ['non-array sourceSwitches.off', { id: 'x', sourceSwitches: { off: { PHB: true } } }],
   ];
   for (const [label, input] of bad) {
     it(`rejects ${label}`, () => {

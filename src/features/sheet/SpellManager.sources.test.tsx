@@ -5,7 +5,12 @@
 import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { type DerivedSheet, newCharacterDoc, type SpellcastingBlock } from '@/engine/types';
+import {
+  type CharacterDoc,
+  type DerivedSheet,
+  newCharacterDoc,
+  type SpellcastingBlock,
+} from '@/engine/types';
 import { SpellManager } from './SpellManager';
 
 const onWizardList = { fromClassList: [{ name: 'Wizard', source: 'PHB' }] };
@@ -55,9 +60,10 @@ const wizard = {
   slots: [2],
 } as SpellcastingBlock;
 
-function renderSpells(allowedSources: string[]) {
+function renderSpells(allowedSources: string[], sourceSwitches?: CharacterDoc['sourceSwitches']) {
   const doc = newCharacterDoc('c1', 'Caster', 't');
   doc.allowedSources = allowedSources;
+  if (sourceSwitches !== undefined) doc.sourceSwitches = sourceSwitches;
   doc.spellcasting = {
     'wizard|phb': { known: [{ name: 'Absorb Elements', source: 'XGE' }], prepared: [] },
   };
@@ -83,5 +89,22 @@ describe("SpellManager under a character's own sources (GAME-005)", () => {
     // Already known from a book outside the list: still there, and labelled.
     expect(screen.queryByText('Absorb Elements')).not.toBeNull();
     expect(screen.getAllByText("Not in this character's sources")).toHaveLength(1);
+  });
+});
+
+describe("SpellManager under a character's collection switches (ADR-002 E2)", () => {
+  it('drops a source switched off, keeping what the character already knows from it', async () => {
+    renderSpells([], { off: ['XGE'] });
+    await waitFor(() => expect(screen.queryByText('Fire Bolt')).not.toBeNull());
+    expect(screen.queryByText('Toll the Dead')).toBeNull();
+    expect(screen.queryByText(/1 spell outside this character's sources/)).not.toBeNull();
+    expect(screen.queryByText('Absorb Elements')).not.toBeNull();
+  });
+
+  it('lets a source switched on in over its own list', async () => {
+    renderSpells(['PHB'], { on: ['XGE'] });
+    await waitFor(() => expect(screen.queryByText('Fire Bolt')).not.toBeNull());
+    expect(screen.queryByText('Toll the Dead')).not.toBeNull();
+    expect(screen.queryByText(/outside this character's sources/)).toBeNull();
   });
 });

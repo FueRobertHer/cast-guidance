@@ -341,3 +341,46 @@ describe('EntityCardList info button (A11Y-002)', () => {
     expect(info.closest('div')?.className.split(' ')).toContain('gap-2.5');
   });
 });
+
+describe("EntityCardList under a character's collection switches (ADR-002 E2)", () => {
+  const mixed: Entity[] = [
+    { name: 'Human', source: 'PHB' },
+    { name: 'Hearthling', source: 'MyHomebrew' },
+    { name: 'Driftfolk', source: 'NewBook' },
+  ];
+
+  it('drops a source switched off for this character, keeping books no switch names', () => {
+    render(
+      <EntityCardList entities={mixed} switches={{ off: ['MyHomebrew'] }} onSelect={vi.fn()} />,
+    );
+    expect(screen.queryByRole('button', { name: 'Hearthling' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Human' })).not.toBeNull();
+    expect(screen.queryByRole('button', { name: 'Driftfolk' })).not.toBeNull();
+    expect(screen.queryByText(/1 outside this character's sources/)).not.toBeNull();
+    cleanup();
+
+    // Another character on the same device, with no switches, sees it.
+    render(<EntityCardList entities={mixed} onSelect={vi.fn()} />);
+    expect(screen.queryByRole('button', { name: 'Hearthling' })).not.toBeNull();
+  });
+
+  it('shows a source switched on over the device, and over its own list', () => {
+    policyState.current = { mode: 'all', except: ['MyHomebrew'] };
+    render(
+      <EntityCardList entities={mixed} switches={{ on: ['MyHomebrew'] }} onSelect={vi.fn()} />,
+    );
+    expect(screen.queryByRole('button', { name: 'Hearthling' })).not.toBeNull();
+    cleanup();
+
+    render(
+      <EntityCardList
+        entities={mixed}
+        sources={['PHB']}
+        switches={{ on: ['MyHomebrew'] }}
+        onSelect={vi.fn()}
+      />,
+    );
+    expect(screen.queryByRole('button', { name: 'Hearthling' })).not.toBeNull();
+    expect(screen.queryByRole('button', { name: 'Driftfolk' })).toBeNull();
+  });
+});

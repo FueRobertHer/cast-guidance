@@ -22,13 +22,21 @@
  * table allows. When that list is non-empty it replaces this device policy in
  * that character's pickers, because it is the more specific setting and it
  * travels with the character. An empty list means "no restriction", so the
- * device policy applies as usual. The library and search never look at a
- * character's list. See {@link pickPolicy}.
+ * device policy applies as usual. On top of either, a character can switch a
+ * source on or off for itself (`sourceSwitches`), which is how a collection is
+ * turned on or off for one character. The library and search never look at a
+ * character's list or switches. See {@link pickPolicy}.
  */
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '@/db/db';
 import type { SearchSourceFilter } from './search/protocol';
-import { characterSourceList, knownSources, type SourceGroup, sourceGroup } from './sourceNames';
+import {
+  characterSourceList,
+  characterSourceSwitches,
+  knownSources,
+  type SourceGroup,
+  sourceGroup,
+} from './sourceNames';
 
 export type SourcePolicy =
   | { mode: 'all'; except: readonly string[] }
@@ -191,7 +199,7 @@ export type PolicyScope = 'device' | 'character';
 
 // Lives with the source table (React- and Dexie-free) so the history diff can
 // read a list the same way the pickers do without importing this module.
-export { characterSourceList };
+export { characterSourceList, characterSourceSwitches };
 
 /** The character's list as a policy, or `undefined` when it restricts nothing. */
 export function characterPolicy(raw: unknown): SourcePolicy | undefined {
@@ -200,20 +208,52 @@ export function characterPolicy(raw: unknown): SourcePolicy | undefined {
 }
 
 /**
+ * A policy with a character's switches laid over it: `on` sources shown, `off`
+ * ones hidden, every other source as the policy had it. It stays in the
+ * policy's own shape, so over "everything except" a book added later still
+ * shows. A source on both lists reads as off. No switches returns the policy
+ * itself.
+ */
+export function withSwitches(
+  policy: SourcePolicy,
+  switches: { on: readonly string[]; off: readonly string[] },
+): SourcePolicy {
+  const { off } = switches;
+  const on = switches.on.filter((s) => !off.includes(s));
+  if (on.length === 0 && off.length === 0) return policy;
+  if (policy.mode === 'all') {
+    const except = policy.except.filter((s) => !on.includes(s));
+    return { mode: 'all', except: [...except, ...off.filter((s) => !except.includes(s))] };
+  }
+  const sources = policy.sources.filter((s) => !off.includes(s));
+  return { mode: 'only', sources: [...sources, ...on.filter((s) => !sources.includes(s))] };
+}
+
+/**
  * The policy a character's picker should use. A non-empty character list
  * replaces the device policy rather than intersecting with it: a device set to
  * "2024 core only" and a table allowing "PHB, XGE" would otherwise leave every
  * picker empty, and the table's list is the one that says what this character
- * may take.
+ * may take. The character's switches then go over whichever applies.
+ *
+ * The scope is the character's when its list is set or one of its switches
+ * hides a source that would otherwise show. A switch that only turns sources
+ * on leaves the device in charge of what stays hidden, so the reveal offer
+ * keeps naming the device's settings.
  */
 export function pickPolicy(
   device: SourcePolicy,
   characterRaw: unknown,
+  switchesRaw?: unknown,
 ): { policy: SourcePolicy; scope: PolicyScope } {
   const own = characterPolicy(characterRaw);
-  return own !== undefined
-    ? { policy: own, scope: 'character' }
-    : { policy: device, scope: 'device' };
+  const base = own ?? device;
+  const switches = characterSourceSwitches(switchesRaw);
+  const hidesMore = switches.off.some((s) => policyAllows(base, s));
+  return {
+    policy: withSwitches(base, switches),
+    scope: own !== undefined || hidesMore ? 'character' : 'device',
+  };
 }
 
 /** Text cue for a pick outside the character's list. Text, so it never relies on colour. */

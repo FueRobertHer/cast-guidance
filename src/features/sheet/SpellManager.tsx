@@ -154,7 +154,7 @@ function ClassSpells({
   const [filter, setFilter] = useState('');
   const [showHiddenSources, setShowHiddenSources] = useState(false);
   const [showLocked, setShowLocked] = useState(false);
-  const { policy, scope } = usePickSourcePolicy(doc.allowedSources);
+  const { policy, scope } = usePickSourcePolicy(doc.allowedSources, doc.sourceSwitches);
 
   const subclassOf = block.fromSubclass?.className;
   const subclassShort = block.fromSubclass?.shortName;

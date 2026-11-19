@@ -210,8 +210,17 @@ describe("OriginChoices under a character's own sources (GAME-005)", () => {
     ],
   };
 
-  function renderFeats(allowedSources: string[], choices: CharacterDoc['choices'] = {}) {
-    const doc = { rulesVersion: '2014', choices, allowedSources } as unknown as CharacterDoc;
+  function renderFeats(
+    allowedSources: string[],
+    choices: CharacterDoc['choices'] = {},
+    sourceSwitches?: CharacterDoc['sourceSwitches'],
+  ) {
+    const doc = {
+      rulesVersion: '2014',
+      choices,
+      allowedSources,
+      sourceSwitches,
+    } as unknown as CharacterDoc;
     const sheet = { pending: [featPick], resolvedChoices: [] } as unknown as DerivedSheet;
     render(
       <OriginChoices
@@ -240,6 +249,14 @@ describe("OriginChoices under a character's own sources (GAME-005)", () => {
     expect(kept?.textContent).toContain("From a book outside this character's sources.");
     // A feat from a listed book carries no such cue.
     expect(screen.getByText('Alert').closest('button')?.textContent).not.toContain('outside');
+  });
+  it('drops a book switched off for this character, and lets one switched on in (ADR-002 E2)', () => {
+    renderFeats([], {}, { off: ['TCE'] });
+    expect(screen.queryByText('Alert')).not.toBeNull();
+    expect(screen.queryByText('Telekinetic')).toBeNull();
+    cleanup();
+    renderFeats(['PHB'], {}, { on: ['TCE'] });
+    expect(screen.queryByText('Telekinetic')).not.toBeNull();
   });
 });
 
