@@ -53,6 +53,41 @@ describe('collectionKey and sameCollection (ADR-002, D4)', () => {
     );
   });
 
+  it('lets a stamped file take the place of a copy with no stamp under its link or file', () => {
+    const parts = { sourceIds: ['HB'], fileName: 'Homebrew.json' };
+    const stamped = (made: string, more: object = {}) => {
+      const f = { ...parts, ...more, made };
+      return { ...f, editable: false, key: collectionKey(f) };
+    };
+    const plain = (more: object = {}) => ({
+      editable: false,
+      key: collectionKey({ ...parts, ...more }),
+    });
+    expect(sameCollection(plain(), stamped('osk'))).toBe(true);
+    expect(
+      sameCollection(
+        plain({ url: 'https://x/hb.json' }),
+        stamped('osk', { url: 'https://x/hb.json' }),
+      ),
+    ).toBe(true);
+    expect(sameCollection(plain({ fileName: 'Other.json' }), stamped('osk'))).toBe(false);
+    // Two stamped copies are one collection by their stamp alone.
+    expect(sameCollection(stamped('bram'), stamped('osk'))).toBe(false);
+    expect(sameCollection(stamped('osk'), stamped('osk', { fileName: 'Renamed.json' }))).toBe(true);
+    // Never the other way: a file with no stamp cannot be told from another player's.
+    expect(sameCollection(stamped('osk'), { ...parts, ...plain() })).toBe(false);
+    // Nor under the app's own sources, where a copy with no stamp has no key.
+    const workshop = { sourceIds: ['MyHomebrew'], fileName: 'My_homebrew.json' };
+    expect(
+      sameCollection(
+        { editable: false, key: collectionKey(workshop) },
+        { ...workshop, editable: false, key: collectionKey({ ...workshop, made: 'osk' }) },
+      ),
+    ).toBe(false);
+    // Nor a file the player owns.
+    expect(sameCollection({ ...plain(), editable: true }, stamped('osk'))).toBe(false);
+  });
+
   it('matches imported files of one key only, never a file the player owns', () => {
     const key = 'file:emb|ember';
     expect(sameCollection({ editable: false, key }, { editable: false, key })).toBe(true);

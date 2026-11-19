@@ -142,6 +142,32 @@ async function unstampedWorkshopFile(spells: string[]): Promise<string> {
   return row.id;
 }
 
+/** A collection the player made under a source of their own before files were stamped. */
+async function unstampedCollection(source: string, title: string, spells: string[]) {
+  const row: HomebrewFileRow = {
+    id: crypto.randomUUID(),
+    fileName: `${title}.json`,
+    json: {
+      _meta: { sources: [{ json: source, abbreviation: source, full: title }] },
+      spell: spells.map((name) => ({ name, source, level: 1 })),
+    },
+    enabled: true,
+    editable: true,
+    sourceIds: [source],
+    counts: { spell: spells.length },
+    addedAt: 1,
+  };
+  await db.transaction('rw', db.homebrewFiles, db.homebrewJson, () => putHomebrewRow(row));
+  return row.id;
+}
+
+/** A character export from this device carrying the files of `source`. */
+async function exportedWith(id: string, source: string): Promise<string> {
+  const character = { ...newCharacterDoc(id, id, 'tag'), homebrewDeps: [source] };
+  const homebrew = homebrewForExport(character, (await homebrewRepo.enabledSafe()).files);
+  return JSON.stringify({ $format: CHARACTER_EXPORT_FORMAT, character, homebrew });
+}
+
 const spellsOf = (f: { json: Record<string, unknown> }) =>
   (f.json.spell as { name: string }[]).map((s) => s.name);
 
@@ -213,5 +239,84 @@ describe('a collection made in the app, in a character export (ADR-002, D4)', ()
     ]);
     const ids = files.map((f) => (f.json._meta as Record<string, unknown>)[COLLECTION_ID_KEY]);
     expect(ids.filter((v) => v !== undefined)).toHaveLength(1);
+  });
+});
+
+describe('a collection under a source the player chose, first stamped (ADR-002, D4)', () => {
+  it('takes the place of its copy from before stamps here, keeping its switch and place', async () => {
+    const id = await unstampedCollection('HB', 'Homebrew', ['Osk Lance']);
+    const old = await exportedWith('osk', 'HB');
+    // Its first save on the device that made it stamps it.
+    await homebrewRepo.saveEntry(
+      'spell',
+      { name: 'Osk Ward', source: 'HB', level: 1 },
+      { fileId: id },
+    );
+    const stamped = await exportedWith('osk', 'HB');
+    await homebrewRepo.saveEntry(
+      'spell',
+      { name: 'Osk Bolt', source: 'HB', level: 1 },
+      { fileId: id },
+    );
+    const newer = await exportedWith('osk', 'HB');
+    await wipe();
+    const now = vi.spyOn(Date, 'now').mockReturnValue(1_000);
+    await characterRepo.importFromText(old);
+    const [first] = (await homebrewRepo.listSafe()).files;
+    await homebrewRepo.setEnabled(first?.id ?? '', false);
+    now.mockReturnValue(9_000);
+
+    expect(await characterRepo.importFromText(stamped)).toMatchObject({ homebrewUpdated: 1 });
+    // The copy after it is found by its stamp.
+    expect(await characterRepo.importFromText(newer)).toMatchObject({ homebrewUpdated: 1 });
+
+    const { files } = await homebrewRepo.listSafe();
+    expect(
+      files.map((f) => [spellsOf(f), f.enabled, f.addedAt, f.key?.startsWith('made:')]),
+    ).toEqual([[['Osk Lance', 'Osk Ward', 'Osk Bolt'], false, 1_000, true]]);
+  });
+
+  it('is never taken the place of by a file with no stamp', async () => {
+    const id = await unstampedCollection('HB', 'Homebrew', ['Osk Lance']);
+    const old = await exportedWith('osk', 'HB');
+    await homebrewRepo.saveEntry(
+      'spell',
+      { name: 'Osk Ward', source: 'HB', level: 1 },
+      { fileId: id },
+    );
+    const stamped = await exportedWith('osk', 'HB');
+    await wipe();
+
+    await characterRepo.importFromText(stamped);
+    expect(await characterRepo.importFromText(old)).not.toHaveProperty('homebrewUpdated');
+    expect((await homebrewRepo.listSafe()).files).toHaveLength(2);
+  });
+
+  it('leaves another player’s stamped collection of its name and code beside it', async () => {
+    await homebrewRepo.createEditable('Homebrew', 'HB');
+    const made = (await homebrewRepo.ownedSafe()).files[0]?.id ?? '';
+    await homebrewRepo.saveEntry(
+      'spell',
+      { name: 'Osk Lance', source: 'HB', level: 1 },
+      { fileId: made },
+    );
+    const osk = await exportedWith('osk', 'HB');
+    await wipe();
+    await homebrewRepo.createEditable('Homebrew', 'HB');
+    const theirs = (await homebrewRepo.ownedSafe()).files[0]?.id ?? '';
+    await homebrewRepo.saveEntry(
+      'spell',
+      { name: 'Bram Ward', source: 'HB', level: 1 },
+      { fileId: theirs },
+    );
+    const bram = await exportedWith('bram', 'HB');
+    await wipe();
+
+    await characterRepo.importFromText(osk);
+    expect(await characterRepo.importFromText(bram)).not.toHaveProperty('homebrewUpdated');
+    expect((await homebrewRepo.listSafe()).files.map(spellsOf).sort()).toEqual([
+      ['Bram Ward'],
+      ['Osk Lance'],
+    ]);
   });
 });

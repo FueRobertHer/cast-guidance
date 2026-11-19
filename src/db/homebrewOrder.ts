@@ -125,12 +125,29 @@ export interface CollectionMeta {
   key?: string;
 }
 
+/** A file coming in: its key, and what its key without a stamp is made of. */
+export interface IncomingCollection extends CollectionMeta, Partial<CollectionKeyParts> {}
+
+/** The key a stamped file coming in would have with no stamp, if it says what that is made of. */
+function keyWithoutStamp(f: IncomingCollection): string | undefined {
+  if (!f.key?.startsWith('made:') || f.sourceIds === undefined || f.fileName === undefined) {
+    return undefined;
+  }
+  return collectionKey({ ...f, sourceIds: f.sourceIds, fileName: f.fileName, made: undefined });
+}
+
 /**
- * Whether `a` and `b` are copies of one collection (ADR-002, D4): imported
- * files with the same key, so one coming in takes the other's place. A file
- * the player owns is never one: no import writes over it. Nor is a file with
- * no key (`collectionKey`).
+ * Whether `incoming` is a copy of the collection `stored` is, so it takes
+ * that copy's place (ADR-002, D4): imported files with the same key. A
+ * stamped file is also one with a copy that has no stamp under its link, or
+ * its first source and file name (the owner, 2026-11-19): most likely its own
+ * from before stamps. Never the other way: a file with no stamp cannot be
+ * told from another player's, so it never takes a stamped copy's place. Under
+ * the app's own sources a copy with no stamp has no key, so it is never one.
+ * A file the player owns is never one: no import writes over it. Nor is a
+ * file with no key (`collectionKey`).
  */
-export function sameCollection(a: CollectionMeta, b: CollectionMeta): boolean {
-  return !a.editable && !b.editable && a.key !== undefined && a.key === b.key;
+export function sameCollection(stored: CollectionMeta, incoming: IncomingCollection): boolean {
+  if (stored.editable || incoming.editable || stored.key === undefined) return false;
+  return stored.key === incoming.key || stored.key === keyWithoutStamp(incoming);
 }

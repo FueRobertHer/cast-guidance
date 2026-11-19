@@ -407,6 +407,34 @@ describe('previewCharacterImport of a file of a collection here (ADR-002, D4)', 
     expect(await status([old], 'osk')).toEqual([['other-version', undefined]]);
   });
 
+  it('updates a copy with no stamp under a chosen source with the first stamped one', async () => {
+    const brewed = (stamp: string | undefined, spell: string) => {
+      const json = {
+        _meta: { sources: [{ json: 'HB', full: 'Homebrew' }] },
+        spell: [{ name: spell, source: 'HB', level: 1 }],
+      };
+      return buildHomebrewRow(
+        stamp === undefined ? json : withCollectionId(json, stamp),
+        'Homebrew.json',
+      );
+    };
+    const here = (row: HomebrewFileRow): HomebrewFile => ({
+      ...row,
+      json: row.json as Record<string, unknown>,
+    });
+    const status = async (existing: HomebrewFile[], stamp: string | undefined) =>
+      previewCharacterImport({
+        prepared: prepared([await brewed(stamp, 'Osk Ward')]),
+        existing,
+        official: officialPhb(),
+        characterExists: false,
+      }).files.map((f) => [f.status, f.updates]);
+    const old = here(await brewed(undefined, 'Osk Lance'));
+    expect(await status([old], 'osk')).toEqual([['updates', 'Homebrew.json']]);
+    const stamped = here(await brewed('osk', 'Osk Lance'));
+    expect(await status([stamped], undefined)).toEqual([['other-version', undefined]]);
+  });
+
   it('never updates a rule pack, nor with one: a pack lands beside', () => {
     const asPack = <T extends { json: unknown }>(f: T): T =>
       ({ ...f, json: { _meta: { sources: [{ json: 'HB' }], castGuidance: { v: 1 } } } }) as T;

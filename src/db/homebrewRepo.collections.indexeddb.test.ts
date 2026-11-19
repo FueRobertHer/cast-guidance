@@ -265,6 +265,17 @@ describe('the id a collection made in the app is stamped with', () => {
     expect(files.every((f) => f.key === undefined)).toBe(true);
   });
 
+  it('lets a stamped file imported as a file take the place of its copy with no stamp', async () => {
+    const old = await homebrewRepo.importJson(file('HB', ['Osk Lance']), 'Homebrew.json');
+    const stamped = withCollectionId(file('HB', ['Osk Lance', 'Osk Ward']), 'osk');
+    const { replaced, row } = await homebrewRepo.commit(
+      await homebrewRepo.prepare(stamped, 'Homebrew (1).json'),
+    );
+    expect(replaced.map((r) => r.id)).toEqual([old.id]);
+    expect(row.key).toBe('made:osk');
+    expect((await homebrewRepo.listSafe()).files.map((f) => f.json)).toEqual([stamped]);
+  });
+
   it('is missing from a file under a source the player chose, which is keyed as any file is', async () => {
     // Made before stamps, it looks like any other file here: a known gap, in the hand-over.
     await homebrewRepo.importJson(file('HB', ['Osk Lance']), 'Homebrew.json');
