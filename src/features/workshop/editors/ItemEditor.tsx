@@ -264,22 +264,43 @@ export function fixedOfOriginal(registry: EntityRegistry, original: Json | undef
   return { ...firstOf(originalRefs(original), (ref) => itemDcIn(sets, ref)) };
 }
 
+/**
+ * An original's built-in `charges` row, found as `originalRefs` finds it, with
+ * the item it was read from: the original under its own key, else the official
+ * item the original is saved `basedOn` (or a printing of), when the registry
+ * holds it.
+ */
+export function rowOfOriginal(
+  registry: EntityRegistry,
+  original: Json | undefined,
+): { row: ItemCharges; of: Json | undefined } | undefined {
+  if (original === undefined) return undefined;
+  const sets = registry.byType(RULE_SET_TYPE) as readonly DataEntity[];
+  const [own, official] = originalRefs(original);
+  const mine = own === undefined ? undefined : itemChargesIn(sets, own);
+  if (mine !== undefined) return { row: mine, of: original };
+  const row = official === undefined ? undefined : itemChargesIn(sets, official);
+  if (row === undefined || official === undefined) return undefined;
+  return { row, of: registry.get('item', official.name, official.source) as Json | undefined };
+}
+
 /** The standard fields that say an item's charges and what comes back. */
 const POOL_FIELDS = ['charges', 'recharge', 'rechargeAmount'] as const;
 
 /**
  * The standard fields saying a built-in `charges` row's count and what comes
  * back, which `regainOf` reads back as the row says them, for a copy whose
- * fields still say what its original's do: the row is read from the item's
- * text where those fields misstate it. Only what they misstate: a count, or
- * what comes back, they already say as the row does is left as written. A time
- * the fields give that a long rest covers is kept, else dawn; none comes back
- * with no recharge. A copy whose author changed any of them keeps them all,
- * and one a charges effect counts already keeps what the effect says.
+ * fields still say what those of `of`, the item the row was read from, do:
+ * the row is read from that item's text where its fields misstate it. Only
+ * what they misstate: a count, or what comes back, they already say as the row
+ * does is left as written. A time the fields give that a long rest covers is
+ * kept, else dawn; none comes back with no recharge. A copy whose fields an
+ * author changed (its own, or a copy's it was copied from) keeps them all, as
+ * does one a charges effect counts already.
  */
-export function rowPoolFields(row: ItemCharges, draft: Json, original: Json | undefined): Json {
-  if (original === undefined || effectsOf(draft).some(isCharges)) return {};
-  if (POOL_FIELDS.some((k) => draft[k] !== original[k])) return {};
+export function rowPoolFields(row: ItemCharges, draft: Json, of: Json | undefined): Json {
+  if (of === undefined || effectsOf(draft).some(isCharges)) return {};
+  if (POOL_FIELDS.some((k) => draft[k] !== of[k])) return {};
   const regain = String(row.regain);
   const count: Json = draft.charges === row.charges ? {} : { charges: row.charges };
   if (String(regainOf(draft.recharge, draft.rechargeAmount)) === regain) return count;
@@ -731,11 +752,8 @@ function Charges(props: EditorProps) {
   const options = spellOptions(props);
   // A copy of an official item the app counts already: its row is written out
   // (a copy of a copy, or of a converted file's item, the official one's).
-  const sets = registry.byType(RULE_SET_TYPE) as readonly DataEntity[];
-  const row =
-    original === undefined
-      ? undefined
-      : firstOf(originalRefs(original), (ref) => itemChargesIn(sets, ref));
+  const found = rowOfOriginal(registry, original);
+  const row = found?.row;
   const set = (patch: Json, own?: Json) => change(withCharges(draft, patch, own));
   const setCharges = (to: number | undefined) => {
     if (to === undefined || to <= 0) {
@@ -759,10 +777,11 @@ function Charges(props: EditorProps) {
   const spells = list(counted?.spells).filter(isRecord) as Json[];
   // Written out, the effect says what the sheet counted: the row's spells or
   // the fields', and the DC the original's text fixes. The row's count and
-  // what comes back go in the fields while they are still the original's.
+  // what comes back go in the fields while they are still those of the item
+  // the row was read from.
   const fixed = fixedOfOriginal(registry, original);
   const fieldSpells = byFields?.spells ?? [];
-  const pool = row === undefined ? {} : rowPoolFields(row, draft, original);
+  const pool = found === undefined ? {} : rowPoolFields(found.row, draft, found.of);
   const fromRow =
     row === undefined ? undefined : (
       <Button
@@ -834,9 +853,9 @@ function Charges(props: EditorProps) {
           costs its charges by level.
         </p>
       )}
-      {charges === undefined && 'charges' in pool && !readOnly && (
+      {charges === undefined && !old && 'charges' in pool && !readOnly && (
         // An item whose fields give no count, which the app counts by its row
-        // (a Ring of Three Wishes), while they are still its original's.
+        // (a Ring of Three Wishes), while they are still the row's item's.
         <div className="flex flex-col gap-2">
           <p className="text-caption text-ink-muted">
             {`${String(original?.name)} has charges the app counts. Counted, they cast the spells it casts, priced as the app prices them.`}

@@ -492,61 +492,71 @@ describe('item fields', () => {
   });
 
   it("writes a built-in row's count and what comes back in fields still the original's", () => {
-    const row = (charges: number, regain: string | number) =>
-      ({ charges, regain, spells: [] }) as unknown as ItemCharges;
-    // A copy as made: the original's fields, unchanged.
-    const pool = (r: ItemCharges, fields: Json) =>
-      rowPoolFields(r, structuredClone(fields), fields);
+    const row = (charges: number, regain: string): ItemCharges => ({ charges, regain, spells: [] });
+    // A copy as made: the fields of the item the row was read from, unchanged.
+    // Written out with them, its effect says the row's pool.
+    const pool = (r: ItemCharges, fields: Json) => {
+      const draft = structuredClone(fields);
+      const patch = rowPoolFields(r, draft, fields);
+      const effects = (withCharges(draft, patch, { spells: [] }).castGuidance as Json)
+        .effects as Json[];
+      // (A number comes back as the reader's digits.)
+      expect([effects[0]?.charges, String(effects[0]?.regain)]).toEqual([r.charges, r.regain]);
+      return patch;
+    };
     // Robe of Stars: how many, with no time.
-    expect(pool(row(6, '1d6'), { charges: 6, rechargeAmount: '{@dice 1d6}' })).toEqual({
+    expect(pool(row(6, '1d6'), { charges: 6, rechargeAmount: '{@dice 1d6}' })).toStrictEqual({
       recharge: 'dawn',
       rechargeAmount: '{@dice 1d6}',
     });
     // Jewel of Three Prayers (Awakened): no recharge, all back.
-    expect(pool(row(5, 'all'), { charges: 5 })).toEqual({
+    expect(pool(row(5, 'all'), { charges: 5 })).toStrictEqual({
       recharge: 'dawn',
       rechargeAmount: undefined,
     });
     // Eyes of Charming and Spirit Board: the fields' time kept.
-    expect(pool(row(3, 'all'), { charges: 3, recharge: 'dawn', rechargeAmount: 3 })).toEqual({
+    expect(pool(row(3, 'all'), { charges: 3, recharge: 'dawn', rechargeAmount: 3 })).toStrictEqual({
       recharge: 'dawn',
       rechargeAmount: undefined,
     });
-    expect(pool(row(3, 1), { charges: 3, recharge: 'dusk', rechargeAmount: 3 })).toEqual({
+    expect(pool(row(3, '1'), { charges: 3, recharge: 'dusk', rechargeAmount: 3 })).toStrictEqual({
       recharge: 'dusk',
       rechargeAmount: 1,
     });
     // A time no long rest covers gives nothing back, so dawn in its place.
-    expect(pool(row(3, 1), { charges: 3, recharge: 'special', rechargeAmount: 3 })).toEqual({
-      recharge: 'dawn',
-      rechargeAmount: 1,
-    });
+    expect(pool(row(3, '1'), { charges: 3, recharge: 'special', rechargeAmount: 3 })).toStrictEqual(
+      {
+        recharge: 'dawn',
+        rechargeAmount: 1,
+      },
+    );
     // Ring of Three Wishes and Staff of Charming: no count in the fields.
-    expect(pool(row(3, 'none'), {})).toEqual({ charges: 3 });
-    expect(pool(row(10, '1d8+2'), {})).toEqual({
+    expect(pool(row(3, 'none'), {})).toStrictEqual({ charges: 3 });
+    expect(pool(row(10, '1d8+2'), {})).toStrictEqual({
       charges: 10,
       recharge: 'dawn',
       rechargeAmount: '{@dice 1d8+2}',
     });
     // None back clears a recharge the fields give.
-    expect(pool(row(3, 'none'), { charges: 3, recharge: 'dawn' })).toEqual({
+    expect(pool(row(3, 'none'), { charges: 3, recharge: 'dawn' })).toStrictEqual({
       recharge: undefined,
       rechargeAmount: undefined,
     });
     // Fields that say the row already, in their own way, are left as written.
     expect(
       pool(row(7, '1d6+1'), { charges: 7, recharge: 'dawn', rechargeAmount: '{@dice 1d6 + 1}' }),
-    ).toEqual({});
-    // A copy changed from its original, or counted by an effect already, keeps them.
+    ).toStrictEqual({});
+    // A copy changed from the row's item, or counted by an effect already, or
+    // of an item the row was not read from (none found), keeps them.
     const wand: Json = { charges: 7, recharge: 'dawn' };
-    expect(rowPoolFields(row(7, '1d6+1'), { ...wand, charges: 8 }, wand)).toEqual({});
-    expect(rowPoolFields(row(7, '1d6+1'), { ...wand, rechargeAmount: 2 }, wand)).toEqual({});
+    expect(rowPoolFields(row(7, '1d6+1'), { ...wand, charges: 8 }, wand)).toStrictEqual({});
+    expect(rowPoolFields(row(7, '1d6+1'), { ...wand, rechargeAmount: 2 }, wand)).toStrictEqual({});
     const counted = {
       ...wand,
       castGuidance: { v: 1, effects: [{ kind: 'charges', charges: 7, regain: 'all' }] },
     };
-    expect(rowPoolFields(row(7, '1d6+1'), counted, wand)).toEqual({});
-    expect(rowPoolFields(row(7, '1d6+1'), wand, undefined)).toEqual({});
+    expect(rowPoolFields(row(7, '1d6+1'), counted, wand)).toStrictEqual({});
+    expect(rowPoolFields(row(7, '1d6+1'), wand, undefined)).toStrictEqual({});
   });
 
   it('writes a property as the others are written', () => {
@@ -1052,6 +1062,21 @@ describe('ItemEditor', () => {
     ]);
     expect(screen.queryByText(/has charges the app counts/)).toBeNull();
     cleanup();
+    // An older copy whose pool does not convert (a short rest) counts them the
+    // older way: no count is offered in its place.
+    const oldRing: Json = {
+      ...ring,
+      castGuidance: {
+        v: 1,
+        effects: [
+          { kind: 'resource', key: ITEM_CHARGES, label: 'Charges', max: 3, reset: 'short' },
+        ],
+      },
+    };
+    mount(item, structuredClone(oldRing), registry, ring);
+    expect(screen.queryByText(/has charges the app counts/)).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Count them on the sheet' })).toBeNull();
+    cleanup();
     // An item the app does not count, with no count, offers nothing.
     const plain: Json = { name: 'Plain Ring', source: 'HB', type: 'RG', entries: [] };
     mount(item, structuredClone(plain), registry, plain);
@@ -1086,8 +1111,9 @@ describe('ItemEditor', () => {
     const official = {
       kind: 'charges',
       charges: 7,
-      // The row's, in place of the fields' all: their fields are still the original's.
-      regain: '1d6+1',
+      // The fields' all: with no official item in the registry, they are not
+      // known to be its.
+      regain: 'all',
       dc: 15,
       spells: [{ spell: 'Fireball|XPHB', cost: 1, upTo: 5 }],
     };
@@ -1102,6 +1128,53 @@ describe('ItemEditor', () => {
       regain: 'all',
       spells: [{ spell: 'Fireball|XPHB', cost: 1 }],
     });
+  });
+
+  it("writes out the row's pool for a copy of a copy while its fields are the official item's", () => {
+    const registry = new EntityRegistry();
+    registry.setRuleSets(BUILT_IN_RULE_SETS);
+    const robe: Json = {
+      name: 'Robe of Stars',
+      source: 'DMG',
+      type: 'OTH',
+      charges: 6,
+      rechargeAmount: '{@dice 1d6}',
+      entries: [],
+    };
+    registry.addAll('item', [robe] as unknown as Entity[]);
+    registry.addAll('spell', [
+      { name: 'Magic Missile', source: 'PHB', level: 1 },
+    ] as unknown as Entity[]);
+    const myRobe = (more: Json): Json => ({
+      ...robe,
+      name: 'My Robe',
+      source: 'HB',
+      castGuidance: { v: 1, basedOn: 'Robe of Stars|DMG' },
+      ...more,
+    });
+    const written = (original: Json): Json => {
+      const draft = mount(item, structuredClone(original), registry, original);
+      press('Add the spells My Robe casts');
+      const out = draft();
+      cleanup();
+      return { ...out, effect: ((out.castGuidance as Json).effects as Json[])[0] };
+    };
+    // A copy of a copy left as it was: the official item's fields, which the
+    // row's pool replaces.
+    expect(written(myRobe({}))).toMatchObject({
+      charges: 6,
+      recharge: 'dawn',
+      rechargeAmount: '{@dice 1d6}',
+      effect: { charges: 6, regain: '1d6' },
+    });
+    // The first copy's author set 8: the copy keeps it, and what comes back as
+    // its fields say.
+    const eight = written(myRobe({ charges: 8 }));
+    expect(eight).toMatchObject({
+      charges: 8,
+      effect: { charges: 8, regain: 'none', spells: [{ spell: 'Magic Missile|PHB', cost: 1 }] },
+    });
+    expect(eight.recharge).toBeUndefined();
   });
 
   it('says the sheet counts the charges its fields say, and writes them out to give them spells', () => {
