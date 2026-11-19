@@ -9,7 +9,7 @@ import { deriveSheet } from '../derive';
 import { lookupItem } from '../effects/item';
 import { longRestRecovery } from '../rest';
 import { type CharacterDoc, type DataEntity, type EngineContext, newCharacterDoc } from '../types';
-import { upgradeOlderCharges } from './itemCharges';
+import { idleChargePools, upgradeOlderCharges } from './itemCharges';
 
 function world(items: DataEntity[]): EngineContext {
   const of: Record<string, readonly DataEntity[]> = {
@@ -375,6 +375,22 @@ describe('a converted item on the sheet', () => {
       .resources.map((r) => r.key)
       .filter((k) => k.includes('charges'));
     expect(keys).toEqual(['item-charges:a', 'item-charges:b']);
+  });
+
+  it('keeps a put-away copy idle on its own pool, given back by the same roll', () => {
+    const doc = carrying('a');
+    for (const entry of doc.equipment) entry.equipped = false;
+    const ctx = world([older([POOL, CARD])]);
+    const sheet = deriveSheet(doc, ctx);
+    expect(sheet.resources.filter((r) => r.key.includes('charges'))).toEqual([]);
+    expect(idleChargePools(doc, sheet.resources, ctx)).toEqual([
+      expect.objectContaining({
+        key: 'item-charges:a',
+        max: 5,
+        resetOn: 'long',
+        regainRoll: '1d4',
+      }),
+    ]);
   });
 
   it('starts full: what was spent from the older card is not carried over', () => {
