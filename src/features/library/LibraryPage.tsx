@@ -17,6 +17,7 @@ import { type SearchResult, searchAll } from '@/data5e/search/client';
 import { DEFAULT_QUERY_LIMIT } from '@/data5e/search/protocol';
 import { applySourcePolicy, policyForSearch, useSourcePolicy } from '@/data5e/sourceFilter';
 import { sourceName } from '@/data5e/sourceNames';
+import { compareMergeOrder } from '@/db/homebrewOrder';
 import { homebrewRepo } from '@/db/homebrewRepo';
 import { hasEditor } from '@/features/workshop/editorTypes';
 import { useBack } from '@/lib/useBack';
@@ -948,22 +949,50 @@ function EntityDetail({ type, uid, reg }: { type: EntityType; uid: string; reg: 
   );
 }
 
+/** Whether a file's list of one kind holds an entry by this name and book. */
+function holds(list: unknown, name: string, source: string): boolean {
+  const n = name.toLowerCase();
+  const s = source.toLowerCase();
+  return (
+    Array.isArray(list) &&
+    list.some(
+      (e: unknown) =>
+        typeof e === 'object' &&
+        e !== null &&
+        String((e as Entity).name).toLowerCase() === n &&
+        String((e as Entity).source).toLowerCase() === s,
+    )
+  );
+}
+
 /**
  * Into the Workshop from an entry: Edit a copy of anything, or Edit one in a
- * homebrew file the player made on this device (ADR-001, D3). An imported
- * file cannot be changed, so its entries are copied like a book's.
+ * homebrew file the player made on this device (ADR-001, D3), in that file.
+ * Only a file that holds the entry counts: one that merely names its book (a
+ * collection called PHB) holds none of the book's entries. An imported file
+ * cannot be changed, so its entries are copied like a book's.
  */
 function WorkshopLink({ type, entity }: { type: EntityType; entity: Entity }) {
+  const name = nameOf(entity);
   const source = sourceOf(entity);
-  const key = encodeURIComponent(`${nameOf(entity)}|${source}`);
-  const files = useLiveQuery(() => homebrewRepo.listMetaSafe(), []);
-  const lower = source.toLowerCase();
-  const theirs =
-    files?.files.some((f) => f.editable && f.sourceIds.some((s) => s.toLowerCase() === lower)) ===
-    true;
+  const key = encodeURIComponent(`${name}|${source}`);
+  const owned = useLiveQuery(() => homebrewRepo.ownedSafe(), []);
+  // Until the files are read the link could be the wrong one, and a tap on
+  // Edit a copy for an entry of their own would make a second one.
+  if (owned === undefined) return null;
+  // Two files can hold one by this name and book: the one shown is the one
+  // the registry keeps, an enabled file's, the oldest first.
+  const file = owned.files
+    .filter((f) => holds(f.json[type], name, source))
+    .sort((a, b) => Number(b.enabled) - Number(a.enabled) || compareMergeOrder(a, b))[0];
+  const theirs = file !== undefined;
   return (
     <Link
-      to={`/workshop/${theirs ? 'edit' : 'copy'}/${type}/${key}`}
+      to={
+        file !== undefined
+          ? `/workshop/edit/${type}/${key}?file=${encodeURIComponent(file.id)}`
+          : `/workshop/copy/${type}/${key}`
+      }
       className={`self-start ${buttonClass({ variant: 'outline', size: 'sm' })}`}
     >
       {theirs ? <Pencil size={16} aria-hidden /> : <GitFork size={16} aria-hidden />}

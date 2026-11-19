@@ -49,6 +49,14 @@ describe('nearestPage', () => {
     expect(nearestPage('/settings/x')?.to).toBe('/settings');
   });
 
+  it('sends an address under the Workshop to the Workshop', () => {
+    // Deeper than the Workshop's own route, so only the catch-all matches it.
+    expect(nearestPage('/workshop/edit/spell/Gone%7CHB/x')).toEqual({
+      to: '/workshop',
+      label: 'Go to the Workshop',
+    });
+  });
+
   it('has nothing better than the roster for anything else', () => {
     expect(nearestPage('/nope')).toBeNull();
     expect(nearestPage('/')).toBeNull();

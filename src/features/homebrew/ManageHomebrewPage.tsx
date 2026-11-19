@@ -667,11 +667,12 @@ export function Component() {
               .map((w) => w[0]?.toUpperCase() ?? '')
               .join('')
               .slice(0, 5);
-            const abbrev =
-              (await askText({
-                title: 'Short source id (shown on badges)',
-                initial: suggested,
-              })) ?? 'HB';
+            const abbrev = await askText({
+              title: 'Short source id (shown on badges)',
+              initial: suggested,
+            });
+            // Cancel on the second question cancels the whole thing, as on the first.
+            if (abbrev === null) return;
             try {
               const row = await homebrewRepo.createEditable(name.trim(), abbrev.trim() || 'HB');
               invalidateRegistry();

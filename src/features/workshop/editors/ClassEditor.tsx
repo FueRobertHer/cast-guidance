@@ -34,7 +34,7 @@
  */
 import { Info, Plus, X } from 'lucide-react';
 import { lazy, type ReactNode, Suspense, useMemo, useState } from 'react';
-import { Link, useNavigate } from 'react-router';
+import { Link, useLocation, useNavigate } from 'react-router';
 import { plainEntryText } from '@/data5e/entries/plainText';
 import type { EntityRegistry } from '@/data5e/normalize';
 import { ownCasterLevel, PACT_SLOTS, STANDARD_SLOTS } from '@/engine/calc/slots';
@@ -1435,6 +1435,9 @@ function Waiting({ draft, registry }: Pick<EditorProps, 'draft' | 'registry'>) {
 /** Where a new class can start: blank, or a copy of one in the data (the board's C). */
 function StartFrom({ registry }: { registry: EntityRegistry }) {
   const navigate = useNavigate();
+  // A class begun in one of the player's files (`?file=`) is copied into it too.
+  const file = new URLSearchParams(useLocation().search).get('file');
+  const into = file === null ? '' : `?file=${encodeURIComponent(file)}`;
   const classes = [...registry.byType('class')].sort((a, b) =>
     String(a.name).localeCompare(String(b.name)),
   );
@@ -1444,7 +1447,7 @@ function StartFrom({ registry }: { registry: EntityRegistry }) {
         value=""
         onChange={(e) => {
           if (e.target.value !== '')
-            navigate(`/workshop/copy/class/${encodeURIComponent(e.target.value)}`, {
+            navigate(`/workshop/copy/class/${encodeURIComponent(e.target.value)}${into}`, {
               replace: true,
             });
         }}

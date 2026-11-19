@@ -58,6 +58,12 @@ const BOX = 'flex items-start gap-2 rounded-control bg-surface-raised px-3 py-2 
 
 const keyOf = (name: string, source: string) => encodeURIComponent(`${name}|${source}`);
 const labelOf = (type: string) => TYPE_LABELS.get(type) ?? type;
+/** Where one of the player's entries opens: two files can hold one by the same name and book. */
+const editPath = (type: string, name: string, source: string) =>
+  `/workshop/edit/${type}/${keyOf(name, source)}`;
+const inFile = (fileId: string) => `?file=${encodeURIComponent(fileId)}`;
+/** The file `?file=` names, as written. */
+const fileParam = (search: string) => new URLSearchParams(search).get('file');
 
 /** One of the player's entries, where it is kept. */
 interface Mine {
@@ -140,7 +146,7 @@ function Home() {
               return (
                 <li key={`${fileId}:${type}:${String(entry.name)}|${String(entry.source)}`}>
                   <Link
-                    to={`/workshop/edit/${type}/${keyOf(String(entry.name), String(entry.source))}`}
+                    to={`${editPath(type, String(entry.name), String(entry.source))}${inFile(fileId)}`}
                     className={`${listRowClass} hover:bg-surface-raised`}
                   >
                     <span className="flex min-w-0 flex-1 flex-col">
@@ -196,7 +202,7 @@ interface Into {
  * names nothing, and the entry goes to My homebrew as it would without it.
  */
 function intoFile(search: string, files: readonly HomebrewFile[]): Into | undefined {
-  const id = new URLSearchParams(search).get('file');
+  const id = fileParam(search);
   const file = id === null ? undefined : files.find((f) => f.id === id);
   const source = file?.sourceIds[0];
   if (file === undefined || file.editable !== true || source === undefined) return undefined;
@@ -215,6 +221,8 @@ function resolve(
   spec: EditorSpec,
   registry: EntityRegistry,
   mine: readonly Mine[],
+  /** The file `?file=` names: one of the player's entries is looked for there first. */
+  fileId: string | null,
 ): Resolved {
   if (action === 'new') {
     return {
@@ -235,7 +243,10 @@ function resolve(
     };
   }
   const [name = '', source = ''] = uid.split('|');
-  const found = mine.find((m) => m.type === type && matches(m.entry, { name, source }));
+  const named = (m: Mine) => m.type === type && matches(m.entry, { name, source });
+  // An address without a file, or naming one that no longer holds it, opens
+  // the first the player has.
+  const found = mine.find((m) => m.fileId === fileId && named(m)) ?? mine.find(named);
   if (found === undefined)
     return { state: 'gone', text: `You have no ${spec.noun} called ${name} on this device.` };
   const stored = found.entry;
@@ -308,9 +319,10 @@ function Editor({
   spec: EditorSpec;
   subject: Subject;
   registry: EntityRegistry;
-  /** A new entry's file, when it was made from one (`?file=`): else My homebrew. */
+  /** A new entry's or a copy's file, when it was made from one (`?file=`): else My homebrew. */
   into?: Into;
-  onSaved: (url: string) => void;
+  /** Where the saved entry now opens, and the file it is in. */
+  onSaved: (path: string, fileId: string) => void;
 }) {
   const navigate = useNavigate();
   const back = useBack('/workshop');
@@ -341,13 +353,21 @@ function Editor({
   const source = at.stored?.source ?? into?.source ?? WORKSHOP_SOURCE;
   // A full copy reopened keeps the mark of the original it was made from.
   const base = mode === 'full' && subject.mode === 'full' ? undefined : original;
+  // A copy saved into a file whose book is the original's (`?file=`) would
+  // take the original's name and book, and so copy itself.
+  const ownName =
+    original !== undefined &&
+    name.toLowerCase() === String(original.name).trim().toLowerCase() &&
+    source.toLowerCase() === String(original.source).toLowerCase();
   const problem = readOnly
     ? `${missingOriginal(missing ?? '')} It can be deleted, not changed.`
     : name === ''
       ? 'Give it a name to save it.'
       : name.includes('|')
         ? 'A name cannot have | in it.'
-        : spec.check?.(draft, { original: base, copied: original, source, mode, registry });
+        : ownName
+          ? `This copy needs a name of its own: ${name} is already in ${source}.`
+          : spec.check?.(draft, { original: base, copied: original, source, mode, registry });
   const footnote = (() => {
     if (problem !== undefined) return problem;
     if (original === undefined) return 'Saved to your homebrew file on this device.';
@@ -393,7 +413,7 @@ function Editor({
       setClean(draft);
       setSaves((s) => [...s, draft]);
       notify({ title: `Saved ${entry.name}`, tone: 'good' });
-      onSaved(`/workshop/edit/${type}/${keyOf(entry.name, entry.source)}`);
+      onSaved(editPath(type, entry.name, entry.source), saved.fileId);
     } catch (err) {
       setFailure(
         err instanceof EntryClash
@@ -556,7 +576,8 @@ function EditorRoute({ action, type, uid }: { action: string; type: string; uid:
   // The editor open, kept through the URL change a first save makes, so a
   // save does not reload what the player is looking at.
   const [session, setSession] = useState<{ key: string; urls: string[]; subject: Subject }>();
-  const url = location.pathname;
+  // With `?file=`: the same name and book in another file is another entry.
+  const url = `${location.pathname}${location.search}`;
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: specTry asks for the chunk again after Try again.
   useEffect(() => {
@@ -584,7 +605,15 @@ function EditorRoute({ action, type, uid }: { action: string; type: string; uid:
       : loading || spec === undefined || reg.registry === null || owned === undefined
         ? { state: 'loading' }
         : opened(
-            resolve(action, type, uid, spec, reg.registry, entriesOf(owned.files)),
+            resolve(
+              action,
+              type,
+              uid,
+              spec,
+              reg.registry,
+              entriesOf(owned.files),
+              fileParam(location.search),
+            ),
             spec,
             reg.registry,
             owned.files,
@@ -640,8 +669,9 @@ function EditorRoute({ action, type, uid }: { action: string; type: string; uid:
       spec={spec as EditorSpec}
       subject={resolved.subject}
       registry={reg.registry as EntityRegistry}
-      into={action === 'new' ? intoFile(location.search, owned?.files ?? []) : undefined}
-      onSaved={(next) => {
+      into={action !== 'edit' ? intoFile(location.search, owned?.files ?? []) : undefined}
+      onSaved={(path, fileId) => {
+        const next = `${path}${inFile(fileId)}`;
         setSession({ key, urls: [...(current?.urls ?? [url]), next], subject: resolved.subject });
         if (next !== url) navigate(next, { replace: true });
       }}

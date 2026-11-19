@@ -7,9 +7,11 @@ import { MemoryRouter, Route, Routes } from 'react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { namelessControls } from '../../../tests-fixtures/a11y';
 
-const { saveEditable, invalidateRegistry, row, read } = vi.hoisted(() => ({
+const { saveEditable, invalidateRegistry, row, read, askConfirm } = vi.hoisted(() => ({
   saveEditable: vi.fn(),
   invalidateRegistry: vi.fn(),
+  /** The delete's question; answered yes unless a test says otherwise. */
+  askConfirm: vi.fn<(opts: unknown) => Promise<boolean>>(() => Promise.resolve(true)),
   /** What the page's read resolves to; tests swap it for the other outcomes. */
   read: { current: undefined as unknown },
   row: {
@@ -35,6 +37,7 @@ vi.mock('@/db/homebrewRepo', () => ({
   homebrewRepo: { saveEditable, getSafe: () => Promise.resolve(read.current) },
 }));
 vi.mock('@/data5e/registry', () => ({ invalidateRegistry }));
+vi.mock('@/ui/dialogs', () => ({ askConfirm }));
 
 import { noticeStore } from '@/stores/notices';
 import { Component as BuilderPage } from './BuilderPage';
@@ -57,6 +60,8 @@ afterEach(() => {
   row.json.item = [{ name: 'Old blade' }];
   saveEditable.mockReset();
   invalidateRegistry.mockClear();
+  askConfirm.mockClear();
+  askConfirm.mockImplementation(() => Promise.resolve(true));
   noticeStore.setState({ notice: null, seq: 0 });
 });
 
@@ -65,8 +70,9 @@ describe('BuilderPage opens entries in the Workshop', () => {
     row.json.item = [{ name: 'Old blade', source: 'HB' }, { name: 'Odd | name?' }];
     renderBuilder();
 
+    // With the file, so a twin of the same name and book in another file is not the one opened.
     expect(screen.getByRole('link', { name: 'Edit Old blade' }).getAttribute('href')).toBe(
-      '/workshop/edit/item/Old%20blade%7CHB',
+      '/workshop/edit/item/Old%20blade%7CHB?file=f1',
     );
     // The Workshop finds an entry by its name and its own book, so one it
     // could not find gets no link that would lead nowhere.
@@ -89,6 +95,63 @@ describe('BuilderPage opens entries in the Workshop', () => {
     renderBuilder();
     expect(document.body.textContent).not.toMatch(/5etools/i);
     expect(document.body.textContent).toContain('standard homebrew file');
+  });
+});
+
+describe('BuilderPage deletes', () => {
+  it('asks first, naming the entry and what it costs', async () => {
+    saveEditable.mockResolvedValue(undefined);
+    renderBuilder();
+    fireEvent.click(screen.getByRole('button', { name: 'Delete Old blade' }));
+
+    await waitFor(() => expect(saveEditable).toHaveBeenCalledOnce());
+    expect(askConfirm).toHaveBeenCalledOnce();
+    expect(askConfirm.mock.calls[0]?.[0]).toMatchObject({
+      title: 'Delete Old blade?',
+      danger: true,
+    });
+  });
+
+  it('leaves the file alone when the answer is no', async () => {
+    askConfirm.mockImplementation(() => Promise.resolve(false));
+    renderBuilder();
+    fireEvent.click(screen.getByRole('button', { name: 'Delete Old blade' }));
+
+    await waitFor(() => expect(askConfirm).toHaveBeenCalledOnce());
+    await new Promise((r) => setTimeout(r, 0));
+    expect(saveEditable).not.toHaveBeenCalled();
+    expect(screen.getByText('Old blade')).toBeTruthy();
+  });
+
+  it('deletes from the file as it stands once answered, not as it was when asked', async () => {
+    let answer: (yes: boolean) => void = () => undefined;
+    askConfirm.mockImplementation(() => new Promise<boolean>((r) => (answer = r)));
+    saveEditable.mockResolvedValue(undefined);
+    renderBuilder();
+    fireEvent.click(screen.getByRole('button', { name: 'Delete Old blade' }));
+    await waitFor(() => expect(askConfirm).toHaveBeenCalledOnce());
+
+    // Another tab saves into the file while the question is open.
+    read.current = {
+      file: { ...row, json: { ...row.json, item: [{ name: 'Old blade' }, { name: 'New sword' }] } },
+    };
+    answer(true);
+
+    await waitFor(() => expect(saveEditable).toHaveBeenCalledOnce());
+    const [, written] = saveEditable.mock.calls[0] as [string, { item: Array<{ name: string }> }];
+    expect(written.item.map((i) => i.name)).toEqual(['New sword']);
+  });
+
+  it('does not ask again on Retry, which repeats a delete already agreed to', async () => {
+    saveEditable.mockRejectedValueOnce(new Error('database closed'));
+    renderBuilder();
+    fireEvent.click(screen.getByRole('button', { name: 'Delete Old blade' }));
+    await screen.findByRole('alert');
+
+    saveEditable.mockResolvedValue(undefined);
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    await waitFor(() => expect(screen.queryByRole('alert')).toBeNull());
+    expect(askConfirm).toHaveBeenCalledOnce();
   });
 });
 

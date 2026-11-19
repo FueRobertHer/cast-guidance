@@ -266,8 +266,9 @@ work:
   entries name the entry they print (`printingOf`), so curated rows, spend
   links and prose picks reach them without the official data, and granted
   spells and the choices a race, feat or background states are read from the
-  text. Remaining: spell captions (mostly Fight Club's own omissions) and
-  language oddities; `<class>` and subclass conversion. A race whose text
+  text. Classes and subclasses convert too (#305, #308, #312, #313).
+  Remaining: spell captions (mostly Fight Club's own omissions) and
+  language oddities. A race whose text
   Fight Club takes from another book (Monsters of the Multiverse's Tabaxi
   climb under Volo's citation, its Aarakocra flight under Elemental Evil's)
   reads that text's speed. A trait offered in place of

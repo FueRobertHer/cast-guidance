@@ -8,6 +8,7 @@ import { usePageTitle } from '@/lib/usePageTitle';
 import { errorText, notify } from '@/stores/notices';
 import { Button, buttonClass } from '@/ui/Button';
 import { DecodeBoundary } from '@/ui/DecodeBoundary';
+import { askConfirm } from '@/ui/dialogs';
 import { listClass } from '@/ui/surfaces';
 
 type Json = Record<string, unknown>;
@@ -29,9 +30,17 @@ const BUILDABLE = [
 ] as const;
 type BuildType = (typeof BUILDABLE)[number][0];
 
-/** Where the Workshop edits an entry, by the name and book it is saved under. */
-export function workshopEditUrl(type: string, name: string, source: string): string {
-  return `/workshop/edit/${type}/${encodeURIComponent(`${name}|${source}`)}`;
+/**
+ * Where the Workshop edits an entry, by the name and book it is saved under,
+ * in the file it is in: another file can hold one by the same name and book.
+ */
+export function workshopEditUrl(
+  type: string,
+  name: string,
+  source: string,
+  fileId: string,
+): string {
+  return `/workshop/edit/${type}/${encodeURIComponent(`${name}|${source}`)}?file=${encodeURIComponent(fileId)}`;
 }
 
 function isRecord(v: unknown): v is Json {
@@ -255,8 +264,28 @@ export function Component() {
     }
   };
 
-  const deleteEntity = async (type: BuildType, ref: EntityRef) => {
-    const next = structuredClone(json);
+  /** A tap on the trash icon: asked first, since the delete reaches every character using it. */
+  const askToDelete = async (type: BuildType, ref: EntityRef) => {
+    const label = refLabel(ref);
+    const ok = await askConfirm({
+      title: `Delete ${label}?`,
+      detail: `It is taken out of ${fileTitle(row)}. A character using it loses it.`,
+      confirmLabel: 'Delete',
+      danger: true,
+    });
+    if (!ok) return;
+    // The file as it stands now: another tab may have written to it while the
+    // question was open, and deleting from this render's copy would undo that.
+    const now = await homebrewRepo.getSafe(row.id).then(
+      (r) => r.file?.json,
+      () => undefined,
+    );
+    await deleteEntity(type, ref, now ?? json);
+  };
+
+  /** The delete itself; Retry comes straight here, the question already answered. */
+  const deleteEntity = async (type: BuildType, ref: EntityRef, from: Json = json) => {
+    const next = structuredClone(from);
     const arr = Array.isArray(next[type]) ? (next[type] as unknown[]) : [];
     const at = entityIndex(arr, ref);
     const label = refLabel(ref);
@@ -352,7 +381,7 @@ export function Component() {
                     aria-label={`Delete ${name ?? `unnamed ${lower}`}`}
                     title="Delete"
                     disabled={busy}
-                    onClick={() => void deleteEntity(type, ref)}
+                    onClick={() => void askToDelete(type, ref)}
                     className="tap shrink-0 rounded-control text-ink-muted transition-colors duration-120 enabled:hover:bg-surface-raised enabled:hover:text-danger disabled:cursor-default disabled:text-ink-faint"
                   >
                     <Trash2 size={18} />
@@ -390,7 +419,7 @@ export function Component() {
                     <div className="flex items-center gap-1 pr-1">
                       {name !== undefined && typeof e.source === 'string' && !name.includes('|') ? (
                         <Link
-                          to={workshopEditUrl(type, name, e.source)}
+                          to={workshopEditUrl(type, name, e.source, row.id)}
                           aria-label={`Edit ${name}`}
                           className="flex min-h-tap min-w-0 flex-1 items-center truncate py-2 pl-4 decoration-line-strong underline-offset-3 hover:underline"
                         >

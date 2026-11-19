@@ -14,6 +14,17 @@ const SIZES: ReadonlyArray<readonly [string, string]> = [
   ['M', 'Medium'],
   ['L', 'Large'],
 ];
+const OFFERED = new Set(SIZES.map(([k]) => k));
+
+/** Sizes a file can give that have no chip: kept as they are, and said by name. */
+const OTHER_SIZES: Readonly<Record<string, string>> = { H: 'Huge', G: 'Gargantuan', V: 'Varies' };
+
+/** "Huge", "Huge and Varies", "Huge, Gargantuan and Varies". */
+function listed(words: readonly string[]): string {
+  return words.length < 2
+    ? (words[0] ?? '')
+    : `${words.slice(0, -1).join(', ')} and ${words[words.length - 1]}`;
+}
 
 const DAMAGE: ReadonlyArray<readonly [string, string]> = [
   'acid',
@@ -51,6 +62,8 @@ export function withWalkSpeed(speed: unknown, walk: number | undefined): unknown
 
 function SpeciesBody({ draft, change, original, readOnly }: EditorProps) {
   const sizes = Array.isArray(draft.size) ? draft.size.map(String) : [];
+  // Tapping a chip changes only the sizes the chips offer; the rest stay.
+  const unoffered = sizes.filter((k) => !OFFERED.has(k));
   const resist = draft.resist;
   const resistPicks =
     resist === undefined || resist === null
@@ -66,12 +79,17 @@ function SpeciesBody({ draft, change, original, readOnly }: EditorProps) {
           options={SIZES}
           value={sizes}
           disabled={readOnly}
-          onChange={(v) =>
-            change({
-              size: v.length === 0 ? undefined : SIZES.map(([k]) => k).filter((k) => v.includes(k)),
-            })
-          }
+          onChange={(v) => {
+            const next = [...SIZES.map(([k]) => k).filter((k) => v.includes(k)), ...unoffered];
+            change({ size: next.length === 0 ? undefined : next });
+          }}
         />
+        {unoffered.length > 0 && (
+          <Kept label="Size">
+            also {listed(unoffered.map((k) => OTHER_SIZES[k] ?? k))}, kept as{' '}
+            {unoffered.length === 1 ? 'it is' : 'they are'}.
+          </Kept>
+        )}
         <div className="grid grid-cols-2 gap-2">
           <NumberField
             label="Speed in feet"

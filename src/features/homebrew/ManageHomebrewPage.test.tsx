@@ -7,19 +7,23 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { namelessControls } from '../../../tests-fixtures/a11y';
 import { recordAnnouncer } from '../../../tests-fixtures/announcements';
 
-const { read, remove, prepare } = vi.hoisted(() => ({
+const { read, remove, prepare, create } = vi.hoisted(() => ({
   read: { current: undefined as unknown },
   remove: vi.fn(),
   prepare: vi.fn(),
+  create: vi.fn(),
 }));
 
 vi.mock('dexie-react-hooks', () => ({ useLiveQuery: () => read.current }));
-vi.mock('@/db/homebrewRepo', () => ({ homebrewRepo: { deleteMany: remove, prepare } }));
+vi.mock('@/db/homebrewRepo', () => ({
+  homebrewRepo: { deleteMany: remove, prepare, createEditable: create },
+}));
 vi.mock('@/ui/dialogs', () => ({ askConfirm: () => Promise.resolve(true), askText: vi.fn() }));
 vi.mock('@/data5e/registry', () => ({ invalidateRegistry: vi.fn() }));
 vi.mock('@/data5e/sourceFilter', () => ({ ensureSourcesVisible: vi.fn() }));
 
 import { resetAnnouncer } from '@/stores/announcer';
+import { askText } from '@/ui/dialogs';
 import { Component as ManageHomebrewPage } from './ManageHomebrewPage';
 
 const file = (over: Record<string, unknown> = {}) => ({
@@ -112,6 +116,43 @@ describe('ManageHomebrewPage read errors', () => {
 
     expect(screen.getByText('No homebrew imported yet.')).toBeTruthy();
     expect(screen.queryByRole('alert')).toBeNull();
+  });
+});
+
+// Making a collection asks two questions, its name and then its short id.
+// Cancelling the second one used to save the collection anyway, under HB.
+describe('ManageHomebrewPage making a collection', () => {
+  const ask = vi.mocked(askText);
+  afterEach(() => {
+    ask.mockReset();
+    create.mockReset();
+  });
+
+  /** Answer the two questions, then wait until both were asked and a tick passed. */
+  async function make(name: string | null, id: string | null) {
+    ask.mockResolvedValueOnce(name).mockResolvedValueOnce(id);
+    read.current = { files: [], errors: [] };
+    renderPage();
+    fireEvent.click(screen.getByRole('button', { name: 'Create your own homebrew' }));
+    await waitFor(() => expect(ask).toHaveBeenCalledTimes(name === null ? 1 : 2));
+    await new Promise((r) => setTimeout(r, 0));
+  }
+
+  it('makes nothing when the short id question is cancelled', async () => {
+    await make("My Table's Brews", null);
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  it('makes it under the short id given', async () => {
+    create.mockResolvedValue({ id: 'n', sourceIds: ['MTB'] });
+    await make("My Table's Brews", ' MTB ');
+    expect(create).toHaveBeenCalledWith("My Table's Brews", 'MTB');
+  });
+
+  it('falls back to HB for a short id left empty', async () => {
+    create.mockResolvedValue({ id: 'n', sourceIds: ['HB'] });
+    await make('Brews', '  ');
+    expect(create).toHaveBeenCalledWith('Brews', 'HB');
   });
 });
 

@@ -28,6 +28,8 @@ export function nearestPage(pathname: string): NearestPage | null {
         : { to: '/library', label: 'Go to the library' };
     case 'homebrew':
       return { to: '/homebrew', label: 'Go to homebrew' };
+    case 'workshop':
+      return { to: '/workshop', label: 'Go to the Workshop' };
     case 'create':
       return { to: '/create', label: 'Go to the character creator' };
     case 'settings':
