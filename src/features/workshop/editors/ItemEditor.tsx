@@ -313,6 +313,17 @@ export function rowPoolFields(row: ItemCharges, draft: Json, of: Json | undefine
   };
 }
 
+/**
+ * The DC and attack bonus an original's text fixes (`fixedOfOriginal`) that a
+ * charges effect does not say already: a number typed in its box is kept when
+ * a row is written out, each apart from the other.
+ */
+export function unsaidFixed(fixed: Json, counted: Json | undefined): Json {
+  return Object.fromEntries(
+    Object.entries(fixed).filter(([k]) => typeof counted?.[k] !== 'number'),
+  );
+}
+
 /** A typed number kept within what the reader takes (`RULE_SET_LIMITS`), or none. */
 const within = (v: number | undefined, least: number, most: number) =>
   v === undefined ? undefined : Math.max(least, Math.min(most, v));
@@ -673,8 +684,10 @@ function ChargeSpell({
     return Number.isNaN(k) ? undefined : Math.max(0, Math.min(99, k));
   };
   // One level for its cost (a Staff of Power's 5th-level Fireball), in place of
-  // the highest: the box says that level until it is cleared.
-  const fixedAt = typeof spell.at === 'number';
+  // the highest: Only at that level, kept while the box is emptied to type
+  // another (a backspace first, as on a phone), for the spell it was kept for.
+  const [heldAt, setHeldAt] = useState<string | undefined>(undefined);
+  const fixedAt = typeof spell.at === 'number' || (spell.upTo === undefined && heldAt === ref);
   const { upTo: _, at: __, ...rest } = spell;
   const levelBox = fixedAt ? spell.at : spell.upTo;
   return (
@@ -713,6 +726,7 @@ function ChargeSpell({
             disabled={disabled}
             onChange={(e) => {
               const to = whole(e.target.value);
+              if (to === undefined) setHeldAt(fixedAt ? ref : undefined);
               onChange(to === undefined ? rest : { ...rest, [fixedAt ? 'at' : 'upTo']: to });
             }}
             className={fieldClass}
@@ -738,7 +752,10 @@ function ChargeSpell({
             aria-label={`Charge spell ${n}: only at that level`}
             checked={fixedAt}
             disabled={disabled}
-            onChange={(e) => onChange({ ...rest, [e.target.checked ? 'at' : 'upTo']: levelBox })}
+            onChange={(e) => {
+              setHeldAt(e.target.checked ? ref : undefined);
+              onChange({ ...rest, [e.target.checked ? 'at' : 'upTo']: levelBox });
+            }}
           />
           Only at that level
         </label>
@@ -806,10 +823,7 @@ function Charges(props: EditorProps) {
   const fixed = fixedOfOriginal(registry, original);
   const fieldSpells = byFields?.spells ?? [];
   const pool = found === undefined ? {} : rowPoolFields(found.row, draft, found.of);
-  // A DC or attack bonus the effect says already (typed in its box) is kept.
-  const unsaid = Object.fromEntries(
-    Object.entries(fixed).filter(([k]) => typeof counted?.[k] !== 'number'),
-  );
+  const unsaid = unsaidFixed(fixed, counted);
   const fromRow =
     row === undefined ? undefined : (
       <Button
@@ -964,8 +978,9 @@ function Charges(props: EditorProps) {
           </div>
           <p className="text-caption text-ink-muted">
             A fixed save DC or attack bonus, as an item's text may give one, is what every spell it
-            casts uses. One left empty comes from the ability above, or the character's own. With
-            either, its charges cast only from its own rows on the Spells tab.
+            casts uses in place of the character's. One left empty comes from the ability above, or
+            the character's own. With either, its charges cast only from its own rows on the Spells
+            tab.
           </p>
           {spells.map((s, i) => (
             <ChargeSpell

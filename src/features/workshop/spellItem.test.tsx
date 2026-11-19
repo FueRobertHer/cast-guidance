@@ -35,6 +35,7 @@ import {
   editor as item,
   rechargeValue,
   rowPoolFields,
+  unsaidFixed,
   withCharges,
   withProperty,
 } from './editors/ItemEditor';
@@ -558,6 +559,17 @@ describe('item fields', () => {
     };
     expect(rowPoolFields(row(7, '1d6+1'), counted, wand)).toStrictEqual({});
     expect(rowPoolFields(row(7, '1d6+1'), wand, undefined)).toStrictEqual({});
+  });
+
+  it("keeps a DC or attack bonus a charges effect says when a row's are written out", () => {
+    const fixed = { dc: 15, attack: 7 };
+    expect(unsaidFixed(fixed, undefined)).toStrictEqual(fixed);
+    expect(unsaidFixed(fixed, { kind: 'charges' })).toStrictEqual(fixed);
+    // Each apart from the other.
+    expect(unsaidFixed(fixed, { kind: 'charges', dc: 17 })).toStrictEqual({ attack: 7 });
+    expect(unsaidFixed(fixed, { kind: 'charges', attack: 3 })).toStrictEqual({ dc: 15 });
+    expect(unsaidFixed(fixed, { kind: 'charges', dc: 17, attack: 3 })).toStrictEqual({});
+    expect(unsaidFixed({}, { kind: 'charges', dc: 17 })).toStrictEqual({});
   });
 
   it('writes a property as the others are written', () => {
@@ -1238,7 +1250,7 @@ describe('ItemEditor', () => {
     expect(counted(readMechanics({ v: 1, effects: written }).charges)).toEqual(counted(before));
   });
 
-  it('writes out a spell its fields cast at one level, and shows that level until it is cleared', () => {
+  it('writes out a spell its fields cast at one level, and keeps it at one level when retyped', () => {
     const registry = new EntityRegistry();
     registry.addAll('spell', [
       { name: 'Fireball', source: 'PHB', level: 3 },
@@ -1260,10 +1272,20 @@ describe('ItemEditor', () => {
       (((draft().castGuidance as Json).effects as Json[])[0]?.spells as Json[])[0];
     expect(spell()).toEqual({ spell: 'Fireball|PHB', cost: 7, at: 7 });
     expect(screen.getByLabelText('Charge spell 1: at level')).toHaveProperty('value', '7');
+    // Emptied to type another (a backspace first), it is still Only at that level.
     type('Charge spell 1: at level', '');
-    expect(spell()).toEqual({ spell: 'Fireball|PHB', cost: 7 });
-    type('Charge spell 1: up to level', '9');
-    expect(spell()).toEqual({ spell: 'Fireball|PHB', cost: 7, upTo: 9 });
+    expect(spell()).toStrictEqual({ spell: 'Fireball|PHB', cost: 7 });
+    type('Charge spell 1: at level', '9');
+    expect(spell()).toStrictEqual({ spell: 'Fireball|PHB', cost: 7, at: 9 });
+    expect(screen.getByLabelText('Charge spell 1: only at that level')).toHaveProperty(
+      'checked',
+      true,
+    );
+    // Unticked, the level is the highest: emptied and retyped, it stays so.
+    fireEvent.click(screen.getByLabelText('Charge spell 1: only at that level'));
+    type('Charge spell 1: up to level', '');
+    type('Charge spell 1: up to level', '8');
+    expect(spell()).toStrictEqual({ spell: 'Fireball|PHB', cost: 7, upTo: 8 });
   });
 
   it('fixes the save DC and attack bonus its spells cast with, within what the sheet reads', () => {
