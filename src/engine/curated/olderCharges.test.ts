@@ -243,7 +243,7 @@ describe('upgradeOlderCharges: what is left as it was', () => {
     ['an action named as the card with spaces', [POOL, CARD, { ...UNPRICED, label: ' Charges ' }]],
     [
       'a card named with spaces',
-      [{ ...POOL, label: 'Charges ' }, CARD, { ...UNPRICED, label: 'Charges' }],
+      [{ ...POOL, label: 'Sparks ' }, CARD, { ...UNPRICED, label: 'Sparks' }],
     ],
     [
       'an action named as a renamed card',
