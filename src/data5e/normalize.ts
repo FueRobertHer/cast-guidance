@@ -5,17 +5,34 @@
  */
 
 // Relative, not `@/`: the data-audit script runs this file under plain Bun.
-import { RULE_PACK_TYPE, RULE_SET_TYPE } from '../engine/castGuidance';
+import {
+  ENTRY_PARENT_KEYS,
+  isRecord,
+  CAST_GUIDANCE_LIMITS as L,
+  own,
+  type PackAppliesTo,
+  RULE_PACK_TYPE,
+  RULE_SET_TYPE,
+} from '../engine/castGuidance';
 import {
   type CopyModWarning,
   type CopyRef,
+  DELETE_ON_COPY,
   type Entity,
   expandVersions,
   resolveCopies,
+  textOf,
   uidOf,
   withReplaceBudget,
 } from './copyMod';
-import { type PackLocal, rulePackEntries } from './rulePack';
+import { fieldPrint } from './fingerprint';
+import {
+  type PackFile,
+  type PackLocal,
+  packReach,
+  packsInOrder,
+  rulePackEntries,
+} from './rulePack';
 
 /**
  * The list and the union are one declaration, so a type added to one cannot go
@@ -115,6 +132,46 @@ export class EntityRegistry {
   rulesBooks: ReadonlySet<string> = new Set();
   /** Per-type list lengths when homebrew started arriving; see `officialCount`. */
   private officialCounts: Map<EntityType, number> | undefined;
+  /** The changes to the books the merge found, in the order it placed them. */
+  private readonly changed: ChangedEntry[] = [];
+  /** Each changed entry's record, under its placed version and the entry below it. */
+  private readonly changeIndex = new Map<Entity, ChangedEntry>();
+
+  /**
+   * Every entry a change to the books stands over (ADR-002, D2), with both
+   * versions: the one below every change and the one in its place here, so a
+   * per-character view (E4) can give a character either, and Needs a look can
+   * show them side by side.
+   */
+  changedEntries(): readonly ChangedEntry[] {
+    return this.changed;
+  }
+
+  /** The change record of `e`, when it is a changed entry or the entry below one. */
+  changeOf(e: Entity): ChangedEntry | undefined {
+    return this.changeIndex.get(e);
+  }
+
+  /**
+   * Record a change to the books and put its placed version where the entry
+   * below it is: at its place in its type's list, so pickers list it once, in
+   * the book's order, and `officialCount` still counts the same rows; and in
+   * the index when the index finds that entry, never when it finds another of
+   * the same `name|source` (each class's Ability Score Improvement).
+   */
+  placeChange(record: ChangedEntry): void {
+    this.changed.push(record);
+    this.changeIndex.set(record.base, record);
+    if (record.placed === record.base) return;
+    this.changeIndex.set(record.placed, record);
+    const list = this.types.get(record.type);
+    const at = list?.indexOf(record.base) ?? -1;
+    if (list === undefined || at === -1) return;
+    list[at] = record.placed;
+    const idx = this.index.get(record.type);
+    const uid = uidOf(record.base);
+    if (idx?.get(uid) === record.base) idx.set(uid, record.placed);
+  }
 
   /**
    * Record where official data ends. Homebrew is only ever appended after it
@@ -436,21 +493,308 @@ const HOMEBREW_TYPES: EntityType[] = [
  * Merge homebrew files into a built registry. Homebrew flows through the SAME
  * copy/mod machinery: `_copy` targets may be official entities. `packs` is
  * each rule pack's Apply to and order by file id, from the stored rows: a
- * pack with none reaches nobody.
+ * pack with none reaches nobody. `changeFiles` is the ids of the stored rows
+ * with the changes role (ADR-002, D2), which only the app sets on a file the
+ * player owns: their entries take the place of the entries they change.
  */
 export function mergeHomebrew(
   reg: EntityRegistry,
   homebrew: ReadonlyMap<string, Record<string, unknown>>,
   packs: ReadonlyMap<string, PackLocal> = new Map(),
+  changeFiles: ReadonlySet<string> = new Set(),
 ): void {
-  // Every replaceTxt in every file draws on one budget, so the merge as a
-  // whole is bounded rather than each operation on its own.
-  withReplaceBudget(() => mergeHomebrewFiles(reg, homebrew));
-  const files = [...homebrew].map(([id, json]) => {
+  const files: PackFile[] = [...homebrew].map(([id, json]) => {
     const pack = packs.get(id);
     return pack === undefined ? { id, json } : { id, json, pack };
   });
+  const ordered = packsInOrder(files);
+  // Every replaceTxt in every file draws on one budget, so the merge as a
+  // whole is bounded rather than each operation on its own.
+  withReplaceBudget(() =>
+    mergeHomebrewFiles(reg, homebrew, replacersOf(reg, homebrew, ordered, changeFiles)),
+  );
   reg.setRulePacks(rulePackEntries(files) as unknown as Entity[]);
+}
+
+// ---------------------------------------------------------------------------
+// Changes to the books (ADR-002, D2)
+// ---------------------------------------------------------------------------
+
+/**
+ * An entry's identity, lowercased: `name|source`, then for the types in
+ * `ENTRY_PARENT_KEYS` those fields, so a change to Rage is the Barbarian's
+ * Rage at level 1 and no other class's feature of that name. One function for
+ * both sides of the match, the change and the entry below it.
+ */
+export function identityKey(type: string, e: Entity): string {
+  const parents = Object.hasOwn(ENTRY_PARENT_KEYS, type) ? ENTRY_PARENT_KEYS[type] : undefined;
+  return [own(e, 'name'), own(e, 'source'), ...(parents ?? []).map((k) => own(e, k))]
+    .map((v) => (v === undefined || v === null ? '' : textOf(v)))
+    .join('|')
+    .toLowerCase();
+}
+
+/** What gives a change to the books: the player's Changes to the books, or a rule pack. */
+export interface ChangeFrom {
+  kind: 'changes' | 'pack';
+  /** The stored file's id. An imported file's changes on every update: never keep it across one. */
+  fileId: string;
+  /** The source its file declares first, which a character's collection switch names (E2). */
+  source: string;
+  /** A pack's: who it reaches, as its row says; absent, nobody. */
+  reach?: PackAppliesTo;
+}
+
+/** One change over an entry, as stored. */
+export interface ChangeLayer {
+  from: ChangeFrom;
+  /** The change as its file holds it, its `_copy` unresolved: `stackChanges` reads it. */
+  entry: Entity;
+  /**
+   * Whether the shared registry's version holds it: the player's changes do,
+   * and a pack's when it applies to every character. A pack applied to some
+   * characters reaches them through their own view (E4), never everyone's.
+   */
+  shared: boolean;
+  /**
+   * The fields the entry below it changed since the change was made, which the
+   * change also changes (Needs a look); empty when none. Read over the base and
+   * the shared layers below it.
+   */
+  needsLook: readonly string[];
+}
+
+/** An entry changes to the books stand over, with both versions. */
+export interface ChangedEntry {
+  type: EntityType;
+  /** The entry below every change: the book's, or an imported collection's. */
+  base: Entity;
+  /** Every change over it, lowest first: packs in the player's order, then the player's own. */
+  layers: readonly ChangeLayer[];
+  /** What the registry holds in the base's place: `base` with the shared layers over it. */
+  placed: Entity;
+}
+
+/** The entries of one file that are changes, by type, and what gives them. */
+interface Replacer {
+  from: ChangeFrom;
+  /** Every entry of its content (the changes file), or those of these identities (a pack). */
+  identities: ReadonlyMap<string, ReadonlySet<string>> | 'all';
+  /** Where it stacks: packs in the player's order, then the player's changes. */
+  rank: number;
+  shared: boolean;
+}
+
+/** The id of the book a homebrew file declares first, or '' when it declares none. */
+function firstSourceId(json: Record<string, unknown>): string {
+  const meta = own(json, '_meta');
+  const sources = isRecord(meta) ? own(meta, 'sources') : undefined;
+  const first = Array.isArray(sources) && isRecord(sources[0]) ? own(sources[0], 'json') : '';
+  return typeof first === 'string' ? first : '';
+}
+
+/**
+ * The files whose entries may take a book entry's place, and which of their
+ * entries do. Only two may (D2): a stored row with the changes role, and a rule
+ * pack for the entries its own `replaces` names. Every other file's entries
+ * keep today's rule, so a file declaring PHB never rewrites Fireball.
+ */
+function replacersOf(
+  reg: EntityRegistry,
+  homebrew: ReadonlyMap<string, Record<string, unknown>>,
+  packs: ReturnType<typeof packsInOrder>,
+  changeFiles: ReadonlySet<string>,
+): Map<string, Replacer> {
+  const out = new Map<string, Replacer>();
+  packs.forEach((pack, rank) => {
+    const listed = own(pack.guidance, 'replaces');
+    if (listed === undefined) return;
+    const warn = (message: string) =>
+      reg.warnings.push({ entity: pack.name, message: `rule pack replaces: ${message}` });
+    if (!Array.isArray(listed)) {
+      warn('"replaces" is a list of entries');
+      return;
+    }
+    if (listed.length > L.replacesPerPack) {
+      warn(`it names ${listed.length} entries; a pack replaces at most ${L.replacesPerPack}`);
+    }
+    const identities = new Map<string, Set<string>>();
+    for (const ref of listed.slice(0, L.replacesPerPack)) {
+      const type = isRecord(ref) ? own(ref, 'type') : undefined;
+      if (
+        !isRecord(ref) ||
+        typeof type !== 'string' ||
+        !(HOMEBREW_TYPES as readonly string[]).includes(type) ||
+        typeof own(ref, 'name') !== 'string' ||
+        typeof own(ref, 'source') !== 'string'
+      ) {
+        warn('each entry it names has a type, a name and a source');
+        continue;
+      }
+      const set = identities.get(type) ?? new Set<string>();
+      set.add(identityKey(type, ref));
+      identities.set(type, set);
+    }
+    if (identities.size === 0) return;
+    const reach = packReach(pack);
+    out.set(pack.id, {
+      from: { kind: 'pack', fileId: pack.id, source: pack.source, ...(reach ? { reach } : {}) },
+      identities,
+      rank,
+      shared: reach?.appDefault === true,
+    });
+  });
+  for (const id of changeFiles) {
+    const json = homebrew.get(id);
+    if (json === undefined) continue;
+    out.set(id, {
+      from: { kind: 'changes', fileId: id, source: firstSourceId(json) },
+      identities: 'all',
+      rank: packs.length,
+      shared: true,
+    });
+  }
+  return out;
+}
+
+/** True when an entry of `type` in this file is a change rather than content. */
+function isChange(replacer: Replacer | undefined, type: string, e: Entity): boolean {
+  if (replacer === undefined) return false;
+  if (replacer.identities === 'all') return true;
+  return replacer.identities.get(type)?.has(changeIdentity(type, e) ?? '') === true;
+}
+
+/**
+ * The identity a change stands for: its own, with what it leaves to its
+ * `_copy` (a change saved as changes need not repeat its class or level).
+ * Undefined when its own and its copy's disagree: a change keeps the identity
+ * of the entry it changes, or the sheets holding that entry would find one of
+ * another name.
+ */
+function changeIdentity(type: string, change: Entity): string | undefined {
+  const copy = isRecord(change._copy) ? change._copy : undefined;
+  const probe: Entity = {};
+  const parents = Object.hasOwn(ENTRY_PARENT_KEYS, type) ? ENTRY_PARENT_KEYS[type] : undefined;
+  for (const key of ['name', 'source', ...(parents ?? [])]) {
+    const mine = own(change, key);
+    const its = copy === undefined ? undefined : own(copy, key);
+    if (
+      mine !== undefined &&
+      its !== undefined &&
+      textOf(mine).toLowerCase() !== textOf(its).toLowerCase()
+    ) {
+      return undefined;
+    }
+    const v = mine ?? its;
+    if (v !== undefined) probe[key] = v;
+  }
+  return identityKey(type, probe);
+}
+
+/** The fields a change marks that the entry below it now holds otherwise (Needs a look). */
+function needsLookOf(change: Entity, below: Entity): string[] {
+  const g = own(change, 'castGuidance');
+  const marks = isRecord(g) ? own(g, 'basedOnFields') : undefined;
+  if (!isRecord(marks)) return [];
+  return Object.entries(marks)
+    .slice(0, L.fieldsPerChange)
+    .filter(([field, mark]) => typeof mark === 'string' && fieldPrint(below, field) !== mark)
+    .map(([field]) => field);
+}
+
+/** Keys a change takes back from the entry it changes when it has none of its own. */
+const RESTORED = [...DELETE_ON_COPY, 'bookEdition'] as const;
+
+/**
+ * One change over the entry below it: its `_copy`, of itself, read against that
+ * entry (never against itself, which it would wait on forever), or the change
+ * as it is when written whole. A change is the entry it changes, so what a
+ * copy leaves behind comes back from below: its book's edition, its reprints,
+ * its versions, its page.
+ */
+function applyChange(
+  type: string,
+  below: Entity,
+  change: Entity,
+  warnings: CopyModWarning[],
+): Entity {
+  const working = structuredClone(change);
+  if (working._copy !== undefined) {
+    warnings.push(...resolveCopies([working], () => below, `change to ${type}`));
+  }
+  for (const key of RESTORED) {
+    if (Object.hasOwn(working, key) || !Object.hasOwn(below, key)) continue;
+    // A change that says its own edition is printed under it, not its book's.
+    if (key === 'bookEdition' && working.edition !== undefined) continue;
+    working[key] = below[key];
+  }
+  return working;
+}
+
+/**
+ * `base` with `layers` over it, lowest first: what a view holding those changes
+ * gives in the base's place. Pure; the shared registry stacks its shared
+ * layers with it, and a per-character view (E4) may stack another set.
+ */
+export function stackChanges(
+  type: string,
+  base: Entity,
+  layers: readonly Entity[],
+  warnings: CopyModWarning[] = [],
+): Entity {
+  let entry = base;
+  for (const change of layers) entry = applyChange(type, entry, change, warnings);
+  return entry;
+}
+
+/** A change found in a file's content, before it is stacked. */
+interface FoundChange {
+  identity: string;
+  replacer: Replacer;
+  entry: Entity;
+}
+
+/**
+ * Stack each identity's changes on the entry below them and put the result in
+ * that entry's place. The entry below is the first of that identity in the
+ * type's list, as every lookup finds it: the book's when the book has it, else
+ * an imported collection's. A change with nothing below it is held out, since
+ * it would be a stub of what it changes: when its book or collection comes
+ * back, so does the change.
+ */
+function placeChanges(reg: EntityRegistry, type: EntityType, found: FoundChange[]): void {
+  if (found.length === 0) return;
+  const byIdentity = new Map<string, FoundChange[]>();
+  for (const f of found) {
+    const list = byIdentity.get(f.identity) ?? [];
+    list.push(f);
+    byIdentity.set(f.identity, list);
+  }
+  const below = new Map<string, Entity>();
+  for (const e of reg.byType(type)) {
+    const key = identityKey(type, e);
+    if (byIdentity.has(key) && !below.has(key)) below.set(key, e);
+  }
+  for (const [identity, changes] of byIdentity) {
+    const base = below.get(identity);
+    if (base === undefined) {
+      for (const c of changes) {
+        reg.warnings.push({
+          entity: uidOf(c.entry),
+          message: `change to ${type}: nothing of that identity to change, so it is left out`,
+        });
+      }
+      continue;
+    }
+    changes.sort((a, b) => a.replacer.rank - b.replacer.rank);
+    let current = base;
+    const layers: ChangeLayer[] = changes.map((c) => {
+      const needsLook = needsLookOf(c.entry, current);
+      if (c.replacer.shared) current = applyChange(type, current, c.entry, reg.warnings);
+      return { from: c.replacer.from, entry: c.entry, shared: c.replacer.shared, needsLook };
+    });
+    reg.placeChange({ type, base, layers, placed: current });
+  }
 }
 
 /**
@@ -534,22 +878,46 @@ function copyIndex(list: readonly Entity[]): CopyIndex {
  *
  * This runs on every registry rebuild, so each lookup is a map hit rather
  * than a scan of the type's list (see {@link copyIndex}).
+ *
+ * Changes to the books (`replacers`) are taken out first: they are not
+ * content, so no copy finds one, no name tie drops the entry they change, and
+ * they are stacked on that entry once the type's content is in.
  */
 function mergeHomebrewFiles(
   reg: EntityRegistry,
   homebrew: ReadonlyMap<string, Record<string, unknown>>,
+  replacers: ReadonlyMap<string, Replacer> = new Map(),
 ): void {
   reg.sealOfficial();
-  const files = [...homebrew.values()];
+  const files = [...homebrew];
   for (const type of HOMEBREW_TYPES) {
-    const perFile = files.map((json) => {
+    const found: FoundChange[] = [];
+    const perFile = files.map(([id, json]) => {
       const arr = json[type];
-      return Array.isArray(arr)
+      const listed = Array.isArray(arr)
         ? arr.filter((e): e is Entity => typeof e === 'object' && e !== null)
         : [];
+      const replacer = replacers.get(id);
+      if (replacer === undefined) return listed;
+      return listed.filter((e) => {
+        if (!isChange(replacer, type, e)) return true;
+        const identity = changeIdentity(type, e);
+        if (identity === undefined) {
+          reg.warnings.push({
+            entity: uidOf(e),
+            message: `change to ${type}: it keeps the name and source of what it changes, so it is left out`,
+          });
+        } else {
+          found.push({ identity, replacer, entry: e });
+        }
+        return false;
+      });
     });
     const all = perFile.flat();
-    if (all.length === 0) continue;
+    if (all.length === 0) {
+      placeChanges(reg, type, found);
+      continue;
+    }
     // Official only: this type's homebrew is added below, after resolution.
     const official = copyIndex(reg.byType(type));
     const everyFile = copyIndex(all);
@@ -581,5 +949,6 @@ function mergeHomebrewFiles(
         reg.addAll(type, entities);
       }
     }
+    placeChanges(reg, type, found);
   }
 }

@@ -33,8 +33,12 @@ export function uidOf(e: Entity): string {
   return `${textOf(e.name ?? '?')}|${textOf(e.source ?? '?')}`.toLowerCase();
 }
 
-/** Meta keys that do NOT carry over from a copy target unless `_preserve`d. */
-const DELETE_ON_COPY = [
+/**
+ * Meta keys that do NOT carry over from a copy target unless `_preserve`d. A
+ * change to the books gets them back from the entry it changes, since it is
+ * that entry (`normalize.ts`).
+ */
+export const DELETE_ON_COPY = [
   'reprintedAs',
   '_versions',
   'srd',

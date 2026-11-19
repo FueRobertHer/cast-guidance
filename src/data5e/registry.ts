@@ -227,12 +227,16 @@ async function rebuild({
   // nothing about the official release, and going back would not fix it.
   const brewMap = new Map<string, Record<string, unknown>>();
   const packs = new Map<string, PackLocal>();
+  const changeFiles = new Set<string>();
   for (const b of brews) {
     brewMap.set(b.id, b.json);
     // A pack's Apply to is on its row, not in the file (ADR-002, D4).
     if (b.pack !== undefined) packs.set(b.id, b.pack);
+    // The changes role is the row's, set by the app on a file the player owns
+    // (`partitionHomebrewRows` keeps it on no other row): never read from a file.
+    if (b.role === 'changes') changeFiles.add(b.id);
   }
-  mergeHomebrew(reg, brewMap, packs);
+  mergeHomebrew(reg, brewMap, packs, changeFiles);
   // Only if nothing invalidated the registry while this was reading. The
   // caller still gets what was built, which is the best answer available to
   // it; what it must not do is leave that answer behind as the current one.

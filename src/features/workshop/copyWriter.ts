@@ -16,72 +16,20 @@
  * writes against the original as it is now.
  */
 import { applyMod, resolveCopies } from '@/data5e/copyMod';
-import { CAST_GUIDANCE_VERSION, isRecord, own } from '@/engine/castGuidance';
+// The marks live beside the registry, which reads them for Needs a look
+// (ADR-002, D2). Keys a saved entry never writes from its draft are the keys
+// no mark reads: its identity and its guidance, written apart, and what the
+// data or the registry keeps about the book an entry is printed in.
+import { fieldPrint, fingerprint, NOT_WRITTEN, OWN_GUIDANCE, same } from '@/data5e/fingerprint';
+import { CAST_GUIDANCE_VERSION, ENTRY_PARENT_KEYS, isRecord, own } from '@/engine/castGuidance';
 import { officialOf } from '@/engine/effects/mechanics';
+
+export { fingerprint, same };
 
 export type Json = Record<string, unknown>;
 
 /** Changes only (the default), or every field written out. */
 export type SaveMode = 'changes' | 'full';
-
-/**
- * Keys a saved entry never writes from its draft: its identity and its
- * guidance, which are written apart, and what the data or the registry keeps
- * about the book an entry is printed in (a copy is printed in the player's).
- */
-const NOT_WRITTEN = new Set([
-  'name',
-  'source',
-  '_copy',
-  'castGuidance',
-  '_versionOf',
-  'bookEdition',
-  '_versions',
-  'reprintedAs',
-  'srd',
-  'srd52',
-  'basicRules',
-  'basicRules2024',
-  'hasFluff',
-  'hasFluffImages',
-  'soundClip',
-  'otherSources',
-  'page',
-  'alias',
-]);
-
-/** Guidance keys an entry keeps from its draft; `basedOn` and its fingerprint are worked out. */
-const OWN_GUIDANCE = ['effects', 'drop', 'amend', 'replace', 'moments'] as const;
-
-/** JSON with its keys sorted, so two equal values always print the same. */
-function stable(v: unknown): string {
-  if (Array.isArray(v)) return `[${v.map(stable).join(',')}]`;
-  if (isRecord(v)) {
-    return `{${Object.keys(v)
-      .sort()
-      .map((k) => `${JSON.stringify(k)}:${stable(v[k])}`)
-      .join(',')}}`;
-  }
-  return JSON.stringify(v) ?? 'null';
-}
-
-export const same = (a: unknown, b: unknown): boolean => stable(a) === stable(b);
-
-/**
- * A short mark of what an entry said when it was copied (FNV-1a over its
- * fields), so the Workshop can say "The original changed since you copied it".
- */
-export function fingerprint(e: Json): string {
-  const kept: Json = {};
-  for (const k of Object.keys(e)) if (!NOT_WRITTEN.has(k)) kept[k] = e[k];
-  const s = stable(kept);
-  let h = 0x811c9dc5;
-  for (let i = 0; i < s.length; i++) {
-    h ^= s.charCodeAt(i);
-    h = Math.imul(h, 0x01000193);
-  }
-  return (h >>> 0).toString(16).padStart(8, '0');
-}
 
 /** The name an entries block goes by, when it is a named part (a trait, a benefit). */
 export function partName(b: unknown): string | undefined {
@@ -237,6 +185,55 @@ export function writeEntry({ original, draft, source, mode }: WriteInput): Json 
   const copy: Json = { name: original.name, source: original.source };
   if (Object.keys(mod).length > 0) copy._mod = mod;
   return { ...head, ...fields, _copy: copy, ...tail };
+}
+
+/**
+ * What Changes to the books stores for a change to `original`, an entry of
+ * `type` as the registry holds it (ADR-002, D2): changes only, under the
+ * original's own identity, so the registry puts it in the original's place and
+ * every character holding the original gets it, with no reference rewritten.
+ *
+ * - Its name is the original's whatever the draft says: a change keeps the
+ *   identity of what it changes, or the sheets holding it would find another.
+ * - For a type known by its parent too (`ENTRY_PARENT_KEYS`: a feature's class
+ *   and level), those fields go on it and in its `_copy`, so a change to Rage
+ *   is the Barbarian's Rage at level 1 and no other class's.
+ * - Its guidance marks each field it changes as the original had it
+ *   (`basedOnFields`), so an update under one of them sends it to Needs a look.
+ * - It is printed in the original's book, so it carries no edition of its own
+ *   where the original took one from its book: the registry gives it back.
+ *
+ * `original` is the entry below the change, never a change itself: to change
+ * an entry already changed, pass the registry's `changeOf(e).base` with the
+ * draft, so what is stored is still read against the entry below.
+ */
+export function writeChange(type: string, original: Json, draft: Json): Json {
+  const out = writeEntry({ original, draft, source: String(original.source), mode: 'changes' });
+  // The original's, untrimmed: a name is never one of the fields a change changes.
+  out.name = original.name;
+  if (own(original, 'edition') === undefined) delete out.edition;
+  const copy = out._copy as Json;
+  const parents = Object.hasOwn(ENTRY_PARENT_KEYS, type) ? (ENTRY_PARENT_KEYS[type] ?? []) : [];
+  for (const key of parents) {
+    const v = own(original, key);
+    if (v === undefined) continue;
+    out[key] = v;
+    copy[key] = v;
+  }
+  const fields: Record<string, string> = {};
+  for (const key of Object.keys(out)) {
+    if (!NOT_WRITTEN.has(key) && !parents.includes(key)) fields[key] = fieldPrint(original, key);
+  }
+  const mod = own(copy, '_mod');
+  if (isRecord(mod)) for (const key of Object.keys(mod)) fields[key] = fieldPrint(original, key);
+  if (fieldPrint(original, 'castGuidance') !== fieldPrint(draft, 'castGuidance')) {
+    fields.castGuidance = fieldPrint(original, 'castGuidance');
+  }
+  if (Object.keys(fields).length > 0) {
+    const g = isRecord(out.castGuidance) ? out.castGuidance : { v: CAST_GUIDANCE_VERSION };
+    out.castGuidance = { ...g, basedOnFields: fields };
+  }
+  return out;
 }
 
 /** What a stored entry copies, and whether it was saved as changes only. */

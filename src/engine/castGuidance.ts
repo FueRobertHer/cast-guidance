@@ -41,6 +41,10 @@ export const CAST_GUIDANCE_LIMITS = {
   /** What one moment does (`do`). */
   outcomesPerMoment: 64,
   patchesPerPack: 500,
+  /** Entries a pack's `replaces` may name; past it, the rest replace nothing. */
+  replacesPerPack: 500,
+  /** Fields a change's `basedOnFields` may mark; past it, the rest are not checked. */
+  fieldsPerChange: 64,
   momentsPerPack: 200,
   cuesPerPack: 200,
   /** Characters in a patch's `target` (`feature|class` names two things). */
@@ -253,6 +257,14 @@ export interface StoredEntryGuidance {
   basedOn?: string;
   /** What the original looked like when copied, for "The original changed since you copied it". */
   basedOnFingerprint?: string;
+  /**
+   * A change to the books' (ADR-002, D2): a mark of each field it changes as the
+   * entry below it had that field when the change was made (`fieldPrint` in
+   * `data5e/fingerprint.ts`). When the entry below moves under one of them (an
+   * update from a collection's link, a new release), the change goes to Needs a
+   * look. At most `CAST_GUIDANCE_LIMITS.fieldsPerChange` are read.
+   */
+  basedOnFields?: Record<string, string>;
   /** What happens at moments the app sees (Phase 2). */
   moments?: StoredMoment[];
 }
@@ -415,20 +427,52 @@ export interface StoredPatch {
 }
 
 /**
+ * The fields beside `name` and `source` that make an entry of these types the
+ * one it is, as the registry and the sheet find them: a subrace by its race, a
+ * subclass by its class, a class or subclass feature by its class (and
+ * subclass) and level. Any other type is known by `name|source` alone.
+ */
+export const ENTRY_PARENT_KEYS: Readonly<Record<string, readonly string[]>> = {
+  subrace: ['raceName', 'raceSource'],
+  subclass: ['className', 'classSource'],
+  classFeature: ['className', 'classSource', 'level'],
+  subclassFeature: ['className', 'classSource', 'subclassShortName', 'subclassSource', 'level'],
+};
+
+/**
+ * An entry of a pack's own content that takes the place of the entry with its
+ * identity (ADR-002, D2): its type, `name` and `source`, and for the types in
+ * `ENTRY_PARENT_KEYS` those fields too (`Rage`, `XPHB`, `Barbarian`, `XPHB`,
+ * level 1). The pack's content must hold an entry of exactly that identity; it
+ * may be written whole, or as changes with a `_copy` of itself, which is read
+ * against the entry below. It reaches the characters the pack applies to.
+ */
+export interface StoredReplacedEntry {
+  type: string;
+  name: string;
+  source: string;
+  [parentKey: string]: unknown;
+}
+
+/**
  * A rule pack file's `_meta.castGuidance`. Data only: nothing in it is run, and a
  * formula is read by the app's own small grammar (`formula.ts`). A cue at a moment
- * shows when that moment happens, as a moment's `cue` outcome does.
+ * shows when that moment happens, as a moment's `cue` outcome does. `replaces`
+ * names the entries of its content that take a book entry's place, which the
+ * import preview names one by one; an entry of its content it does not name
+ * merges as any homebrew file's does, and never takes a book entry's place.
  */
 export interface StoredPackGuidance {
   v: number;
   tableRules?: Partial<TableRuleChoices>;
   patches?: StoredPatch[];
+  replaces?: StoredReplacedEntry[];
   moments?: StoredMoment[];
   cues?: StoredCue[];
 }
 
 /** The parts a pack's `castGuidance` may hold; any other key is not read. */
-export const PACK_PARTS = ['v', 'tableRules', 'patches', 'moments', 'cues'] as const;
+export const PACK_PARTS = ['v', 'tableRules', 'patches', 'replaces', 'moments', 'cues'] as const;
 
 /**
  * Who a pack reaches. Kept on the stored pack, dropped when it is shared: nothing
