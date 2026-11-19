@@ -817,8 +817,8 @@ describe('ItemEditor', () => {
     const draft = mount(item, structuredClone(old));
     expect(screen.getByText(/counts these the older way/)).toBeTruthy();
     // Its fields stand aside for the card, so the sheet counts them once.
+    expect(fieldChargesOf(old as never)).toBe(undefined);
     expect(screen.queryByText(/a second time/)).toBeNull();
-    expect(screen.queryByText(/The sheet counts these/)).toBeNull();
     // Its pool is a card like any other, there to change or remove.
     expect(screen.getByLabelText('Uses per rest: Name')).toHaveProperty('value', 'Charges');
     expect(screen.queryByRole('button', { name: 'Count them on the sheet' })).toBeNull();

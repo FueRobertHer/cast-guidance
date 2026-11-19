@@ -159,6 +159,8 @@ describe('itemChargesOf: the fields below every other source', () => {
       effects: [
         { kind: 'acBonus', amount: 1 },
         { kind: 'resource', key: 'sparks', label: 'Sparks', max: 2, reset: 'long' },
+        // Not a pool, under the key the older one has.
+        { kind: 'resourceRegain', key: 'charges', amount: 1 },
       ],
     };
     expect(held(world([item('Rod of Tests', 'TST', { ...fields, castGuidance: plain })]))).toBe(3);
