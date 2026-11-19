@@ -1,6 +1,6 @@
 import type { Collector } from '../effects/base';
 import { str } from '../effects/base';
-import { lookupItem, magicWorks, parseBonus } from '../effects/item';
+import { isWeapon, lookupItem, magicWorks, parseBonus } from '../effects/item';
 import {
   freeMasteryNames,
   masteryNames,
@@ -124,12 +124,6 @@ function isRangedWeapon(e: DataEntity): boolean {
   return type === 'R' || type === 'AF';
 }
 
-function isWeapon(e: DataEntity): boolean {
-  if (e.weapon === true || e.weaponCategory !== undefined) return true;
-  const type = String(e.type ?? '').split('|')[0];
-  return type === 'M' || type === 'R' || type === 'AF';
-}
-
 /**
  * Whether a proficiency filter ("type=martial weapon|property=light;finesse") covers a
  * weapon. A clause's values are alternatives and every clause must hold, so a curated
@@ -191,17 +185,28 @@ export function calcAttacks(
   );
   /**
    * A bonus's scope reaches this attack, and so do its ability and its weapon,
-   * when it names them: one on a weapon reaches only that carried weapon.
+   * when it names them: one on a weapon reaches only that carried weapon, one
+   * for weapons alone (`weaponsOnly`) no unarmed strike or natural weapon, and
+   * one for kinds of weapon (`weapons`) only a carried weapon of one of them.
    */
   const reaches = (
-    b: { scope: 'melee' | 'ranged' | 'all'; ability?: Ability; weapon?: string },
+    b: {
+      scope: 'melee' | 'ranged' | 'all';
+      ability?: Ability;
+      weapon?: string;
+      weaponsOnly?: boolean;
+      weapons?: readonly string[];
+    },
     ranged: boolean,
     ability: Ability,
-    weaponId: string | undefined,
+    weapon: { id: string; kind: string } | undefined,
   ) =>
     (b.scope === 'all' || (b.scope === 'ranged') === ranged) &&
     (b.ability === undefined || b.ability === ability) &&
-    (b.weapon === undefined || b.weapon === weaponId);
+    (b.weapon === undefined || b.weapon === weapon?.id) &&
+    (b.weaponsOnly !== true || weapon !== undefined) &&
+    (b.weapons === undefined ||
+      (weapon !== undefined && b.weapons.some((w) => w.trim().toLowerCase() === weapon.kind)));
 
   const buildRow = (
     label: string,
@@ -216,15 +221,14 @@ export function calcAttacks(
     range: string | undefined,
     origin: string,
     extraDamage: DamageRider[] = [],
-    weapon?: { id: string; magical: boolean },
+    weapon?: { id: string; magical: boolean; kind: string },
   ): AttackRow => {
-    const weaponId = weapon?.id;
     const mod = abilities[ability].mod;
     const parts = [{ label: `${ability.toUpperCase()} modifier`, amount: mod }];
     if (proficient) parts.push({ label: 'Proficiency', amount: profBonus });
     if (magicBonus !== 0) parts.push({ label: 'Magic bonus', amount: magicBonus });
     for (const b of attackBonuses) {
-      if (reaches(b, ranged, ability, weaponId))
+      if (reaches(b, ranged, ability, weapon))
         parts.push({ label: b.origin.label, amount: b.amount });
     }
 
@@ -232,7 +236,7 @@ export function calcAttacks(
     const damageFrom: string[] = [];
     const bySource = new Map<string, number>();
     for (const b of damageBonuses) {
-      if (!reaches(b, ranged, ability, weaponId)) continue;
+      if (!reaches(b, ranged, ability, weapon)) continue;
       dmgMod += b.amount;
       if (b.amount !== 0 && !damageFrom.includes(b.origin.label)) damageFrom.push(b.origin.label);
       bySource.set(b.origin.label, (bySource.get(b.origin.label) ?? 0) + b.amount);
@@ -241,11 +245,7 @@ export function calcAttacks(
     const riders = [
       ...extraDamage,
       ...riderDice
-        .filter(
-          (d) =>
-            reaches(d, ranged, ability, weaponId) &&
-            (d.weaponsOnly !== true || weaponId !== undefined),
-        )
+        .filter((d) => reaches(d, ranged, ability, weapon))
         .map((d) => ({
           dice: d.dice,
           ...(d.damageType !== undefined ? { damageType: d.damageType } : {}),
@@ -333,7 +333,11 @@ export function calcAttacks(
         str(e.name) ?? '',
         magic ? extraDamageOf(e) : [],
         // A magic item's rarity is set; a mundane weapon's is none.
-        { id: entry.id, magical: typeof e.rarity === 'string' && e.rarity !== 'none' },
+        {
+          id: entry.id,
+          magical: typeof e.rarity === 'string' && e.rarity !== 'none',
+          kind: weaponKindName(e),
+        },
       ),
     );
   }

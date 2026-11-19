@@ -278,8 +278,9 @@ tiefling's Tenser's Floating Disk. The table is gone.
   the reader cannot read is a problem and is left out, and the row keeps the
   rest, still standing in for its keys, as a row keeps the effects it can read.
 - **`replaces`** (`wornTags` rows, at least one): the kinds of tag the row
-  stands in for, of `resist`, `immune`, `vulnerable`, `conditionImmune` and
-  `saveBonus` ("Worn tag rows", below). Its `effects` may only be of those
+  stands in for, of `resist`, `immune`, `vulnerable`, `conditionImmune`,
+  `saveBonus`, `attackBonus`, `damageBonus` and `spellDcBonus` ("Worn tag
+  rows", below). Its `effects` may only be of those
   kinds. A row with a kind it does not know, a kind twice, an effect of a kind
   it does not replace, or an effect it cannot read (which would take that
   tag away unseen) is left out, and its keys stay free for a later row.
@@ -322,7 +323,7 @@ tiefling's Tenser's Floating Disk. The table is gone.
 | Class row | `class:` and the class uid | `class:monk\|phb` |
 | Feat | its uid, then the uid of the feat it copies | `alert\|phb` |
 | Optional feature | its uid, then the uid of the one it copies | `defense\|phb` |
-| Race trait | `trait:` and the trait name | `trait:relentless endurance` |
+| Race trait | `trait\|race or subrace\|source` (the trait in the book that prints it), then `trait:` and the trait name | `speed\|dwarf\|phb`, `trait:relentless endurance` |
 
 A class or subclass feature's printings are its own book (the official one's,
 for a copy), then its class's or subclass's, so a 2014 subclass kept under a
@@ -403,7 +404,17 @@ one. A `wornTags` row says what the item gives instead.
   order, where the tags would be; for every other kind, the tags. So a row
   changes only the kinds it names, and nothing moves.
 - A row giving nothing of a kind takes that kind away: the "nothing worn" rows
-  replace all five, whatever their data has.
+  replace all five defense kinds, whatever their data has.
+- The bonus fields read the same way (ADR-002 D7): `bonusWeaponAttack` as an
+  `attackBonus` and `bonusSpellAttack` as one for spell attacks,
+  `bonusWeaponDamage` as a `damageBonus`, `bonusSpellSaveDc` as a
+  `spellDcBonus`. On a weapon they reach its own attacks; on any other item,
+  every weapon's (`weaponsOnly`), never an unarmed strike's. A row stands in for
+  an item whose text limits the bonus: to some weapons (`weapons`, the kinds by
+  name, as Bracers of Archery's bows), to one class's spells (`className`, as
+  the Rod of the Pact Keeper's Warlock), to spells cast with one ability
+  (`ability`, as the Jester's Mask's Charisma), or to a moment the sheet cannot
+  see, which gives nothing (Niko's Mace's summon). 25 rows do so.
 - A potion's tags count once it is drunk, so a potion reads neither tags nor
   row while carried. `bonusAc` is not a tag: a row never touches it.
 - The row is part of what the item inherits, read while its magic works

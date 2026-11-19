@@ -289,7 +289,14 @@ function collectFrom(col: Collector, e: DataEntity, origin: EffectOrigin, idBase
       label: traitName,
       origin,
       target: `${traitName}|${origin.label}`,
-      ruleKeys: names.map((n) => `trait:${n}`),
+      // A row for this race's own trait in this book first (a 2014 dwarf's
+      // Speed), then one for every trait of its name.
+      ruleKeys: [
+        ...(e.name === undefined || e.source === undefined
+          ? []
+          : [`${traitName}|${str(e.name)}|${str(e.source)}`]),
+        ...names.map((n) => `trait:${n}`),
+      ],
       inherited: (builtIn) => {
         if (builtIn?.scan !== 'replace') proseScanFeature(col, traitName, entry.entries, origin);
         // What the trait adds to rolls, named for the trait (Brave), not the race.
