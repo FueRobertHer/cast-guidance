@@ -484,15 +484,16 @@ function listKey(e: Json): string {
 }
 
 /**
- * The subclasses in the player's data that cast spells of their own (the
- * Eldritch Knight's), one a class and name, the printing in the spell's own
+ * The subclasses in the player's data that cast from a list of their own (the
+ * Eldritch Knight's): those with a caster progression, as the Spells tab gives
+ * one its own block. One a class and name, the printing in the spell's own
  * rules edition where the data has it, as `onePerName` picks a class.
  */
 function subclassLists(props: EditorProps): SubclassList[] {
   const want = editionOf(props.draft);
   const byKey = new Map<string, SubclassList & { fits: boolean }>();
   for (const s of props.registry.byType('subclass')) {
-    if (s.spellcastingAbility === undefined && s.casterProgression === undefined) continue;
+    if (typeof s.casterProgression !== 'string') continue;
     if (typeof s.name !== 'string' || typeof s.className !== 'string') continue;
     const key = subclassKey(s.className, s.name);
     const fits = editionOf(s) === want;

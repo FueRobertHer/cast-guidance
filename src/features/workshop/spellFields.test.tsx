@@ -126,6 +126,14 @@ function knights(): EntityRegistry {
   );
   registry.addAll('subclass', [
     { name: 'Champion', shortName: 'Champion', source: 'XPHB', className: 'Fighter' },
+    // An ability for the spells it grants, and no list of its own to cast from.
+    {
+      name: 'Path of the Giant',
+      shortName: 'Giant',
+      source: 'BGG',
+      className: 'Barbarian',
+      spellcastingAbility: 'wis',
+    },
   ]);
   return registry;
 }
