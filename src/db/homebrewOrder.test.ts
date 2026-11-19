@@ -71,6 +71,8 @@ describe('collectionKey and sameCollection (ADR-002, D4)', () => {
       ),
     ).toBe(true);
     expect(sameCollection(plain({ fileName: 'Other.json' }), stamped('osk'))).toBe(false);
+    // With a link, only a copy from that link: its file name says nothing then.
+    expect(sameCollection(plain(), stamped('osk', { url: 'https://x/hb.json' }))).toBe(false);
     // Two stamped copies are one collection by their stamp alone.
     expect(sameCollection(stamped('bram'), stamped('osk'))).toBe(false);
     expect(sameCollection(stamped('osk'), stamped('osk', { fileName: 'Renamed.json' }))).toBe(true);
@@ -90,14 +92,19 @@ describe('collectionKey and sameCollection (ADR-002, D4)', () => {
 
   it('matches imported files of one key only, never a file the player owns', () => {
     const key = 'file:emb|ember';
-    expect(sameCollection({ editable: false, key }, { editable: false, key })).toBe(true);
-    expect(sameCollection({ editable: false, key }, { editable: false, key: `${key}2` })).toBe(
-      false,
-    );
-    expect(sameCollection({ editable: false }, { editable: false })).toBe(false);
+    const parts = { sourceIds: ['EMB'], fileName: 'Ember.json' };
+    const incoming = (more: { editable?: boolean; key?: string } = {}) => ({
+      ...parts,
+      editable: false,
+      key,
+      ...more,
+    });
+    expect(sameCollection({ editable: false, key }, incoming())).toBe(true);
+    expect(sameCollection({ editable: false, key }, incoming({ key: `${key}2` }))).toBe(false);
+    expect(sameCollection({ editable: false }, incoming({ key: undefined }))).toBe(false);
     // Even one carrying a key: no import writes over the player's own file.
-    expect(sameCollection({ editable: true, key }, { editable: false, key })).toBe(false);
-    expect(sameCollection({ editable: false, key }, { editable: true, key })).toBe(false);
+    expect(sameCollection({ editable: true, key }, incoming())).toBe(false);
+    expect(sameCollection({ editable: false, key }, incoming({ editable: true }))).toBe(false);
   });
 });
 

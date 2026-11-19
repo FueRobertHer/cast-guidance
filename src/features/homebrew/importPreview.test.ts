@@ -405,6 +405,20 @@ describe('previewHomebrewImport for a file of a collection here (ADR-002, D4)', 
     ).toEqual([['Zap', 'before']]);
   });
 
+  it('updates a copy with no stamp under its file with a stamped one, never another stamp', () => {
+    const stamped = (existing: HomebrewFile[]) =>
+      previewHomebrewImport({
+        row: { ...row(incoming), key: 'made:osk' },
+        bytes: 10,
+        existing,
+        official: NO_OFFICIAL,
+        characters: [],
+      }).updates?.id;
+    const old = { ...local('old', { _meta: meta(['HB']), spell: [] }), key: 'file:hb|new-file' };
+    expect(stamped([old])).toBe('old');
+    expect(stamped([{ ...old, key: 'made:bram' }])).toBeUndefined();
+  });
+
   it('never updates a file the player owns, or one under another key', () => {
     const mine = { ...local('mine', { _meta: meta(['HB']), spell: [] }), editable: true, key };
     const other = { ...local('other', { _meta: meta(['HB']), spell: [] }), key: 'file:hb|other' };

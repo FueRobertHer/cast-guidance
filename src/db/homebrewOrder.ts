@@ -125,15 +125,15 @@ export interface CollectionMeta {
   key?: string;
 }
 
-/** A file coming in: its key, and what its key without a stamp is made of. */
-export interface IncomingCollection extends CollectionMeta, Partial<CollectionKeyParts> {}
+/**
+ * A file coming in: its key, and what its key without a stamp is made of.
+ * Required, so a caller cannot leave the stamp's second key out unseen.
+ */
+export interface IncomingCollection extends CollectionMeta, CollectionKeyParts {}
 
-/** The key a stamped file coming in would have with no stamp, if it says what that is made of. */
+/** The key a stamped file coming in would have with no stamp. */
 function keyWithoutStamp(f: IncomingCollection): string | undefined {
-  if (!f.key?.startsWith('made:') || f.sourceIds === undefined || f.fileName === undefined) {
-    return undefined;
-  }
-  return collectionKey({ ...f, sourceIds: f.sourceIds, fileName: f.fileName, made: undefined });
+  return f.key?.startsWith('made:') === true ? collectionKey({ ...f, made: undefined }) : undefined;
 }
 
 /**

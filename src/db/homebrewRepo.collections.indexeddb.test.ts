@@ -276,6 +276,29 @@ describe('the id a collection made in the app is stamped with', () => {
     expect((await homebrewRepo.listSafe()).files.map((f) => f.json)).toEqual([stamped]);
   });
 
+  it('lets a stamped file take the place of its stamped copy and one with no stamp at once', async () => {
+    const now = vi.spyOn(Date, 'now').mockReturnValue(1_000);
+    const first = await homebrewRepo.importJson(
+      withCollectionId(file('HB', ['Osk Lance']), 'osk'),
+      'Homebrew.json',
+    );
+    await homebrewRepo.setEnabled(first.id, false);
+    now.mockReturnValue(2_000);
+    // An older export with no stamp lands beside the stamped copy.
+    await homebrewRepo.importJson(file('HB', ['Osk Old']), 'Homebrew.json');
+    expect((await homebrewRepo.listSafe()).files).toHaveLength(2);
+    now.mockReturnValue(9_000);
+
+    const newer = withCollectionId(file('HB', ['Osk Lance', 'Osk Ward']), 'osk');
+    const { replaced } = await homebrewRepo.commit(
+      await homebrewRepo.prepare(newer, 'Homebrew.json'),
+    );
+
+    expect(replaced).toHaveLength(2);
+    const { files } = await homebrewRepo.listSafe();
+    expect(files.map((f) => [f.json, f.enabled, f.addedAt])).toEqual([[newer, true, 1_000]]);
+  });
+
   it('is missing from a file under a source the player chose, which is keyed as any file is', async () => {
     // Made before stamps, it looks like any other file here: a known gap, in the hand-over.
     await homebrewRepo.importJson(file('HB', ['Osk Lance']), 'Homebrew.json');
