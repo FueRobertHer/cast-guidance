@@ -259,6 +259,24 @@ work:
   unsupported fields. (The import preview itself, covering counts, duplicates,
   `_copy` warnings, size, and affected characters, is IMP-002; this row is only
   the editing surface behind it.)
+- The Workshop's origin fields (ADR-002 U5b, `src/features/workshop/originFields.tsx`):
+  a species' ability scores, fly, swim and climb speeds, blindsight, defenses,
+  proficiencies, languages, spells and every size; a feat's proficiencies,
+  expertise, senses, spells and prerequisites; an optional feature's
+  prerequisites; and the spells an item casts. A shape the fields cannot show
+  (alternatives, a choice of spell, a shared daily count) is kept as written.
+  Subraces have an editor of their own (`editors/SubraceEditor.tsx`), listed
+  on a saved species, and a feat's benefits carry effect cards of their own.
+  Left out: a species' senses beyond darkvision and blindsight, which the
+  engine does not read; a copy of an official item with a built-in spell row
+  still casts the row's spells, not the edited list; no box writes a speed
+  "as fast as walking" (one read is kept); a subrace trait cannot be marked to
+  replace its species' trait of that name (`data.overwrite`, kept when read);
+  the subrace's species list offers the species versions the builder offers;
+  a copy of a subrace cannot hand a field it replaces back to its species
+  (emptied, it is none); the subrace links leave the species editor without
+  the unsaved-changes question, as the subclass links do; two subraces of one
+  name in one collection clash, whatever species each names.
 - Add regression fixtures that exercise the documented export-format
   compatibility matrix (the format itself is documented in
   `docs/export-format.md`).
