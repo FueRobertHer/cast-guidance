@@ -17,7 +17,7 @@
 import { invalidateRegistry } from '@/data5e/registry';
 import { packGuidance, packName } from '@/data5e/rulePack';
 import { addedSpellPoolKey } from '@/engine/effects/addedSpells';
-import { parseSpellRef, spellPoolKey } from '@/engine/effects/additionalSpells';
+import { parseSpellRef } from '@/engine/effects/additionalSpells';
 import { migrateCharacter } from '@/engine/migrate';
 import {
   type ActiveEffect,
@@ -68,6 +68,8 @@ export interface RepointReport {
   changes: Repoint[];
   /** The characters re-pointed, by id. */
   characters: string[];
+  /** Characters that could not be read (a newer app's, a broken row), left as they were. */
+  skipped: string[];
   /** The player's own rule packs whose changes followed, by file id. */
   packs: string[];
   /**
@@ -105,6 +107,13 @@ interface Change extends Repoint {
   renamed: boolean;
   /** Its pick keys' `<prefix>:<uid>` pattern, when its type has one. */
   keys?: RegExp;
+  /**
+   * The character holds this very entry by its ref (an added spell, a class's
+   * levels). What names it by its name alone (an added spell's pool, an
+   * effect's class) follows a rename only then: another book's entry may
+   * have the name.
+   */
+  held?: boolean;
 }
 
 /** The pick key prefixes a type's uid follows (`class:wizard|phb:skill:0`). */
@@ -122,6 +131,19 @@ const KEY_PREFIXES: Readonly<Record<string, readonly string[]>> = {
   baseitem: ['item', 'spells', 'attached'],
 };
 
+/**
+ * The type whose own picks each borrowed prefix keys: an optional feature's
+ * picks sit under its host's `class:`, `subclass:` or `feat:`, and a subrace's
+ * under `race:`, beside those of an entry of that type with the same name and
+ * book. While that entry stays where it was, the keys are taken to be its.
+ */
+const OWNER_OF: Readonly<Record<string, string>> = {
+  race: 'race',
+  class: 'class',
+  subclass: 'subclass',
+  feat: 'feat',
+};
+
 /** Types whose name a built-in pick's key holds after the uid (`feat:<uid>:skill:<name>`). */
 const LABELLED = new Set(['feat', 'race', 'subrace', 'item', 'baseitem']);
 
@@ -130,18 +152,28 @@ const ORIGINS = new Set([...Object.keys(KEY_PREFIXES)]);
 
 const esc = (s: string) => s.replaceAll(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
-function changesOf(list: readonly Repoint[]): Change[] {
+/**
+ * `list` as the walker reads it. `stays` says whether an entry of a type, by
+ * its uid, is still where it was once the move or the rename is made.
+ */
+function changesOf(
+  list: readonly Repoint[],
+  stays: (type: string, uid: string) => boolean = () => false,
+): Change[] {
   return list.map((r) => {
     const was = refUid(r.from);
     const now = refUid(r.to);
     const renamed = r.from.name.trim().toLowerCase() !== r.to.name.trim().toLowerCase();
-    const prefixes = KEY_PREFIXES[r.type];
+    const prefixes = KEY_PREFIXES[r.type]?.filter((p) => {
+      const owner = OWNER_OF[p];
+      return owner === undefined || owner === r.type || !stays(owner, was);
+    });
     const label =
       renamed && LABELLED.has(r.type)
         ? `(?::(skill|tool|weapon|save):(${esc(r.from.name.trim().toLowerCase())}))?`
         : '';
     const keys =
-      prefixes === undefined
+      prefixes === undefined || prefixes.length === 0
         ? undefined
         : new RegExp(`(^|:)(${prefixes.map(esc).join('|')}):${esc(was)}${label}(?=:|$)`, 'g');
     return { ...r, was, now, renamed, ...(keys === undefined ? {} : { keys }) };
@@ -336,13 +368,14 @@ const instance: Walk<string> = (value, c) => {
   return out;
 };
 
-/** A spell's part of a pool key, as `spellPoolKey` writes it. */
-const slug = (name: string) => spellPoolKey('', [name]).slice('spell::'.length);
-
 /**
  * A pool's key: a granted spell's pool is `spell:<origin uid>:<spells>`, an
  * added spell's `spell:added:<name>`. Other pools are keyed by what their
  * entry's effects name them, which neither a move nor a rename changes.
+ *
+ * A granted pool's spells are named as the grant writes them, and a grant in
+ * an entry is not followed (`repointAll`), so a renamed spell keeps its place
+ * in the key: the grant still names it so.
  */
 const poolKey: Walk<string> = (value, c) => {
   if (typeof value !== 'string') return value;
@@ -350,15 +383,13 @@ const poolKey: Walk<string> = (value, c) => {
   for (const x of c) {
     const at = `spell:${x.was}:`;
     if (ORIGINS.has(x.type) && key.startsWith(at)) key = `spell:${x.now}:${key.slice(at.length)}`;
-    if (x.type !== 'spell' || !x.renamed) continue;
-    if (key === addedSpellPoolKey(x.from.name)) key = addedSpellPoolKey(x.to.name);
-    else if (key.startsWith('spell:') && !key.startsWith('spell:added:')) {
-      const cut = key.lastIndexOf(':') + 1;
-      const spells = key.slice(cut).split('+');
-      const old = slug(x.from.name);
-      if (spells.includes(old)) {
-        key = key.slice(0, cut) + spells.map((s) => (s === old ? slug(x.to.name) : s)).join('+');
-      }
+    if (
+      x.type === 'spell' &&
+      x.renamed &&
+      x.held === true &&
+      key === addedSpellPoolKey(x.from.name)
+    ) {
+      key = addedSpellPoolKey(x.to.name);
     }
   }
   return key;
@@ -376,7 +407,7 @@ const effect: Walk<unknown> = (value, c) => {
     if (x.renamed && x.type === 'condition' && value.kind === 'conditionImmune') {
       if (eq(value.condition, x.from.name)) set('condition', x.to.name);
     }
-    if (x.renamed && x.type === 'class') {
+    if (x.renamed && x.type === 'class' && x.held === true) {
       if (eq(value.className, x.from.name)) set('className', x.to.name);
       if (isRecord(value.on) && eq(value.on.className, x.from.name)) {
         set('on', { ...value.on, className: x.to.name });
@@ -390,8 +421,12 @@ const effect: Walk<unknown> = (value, c) => {
 
 const effects = list(effect);
 
-/** A source the character depends on, for its export: the one an entry moved to joins it. */
-const deps: Walk<string[]> = (value, c) => {
+/**
+ * The sources a character depends on, for its export, with the one an entry
+ * it holds moved to. Only for a character the walk re-pointed: the old source
+ * alone says nothing of which of its entries the character holds.
+ */
+function withDeps(value: unknown, c: readonly Change[]): unknown {
   if (!Array.isArray(value)) return value;
   const have = new Set(value.map(lower));
   const add: string[] = [];
@@ -407,7 +442,7 @@ const deps: Walk<string[]> = (value, c) => {
     }
   }
   return add.length === 0 ? value : [...value, ...add];
-};
+}
 
 const CLASS_LEVEL: Walkers<ClassLevelEntry> = {
   ref: ref('class'),
@@ -540,7 +575,8 @@ const DOC: Walkers<CharacterDoc> = {
   // Skills and the sheet's own numbers.
   overrides: null,
   play: fields(PLAY),
-  homebrewDeps: deps,
+  // Joined after the walk, by a character it re-pointed (`withDeps`).
+  homebrewDeps: null,
   notes: null,
 };
 
@@ -567,7 +603,34 @@ export const FIELD_WALKERS = {
  */
 export function repointDoc(doc: CharacterDoc, changes: readonly Repoint[]): CharacterDoc {
   if (changes.length === 0) return doc;
-  return fields(DOC)(doc, changesOf(changes)) ?? doc;
+  return walkDoc(doc, changesOf(changes));
+}
+
+/** Whether `list` holds the entry `uid` names, at `at` of an item. */
+const holdsRef = (list: unknown, at: (v: Row) => unknown, uid: string): boolean =>
+  Array.isArray(list) &&
+  list.some((v) => {
+    const r = isRecord(v) ? at(v) : undefined;
+    return (
+      isRecord(r) &&
+      typeof r.name === 'string' &&
+      typeof r.source === 'string' &&
+      refUid({ name: r.name, source: r.source }) === uid
+    );
+  });
+
+function walkDoc(doc: CharacterDoc, c: readonly Change[]): CharacterDoc {
+  const held = (x: Change) =>
+    x.type === 'spell'
+      ? holdsRef(doc.addedSpells, (a) => a.spell, x.was)
+      : x.type === 'class' && holdsRef(doc.classes, (l) => l.ref, x.was);
+  const mine = c.map((x) => ({ ...x, held: held(x) }));
+  const walked = fields(DOC)(doc, mine) ?? doc;
+  if (walked === doc) return doc;
+  const deps = withDeps(walked.homebrewDeps, mine);
+  return deps === walked.homebrewDeps
+    ? walked
+    : { ...walked, homebrewDeps: deps as CharacterDoc['homebrewDeps'] };
 }
 
 // ---------------------------------------------------------------------------
@@ -657,7 +720,22 @@ function carryClass(json: Row, x: Change): void {
  * files (`owned`, written back where changed), imported packs (listed), and
  * every character, with a new revision so an open sheet sees the change.
  */
-async function repointAll(c: readonly Change[], owned: Map<string, Open>): Promise<RepointReport> {
+async function repointAll(
+  list: readonly Repoint[],
+  owned: Map<string, Open>,
+): Promise<RepointReport> {
+  const files = [...owned.values()];
+  const stays = (type: string, uid: string) =>
+    files.some((f) =>
+      entriesOf(f.json, type).some(
+        (e) =>
+          isRecord(e) &&
+          typeof e.name === 'string' &&
+          typeof e.source === 'string' &&
+          refUid({ name: e.name, source: e.source }) === uid,
+      ),
+    );
+  const c = changesOf(list, stays);
   const packs: string[] = [];
   for (const f of owned.values()) {
     for (const x of c) {
@@ -688,22 +766,28 @@ async function repointAll(c: readonly Change[], owned: Map<string, Open>): Promi
 
   const rows = await db.characters.toArray();
   const changed: CharacterRow[] = [];
-  const changes = c.map(({ type, from, to }) => ({ type, from, to }));
+  const skipped: string[] = [];
   for (const row of rows) {
-    // Synchronous, so a row that cannot be read is skipped without catching a write.
-    let next: CharacterDoc | undefined;
+    // Synchronous, so only the read is caught, never a write.
+    let doc: CharacterDoc;
     try {
       const { revision: _, ...stored } = row;
-      const doc = migrateCharacter(stored);
-      const walked = repointDoc(doc, changes);
-      next = walked === doc ? undefined : walked;
+      doc = migrateCharacter(stored);
     } catch {
-      next = undefined;
+      skipped.push(row.id);
+      continue;
     }
-    if (next !== undefined) changed.push({ ...next, revision: randomId() });
+    const walked = walkDoc(doc, c);
+    if (walked !== doc) changed.push({ ...walked, revision: randomId() });
   }
   if (changed.length > 0) await db.characters.bulkPut(changed);
-  return { changes, characters: changed.map((r) => r.id), packs, imported };
+  return {
+    changes: list.map(({ type, from, to }) => ({ type, from, to })),
+    characters: changed.map((r) => r.id),
+    skipped,
+    packs,
+    imported,
+  };
 }
 
 function defined<T>(rows: ReadonlyArray<T | undefined>): T[] {
@@ -721,7 +805,7 @@ export async function repointRename(
   to: EntityRef,
 ): Promise<RepointReport | undefined> {
   if (from.name === to.name && from.source === to.source) return undefined;
-  return repointAll(changesOf([{ type, from, to }]), await openOwned());
+  return repointAll([{ type, from, to }], await openOwned());
 }
 
 // ---------------------------------------------------------------------------
@@ -798,7 +882,7 @@ function moveOne(
   to: Open,
   want: EntryKey & { type: string },
   source: string,
-): Change {
+): Repoint {
   const { type } = want;
   const left = entriesOf(from.json, type);
   const at = left.findIndex((e) => isEntry(e, want));
@@ -817,6 +901,11 @@ function moveOne(
     if (left.some((o) => isRecord(o) && own.peer(o, before))) {
       throw new MoveRefused(
         `another ${type} in "${from.file.fileName}" shares its features with ${before.name}`,
+      );
+    }
+    if (into.some((o) => isRecord(o) && own.peer(o, after))) {
+      throw new MoveRefused(
+        `another ${type} in "${to.file.fileName}" would share its features with ${before.name}`,
       );
     }
     const theirs = entriesOf(from.json, own.type);
@@ -843,9 +932,11 @@ function moveOne(
     if (type === 'class') OWNED.class?.carry?.(f.json, before, after);
     if (type === 'class' || type === 'subclass') eachFeatureRef(f.json, fix);
   }
-  return changesOf([
-    { type, from: { name: before.name, source: before.source }, to: { name: before.name, source } },
-  ])[0] as Change;
+  return {
+    type,
+    from: { name: before.name, source: before.source },
+    to: { name: before.name, source },
+  };
 }
 
 /**

@@ -87,13 +87,6 @@ const CASES: Record<string, Case> = {
     },
     check: (d) => expect(d.customEffects[0]).toMatchObject({ spell: at('Ember Lance', NEW) }),
   },
-  'doc.homebrewDeps': {
-    changes: [move('feat', "Ogre's Grip")],
-    give: (d) => {
-      d.homebrewDeps = [OLD];
-    },
-    check: (d) => expect(d.homebrewDeps).toEqual([OLD, NEW]),
-  },
   'play.foretold': {
     changes: [move('feat', "Ogre's Grip")],
     give: (d) => {
@@ -186,6 +179,7 @@ const CASES: Record<string, Case> = {
   'activeEffects.parts': {
     changes: [rename('class', 'Brute', 'Bruiser')],
     give: (d) => {
+      d.classes = [{ ref: at('Brute'), levels: 1, hp: [] }];
       d.play.activeEffects = [
         {
           id: 'a1',
@@ -287,10 +281,35 @@ describe('repointDoc', () => {
     expect(repointDoc(doc, [move('race', 'Stonefolk')]).race).toEqual(at('Stonefolk', NEW));
   });
 
-  it('adds the new source to what the character depends on once', () => {
+  it('adds the new source to what a character it re-pointed depends on, once', () => {
     const doc = fresh();
+    doc.race = at('Stonefolk');
+    doc.homebrewDeps = [OLD];
+    expect(repointDoc(doc, [move('race', 'Stonefolk')]).homebrewDeps).toEqual([OLD, NEW]);
     doc.homebrewDeps = [OLD, NEW];
-    expect(repointDoc(doc, [move('feat', 'Grip')]).homebrewDeps).toEqual([OLD, NEW]);
+    expect(repointDoc(doc, [move('race', 'Stonefolk')]).homebrewDeps).toEqual([OLD, NEW]);
+  });
+
+  it('leaves a character that depends on the old source but holds nothing that moved', () => {
+    const doc = fresh();
+    doc.race = at('Elsewhere');
+    doc.homebrewDeps = [OLD];
+    expect(repointDoc(doc, [move('race', 'Stonefolk')])).toBe(doc);
+  });
+
+  it('renames a class an effect names only on a character with that very class', () => {
+    const doc = fresh();
+    doc.classes = [{ ref: at('Brute', 'PHB'), levels: 1, hp: [] }];
+    doc.customEffects = [
+      {
+        id: 'e1',
+        kind: 'spellDcBonus',
+        amount: 1,
+        className: 'Brute',
+        origin: { label: 'Mine', uid: 'mine', type: 'custom' },
+      } as unknown as CharacterDoc['customEffects'][number],
+    ];
+    expect(repointDoc(doc, [rename('class', 'Brute', 'Bruiser')])).toBe(doc);
   });
 
   it('reads a field that is missing or the wrong shape as holding nothing', () => {
@@ -444,27 +463,32 @@ describe('repointDoc on picks', () => {
 });
 
 describe('repointDoc on pools', () => {
-  const pools = (keys: string[], changes: Repoint[]) => {
+  const pools = (keys: string[], changes: Repoint[], added?: EntityRef) => {
     const doc = fresh();
     doc.play.resources = keys.map((key) => ({ key, used: 1 }));
+    if (added !== undefined) doc.addedSpells = [{ spell: added, ability: 'int', uses: 'long' }];
     return repointDoc(doc, changes).play.resources.map((r) => r.key);
   };
 
-  it('re-points the origin of a granted spell’s pool, and a renamed spell in it', () => {
+  it('re-points the origin of a granted spell’s pool, and keeps a renamed spell’s place in it', () => {
+    // A grant names its spells as it writes them, and a grant is not followed.
     expect(
       pools(
         ['spell:stonefolk|myhomebrew:ember-lance+aid', 'spell:testfolk|tst:ember-lance', 'rage'],
         [move('race', 'Stonefolk'), rename('spell', 'Ember Lance', 'Ember Spear')],
       ),
-    ).toEqual(['spell:stonefolk|hb2:ember-spear+aid', 'spell:testfolk|tst:ember-spear', 'rage']);
+    ).toEqual(['spell:stonefolk|hb2:ember-lance+aid', 'spell:testfolk|tst:ember-lance', 'rage']);
   });
 
-  it('renames an added spell’s pool, which a move leaves alone', () => {
-    expect(pools(['spell:added:ember lance'], [move('spell', 'Ember Lance')])).toEqual([
-      'spell:added:ember lance',
+  it('renames the pool of the very spell the character added, which a move leaves alone', () => {
+    const key = ['spell:added:ember lance'];
+    expect(pools(key, [move('spell', 'Ember Lance')], at('Ember Lance'))).toEqual(key);
+    expect(pools(key, [rename('spell', 'Ember Lance', 'Ember Spear')], at('Ember Lance'))).toEqual([
+      'spell:added:ember spear',
     ]);
+    // Another book's spell of that name keeps its pool.
     expect(
-      pools(['spell:added:ember lance'], [rename('spell', 'Ember Lance', 'Ember Spear')]),
-    ).toEqual(['spell:added:ember spear']);
+      pools(key, [rename('spell', 'Ember Lance', 'Ember Spear')], at('Ember Lance', 'PHB')),
+    ).toEqual(key);
   });
 });

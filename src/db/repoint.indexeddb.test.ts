@@ -211,7 +211,9 @@ describe('homebrewRepo.moveEntries', () => {
     const ash = await collection('Ash Book', ASH, { feat: [keenStudy(ASH)] });
     const bone = await collection('Bone Book', BONE);
     await putCharacter(grog());
+    // Bram depends on the collection, but holds nothing that moves.
     const other = newCharacterDoc('bram', 'Bram', 'test-tag');
+    other.homebrewDeps = [ASH];
     await putCharacter(other);
     const was = await db.characters.get('grog');
 
@@ -230,6 +232,7 @@ describe('homebrewRepo.moveEntries', () => {
         },
       ],
       characters: ['grog'],
+      skipped: [],
       packs: [],
       imported: [],
     });
@@ -353,6 +356,50 @@ describe('homebrewRepo.moveEntries', () => {
     expect(await db.homebrewJson.get(imported.id)).toEqual(importedBefore);
   });
 
+  it('leaves a feat’s picks alone when an optional feature of its name and book moves', async () => {
+    const twin = (extra: Row) => ({ name: 'Twin Edge', source: ASH, entries: ['Two.'], ...extra });
+    const ash = await collection('Ash Book', ASH, {
+      feat: [twin({ skillProficiencies: [{ any: 1 }] })],
+      optionalfeature: [twin({ featureType: ['FS:T'], skillProficiencies: [{ any: 1 }] })],
+    });
+    const bone = await collection('Bone Book', BONE);
+    const doc = newCharacterDoc('osk', 'Osk', 'test-tag');
+    doc.choices = {
+      'class:warrior|tst:asi:4:feat': 'twin edge|ash',
+      'feat:twin edge|ash:asi4:skill:0': ['Arcana'],
+      'class:warrior|tst:optfeature:FS:T': ['twin edge|ash'],
+      'spells-of:twin edge|ash:0': ['Aid|TST'],
+    };
+    await putCharacter(doc);
+    await homebrewRepo.moveEntries({
+      from: ash,
+      to: bone,
+      entries: [{ type: 'optionalfeature', name: 'Twin Edge', source: ASH }],
+    });
+    expect((await characterRepo.get('osk'))?.choices).toEqual({
+      'class:warrior|tst:asi:4:feat': 'twin edge|ash',
+      'feat:twin edge|ash:asi4:skill:0': ['Arcana'],
+      'class:warrior|tst:optfeature:FS:T': ['twin edge|bone'],
+      'spells-of:twin edge|bone:0': ['Aid|TST'],
+    });
+  });
+
+  it('names a character it could not read, and moves the rest', async () => {
+    const ash = await collection('Ash Book', ASH, { feat: [keenStudy(ASH)] });
+    const bone = await collection('Bone Book', BONE);
+    await putCharacter(grog());
+    const newer = { ...grog(), id: 'later', schemaVersion: 999 };
+    await db.characters.put({ ...newer, revision: 'r0' });
+    const report = await homebrewRepo.moveEntries({
+      from: ash,
+      to: bone,
+      entries: [{ type: 'feat', name: 'Keen Study', source: ASH }],
+    });
+    expect(report.characters).toEqual(['grog']);
+    expect(report.skipped).toEqual(['later']);
+    expect(await db.characters.get('later')).toEqual({ ...newer, revision: 'r0' });
+  });
+
   describe('refuses a move it cannot make, and changes nothing', () => {
     const refusals: Array<
       [string, (ids: { ash: string; bone: string }) => Promise<MoveRequest>, unknown]
@@ -446,6 +493,15 @@ describe('homebrewRepo.moveEntries', () => {
         MoveRefused,
       ],
       [
+        'a subclass whose features one of its short name in the target would share',
+        async ({ ash, bone }) => {
+          const twin = { ...(ashContent(BONE).subclass as Row[])[0], name: 'Way of Ashes' };
+          await homebrewRepo.saveEditable(bone, { ...(await content(bone)), subclass: [twin] });
+          return { from: ash, to: bone, entries: EVERY.filter((e) => e.type === 'subclass') };
+        },
+        MoveRefused,
+      ],
+      [
         'a subclass whose features another of its short name shares',
         async ({ ash, bone }) => {
           const json = await content(ash);
@@ -525,6 +581,7 @@ describe('homebrewRepo.saveEntry, renaming', () => {
           },
         ],
         characters: ['grog'],
+        skipped: [],
         packs: [],
         imported: [],
       },
@@ -557,7 +614,10 @@ describe('homebrewRepo.saveEntry, renaming', () => {
       { role: 'changes' },
     );
     const doc = newCharacterDoc('hild', 'Hild', 'test-tag');
-    doc.feats = [{ ref: { name: 'Alert', source: 'PHB' }, instanceId: 'asi4@warrior|tst' }];
+    doc.feats = [
+      { ref: { name: 'Alert', source: 'PHB' }, instanceId: 'asi4@warrior|tst' },
+      { ref: { name: 'Lucky', source: 'PHB' }, instanceId: 'bonus' },
+    ];
     await putCharacter(doc);
     const result = await homebrewRepo.saveEntry(
       'feat',
@@ -565,6 +625,18 @@ describe('homebrewRepo.saveEntry, renaming', () => {
       { role: 'changes', replaces: { name: 'Alert', source: 'PHB' } },
     );
     expect(result).not.toHaveProperty('repointed');
+    // Nor when the Workshop opens a change by its file, as it does.
+    await homebrewRepo.saveEntry(
+      'feat',
+      { name: 'Lucky', source: 'PHB', entries: ['Changed.'] },
+      { role: 'changes' },
+    );
+    const byFile = await homebrewRepo.saveEntry(
+      'feat',
+      { name: 'Luckier', source: 'PHB', entries: ['Changed.'] },
+      { fileId: result.fileId, replaces: { name: 'Lucky', source: 'PHB' } },
+    );
+    expect(byFile).toEqual({ fileId: result.fileId, created: false });
     expect((await db.characters.get('hild'))?.revision).toBe('r0');
   });
 

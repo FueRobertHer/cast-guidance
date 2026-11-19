@@ -883,11 +883,13 @@ export const homebrewRepo = {
         await putHomebrewRow({ ...row, json, counts: homebrewEntityCounts(json) });
         return { fileId: row.id, created: true };
       }
-      const id = (file as HomebrewFile).id;
+      const { id, role } = file as HomebrewFile;
       if (!(await rewrite(id, json)))
         throw new Error('that homebrew file is no longer on this device');
+      // The changes file is opened by its id too: a change to the books is
+      // found by the book's entry, so a character holding it keeps it.
       const repointed =
-        walker !== undefined && isRecord(before)
+        walker !== undefined && isRecord(before) && role !== 'changes'
           ? await walker.repointRename(
               type,
               { name: String(before.name), source: String(before.source) },
