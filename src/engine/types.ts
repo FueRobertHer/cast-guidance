@@ -109,7 +109,11 @@ export interface PlayState {
   conditions: Array<{ id: string; level?: number; ignored?: boolean }>;
   deathSaves: { success: number; fail: number };
   /** `level` is the slot a cast spent, which its dice on later turns scale with. */
-  concentratingOn?: { label: string; level?: number };
+  /**
+   * `spent`: a spell whose extra damage is for the next hit alone (a 2014
+   * smite) has dealt it, though the spell runs on.
+   */
+  concentratingOn?: { label: string; level?: number; spent?: true };
   /** keyed to derived resources (rage, ki, …) */
   resources: Array<{ key: string; used: number }>;
   inspiration: boolean;
@@ -130,6 +134,8 @@ export interface PlayState {
     extra?: string[];
     attacks?: number;
     once?: string[];
+    /** Action Surge used this turn: one more Attack action's attacks (at most one a turn). */
+    surges?: number;
   };
   /**
    * What the player put on a weapon to add to its damage (a coated blade, a

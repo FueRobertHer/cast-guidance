@@ -321,13 +321,14 @@ export function castsByPrompt(c: SpellCast): boolean {
 
 /**
  * The spell's dice at `level`: the chip that casts it, or the damage its
- * attack's hit offers; with `label`, its roll of that label.
+ * attack's hit offers; with `label`, its roll of that label, in any case (the
+ * 2024 text writes "Fire damage", the 2014 "fire damage").
  */
 export function castDiceAt(c: SpellCast, level: number, label?: string): CastDice | undefined {
   const rolls = castRolls(c, level);
   const roll =
     label !== undefined
-      ? rolls.find((r) => r.label === label)
+      ? rolls.find((r) => r.label.toLowerCase() === label.toLowerCase())
       : c.attack
         ? rolls.find((r) => r.variant === 'damage')
         : rolls[0];

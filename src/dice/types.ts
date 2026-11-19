@@ -181,7 +181,17 @@ export interface RollResult {
      * `attackInPlay`) to roll its dice twice. `critFrom`, when below 20, is
      * the lowest natural that crits, for a reroll to settle it again.
      */
-    attack?: { by: string; of: string; crit: boolean; critFrom?: number };
+    attack?: {
+      by: string;
+      of: string;
+      crit: boolean;
+      critFrom?: number;
+      /**
+       * What was claimed for this roll alone in the prompt (a −5 to hit for
+       * Great Weapon Master's +10), for the damage that goes with it.
+       */
+      claimed?: string[];
+    };
   };
 }
 

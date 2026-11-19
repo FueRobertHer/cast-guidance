@@ -52,6 +52,7 @@ import type {
   DerivedSheet,
   PlayState,
   SlotPrice,
+  SpellcastingBlock,
   WeaponExtra,
 } from '@/engine/types';
 import { choiceTitle, RuleSheet } from '@/features/settings/RuleSheet';
@@ -94,6 +95,8 @@ import {
   applyRestore,
 } from '../actionUse';
 import {
+  castDiceAt,
+  castPlan,
   grantBadgeTitle,
   grantCast,
   grantLimitWords,
@@ -116,7 +119,16 @@ import {
   type TurnExtra,
   useIgnoreOnce,
 } from '../d20Tests';
-import { type DamageAdd, damageAdds, damageParts, entriesText, oncePerTurn } from '../damageAdds';
+import {
+  type DamageAdd,
+  damageAdds,
+  damageParts,
+  entriesText,
+  featReaches,
+  hitSpell,
+  oncePerTurn,
+  weaponFeats,
+} from '../damageAdds';
 import {
   andList,
   attackDrop,
@@ -606,23 +618,31 @@ export function Component() {
    * it crit, inside the character's crit range: the damage that goes with it
    * (`attackDamage`) reads that to roll its dice twice.
    */
-  const rollAttack = (modifier: number, label: string, test: D20Test, of: string) => () =>
-    d20Ask(`1d20${fmt(modifier)}`, {
-      label,
-      effects: attackEffects,
-      ignored: ignore.take('attack', attackEffects),
-      riders: pricedRollEffects(rollEffects(sheet, test), sheet, doc.play),
-      settlesOnNatural: true,
-      thisTurn: turnExtras(test),
-      attack: {
-        by: doc.id,
-        of,
-        critFrom: Math.min(
-          sheet.critRange?.min ?? 20,
-          test.kind === 'attack' && test.attack === 'weapon' ? weaponCritFrom : 20,
-        ),
-      },
-    });
+  const rollAttack =
+    (
+      modifier: number,
+      label: string,
+      test: D20Test,
+      of: string,
+      claims: readonly TurnExtra[] = [],
+    ) =>
+    () =>
+      d20Ask(`1d20${fmt(modifier)}`, {
+        label,
+        effects: attackEffects,
+        ignored: ignore.take('attack', attackEffects),
+        riders: pricedRollEffects(rollEffects(sheet, test), sheet, doc.play),
+        settlesOnNatural: true,
+        thisTurn: [...turnExtras(test), ...claims],
+        attack: {
+          by: doc.id,
+          of,
+          critFrom: Math.min(
+            sheet.critRange?.min ?? 20,
+            test.kind === 'attack' && test.attack === 'weapon' ? weaponCritFrom : 20,
+          ),
+        },
+      });
   /** Damage that goes with the attack `of`, or with any of this character's attacks. */
   const attackDamage = (of?: string, critDice?: { dice: string; source: string }) => ({
     by: doc.id,
@@ -939,6 +959,34 @@ export function Component() {
   /** Attacks one Attack action gives (Extra Attack), the most any feature gives. */
   const perAction = attacksPerAction(sheet.features);
   /**
+   * Weapon attacks the turn's Attack actions give: one action's, and as many
+   * again after Action Surge (once a turn, even with two uses).
+   */
+  const attacksAllowed = (p: PlayState) => perAction * (1 + Math.min(1, p.turn?.surges ?? 0));
+  /** The feats that change a weapon's damage (Great Weapon Master, Savage Attacker). */
+  const feats = weaponFeats(sheet.features);
+  /** Action Surge used: one more action this turn, and with it one more Attack action. */
+  const markSurge = (d: CharacterDoc) => {
+    const turn = d.play.turn ?? { action: false, bonus: false, reaction: false };
+    turn.surges = Math.min(1, (turn.surges ?? 0) + 1);
+    d.play.turn = turn;
+  };
+  /**
+   * What the attack prompt offers to claim for a weapon's roll alone: a −5 to
+   * hit for +10 damage (2014 Great Weapon Master, Sharpshooter), which its
+   * damage then adds.
+   */
+  const powerClaims = (a: AttackRow): TurnExtra[] =>
+    feats
+      .filter((f) => f.kind === 'power' && featReaches(f, a))
+      .map((f) => ({
+        source: f.source,
+        bonus: -5,
+        cost: '+10 damage if it hits',
+        declare: () => undefined,
+        thisRoll: true,
+      }));
+  /**
    * A weapon attack made: the first of the turn takes the action, and Extra
    * Attack's later ones only count, so they spend nothing more of the turn.
    */
@@ -952,16 +1000,19 @@ export function Component() {
       },
       (d) => {
         const made = d.play.turn?.attacks ?? 1;
-        return made > 1 && perAction > 1
-          ? `Attacked with ${label} (${String(made)} of ${String(perAction)})`
+        const allowed = attacksAllowed(d.play);
+        return made > 1 && allowed > 1 && made <= allowed
+          ? `Attacked with ${label} (${String(made)} of ${String(allowed)})`
           : `Attacked with ${label}`;
       },
     );
   /** The Attack action's next attack, in words, while Extra Attack leaves one: "Attack 2 of 2". */
   const nextAttack = (): string | undefined => {
-    const made = playNow().turn?.attacks ?? 0;
-    return perAction > 1 && made > 0 && made < perAction
-      ? `Attack ${String(made + 1)} of ${String(perAction)}`
+    const now = playNow();
+    const made = now.turn?.attacks ?? 0;
+    const allowed = attacksAllowed(now);
+    return allowed > 1 && made > 0 && made < allowed
+      ? `Attack ${String(made + 1)} of ${String(allowed)}`
       : undefined;
   };
   /** Marks a once-a-turn extra used this turn (Sneak Attack), by its row key. */
@@ -1031,6 +1082,23 @@ export function Component() {
    * its Use is. A damage action spends its uses and marks a once-a-turn one;
    * one paid with a slot brings its tiles; Bardic Inspiration spends the effect.
    */
+  /** An add's extras: itself, and with it what it adds against some creatures (Divine Smite's d8). */
+  const addExtras = (add: DamageAdd, usedThisTurn: readonly string[]): DamageExtra[] => {
+    const own = addExtra(add, usedThisTurn);
+    const { against } = add;
+    return against === undefined ? [own] : [own, againstExtra(own, against)];
+  };
+  /** Dice an extra adds against some creatures, which roll only with it: the player says. */
+  const againstExtra = (of: DamageExtra, against: { dice: string; who: string }): DamageExtra => ({
+    key: `${of.key}:against`,
+    dice: against.dice,
+    source: `${of.source} vs ${against.who}`,
+    damageType: of.damageType,
+    label: `${of.source} damage vs ${against.who}`,
+    kind: 'add',
+    tag: 'if it is one',
+    needs: of.key,
+  });
   const addExtra = (add: DamageAdd, usedThisTurn: readonly string[]): DamageExtra => {
     const base = {
       key: `add:${add.key}`,
@@ -1079,6 +1147,247 @@ export function Component() {
       },
     };
   };
+  /** A class spell's cast, as its row and a hit's damage prompt (a smite) both make it. */
+  const classSpellCast = (
+    sc: SpellcastingBlock,
+    ref: { name: string; source: string },
+  ): SpellCast => {
+    const entity = spellEntity(ref.name, ref.source);
+    return {
+      doc,
+      sheet,
+      update,
+      hp: hpNow,
+      info: {
+        name: ref.name,
+        source: ref.source,
+        concentration: spellConcentrationOf(ref.name, ref.source),
+        economy: spellCastEconomy(ref.name, ref.source),
+      },
+      entity,
+      level: spellLevelOf(ref.name, ref.source),
+      block: sc,
+      abilityModifier: sheet.abilities[sc.ability].mod,
+      attack: hasSpellAttack(entity),
+      entities,
+    };
+  };
+  /**
+   * A granted spell's cast, and the uses its own pool has left ("1/day"). An
+   * always-prepared grant casts with class slots, as a class spell does; an
+   * innate grant spends its own pool, or an item's charges, through the same
+   * prompt.
+   */
+  const grantSpellCast = (
+    g: DerivedSheet['grantedSpells'][number],
+  ): {
+    cast: SpellCast;
+    remaining: number | undefined;
+    limited: DerivedSheet['resources'][number] | undefined;
+  } => {
+    const entity = spellEntity(g.name, g.source);
+    const block =
+      sheet.spellcasting.find((sc) => sc.ability === g.ability) ??
+      (g.usage === 'prepared' ? sheet.spellcasting[0] : undefined);
+    const numbers = grantCast(g, sheet);
+    // "1/day" grants carry their own pool; casting spends from it.
+    const limited =
+      g.resourceKey !== undefined
+        ? sheet.resources.find((r) => r.key === g.resourceKey)
+        : undefined;
+    const remaining = limited !== undefined ? limited.max - usedOf(limited.key) : undefined;
+    const cast: SpellCast = {
+      doc,
+      sheet,
+      update,
+      hp: hpNow,
+      info: {
+        name: g.name,
+        source: g.source,
+        concentration: spellConcentrationOf(g.name, g.source),
+        economy: spellCastEconomy(g.name, g.source),
+      },
+      entity,
+      level: spellLevelOf(g.name, g.source),
+      block: g.usage === 'prepared' ? block : undefined,
+      className: g.className,
+      abilityModifier: numbers.mod,
+      grantPool:
+        limited === undefined ? undefined : { key: limited.key, label: g.origin, max: limited.max },
+      numbers: grantNumbersKey(g),
+      attack: numbers.attack !== undefined && hasSpellAttack(entity),
+      entities,
+    };
+    return { cast, remaining, limited };
+  };
+  /**
+   * The spells the character can cast now, each as its row casts it: a
+   * granted one first (it may carry a free use, as Paladin's Smite does), then
+   * each class's prepared spells, or its known ones where it prepares none.
+   */
+  const castableSpells = (): SpellCast[] => {
+    const out = sheet.grantedSpells.map((g) => grantSpellCast(g).cast);
+    for (const sc of sheet.spellcasting) {
+      const state = doc.spellcasting[sc.classUid];
+      if (state === undefined) continue;
+      const prepared = new Set(state.prepared.map((r) => `${r.name}|${r.source}`.toLowerCase()));
+      const prepares = sc.mode === 'prepared' || sc.mode === 'spellbook';
+      for (const ref of state.known) {
+        if (prepares && !prepared.has(`${ref.name}|${ref.source}`.toLowerCase())) continue;
+        out.push(classSpellCast(sc, ref));
+      }
+    }
+    return out;
+  };
+  /** Marks the spell concentrated on as having dealt its next hit's damage (a 2014 smite). */
+  const markSpent = (name: string) =>
+    update((d) => {
+      const focus = d.play.concentratingOn;
+      if (focus !== undefined && focus.label.toLowerCase() === name.toLowerCase())
+        d.play.concentratingOn = { ...focus, spent: true };
+    }, `Used ${name}`);
+  /**
+   * The spells that add damage to a hit with `a`, as the damage prompt offers
+   * them (`hitSpell`). One cast as the hit lands (a 2024 smite) brings its ways
+   * to cast as tiles, and Roll casts it: the slot, the bonus action, and
+   * concentration where it needs it. One the character concentrates on adds
+   * its dice at the level it was cast: on to start when it runs on them or on
+   * the target they marked (Hex), else theirs to put on; a 2014 smite's is for
+   * the next hit alone. One whose damage an effect in play already rolls (a
+   * rider of its name) is left to that.
+   */
+  const spellExtras = (
+    a: AttackRow,
+    now: PlayState,
+    riders: readonly DamageRider[],
+  ): DamageExtra[] => {
+    const focus = now.concentratingOn;
+    const rolled = new Set([
+      ...riders.flatMap((r) => (r.label === undefined ? [] : [r.label.toLowerCase()])),
+      ...inPlay.map((e) => e.name.toLowerCase()),
+    ]);
+    const seen = new Set<string>();
+    const out: DamageExtra[] = [];
+    for (const c of castableSpells()) {
+      const name = c.info.name;
+      const lower = name.toLowerCase();
+      if (seen.has(lower) || rolled.has(lower)) continue;
+      const running = focus !== undefined && focus.label.toLowerCase() === lower;
+      const spell = hitSpell(c.entity, running);
+      if (spell === undefined) continue;
+      if (spell.need === 'melee' && a.ranged === true) continue;
+      if (spell.need === 'ranged' && a.ranged !== true) continue;
+      seen.add(lower);
+      const type = spell.damageType;
+      const label = `${name}${type === undefined ? '' : ` ${type}`} damage`;
+      const key = `spell:${lower}`;
+      let extra: DamageExtra;
+      if (spell.how === 'cast') {
+        extra = {
+          key,
+          dice: spell.dice,
+          source: name,
+          damageType: type,
+          label,
+          kind: 'add',
+          tag: 'spell',
+          diceLabel: label,
+          slot: () => castPlan(c),
+          ...(now.turn?.bonus === true
+            ? { note: 'It takes your bonus action, which is used this turn' }
+            : {}),
+        };
+      } else {
+        const spent = !spell.every && focus?.spent === true;
+        extra = {
+          key,
+          dice: castDiceAt(c, focus?.level ?? c.level, label)?.expr ?? spell.dice,
+          source: name,
+          damageType: type,
+          label,
+          kind: spell.on ? 'rider' : 'add',
+          tag: spell.every ? 'concentrating' : spent ? 'dealt already' : 'next hit',
+          note: spell.note,
+          ...(spent ? { on: false } : {}),
+          ...(spell.every
+            ? {}
+            : {
+                pay: () => {
+                  markSpent(name);
+                  return true;
+                },
+              }),
+        };
+      }
+      out.push(extra);
+      if (spell.against !== undefined) out.push(againstExtra(extra, spell.against));
+    }
+    return out;
+  };
+  /**
+   * What the character's feats add to a hit with `a`: the +10 a −5 claim on
+   * its attack bought (on; offered off when no attack of it is in play), the
+   * Proficiency Bonus with a Heavy weapon in the turn's Attack actions (on
+   * while attacks are left, else off), and Savage Attacker's weapon dice twice
+   * (on while unused this turn). Flat damage never doubles on a crit.
+   */
+  const featExtras = (a: AttackRow, now: PlayState): DamageExtra[] => {
+    const attack = attackInPlay();
+    const ofThis = attack !== undefined && attack.by === doc.id && attack.of === a.label;
+    const used = now.turn?.once ?? [];
+    const out: DamageExtra[] = [];
+    for (const f of feats) {
+      if (!featReaches(f, a)) continue;
+      const key = `feat:${f.source.toLowerCase()}`;
+      if (f.kind === 'power') {
+        const claimed = ofThis && attack.claimed?.includes(f.source) === true;
+        if (ofThis && !claimed) continue;
+        out.push({
+          key,
+          dice: '10',
+          source: f.source,
+          label: f.source,
+          kind: claimed ? 'rider' : 'add',
+          folds: true,
+          noCrit: true,
+          tag: claimed ? 'claimed' : 'if claimed',
+          ...(claimed ? {} : { note: 'Only if you took the −5 to hit' }),
+        });
+      } else if (f.kind === 'heavyMastery') {
+        const within = (now.turn?.attacks ?? 0) <= attacksAllowed(now);
+        out.push({
+          key,
+          dice: String(sheet.profBonus.value),
+          source: f.source,
+          label: f.source,
+          kind: within ? 'rider' : 'add',
+          folds: true,
+          noCrit: true,
+          tag: 'heavy weapon',
+          ...(within ? {} : { note: 'Only as part of the Attack action on your turn' }),
+        });
+      } else {
+        const spent = used.includes(key);
+        out.push({
+          key,
+          dice: '',
+          source: f.source,
+          label: f.source,
+          kind: 'add',
+          best: true,
+          on: !spent,
+          usedThisTurn: spent,
+          tag: 'once a turn',
+          note: 'Rolls the weapon’s dice twice and keeps the higher',
+          pay: () => {
+            update((d) => markOnce(d, key), `Used ${f.source}`);
+            return true;
+          },
+        });
+      }
+    }
+    return out;
+  };
   /** The effects in play whose riders (Enlarge's d4) roll with a weapon's damage chip. */
   const riderLift = (a: AttackRow, raised: readonly boolean[]) => [
     ...new Set(
@@ -1113,7 +1422,9 @@ export function Component() {
           }),
         ),
         ...(now.weaponExtras?.[weaponKey(a)] ?? []).map((w) => ownExtra(a, w)),
-        ...damageAdds(sheet, a, offers).map((add) => addExtra(add, used)),
+        ...damageAdds(sheet, a, offers).flatMap((add) => addExtras(add, used)),
+        ...spellExtras(a, now, riders),
+        ...featExtras(a, now),
       ];
       const critDice = extraCritDice(a, expr);
       return {
@@ -1972,11 +2283,12 @@ export function Component() {
             const used = play.turn?.[key] ?? false;
             // Extra Attack: how many of the Attack action's attacks are made.
             const made = play.turn?.attacks ?? 0;
+            const allowed = attacksAllowed(play);
             const attacksWords =
-              perAction > 1 && made > 0 && used
-                ? made <= perAction
-                  ? `${String(made)} of ${String(perAction)} attacks`
-                  : `${String(made)} attacks, ${String(perAction)} an action`
+              allowed > 1 && made > 0 && used
+                ? made <= allowed
+                  ? `${String(made)} of ${String(allowed)} attacks`
+                  : `${String(made)} attacks, ${String(allowed)} this turn`
                 : undefined;
             return (
               <button
@@ -2241,6 +2553,7 @@ export function Component() {
                         `${a.label} attack`,
                         weaponTest(a),
                         a.label,
+                        powerClaims(a),
                       )}
                       wear={attackChipWear}
                       raisedBy={lift.hit ? raisedBy(a.toHit, before?.toHit) : []}
@@ -2322,6 +2635,8 @@ export function Component() {
               // Damage added to a hit once a turn (Sneak Attack): rolled here,
               // it is marked used for the turn, as the damage prompt marks it.
               const once = a.roll !== undefined && oncePerTurn(entriesText(info?.entries));
+              // Action Surge: one more action, so one more Attack action's attacks.
+              const surges = capabilityKey(a.label) === 'action surge';
               // What it spends: a use of the pool sharing its name, and the pool
               // its cost names. See `actionUse`.
               const use = actionUse(a, sheet.resources, usedOf, paying);
@@ -2347,13 +2662,10 @@ export function Component() {
                   return;
                 }
                 if (starts === undefined) {
-                  triggerAction(
-                    a.economy,
-                    use.spends,
-                    a.label,
-                    use.regains,
-                    once ? (d) => markOnce(d, rowKey) : undefined,
-                  );
+                  triggerAction(a.economy, use.spends, a.label, use.regains, (d) => {
+                    if (once) markOnce(d, rowKey);
+                    if (surges) markSurge(d);
+                  });
                   return;
                 }
                 if (recent()) return;
@@ -2658,24 +2970,7 @@ export function Component() {
                   // was cast with, and rolling them spends nothing more.
                   const running = isConcentratingOn(play, ref.name);
                   const hasAttack = hasSpellAttack(entity);
-                  const cast: SpellCast = {
-                    doc,
-                    sheet,
-                    update,
-                    hp: hpNow,
-                    info: {
-                      name: ref.name,
-                      source: ref.source,
-                      concentration: spellConcentrationOf(ref.name, ref.source),
-                      economy: spellCastEconomy(ref.name, ref.source),
-                    },
-                    entity,
-                    level,
-                    block: sc,
-                    abilityModifier: sheet.abilities[sc.ability].mod,
-                    attack: hasAttack,
-                    entities,
-                  };
+                  const cast = classSpellCast(sc, ref);
                   return (
                     <div key={uid} className={`min-h-10 ${ROW}`}>
                       <div className={ROW_NAME}>
@@ -2797,55 +3092,17 @@ export function Component() {
                   />
                 );
               }
-              const level = spellLevelOf(g.name, g.source);
-              const block =
-                sheet.spellcasting.find((sc) => sc.ability === g.ability) ??
-                (g.usage === 'prepared' ? sheet.spellcasting[0] : undefined);
               const numbers = grantCast(g, sheet);
-              const abilityModifier = numbers.mod;
               const attackModifier = numbers.attack;
               const running = isConcentratingOn(play, g.name);
+              const { cast, remaining, limited } = grantSpellCast(g);
               const hasAttack = attackModifier !== undefined && hasSpellAttack(entity);
-              // "1/day" grants carry their own pool; casting spends from it.
-              const limited =
-                g.resourceKey !== undefined
-                  ? sheet.resources.find((r) => r.key === g.resourceKey)
-                  : undefined;
-              const remaining =
-                limited !== undefined ? limited.max - usedOf(limited.key) : undefined;
               // Rolling dice is always allowed, but a spent grant must not go
               // on marking your action and your concentration: most limited
               // spells cast through a roll chip rather than the Cast button, so
               // guarding only the button would leave the limit unenforced for
               // every one of them.
               const depleted = remaining !== undefined && remaining <= 0;
-              // An always-prepared grant casts with class slots, as a class
-              // spell does; an innate grant spends its own pool, or an item's
-              // charges, through the same prompt.
-              const cast: SpellCast = {
-                doc,
-                sheet,
-                update,
-                hp: hpNow,
-                info: {
-                  name: g.name,
-                  source: g.source,
-                  concentration: spellConcentrationOf(g.name, g.source),
-                  economy: spellCastEconomy(g.name, g.source),
-                },
-                entity,
-                level,
-                block: g.usage === 'prepared' ? block : undefined,
-                className: g.className,
-                abilityModifier,
-                grantPool:
-                  limited === undefined
-                    ? undefined
-                    : { key: limited.key, label: g.origin, max: limited.max },
-                numbers: grantNumbersKey(g),
-                attack: hasAttack,
-                entities,
-              };
               const usedUp = grantUsedUp(cast, remaining);
               return (
                 <div

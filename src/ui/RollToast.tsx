@@ -1680,15 +1680,21 @@ function DamagePrompt({
   const twice = (x: DamageExtra) => hit.crit && x.noCrit !== true;
   /** An extra's dice as this roll makes them. */
   const diceOf = (x: DamageExtra) => {
+    if (x.best === true) return undefined;
     if (x.slot !== undefined) {
-      const d = cast?.dice(picked)?.expr;
+      const d = (cast?.dice(picked, x.diceLabel) ?? cast?.dice(picked))?.expr;
       return d === undefined ? undefined : hit.crit ? critDice(d) : d;
     }
     return twice(x) ? critDice(x.dice) : x.dice;
   };
   const type = hit.damageType === undefined ? '' : ` ${hit.damageType}`;
+  // An extra riding on another (Divine Smite's d8 against a Fiend) shows and rolls only with it.
+  const shown = (x: DamageExtra) =>
+    x.needs === undefined || hit.extras.some((y, j) => y.key === x.needs && on(j));
   const folded = hit.extras
-    .filter((x, i) => on(i) && x.folds === true && x.slot === undefined)
+    .filter(
+      (x, i) => on(i) && shown(x) && x.folds === true && x.slot === undefined && x.best !== true,
+    )
     .map((x) => ` + ${dieWord(diceOf(x) ?? x.dice)} ${x.source}`);
   const crits =
     hit.crit && hit.critDice !== undefined
@@ -1696,17 +1702,20 @@ function DamagePrompt({
       : [];
   const formula = `${hit.crit ? critDice(hit.expr) : hit.expr}${type}${[...folded, ...crits].join('')}`;
   const apart = hit.extras.flatMap((x, i) => {
-    if (!on(i) || (x.folds === true && x.slot === undefined)) return [];
+    if (!on(i) || !shown(x) || x.best === true || (x.folds === true && x.slot === undefined))
+      return [];
     const d = diceOf(x);
     const t = x.damageType === undefined ? '' : ` ${x.damageType}`;
     return [d === undefined ? x.source : `${dieWord(d)}${t} ${x.source}`];
   });
   // What it spends and what holds: an add's use and its when, a slot, a coating that comes off.
-  const adds = hit.extras.filter((x, i) => on(i) && x.kind === 'add' && x.slot === undefined);
+  const adds = hit.extras.filter(
+    (x, i) => on(i) && shown(x) && x.kind === 'add' && x.slot === undefined,
+  );
   const slotOn = hit.extras.some((x, i) => on(i) && x.slot !== undefined);
   const comesOff = hit.extras.filter((x, i) => on(i) && x.kind === 'own' && x.tag === 'next hit');
   const notes = hit.extras.flatMap((x, i) => {
-    if (!on(i)) return [];
+    if (!on(i) || !shown(x)) return [];
     const said = [
       x.note === undefined ? '' : `${x.source}: ${x.note}.`,
       x.usedThisTurn === true ? `${x.source} was used this turn already.` : '',
@@ -1785,16 +1794,18 @@ function DamagePrompt({
       )}
       {hit.extras.length > 0 && (
         <div className="flex flex-wrap items-center gap-1.5">
-          {hit.extras.map((x, i) => (
-            <DamageExtraChip
-              key={x.key}
-              extra={x}
-              dice={diceOf(x)}
-              on={on(i)}
-              onClick={() => toggleHeldExtra(i)}
-              onRemove={x.remove === undefined ? undefined : () => removeHeldExtra(i)}
-            />
-          ))}
+          {hit.extras.map((x, i) =>
+            !shown(x) ? null : (
+              <DamageExtraChip
+                key={x.key}
+                extra={x}
+                dice={diceOf(x)}
+                on={on(i)}
+                onClick={() => toggleHeldExtra(i)}
+                onRemove={x.remove === undefined ? undefined : () => removeHeldExtra(i)}
+              />
+            ),
+          )}
         </div>
       )}
       {slotOn && <CastTiles held={held} />}
