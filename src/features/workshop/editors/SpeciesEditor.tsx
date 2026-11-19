@@ -4,7 +4,11 @@
  * sheet (the sheet reads a trait's own effects, and a renamed trait still
  * finds what the original did).
  */
+import type { ReactNode } from 'react';
+import { Link } from 'react-router';
+import { subraceBelongsTo } from '@/data5e/subraceOptions';
 import { isRecord } from '@/engine/castGuidance';
+import { listClass } from '@/ui/surfaces';
 import type { EditorProps, EditorSpec, Json } from '../editorTypes';
 import { ABILITY_WORDS, ChipPicks, Kept, NumberField, Section, TextBlocks } from '../fields';
 import {
@@ -18,6 +22,7 @@ import {
   SpellsGiven,
 } from '../originFields';
 import { PartList } from '../PartList';
+import { editPath } from '../yours';
 
 /** The data's sizes, Varies (the player's choice) last: it stands alone. */
 const SIZES: ReadonlyArray<readonly [string, string]> = [
@@ -186,7 +191,6 @@ function AbilityScores({ draft, change, readOnly }: EditorProps) {
           {`from ${from.map((a) => String(a).toUpperCase()).join(', ')} only, kept as it is.`}
         </Kept>
       )}
-      <OnSheet>the ability scores, a choice asked when the character is built.</OnSheet>
     </>
   );
 }
@@ -233,15 +237,21 @@ function DefensePicks({
   );
 }
 
-/** Speeds and senses as feet; one written with a condition is kept as it is. */
-function Movement({ draft, change, original, readOnly }: EditorProps) {
+/**
+ * Speeds and senses as feet; one written with a condition is kept as it is.
+ * A subrace's (`sub`) that it leaves empty are its species'.
+ */
+function Movement({ draft, change, original, readOnly, sub }: EditorProps & { sub: boolean }) {
   const speed = isRecord(draft.speed) ? draft.speed : {};
   const block = isRecord(original?.speed);
+  // A subrace's speed takes the place of its species' speeds, all of them.
+  const theirs = sub && absent(draft.speed);
   return (
     <div className="grid grid-cols-2 gap-2">
       <NumberField
         label="Speed in feet"
         value={walkSpeed(draft.speed)}
+        placeholder={theirs ? 'As the species' : undefined}
         disabled={readOnly}
         onChange={(walk) => change({ speed: withWalkSpeed(draft.speed, walk) })}
       />
@@ -254,7 +264,7 @@ function Movement({ draft, change, original, readOnly }: EditorProps) {
             label={label}
             value={typeof v === 'number' ? v : undefined}
             // `true` is as fast as the character walks, until a number is typed.
-            placeholder={v === true ? 'As walking' : 'None'}
+            placeholder={v === true ? 'As walking' : theirs ? 'As the species' : 'None'}
             disabled={readOnly}
             onChange={(feet) =>
               change({
@@ -273,7 +283,7 @@ function Movement({ draft, change, original, readOnly }: EditorProps) {
           key={sense}
           label={`${sense[0]?.toUpperCase()}${sense.slice(1)} in feet`}
           value={typeof draft[sense] === 'number' ? (draft[sense] as number) : undefined}
-          placeholder="None"
+          placeholder={sub ? 'As the species' : 'None'}
           disabled={readOnly}
           onChange={(d) => change({ [sense]: d === 0 ? undefined : d })}
         />
@@ -282,11 +292,40 @@ function Movement({ draft, change, original, readOnly }: EditorProps) {
   );
 }
 
-function SpeciesBody(props: EditorProps) {
-  const { draft, change, original, readOnly, registry } = props;
-  const sizes = Array.isArray(draft.size) ? draft.size.map(String) : [];
-  // Tapping a chip changes only the sizes the chips offer; the rest stay.
-  const unoffered = sizes.filter((k) => !OFFERED.has(k));
+/** What a sheet makes of a field: the species' own, or a subrace's beside its species'. */
+const ON_SHEET = {
+  movement: [
+    'speeds and senses, on the Stats tab.',
+    "speeds and senses, on the Stats tab, in place of the species' own.",
+  ],
+  ability: [
+    'the ability scores, a choice asked when the character is built.',
+    "the ability scores, added to the species', a choice asked when built.",
+  ],
+  defenses: [
+    'defenses, on the Stats tab.',
+    "defenses, on the Stats tab, in place of the species' own.",
+  ],
+  proficiencies: [
+    'proficiencies and languages, on the Stats tab; a choice is asked when built.',
+    "the Stats tab, skills and languages beside the species' own, tools, weapons and armor in their place.",
+  ],
+  spells: [
+    'the Spells tab, each from the character level it names.',
+    "the Spells tab, each from the character level it names, in place of the species' spells.",
+  ],
+} as const;
+
+/**
+ * Everything a species gives but its size, shared with its subraces (`sub`),
+ * whose fields a sheet reads over their species' own. `about` opens the first
+ * section (the sizes, or the species a subrace belongs to); `after` ends it.
+ */
+export function OriginParts(
+  props: EditorProps & { sub: boolean; about: ReactNode; after?: ReactNode },
+) {
+  const { draft, change, original, readOnly, registry, sub, about, after } = props;
+  const said = (k: keyof typeof ON_SHEET) => ON_SHEET[k][sub ? 1 : 0];
   const grant = (field: string) => ({
     raw: draft[field],
     readOnly,
@@ -295,31 +334,13 @@ function SpeciesBody(props: EditorProps) {
   return (
     <>
       <Section title="About them">
-        <ChipPicks
-          label="Size"
-          options={SIZES}
-          value={sizes}
-          disabled={readOnly}
-          onChange={(v) => {
-            // Varies is the player's pick of a size, so it goes with no other.
-            const added = v.find((k) => !sizes.includes(k));
-            const picked =
-              added === 'V' ? ['V'] : v.filter((k) => k !== 'V' || added === undefined);
-            const next = [...SIZES.map(([k]) => k).filter((k) => picked.includes(k)), ...unoffered];
-            change({ size: next.length === 0 ? undefined : next });
-          }}
-        />
-        {unoffered.length > 0 && (
-          <Kept label="Size">
-            also {unoffered.join(', ')}, kept as {unoffered.length === 1 ? 'it is' : 'they are'}.
-          </Kept>
-        )}
-        <OnSheet>the Library lists the size.</OnSheet>
+        {about}
         <Movement {...props} />
-        <OnSheet>speeds and senses, on the Stats tab.</OnSheet>
+        <OnSheet>{said('movement')}</OnSheet>
       </Section>
       <Section title="Ability scores">
         <AbilityScores {...props} />
+        <OnSheet>{said('ability')}</OnSheet>
       </Section>
       <Section title="Defenses">
         <DefensePicks {...props} label="Resistances" field="resist" options={DAMAGE} />
@@ -331,7 +352,7 @@ function SpeciesBody(props: EditorProps) {
           field="conditionImmune"
           options={CONDITIONS}
         />
-        <OnSheet>defenses, on the Stats tab.</OnSheet>
+        <OnSheet>{said('defenses')}</OnSheet>
       </Section>
       <Section title="Proficiencies and languages">
         <GrantField
@@ -361,9 +382,7 @@ function SpeciesBody(props: EditorProps) {
           placeholder="Longsword|XPHB"
         />
         <GrantField {...grant('armorProficiencies')} label="Armor" options={ARMOR_WORDS} />
-        <OnSheet>
-          proficiencies and languages, on the Stats tab; a choice is asked when built.
-        </OnSheet>
+        <OnSheet>{said('proficiencies')}</OnSheet>
       </Section>
       <Section title="Spells">
         <SpellsGiven
@@ -373,7 +392,7 @@ function SpeciesBody(props: EditorProps) {
           readOnly={readOnly}
           onChange={(additionalSpells) => change({ additionalSpells })}
         />
-        <OnSheet>the Spells tab, each from the character level it names.</OnSheet>
+        <OnSheet>{said('spells')}</OnSheet>
       </Section>
       <Section title="Text">
         <TextBlocks
@@ -395,8 +414,87 @@ function SpeciesBody(props: EditorProps) {
           onChange={(entries) => change({ entries })}
         />
       </Section>
+      {after}
     </>
   );
+}
+
+/**
+ * The species' own subraces, each found by the species it names, and Add a
+ * subrace, which opens a new one already naming it. Only for a species saved
+ * under the name it has: a subrace finds its species by that name and book.
+ */
+function Subraces({ draft, registry }: EditorProps) {
+  const name = typeof draft.name === 'string' ? draft.name : '';
+  const source = typeof draft.source === 'string' ? draft.source : '';
+  if (name === '' || registry.get('race', name, source) === undefined) {
+    return <p className="text-caption text-ink-muted">Save the species to add a subrace to it.</p>;
+  }
+  const own = registry
+    .byType('subrace')
+    .filter((s) => typeof s.name === 'string' && subraceBelongsTo(s, { name, source }));
+  return (
+    <div className="flex flex-col gap-2">
+      {own.length > 0 && (
+        <ul aria-label="Subraces" className={listClass}>
+          {own.map((s) => (
+            <li key={`${String(s.name)}|${String(s.source)}`} className="px-4 py-3">
+              <Link
+                to={editPath('subrace', String(s.name), String(s.source))}
+                className="text-body-strong underline-offset-2 hover:underline"
+              >
+                {String(s.name)}
+              </Link>
+            </li>
+          ))}
+        </ul>
+      )}
+      <Link
+        to="/workshop/new/subrace"
+        state={{ seed: { raceName: name, raceSource: source } }}
+        className="tap self-start text-body-strong underline underline-offset-2"
+      >
+        Add a subrace
+      </Link>
+      <OnSheet>a character of this species picks one of these when built.</OnSheet>
+    </div>
+  );
+}
+
+function SpeciesBody(props: EditorProps) {
+  const { draft, change, readOnly } = props;
+  const sizes = Array.isArray(draft.size) ? draft.size.map(String) : [];
+  // Tapping a chip changes only the sizes the chips offer; the rest stay.
+  const unoffered = sizes.filter((k) => !OFFERED.has(k));
+  const about = (
+    <>
+      <ChipPicks
+        label="Size"
+        options={SIZES}
+        value={sizes}
+        disabled={readOnly}
+        onChange={(v) => {
+          // Varies is the player's pick of a size, so it goes with no other.
+          const added = v.find((k) => !sizes.includes(k));
+          const picked = added === 'V' ? ['V'] : v.filter((k) => k !== 'V' || added === undefined);
+          const next = [...SIZES.map(([k]) => k).filter((k) => picked.includes(k)), ...unoffered];
+          change({ size: next.length === 0 ? undefined : next });
+        }}
+      />
+      {unoffered.length > 0 && (
+        <Kept label="Size">
+          also {unoffered.join(', ')}, kept as {unoffered.length === 1 ? 'it is' : 'they are'}.
+        </Kept>
+      )}
+      <OnSheet>the Library lists the size.</OnSheet>
+    </>
+  );
+  const after = (
+    <Section title="Subraces">
+      <Subraces {...props} />
+    </Section>
+  );
+  return <OriginParts {...props} sub={false} about={about} after={after} />;
 }
 
 export const editor: EditorSpec = {

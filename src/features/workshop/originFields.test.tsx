@@ -6,7 +6,7 @@
 // another field is edited.
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { useState } from 'react';
-import { MemoryRouter } from 'react-router';
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { Entity } from '@/data5e/copyMod';
 import { EntityRegistry } from '@/data5e/normalize';
@@ -21,17 +21,28 @@ import { editor as feat } from './editors/FeatEditor';
 import { editor as item } from './editors/ItemEditor';
 import { editor as optional } from './editors/OptionalFeatureEditor';
 import { editor as species } from './editors/SpeciesEditor';
+import { editor as subrace } from './editors/SubraceEditor';
 import type { EditorSpec, Json } from './editorTypes';
 import { grantRows, grantsOf } from './originFields';
 
 afterEach(cleanup);
 
-/** The editor on screen with the test world's spells; the draft as it stands, and how often it changed. */
-function mount(spec: EditorSpec, start: Json, original?: Json) {
-  let latest = start;
-  let changes = 0;
+type Extra = Partial<Record<Parameters<EntityRegistry['addAll']>[0], Json[]>>;
+
+/** The test world's spells, and `extra`'s entries by type. */
+function withEntries(extra: Extra) {
   const registry = new EntityRegistry();
   registry.addAll('spell', makeTestContext().byType('spell') as Entity[]);
+  for (const [t, list] of Object.entries(extra))
+    registry.addAll(t as keyof Extra, (list ?? []) as Entity[]);
+  return registry;
+}
+
+/** The editor on screen with the test world's spells; the draft as it stands, and how often it changed. */
+function mount(spec: EditorSpec, start: Json, original?: Json, extra: Extra = {}) {
+  let latest = start;
+  let changes = 0;
+  const registry = withEntries(extra);
   function Harness() {
     const [draft, setDraft] = useState(start);
     latest = draft;
@@ -725,5 +736,107 @@ describe('fields at their edges (the U5b review)', () => {
     ];
     const read = grantRows(grantsOf(rows, undefined));
     expect(read?.rows.map((r) => r.spell)).toEqual(['Guidance|TST', 'Aid|TST']);
+  });
+});
+
+const LANTERNFOLK = {
+  ...NEW_SPECIES,
+  source: 'HB',
+  ability: [{ dex: 2 }],
+  darkvision: 60,
+  languageProficiencies: [{ common: true }],
+};
+
+/** A level 5 Warrior of Lanternfolk and the subrace `sub`. */
+const asSubrace = (sub: Json) =>
+  hero(
+    (d) => {
+      d.race = { name: 'Lanternfolk', source: 'HB' };
+      d.subrace = { name: String(sub.name), source: String(sub.source) };
+    },
+    { race: [LANTERNFOLK as DataEntity], subrace: [sub as DataEntity] },
+  );
+
+describe('subraces', () => {
+  it('a new one picks its species first, and cannot be saved without one', () => {
+    expect(subrace.check?.({ name: 'Deepfolk', entries: [] })).toBe(
+      'Pick the species it belongs to.',
+    );
+    const at = mount(subrace, { name: 'Deepfolk', entries: [] }, undefined, {
+      race: [LANTERNFOLK],
+    });
+    pick('Species', 'Lanternfolk|HB');
+    expect(at.draft()).toMatchObject({ raceName: 'Lanternfolk', raceSource: 'HB' });
+    expect(subrace.check?.(at.draft())).toBeUndefined();
+  });
+
+  it("its fields save, read back, and count over the species' own", () => {
+    const start = { name: 'Deepfolk', raceName: 'Lanternfolk', raceSource: 'HB', entries: [] };
+    const at = mount(subrace, start);
+    // What it leaves empty is the species'.
+    expect(screen.getByLabelText('Speed in feet').getAttribute('placeholder')).toBe(
+      'As the species',
+    );
+    expect(screen.getByLabelText('Darkvision in feet').getAttribute('placeholder')).toBe(
+      'As the species',
+    );
+    type('Darkvision in feet', '120');
+    type('Strength +', '1');
+    chip('Languages', 'Elvish');
+    const stored = save(at.draft());
+    expect(stored).toMatchObject({ darkvision: 120, ability: [{ str: 1 }] });
+    const { sheet } = asSubrace(stored);
+    // Ability scores and languages add to the species'; darkvision takes its place.
+    expect(sheet.abilities.str.value).toBe(15);
+    expect(sheet.abilities.dex.value).toBe(18);
+    expect(sheet.senses).toContainEqual(
+      expect.objectContaining({ sense: 'darkvision', range: 120 }),
+    );
+    expect(sheet.senses).not.toContainEqual(
+      expect.objectContaining({ sense: 'darkvision', range: 60 }),
+    );
+    expect(sheet.languages).toEqual(expect.arrayContaining(['Common', 'Elvish']));
+    reopen(subrace, stored);
+    expect(box('Darkvision in feet')).toBe('120');
+    expect(box('Strength +')).toBe('1');
+  });
+
+  it('a species lists its own subraces, and Add a subrace opens one naming it', () => {
+    const deep = { name: 'Deepfolk', source: 'HB', raceName: 'Lanternfolk', raceSource: 'HB' };
+    const other = { name: 'Hillfolk', source: 'HB', raceName: 'Dwarf', raceSource: 'HB' };
+    const registry = withEntries({ race: [LANTERNFOLK], subrace: [deep, other] });
+    function Seen() {
+      return <p>{JSON.stringify(useLocation().state)}</p>;
+    }
+    render(
+      <MemoryRouter initialEntries={['/edit']}>
+        <Routes>
+          <Route
+            path="/edit"
+            element={
+              <species.Body
+                draft={LANTERNFOLK}
+                change={() => {}}
+                registry={registry}
+                readOnly={false}
+              />
+            }
+          />
+          <Route path="/workshop/new/subrace" element={<Seen />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    const list = within(screen.getByRole('list', { name: 'Subraces' }));
+    expect(list.getAllByRole('link').map((l) => l.textContent)).toEqual(['Deepfolk']);
+    fireEvent.click(screen.getByRole('link', { name: 'Add a subrace' }));
+    expect(
+      screen.getByText(JSON.stringify({ seed: { raceName: 'Lanternfolk', raceSource: 'HB' } })),
+    ).toBeTruthy();
+  });
+
+  it('a species not saved yet says to save it first', () => {
+    mount(species, NEW_SPECIES);
+    expect(screen.getByText('Save the species to add a subrace to it.')).toBeTruthy();
+    expect(screen.queryByRole('link', { name: 'Add a subrace' })).toBeNull();
   });
 });
