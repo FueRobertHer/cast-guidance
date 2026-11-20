@@ -316,13 +316,15 @@ export function calcSpellcasting(
         b.kind === 'attackBonus' &&
         (b.attack === 'spell' || b.attack === 'any') &&
         b.scope === 'all' &&
-        (b.ability === undefined || b.ability === abilityKey)
+        (b.ability === undefined || b.ability === abilityKey) &&
+        (b.className === undefined || names.includes(b.className.trim().toLowerCase()))
       ) {
         atkParts.push({ label: b.origin.label, amount: b.amount });
       }
       if (
         b.kind === 'spellDcBonus' &&
-        (b.className === undefined || names.includes(b.className.trim().toLowerCase()))
+        (b.className === undefined || names.includes(b.className.trim().toLowerCase())) &&
+        (b.ability === undefined || b.ability === abilityKey)
       ) {
         dcParts.push({ label: b.origin.label, amount: b.amount });
       }
@@ -386,13 +388,16 @@ export function calcSpellcasting(
     // A class's or subclass's expanded list widens that class; a race's, a feat's
     // or a background's, every spellcasting class ("your spellcasting class"). So
     // does one whose origin names no class or subclass here: an optional feature
-    // takes its host's type but keeps its own uid.
+    // takes its host's type but keeps its own uid. One that names a class widens
+    // that class alone, by either name, as a DC bonus does.
     const expanded = col.effects.flatMap((e) =>
       e.kind === 'spellListAdd' &&
-      (!ownedByAClass(e.origin) ||
-        (e.origin.type === 'class'
-          ? e.origin.uid === refUid(entry.ref)
-          : entry.subclass !== undefined && e.origin.uid === refUid(entry.subclass)))
+      (e.className !== undefined
+        ? names.includes(e.className.trim().toLowerCase())
+        : !ownedByAClass(e.origin) ||
+          (e.origin.type === 'class'
+            ? e.origin.uid === refUid(entry.ref)
+            : entry.subclass !== undefined && e.origin.uid === refUid(entry.subclass)))
         ? [{ from: e.origin.label, spells: e.spells, filters: e.filters }]
         : [],
     );

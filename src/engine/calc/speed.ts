@@ -1,6 +1,13 @@
 import type { Collector } from '../effects/base';
-import { num } from '../effects/base';
-import { isArmor, isShield, itemTypeCode, lookupItem } from '../effects/item';
+import { num, str } from '../effects/base';
+import {
+  armorPenaltyLifted,
+  isArmor,
+  isShield,
+  itemTypeCode,
+  lookupItem,
+  parseBonus,
+} from '../effects/item';
 import { baseSubraceFor, subraceFor } from '../effects/race';
 import type {
   CharacterDoc,
@@ -24,10 +31,35 @@ function wornGear(doc: CharacterDoc, col: Collector): Set<SpeedBonusUnless> {
   return worn;
 }
 
+/**
+ * The armor worn whose Strength requirement (`strength`) the wearer's Strength
+ * score is under: it costs 10 feet of speed, unless an effect lifts that for it
+ * (a 2014 dwarf in heavy armor).
+ */
+function strengthShort(
+  doc: CharacterDoc,
+  col: Collector,
+  effects: readonly EffectInput[],
+  strength: number,
+): { label: string; amount: number } | undefined {
+  for (const entry of doc.equipment) {
+    if (!entry.equipped || entry.ref === undefined) continue;
+    const e = lookupItem(col, entry.ref.name, entry.ref.source);
+    if (e === undefined || !isArmor(e)) continue;
+    const need = parseBonus(e.strength);
+    if (strength < need && !armorPenaltyLifted(effects, 'strength', e)) {
+      return { label: `${str(e.name) ?? entry.ref.name} (Strength ${need})`, amount: -10 };
+    }
+  }
+  return undefined;
+}
+
+/** Walking speed: the species', its bonuses, and what armor too heavy for `strength` (its score) costs. */
 export function calcWalkSpeed(
   doc: CharacterDoc,
   col: Collector,
   effects: readonly EffectInput[],
+  strength: number,
 ): DerivedValue {
   let raceSpeed = 30;
   let label = 'Base';
@@ -44,6 +76,8 @@ export function calcWalkSpeed(
     }
   }
   const parts = [{ label, amount: raceSpeed }];
+  const short = strengthShort(doc, col, effects, strength);
+  if (short !== undefined) parts.push(short);
   // A bonus that holds only out of armor (Fast Movement) does not count in it.
   const worn = wornGear(doc, col);
   const bonuses = effectsOf(effects, 'speedBonus').filter(

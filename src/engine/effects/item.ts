@@ -10,7 +10,15 @@ import {
   regainRollOf,
   upgradeOlderCharges,
 } from '../curated/itemCharges';
-import type { Ability, DataEntity, EffectOrigin, EntityRef } from '../types';
+import type {
+  Ability,
+  ArmorPenalty,
+  ArmorWeight,
+  DataEntity,
+  EffectInput,
+  EffectOrigin,
+  EntityRef,
+} from '../types';
 import { ABILITIES, refUid } from '../types';
 import { collectAdditionalSpells } from './additionalSpells';
 import { type Collector, str } from './base';
@@ -18,6 +26,7 @@ import {
   builtInRowsFor,
   builtInRuleFor,
   emitRuleRows,
+  entryKeys,
   type FixedCast,
   type ItemCharges,
   mechanicsOf,
@@ -30,6 +39,11 @@ export function itemTypeCode(e: DataEntity): string | undefined {
 }
 
 export const ARMOR_TYPES = new Set(['LA', 'MA', 'HA']);
+const ARMOR_WEIGHTS: Readonly<Record<string, ArmorWeight>> = {
+  LA: 'light',
+  MA: 'medium',
+  HA: 'heavy',
+};
 
 export function isArmor(e: DataEntity): boolean {
   const t = itemTypeCode(e);
@@ -38,6 +52,28 @@ export function isArmor(e: DataEntity): boolean {
 
 export function isShield(e: DataEntity): boolean {
   return itemTypeCode(e) === 'S';
+}
+
+/** Whether an effect spares the wearer of this armor its `penalty` (`armorPenaltyLift`). */
+export function armorPenaltyLifted(
+  effects: readonly EffectInput[],
+  penalty: ArmorPenalty,
+  e: DataEntity,
+): boolean {
+  const weight = ARMOR_WEIGHTS[itemTypeCode(e) ?? ''];
+  return effects.some(
+    (x) =>
+      x.kind === 'armorPenaltyLift' &&
+      x.penalty === penalty &&
+      (x.armor === undefined || x.armor === weight),
+  );
+}
+
+/** A weapon: one the data marks so, or of a weapon's type (melee, ranged, firearm ammunition). */
+export function isWeapon(e: DataEntity): boolean {
+  if (e.weapon === true || e.weaponCategory !== undefined) return true;
+  const type = itemTypeCode(e);
+  return type === 'M' || type === 'R' || type === 'AF';
 }
 
 export function parseBonus(v: unknown): number {
@@ -84,23 +120,39 @@ const strings = (v: unknown): string[] =>
   Array.isArray(v) ? v.filter((s): s is string => typeof s === 'string') : [];
 
 /**
- * The defenses and save bonus an equipped item gives, once its magic works
- * (`magicWorks`), from its data tags, kind by kind in `WORN_TAG_KINDS` order.
- * A built-in `wornTags` row under the item's own `name|source` stands in for
- * the kinds it `replaces`, its effects where the tags of that kind would be.
+ * What an equipped item's data tags and bonus fields give, once its magic works
+ * (`magicWorks`), kind by kind in `WORN_TAG_KINDS` order: its defenses, its save
+ * bonus, and its bonuses to attacks, damage and the spell save DC
+ * (`readBonusField`). A built-in `wornTags` row under the item's own
+ * `name|source` stands in for the kinds it `replaces`, its effects where the
+ * data's of that kind would be. For the bonus kinds, a copy or a converted
+ * printing (`entryKeys`) then reads the official item's row: its fields are the
+ * official one's, which the row corrects. Its defense tags stay its author's.
  * A potion's last a while once it is drunk, so it gives none while carried.
+ * `id` is its equipment entry's.
  */
-function readWornTags(col: Collector, e: DataEntity, origin: EffectOrigin): void {
+function readWornTags(col: Collector, e: DataEntity, id: string, origin: EffectOrigin): void {
   if (itemTypeCode(e) === 'P') return;
   const key = refUid({ name: str(e.name) ?? '', source: str(e.source) ?? '' });
   const row = builtInRowsFor(col, 'wornTags', [key])?.[0];
+  const official = entryKeys(e, key).slice(1);
+  const copied = official.length === 0 ? undefined : builtInRowsFor(col, 'wornTags', official)?.[0];
   for (const kind of WORN_TAG_KINDS) {
-    if (row?.replaces?.includes(kind) === true) emitKind(col, row, kind, origin);
+    const bonus = kind === 'attackBonus' || kind === 'damageBonus' || kind === 'spellDcBonus';
+    const standing =
+      row?.replaces?.includes(kind) === true
+        ? row
+        : bonus && copied?.replaces?.includes(kind) === true
+          ? copied
+          : undefined;
+    if (standing !== undefined) emitKind(col, standing, kind, origin);
     else if (kind === 'conditionImmune') {
       for (const condition of strings(e.conditionImmune)) col.add({ kind, condition, origin });
     } else if (kind === 'saveBonus') {
       const amount = parseBonus(e.bonusSavingThrow);
       if (amount !== 0) col.add({ kind, amount, origin });
+    } else if (bonus) {
+      readBonusField(col, e, kind, id, origin);
     } else {
       for (const damageType of strings(e[kind])) col.add({ kind, damageType, origin });
     }
@@ -184,6 +236,55 @@ function fixGrants(col: Collector, from: number, fixed: FixedCast | undefined): 
   }
 }
 
+/**
+ * The bonus of one kind an item's fields give: `attackBonus` from
+ * `bonusWeaponAttack` (a carried weapon's attacks, or on a weapon its own alone)
+ * and `bonusSpellAttack` (spell attacks), `damageBonus` from `bonusWeaponDamage`
+ * (as the weapon attack bonus), `spellDcBonus` from `bonusSpellSaveDc`. A
+ * weapon's own `bonusWeapon` is the attack row's magic bonus.
+ */
+function readBonusField(
+  col: Collector,
+  e: DataEntity,
+  kind: 'attackBonus' | 'damageBonus' | 'spellDcBonus',
+  id: string,
+  origin: EffectOrigin,
+): void {
+  // "With weapons": a carried weapon's, never an unarmed strike's.
+  const weapon = isWeapon(e) ? { weapon: id } : { weaponsOnly: true };
+  if (kind === 'attackBonus') {
+    const toHit = parseBonus(e.bonusWeaponAttack);
+    if (toHit !== 0) col.add({ kind, scope: 'all', amount: toHit, ...weapon, origin });
+    const spell = parseBonus(e.bonusSpellAttack);
+    if (spell !== 0) col.add({ kind, scope: 'all', attack: 'spell', amount: spell, origin });
+  } else if (kind === 'damageBonus') {
+    const damage = parseBonus(e.bonusWeaponDamage);
+    if (damage !== 0) col.add({ kind, scope: 'all', amount: damage, ...weapon, origin });
+  } else {
+    const dc = parseBonus(e.bonusSpellSaveDc);
+    if (dc !== 0) col.add({ kind, amount: dc, origin });
+  }
+}
+
+/**
+ * What armor's data says it costs its wearer, magic or not: disadvantage on
+ * Stealth checks (`stealth`), once the whole build is in, unless something in
+ * it lifts that (Medium Armor Master). False says the armor has none (mithral).
+ * Its Strength requirement costs speed (`calcWalkSpeed`).
+ */
+function readArmorDrawbacks(col: Collector, e: DataEntity, origin: EffectOrigin): void {
+  if (!isArmor(e) || e.stealth !== true) return;
+  col.afterAll.push(() => {
+    if (armorPenaltyLifted(col.effects, 'stealth', e)) return;
+    col.add({
+      kind: 'rollAdvantage',
+      mode: 'dis',
+      on: { rolls: ['check'], skills: ['Stealth'] },
+      origin,
+    });
+  });
+}
+
 /** A `wornTags` row's effects of one kind, in the row's order. */
 function emitKind(col: Collector, row: RuleRow, kind: string, origin: EffectOrigin): void {
   const effects = row.effects.filter((t) => t.effect.kind === kind);
@@ -227,21 +328,22 @@ export function collectItems(col: Collector): void {
       charged = counted?.charges;
       // Its magic fields are what it inherits; its own `castGuidance` adds to
       // them, and a pack's patch can replace them, while the magic works.
-      mechanicsOf(col, {
-        entry: e,
-        label: origin.label,
-        origin,
-        target: origin.uid,
-        inherited: () => {
-          // Rings/cloaks of protection etc: bonusAc on a non-armor non-shield item.
-          const bonusAc = parseBonus(e.bonusAc);
-          if (bonusAc !== 0 && !isArmor(e) && !isShield(e)) {
-            col.add({ kind: 'acBonus', amount: bonusAc, origin });
-          }
-          readWornTags(col, e, origin);
-          grantAttached(col, e, ref, origin, counted?.from);
-        },
-      });
+      const inherited = () => {
+        // Rings/cloaks of protection etc: bonusAc on a non-armor non-shield item.
+        const bonusAc = parseBonus(e.bonusAc);
+        if (bonusAc !== 0 && !isArmor(e) && !isShield(e)) {
+          col.add({ kind: 'acBonus', amount: bonusAc, origin });
+        }
+        readWornTags(col, e, entry.id, origin);
+        grantAttached(col, e, ref, origin, counted?.from);
+      };
+      // A potion's own effects are what it does once drunk (+ Effect puts them
+      // in play, `homebrewLanding`), so carried or equipped it gives only what
+      // its data does: neither those, its moments nor a pack's patch for it.
+      // Drinking lands its own effects alone (a moment or a patch, none).
+      if (itemTypeCode(e) === 'P') inherited();
+      else
+        mechanicsOf(col, { entry: e, label: origin.label, origin, target: origin.uid, inherited });
       // Its charges are a pool of its own, which the cast prompt and the
       // item's actions spend and a long rest (dawn) refills by its roll.
       if (charged !== undefined) {
@@ -284,6 +386,8 @@ export function collectItems(col: Collector): void {
         }
       }
     }
+
+    readArmorDrawbacks(col, e, origin);
 
     // Spells the item grants: a wand's cantrip, a cloak's daily misty step.
     // Same 5etools shape races and feats use, so an imported magic item and a

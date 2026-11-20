@@ -556,9 +556,12 @@ export const RULE_SET_PARTS = [
 ] as const;
 
 /**
- * The kinds of what an item's data tags give while it is worn, in the order the
- * item call site reads them, which a `wornTags` row `replaces`: its defenses
- * (`resist`, `immune`, `vulnerable`, `conditionImmune`) and its save bonus.
+ * The kinds of what an item's data tags and bonus fields give while it is worn,
+ * in the order the item call site reads them, which a `wornTags` row
+ * `replaces`: its defenses (`resist`, `immune`, `vulnerable`,
+ * `conditionImmune`), its save bonus, and its bonuses to attacks, damage and
+ * the spell save DC (`bonusWeaponAttack` and `bonusSpellAttack`,
+ * `bonusWeaponDamage`, `bonusSpellSaveDc`).
  */
 export const WORN_TAG_KINDS = [
   'resist',
@@ -566,6 +569,9 @@ export const WORN_TAG_KINDS = [
   'vulnerable',
   'conditionImmune',
   'saveBonus',
+  'attackBonus',
+  'damageBonus',
+  'spellDcBonus',
 ] as const;
 
 /** Whether a built-in row turns the prose scan off for its entry, or runs beside it. */

@@ -3966,6 +3966,41 @@
           }
         }
       ]
+    },
+    {
+      "part": "curated",
+      "keys": ["speed|dwarf|phb", "speed|dwarf (kaladesh)|psk"],
+      "scan": "keep",
+      "effects": [
+        {
+          "kind": "armorPenaltyLift",
+          "penalty": "strength",
+          "armor": "heavy"
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["medium armor master|phb"],
+      "scan": "keep",
+      "effects": [
+        {
+          "kind": "armorPenaltyLift",
+          "penalty": "stealth",
+          "armor": "medium"
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["arcane armor|armorer"],
+      "scan": "keep",
+      "effects": [
+        {
+          "kind": "armorPenaltyLift",
+          "penalty": "strength"
+        }
+      ]
     }
   ]
 }

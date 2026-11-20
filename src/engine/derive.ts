@@ -35,7 +35,7 @@ import { subjectsWithMoments } from './effects/mechanics';
 import { collectRace } from './effects/race';
 import { noteSkillSources } from './effects/skillSources';
 import { Formula } from './formula';
-import { collectMoments, momentsInForce } from './moments';
+import { collectMoments, type MomentSubject, momentsInForce } from './moments';
 import { sheetRulesField } from './rules';
 import type {
   Ability,
@@ -97,6 +97,8 @@ export function deriveSheet(
   // Effects in play come last: they reach numbers and rolls, never a pick.
   let effectsNotCounted: NotCounted[] = [];
   let played: ActiveEffect[] = [];
+  /** The homebrew conditions in force that have moments of their own. */
+  let conditionMoments: MomentSubject[] = [];
   if (options.active !== false) {
     const read = readActiveEffects(doc.play.activeEffects);
     played = read.effects;
@@ -112,6 +114,7 @@ export function deriveSheet(
       ).map((e) => ({ condition: e.condition, origin: e.origin.label })),
     );
     for (const problem of brew.problems) col.warn(problem);
+    conditionMoments = brew.subjects;
     const counting = countingEffects([...played, ...brew.effects]);
     for (const e of counting.inputs) col.add(e);
     effectsNotCounted = counting.notCounted;
@@ -163,7 +166,7 @@ export function deriveSheet(
   const checks = calcChecks(effects, abilities, profBonus.value);
   const skills = calcSkills(doc, effects, abilities, profBonus.value, fromBackground);
   const passivePerception = calcPassivePerception(doc, skills, effects);
-  const speedWalk = calcWalkSpeed(doc, col, effects);
+  const speedWalk = calcWalkSpeed(doc, col, effects, abilities.str.value);
   const {
     ac,
     label: acFormulaLabel,
@@ -256,8 +259,13 @@ export function deriveSheet(
     col.warnings.push(`${note.origin.label}: ${note.text}`);
   }
 
-  // Moments (H9): the entries' own and the packs applied to this character.
-  const readMoments = collectMoments(subjectsWithMoments(col), ctx, doc.id);
+  // Moments (H9): the entries' own, the homebrew conditions' in force, and the
+  // packs applied to this character.
+  const readMoments = collectMoments(
+    [...subjectsWithMoments(col), ...conditionMoments],
+    ctx,
+    doc.id,
+  );
   for (const problem of readMoments.problems) col.warn(problem);
   const moments = momentsInForce(
     readMoments,
@@ -337,7 +345,12 @@ export function deriveSheet(
         ...(e.oneRoll === true ? { oneRoll: true as const } : {}),
       })),
     ),
-    tempHpEachTurn: effectsOf(effects, 'tempHpEachTurn').reduce<DerivedSheet['tempHpEachTurn']>(
+    // The build's own alone: the start of a turn reads the effects in play's
+    // from play (`newTurn`), so one ending then gives none.
+    tempHpEachTurn: effectsOf(
+      effects.filter((e) => !inPlay(e)),
+      'tempHpEachTurn',
+    ).reduce<DerivedSheet['tempHpEachTurn']>(
       (best, e) =>
         best === undefined || e.amount > best.amount
           ? { amount: e.amount, origin: e.origin.label }

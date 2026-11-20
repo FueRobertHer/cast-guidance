@@ -32,8 +32,8 @@ function ctx(entities: Entities): EngineContext {
   };
 }
 
-function speed(d: CharacterDoc, entities: Entities, effects: EffectInput[] = []) {
-  return calcWalkSpeed(d, new Collector(d, ctx(entities)), effects);
+function speed(d: CharacterDoc, entities: Entities, effects: EffectInput[] = [], strength = 10) {
+  return calcWalkSpeed(d, new Collector(d, ctx(entities)), effects, strength);
 }
 
 function docWithRace(): CharacterDoc {

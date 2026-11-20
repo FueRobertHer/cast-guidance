@@ -108,12 +108,17 @@ over the device's choice. It travels inside `character` beside
   settings, or the character's `allowedSources` when that list is set, so a
   book or file added later shows. The switches go over the list: an `off`
   source is hidden even when listed, an `on` one shown even when not.
-- **Pickers only, as for the list.** Picks already on the character from a
-  source switched off stay and derive as before; the Build page names them.
-  The library and search keep using the device settings.
-- **`on` cannot bring back a file switched off on this device.** A homebrew
-  file the device has turned off is not loaded at all, so `on` only lifts the
-  device's source settings.
+- **Pickers, as for the list, and one collection more.** Picks already on the
+  character from a source switched off stay and derive as before; the Build
+  page names them. The library and search keep using the device settings.
+  Changes to the books (`MyChanges`) is the exception: switched off, the
+  character gets the book's version of every entry it changes, on the sheet
+  as well as in the pickers. A rule pack's changes follow its Apply to, not a
+  switch.
+- **`on` brings back a file switched off on this device, for this character
+  alone.** The device keeps a file it has turned off out of everyone's data;
+  a character whose `on` names a source that file declares sees the file in
+  its pickers and on its sheet, as if it were on.
 - **It is a permission, not a dependency.** Switching a homebrew source on does
   not pull that homebrew into an export.
 - **The guards check the shape only**: `sourceSwitches` must be an object and

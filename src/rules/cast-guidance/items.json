@@ -161,6 +161,500 @@
       ]
     },
     {
+      "part": "wornTags",
+      "keys": [
+        "banner of the krig rune|skt",
+        "niko's mace|uthftlh",
+        "the infernal machine of lum the mad|imr"
+      ],
+      "replaces": ["attackBonus"],
+      "effects": []
+    },
+    {
+      "part": "wornTags",
+      "keys": ["bracers of archery|dmg", "bracers of archery|xdmg"],
+      "replaces": ["damageBonus"],
+      "effects": [
+        {
+          "kind": "damageBonus",
+          "scope": "ranged",
+          "amount": 2,
+          "weapons": ["longbow", "shortbow"]
+        }
+      ]
+    },
+    {
+      "part": "wornTags",
+      "keys": [
+        "ashen band of might|icc",
+        "ashen band of greater might|icc",
+        "ashen band of unmatched might|icc",
+        "ashen band of endless might|icc"
+      ],
+      "replaces": ["damageBonus"],
+      "effects": [
+        {
+          "kind": "damageBonus",
+          "scope": "melee",
+          "amount": 1,
+          "weaponsOnly": true
+        }
+      ]
+    },
+    {
+      "part": "wornTags",
+      "keys": [
+        "ashen band of vengeance|icc",
+        "ashen band of greater vengeance|icc",
+        "ashen band of unmatched vengeance|icc",
+        "ashen band of endless vengeance|icc"
+      ],
+      "replaces": ["damageBonus"],
+      "effects": [
+        {
+          "kind": "damageBonus",
+          "scope": "ranged",
+          "amount": 2
+        }
+      ]
+    },
+    {
+      "part": "wornTags",
+      "keys": ["+1 all-purpose tool|tce"],
+      "replaces": ["attackBonus", "spellDcBonus"],
+      "effects": [
+        {
+          "kind": "attackBonus",
+          "scope": "all",
+          "attack": "spell",
+          "amount": 1,
+          "className": "Artificer"
+        },
+        {
+          "kind": "spellDcBonus",
+          "amount": 1,
+          "className": "Artificer"
+        }
+      ]
+    },
+    {
+      "part": "wornTags",
+      "keys": ["+2 all-purpose tool|tce"],
+      "replaces": ["attackBonus", "spellDcBonus"],
+      "effects": [
+        {
+          "kind": "attackBonus",
+          "scope": "all",
+          "attack": "spell",
+          "amount": 2,
+          "className": "Artificer"
+        },
+        {
+          "kind": "spellDcBonus",
+          "amount": 2,
+          "className": "Artificer"
+        }
+      ]
+    },
+    {
+      "part": "wornTags",
+      "keys": ["+3 all-purpose tool|tce"],
+      "replaces": ["attackBonus", "spellDcBonus"],
+      "effects": [
+        {
+          "kind": "attackBonus",
+          "scope": "all",
+          "attack": "spell",
+          "amount": 3,
+          "className": "Artificer"
+        },
+        {
+          "kind": "spellDcBonus",
+          "amount": 3,
+          "className": "Artificer"
+        }
+      ]
+    },
+    {
+      "part": "wornTags",
+      "keys": ["+1 arcane grimoire|tce"],
+      "replaces": ["attackBonus", "spellDcBonus"],
+      "effects": [
+        {
+          "kind": "attackBonus",
+          "scope": "all",
+          "attack": "spell",
+          "amount": 1,
+          "className": "Wizard"
+        },
+        {
+          "kind": "spellDcBonus",
+          "amount": 1,
+          "className": "Wizard"
+        }
+      ]
+    },
+    {
+      "part": "wornTags",
+      "keys": ["+2 arcane grimoire|tce"],
+      "replaces": ["attackBonus", "spellDcBonus"],
+      "effects": [
+        {
+          "kind": "attackBonus",
+          "scope": "all",
+          "attack": "spell",
+          "amount": 2,
+          "className": "Wizard"
+        },
+        {
+          "kind": "spellDcBonus",
+          "amount": 2,
+          "className": "Wizard"
+        }
+      ]
+    },
+    {
+      "part": "wornTags",
+      "keys": ["+3 arcane grimoire|tce"],
+      "replaces": ["attackBonus", "spellDcBonus"],
+      "effects": [
+        {
+          "kind": "attackBonus",
+          "scope": "all",
+          "attack": "spell",
+          "amount": 3,
+          "className": "Wizard"
+        },
+        {
+          "kind": "spellDcBonus",
+          "amount": 3,
+          "className": "Wizard"
+        }
+      ]
+    },
+    {
+      "part": "wornTags",
+      "keys": ["+1 bloodwell vial|tce"],
+      "replaces": ["attackBonus", "spellDcBonus"],
+      "effects": [
+        {
+          "kind": "attackBonus",
+          "scope": "all",
+          "attack": "spell",
+          "amount": 1,
+          "className": "Sorcerer"
+        },
+        {
+          "kind": "spellDcBonus",
+          "amount": 1,
+          "className": "Sorcerer"
+        }
+      ]
+    },
+    {
+      "part": "wornTags",
+      "keys": ["+2 bloodwell vial|tce"],
+      "replaces": ["attackBonus", "spellDcBonus"],
+      "effects": [
+        {
+          "kind": "attackBonus",
+          "scope": "all",
+          "attack": "spell",
+          "amount": 2,
+          "className": "Sorcerer"
+        },
+        {
+          "kind": "spellDcBonus",
+          "amount": 2,
+          "className": "Sorcerer"
+        }
+      ]
+    },
+    {
+      "part": "wornTags",
+      "keys": ["+3 bloodwell vial|tce"],
+      "replaces": ["attackBonus", "spellDcBonus"],
+      "effects": [
+        {
+          "kind": "attackBonus",
+          "scope": "all",
+          "attack": "spell",
+          "amount": 3,
+          "className": "Sorcerer"
+        },
+        {
+          "kind": "spellDcBonus",
+          "amount": 3,
+          "className": "Sorcerer"
+        }
+      ]
+    },
+    {
+      "part": "wornTags",
+      "keys": ["+1 moon sickle|tce"],
+      "replaces": ["attackBonus", "spellDcBonus"],
+      "effects": [
+        {
+          "kind": "attackBonus",
+          "scope": "all",
+          "attack": "spell",
+          "amount": 1,
+          "className": "Druid"
+        },
+        {
+          "kind": "attackBonus",
+          "scope": "all",
+          "attack": "spell",
+          "amount": 1,
+          "className": "Ranger"
+        },
+        {
+          "kind": "spellDcBonus",
+          "amount": 1,
+          "className": "Druid"
+        },
+        {
+          "kind": "spellDcBonus",
+          "amount": 1,
+          "className": "Ranger"
+        }
+      ]
+    },
+    {
+      "part": "wornTags",
+      "keys": ["+2 moon sickle|tce"],
+      "replaces": ["attackBonus", "spellDcBonus"],
+      "effects": [
+        {
+          "kind": "attackBonus",
+          "scope": "all",
+          "attack": "spell",
+          "amount": 2,
+          "className": "Druid"
+        },
+        {
+          "kind": "attackBonus",
+          "scope": "all",
+          "attack": "spell",
+          "amount": 2,
+          "className": "Ranger"
+        },
+        {
+          "kind": "spellDcBonus",
+          "amount": 2,
+          "className": "Druid"
+        },
+        {
+          "kind": "spellDcBonus",
+          "amount": 2,
+          "className": "Ranger"
+        }
+      ]
+    },
+    {
+      "part": "wornTags",
+      "keys": ["+3 moon sickle|tce"],
+      "replaces": ["attackBonus", "spellDcBonus"],
+      "effects": [
+        {
+          "kind": "attackBonus",
+          "scope": "all",
+          "attack": "spell",
+          "amount": 3,
+          "className": "Druid"
+        },
+        {
+          "kind": "attackBonus",
+          "scope": "all",
+          "attack": "spell",
+          "amount": 3,
+          "className": "Ranger"
+        },
+        {
+          "kind": "spellDcBonus",
+          "amount": 3,
+          "className": "Druid"
+        },
+        {
+          "kind": "spellDcBonus",
+          "amount": 3,
+          "className": "Ranger"
+        }
+      ]
+    },
+    {
+      "part": "wornTags",
+      "keys": ["+1 rhythm-maker's drum|tce"],
+      "replaces": ["attackBonus", "spellDcBonus"],
+      "effects": [
+        {
+          "kind": "attackBonus",
+          "scope": "all",
+          "attack": "spell",
+          "amount": 1,
+          "className": "Bard"
+        },
+        {
+          "kind": "spellDcBonus",
+          "amount": 1,
+          "className": "Bard"
+        }
+      ]
+    },
+    {
+      "part": "wornTags",
+      "keys": ["+2 rhythm-maker's drum|tce"],
+      "replaces": ["attackBonus", "spellDcBonus"],
+      "effects": [
+        {
+          "kind": "attackBonus",
+          "scope": "all",
+          "attack": "spell",
+          "amount": 2,
+          "className": "Bard"
+        },
+        {
+          "kind": "spellDcBonus",
+          "amount": 2,
+          "className": "Bard"
+        }
+      ]
+    },
+    {
+      "part": "wornTags",
+      "keys": ["+3 rhythm-maker's drum|tce"],
+      "replaces": ["attackBonus", "spellDcBonus"],
+      "effects": [
+        {
+          "kind": "attackBonus",
+          "scope": "all",
+          "attack": "spell",
+          "amount": 3,
+          "className": "Bard"
+        },
+        {
+          "kind": "spellDcBonus",
+          "amount": 3,
+          "className": "Bard"
+        }
+      ]
+    },
+    {
+      "part": "wornTags",
+      "keys": [
+        "+1 rod of the pact keeper|dmg",
+        "+1 rod of the pact keeper|xdmg",
+        "psionic rod of the honed mind|au",
+        "tranquil rod of the honed mind|au",
+        "vigilant rod of the honed mind|au"
+      ],
+      "replaces": ["attackBonus", "spellDcBonus"],
+      "effects": [
+        {
+          "kind": "attackBonus",
+          "scope": "all",
+          "attack": "spell",
+          "amount": 1,
+          "className": "Warlock"
+        },
+        {
+          "kind": "spellDcBonus",
+          "amount": 1,
+          "className": "Warlock"
+        }
+      ]
+    },
+    {
+      "part": "wornTags",
+      "keys": ["+2 rod of the pact keeper|dmg", "+2 rod of the pact keeper|xdmg"],
+      "replaces": ["attackBonus", "spellDcBonus"],
+      "effects": [
+        {
+          "kind": "attackBonus",
+          "scope": "all",
+          "attack": "spell",
+          "amount": 2,
+          "className": "Warlock"
+        },
+        {
+          "kind": "spellDcBonus",
+          "amount": 2,
+          "className": "Warlock"
+        }
+      ]
+    },
+    {
+      "part": "wornTags",
+      "keys": ["+3 rod of the pact keeper|dmg", "+3 rod of the pact keeper|xdmg"],
+      "replaces": ["attackBonus", "spellDcBonus"],
+      "effects": [
+        {
+          "kind": "attackBonus",
+          "scope": "all",
+          "attack": "spell",
+          "amount": 3,
+          "className": "Warlock"
+        },
+        {
+          "kind": "spellDcBonus",
+          "amount": 3,
+          "className": "Warlock"
+        }
+      ]
+    },
+    {
+      "part": "wornTags",
+      "keys": ["reveler's concertina|tce"],
+      "replaces": ["spellDcBonus"],
+      "effects": [
+        {
+          "kind": "spellDcBonus",
+          "amount": 2,
+          "className": "Bard"
+        }
+      ]
+    },
+    {
+      "part": "wornTags",
+      "keys": ["talisman of pure good|dmg", "talisman of ultimate evil|dmg"],
+      "replaces": ["attackBonus"],
+      "effects": [
+        {
+          "kind": "attackBonus",
+          "scope": "all",
+          "attack": "spell",
+          "amount": 2,
+          "className": "Cleric"
+        },
+        {
+          "kind": "attackBonus",
+          "scope": "all",
+          "attack": "spell",
+          "amount": 2,
+          "className": "Paladin"
+        }
+      ]
+    },
+    {
+      "part": "wornTags",
+      "keys": ["jester's mask|bmt"],
+      "replaces": ["attackBonus", "spellDcBonus"],
+      "effects": [
+        {
+          "kind": "attackBonus",
+          "scope": "all",
+          "attack": "spell",
+          "amount": 3,
+          "ability": "cha"
+        },
+        {
+          "kind": "spellDcBonus",
+          "amount": 3,
+          "ability": "cha"
+        }
+      ]
+    },
+    {
       "part": "charges",
       "keys": ["staff of healing|dmg", "staff of healing|xdmg"],
       "charges": 10,

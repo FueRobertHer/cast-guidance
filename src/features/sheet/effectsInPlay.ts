@@ -58,6 +58,7 @@ export function hpLimits(
     edition,
     immune: sheet.conditionImmunities,
     ...(sheet.moments === undefined ? {} : { moments: sheet.moments }),
+    ...(sheet.tempHpEachTurn === undefined ? {} : { tempHpEachTurn: sheet.tempHpEachTurn }),
     ...(conditionEntry === undefined ? {} : { conditionEntry }),
   };
 }

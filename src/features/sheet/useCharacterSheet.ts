@@ -84,7 +84,8 @@ export function useCharacterSheet(id: string | undefined): CharacterSheetState {
   // biome-ignore lint/correctness/useExhaustiveDependencies: rev tracks doc mutations
   const sheets = useMemo(() => {
     if (doc === null || registry === null || !dataReady) return null;
-    const context = engineContextFor(registry, appRules);
+    // The character's own view, as the layout's provider gives every tab.
+    const context = engineContextFor(registry, appRules, doc);
     const sheet = deriveSheet(doc, context);
     // A homebrew condition counts as an effect in play does, so the build alone
     // is worked out for it too, and what it lowered wears the red edge.
