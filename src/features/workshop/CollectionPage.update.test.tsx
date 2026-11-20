@@ -268,17 +268,31 @@ describe('Needs a look', () => {
     expect(record?.placed.entries).toEqual(['Glow brightly.', part('Lantern Vow')]);
   });
 
-  it('an update that already says what yours did: yours shows, and Keep yours settles it', async () => {
+  it('an update that already has the words yours put in: says so, and uses the collection’s', async () => {
     const { fileKey } = await changedUnderneath(
       ['Glow brightly.', 'Shine.'],
       ['Glow brightly.', 'Shine on.'],
     );
     const list = await lookAt(fileKey);
-    expect(list.textContent).toContain('Yours: Glow brightly. Shine on.');
-    expect(list.textContent).toContain('Yours shows.');
-    expect(list.textContent).not.toContain('so its words show now');
-    fireEvent.click(within(list).getByRole('button', { name: 'Keep yours: Glimmer' }));
+    expect(list.textContent).toContain('Yours: Glow brightly. (in place of “Glow.”)');
+    expect(list.textContent).toContain('it now has the words yours put in');
+    expect(list.textContent).not.toContain('Yours shows.');
+    expect(within(list).queryByRole('button', { name: /^Keep yours/ })).toBeNull();
+    fireEvent.click(within(list).getByRole('button', { name: 'Use the collection’s: Glimmer' }));
     await settled();
+    const reg = await getRegistry();
+    expect(reg.changedEntries()).toEqual([]);
+    expect(reg.get('feat', 'Glimmer', 'TID')?.entries).toEqual(['Glow brightly.', 'Shine on.']);
+  });
+
+  it('an update with words yours put in only elsewhere: does not say yours shows', async () => {
+    // The player made a second "Shine."; the update reworded the first line, and one "Shine." stays.
+    const { fileKey } = await changedUnderneath(['Shine.', 'Shine.'], ['Glow softly.', 'Shine.']);
+    const list = await lookAt(fileKey);
+    expect(list.textContent).toContain('The collection’s now: Glow softly. Shine.');
+    expect(list.textContent).not.toContain('Yours shows.');
+    expect(list.textContent).toContain('so its words show');
+    expect(within(list).queryByRole('button', { name: /^Keep yours/ })).toBeNull();
   });
 
   it('a removal of two parts with one renamed: says the renamed one is not taken out', async () => {
@@ -340,6 +354,53 @@ describe('Needs a look', () => {
     expect(list.textContent).toContain('Yours: Glow brightly. Shine on.');
   });
 
+  it('leaves a look off a rule pack that replaces the same entry', async () => {
+    const lumen = (entries: unknown[]) => ({
+      feat: [{ name: 'Lumen', source: 'TST', entries }],
+    });
+    await seedWorld(lumen(BASE));
+    const pack = await homebrewRepo.importJson(
+      {
+        _meta: {
+          sources: [{ json: 'TBL', full: 'Our Table' }],
+          castGuidance: { v: 1, replaces: [{ type: 'feat', name: 'Lumen', source: 'TST' }] },
+        },
+        feat: [
+          {
+            name: 'Lumen',
+            source: 'TST',
+            _copy: {
+              name: 'Lumen',
+              source: 'TST',
+              _mod: { entries: { mode: 'appendArr', items: ['At our table, it lasts.'] } },
+            },
+          },
+        ],
+      },
+      'Our Table.json',
+    );
+    const reg = await getRegistry();
+    const placed = reg.get('feat', 'Lumen', 'TST');
+    if (placed === undefined) throw new Error('no Lumen');
+    const original = reg.belowOwnChange(placed) as Json;
+    const change = writeChange('feat', original, {
+      ...original,
+      entries: ['Glow brightly.', 'Shine.'],
+    });
+    const { fileId } = await homebrewRepo.saveEntry('feat', change as Json & EntryKey, {
+      role: 'changes',
+    });
+    await seedWorld(lumen(['Glow.', 'Shine on.']));
+    const looks = (await getRegistry()).changedEntries().flatMap((r) => r.layers);
+    expect(looks.some((l) => l.from.fileId === fileId && l.needsLook.length > 0)).toBe(true);
+    // The look is the player's change over the book: it shows where the change is.
+    visit(collectionPath(pack.key ?? ''));
+    await screen.findByRole('heading', { level: 1, name: 'Our Table.json' }, { timeout: WAIT });
+    await screen.findByRole('list', { name: 'In Our Table.json' }, { timeout: WAIT });
+    await new Promise((go) => setTimeout(go, 200));
+    expect(screen.queryByRole('list', { name: 'Needs a look' })).toBeNull();
+  });
+
   it('appears while the page is open, when the books under a change land new words', async () => {
     const lumen = (entries: unknown[]) => ({
       feat: [{ name: 'Lumen', source: 'TST', entries }],
@@ -364,6 +425,23 @@ describe('Needs a look', () => {
     markDataChanged();
     const list = await screen.findByRole('list', { name: 'Needs a look' }, { timeout: WAIT });
     expect(list.textContent).toContain('Lumen');
+  });
+
+  it('takes a settled look off the list at once, so a second tap cannot land', async () => {
+    const { fileKey } = await changedUnderneath(
+      ['Glow brightly.', 'Shine.'],
+      ['Glow softly.', 'Shine.'],
+    );
+    const list = await lookAt(fileKey);
+    // Done, but nothing stored moves: the list is not read again.
+    vi.spyOn(homebrewRepo, 'removeEntry').mockResolvedValue(true);
+    fireEvent.click(within(list).getByRole('button', { name: 'Use the collection’s: Glimmer' }));
+    await waitFor(() => expect(noticeStore.getState().notice?.tone).toBe('good'), {
+      timeout: WAIT,
+    });
+    await new Promise((go) => setTimeout(go, 50));
+    const again = screen.queryByRole('button', { name: 'Use the collection’s: Glimmer' });
+    expect(again === null || again.hasAttribute('disabled')).toBe(true);
   });
 
   it('says so when settling finds the change already gone', async () => {

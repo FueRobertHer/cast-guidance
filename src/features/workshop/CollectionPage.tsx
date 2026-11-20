@@ -33,6 +33,7 @@ import {
   readSourcePolicy,
   type SourcePolicy,
 } from '@/data5e/sourceFilter';
+import { knownSources } from '@/data5e/sourceNames';
 import { characterRepo } from '@/db/characterRepo';
 import {
   EntryClash,
@@ -87,6 +88,8 @@ const LINK =
 const PAGE = 100;
 
 const lower = (s: string) => s.toLowerCase();
+/** The books' sources, lowercased. */
+const KNOWN = knownSources().map(lower);
 const isRecord = (v: unknown): v is Json =>
   typeof v === 'object' && v !== null && !Array.isArray(v);
 /** "Hild", "Hild and Osk", "Hild, Maren and Osk". */
@@ -449,8 +452,10 @@ async function heldIn(c: Collection): Promise<{
   const ids = new Set<string>();
   const unread: string[] = [];
   for (const r of c.rows) {
-    const { file } = await homebrewRepo.getSafe(r.id);
-    if (file === undefined) unread.push(r.book ?? r.fileName);
+    const { file, error } = await homebrewRepo.getSafe(r.id);
+    // Gone meanwhile (another tab) is not unreadable; copies share a name.
+    const name = r.book ?? r.fileName;
+    if (error !== undefined && !unread.includes(name)) unread.push(name);
     for (const e of file === undefined ? [] : entriesIn(file.json, false)) {
       if (typeof e.entry.source === 'string') ids.add(`${lower(e.name)}|${lower(e.entry.source)}`);
     }
@@ -496,8 +501,10 @@ function EntriesSection({ c, looks }: { c: Collection; looks: ReadonlySet<string
   const navigate = useNavigate();
   const books = c.rows[0]?.book !== undefined && c.rows.length > 1;
   const rows = inOrder(c);
-  // A book by its name: an update stores it under a new row, and it stays picked.
-  const bookOf = (r: HomebrewFileMeta) => r.book ?? r.id;
+  // A book by its name and source: an update stores it under a new row, and
+  // it stays picked; two books can share a name, never a source.
+  const bookOf = (r: HomebrewFileMeta) =>
+    r.book === undefined ? r.id : `${r.book}|${r.sourceIds[0] ?? ''}`;
   const [picked, setPicked] = useState(rows[0] === undefined ? '' : bookOf(rows[0]));
   const row = rows.find((r) => bookOf(r) === picked) ?? rows[0];
   const read = useLiveQuery(
@@ -642,8 +649,9 @@ function EntriesSection({ c, looks }: { c: Collection; looks: ReadonlySet<string
             {(all ? shown : shown.slice(0, PAGE)).map((e, i) => {
               const href = hrefOf(e);
               const look = looks.has(`${e.type}:${identityKey(e.type, e.entry)}`);
-              // Only when off: some kinds have no Library page at all.
-              const caption = `${kindOf(e.type)}${href === undefined && !own && !row.enabled ? '. Turn it on to open it in the Library' : ''}`;
+              // Only when off, and only for a kind the Library has a page for.
+              const opens = !own && !row.enabled && libraryPath(e.type, e.entry) !== undefined;
+              const caption = `${kindOf(e.type)}${href === undefined && opens ? '. Turn it on to open it in the Library' : ''}`;
               const body = (
                 <>
                   <span className="flex min-w-0 flex-1 flex-col">
@@ -740,18 +748,30 @@ function looksAt(
 }
 
 /**
- * Every entry identity a collection holds, read only while some look is not
- * already placed here by its file or source: most pages never read a file
- * for it.
+ * Every entry identity a collection holds, read only while a look is over an
+ * entry whose source no stored file declares and no book uses (an entry can
+ * name a source its file does not declare): otherwise no file is read for it.
+ * Only files that hold entries of their own are read: a rule pack's or
+ * Changes to the books' entries carry the identity of the entry they change,
+ * so a look on that entry is not theirs (`skip`, undefined while the packs
+ * here are not yet known).
  */
 function useHeld(
   c: Collection,
   records: readonly ChangedEntry[],
   stamp: string,
+  declared: ReadonlySet<string>,
+  skip: ReadonlySet<string> | undefined,
 ): ReadonlySet<string> | undefined {
-  const need = records.some(
-    (r) => r.layers.some((l) => l.needsLook.length > 0) && looksAt([r], c).length === 0,
-  );
+  const reads = skip === undefined ? [] : c.rows.filter((r) => !isChanges(r) && !skip.has(r.id));
+  const need =
+    reads.length > 0 &&
+    records.some(
+      (r) =>
+        r.layers.some((l) => l.needsLook.length > 0) &&
+        !declared.has(typeof r.base.source === 'string' ? lower(r.base.source) : '') &&
+        looksAt([r], c).length === 0,
+    );
   const [held, setHeld] = useState<{ stamp: string; ids: ReadonlySet<string> }>();
   // biome-ignore lint/correctness/useExhaustiveDependencies: stamp names every row and its revision
   useEffect(() => {
@@ -759,7 +779,7 @@ function useHeld(
     let alive = true;
     void (async () => {
       const ids = new Set<string>();
-      for (const r of c.rows) {
+      for (const r of reads) {
         const { file } = await homebrewRepo.getSafe(r.id);
         for (const e of file === undefined ? [] : entriesIn(file.json, false)) {
           ids.add(`${e.type}:${identityKey(e.type, e.entry)}`);
@@ -830,7 +850,7 @@ function words(v: unknown): string {
  * update reworded the very text the player changed: the collection's words
  * show, and the player's whole field is gone, since a mark is only a hash).
  */
-type Shape = 'whole' | 'applies' | 'partly' | 'misses';
+type Shape = 'whole' | 'applies' | 'partly' | 'misses' | 'said';
 
 function shapeOf(layer: ChangeLayer, f: string): { shape: Shape; missed: Json[] } {
   const copy = fieldOf(layer.entry, '_copy');
@@ -848,6 +868,7 @@ function shapeOf(layer: ChangeLayer, f: string): { shape: Shape; missed: Json[] 
   >[0];
   const missed: Json[] = [];
   let tried = 0;
+  let said = 0;
   for (const op of ops) {
     // A removal of several is read one by one: one can still find its part
     // while another, renamed by the update, finds nothing.
@@ -859,12 +880,23 @@ function shapeOf(layer: ChangeLayer, f: string): { shape: Shape; missed: Json[] 
         warned = true;
       });
       const found = !warned && JSON.stringify(target[f]) !== before;
-      // A replacement whose words went because the update already says the
-      // player's: what shows is theirs (#6).
-      if (!found && !alreadySays(target[f], part)) missed.push(part);
+      if (found) continue;
+      missed.push(part);
+      if (alreadySays(target[f], part)) said += 1;
     }
   }
-  const shape = missed.length === 0 ? 'applies' : missed.length === tried ? 'misses' : 'partly';
+  // Every step missed, each where the field already holds the words it put
+  // in (#6): the collection's words show, and they hold the player's. A mark
+  // is a hash, so this cannot be told from words the player also had
+  // elsewhere: it says only what is so, and settles as a miss.
+  const shape =
+    missed.length === 0
+      ? 'applies'
+      : missed.length < tried
+        ? 'partly'
+        : said === tried
+          ? 'said'
+          : 'misses';
   return { shape, missed };
 }
 
@@ -900,13 +932,20 @@ function wordingOf(ops: readonly Json[]): string {
 /** What settling a look does: keeps the player's, where it still applies. */
 function settleLabel(shapes: readonly Shape[]): string {
   if (shapes.every((s) => s === 'whole' || s === 'applies')) return 'Keep yours';
-  if (shapes.every((s) => s === 'misses')) return 'Use the collection’s';
+  if (shapes.every((s) => s === 'misses' || s === 'said')) return 'Use the collection’s';
   return 'Keep yours where it applies';
 }
 
+const keyOfLook = ({ record, layer }: Look) => `${lookKey(record)}:${layer.from.fileId}`;
+
 function NeedsLookSection({ c, items }: { c: Collection; items: readonly Look[] }) {
   const [busy, setBusy] = useState(false);
-  if (items.length === 0) return null;
+  // Settled, a look leaves the list before the registry is read again, so a
+  // second tap on it cannot land; a new list (read again) starts clean.
+  const [done, setDone] = useState<{ of: readonly Look[]; keys: ReadonlySet<string> }>();
+  const gone = done?.of === items ? done.keys : new Set<string>();
+  const open = items.filter((l) => !gone.has(keyOfLook(l)));
+  if (open.length === 0) return null;
 
   /**
    * Read the change again over the entry below as it is now: what shows stays
@@ -928,6 +967,10 @@ function NeedsLookSection({ c, items }: { c: Collection; items: readonly Look[] 
         await homebrewRepo.saveEntry(record.type, entry, { role: 'changes', replaces: was });
       }
       invalidateRegistry();
+      setDone((d) => ({
+        of: items,
+        keys: new Set([...(d?.of === items ? d.keys : []), keyOfLook({ record, layer })]),
+      }));
       notify({ title: `${label}: ${String(placed.name)}`, tone: 'good' });
     } catch (err) {
       notifyFailure(label, err);
@@ -947,7 +990,7 @@ function NeedsLookSection({ c, items }: { c: Collection; items: readonly Look[] 
           : 'Since you changed these, this collection changed the same thing.'}
       </p>
       <ul className="flex flex-col gap-2" aria-label="Needs a look">
-        {items.map((look) => {
+        {open.map((look) => {
           const { record, layer } = look;
           const name = String(record.placed.name);
           const view = libraryPath(record.type, record.placed as Json);
@@ -955,7 +998,7 @@ function NeedsLookSection({ c, items }: { c: Collection; items: readonly Look[] 
           const label = settleLabel(fields.map((x) => x.shape));
           return (
             <li
-              key={`${record.type}:${identityKey(record.type, record.base)}:${layer.from.fileId}`}
+              key={keyOfLook(look)}
               className="flex flex-col gap-2 rounded-card bg-guide-soft p-3"
             >
               <span className="text-body-strong break-words">
@@ -972,14 +1015,18 @@ function NeedsLookSection({ c, items }: { c: Collection; items: readonly Look[] 
                     </dd>
                     <dd className="break-words">
                       <span className="text-ink-muted">Yours: </span>
-                      {shape === 'misses' ? wordingOf(missed) : words(fieldOf(record.placed, f))}
+                      {shape === 'misses' || shape === 'said'
+                        ? wordingOf(missed)
+                        : words(fieldOf(record.placed, f))}
                     </dd>
                     <dd className="text-ink-muted">
                       {shape === 'misses'
                         ? 'The words yours changed are gone from the collection’s, so its words show now.'
-                        : shape === 'partly'
-                          ? `Part of yours no longer finds its words, so the collection’s show there: ${wordingOf(missed)}`
-                          : 'Yours shows.'}
+                        : shape === 'said'
+                          ? 'The words yours changed are gone from the collection’s, and it now has the words yours put in, so its words show.'
+                          : shape === 'partly'
+                            ? `Part of yours no longer finds its words, so the collection’s show there: ${wordingOf(missed)}`
+                            : 'Yours shows.'}
                     </dd>
                   </div>
                 ))}
@@ -1132,11 +1179,14 @@ function Found({
   c,
   stamp,
   strays,
+  declared,
 }: {
   c: Collection;
   stamp: string;
   /** Rows of its file name that could not be read: a delete leaves them. */
   strays: number;
+  /** Every source a stored file declares or a book uses, lowercased. */
+  declared: ReadonlySet<string>;
 }) {
   usePageTitle(c.name, 'Workshop');
   const navigate = useNavigate();
@@ -1147,7 +1197,11 @@ function Found({
   const [status, setStatus] = useState<string>();
   const sharing = useMemo(canShareFiles, []);
   const records = useChangedEntries(stamp);
-  const held = useHeld(c, records, stamp);
+  const packIds = useMemo(
+    () => (packs === undefined ? undefined : new Set(packs.map((p) => p.id))),
+    [packs],
+  );
+  const held = useHeld(c, records, stamp, declared, packIds);
   const looks = useMemo(() => looksAt(records, c, held), [records, c, held]);
   const looked = useMemo(() => new Set(looks.map((l) => lookKey(l.record))), [looks]);
   const [single] = c.rows.length === 1 ? c.rows : [];
@@ -1292,12 +1346,13 @@ function CollectionAt({ address }: { address: string }) {
   }
   // Keyed by its address, so a book picked or a list opened is kept across an update.
   const stamp = meta.files.map((r) => `${r.id}@${r.rev ?? 0}:${r.enabled}`).join(',');
+  const declared = new Set([...KNOWN, ...meta.files.flatMap((r) => r.sourceIds.map(lower))]);
   if (c !== undefined) {
     const names = new Set(c.rows.map((r) => r.fileName));
     const strays = meta.errors.filter(
       (e) => e.fileName !== undefined && names.has(e.fileName),
     ).length;
-    return <Found key={c.id} c={c} stamp={stamp} strays={strays} />;
+    return <Found key={c.id} c={c} stamp={stamp} strays={strays} declared={declared} />;
   }
   const broken = meta.errors.find((e) => e.id === address);
   if (broken?.id !== undefined) {

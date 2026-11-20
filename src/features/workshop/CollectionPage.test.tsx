@@ -11,6 +11,8 @@ import { StrictMode } from 'react';
 import { createMemoryRouter, RouterProvider } from 'react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { routes } from '@/app/routes';
+import { getRegistry } from '@/data5e/registry';
+import { registryViewFor } from '@/data5e/registryView';
 import { policyAllows, readSourcePolicy, writeSourcePolicy } from '@/data5e/sourceFilter';
 import { characterRepo } from '@/db/characterRepo';
 import { db } from '@/db/db';
@@ -207,6 +209,57 @@ describe('a collection page', () => {
     expect(screen.queryByText('Ember Ward')).toBeNull();
   });
 
+  it('opens the book picked when two books share a name', async () => {
+    const { books } = await homebrewRepo.prepareBooks(
+      {
+        _meta: {
+          sources: [
+            { json: 'FCA', full: 'Codex' },
+            { json: 'FCB', full: 'Codex' },
+          ],
+          convertedFrom: { format: 'fc5-compendium', fileName: 'all.xml' },
+        },
+        spell: [
+          { name: 'Ember Ward', source: 'FCA', level: 1 },
+          { name: 'Frost Ward', source: 'FCB', level: 1 },
+        ],
+      },
+      'all.xml',
+    );
+    await homebrewRepo.commitBooks(books);
+    expect(await db.homebrewFiles.count()).toBe(2);
+    visit(await addressOf((await db.homebrewFiles.toArray())[0]?.id ?? ''));
+    await screen.findByRole('list', { name: 'In all.xml' }, { timeout: WAIT });
+    const box = screen.getByRole<HTMLSelectElement>('combobox', { name: 'Book' });
+    const options = within(box).getAllByRole<HTMLOptionElement>('option');
+    expect(new Set(options.map((o) => o.value)).size).toBe(2);
+    const shown = () => screen.getByRole('list', { name: 'In all.xml' }).textContent ?? '';
+    const first = shown();
+    fireEvent.change(box, { target: { value: options[1]?.value } });
+    await waitFor(() => expect(shown()).not.toBe(first), { timeout: WAIT });
+  });
+
+  it('names two copies of one day by the time each came in', async () => {
+    const row = await homebrewRepo.importJson(IMPORTED, 'imported.json');
+    const meta = await db.homebrewFiles.get(row.id);
+    if (meta === undefined) throw new Error('no row');
+    // Noon and ten past, one day: apart by the time, with no number.
+    const noon = new Date(2026, 0, 5, 12, 0, 0).getTime();
+    await db.homebrewFiles.update(row.id, { addedAt: noon + 600_000 });
+    await db.homebrewFiles.add({ ...meta, id: 'older-copy', addedAt: noon });
+    await db.homebrewJson.add({ id: 'older-copy', json: IMPORTED });
+    visit(await addressOf(row.id));
+    const list = await screen.findByRole('list', { name: 'Its copies' }, { timeout: WAIT });
+    const names = within(list)
+      .getAllByRole('button', { name: /^Use / })
+      .map((b) => b.getAttribute('aria-label') ?? '');
+    expect(new Set(names).size).toBe(2);
+    for (const n of names) {
+      expect(n).toContain(new Date(noon).toLocaleDateString());
+      expect(n).not.toMatch(/of 2\)$/);
+    }
+  });
+
   it('names each copy apart, even two added the same day', async () => {
     const row = await homebrewRepo.importJson(IMPORTED, 'imported.json');
     const meta = await db.homebrewFiles.get(row.id);
@@ -263,6 +316,14 @@ describe('a collection page', () => {
       timeout: WAIT,
     });
     await screen.findByText(/^Hild picks from it\. New characters do not\./, {}, { timeout: WAIT });
+    // What the chips say is what each character's pickers read (E4's view).
+    const glimmerFor = async (id: string) => {
+      const doc = await characterRepo.get(id);
+      if (doc === undefined) throw new Error('no character');
+      return registryViewFor(await getRegistry(), doc).get('feat', 'Glimmer', 'IMP');
+    };
+    expect(await glimmerFor(hild.id)).toBeDefined();
+    expect(await glimmerFor(osk.id)).toBeUndefined();
 
     fireEvent.click(screen.getByRole('button', { name: 'Every character as this device' }));
     await waitFor(
@@ -482,7 +543,7 @@ describe('a collection page', () => {
     const item = hound.closest('li');
     expect(item?.querySelector('a')).toBeNull();
     expect(item?.textContent).not.toContain('Turn it on');
-    // Off, the kinds the Library lists say how to open them.
+    // Off, the kinds the Library lists say how to open them; a kind it does not list, still not.
     fireEvent.click(screen.getByRole('button', { name: 'Use imported.json' }));
     await waitFor(
       () =>
@@ -491,6 +552,7 @@ describe('a collection page', () => {
         ),
       { timeout: WAIT },
     );
+    expect(screen.getByText('Gloomhound').closest('li')?.textContent).not.toContain('Turn it on');
   });
 
   it('exports the file as it leaves this device', async () => {
@@ -691,6 +753,28 @@ describe('The books', () => {
       'imported.json could not be read, so who has its entries is not known.',
     );
     expect(ask.textContent).not.toContain('No character has any of it.');
+    fireEvent.click(within(ask).getByRole('button', { name: 'Cancel' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull(), { timeout: WAIT });
+  });
+
+  it('names an unreadable file once when two copies of it cannot be read', async () => {
+    const row = await homebrewRepo.importJson(IMPORTED, 'imported.json');
+    const meta = await db.homebrewFiles.get(row.id);
+    if (meta === undefined) throw new Error('no row');
+    await db.homebrewFiles.add({ ...meta, id: 'older-copy', addedAt: meta.addedAt - 1 });
+    await db.homebrewJson.delete(row.id);
+    visit(await addressOf(row.id));
+    await heading('imported.json');
+    fireEvent.click(screen.getByRole('button', { name: 'Delete this collection' }));
+    const ask = await screen.findByRole(
+      'dialog',
+      { name: 'Delete imported.json?' },
+      { timeout: WAIT },
+    );
+    expect(ask.textContent).toContain(
+      'imported.json could not be read, so who has its entries is not known.',
+    );
+    expect(ask.textContent).not.toContain('imported.json and imported.json');
     fireEvent.click(within(ask).getByRole('button', { name: 'Cancel' }));
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull(), { timeout: WAIT });
   });

@@ -5,11 +5,14 @@
  * Read source by source, through the pickers' own reading (`pickPolicy`), so
  * the page cannot say one thing while the pickers do another:
  * - a character's `off` wins, then its `on`, then its own list of books, or
- *   else the device's choice of what shows;
+ *   else the device's choice of what shows, each code compared exactly, as
+ *   `pickPolicy` compares them;
  * - a file switched off on this device comes back for a character whose `on`
- *   names a source it declares (E4's view);
+ *   names a source it declares (E4's view, which ignores case);
  * - Changes to the books stand in the books' place, so no choice of books
- *   hides them: only their own switch does.
+ *   hides them: only their own switch does (E4 again, without case);
+ * - a row that declares no source has nothing a choice or a switch can name,
+ *   so it is on wherever its own switch is.
  */
 import {
   characterSourceSwitches,
@@ -39,7 +42,7 @@ export function reachesSource(
   device: SourcePolicy,
 ): boolean {
   const { on, off } = characterSourceSwitches(who.sourceSwitches);
-  if (named(off, s)) return false;
+  if (isChanges(r) && named(off, s)) return false;
   if (!r.enabled && !r.sourceIds.some((x) => named(on, x))) return false;
   if (isChanges(r)) return true;
   return policyAllows(pickPolicy(device, who.allowedSources, who.sourceSwitches).policy, s);
@@ -47,7 +50,7 @@ export function reachesSource(
 
 /** Whether `who` picks from any of a row's sources. */
 export const reachesRow = (who: Picker, r: HomebrewFileMeta, device: SourcePolicy): boolean =>
-  r.sourceIds.some((s) => reachesSource(who, r, s, device));
+  r.sourceIds.length === 0 ? r.enabled : r.sourceIds.some((s) => reachesSource(who, r, s, device));
 
 /** On for this device: what a character without a list or a switch of its own picks from. */
 export const deviceOn = (r: HomebrewFileMeta, device: SourcePolicy): boolean =>

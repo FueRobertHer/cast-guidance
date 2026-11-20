@@ -149,6 +149,21 @@ describe('switchedTo', () => {
     ).toBeUndefined();
   });
 
+  it('reads a switch in another case as the pickers do', () => {
+    // `pickPolicy` compares codes exactly: `imp` does not switch off `IMP`.
+    const r = row('imp');
+    const who = { sourceSwitches: { off: ['imp'] } };
+    const { policy } = pickPolicy(ALL, undefined, who.sourceSwitches);
+    expect(policyAllows(policy, 'IMP')).toBe(true);
+    expect(reachesSource(who, r, 'IMP', ALL)).toBe(true);
+  });
+
+  it('reads a row with no sources by its own switch alone', () => {
+    // Nothing for The books to hide, so on is its switch.
+    expect(deviceOn(row('bare', { sourceIds: [] }), ALL)).toBe(true);
+    expect(deviceOn(row('bare', { sourceIds: [], enabled: false }), ALL)).toBe(false);
+  });
+
   it('brings a copy switched off here in too, since copies share their sources (a known limit)', () => {
     const rows = [
       row('new', { sourceIds: ['IMP'] }),
