@@ -278,8 +278,9 @@ tiefling's Tenser's Floating Disk. The table is gone.
   the reader cannot read is a problem and is left out, and the row keeps the
   rest, still standing in for its keys, as a row keeps the effects it can read.
 - **`replaces`** (`wornTags` rows, at least one): the kinds of tag the row
-  stands in for, of `resist`, `immune`, `vulnerable`, `conditionImmune` and
-  `saveBonus` ("Worn tag rows", below). Its `effects` may only be of those
+  stands in for, of `resist`, `immune`, `vulnerable`, `conditionImmune`,
+  `saveBonus`, `attackBonus`, `damageBonus` and `spellDcBonus` ("Worn tag
+  rows", below). Its `effects` may only be of those
   kinds. A row with a kind it does not know, a kind twice, an effect of a kind
   it does not replace, or an effect it cannot read (which would take that
   tag away unseen) is left out, and its keys stay free for a later row.
@@ -322,7 +323,7 @@ tiefling's Tenser's Floating Disk. The table is gone.
 | Class row | `class:` and the class uid | `class:monk\|phb` |
 | Feat | its uid, then the uid of the feat it copies | `alert\|phb` |
 | Optional feature | its uid, then the uid of the one it copies | `defense\|phb` |
-| Race trait | `trait:` and the trait name | `trait:relentless endurance` |
+| Race trait | `trait\|race or subrace\|source` (the trait in the book that prints it), then `trait:` and the trait name | `speed\|dwarf\|phb`, `trait:relentless endurance` |
 
 A class or subclass feature's printings are its own book (the official one's,
 for a copy), then its class's or subclass's, so a 2014 subclass kept under a
@@ -332,7 +333,9 @@ printing with no row of its own.
 The first key with a row wins, in the order the call site tries them. A
 subclass has no row of its own. Items have no curated row: their parts are
 `wornTags`, under the item's own `name|source` (`rod of alertness|dmg`), the
-entity found rather than the ref a character saved, and `charges`, `itemDc`
+entity found rather than the ref a character saved, then, for the bonus kinds
+alone, under the official item's a copy or a converted printing stands for
+("Worn tag rows", below); and `charges`, `itemDc`
 and `itemSpells`, under the `name|source` the character's equipment entry
 names (`refUid(entry.ref)`), which the sheet's pool, the cast prompt and the
 long rest all read alike. The two agree for every ref that names its book;
@@ -344,8 +347,11 @@ as the Workshop saves every copy, in changes or in full) is reached by the
 official one's `itemDc` and `itemSpells` rows, under the official one's
 `name|source` after its own (`itemRowKeys`). It casts what the official one
 casts, whatever its own lists say, and, with no `charges` effect of its own
-or a pack's, at the DC its text fixes. It is not reached by the official one's `wornTags`
-or `charges` rows: its tags and charges are its author's (its own `charges`
+or a pack's, at the DC its text fixes. It is reached by the official one's
+`wornTags` row for the bonus fields alone (`attackBonus`, `damageBonus`,
+`spellDcBonus`), "Worn tag rows", below. It is not reached by that row for
+its defense tags, nor by the official one's `charges` row: its tags and
+charges are its author's (its own `charges`
 effect, "An item's own charges", below), and the Workshop writes the official
 one's charges out for it. Until then a copy counts its charges by its fields,
 or not at all, which cast none of the spells an `itemSpells` row takes out
@@ -354,7 +360,8 @@ Thoughts, the 2024 Staff of Healing, the Rod of Seven Parts). So such a copy
 keeps its data's lists until its charges are counted by an effect of its own
 or a pack's, and loses no spell. An effect of its own takes the row, whatever
 it casts. A file converted from another app (`printingOf`) reaches none of
-these rows; a Workshop copy of one is `basedOn` the official item it prints,
+these rows but the `wornTags` row for the bonus fields, which it reaches as a
+copy does; a Workshop copy of one is `basedOn` the official item it prints,
 and reaches them as any copy does.
 
 A `spellRest` row is found under the `type:uid` of the origin granting the
@@ -403,7 +410,25 @@ one. A `wornTags` row says what the item gives instead.
   order, where the tags would be; for every other kind, the tags. So a row
   changes only the kinds it names, and nothing moves.
 - A row giving nothing of a kind takes that kind away: the "nothing worn" rows
-  replace all five, whatever their data has.
+  replace all five defense kinds, whatever their data has.
+- The bonus fields read the same way (ADR-002 D7): `bonusWeaponAttack` as an
+  `attackBonus` and `bonusSpellAttack` as one for spell attacks,
+  `bonusWeaponDamage` as a `damageBonus`, `bonusSpellSaveDc` as a
+  `spellDcBonus`. On a weapon they reach its own attacks; on any other item,
+  every weapon's (`weaponsOnly`), never an unarmed strike's. A row stands in for
+  an item whose text limits the bonus: to some weapons (`weapons`, the kinds by
+  name, as Bracers of Archery's bows), to one class's spells (`className`, as
+  the Rod of the Pact Keeper's Warlock), to spells cast with one ability
+  (`ability`, as the Jester's Mask's Charisma), or to a moment the sheet cannot
+  see, which gives nothing (Niko's Mace's summon). 25 rows do so.
+- A copy of the item (`basedOn`) or a converted printing of it (`printingOf`)
+  takes the official item's correction too: for each bonus kind no row under
+  its own `name|source` replaces, the official item's row stands in, so a copy
+  of Bracers of Archery gives a longsword nothing. The row stands in even where
+  the copy's author changed the field (a copy's +2 rod still gives +1, to a
+  Warlock's spells alone); the copy's own `drop` takes the row away, and its own
+  `effects` say what it gives instead. Its defense tags stay its author's, read
+  from its own fields.
 - A potion's tags count once it is drunk, so a potion reads neither tags nor
   row while carried. `bonusAc` is not a tag: a row never touches it.
 - The row is part of what the item inherits, read while its magic works

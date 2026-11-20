@@ -814,7 +814,8 @@ describe('deriveSheet with effects in play', () => {
         inspiration: true,
       },
     ]);
-    expect(sheet.tempHpEachTurn).toEqual({ amount: 5, origin: 'Inspiring Song' });
+    // The sheet's is the build's own: the start of a turn reads these from play (`newTurn`).
+    expect(sheet.tempHpEachTurn).toBeUndefined();
     expect(sheet.critRange).toEqual({ min: 19, origin: "Hexblade's Curse" });
     expect(sheet.extraActions).toEqual([
       {

@@ -103,7 +103,22 @@ const fixtureFor = (key: string): DataEntity => {
 
 describe('the built-in worn tag rows', () => {
   it('cover the keys the table had, each once', () => {
-    const keys = itemRules.rows.filter((r) => r.part === 'wornTags').flatMap((r) => r.keys);
+    // The rows for the bonus fields are `wornTagFields.test.ts`'s.
+    const defenses: readonly string[] = [
+      'resist',
+      'immune',
+      'vulnerable',
+      'conditionImmune',
+      'saveBonus',
+    ];
+    const keys = itemRules.rows
+      .filter(
+        (r) =>
+          r.part === 'wornTags' &&
+          'replaces' in r &&
+          (r.replaces as string[]).some((k) => defenses.includes(k)),
+      )
+      .flatMap((r) => r.keys);
     expect([...keys].sort()).toEqual(Object.keys(EXPECTED).sort());
     expect(readRuleSet(itemRules).problems).toEqual([]);
   });

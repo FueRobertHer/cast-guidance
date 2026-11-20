@@ -163,15 +163,13 @@ describe('Temporary HP each turn', () => {
     expect(boxValue(`${TITLE}: Amount`)).toBe('4');
   });
 
-  it("says on an entry's own list that it counts only in play", () => {
+  it("says nothing of where it counts on an entry's own list or a pick's: the sheet gives it there", () => {
     renderCards([FOUR]);
-    expect(screen.getByText(NOTE)).toBeTruthy();
-  });
-
-  it('says, as what a pick gives, that it counts only in play, without a Counts when it has not', () => {
+    expect(screen.getByText('4 temporary hit points at the start of each turn')).toBeTruthy();
+    expect(screen.queryByText(NOTE)).toBeNull();
+    cleanup();
     renderCards([{ kind: 'pick', id: 'gift', ask: 'skill', gives: [FOUR] }]);
-    expect(screen.getByText('This counts only in play, not as what a pick gives.')).toBeTruthy();
-    expect(screen.queryByText(/Counts when, or give it/)).toBeNull();
+    expect(screen.queryByText(NOTE)).toBeNull();
   });
 
   it("says nothing of it on a spell's while-it-lasts list, where it counts", () => {
@@ -193,7 +191,7 @@ describe('Temporary HP each turn', () => {
     expect(moreKinds({ inPlay: true, spells: false, counts })).not.toContain(TITLE);
   });
 
-  it('drops the note once Counts when puts it on at a moment', () => {
+  it('puts it on at a moment with Counts when', () => {
     let held: unknown[] = [];
     function Host() {
       const [effects, setEffects] = useState<unknown[]>([FOUR]);
@@ -214,10 +212,8 @@ describe('Temporary HP each turn', () => {
       );
     }
     render(<Host />);
-    expect(screen.getByText(NOTE)).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Counts when' }));
     change(`${TITLE}: Put on when`, 'zeroHp');
-    expect(screen.queryByText(NOTE)).toBeNull();
     expect(held).toEqual([
       { at: 'zeroHp', do: [{ kind: 'addEffect', name: 'Card Feat', effects: [FOUR] }] },
     ]);

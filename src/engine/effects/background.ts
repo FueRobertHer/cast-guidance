@@ -3,6 +3,7 @@ import { collectAdditionalSpells } from './additionalSpells';
 import { asEntityArray, type Collector, num, str } from './base';
 import { collectFeatEntity } from './feat';
 import { isRepeatableFeat } from './featPicks';
+import { mechanicsOf } from './mechanics';
 import { buildPrereqContext, featChoiceOption } from './prerequisites';
 import {
   isLanguageOrToolMix,
@@ -29,6 +30,46 @@ export function collectBackground(col: Collector): void {
   };
   const idBase = `background:${origin.uid}`;
 
+  // What its data gives is what it inherits: its own `castGuidance` adds to it,
+  // drops from it or replaces it, and a pack's patch reaches it by `name|source`.
+  // Its moments count from here too (`subjectsWithMoments`).
+  mechanicsOf(col, {
+    entry: e,
+    label: origin.label,
+    origin,
+    target: origin.uid,
+    inherited: () => inheritBackground(col, e, origin, idBase),
+  });
+
+  // Its origin feats are feats of their own, after it: what it drops or
+  // replaces never reaches a feat's effects.
+  // Each free-feat grant gets its own indexed picker id so multiple grants (or a
+  // grant beside a named feat) never share a doc.choices slot.
+  let freeFeatIdx = 0;
+  for (const featEntry of asEntityArray(e.feats)) {
+    for (const [key, value] of Object.entries(featEntry)) {
+      if (value === true && key.includes('|')) {
+        const [name, source] = key.split('|');
+        if (name !== undefined && source !== undefined) {
+          collectGrantedFeat(col, name, source, origin);
+        }
+      } else if (key === 'any' || key === 'anyFromCategory') {
+        collectFreeFeatChoice(col, origin, `${idBase}:feat:${freeFeatIdx}`, key, value);
+        freeFeatIdx += 1;
+      }
+    }
+  }
+
+  col.features.push({ name: origin.label, origin, entries: e.entries });
+}
+
+/** What a background's data gives: proficiencies, languages, tools, spells and ability scores. */
+function inheritBackground(
+  col: Collector,
+  e: DataEntity,
+  origin: EffectOrigin,
+  idBase: string,
+): void {
   readProficiencyList(
     col,
     e.skillProficiencies,
@@ -73,26 +114,8 @@ export function collectBackground(col: Collector): void {
   // without this those grants and notes were silently dropped.
   collectAdditionalSpells(col, e.additionalSpells, origin, undefined, idBase);
 
-  // XPHB (2024) backgrounds: weighted ability bonuses + an origin feat.
+  // XPHB (2024) backgrounds: weighted ability bonuses (the origin feat follows).
   readAbilityBlock(col, e.ability, origin, `${idBase}:ability`);
-  // Each free-feat grant gets its own indexed picker id so multiple grants (or a
-  // grant beside a named feat) never share a doc.choices slot.
-  let freeFeatIdx = 0;
-  for (const featEntry of asEntityArray(e.feats)) {
-    for (const [key, value] of Object.entries(featEntry)) {
-      if (value === true && key.includes('|')) {
-        const [name, source] = key.split('|');
-        if (name !== undefined && source !== undefined) {
-          collectGrantedFeat(col, name, source, origin);
-        }
-      } else if (key === 'any' || key === 'anyFromCategory') {
-        collectFreeFeatChoice(col, origin, `${idBase}:feat:${freeFeatIdx}`, key, value);
-        freeFeatIdx += 1;
-      }
-    }
-  }
-
-  col.features.push({ name: origin.label, origin, entries: e.entries });
 }
 
 /** A proficiency list without its picks (`choose`, `any…`): the grants it names outright. */
