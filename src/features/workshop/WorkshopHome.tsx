@@ -754,20 +754,21 @@ export function Component() {
             picked={picked}
             files={owned.files}
             names={names}
-            onDone={(text) => {
-              select(false, '[data-select-start]');
+            onDone={(text, stay) => {
+              // An export that saved nothing keeps the selection to try again.
+              if (stay !== true) select(false, '[data-select-start]');
               setOutcome(text);
               announce(text, { key: 'workshop-select', repeat: true });
             }}
+            onEscape={() => select(false, '[data-select-start]')}
             onDeleted={(removed, title, detail) => {
               select(false, null);
               setOutcome(undefined);
-              deleted.offer(
-                { revs: {}, removed },
-                { revs: Object.fromEntries(removed.files.map((f) => [f.id, f.rev])) },
-                title,
-                detail,
-              );
+              // Undo's write moves each file one revision on, so "Undone"
+              // stays until the next change to one of them.
+              const revs = (step: number) =>
+                Object.fromEntries(removed.files.map((f) => [f.id, f.rev + step]));
+              deleted.offer({ revs: revs(1), removed }, { revs: revs(0) }, title, detail);
               setUndoFocus((n) => n + 1);
             }}
           />

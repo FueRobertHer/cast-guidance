@@ -99,7 +99,7 @@ async function sparks(): Promise<CharacterDoc> {
   const own = doc.spellcasting['sorcerer|tst'];
   doc.spellcasting = {
     'sorcerer|tst': {
-      ...own,
+      prepared: own?.prepared ?? [],
       known: [...(own?.known ?? []), { name: 'Glimmer Bolt', source: 'HB' }],
     },
   };
@@ -109,8 +109,18 @@ async function sparks(): Promise<CharacterDoc> {
 
 const sheetOf = async (doc: CharacterDoc) => {
   invalidateRegistry();
-  return deriveSheet(doc, engineContextFor(await getRegistry()));
+  return sheetNow(doc);
 };
+/** The sheet from the registry as the app left it: its own writes must refresh it. */
+const sheetNow = async (doc: CharacterDoc) =>
+  deriveSheet(doc, engineContextFor(await getRegistry()));
+
+/** A character row from a newer app: listed as unreadable, never written. */
+async function newerRow(): Promise<CharacterDoc & { revision: string }> {
+  const row = { ...sorcerer(), id: 'later', schemaVersion: 999, revision: 'r0' };
+  await db.characters.put(row);
+  return row;
+}
 
 /** The world, Lantern Coast (Gift, Glimmer Bolt and a lamp) and Tidewater (a rope). */
 async function world() {
@@ -168,11 +178,18 @@ describe('select mode on Yours', () => {
     await waitFor(() => expect(screen.queryByRole('group', { name: /selected/ })).toBeNull());
     expect(document.activeElement?.textContent).toBe('Select');
     expect(screen.getByRole('searchbox')).toBeTruthy();
+
+    // Escape from the bar at the foot does the same.
+    const again = await selectMode();
+    fireEvent.keyDown(within(again).getByRole('button', { name: 'Move' }), { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByRole('group', { name: /selected/ })).toBeNull());
+    expect(document.activeElement?.textContent).toBe('Select');
   });
 
   it('deletes, naming who uses them, and Undo puts each back on every sheet that had it', async () => {
     const { lantern } = await world();
     const doc = await sparks();
+    const newer = await newerRow();
     const before = {
       file: await content(lantern),
       row: await db.characters.get(doc.id),
@@ -192,6 +209,9 @@ describe('select mode on Yours', () => {
     await within(sheet).findByText('Sparks', {}, { timeout: WAIT });
     expect(within(sheet).getByText('Gift leaves the sheet.')).toBeTruthy();
     expect(within(sheet).getByText('Glimmer Bolt leaves the sheet.')).toBeTruthy();
+    expect(
+      within(sheet).getByText(/1 character could not be read, so it was not checked/),
+    ).toBeTruthy();
     fireEvent.click(within(sheet).getByRole('button', { name: 'Delete 2 entries' }));
 
     const undo = await screen.findByRole(
@@ -207,7 +227,7 @@ describe('select mode on Yours', () => {
     expect(gone.spell).toEqual([]);
     // The character is left as it was; its sheet loses what they gave.
     expect(await db.characters.get(doc.id)).toEqual(before.row);
-    const without = await sheetOf(doc);
+    const without = await sheetNow(doc);
     expect(without.speedWalk.value).toBe(before.sheet.speedWalk.value - 10);
     expect(without).not.toEqual(before.sheet);
 
@@ -219,8 +239,56 @@ describe('select mode on Yours', () => {
       await screen.findByText(/Undone: Deleted 2 entries/, {}, { timeout: WAIT }),
     ).toBeTruthy();
     expect(await db.characters.get(doc.id)).toEqual(before.row);
-    expect(await sheetOf(doc)).toEqual(before.sheet);
+    expect(await db.characters.get('later')).toEqual(newer);
+    expect(await sheetNow(doc)).toEqual(before.sheet);
     await screen.findByRole('link', { name: /^Gift\s*,/ }, { timeout: WAIT });
+
+    // "Undone" stays until the next change to that collection.
+    await homebrewRepo.saveEntry(
+      'item',
+      { name: 'Wick', source: 'HB', type: 'G' },
+      {
+        fileId: lantern,
+      },
+    );
+    await waitFor(() => expect(screen.queryByText(/Undone: Deleted 2 entries/)).toBeNull(), {
+      timeout: WAIT,
+    });
+  });
+
+  it('drops the Undo offer once the collection changes again, and says when no check could be made', async () => {
+    const { lantern } = await world();
+    await visit();
+    await selectMode();
+    fireEvent.click(row('Lamp'));
+    const list = vi.spyOn(characterRepo, 'listSafe').mockRejectedValue(new Error('locked'));
+    fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+    const sheet = await screen.findByRole('dialog', { name: 'Delete 1 entry?' }, { timeout: WAIT });
+    expect(
+      await within(sheet).findByText(
+        'Your characters could not be checked for them.',
+        {},
+        { timeout: WAIT },
+      ),
+    ).toBeTruthy();
+    expect(within(sheet).queryByText('No character uses them.')).toBeNull();
+    list.mockRestore();
+    fireEvent.click(within(sheet).getByRole('button', { name: 'Delete 1 entry' }));
+    await screen.findByRole('button', { name: 'Undo: Deleted 1 entry' }, { timeout: WAIT });
+
+    await homebrewRepo.saveEntry(
+      'item',
+      { name: 'Wick', source: 'HB', type: 'G' },
+      {
+        fileId: lantern,
+      },
+    );
+    await waitFor(
+      () => expect(screen.queryByRole('button', { name: /^Undo: Deleted/ })).toBeNull(),
+      { timeout: WAIT },
+    );
+    const items = (await content(lantern)).item as Row[];
+    expect(items.map((i) => i.name)).toEqual(['Wick']);
   });
 
   it('moves, the characters following, and lists the packs and rows it could not reach', async () => {
@@ -239,8 +307,8 @@ describe('select mode on Yours', () => {
       },
       'gritty.json',
     );
-    const newer = { ...sorcerer(), id: 'later', schemaVersion: 999 };
-    await db.characters.put({ ...newer, revision: 'r0' });
+    const packBefore = await content(pack.id);
+    const newer = await newerRow();
     await visit();
     await selectMode();
     fireEvent.click(row('Gift'));
@@ -265,10 +333,52 @@ describe('select mode on Yours', () => {
     expect((await content(tide)).feat).toEqual([gift('TW')]);
     const moved = (await characterRepo.get(doc.id)) as CharacterDoc;
     expect(moved.feats[0]?.ref).toEqual({ name: 'Gift', source: 'TW' });
-    expect((await sheetOf(moved)).speedWalk.value).toBe(before.speedWalk.value);
+    expect((await sheetNow(moved)).speedWalk.value).toBe(before.speedWalk.value);
     // The unreadable row and the imported pack are left as they were.
-    expect(await db.characters.get('later')).toEqual({ ...newer, revision: 'r0' });
-    expect(pack.id).toBeTruthy();
+    expect(await db.characters.get('later')).toEqual(newer);
+    expect(await content(pack.id)).toEqual(packBefore);
+  });
+
+  it('moves from three collections, two refused, and reports each that did not move', async () => {
+    const { lantern, tide } = await world();
+    // Harbor has a Gift and a Rope of its own, so those cannot go there; a Shell can.
+    // Two refusals, so whichever comes first, one stopping the rest shows.
+    await collection('Harbor', 'HR', {
+      feat: [gift('HR')],
+      item: [{ name: 'Rope', source: 'HR', type: 'G', entries: ['Short.'] }],
+    });
+    const reef = await collection('Reef', 'RF', {
+      item: [{ name: 'Shell', source: 'RF', type: 'G', entries: ['Pink.'] }],
+    });
+    const kept = { lantern: await content(lantern), tide: await content(tide) };
+    await visit();
+    await selectMode();
+    fireEvent.click(row('Gift', 'Lantern Coast'));
+    fireEvent.click(row('Rope', 'Tidewater'));
+    fireEvent.click(row('Shell'));
+    fireEvent.click(screen.getByRole('button', { name: 'Move' }));
+    const sheet = await screen.findByRole('dialog', { name: 'Move 3 entries' }, { timeout: WAIT });
+    fireEvent.click(within(sheet).getByRole('radio', { name: /^Harbor/ }));
+    fireEvent.click(within(sheet).getByRole('button', { name: 'Move here' }));
+    const report = await screen.findByRole('dialog', { name: 'Moved' }, { timeout: WAIT });
+    expect(within(report).getByText('Moved 1 entry to Harbor.')).toBeTruthy();
+    expect(
+      within(report).getByText(
+        /^Gift from Lantern Coast did not move: .*already has one called Gift/,
+      ),
+    ).toBeTruthy();
+    expect(
+      within(report).getByText(/^Rope from Tidewater did not move: .*already has one called Rope/),
+    ).toBeTruthy();
+    fireEvent.click(within(report).getByRole('button', { name: 'Done' }));
+    expect(await content(lantern)).toEqual(kept.lantern);
+    expect(await content(tide)).toEqual(kept.tide);
+    expect((await content(reef)).item).toEqual([]);
+    const harbor = (await homebrewRepo.ownedSafe()).files.find((f) => f.sourceIds[0] === 'HR');
+    expect((harbor?.json.item as Row[]).map((i) => `${i.name}|${i.source}`)).toEqual([
+      'Rope|HR',
+      'Shell|HR',
+    ]);
   });
 
   it('starts a collection only when the move is made, and a refused move moves nothing', async () => {
@@ -362,6 +472,17 @@ describe('select mode on Yours', () => {
     expect(Object.hasOwn((await content(lantern))._meta as Row, COLLECTION_ID_KEY)).toBe(true);
     const prepared = await homebrewRepo.prepare(json, 'gift.json');
     expect(prepared.counts).toMatchObject({ feat: 1 });
+
+    // Changes to the books alone save nothing and keep the selection to try again.
+    await selectMode();
+    fireEvent.click(row('Glimmer Bolt', 'Changes to the books'));
+    expect(screen.getByText('1 selected')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Export' }));
+    expect(document.querySelector('[data-import-status]')?.textContent).toBe(
+      'Changes to the books are shared as a rule pack, not as a file of entries.',
+    );
+    expect(screen.getByRole('group', { name: 'With what is selected' })).toBeTruthy();
+    expect(vi.mocked(downloadJson)).toHaveBeenCalledTimes(1);
     await act(async () => undefined);
   });
 });

@@ -49,7 +49,9 @@ describe('removeEntries and restoreEntries', () => {
     const tide = await collection('Tidewater', 'TW', { feat: [{ name: 'Gift', source: 'TW' }] });
     const doc = newCharacterDoc('sparks', 'Sparks', 'tag');
     doc.feats = [{ ref: { name: 'Gift', source: 'TW' }, instanceId: 'gift' }];
-    doc.spellcasting = { 'sorcerer|tst': { known: [{ name: 'Lantern Light', source: 'HB' }] } };
+    doc.spellcasting = {
+      'sorcerer|tst': { known: [{ name: 'Lantern Light', source: 'HB' }], prepared: [] },
+    };
     await db.characters.put({ ...doc, revision: 'r1' });
     const before = { lantern: await content(lantern), tide: await content(tide) };
     const character = await db.characters.get('sparks');

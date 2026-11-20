@@ -45,8 +45,8 @@ function andList(items: readonly string[]): string {
 interface Moved {
   /** One sentence for the home, said once. */
   summary: string;
-  /** The part that did not move, and why. */
-  refused?: string;
+  /** Each part that did not move, and why. */
+  refused: string[];
   imported: ImportedMention[];
   skipped: number;
 }
@@ -65,13 +65,22 @@ export interface SelectBarProps {
   files: readonly HomebrewFile[];
   /** Each file's name, as the home shows it. */
   names: ReadonlyMap<string, string>;
-  /** A move or an export is done: what to say on the page. */
-  onDone: (message: string) => void;
+  /** A move or an export is done: what to say on the page; `stay` keeps select mode on. */
+  onDone: (message: string, stay?: boolean) => void;
+  /** Escape on the bar: select mode ends, as it does from a row. */
+  onEscape: () => void;
   /** Entries were deleted: what was taken out, for Undo, and what to call it. */
   onDeleted: (removed: Removed, title: string, detail: string) => void;
 }
 
-export default function SelectBar({ picked, files, names, onDone, onDeleted }: SelectBarProps) {
+export default function SelectBar({
+  picked,
+  files,
+  names,
+  onDone,
+  onEscape,
+  onDeleted,
+}: SelectBarProps) {
   const [sheet, setSheet] = useState<'move' | 'delete' | null>(null);
   const opener = useRef<HTMLButtonElement | null>(null);
   const none = picked.length === 0;
@@ -94,7 +103,7 @@ export default function SelectBar({ picked, files, names, onDone, onDeleted }: S
     const shared = picked.filter((m) => !isChange(m));
     const left = picked.length - shared.length;
     if (shared.length === 0) {
-      onDone('Changes to the books are shared as a rule pack, not as a file of entries.');
+      onDone('Changes to the books are shared as a rule pack, not as a file of entries.', true);
       return;
     }
     const homes = [...new Set(shared.map((m) => names.get(m.fileId) ?? 'Workshop'))];
@@ -108,7 +117,7 @@ export default function SelectBar({ picked, files, names, onDone, onDeleted }: S
     try {
       downloadJson(name, selectionFile(files, shared));
     } catch (err) {
-      onDone(`The file could not be saved: ${errorText(err)}`);
+      onDone(`The file could not be saved: ${errorText(err)}`, true);
       return;
     }
     onDone(
@@ -122,9 +131,15 @@ export default function SelectBar({ picked, files, names, onDone, onDeleted }: S
 
   return (
     <>
-      {/* Over the tab bar on a phone, at the foot of the page beside the rail on a wide screen. */}
-      <div className="fixed inset-x-0 bottom-0 z-20 box-content border-line border-t bg-surface pb-[env(safe-area-inset-bottom)] lg:left-40">
-        <fieldset className="flex min-h-tabbar flex-wrap items-center gap-2 px-3 py-2">
+      {/* Above the tab bar on a phone, which stays in reach; at the foot of the
+          page beside the rail on a wide screen. */}
+      <div className="fixed inset-x-0 bottom-[calc(var(--spacing-tabbar)+1px+env(safe-area-inset-bottom))] z-20 border-line border-t bg-surface lg:bottom-0 lg:left-40">
+        <fieldset
+          className="flex flex-wrap items-center gap-2 px-3 py-2"
+          onKeyDown={(e) => {
+            if (e.key === 'Escape') onEscape();
+          }}
+        >
           <legend className="sr-only">With what is selected</legend>
           <Button
             variant="outline"
@@ -225,15 +240,15 @@ function MoveSheet({
     setError(undefined);
     let made: string | undefined;
     let count = 0;
-    let refused: string | undefined;
+    const refused: string[] = [];
     const characters = new Set<string>();
     const skipped = new Set<string>();
     const imported = new Map<string, ImportedMention>();
     try {
       if (to === NEW) made = (await homebrewRepo.createEditable(target, newSource(target))).id;
       const into = made ?? to;
-      // One move per collection they come from, in turn: a refusal stops the
-      // rest, and each move changes nothing when it refuses.
+      // One move per collection they come from, in turn. Each changes nothing
+      // when it refuses, and the others still go.
       const groups = new Map<string, Mine[]>();
       for (const m of going) groups.set(m.fileId, [...(groups.get(m.fileId) ?? []), m]);
       for (const [from, list] of groups) {
@@ -259,8 +274,9 @@ function MoveSheet({
           }
         } catch (err) {
           const what = list.length === 1 ? String(list[0]?.entry.name) : words(list.length);
-          refused = `${what} from ${names.get(from) ?? 'a collection'} did not move: ${errorText(err)}.`;
-          break;
+          refused.push(
+            `${what} from ${names.get(from) ?? 'a collection'} did not move: ${errorText(err)}.`,
+          );
         }
       }
     } catch (err) {
@@ -273,7 +289,7 @@ function MoveSheet({
     if (made !== undefined && count === 0) await homebrewRepo.delete(made).catch(() => undefined);
     setBusy(false);
     if (count === 0) {
-      setError(refused);
+      setError(refused.join(' '));
       return;
     }
     const followed =
@@ -281,7 +297,7 @@ function MoveSheet({
         ? ''
         : ` ${characters.size === 1 ? '1 character' : `${characters.size} characters`} followed them.`;
     const summary = `${made !== undefined ? `Made ${target} and moved ${words(count)}` : `Moved ${words(count)} to ${target}`}.${followed}`;
-    if (refused === undefined && imported.size === 0 && skipped.size === 0) {
+    if (refused.length === 0 && imported.size === 0 && skipped.size === 0) {
       onMoved(summary);
       return;
     }
@@ -293,7 +309,11 @@ function MoveSheet({
       <DialogFrame title="Moved" onDismiss={() => onMoved(moved.summary)}>
         <div className="flex flex-col gap-3">
           <p className="text-body">{moved.summary}</p>
-          {moved.refused !== undefined && <p className="text-body text-danger">{moved.refused}</p>}
+          {moved.refused.map((r) => (
+            <p key={r} className="text-body text-danger">
+              {r}
+            </p>
+          ))}
           {moved.imported.length > 0 && (
             <section aria-labelledby="moved-packs" className="flex flex-col gap-2">
               <h3 id="moved-packs" className="text-body-strong">
@@ -398,7 +418,14 @@ function MoveSheet({
           </p>
         )}
         <div className="flex gap-2">
-          <Button variant="secondary" className="flex-1" onClick={onCancel} aria-disabled={busy}>
+          <Button
+            variant="secondary"
+            className="flex-1"
+            aria-disabled={busy}
+            onClick={() => {
+              if (!busy) onCancel();
+            }}
+          >
             Cancel
           </Button>
           <Button
@@ -418,16 +445,22 @@ function MoveSheet({
   );
 }
 
+/** Who uses the entries being deleted, and how many characters could not be read to say. */
+interface Users {
+  users: User[];
+  unreadable: number;
+}
+
 /**
  * The characters holding any of `picked`, each with what it holds. E5's walker
  * is the finder: a character that a rename of an entry would change holds it.
  */
-async function usersOf(picked: ReadonlyArray<Mine & { change: boolean }>): Promise<User[]> {
-  const [{ repointDoc }, { characters }] = await Promise.all([
+async function usersOf(picked: ReadonlyArray<Mine & { change: boolean }>): Promise<Users> {
+  const [{ repointDoc }, { characters, errors }] = await Promise.all([
     import('@/db/repoint'),
     characterRepo.listSafe(),
   ]);
-  return characters.flatMap((doc) => {
+  const users = characters.flatMap((doc) => {
     const held = picked.filter((m) => {
       const from = { name: String(m.entry.name), source: String(m.entry.source) };
       try {
@@ -445,6 +478,7 @@ async function usersOf(picked: ReadonlyArray<Mine & { change: boolean }>): Promi
     );
     return [{ id: doc.id, name: doc.name, lines }];
   });
+  return { users, unreadable: errors.length };
 }
 
 function DeleteSheet({
@@ -462,14 +496,16 @@ function DeleteSheet({
 }) {
   // Picked once, as the sheet opens, with whether each is a change to the books.
   const [gone] = useState(() => picked.map((m) => ({ ...m, change: isChange(m) })));
-  const [users, setUsers] = useState<User[]>();
+  // Undefined while checking, null when the check failed.
+  const [found, setFound] = useState<Users | null>();
+  const users = found?.users;
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
   useEffect(() => {
     let alive = true;
     usersOf(gone).then(
-      (u) => alive && setUsers(u),
-      () => alive && setUsers([]),
+      (u) => alive && setFound(u),
+      () => alive && setFound(null),
     );
     return () => {
       alive = false;
@@ -499,13 +535,15 @@ function DeleteSheet({
             users.length > 0 &&
             ' Characters that use them lose what they gave:'}
         </p>
-        {users === undefined ? (
+        {found === undefined ? (
           <p className={NOTE}>Checking your characters…</p>
-        ) : users.length === 0 ? (
+        ) : found === null ? (
+          <p className={NOTE}>Your characters could not be checked for them.</p>
+        ) : found.users.length === 0 ? (
           <p className={NOTE}>No character uses them.</p>
         ) : (
           <ul className="flex flex-col gap-2">
-            {users.map((u) => (
+            {found.users.map((u) => (
               <li key={u.id} className={ITEM}>
                 <span className="text-body-strong">{u.name}</span>
                 {u.lines.map((l) => (
@@ -517,13 +555,26 @@ function DeleteSheet({
             ))}
           </ul>
         )}
+        {found !== undefined && found !== null && found.unreadable > 0 && (
+          <p className={NOTE}>
+            {found.unreadable === 1 ? '1 character' : `${found.unreadable} characters`} could not be
+            read, so {found.unreadable === 1 ? 'it was' : 'they were'} not checked.
+          </p>
+        )}
         {error !== undefined && (
           <p role="alert" className="text-body text-danger">
             {error}
           </p>
         )}
         <div className="flex gap-2">
-          <Button variant="secondary" className="flex-1" onClick={onCancel} aria-disabled={busy}>
+          <Button
+            variant="secondary"
+            className="flex-1"
+            aria-disabled={busy}
+            onClick={() => {
+              if (!busy) onCancel();
+            }}
+          >
             Cancel
           </Button>
           <Button

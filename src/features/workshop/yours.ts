@@ -103,30 +103,36 @@ export function selectionFile(files: readonly HomebrewFile[], picked: readonly M
     if (file === undefined) continue;
     (out[m.type] ??= []).push(m.entry);
     const own = internals.OWNED[m.type];
-    if (own !== undefined) {
-      for (const e of listOf(file.json[own.type])) {
-        if (isJson(e) && own.owns(m.entry, e)) (out[own.type] ??= []).push(e);
-      }
-    }
-    const book = lower(m.entry.source);
+    const owned =
+      own === undefined
+        ? []
+        : listOf(file.json[own.type]).filter((e): e is Json => isJson(e) && own.owns(m.entry, e));
+    if (own !== undefined && owned.length > 0) (out[own.type] ??= []).push(...owned);
     const meta = isJson(file.json._meta) ? file.json._meta : {};
-    const declared = listOf(meta.sources).find((s) => isJson(s) && lower(s.json) === book);
-    const source = String(m.entry.source);
-    sources.set(
-      book,
-      declared ?? sources.get(book) ?? { json: source, abbreviation: source, full: source },
-    );
+    // Its book, and its own entries' (a feature can keep a book of its own).
+    for (const e of [m.entry, ...owned]) {
+      const book = lower(e.source);
+      if (sources.has(book)) continue;
+      const declared = listOf(meta.sources).find((s) => isJson(s) && lower(s.json) === book);
+      const source = String(e.source);
+      sources.set(book, declared ?? { json: source, abbreviation: source, full: source });
+    }
   }
   return { _meta: { sources: [...sources.values()] }, ...out };
 }
 
 /**
  * A source for a collection started on the move sheet, from its name
- * (`Lantern Coast` as `LanternCoast`), as `MyHomebrew` is. Long, so it does not
- * read as a book's short code; the repo makes it unique.
+ * (`Lantern Coast` as `LanternCoast`), as `MyHomebrew` is. A short or capital
+ * name (`MM`) gets `Homebrew` after it, so it is never a book's short code;
+ * the repo makes it unique among the files here.
  */
 export function newSource(name: string): string {
   const words = name.match(/[A-Za-z0-9]+/g) ?? [];
-  const joined = words.map((w) => w[0]?.toUpperCase() + w.slice(1)).join('');
-  return joined.slice(0, 24) || 'MyCollection';
+  const joined = words
+    .map((w) => w[0]?.toUpperCase() + w.slice(1))
+    .join('')
+    .slice(0, 24);
+  if (joined === '') return 'MyCollection';
+  return joined.length < 6 || !/[a-z]/.test(joined) ? `${joined}Homebrew` : joined;
 }

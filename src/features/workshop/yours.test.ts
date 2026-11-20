@@ -58,6 +58,21 @@ describe('selectionFile', () => {
     expect(Object.hasOwn(out._meta as object, COLLECTION_ID_KEY)).toBe(false);
   });
 
+  it('declares the book of an owned entry too', () => {
+    const odd = file('odd', {
+      _meta: { sources: [{ json: 'HB', full: 'Lantern Coast' }] },
+      class: [{ name: 'Warden', source: 'HB' }],
+      classFeature: [
+        { name: 'Watch', source: 'ELS', className: 'Warden', classSource: 'HB', level: 1 },
+      ],
+    });
+    const out = selectionFile([odd], entriesOf([odd]));
+    expect((out._meta as { sources: Array<{ json: string }> }).sources.map((s) => s.json)).toEqual([
+      'HB',
+      'ELS',
+    ]);
+  });
+
   it('names a book the file does not declare by its code', () => {
     const spell = entriesOf([LANTERN]).filter((m) => m.type === 'spell');
     expect(selectionFile([LANTERN], spell)._meta).toEqual({
@@ -83,5 +98,11 @@ describe('newSource', () => {
     expect(newSource('sea shanties & salt')).toBe('SeaShantiesSalt');
     expect(newSource('  ***  ')).toBe('MyCollection');
     expect(newSource('A very long name for a collection indeed')).toHaveLength(24);
+  });
+
+  it('never makes what reads as a book code: short or capital names get Homebrew after them', () => {
+    expect(newSource('MM')).toBe('MMHomebrew');
+    expect(newSource('Sky')).toBe('SkyHomebrew');
+    expect(newSource('XGE 2')).toBe('XGE2Homebrew');
   });
 });
