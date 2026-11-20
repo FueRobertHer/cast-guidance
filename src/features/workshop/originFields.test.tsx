@@ -624,13 +624,14 @@ describe('item fields', () => {
     expect(at.changes()).toBe(0);
   });
 
-  it("a potion's cards are the in-play ones: no note that one counts only in play", () => {
-    const castGuidance = { v: 1, effects: [{ kind: 'tempHpEachTurn', amount: 5 }] };
+  it("a potion's cards are the in-play ones: no proficiency bonus tick, which in play refuses", () => {
+    const castGuidance = { v: 1, effects: [{ kind: 'initiativeBonus', amount: 2 }] };
+    const tick = () => screen.queryByRole('checkbox', { name: /Your proficiency bonus instead/ });
     mount(item, { ...NEW_ITEM, type: 'W', castGuidance });
-    expect(screen.getByText(/This counts only in play/)).toBeTruthy();
+    expect(tick()).not.toBeNull();
     cleanup();
     mount(item, { ...NEW_ITEM, type: 'P', castGuidance });
-    expect(screen.queryByText(/This counts only in play/)).toBeNull();
+    expect(tick()).toBeNull();
   });
 });
 
