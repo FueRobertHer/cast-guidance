@@ -156,8 +156,9 @@ describe('select mode on Yours', () => {
 
     fireEvent.click(row('Gift'));
     expect(screen.getByText('1 selected')).toBeTruthy();
-    // Items only: Select all picks the two items, and the feat out of sight is let go.
+    // Items only: the feat out of sight is not picked, so nothing hidden is acted on.
     fireEvent.click(screen.getByRole('button', { name: /^Items/ }));
+    expect(screen.getByText('Select entries')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Select all' }));
     expect(screen.getByText('2 selected')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Select none' }));
@@ -307,6 +308,23 @@ describe('select mode on Yours', () => {
       (f) => f.sourceIds[0] === 'SeaShanties',
     );
     expect(made?.json.spell).toEqual([bolt('SeaShanties')]);
+
+    // A move refused into a collection started for it takes the collection away again.
+    await selectMode();
+    fireEvent.click(row('Lamp'));
+    fireEvent.click(screen.getByRole('button', { name: 'Move' }));
+    sheet = await screen.findByRole('dialog', { name: 'Move 1 entry' }, { timeout: WAIT });
+    fireEvent.click(within(sheet).getByRole('radio', { name: /^Start a new collection/ }));
+    await homebrewRepo.removeEntry(lantern, 'item', { name: 'Lamp', source: 'HB' });
+    const before = await files();
+    fireEvent.click(within(sheet).getByRole('button', { name: 'Make and move' }));
+    expect((await within(sheet).findByRole('alert', {}, { timeout: WAIT })).textContent).toMatch(
+      /^Lamp from Lantern Coast did not move/,
+    );
+    expect(await files()).toBe(before);
+    fireEvent.click(within(sheet).getByRole('button', { name: 'Cancel' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    fireEvent.click(screen.getByRole('button', { name: 'Stop selecting' }));
 
     const kept = await content(lantern);
     await selectMode();
