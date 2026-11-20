@@ -387,7 +387,10 @@ work:
   refusal reported; an export leaves out changes to the books (a rule pack,
   U9); Undo puts whole files back, so any later change to one of them ends
   the offer; the who-uses list finds characters as a move would (E5), so it
-  shares a move's blind spots (history snapshots, creator drafts); where a
+  shares a move's blind spots (history snapshots, creator drafts), and it
+  names every character with a subrace or subclass of that name and book,
+  whatever its parent (which of two the sheet takes depends on each
+  character's own view of the data, as `useCharacterSheet` builds it); where a
   collection holds two entries of one name and book (only a hand-edited
   import does), a delete takes the first. No long press to start selecting,
   no sort, and Collections has no select mode.
