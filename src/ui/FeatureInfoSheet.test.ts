@@ -110,6 +110,68 @@ describe('changeHolding', () => {
     expect(changeHolding(reworded.reg, bigger)?.book).toEqual(['Small print.']);
   });
 
+  it("prefers the book's part at the same place, and reads names as the card finder does", () => {
+    // A part of one name nested earlier in the book: the card's own place wins.
+    const book = new Map<string, unknown>([
+      [
+        'races.json',
+        {
+          race: [
+            {
+              name: 'Dwarf',
+              source: 'XPHB',
+              entries: [
+                {
+                  type: 'entries',
+                  name: 'Ancestry',
+                  entries: [
+                    'Pick one.',
+                    { type: 'entries', name: 'Breath Weapon', entries: ['Ancestry note.'] },
+                  ],
+                },
+                { type: 'entries', name: 'Breath Weapon', entries: ['Exhale.'] },
+                { type: 'entries', name: 'Toughness', entries: ['Tough.'] },
+              ],
+            },
+          ],
+        },
+      ],
+    ]);
+    const over = (entries: unknown[]) => {
+      const reg = normalizeDataset(book);
+      mergeHomebrew(
+        reg,
+        new Map([
+          [
+            'c',
+            {
+              _meta: { sources: [{ json: 'MyChanges' }] },
+              race: [{ name: 'Dwarf', source: 'XPHB', entries }],
+            },
+          ],
+        ]),
+        new Map(),
+        new Set(['c']),
+      );
+      return { reg, placed: reg.get('race', 'Dwarf', 'XPHB') as Entity };
+    };
+    const kept = over([
+      { type: 'entries', name: 'Ancestry', entries: ['Pick two.'] },
+      { type: 'entries', name: 'Breath Weapon', entries: ['Exhale.'] },
+      { type: 'entries', name: 'toughness ', entries: ['Tough.'] },
+    ]);
+    const [, breath, tough] = kept.placed.entries as Array<{ entries: unknown }>;
+    expect(changeHolding(kept.reg, breath?.entries)).toBeUndefined();
+    // Only its name's case changed: not what changed.
+    expect(changeHolding(kept.reg, tough?.entries)).toBeUndefined();
+    const reworded = over([
+      { type: 'entries', name: 'Ancestry', entries: ['Pick one.'] },
+      { type: 'entries', name: 'Breath Weapon', entries: ['Exhale twice.'] },
+    ]);
+    const [, again] = reworded.placed.entries as Array<{ entries: unknown }>;
+    expect(changeHolding(reworded.reg, again?.entries)?.book).toEqual(['Exhale.']);
+  });
+
   it("finds the book's trait by its name when the change moves it", () => {
     const { reg, placed } = changed([
       { type: 'entries', name: 'Deep Sight', entries: ['Sees far.'] },

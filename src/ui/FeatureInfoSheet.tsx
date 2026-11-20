@@ -72,25 +72,35 @@ function pathTo(node: unknown, target: unknown, depth = 0): Step[] | undefined {
   return undefined;
 }
 
-/** The first part named `name` under `node`, through `entries` and `items`. */
-function named(node: unknown, name: unknown, depth = 0): Record<string, unknown> | undefined {
+/** A part's name as `findFeatureInfo` matches it: trimmed, any case; none for no name. */
+const nameKey = (name: unknown): string | undefined =>
+  typeof name === 'string' ? name.trim().toLowerCase() : undefined;
+
+/** The first part named `key` under `node`, through `entries` and `items`. */
+function named(node: unknown, key: string, depth = 0): Record<string, unknown> | undefined {
   if (!isNode(node) || depth > 16) return undefined;
-  for (const key of ['entries', 'items'] as const) {
-    const list = node[key];
+  for (const list of [node.entries, node.items]) {
     if (!Array.isArray(list)) continue;
     for (const part of list) {
-      if (isNode(part) && part.name === name) return part;
-      const deeper = named(part, name, depth + 1);
+      if (isNode(part) && nameKey(part.name) === key) return part;
+      const deeper = named(part, key, depth + 1);
       if (deeper !== undefined) return deeper;
     }
   }
   return undefined;
 }
 
-/** The book's part at `path`, when it too has no name. */
-function unnamedAt(node: unknown, path: readonly Step[]): Record<string, unknown> | undefined {
-  const at = follow(node, path);
-  return isNode(at) && at.name === undefined ? at : undefined;
+/**
+ * The book's part a changed part stands for: the one at the same place when
+ * its name matches (unnamed matching unnamed), else the first of its name
+ * wherever the change moved it.
+ */
+function bookPart(base: unknown, path: readonly Step[], mine: unknown) {
+  if (!isNode(mine)) return undefined;
+  const key = nameKey(mine.name);
+  const at = follow(base, path);
+  if (isNode(at) && nameKey(at.name) === key) return at;
+  return key === undefined ? undefined : named(base, key);
 }
 
 function follow(node: unknown, path: readonly Step[]): unknown {
@@ -119,17 +129,11 @@ export function changeHolding(
     const path = pathTo(record.placed, entries);
     if (path === undefined) continue;
     if (path.length === 0) return { record, book: record.base.entries ?? [] };
-    // A part (a race's trait): the book's part of its name, wherever the
-    // change moved it, or an unnamed one at its place; none, and the change
-    // added it, so the book's whole text is what lies below. A part the
-    // change left as the book has it is not what changed, so its card is not
-    // marked.
-    const mine = follow(record.placed, path);
-    const theirs = !isNode(mine)
-      ? undefined
-      : mine.name !== undefined
-        ? named(record.base, mine.name)
-        : unnamedAt(record.base, path);
+    // A part (a race's trait): the book's part it stands for; none, and the
+    // change added it, so the book's whole text is what lies below. A part
+    // the change left as the book has it is not what changed, so its card is
+    // not marked.
+    const theirs = bookPart(record.base, path, follow(record.placed, path));
     if (theirs === undefined) return { record, book: record.base.entries ?? [] };
     const book = theirs.entries ?? [];
     return sameWords(book, entries) ? undefined : { record, book };

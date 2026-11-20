@@ -147,6 +147,7 @@ function Probe() {
   if (doc === null || sheet === null || registry === null) return null;
   const rage = findFeatureInfo(sheet.features, 'Rage');
   const rope = registry.get('item', 'Rope', 'XPHB');
+  const rageEntry = registry.byType('classFeature').find((e) => e.name === 'Rage');
   return (
     <>
       <p>Max HP {sheet.maxHp.value}</p>
@@ -168,6 +169,14 @@ function Probe() {
           type="item"
           entity={rope}
           trigger={<button type="button">Open the item</button>}
+        />
+      )}
+      {rageEntry !== undefined && (
+        <EntityInfoSheet
+          type="classFeature"
+          entity={rageEntry}
+          entriesOverride={['Text the caller wrote.']}
+          trigger={<button type="button">Open the feature's own text</button>}
         />
       )}
       {/* As a subclass's sheet shows its features' text in its own place. */}
@@ -282,6 +291,12 @@ describe('the Changed badge and the Content row (ADR-002 U11)', () => {
     expect(within(sheet).getByText('Changed')).toBeTruthy();
     expect(within(sheet).getByText(/from Changes to the books/)).toBeTruthy();
     expect(within(sheet).queryByRole('button', { name: /version/ })).toBeNull();
+    cleanup();
+    // Its own words are the book's, but they are not what the sheet shows.
+    await visit('/c/maren');
+    const rage = await openSheet("Open the feature's own text");
+    expect(within(rage).getByText('Changed')).toBeTruthy();
+    expect(within(rage).queryByText(/The words are the same/)).toBeNull();
   });
 
   it('marks Maren’s Rage Changed, its words the book’s, and Hild’s not', async () => {
