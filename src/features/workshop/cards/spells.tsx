@@ -8,7 +8,7 @@ import { isRecord } from '@/engine/castGuidance';
 import { SPELL_SCHOOLS } from '@/engine/spellQuery';
 import { fieldClass } from '@/ui/TextField';
 import { Field, Select } from '../fields';
-import { ListBox } from './attacks';
+import { ListBox, optionalHeld } from './attacks';
 import type { Eff, KindSpec, Options, SpellOption } from './kit/types';
 import {
   ABILITY,
@@ -202,7 +202,7 @@ function OptionalBox({
   options: Options;
   onChange: (next: Eff) => void;
 }) {
-  const held = typeof effect[field] === 'string' ? (effect[field] as string) : '';
+  const held = optionalHeld(effect[field]);
   return (
     <Field label={label}>
       <Select
@@ -331,7 +331,14 @@ function SpellDamageFields({
   title: string;
   onChange: (next: Eff) => void;
 }) {
-  const mod = modOf(effect.amount);
+  // What was last typed in Amount. "mod.cha + 1" is "mod.cha" on the way, which
+  // Adds would take for Charisma's modifier and close the box mid-word; it stays
+  // while the amount is what was typed there.
+  const [typed, setTyped] = useState<string>();
+  const fromAmount =
+    typed !== undefined &&
+    JSON.stringify(stored(amountField, typed)) === JSON.stringify(effect.amount);
+  const mod = fromAmount ? undefined : modOf(effect.amount);
   return (
     <>
       {/* The whole row for "Charisma modifier", which half of a phone cuts off; beside Amount for a number. */}
@@ -340,12 +347,13 @@ function SpellDamageFields({
           <Select
             aria-label={`${title}: Adds`}
             value={mod ?? NUMBER}
-            onChange={(e) =>
+            onChange={(e) => {
+              setTyped(undefined);
               onChange({
                 ...effect,
                 amount: e.target.value === NUMBER ? 1 : { f: `mod.${e.target.value}` },
-              })
-            }
+              });
+            }}
           >
             <option value={NUMBER}>A number</option>
             {ABILITY.map(([v, text]) => (
@@ -362,7 +370,10 @@ function SpellDamageFields({
             aria-label={`${title}: Amount`}
             value={shown(effect, amountField)}
             placeholder={asWritten(effect.amount)}
-            onChange={(e) => onChange({ ...effect, amount: stored(amountField, e.target.value) })}
+            onChange={(e) => {
+              setTyped(e.target.value);
+              onChange({ ...effect, amount: stored(amountField, e.target.value) });
+            }}
             className={fieldClass}
           />
         </Field>

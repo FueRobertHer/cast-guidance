@@ -146,6 +146,18 @@ describe('Die offered after a roll', () => {
     noProblems(cards.written());
   });
 
+  it('is used once when a moment puts it on (Counts when), which spends it', () => {
+    renderCards([], {
+      moments: [
+        { at: 'zeroHp', do: [{ kind: 'addEffect', name: 'Card Feat', effects: [make(T)] }] },
+      ],
+      onMoments: () => {},
+      momentName: 'Card Feat',
+    });
+    expect(tick(`${T}: Used once`).checked).toBe(false);
+    expect(screen.queryByText(caption)).toBeNull();
+  });
+
   it("shows a file's once on an entry's own list, says it is not, and takes it back", () => {
     const cards = renderCards([
       { kind: 'rollOffer', dice: '1d4', on: { rolls: ['check'] }, once: true },

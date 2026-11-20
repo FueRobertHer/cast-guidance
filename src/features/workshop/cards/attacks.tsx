@@ -39,12 +39,55 @@ export const DAMAGE: Options = [
   'thunder',
 ].map((t) => [t, t] as const);
 
-/** Words a box holds as a list, "longbow, shortbow", read back as one. */
-export const listOf = (text: string): string[] =>
-  text
-    .split(',')
-    .map((s) => s.trim())
-    .filter((s) => s !== '');
+/**
+ * What a box with a choice for none ("Any ability", "As the weapon") holds: ''
+ * for none, else the value, with a file's empty or non-word value said as
+ * written (`""`, `3`), so the none choice is a change and takes it away.
+ */
+export const optionalHeld = (v: unknown): string =>
+  v === undefined ? '' : typeof v === 'string' && v.trim() !== '' ? v : String(JSON.stringify(v));
+
+/**
+ * Words a box holds as a list, "longbow, shortbow", read back as one. A name
+ * with a comma in it is typed in quotes, "Crossbow, hand", and kept whole; a
+ * quote opens only at a name's start (12" blade is a name), and two quotes in
+ * a quoted name are one quote mark.
+ */
+export function listOf(text: string): string[] {
+  const out: string[] = [];
+  let i = 0;
+  while (i <= text.length) {
+    while (i < text.length && /\s/.test(text.charAt(i))) i++;
+    let name = '';
+    if (text.charAt(i) === '"') {
+      i++;
+      while (i < text.length) {
+        const c = text.charAt(i);
+        if (c === '"' && text.charAt(i + 1) === '"') {
+          name += '"';
+          i += 2;
+        } else if (c === '"') {
+          i++;
+          break;
+        } else {
+          name += c;
+          i++;
+        }
+      }
+    }
+    // Up to the next comma: a name's words, or what follows its closing quote.
+    while (i < text.length && text.charAt(i) !== ',') name += text.charAt(i++);
+    out.push(name.trim());
+    i++;
+  }
+  return out.filter((s) => s !== '');
+}
+
+/** A list as its box shows it, quoted where a name would not read back whole. */
+const listText = (xs: readonly string[]) =>
+  xs
+    .map((x) => (x.includes(',') || x.startsWith('"') ? `"${x.replaceAll('"', '""')}"` : x))
+    .join(', ');
 
 /** A stored list of words, or none. */
 const wordsOf = (v: unknown): string[] => (Array.isArray(v) ? v.map(String) : []);
@@ -74,9 +117,12 @@ export function ListBox({
   onChange: (next: Eff) => void;
 }) {
   const held = wordsOf(effect[field]);
-  const [typed, setTyped] = useState(held.join(', '));
-  // Written from elsewhere (the file view, Undo): what the field holds is shown.
-  const shown = JSON.stringify(listOf(typed)) === JSON.stringify(held) ? typed : held.join(', ');
+  const key = JSON.stringify(held);
+  const [typed, setTyped] = useState({ text: listText(held), key });
+  // Written from elsewhere (the file view, Undo): the box starts again from what
+  // the field holds, so text typed for an earlier list never comes back with it.
+  if (typed.key !== key) setTyped({ text: listText(held), key });
+  const shown = typed.key === key ? typed.text : listText(held);
   return (
     <div className="col-span-2">
       <Field label={label}>
@@ -86,8 +132,8 @@ export function ListBox({
           placeholder={placeholder}
           onChange={(e) => {
             const text = e.target.value;
-            setTyped(text);
             const next = listOf(text);
+            setTyped({ text, key: JSON.stringify(next) });
             onChange(next.length === 0 ? omit(effect, [field]) : { ...effect, [field]: next });
           }}
           className={fieldClass}
@@ -132,7 +178,7 @@ function ReachFields({
   weapons?: boolean;
   onChange: (next: Eff) => void;
 }) {
-  const held = typeof effect.ability === 'string' ? effect.ability : '';
+  const held = optionalHeld(effect.ability);
   return (
     <>
       {ability && (
@@ -216,11 +262,12 @@ export const cards: readonly KindSpec[] = [
               : String(e.scope ?? 'all'),
         // A spell attack is one modifier for melee and ranged alike, so only a
         // bonus to every attack reaches it; melee or ranged are weapon attacks.
-        // Spell attacks know no weapon, so a bonus to every attack names none.
+        // Spell attacks know no weapon, so a bonus to every attack names none;
+        // a class names whose spells, so a weapon bonus keeps none.
         apply: (e, v) =>
           v === EVERY_ATTACK
             ? { ...omit(e, ['weaponsOnly', 'weapons']), scope: 'all', attack: 'any' }
-            : { ...omit(e, ['attack']), scope: v },
+            : { ...omit(e, ['attack', 'className']), scope: v },
       },
     ],
     line: (e) =>
@@ -265,7 +312,8 @@ export const cards: readonly KindSpec[] = [
         label: 'Damage',
         type: 'pick',
         options: [['', 'As the weapon'], ...DAMAGE],
-        value: (e) => (typeof e.damageType === 'string' ? e.damageType : ''),
+        // A level table has a choice of its own (`asWritten`).
+        value: (e) => (asWritten(e.damageType) !== undefined ? '' : optionalHeld(e.damageType)),
         apply: (e, v) => (v === '' ? omit(e, ['damageType']) : { ...e, damageType: v }),
       },
       { key: 'scope', label: 'Which', type: 'pick', options: SCOPE },
@@ -337,9 +385,13 @@ export const cards: readonly KindSpec[] = [
     ],
     line: (e) => `Your unarmed strike deals ${String(e.dice)}`,
     // The sheet keeps the biggest die by its average, which it works out for
-    // dice like 1d8 alone (`averageDice`): "d8" or "1d8+1" never wins.
+    // dice like 1d8 alone (`averageDice`): "d8" or "1d8+1" never wins. Dice the
+    // reader refuses already say so.
     ownProblems: (problems, e) =>
-      typeof e.dice === 'string' && e.dice.trim() !== '' && !/^\d+d\d+$/.test(e.dice.trim())
+      typeof e.dice === 'string' &&
+      e.dice.trim() !== '' &&
+      !/^\d+d\d+$/.test(e.dice.trim()) &&
+      !problems.some((p) => p.includes('"dice"'))
         ? [
             ...problems,
             'dice written as 1d8, a number of dice and their size alone, so the sheet can weigh them',

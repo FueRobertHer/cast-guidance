@@ -7,7 +7,7 @@
  * from what it wrote, and counted on a sheet beside one without it: what it
  * reaches, and what it leaves alone.
  */
-import { cleanup, fireEvent, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { CharacterDoc, DerivedSheet } from '@/engine/types';
 import {
@@ -18,7 +18,7 @@ import {
   renderCards,
   sheetWith,
 } from '../../../../tests-fixtures/cardSheet';
-import { moreKinds } from '../EffectCards';
+import { EffectCards, moreKinds } from '../EffectCards';
 import { cards } from './attacks';
 
 vi.mock('@/ui/dialogs', () => ({ askChoice: () => Promise.resolve(undefined) }));
@@ -28,6 +28,9 @@ afterEach(cleanup);
 type Eff = Record<string, unknown> & { kind: string };
 
 const make = (add: string) => makeCard(cards, add);
+/** The words of the choice a dropdown shows. */
+const shownText = (label: string) =>
+  (screen.getByLabelText(label) as HTMLSelectElement).selectedOptions[0]?.textContent;
 const tick = (label: string) => screen.getByRole('checkbox', { name: label }) as HTMLInputElement;
 const line = (text: string) => expect(screen.getByText(text)).toBeTruthy();
 
@@ -140,6 +143,82 @@ describe('Attack rolls, narrowed', () => {
     ]);
     line('+1 to every attack roll, weapon and Mage spell');
   });
+
+  it('keeps no class once it is a weapon bonus again, which has none', () => {
+    const cards = renderCards([
+      { kind: 'attackBonus', amount: 1, scope: 'all', attack: 'any', className: 'Mage' },
+    ]);
+    change('Attack rolls: Which', 'melee');
+    expect(cards.written()).toEqual([{ kind: 'attackBonus', amount: 1, scope: 'melee' }]);
+    noProblems(cards.written());
+  });
+
+  it("shows a file's empty ability as written, and Any ability takes it away", () => {
+    const cards = renderCards([{ kind: 'attackBonus', amount: 1, scope: 'all', ability: '' }]);
+    expect(shownText('Attack rolls: With')).toBe('"", as written');
+    change('Attack rolls: With', '');
+    expect(cards.written()).toEqual([{ kind: 'attackBonus', amount: 1, scope: 'all' }]);
+    noProblems(cards.written());
+  });
+});
+
+describe('a list of weapons', () => {
+  const box = 'Damage: Only these weapons';
+  const withWeapons = (weapons: string[]): Eff[] => [
+    { kind: 'damageBonus', amount: 1, scope: 'all', weapons },
+  ];
+
+  it('keeps a name with a comma whole, quoted', () => {
+    const cards = renderCards(withWeapons(['Crossbow, hand']));
+    expect(boxValue(box)).toBe('"Crossbow, hand"');
+    change(box, '"Crossbow, hand", dagger');
+    expect(cards.written()).toEqual(withWeapons(['Crossbow, hand', 'dagger']));
+    noProblems(cards.written());
+  });
+
+  it('keeps a quote mark inside a name as written, and reads every list it shows back whole', () => {
+    const cards = renderCards(withWeapons(['12" blade', 'dagger']));
+    expect(boxValue(box)).toBe('12" blade, dagger');
+    change(box, '12" blade, dagger, club');
+    expect(cards.written()).toEqual(withWeapons(['12" blade', 'dagger', 'club']));
+    cleanup();
+    for (const names of [
+      ['"Quoted"', 'dagger'],
+      ['a, "b"', 'c'],
+      ['Crossbow, hand', '12" blade'],
+    ]) {
+      const again = renderCards(withWeapons(names));
+      // An edit that changes nothing writes the list it shows.
+      change(box, `${boxValue(box)} `);
+      expect(again.written()).toEqual(withWeapons(names));
+      cleanup();
+    }
+  });
+
+  it('starts again from the list Undo and Redo bring back, never text typed for another', () => {
+    // The card's own history, so the card stays on the page throughout.
+    const steps: unknown[][] = [[{ kind: 'damageBonus', amount: 1, scope: 'all' }]];
+    const shownWith = (effects: unknown[]) => (
+      <EffectCards
+        effects={effects}
+        readOnly={false}
+        onChange={(next) => {
+          steps.push(next);
+        }}
+      />
+    );
+    const { rerender } = render(shownWith(steps[0] ?? []));
+    for (const typed of ['longsword', 'longsword, ']) {
+      change(box, typed);
+      rerender(shownWith(steps.at(-1) ?? []));
+    }
+    expect(boxValue(box)).toBe('longsword, ');
+    // Undo to no weapon, then Redo to the first "longsword".
+    rerender(shownWith(steps[0] ?? []));
+    expect(boxValue(box)).toBe('');
+    rerender(shownWith(steps[1] ?? []));
+    expect(boxValue(box)).toBe('longsword');
+  });
 });
 
 describe('Damage, narrowed', () => {
@@ -156,6 +235,10 @@ describe('Damage, narrowed', () => {
     // A punch is a melee Strength attack too.
     expect(damageGained(cards.written())).toEqual([2, 0, 2]);
     fireEvent.click(tick('Damage: Weapons only'));
+    noProblems(cards.written());
+    expect(damageGained(cards.written())).toEqual([2, 0, 0]);
+    change('Damage: Only these weapons', 'longsword');
+    noProblems(cards.written());
     expect(damageGained(cards.written())).toEqual([2, 0, 0]);
     change('Damage: Only these weapons', 'shortbow');
     expect(damageGained(cards.written())).toEqual([0, 0, 0]);
@@ -163,6 +246,7 @@ describe('Damage, narrowed', () => {
     cleanup();
     renderCards(cards.written());
     expect(boxValue('Damage: With')).toBe('str');
+    expect(tick('Damage: Weapons only').checked).toBe(true);
     expect(boxValue('Damage: Only these weapons')).toBe('shortbow');
   });
 });
@@ -210,6 +294,14 @@ describe('Extra die on a hit', () => {
     renderCards([{ kind: 'damageDie', scope: 'all', dice: '1d4', damageType: 'sonic' }]);
     expect(boxValue(`${T}: Damage`)).toBe('sonic');
     expect(screen.getByRole('option', { name: 'sonic, as written' })).toBeTruthy();
+  });
+
+  it('shows an empty type as written, and As the weapon takes it away', () => {
+    const cards = renderCards([{ kind: 'damageDie', scope: 'all', dice: '1d4', damageType: '' }]);
+    expect(shownText(`${T}: Damage`)).toBe('"", as written');
+    change(`${T}: Damage`, '');
+    expect(cards.written()).toEqual([{ kind: 'damageDie', scope: 'all', dice: '1d4' }]);
+    noProblems(cards.written());
   });
 });
 
@@ -317,10 +409,15 @@ describe('Bigger unarmed strike', () => {
     // The reader trims what is typed, so spaces round good dice still count.
     change(`${T}: Dice`, ' 1d10 ');
     expect(screen.queryByText(why)).toBeNull();
+    noProblems(cards.written());
     expect(row(sheetWith(cards.written()), 'Unarmed Strike').damage).toBe(
       row(sheetWith([{ kind: 'unarmedDamage', label: 'Fists', dice: '1d10' }]), 'Unarmed Strike')
         .damage,
     );
+    // Not dice at all: the reader says so, once.
+    change(`${T}: Dice`, 'abc');
+    expect(screen.queryByText(why)).toBeNull();
+    expect(screen.getAllByText(/like 1d6 or 2d8/)).toHaveLength(1);
   });
 });
 

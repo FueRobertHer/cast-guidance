@@ -124,6 +124,24 @@ describe('Spell attacks and Spell save DC, narrowed', () => {
   });
 });
 
+describe('Attack rolls, every attack, on spells', () => {
+  it('narrowed to one ability, reaches the spell blocks cast with it alone', () => {
+    const cards = renderCards([{ kind: 'attackBonus', amount: 1, scope: 'all' }]);
+    change('Attack rolls: Which', ':every');
+    change('Attack rolls: With', 'cha');
+    expect(cards.written()).toEqual([
+      { kind: 'attackBonus', amount: 1, scope: 'all', attack: 'any', ability: 'cha' },
+    ]);
+    noProblems(cards.written());
+    // Pactcaster casts with Charisma, Mage with Intelligence.
+    const plain = sheetWith([], { setup: casters });
+    const now = sheetWith(cards.written(), { setup: casters });
+    const mod = (s: DerivedSheet, c: string) => block(s, c).attackMod.value;
+    expect(mod(now, 'Pactcaster')).toBe(mod(plain, 'Pactcaster') + 1);
+    expect(mod(now, 'Mage')).toBe(mod(plain, 'Mage'));
+  });
+});
+
 describe('Spell damage', () => {
   const T = 'Spell damage';
   const bonuses = (effects: Eff[]) =>
@@ -168,6 +186,36 @@ describe('Spell damage', () => {
     expect(tick(`${T}: Cantrips only`).checked).toBe(true);
     expect(boxValue(`${T}: Only these spells`)).toBe('Eldritch Blast');
     expect(again.written()).toEqual(cards.written());
+  });
+
+  it('keeps Amount open while a formula is typed that starts as a modifier', () => {
+    const cards = renderCards([make(T)]);
+    change(`${T}: Adds`, ':number');
+    // "mod.cha" on the way to "mod.cha + 1": Adds would read it as Charisma's modifier.
+    for (const typed of ['mod.cha', 'mod.cha + 1']) {
+      change(`${T}: Amount`, typed);
+      expect(boxValue(`${T}: Amount`)).toBe(typed);
+      expect(boxValue(`${T}: Adds`)).toBe(':number');
+    }
+    expect(cards.written()).toEqual([
+      { kind: 'spellDamageBonus', amount: { f: 'mod.cha + 1' }, cantrips: true },
+    ]);
+    noProblems(cards.written());
+
+    // Read back, a modifier alone is the modifier.
+    cleanup();
+    renderCards([{ kind: 'spellDamageBonus', amount: { f: 'mod.cha' } }]);
+    expect(boxValue(`${T}: Adds`)).toBe('cha');
+    expect(screen.queryByLabelText(`${T}: Amount`)).toBeNull();
+  });
+
+  it("shows a file's empty school as written, and Any school takes it away", () => {
+    const cards = renderCards([{ kind: 'spellDamageBonus', amount: 1, school: '' }]);
+    const school = screen.getByLabelText(`${T}: School`) as HTMLSelectElement;
+    expect(school.selectedOptions[0]?.textContent).toBe('"", as written');
+    change(`${T}: School`, '');
+    expect(cards.written()).toEqual([{ kind: 'spellDamageBonus', amount: 1 }]);
+    noProblems(cards.written());
   });
 
   it('adds a number to one school, once a cast', () => {
@@ -226,6 +274,7 @@ describe('Spells added to a class list', () => {
     // With no class, each list.
     const each = sheetWith([{ kind: 'spellListAdd', spells: ['Aid'] }], { setup: casters });
     expect(block(each, 'Mage').expanded?.[0]?.spells).toEqual(['Aid']);
+    expect(block(each, 'Pactcaster').expanded?.[0]?.spells).toEqual(['Aid']);
 
     cleanup();
     renderCards(cards.written());
