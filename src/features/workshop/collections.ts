@@ -22,8 +22,17 @@ import { fileKey } from '@/db/homebrewBooks';
 import type { HomebrewFileMeta } from '@/db/homebrewRepo';
 
 export interface Collection {
-  /** Its address: unique among collections, and the same after an update. */
+  /**
+   * Its address: unique among collections, and the same after an update. Not
+   * a row id (an imported file's is its key): give the repository `fileId`.
+   */
   id: string;
+  /**
+   * Its newest row's id, what `id` was before keys: the file's own, the
+   * compendium's newest book's, or the newest copy's. This is the id
+   * `homebrewRepo` takes; it changes with every update.
+   */
+  fileId: string;
   name: string;
   /** Where it came from, in words. */
   from: string;
@@ -85,8 +94,11 @@ export function collectionsOf(
   }
   const out: Collection[] = [];
   for (const [id, members] of groups) {
+    const [newest] = members;
+    if (newest === undefined) continue;
     out.push({
       id,
+      fileId: newest.id,
       name: nameOf(members, names),
       from: fromOf(members),
       rows: members,

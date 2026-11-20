@@ -71,6 +71,22 @@ describe('collectionsOf', () => {
     ]);
   });
 
+  it("keeps its newest row's id apart from its address, for the repository", () => {
+    const key = 'url:https://example.com/brew.json';
+    const all = collectionsOf([
+      row('h2', { key }),
+      row('h1', { key, enabled: false }),
+      row('a', { fileName: 'all.xml', book: 'Ember Codex' }),
+      row('b', { fileName: 'all (1).xml', book: 'Frost Codex' }),
+      row('mine', { editable: true }),
+    ]);
+    expect(all.map((c) => [c.id, c.fileId])).toEqual([
+      [key, 'h2'],
+      ['books:all', 'a'],
+      ['mine', 'mine'],
+    ]);
+  });
+
   it('says a collection turned off is off', () => {
     const [c] = collectionsOf([row('x', { enabled: false, counts: { feat: 3, spell: 2 } })]);
     expect(c === undefined ? '' : holdsOf(c)).toBe('5 entries. Off');
