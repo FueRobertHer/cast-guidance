@@ -12,9 +12,18 @@
  */
 import { useLiveQuery } from 'dexie-react-hooks';
 import { ArrowLeft, ChevronRight, Download, Ellipsis, Plus, Share2, Trash2 } from 'lucide-react';
-import { lazy, type ReactNode, Suspense, useEffect, useMemo, useState } from 'react';
+import {
+  lazy,
+  type ReactNode,
+  Suspense,
+  useEffect,
+  useMemo,
+  useState,
+  useSyncExternalStore,
+} from 'react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router';
 import { applyMod, uidOf } from '@/data5e/copyMod';
+import { getRevision, subscribeRevision } from '@/data5e/landing';
 import { type ChangedEntry, type ChangeLayer, identityKey } from '@/data5e/normalize';
 import { getRegistry, invalidateRegistry } from '@/data5e/registry';
 import { sharedFile } from '@/data5e/rulePack';
@@ -39,6 +48,7 @@ import { downloadJson, jsonFilename } from '@/lib/download';
 import { safeExternalHref } from '@/lib/url';
 import { useBack } from '@/lib/useBack';
 import { usePageTitle } from '@/lib/usePageTitle';
+import { useDataStatus } from '@/stores/dataStatus';
 import { errorText, notify, notifyFailure } from '@/stores/notices';
 import { Badge } from '@/ui/Badge';
 import { Button, buttonClass } from '@/ui/Button';
@@ -665,19 +675,67 @@ interface Look {
   layer: ChangeLayer;
 }
 
-/** The changes over this collection's entries, or in it, that an update moved under. */
-function looksAt(records: readonly ChangedEntry[], c: Collection): Look[] {
+const lookKey = (record: ChangedEntry) => `${record.type}:${identityKey(record.type, record.base)}`;
+
+/**
+ * The changes over this collection's entries, or in it, that an update moved
+ * under: by the change's file, the entry's source, or else (an entry can name
+ * a source its file does not declare) its identity among `held`.
+ */
+function looksAt(
+  records: readonly ChangedEntry[],
+  c: Collection,
+  held?: ReadonlySet<string>,
+): Look[] {
   const ids = new Set(c.rows.map((r) => r.id));
   const sources = new Set(c.rows.flatMap((r) => r.sourceIds.map(lower)));
   const out: Look[] = [];
   for (const record of records) {
     const base = typeof record.base.source === 'string' ? lower(record.base.source) : '';
+    const here = sources.has(base) || held?.has(lookKey(record)) === true;
     for (const layer of record.layers) {
       if (layer.needsLook.length === 0) continue;
-      if (ids.has(layer.from.fileId) || sources.has(base)) out.push({ record, layer });
+      if (here || ids.has(layer.from.fileId)) out.push({ record, layer });
     }
   }
   return out;
+}
+
+/**
+ * Every entry identity a collection holds, read only while some look is not
+ * already placed here by its file or source: most pages never read a file
+ * for it.
+ */
+function useHeld(
+  c: Collection,
+  records: readonly ChangedEntry[],
+  stamp: string,
+): ReadonlySet<string> | undefined {
+  const need = records.some(
+    (r) => r.layers.some((l) => l.needsLook.length > 0) && looksAt([r], c).length === 0,
+  );
+  const [held, setHeld] = useState<{ stamp: string; ids: ReadonlySet<string> }>();
+  // biome-ignore lint/correctness/useExhaustiveDependencies: stamp names every row and its revision
+  useEffect(() => {
+    if (!need) return;
+    let alive = true;
+    void (async () => {
+      const ids = new Set<string>();
+      for (const r of c.rows) {
+        const { file } = await homebrewRepo.getSafe(r.id);
+        for (const e of file === undefined ? [] : entriesIn(file.json, false)) {
+          ids.add(`${e.type}:${identityKey(e.type, e.entry)}`);
+        }
+      }
+      if (alive) setHeld({ stamp, ids });
+    })().catch(() => {
+      // Unread, a look shows where its file or source places it.
+    });
+    return () => {
+      alive = false;
+    };
+  }, [need, stamp]);
+  return need && held?.stamp === stamp ? held.ids : undefined;
 }
 
 const FIELD_NAMES: Readonly<Record<string, string>> = {
@@ -751,17 +809,43 @@ function shapeOf(layer: ChangeLayer, f: string): { shape: Shape; missed: Json[] 
     typeof applyMod
   >[0];
   const missed: Json[] = [];
+  let tried = 0;
   for (const op of ops) {
-    const before = JSON.stringify(target[f]);
-    let warned = false;
-    applyMod(target, { [f]: [structuredClone(op)] }, () => {
-      warned = true;
-    });
-    if (warned || JSON.stringify(target[f]) === before) missed.push(op);
+    // A removal of several is read one by one: one can still find its part
+    // while another, renamed by the update, finds nothing.
+    for (const part of partsOf(op)) {
+      tried += 1;
+      const before = JSON.stringify(target[f]);
+      let warned = false;
+      applyMod(target, { [f]: [structuredClone(part)] }, () => {
+        warned = true;
+      });
+      const found = !warned && JSON.stringify(target[f]) !== before;
+      // A replacement whose words went because the update already says the
+      // player's: what shows is theirs (#6).
+      if (!found && !alreadySays(target[f], part)) missed.push(part);
+    }
   }
-  const shape =
-    missed.length === 0 ? 'applies' : missed.length === ops.length ? 'misses' : 'partly';
+  const shape = missed.length === 0 ? 'applies' : missed.length === tried ? 'misses' : 'partly';
   return { shape, missed };
+}
+
+/** A `removeArr` of several names or items as one step each; any other step as it is. */
+function partsOf(op: Json): Json[] {
+  if (op.mode !== 'removeArr') return [op];
+  for (const k of ['names', 'items'] as const) {
+    const list = op[k];
+    if (Array.isArray(list) && list.length > 1) return list.map((x) => ({ ...op, [k]: [x] }));
+  }
+  return [op];
+}
+
+/** Whether a field already holds every item a `replaceArr` puts in. */
+function alreadySays(field: unknown, op: Json): boolean {
+  if (op.mode !== 'replaceArr' || !Array.isArray(field)) return false;
+  const items = Array.isArray(op.items) ? op.items : op.items === undefined ? [] : [op.items];
+  const there = new Set(field.map((x) => JSON.stringify(x)));
+  return items.length > 0 && items.every((x) => there.has(JSON.stringify(x)));
 }
 
 /** The player's wording, as the steps of their change say it. */
@@ -799,7 +883,8 @@ function NeedsLookSection({ c, items }: { c: Collection; items: readonly Look[] 
       const placed = record.placed as Json;
       const was = layer.entry as unknown as EntryKey;
       if (changeCount(below, placed) === 0) {
-        await homebrewRepo.removeEntry(layer.from.fileId, record.type, was);
+        if (!(await homebrewRepo.removeEntry(layer.from.fileId, record.type, was)))
+          throw new Error('that change is no longer in its collection');
       } else {
         const entry = writeChange(record.type, below, placed) as Json & EntryKey;
         await homebrewRepo.saveEntry(record.type, entry, { role: 'changes', replaces: was });
@@ -984,7 +1069,11 @@ function FromSection({ c, onImport }: { c: Collection; onImport: (link?: string)
  */
 function useChangedEntries(stamp: string): readonly ChangedEntry[] {
   const [records, setRecords] = useState<readonly ChangedEntry[]>([]);
-  // biome-ignore lint/correctness/useExhaustiveDependencies: stamp is the refresh trigger
+  // The books under a change can move with no stored file moving: a release
+  // landing. The registry hook's own triggers (`hooks.ts`), read here.
+  const revision = useSyncExternalStore(subscribeRevision, getRevision, getRevision);
+  const phase = useDataStatus((s) => s.phase);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: stamp, revision and phase are the refresh triggers
   useEffect(() => {
     let alive = true;
     getRegistry()
@@ -997,7 +1086,7 @@ function useChangedEntries(stamp: string): readonly ChangedEntry[] {
     return () => {
       alive = false;
     };
-  }, [stamp]);
+  }, [stamp, revision, phase]);
   return records;
 }
 
@@ -1011,12 +1100,9 @@ function Found({ c, stamp }: { c: Collection; stamp: string }) {
   const [status, setStatus] = useState<string>();
   const sharing = useMemo(canShareFiles, []);
   const records = useChangedEntries(stamp);
-  const looks = useMemo(() => looksAt(records, c), [records, c]);
-  const looked = useMemo(
-    () =>
-      new Set(looks.map((l) => `${l.record.type}:${identityKey(l.record.type, l.record.base)}`)),
-    [looks],
-  );
+  const held = useHeld(c, records, stamp);
+  const looks = useMemo(() => looksAt(records, c, held), [records, c, held]);
+  const looked = useMemo(() => new Set(looks.map((l) => lookKey(l.record))), [looks]);
   const [single] = c.rows.length === 1 ? c.rows : [];
   // Read here, not through `useSourcePolicy`, whose default while it loads
   // shows every book: a tap then would write switches for the wrong choice.
