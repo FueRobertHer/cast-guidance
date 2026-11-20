@@ -14,33 +14,41 @@
  * Import opens the one Import sheet (board 7, `ImportSheet`) over the home,
  * kept in the address too (`?import`), so its links stay links. What it lands
  * is a collection: the home says so and shows Collections.
+ *
+ * Select on Yours (board 9) turns its rows into checkboxes, and a bar over the
+ * tab bar moves, exports or deletes what is picked (`SelectBar`). A delete is
+ * offered back with Undo, which puts every entry back in its place.
  */
 import { useLiveQuery } from 'dexie-react-hooks';
-import { ChevronRight, FileUp, Plus, Search } from 'lucide-react';
+import { ChevronRight, FileUp, ListChecks, Plus, Search, X } from 'lucide-react';
 import { lazy, type ReactNode, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router';
 import { useRegistry, useRegistryState, useSearchState } from '@/data5e/hooks';
 import { getActiveTag } from '@/data5e/loader';
+import { invalidateRegistry } from '@/data5e/registry';
 import { type SearchResult, searchAll } from '@/data5e/search/client';
 import { policyForSearch, useSourcePolicy } from '@/data5e/sourceFilter';
 import { sourceName } from '@/data5e/sourceNames';
-import { type HomebrewFileMeta, homebrewRepo } from '@/db/homebrewRepo';
+import { type HomebrewFileMeta, homebrewRepo, type Removed } from '@/db/homebrewRepo';
 import { appRulesFor } from '@/engine/rules';
 import { usePacksHere } from '@/features/homebrew/PackReviewSheet';
 import { choiceTitle, RULE_ORDER, RULE_TITLES } from '@/features/settings/RuleSheet';
 import { usePageTitle } from '@/lib/usePageTitle';
+import { useUndoOffer } from '@/lib/useUndoOffer';
 import { announce, cancelAnnouncement } from '@/stores/announcer';
+import { notifyFailure } from '@/stores/notices';
 import { useAppTableRules } from '@/stores/tableRules';
 import { Badge } from '@/ui/Badge';
-import { buttonClass } from '@/ui/Button';
+import { Button, buttonClass } from '@/ui/Button';
 import { CollectionCard } from '@/ui/CollectionCard';
 import { FilterChips } from '@/ui/FilterChips';
 import { SegmentedControl } from '@/ui/SegmentedControl';
 import { listClass, listRowClass } from '@/ui/surfaces';
 import { fieldClass } from '@/ui/TextField';
+import { UndoBar } from '@/ui/UndoBar';
 import { collectionPath, collectionsOf, holdsOf, madeName } from './collections';
 import { copiedFrom } from './copyWriter';
-import { editPath, entriesOf, inFile, kindOf, labelOf, type Mine } from './yours';
+import { editPath, entriesOf, inFile, kindOf, labelOf, type Mine, mineKey } from './yours';
 
 const NOTE = 'text-body text-ink-muted';
 const H2 = 'text-body-strong';
@@ -95,7 +103,7 @@ function mineRow(m: Mine, fileNames: ReadonlyMap<string, string>) {
   const kept = fileNames.get(m.fileId);
   const caption = [kindOf(m.type), kept].filter((p) => p !== undefined).join(', ');
   return {
-    key: `${m.fileId}:${m.type}:${name}|${String(m.entry.source)}`,
+    key: mineKey(m),
     to: `${editPath(m.type, name, String(m.entry.source))}${inFile(m.fileId)}`,
     name,
     caption: from === undefined ? caption : `${caption}. Based on ${from.name}`,
@@ -118,6 +126,20 @@ const IMPORT_PARAM = 'import';
 /** The Import sheet, loaded once it is first opened. */
 const ImportSheet = lazy(() => import('./ImportSheet'));
 
+/** The select mode's bar and sheets, loaded once select mode is first opened. */
+const SelectBar = lazy(() => import('./SelectBar'));
+
+/** The files' revisions, for Undo to tell whether anything changed since a delete. */
+interface Revisions {
+  revs: Readonly<Record<string, number>>;
+  /** What a delete took out, on the snapshot from before it. */
+  removed?: Removed;
+}
+
+/** Whether every file `b` names is at the revision it says in `a`. */
+const sameRevisions = (a: Revisions, b: Revisions) =>
+  Object.entries(b.revs).every(([id, rev]) => a.revs[id] === rev);
+
 /**
  * Where a file comes in: the Import sheet (U7), opened over this page by
  * `?import`, so the way in stays a link and Back leaves the page as before.
@@ -139,14 +161,29 @@ function ImportLink({ label }: { label: string }) {
   );
 }
 
+/** Select mode on Yours: what is picked, and how a row is picked or let go. */
+interface Selecting {
+  chosen: ReadonlySet<string>;
+  toggle: (key: string) => void;
+}
+
 function YoursShelf({
   mine,
   fileNames,
+  kind,
+  onKind,
+  selecting,
+  onSelect,
 }: {
   mine: readonly Mine[] | undefined;
   fileNames: ReadonlyMap<string, string>;
+  /** The kind shown, `all` for every one. */
+  kind: string;
+  onKind: (kind: string) => void;
+  /** Select mode, when it is on. */
+  selecting?: Selecting;
+  onSelect: () => void;
 }) {
-  const [kind, setKind] = useState('all');
   if (mine === undefined) return <p className={NOTE}>Loading…</p>;
   if (mine.length === 0) {
     return (
@@ -175,32 +212,58 @@ function YoursShelf({
   const rows = mine.filter((m) => shown === 'all' || m.type === shown);
   return (
     <>
-      {kinds.length > 1 && (
-        <FilterChips
-          label="Show"
-          value={shown}
-          onChange={setKind}
-          options={[
-            { value: 'all', label: 'All', count: mine.length },
-            ...kinds.map((t) => ({
-              value: t,
-              label: labelOf(t),
-              count: mine.filter((m) => m.type === t).length,
-            })),
-          ]}
-        />
-      )}
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div className="min-w-0 flex-1">
+          {kinds.length > 1 && (
+            <FilterChips
+              label="Show"
+              value={shown}
+              onChange={onKind}
+              options={[
+                { value: 'all', label: 'All', count: mine.length },
+                ...kinds.map((t) => ({
+                  value: t,
+                  label: labelOf(t),
+                  count: mine.filter((m) => m.type === t).length,
+                })),
+              ]}
+            />
+          )}
+        </div>
+        {selecting === undefined && (
+          <Button variant="ghost" size="sm" data-select-start="" onClick={onSelect}>
+            <ListChecks size={16} aria-hidden />
+            Select
+          </Button>
+        )}
+      </div>
       <ul className={listClass}>
         {rows.map((m) => {
           const row = mineRow(m, fileNames);
           return (
             <li key={row.key}>
-              <RowLink
-                to={row.to}
-                title={row.name}
-                caption={row.caption}
-                end={<Badge tone="outline">New</Badge>}
-              />
+              {selecting === undefined ? (
+                <RowLink
+                  to={row.to}
+                  title={row.name}
+                  caption={row.caption}
+                  end={<Badge tone="outline">New</Badge>}
+                />
+              ) : (
+                <label className={`${ROW} cursor-pointer`}>
+                  <input
+                    type="checkbox"
+                    checked={selecting.chosen.has(row.key)}
+                    onChange={() => selecting.toggle(row.key)}
+                    className="size-5 shrink-0 accent-brand"
+                  />
+                  <span className="flex min-w-0 flex-1 flex-col">
+                    <span className="text-body-strong break-words">{row.name}</span>
+                    <span className="sr-only">,</span>{' '}
+                    <span className="text-caption text-ink-muted">{row.caption}</span>
+                  </span>
+                </label>
+              )}
             </li>
           );
         })}
@@ -486,8 +549,61 @@ export function Component() {
     for (const f of owned?.files ?? []) out.set(f.id, madeName(f.json) ?? f.fileName);
     return out;
   }, [owned]);
-  // What the last import did, on screen and said once (A11Y-002).
+  // What the last import, move or export did, on screen and said once (A11Y-002).
   const [outcome, setOutcome] = useState<string>();
+  const [kind, setKind] = useState('all');
+
+  // Select mode (board 9): rows by `mineKey`. Only rows on show count as
+  // picked, so a kind filter never leaves a hidden entry picked.
+  const [selecting, setSelecting] = useState(false);
+  const [chosen, setChosen] = useState<ReadonlySet<string>>(() => new Set());
+  const kinds = new Set((mine ?? []).map((m) => m.type));
+  const shownKind = kinds.has(kind) ? kind : 'all';
+  const shown = (mine ?? []).filter((m) => shownKind === 'all' || m.type === shownKind);
+  const picked = shown.filter((m) => chosen.has(mineKey(m)));
+  const inSelect = selecting && shelf === 'yours' && shown.length > 0;
+  // Where the keyboard goes once select mode starts or stops: its first
+  // control, or back to Select. After a delete it goes to Undo instead.
+  const focusTo = useRef<string | null>(null);
+  const select = (on: boolean, focus: string | null) => {
+    setSelecting(on);
+    setChosen(new Set());
+    focusTo.current = focus;
+  };
+  // biome-ignore lint/correctness/useExhaustiveDependencies: runs once select mode has started or stopped
+  useEffect(() => {
+    const to = focusTo.current;
+    if (to === null) return;
+    focusTo.current = null;
+    page.current?.querySelector<HTMLElement>(to)?.focus({ preventScroll: true });
+  }, [inSelect]);
+  const toggle = (key: string) =>
+    setChosen((was) => {
+      const next = new Set(was);
+      if (!next.delete(key)) next.add(key);
+      return next;
+    });
+
+  // Undo of a delete, offered until one of the files it changed changes again.
+  const revisions = useMemo<Revisions | null>(
+    () =>
+      owned === undefined
+        ? null
+        : { revs: Object.fromEntries(owned.files.map((f) => [f.id, f.rev ?? 0])) },
+    [owned],
+  );
+  const [undoFocus, setUndoFocus] = useState(0);
+  const deleted = useUndoOffer<Revisions>({
+    current: revisions,
+    same: sameRevisions,
+    restore: (before) => {
+      if (before.removed === undefined) return;
+      homebrewRepo.restoreEntries(before.removed).then(invalidateRegistry, (err: unknown) => {
+        deleted.dismiss();
+        notifyFailure('Undo', err);
+      });
+    },
+  });
   const importing = params.has(IMPORT_PARAM);
   const page = useRef<HTMLElement>(null);
   const closedImport = useRef(false);
@@ -518,7 +634,10 @@ export function Component() {
     : [];
 
   return (
-    <main ref={page} className="flex flex-1 flex-col gap-4 px-4 pt-5 pb-4">
+    <main
+      ref={page}
+      className={`flex flex-1 flex-col gap-4 px-4 pt-5 ${inSelect ? 'pb-24' : 'pb-4'}`}
+    >
       <header className="flex flex-wrap items-end justify-between gap-x-3 gap-y-2">
         <h1 className="font-display text-title-page">Workshop</h1>
         <MakeLink />
@@ -529,44 +648,130 @@ export function Component() {
           {outcome}
         </p>
       )}
-      <div className="relative">
-        <Search
-          size={20}
-          aria-hidden
-          className="pointer-events-none absolute top-3.5 left-3.5 text-ink-muted"
-        />
-        <input
-          type="search"
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          aria-label="Search your content, collections and the books"
-          placeholder="Search everything"
-          className={`${fieldClass} pl-10.5`}
-        />
-      </div>
-      {searching ? (
-        <SearchResults query={query} yours={found} own={own} rows={meta?.files} />
+      <UndoBar
+        pending={deleted.pending}
+        undone={deleted.undone}
+        onUndo={() => void deleted.run()}
+        focusRequest={undoFocus}
+      />
+      {inSelect ? (
+        // Escape leaves select mode, as the X does.
+        // biome-ignore lint/a11y/noStaticElementInteractions: a key handler for the controls inside it
+        <div
+          className="flex flex-col gap-4"
+          onKeyDown={(e) => {
+            if (e.key === 'Escape') select(false, '[data-select-start]');
+          }}
+        >
+          <div className="flex items-center gap-2">
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label="Stop selecting"
+              data-select-stop=""
+              onClick={() => select(false, '[data-select-start]')}
+            >
+              <X size={20} aria-hidden />
+            </Button>
+            <p className="min-w-0 flex-1 text-body-strong">
+              {picked.length === 0 ? 'Select entries' : `${picked.length} selected`}
+            </p>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() =>
+                setChosen(
+                  new Set(picked.length === shown.length ? [] : shown.map((m) => mineKey(m))),
+                )
+              }
+            >
+              {picked.length === shown.length ? 'Select none' : 'Select all'}
+            </Button>
+          </div>
+          <YoursShelf
+            mine={mine}
+            fileNames={names}
+            kind={shownKind}
+            onKind={setKind}
+            selecting={{ chosen, toggle }}
+            onSelect={() => undefined}
+          />
+        </div>
       ) : (
         <>
-          <SegmentedControl
-            label="Shelf"
-            block
-            options={SHELVES}
-            value={shelf}
-            onChange={(next) =>
-              setParams(next === 'yours' ? {} : { shelf: next }, { replace: true })
-            }
-          />
-          {shelf === 'yours' && <YoursShelf mine={mine} fileNames={names} />}
-          {shelf === 'collections' && (
-            <CollectionsShelf
-              rows={meta?.files}
-              unreadable={meta?.errors.length ?? 0}
-              names={names}
+          <div className="relative">
+            <Search
+              size={20}
+              aria-hidden
+              className="pointer-events-none absolute top-3.5 left-3.5 text-ink-muted"
             />
+            <input
+              type="search"
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              aria-label="Search your content, collections and the books"
+              placeholder="Search everything"
+              className={`${fieldClass} pl-10.5`}
+            />
+          </div>
+          {searching ? (
+            <SearchResults query={query} yours={found} own={own} rows={meta?.files} />
+          ) : (
+            <>
+              <SegmentedControl
+                label="Shelf"
+                block
+                options={SHELVES}
+                value={shelf}
+                onChange={(next) =>
+                  setParams(next === 'yours' ? {} : { shelf: next }, { replace: true })
+                }
+              />
+              {shelf === 'yours' && (
+                <YoursShelf
+                  mine={mine}
+                  fileNames={names}
+                  kind={shownKind}
+                  onKind={setKind}
+                  onSelect={() => select(true, '[data-select-stop]')}
+                />
+              )}
+              {shelf === 'collections' && (
+                <CollectionsShelf
+                  rows={meta?.files}
+                  unreadable={meta?.errors.length ?? 0}
+                  names={names}
+                />
+              )}
+              {shelf === 'rules' && <RulesShelf rows={meta?.files} />}
+            </>
           )}
-          {shelf === 'rules' && <RulesShelf rows={meta?.files} />}
         </>
+      )}
+      {inSelect && owned !== undefined && (
+        <Suspense fallback={null}>
+          <SelectBar
+            picked={picked}
+            files={owned.files}
+            names={names}
+            onDone={(text) => {
+              select(false, '[data-select-start]');
+              setOutcome(text);
+              announce(text, { key: 'workshop-select', repeat: true });
+            }}
+            onDeleted={(removed, title, detail) => {
+              select(false, null);
+              setOutcome(undefined);
+              deleted.offer(
+                { revs: {}, removed },
+                { revs: Object.fromEntries(removed.files.map((f) => [f.id, f.rev])) },
+                title,
+                detail,
+              );
+              setUndoFocus((n) => n + 1);
+            }}
+          />
+        </Suspense>
       )}
       {importing && (
         <Suspense fallback={null}>
