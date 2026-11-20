@@ -84,9 +84,12 @@ const refusedText = (reason: string) =>
     : reason;
 
 export default function ImportSheet({
+  link,
   onClose,
   onDone,
 }: {
+  /** A collection's own link, to update it from: the sheet opens on A link with it filled. */
+  link?: string;
   /** Closed with nothing to report (swiped away, or Close). */
   onClose: () => void;
   /**
@@ -96,9 +99,9 @@ export default function ImportSheet({
   onDone: (message: string, landed: boolean) => void;
 }) {
   const navigate = useNavigate();
-  const [way, setWay] = useState<Way>('file');
+  const [way, setWay] = useState<Way>(link === undefined ? 'file' : 'link');
   const [file, setFile] = useState<File>();
-  const [url, setUrl] = useState('');
+  const [url, setUrl] = useState(link ?? '');
   const [text, setText] = useState('');
   const [kind, setKind] = useState('spell');
   const [status, setStatusState] = useState<{ text: string; failed: boolean }>();

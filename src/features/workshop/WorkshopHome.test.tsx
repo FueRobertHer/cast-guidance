@@ -177,9 +177,7 @@ describe('the Workshop home', () => {
       () => {
         const list = within(main)
           .getAllByRole('link')
-          .filter((l) =>
-            /^\/(workshop\/collection\/|settings$)/.test(l.getAttribute('href') ?? ''),
-          );
+          .filter((l) => /^\/workshop\/collection\//.test(l.getAttribute('href') ?? ''));
         expect(list).toHaveLength(4);
         return list;
       },
@@ -189,7 +187,7 @@ describe('the Workshop home', () => {
       'all.xml, A compendium of 2 books, 2 entries. On',
       'imported.json, A homebrew file you imported, 1 entry. On',
       'Lantern Coast, Yours. Made in this app, 2 entries. On',
-      'The books, Game data harness, Choose which books show, in Settings',
+      'The books, Game data harness, Choose which books show',
     ]);
     expect(screen.getByRole('link', { name: 'Import or manage files' }).getAttribute('href')).toBe(
       '/homebrew',
