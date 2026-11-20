@@ -1,0 +1,358 @@
+// @vitest-environment jsdom
+// A collection over time (ADR-002, D4; board 8): its page's address holds
+// through an update, which comes from its link through the Import sheet; and
+// what an update moved under the player's change shows as Needs a look,
+// with both versions (E3's data), until the player keeps theirs.
+import 'fake-indexeddb/auto';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { StrictMode } from 'react';
+import { createMemoryRouter, RouterProvider } from 'react-router';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { routes } from '@/app/routes';
+import { getRegistry, invalidateRegistry } from '@/data5e/registry';
+import { writeSourcePolicy } from '@/data5e/sourceFilter';
+import { characterRepo } from '@/db/characterRepo';
+import { db } from '@/db/db';
+import { type EntryKey, homebrewRepo } from '@/db/homebrewRepo';
+import { namelessControls } from '../../../tests-fixtures/a11y';
+import {
+  classEntry,
+  HARNESS_TIMEOUT,
+  resetSheetHarness,
+  seedWorld,
+  testCharacter,
+} from '../../../tests-fixtures/sheetHarness';
+import { collectionPath } from './collections';
+import { writeChange } from './copyWriter';
+
+vi.mock('@/data5e/loader', () =>
+  import('../../../tests-fixtures/sheetHarnessMocks').then((m) => m.loaderStub),
+);
+vi.mock('@/app/AppShell', () =>
+  import('../../../tests-fixtures/sheetHarnessMocks').then((m) => m.appShellStub),
+);
+
+vi.setConfig({ testTimeout: HARNESS_TIMEOUT });
+
+afterEach(async () => {
+  vi.restoreAllMocks();
+  await resetSheetHarness();
+});
+
+const WAIT = 30_000;
+type Json = Record<string, unknown>;
+
+function visit(path: string) {
+  const router = createMemoryRouter(routes, { initialEntries: [path] });
+  render(
+    <StrictMode>
+      <RouterProvider router={router} />
+    </StrictMode>,
+  );
+  return router;
+}
+
+const NAME = 'Tidewater Grimoire.json';
+const LINK = `https://raw.githubusercontent.com/me/brews/main/${encodeURIComponent(NAME)}`;
+
+function grimoire(changed = false): Json {
+  return {
+    _meta: { sources: [{ json: 'TWG', full: 'Tidewater Grimoire' }] },
+    spell: [
+      { name: 'Riptide', source: 'TWG', level: 1, entries: ['Pull.'] },
+      ...(changed ? [{ name: 'Kelp Cloak', source: 'TWG', level: 2, entries: ['Wrap.'] }] : []),
+    ],
+  };
+}
+
+const rowIds = async () => (await db.homebrewFiles.toArray()).map((r) => r.id);
+
+describe('a collection from a link', () => {
+  it('keeps its address through an update, and updates from its link through the sheet', async () => {
+    await seedWorld();
+    const first = await homebrewRepo.commit(await homebrewRepo.prepare(grimoire(), NAME, LINK));
+    expect(first.row.key).toBe(`url:${LINK}`);
+    // The address the home links it by: the key, with its slashes and colons.
+    visit(collectionPath(`url:${LINK}`));
+    expect(
+      await screen.findByRole('heading', { level: 1, name: NAME }, { timeout: WAIT }),
+    ).toBeTruthy();
+    await screen.findByText('Riptide', {}, { timeout: WAIT });
+    expect(screen.getByRole('link', { name: LINK }).getAttribute('href')).toBe(LINK);
+
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify(grimoire(true))));
+    fireEvent.click(screen.getByRole('button', { name: 'Update from its link' }));
+    const sheet = await screen.findByRole('dialog', { name: 'Import' }, { timeout: WAIT });
+    const link = within(sheet).getByRole<HTMLInputElement>('textbox', {
+      name: 'Link to a JSON homebrew file',
+    });
+    expect(link.value).toBe(LINK);
+    fireEvent.click(within(sheet).getByRole('button', { name: 'Read it' }));
+    const preview = await screen.findByRole(
+      'dialog',
+      { name: `Update "${NAME}"?` },
+      { timeout: WAIT },
+    );
+    fireEvent.click(within(preview).getByRole('button', { name: 'Update' }));
+
+    // The same page, on the new content, under a new row id.
+    await screen.findByText('Kelp Cloak', {}, { timeout: WAIT });
+    expect(screen.getByRole('heading', { level: 1, name: NAME })).toBeTruthy();
+    expect(screen.getByRole('status').textContent).toMatch(/^Updated/);
+    const ids = await rowIds();
+    expect(ids).toHaveLength(1);
+    expect(ids).not.toContain(first.row.id);
+    expect(namelessControls()).toEqual([]);
+  });
+
+  it('follows an update made elsewhere while it is open', async () => {
+    await homebrewRepo.commit(await homebrewRepo.prepare(grimoire(), NAME, LINK));
+    visit(collectionPath(`url:${LINK}`));
+    await screen.findByText('Riptide', {}, { timeout: WAIT });
+    await homebrewRepo.commit(await homebrewRepo.prepare(grimoire(true), NAME, LINK));
+    await screen.findByText('Kelp Cloak', {}, { timeout: WAIT });
+    expect(screen.queryByText('This collection is no longer on this device.')).toBeNull();
+    // A file would land beside it: its key is the link (U7).
+    expect(screen.queryByRole('button', { name: 'Update from a file' })).toBeNull();
+  });
+
+  it('moves to its own address when opened by a row id, so an update keeps it open', async () => {
+    const first = await homebrewRepo.commit(await homebrewRepo.prepare(grimoire(), NAME, LINK));
+    const router = visit(`/workshop/collection/${first.row.id}`);
+    await screen.findByText('Riptide', {}, { timeout: WAIT });
+    await waitFor(
+      () =>
+        expect(decodeURIComponent(router.state.location.pathname)).toBe(
+          decodeURIComponent(collectionPath(`url:${LINK}`)),
+        ),
+      { timeout: WAIT },
+    );
+    await homebrewRepo.commit(await homebrewRepo.prepare(grimoire(true), NAME, LINK));
+    await screen.findByText('Kelp Cloak', {}, { timeout: WAIT });
+    expect(screen.queryByText('This collection is no longer on this device.')).toBeNull();
+  });
+
+  it('opens from a link whose own address holds an encoded slash', async () => {
+    const link = 'https://raw.githubusercontent.com/me/brews/main/get?p=a%2Fb.json';
+    const first = await homebrewRepo.commit(await homebrewRepo.prepare(grimoire(), 'b.json', link));
+    expect(first.row.key).toBe(`url:${link}`);
+    visit(collectionPath(`url:${link}`));
+    expect(
+      await screen.findByRole('heading', { level: 1, name: 'b.json' }, { timeout: WAIT }),
+    ).toBeTruthy();
+  });
+});
+
+describe('Needs a look', () => {
+  const BASE = ['Glow.', 'Shine.'];
+  const tide = (entries: unknown[]): Json => ({
+    _meta: { sources: [{ json: 'TID', full: 'Tide Tales' }] },
+    feat: [{ name: 'Glimmer', source: 'TID', entries }],
+  });
+
+  /** An imported Glimmer the player changed to `mine`, then an update to `theirs`. */
+  async function changedUnderneath(
+    mine: unknown[],
+    theirs: unknown[],
+    base: unknown[] = BASE,
+  ): Promise<{ changesId: string; fileKey: string }> {
+    await seedWorld();
+    await homebrewRepo.importJson(tide(base), 'Tide.json');
+    const reg = await getRegistry();
+    const placed = reg.get('feat', 'Glimmer', 'TID');
+    if (placed === undefined) throw new Error('no Glimmer');
+    const original = reg.belowOwnChange(placed) as Json;
+    const change = writeChange('feat', original, { ...original, entries: mine });
+    const { fileId } = await homebrewRepo.saveEntry('feat', change as Json & EntryKey, {
+      role: 'changes',
+    });
+    const updated = await homebrewRepo.importJson(tide(theirs), 'Tide.json');
+    invalidateRegistry();
+    const after = await getRegistry();
+    const [record] = after.changedEntries();
+    expect(record?.layers.map((l) => l.needsLook)).toEqual([['entries']]);
+    return { changesId: fileId, fileKey: updated.key ?? '' };
+  }
+
+  async function lookAt(fileKey: string) {
+    visit(collectionPath(fileKey));
+    const list = await screen.findByRole('list', { name: 'Needs a look' }, { timeout: WAIT });
+    expect(list.textContent).toContain('Glimmer');
+    // What it holds is read on its own, so it can land after Needs a look.
+    const held = await screen.findByRole('list', { name: 'In Tide.json' }, { timeout: WAIT });
+    expect(within(held).getByText('Needs a look')).toBeTruthy();
+    expect(namelessControls()).toEqual([]);
+    return list;
+  }
+
+  const settled = () =>
+    waitFor(() => expect(screen.queryByRole('list', { name: 'Needs a look' })).toBeNull(), {
+      timeout: WAIT,
+    });
+
+  it('an update to another paragraph: yours shows over it, and Keep yours settles it', async () => {
+    const { fileKey } = await changedUnderneath(
+      ['Glow brightly.', 'Shine.'],
+      ['Glow.', 'Shine on.'],
+    );
+    const list = await lookAt(fileKey);
+    expect(list.textContent).toContain('The collection’s now: Glow. Shine on.');
+    expect(list.textContent).toContain('Yours: Glow brightly. Shine on.');
+    expect(list.textContent).toContain('Yours shows.');
+
+    fireEvent.click(within(list).getByRole('button', { name: 'Keep yours: Glimmer' }));
+    await settled();
+    const [record] = (await getRegistry()).changedEntries();
+    expect(record?.layers.map((l) => l.needsLook)).toEqual([[]]);
+    expect(record?.placed.entries).toEqual(['Glow brightly.', 'Shine on.']);
+  });
+
+  it('a change that holds the text whole: yours shows, and Keep yours settles it', async () => {
+    // A paragraph added: the change holds the whole text, not steps over it.
+    const mine = ['Glow.', 'Shine.', 'Sparkle.'];
+    const { fileKey } = await changedUnderneath(mine, ['Glow softly.', 'Shine.']);
+    const list = await lookAt(fileKey);
+    expect(list.textContent).toContain('The collection’s now: Glow softly. Shine.');
+    expect(list.textContent).toContain('Yours: Glow. Shine. Sparkle.');
+
+    fireEvent.click(within(list).getByRole('button', { name: 'Keep yours: Glimmer' }));
+    await settled();
+    const [record] = (await getRegistry()).changedEntries();
+    expect(record?.layers.map((l) => l.needsLook)).toEqual([[]]);
+    expect(record?.placed.entries).toEqual(mine);
+  });
+
+  it('an update that reworded the text yours changed: says the collection’s shows, and uses it', async () => {
+    const { fileKey } = await changedUnderneath(
+      ['Glow brightly.', 'Shine.'],
+      ['Glow softly.', 'Shine.'],
+    );
+    const list = await lookAt(fileKey);
+    expect(list.textContent).toContain('The collection’s now: Glow softly. Shine.');
+    // The player's whole text is gone (a mark is a hash): their words, as their change says them.
+    expect(list.textContent).toContain('Yours: Glow brightly. (in place of “Glow.”)');
+    expect(list.textContent).toContain('so its words show now');
+    expect(within(list).queryByRole('button', { name: /^Keep yours/ })).toBeNull();
+
+    fireEvent.click(within(list).getByRole('button', { name: 'Use the collection’s: Glimmer' }));
+    await settled();
+    // Nothing of the change still applied, so it is taken out.
+    const reg = await getRegistry();
+    expect(reg.changedEntries()).toEqual([]);
+    expect(reg.get('feat', 'Glimmer', 'TID')?.entries).toEqual(['Glow softly.', 'Shine.']);
+  });
+
+  it('a change partly gone: keeps what still applies, and says what does not', async () => {
+    const part = (name: string) => ({ type: 'entries', name, entries: ['Swear.'] });
+    // The player rewords the first line and takes out the oath; the update renames the oath.
+    const { fileKey } = await changedUnderneath(
+      ['Glow brightly.'],
+      ['Glow.', part('Lantern Vow')],
+      ['Glow.', part('Lantern Oath')],
+    );
+    const list = await lookAt(fileKey);
+    expect(list.textContent).toContain('Yours: Glow brightly. Lantern Vow Swear.');
+    // A removal that finds nothing says nothing: it is a miss all the same.
+    expect(list.textContent).toContain('Part of yours no longer finds its words');
+    expect(list.textContent).toContain('Takes out Lantern Oath');
+    fireEvent.click(
+      within(list).getByRole('button', { name: 'Keep yours where it applies: Glimmer' }),
+    );
+    await settled();
+    const [record] = (await getRegistry()).changedEntries();
+    expect(record?.layers.map((l) => l.needsLook)).toEqual([[]]);
+    expect(record?.placed.entries).toEqual(['Glow brightly.', part('Lantern Vow')]);
+  });
+
+  it('shows it on Changes to the books too, where the change is', async () => {
+    const { changesId } = await changedUnderneath(
+      ['Glow brightly.', 'Shine.'],
+      ['Glow softly.', 'Shine.'],
+    );
+    visit(collectionPath(changesId));
+    expect(
+      await screen.findByRole(
+        'heading',
+        { level: 1, name: 'Changes to the books' },
+        { timeout: WAIT },
+      ),
+    ).toBeTruthy();
+    const list = await screen.findByRole('list', { name: 'Needs a look' }, { timeout: WAIT });
+    expect(list.textContent).toContain('Yours: Glow brightly.');
+    // A change opens where it is made: the entry's page in the Library.
+    const entry = await screen.findByRole('link', { name: /^Glimmer/ }, { timeout: WAIT });
+    expect(entry.getAttribute('href')).toBe('/library/feat/glimmer%7Ctid');
+  });
+});
+
+describe('Changes to the books', () => {
+  /** The player's change to an imported Glimmer, in Changes to the books. */
+  async function changesFile(): Promise<string> {
+    await seedWorld();
+    await homebrewRepo.importJson(
+      {
+        _meta: { sources: [{ json: 'TID', full: 'Tide Tales' }] },
+        feat: [{ name: 'Glimmer', source: 'TID', entries: ['Glow.'] }],
+      },
+      'Tide.json',
+    );
+    const reg = await getRegistry();
+    const placed = reg.get('feat', 'Glimmer', 'TID');
+    if (placed === undefined) throw new Error('no Glimmer');
+    const original = reg.belowOwnChange(placed) as Json;
+    const change = writeChange('feat', original, { ...original, entries: ['Glow brightly.'] });
+    const { fileId } = await homebrewRepo.saveEntry('feat', change as Json & EntryKey, {
+      role: 'changes',
+    });
+    return fileId;
+  }
+
+  it('is on for every character whatever books show, and turns off for one', async () => {
+    const fileId = await changesFile();
+    // A choice of books that names neither the collection nor the changes.
+    await writeSourcePolicy({ mode: 'only', sources: ['TST'] });
+    const osk = await characterRepo.create(testCharacter('Osk', [classEntry('Fighter', 1)]));
+    visit(collectionPath(fileId));
+    await screen.findByRole(
+      'heading',
+      { level: 1, name: 'Changes to the books' },
+      { timeout: WAIT },
+    );
+    expect(await screen.findByText('In use on this device', {}, { timeout: WAIT })).toBeTruthy();
+    const chip = () =>
+      screen.findByRole('button', { name: 'Osk picks from it' }, { timeout: WAIT });
+    await waitFor(async () => expect((await chip()).getAttribute('aria-pressed')).toBe('true'), {
+      timeout: WAIT,
+    });
+    fireEvent.click(await chip());
+    await waitFor(
+      async () =>
+        expect((await characterRepo.get(osk.id))?.sourceSwitches).toEqual({ off: ['MyChanges'] }),
+      { timeout: WAIT },
+    );
+  });
+
+  it("lists a change to a class's feature, which stands alone", async () => {
+    await seedWorld();
+    const keys = {
+      name: 'Second Wind',
+      source: 'TST',
+      className: 'Fighter',
+      classSource: 'TST',
+      level: 1,
+    };
+    const { fileId } = await homebrewRepo.saveEntry(
+      'classFeature',
+      { ...keys, entries: ['Breathe deep.'], _copy: { ...keys } } as Json & EntryKey,
+      { role: 'changes' },
+    );
+    visit(collectionPath(fileId));
+    const held = await screen.findByRole(
+      'list',
+      { name: 'In Changes to the books' },
+      { timeout: WAIT },
+    );
+    expect(within(held).getByText('Second Wind')).toBeTruthy();
+    expect(screen.queryByText('Nothing in it yet.')).toBeNull();
+  });
+});
