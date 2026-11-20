@@ -21,9 +21,11 @@ const gritty = {
 
 // The shared registry, read before Gritty was applied, and the one read now.
 const stale = registryOf([]);
+/** What `useRegistry` gives now: a test swaps it for a newer shared read. */
+const shared = { current: stale as ReturnType<typeof registryOf> };
 const reads = vi.hoisted(() => [] as Array<(r: unknown) => void>);
 const fails = vi.hoisted(() => [] as Array<(e: unknown) => void>);
-vi.mock('@/data5e/hooks', () => ({ useRegistry: () => stale }));
+vi.mock('@/data5e/hooks', () => ({ useRegistry: () => shared.current }));
 vi.mock('@/data5e/registry', () => ({
   invalidateRegistry: vi.fn(),
   getRegistry: () =>
@@ -49,6 +51,7 @@ afterEach(() => {
   cleanup();
   reads.length = 0;
   fails.length = 0;
+  shared.current = stale;
 });
 
 describe('useAppRules', () => {
@@ -69,6 +72,18 @@ describe('useAppRules', () => {
     await waitFor(() => expect(fails).toHaveLength(1));
     fails[0]?.(new Error('no data'));
     await waitFor(() => expect(probe()).toBe('ready standard none'));
+  });
+
+  it('reads again when the shared registry changes, not only when the rows do', async () => {
+    const { rerender } = render(<Probe />);
+    const probe = () => screen.getByTestId('probe').textContent;
+    await waitFor(() => expect(reads).toHaveLength(1));
+    // A download lands: a newer shared registry, while the first read is out.
+    shared.current = registryOf([]);
+    rerender(<Probe />);
+    await waitFor(() => expect(reads).toHaveLength(2));
+    reads[1]?.(registryOf([gritty]));
+    await waitFor(() => expect(probe()).toBe('ready gritty Gritty'));
   });
 
   it('keeps the last read started when an older one lands after it', async () => {
