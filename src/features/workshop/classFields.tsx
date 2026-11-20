@@ -36,16 +36,14 @@ export const belowChanges = (registry: EntityRegistry, e: Json): Json =>
 
 /**
  * The entry Save compares the spell fields with when the draft holds none of
- * its own (one edited as a file): the one copied, or the one as stored before,
- * under any name it was saved under while the editor was open.
+ * its own, one that never went through `open`: the one copied, or the one as
+ * stored. The Workshop opens every draft, and a class's or subclass's file
+ * view cannot be edited, so there this is never reached.
  */
 export function savedBefore(at: WriteContext, type: 'class' | 'subclass'): Json | undefined {
   if (at.copied !== undefined) return at.copied;
-  for (const s of [at.stored, ...[...(at.storedAs ?? [])].reverse()]) {
-    const e = s === undefined ? undefined : at.registry.get(type, s.name, s.source);
-    if (e !== undefined) return e as Json;
-  }
-  return undefined;
+  if (at.stored === undefined) return undefined;
+  return at.registry.get(type, at.stored.name, at.stored.source) as Json | undefined;
 }
 
 /**

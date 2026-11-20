@@ -265,6 +265,9 @@ describe('starting equipment', () => {
     type('Gear 1', 'javelin x10');
     expect(box('Gear 1')).toBe('javelin x10');
     expect(gear()).toEqual([{ item: 'javelin|phb', quantity: 10 }]);
+    // None of a gear is still one: the creator gives what it names.
+    type('Gear 1', 'javelin x0');
+    expect(gear()).toEqual([{ item: 'javelin|phb', quantity: 1 }]);
     type('Gear 1', 'any martial weapon x1');
     expect(box('Gear 1')).toBe('any martial weapon x1');
     const parsed = parseStartingEquipment({
@@ -369,6 +372,16 @@ describe('the Basics fields', () => {
     expect(at.draft().startingProficiencies).toBeUndefined();
   });
 
+  it('takes 0 skills to choose as none', () => {
+    const skills = [{ choose: { from: ['history', 'insight'], count: 1 } }];
+    const at = mount(
+      { name: 'Lantern', ...editor.blank(), startingProficiencies: { skills } },
+      world(),
+    );
+    type('Skills to choose', '0');
+    expect(at.draft().startingProficiencies).toBeUndefined();
+  });
+
   it("keeps a tool's tag while its words are as they were", () => {
     const registry = world();
     const at = mount(
@@ -452,7 +465,11 @@ describe('optional features by level', () => {
       'Fighting Style has fewer at level 10 than before. The sheet keeps the most so far, so set it no lower.',
     );
     expect(editor.check?.(style([2, 2, 1]))).toMatch(/at level 3/);
+    expect(editor.check?.(style([2, null, 1]))).toMatch(/at level 3/);
     expect(editor.check?.(style({ '1': 1, '10': 2 }))).toBeUndefined();
+    // A list read as far as it goes, its numbers only, as the sheet reads it.
+    expect(editor.check?.(style([1, 1, 2]))).toBeUndefined();
+    expect(editor.check?.(style([1, null, 2]))).toBeUndefined();
   });
 
   it('saves a list to pick from and how many by level, a pick on the sheet', async () => {
@@ -540,6 +557,75 @@ describe('the number of spells it prepares', () => {
     expect((table.get('class', 'Shrine', 'MyHomebrew') as Json).preparedSpells).toBeNull();
     // Started from the counts of the first full caster with a table: none here, so 0s to set.
     expect(preparedAt(table, 5)).toBe(0);
+  });
+});
+
+describe('its own slot table, saved again and again', () => {
+  // A converted class's slots, from level 1: not what 1/3 gives, read first by the sheet.
+  const ODD = Array.from({ length: 20 }, (_, i) => (i < 6 ? [2] : [3, 1]));
+  const KEY = { name: 'Lantern', source: 'MyHomebrew' };
+  const STORED: Json = {
+    ...KEY,
+    hd: { number: 1, faces: 8 },
+    proficiency: ['int', 'wis'],
+    casterProgression: '1/3',
+    spellcastingAbility: 'int',
+    cantripProgression: Array(20).fill(2),
+    classFeatures: [],
+    classTableGroups: [
+      {
+        title: 'Spell Slots per Spell Level',
+        colLabels: ['1st', '2nd'],
+        rowsSpellProgression: ODD,
+      },
+    ],
+  };
+  const slotsOf = (e: Json) =>
+    (e.classTableGroups as Json[]).find((g) => Array.isArray(g.rowsSpellProgression))
+      ?.rowsSpellProgression as unknown[][] | undefined;
+  /** Opened as the Workshop opens the stored entry. */
+  const opened = () => {
+    const registry = world({}, { class: [structuredClone(STORED)] });
+    const e = registry.get('class', 'Lantern', 'MyHomebrew') as Json;
+    return { registry, draft: openClass(structuredClone(e), { registry }) };
+  };
+  const save = (draft: Json, registry: EntityRegistry) =>
+    writeClass({
+      draft,
+      source: 'MyHomebrew',
+      mode: 'full',
+      registry,
+      stored: KEY,
+      storedAs: [KEY],
+    }).entry;
+
+  it('keeps its slots when a count changes, and writes none of the draft its own', () => {
+    const { registry, draft } = opened();
+    const entry = save({ ...draft, cantripProgression: Array(20).fill(3) }, registry);
+    expect(slotsOf(entry)).toEqual(ODD);
+    expect(entry).not.toHaveProperty('_spellsOpened');
+    expect(entry).not.toHaveProperty('_features');
+  });
+
+  it('makes its slots again for a new progression, the same on every save after', () => {
+    const { registry, draft } = opened();
+    const full = { ...draft, casterProgression: 'full' };
+    const first = save(full, registry);
+    expect(slotsOf(first)?.[2]).toEqual([4, 2, 0, 0, 0, 0, 0, 0, 0]);
+    // After a save the Workshop reads the registry again; the draft's table is as it opened.
+    const refreshed = world({}, { class: [structuredClone(first)] });
+    expect(slotsOf(save(full, refreshed))).toEqual(slotsOf(first));
+  });
+
+  it('opened new, makes the slots its progression gives', () => {
+    const registry = world();
+    const draft = openClass({ name: 'Lantern', ...editor.blank() }, { registry });
+    const { entry } = saveNew(
+      { ...draft, casterProgression: 'full', spellcastingAbility: 'int' },
+      registry,
+    );
+    expect(slotsOf(entry)?.[0]).toEqual([2, 0, 0, 0, 0, 0, 0, 0, 0]);
+    expect(entry).not.toHaveProperty('_spellsOpened');
   });
 });
 

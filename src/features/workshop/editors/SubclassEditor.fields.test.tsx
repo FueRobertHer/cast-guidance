@@ -257,15 +257,11 @@ describe('its own slot table, saved again and again', () => {
     expect(slotsOf(save(full, refreshed))).toEqual(slotsOf(first));
   });
 
-  it('keeps its table under a new name, and as a file edit left it', () => {
+  it('keeps its table under a new name', () => {
     const { registry, draft } = opened();
     const renamed: Json = { ...draft, name: 'Lamplight' };
     const both = [KEY, { name: 'Lamplight', source: 'MyHomebrew' }];
     expect(save(renamed, registry, both).subclassTableGroups).toEqual(STORED.subclassTableGroups);
-    // Edited as a file, the draft holds no spell fields of its own: the entry
-    // saved under its first name is what it is compared with.
-    const { _spellsOpened: _, ...asFile } = renamed;
-    expect(save(asFile, registry, both).subclassTableGroups).toEqual(STORED.subclassTableGroups);
   });
 });
 
@@ -300,6 +296,11 @@ describe('the spells it gives', () => {
     type('Spell row 1: from level', '5');
     expect(box('Spell row 1: from level')).toBe('5');
     expect(at.draft().additionalSpells).toEqual([{ prepared: { '5': ['Shield|XPHB'] } }]);
+    // 0 is no level: held, not saved, and the level it had is back once left.
+    type('Spell row 1: from level', '0');
+    expect(at.draft().additionalSpells).toEqual([{ prepared: { '5': ['Shield|XPHB'] } }]);
+    fireEvent.blur(screen.getByLabelText('Spell row 1: from level'));
+    expect(box('Spell row 1: from level')).toBe('5');
     type('Spell row 1: from level', '25');
     expect(at.draft().additionalSpells).toEqual([{ prepared: { '20': ['Shield|XPHB'] } }]);
   });

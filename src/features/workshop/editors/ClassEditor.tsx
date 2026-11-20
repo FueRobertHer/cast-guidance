@@ -741,9 +741,15 @@ function check(draft: Json, at?: Omit<WriteContext, 'draft'>): string | undefine
     if (name === '') return 'Every optional feature list needs a name.';
     if (!Array.isArray(o.featureType) || o.featureType.length === 0)
       return `Pick the list ${name} picks from.`;
-    // The sheet gives the most a level so far has given (`progressionCount`).
-    const values = optionalValues(o);
-    const fewer = values.findIndex((v, i) => i > 0 && v < Math.max(...values.slice(0, i)));
+    // The sheet gives the most a level so far has given (`progressionCount`),
+    // reading a list only as far as it goes and only the numbers in it.
+    const stated: unknown[] = Array.isArray(o.progression) ? o.progression : optionalValues(o);
+    let most = 0;
+    const fewer = stated.findIndex((v) => {
+      if (typeof v !== 'number') return false;
+      most = Math.max(most, v);
+      return v < most;
+    });
     if (fewer !== -1)
       return `${name} has fewer at level ${fewer + 1} than before. The sheet keeps the most so far, so set it no lower.`;
   }
@@ -1101,7 +1107,8 @@ export function gearFrom(text: string, was: readonly unknown[], items: readonly 
     return { value: Number(coins[1]) * (COIN[String(coins[2]).toLowerCase()] ?? 1) };
   const counted = /^(.*?)\s+x\s*(\d+)$/i.exec(text);
   const name = (counted?.[1] ?? text).trim();
-  const many = counted === null ? {} : { quantity: Number(counted[2]) };
+  // A count of none is still one: the creator gives what a gear names.
+  const many = counted === null ? {} : { quantity: Math.max(1, Number(counted[2])) };
   const kind = GEAR_KINDS.find(([, w]) => w.toLowerCase() === name.toLowerCase());
   if (kind !== undefined) return { equipmentType: kind[0], ...many };
   const hit = items.find((i) => String(i.name).toLowerCase() === name.toLowerCase());
