@@ -120,14 +120,14 @@ function WorkshopRow({ to, title, caption }: { to: string; title: string; captio
 
 /** The table rules every character plays by, in short, opening the Rules page. */
 export function TableRulesRow() {
-  const { rules } = useAppRules();
+  const { rules, ready } = useAppRules();
   return (
     <section className="flex flex-col gap-2">
       <h2 className={H2}>House rules</h2>
       <WorkshopRow
         to={RULES_PATH}
         title="Table rules and rule packs"
-        caption={houseRulesWords(rules)}
+        caption={ready ? houseRulesWords(rules) : 'Loading…'}
       />
       <p className="px-1 text-caption text-ink-muted">
         In the Workshop, under Rules, for every character. A character can set its own on its Build

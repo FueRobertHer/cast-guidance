@@ -100,12 +100,18 @@ const packFile = (name: string, tableRules: Record<string, string>) => ({
   },
 });
 
-async function importPack(name: string, tableRules: Record<string, string>, everyone = false) {
-  const row = await homebrewRepo.importJson(packFile(name, tableRules), `${name}.json`);
-  if (everyone) {
+async function importPack(
+  name: string,
+  tableRules: Record<string, string>,
+  { everyone = false, order, url }: { everyone?: boolean; order?: number; url?: string } = {},
+) {
+  const row = await homebrewRepo.importJson(packFile(name, tableRules), `${name}.json`, url);
+  if (everyone || order !== undefined) {
     await savePackLocal(row.id, (local) => ({
       ...local,
-      appliesTo: { characters: [], appDefault: true },
+      ...(everyone ? { appliesTo: { characters: [], appDefault: true } } : {}),
+      // Two imports in one millisecond would take their order from their ids.
+      ...(order === undefined ? {} : { order }),
     }));
   }
   invalidateRegistry();
@@ -115,15 +121,15 @@ async function importPack(name: string, tableRules: Record<string, string>, ever
 describe('the Rules page', () => {
   it('shows the table rules as Settings does, and a change made here reaches both', async () => {
     setAppTableRule('critDamage', 'maxPlusRoll');
-    await importPack('Gritty', { restLength: 'gritty' }, true);
+    await importPack('Gritty', { restLength: 'gritty' }, { everyone: true });
     await visit();
-    expect(ruleRow('Critical hits').textContent).toContain('Max the dice, then roll them');
-    expect(settingsRow().textContent).toContain('Critical hits: Max the dice, then roll them');
     // A pack applied to every character sets a rule nobody chose, and both say so.
     await waitFor(
       () => expect(ruleRow('Rest length').textContent).toContain('Short 8 hours, long 7 days'),
       { timeout: WAIT },
     );
+    expect(ruleRow('Critical hits').textContent).toContain('Max the dice, then roll them');
+    expect(settingsRow().textContent).toContain('Critical hits: Max the dice, then roll them');
     expect(ruleRow('Rest length').textContent).toContain('Gritty');
     expect(settingsRow().textContent).toContain('Rest length: Short 8 hours, long 7 days');
     expect(settingsRow().getAttribute('href')).toBe('/workshop/rules');
@@ -139,7 +145,25 @@ describe('the Rules page', () => {
 
   it('says every rule is as written when none is a house rule', async () => {
     await visit();
-    expect(settingsRow().textContent).toContain('Every rule as written');
+    await waitFor(() => expect(settingsRow().textContent).toContain('Every rule as written'), {
+      timeout: WAIT,
+    });
+  });
+
+  it('says a pack from a link is from a link', async () => {
+    await importPack(
+      'Gritty',
+      { restLength: 'gritty' },
+      { url: 'https://example.com/gritty.json' },
+    );
+    await visit();
+    expect(
+      await screen.findByRole(
+        'button',
+        { name: /^Gritty, From a link\. Applies to no character yet/ },
+        { timeout: WAIT },
+      ),
+    ).toBeTruthy();
   });
 
   it('lists each pack by where it came from and who it reaches, opening its review', async () => {
@@ -147,7 +171,7 @@ describe('the Rules page', () => {
     await visit();
     const row = await screen.findByRole(
       'button',
-      { name: /^Gritty, From a file\. Applies to no character yet/ },
+      { name: /^Gritty, Applies to no character yet/ },
       { timeout: WAIT },
     );
     fireEvent.click(row);
@@ -163,7 +187,7 @@ describe('the Rules page', () => {
     expect(
       await screen.findByRole(
         'button',
-        { name: /^Gritty, From a file\. On for every character/ },
+        { name: /^Gritty, On for every character/ },
         { timeout: WAIT },
       ),
     ).toBeTruthy();
@@ -177,8 +201,8 @@ describe('the Rules page', () => {
   });
 
   it('orders the packs, saying where they disagree as the order now stands', async () => {
-    await importPack('Gritty', { restLength: 'gritty' }, true);
-    await importPack('Heroic', { restLength: 'heroic' }, true);
+    await importPack('Gritty', { restLength: 'gritty' }, { everyone: true, order: 0 });
+    await importPack('Heroic', { restLength: 'heroic' }, { everyone: true, order: 1 });
     await visit();
     fireEvent.click(await screen.findByRole('button', { name: 'Order' }, { timeout: WAIT }));
     const order = await screen.findByRole('dialog', { name: 'Pack order' });
@@ -194,22 +218,32 @@ describe('the Rules page', () => {
 
   it('says which rules in a pack being written come from a pack applied to everyone', async () => {
     setAppTableRule('critDamage', 'doubleTotal');
-    await importPack('Gritty', { restLength: 'gritty' }, true);
+    await importPack('Gritty', { restLength: 'gritty' }, { everyone: true });
     await visit();
     await waitFor(
       () => expect(ruleRow('Rest length').textContent).toContain('Short 8 hours, long 7 days'),
       { timeout: WAIT },
     );
+    // Every render of the sheet, watched: a pick shown before the packs are
+    // read would say the pack's rule is as written, and could be taken so.
+    const shown: string[] = [];
+    const watch = new MutationObserver(() => {
+      for (const label of document.querySelectorAll('label')) {
+        if (/^Rest length/.test(label.textContent ?? '')) shown.push(label.textContent ?? '');
+      }
+    });
+    watch.observe(document.body, { childList: true, subtree: true, characterData: true });
     fireEvent.click(screen.getByRole('button', { name: 'Write a rule pack' }));
     const sheet = await screen.findByRole(
       'dialog',
       { name: 'Write a rule pack' },
       { timeout: WAIT },
     );
+    // The picks wait for the packs, so none starts from the rules without them.
     expect(
-      within(sheet)
-        .getByRole('checkbox', { name: /^Rest length/ })
-        .closest('label')?.textContent,
+      (
+        await within(sheet).findByRole('checkbox', { name: /^Rest length/ }, { timeout: WAIT })
+      ).closest('label')?.textContent,
     ).toContain('Short 8 hours, long 7 days, from Gritty');
     expect(
       within(sheet)
@@ -221,6 +255,9 @@ describe('the Rules page', () => {
         .getByRole('checkbox', { name: /^Flanking/ })
         .closest('label')?.textContent,
     ).toContain('Off, as written');
+    watch.disconnect();
+    expect(shown.length).toBeGreaterThan(0);
+    expect(shown.filter((t) => !t.includes('from Gritty'))).toEqual([]);
   });
 
   it('writes a rule pack from the table rules, lists it, and exports the file it saved', async () => {
@@ -234,7 +271,13 @@ describe('the Rules page', () => {
     );
     // Every house rule is in until the player says otherwise; a rule as written is not.
     expect(
-      (within(sheet).getByRole('checkbox', { name: /^Critical hits/ }) as HTMLInputElement).checked,
+      (
+        (await within(sheet).findByRole(
+          'checkbox',
+          { name: /^Critical hits/ },
+          { timeout: WAIT },
+        )) as HTMLInputElement
+      ).checked,
     ).toBe(true);
     expect(
       (within(sheet).getByRole('checkbox', { name: /^Flanking/ }) as HTMLInputElement).checked,
@@ -268,7 +311,7 @@ describe('the Rules page', () => {
     expect(
       await screen.findByRole(
         'button',
-        { name: /^Lantern Coast rules, Made in this app\. Applies to no character yet/ },
+        { name: /^Lantern Coast rules, Applies to no character yet/ },
         { timeout: WAIT },
       ),
     ).toBeTruthy();

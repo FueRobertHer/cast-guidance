@@ -58,15 +58,17 @@ export interface AppRules {
   chosen: AppTableRules;
   /** The every-character pack that sets a rule, by name, where it does. */
   packs: Partial<Record<TableRuleId, string>>;
+  /** Whether the packs have been read: before that, `rules` holds the choices alone. */
+  ready: boolean;
 }
 
 /**
  * The registry as the rules read it. A pack turned on or off, moved, or
  * applied to every character changes the rules with no download, and a screen
- * already holding the registry hears of that only from the stored rows: on a
- * change there, it reads the registry again, keeping the one it has until the
- * new one is in. A later read of the shared registry (a download landing)
- * takes over again.
+ * already holding the registry hears of that only from the stored rows. Once
+ * they change, it reads the registry again on each change there and on each
+ * new shared read, the last read started winning: a read begun before a pack
+ * change (the first build, a download landing) never has the last word.
  */
 function useRulesRegistry(): EntityRegistry | null {
   const shared = useRegistry();
@@ -77,31 +79,32 @@ function useRulesRegistry(): EntityRegistry | null {
       ),
     [],
   );
-  const seen = useRef(packs);
-  const [fresh, setFresh] = useState<{ registry: EntityRegistry; over: EntityRegistry | null }>();
+  const first = useRef<string>(undefined);
+  const changed = useRef(false);
+  const latest = useRef(0);
+  const [own, setOwn] = useState<EntityRegistry>();
+  // biome-ignore lint/correctness/useExhaustiveDependencies: a new shared registry is a trigger, read again so an older read never wins
   useEffect(() => {
-    if (packs === seen.current) return;
-    const first = seen.current === undefined;
-    seen.current = packs;
-    if (first) return;
-    let alive = true;
+    if (packs === undefined) return;
+    first.current ??= packs;
+    if (packs !== first.current) changed.current = true;
+    if (!changed.current) return;
+    latest.current += 1;
+    const read = latest.current;
     getRegistry().then(
       (registry) => {
-        if (alive) setFresh({ registry, over: shared });
+        if (read === latest.current) setOwn(registry);
       },
-      // The shared registry stands: its own read reports a failure.
+      // The registry in hand stands: the shared read reports a failure.
       () => undefined,
     );
-    return () => {
-      alive = false;
-    };
   }, [packs, shared]);
-  return fresh !== undefined && fresh.over === shared ? fresh.registry : shared;
+  return own ?? shared;
 }
 
 /**
  * The table rules as every character plays them, read one way for every
- * screen that shows them (the Rules page, Settings' row, the Rules shelf),
+ * screen that shows them (the Rules page, Settings' row, Write a rule pack),
  * so they never disagree.
  */
 export function useAppRules(): AppRules {
@@ -114,7 +117,7 @@ export function useAppRules(): AppRules {
     },
     '2024',
   );
-  return { rules: app.rules, chosen, packs: app.packs };
+  return { rules: app.rules, chosen, packs: app.packs, ready: registry !== null };
 }
 
 /** Whether a rule plays as written. */

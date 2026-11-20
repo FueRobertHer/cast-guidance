@@ -239,7 +239,7 @@ type Reach = 'every' | 'choose';
 
 /**
  * Apply to: every character, or the ones chosen. Every character makes its
- * table rules the app's default, under a choice made in Settings; chosen
+ * table rules the app's default, under a table rule chosen; chosen
  * characters get them over the app's.
  */
 export function ApplyTo({
@@ -284,7 +284,7 @@ export function ApplyTo({
       />
       <p id={hint} className="text-caption text-ink-muted">
         {reach === 'every'
-          ? 'Its rules become the app’s, under any you set in Settings.'
+          ? 'Its rules become the table rules, under any you choose yourself.'
           : 'Its rules win over the app’s for these characters.'}
       </p>
       {reach === 'choose' &&

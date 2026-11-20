@@ -74,17 +74,15 @@ function useBrewSources(): Set<string> | undefined {
 /**
  * How many of the books show on this device, as The books lists them
  * (collections left out): Settings' row says it. Undefined until the
- * collections' sources are read, since before that a book cannot be told
- * from a collection.
+ * registry and the collections' sources are read, since before that a book
+ * cannot be told from a collection, or the books counted.
  */
 export function useBooksShown(): { shown: number; total: number } | undefined {
   const registry = useRegistry();
   const policy = useSourcePolicy();
   const brewSources = useBrewSources();
-  if (brewSources === undefined) return undefined;
-  const books = [...(registry?.sourceCounts() ?? new Map<string, number>()).keys()].filter(
-    (s) => !brewSources.has(s),
-  );
+  if (brewSources === undefined || registry === null) return undefined;
+  const books = [...registry.sourceCounts().keys()].filter((s) => !brewSources.has(s));
   return { shown: books.filter((s) => policyAllows(policy, s)).length, total: books.length };
 }
 

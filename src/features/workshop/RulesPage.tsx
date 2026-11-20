@@ -38,12 +38,13 @@ const H2 = 'px-1 text-body-strong';
 const ICON =
   '-ml-3 tap shrink-0 self-start rounded-control text-ink-muted hover:bg-surface-raised hover:text-ink';
 
-/** Where a pack came from, as its row says it. */
-function fromWords(row: { url?: string | undefined; key?: string | undefined } | undefined) {
-  if (row?.url !== undefined) return 'From a link';
-  if (row?.key?.startsWith('made:') === true) return 'Made in this app';
-  return 'From a file';
-}
+/**
+ * A pack from a link says so, since Update can bring a newer one. A written
+ * pack keeps its key through export and import, so where any other pack came
+ * from (written here, or a friend's file) cannot be told, and is not said.
+ */
+const fromWords = (row: { url?: string | undefined } | undefined) =>
+  row?.url === undefined ? '' : 'From a link. ';
 
 type Open =
   | { kind: 'pack'; id: string }
@@ -133,7 +134,8 @@ export function Component() {
                     <span className="text-body-strong break-words">{p.review.name}</span>
                     <span className="sr-only">,</span>{' '}
                     <span className="text-caption text-ink-muted">
-                      {fromWords(rowOf(p.id))}. {reachWords(p, names)}
+                      {fromWords(rowOf(p.id))}
+                      {reachWords(p, names)}
                     </span>
                   </span>
                   <ChevronRight size={20} aria-hidden="true" className="shrink-0 text-ink-faint" />

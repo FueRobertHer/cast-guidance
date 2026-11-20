@@ -231,12 +231,15 @@ export default function WritePackSheet({
   onSaved: (message: string) => void;
 }) {
   const ids = useId();
-  const { rules, chosen, packs } = useAppRules();
+  const { rules, chosen, packs, ready } = useAppRules();
   const changesFile = useLiveQuery(
     async () => (await homebrewRepo.ownedSafe()).files.find((f) => f.role === 'changes') ?? null,
     [],
   );
   const changes = changesFile === undefined ? undefined : changesIn(changesFile?.json);
+  // The picks start from what the rules and changes are, so none is shown, or
+  // taken, before both are read.
+  const loading = !ready || changes === undefined;
   const [step, setStep] = useState<Step>('pick');
   // Until the player picks, every house rule and every change is in.
   const [picked, setPicked] = useState<ReadonlySet<string>>();
@@ -347,21 +350,25 @@ export default function WritePackSheet({
                 </p>
                 <fieldset className="flex flex-col gap-2">
                   <legend className="mb-2 text-body-strong">Your table rules</legend>
-                  <div className={LIST}>
-                    {RULE_ORDER.map((id) => (
-                      <PickRow
-                        key={id}
-                        title={RULE_TITLES[id]}
-                        caption={`${choiceTitle(id, rules[id])}, ${whence(id)}`}
-                        checked={picks.has(rulePick(id))}
-                        onChange={() => toggle(rulePick(id))}
-                      />
-                    ))}
-                  </div>
+                  {loading ? (
+                    <p className={NOTE}>Loading…</p>
+                  ) : (
+                    <div className={LIST}>
+                      {RULE_ORDER.map((id) => (
+                        <PickRow
+                          key={id}
+                          title={RULE_TITLES[id]}
+                          caption={`${choiceTitle(id, rules[id])}, ${whence(id)}`}
+                          checked={picks.has(rulePick(id))}
+                          onChange={() => toggle(rulePick(id))}
+                        />
+                      ))}
+                    </div>
+                  )}
                 </fieldset>
                 <fieldset className="flex flex-col gap-2">
                   <legend className="mb-2 text-body-strong">Your changes to the books</legend>
-                  {changes === undefined ? (
+                  {loading || changes === undefined ? (
                     <p className={NOTE}>Loading…</p>
                   ) : changes.length === 0 ? (
                     <p className={NOTE}>
@@ -462,10 +469,14 @@ export default function WritePackSheet({
                 <Button
                   variant="brand"
                   className="flex-1"
-                  aria-disabled={count === 0 ? true : undefined}
-                  onClick={() => count > 0 && setStep('name')}
+                  aria-disabled={loading || count === 0 ? true : undefined}
+                  onClick={() => !loading && count > 0 && setStep('name')}
                 >
-                  {count === 0 ? 'Pick at least one' : `Next: name it (${things(count)})`}
+                  {loading
+                    ? 'Loading…'
+                    : count === 0
+                      ? 'Pick at least one'
+                      : `Next: name it (${things(count)})`}
                 </Button>
               </>
             )}

@@ -500,6 +500,21 @@ describe('SettingsPage data and privacy', () => {
   });
 });
 
+describe('SettingsPage rows into the Workshop', () => {
+  it('opens the Rules page and The books, saying Loading for the rules until packs are read', () => {
+    // The registry is not read here (`useRegistry` gives null), so an
+    // every-character pack could still set a rule: no value is claimed yet.
+    render(<SettingsPage />);
+    const rules = screen.getByRole('link', { name: /^Table rules and rule packs/ });
+    expect(rules.getAttribute('href')).toBe('/workshop/rules');
+    expect(rules.textContent).toContain('Loading…');
+    expect(rules.textContent).not.toContain('Every rule as written');
+    const books = screen.getByRole('link', { name: /^The books/ });
+    expect(books.getAttribute('href')).toBe('/workshop/collection/books');
+    expect(books.textContent).toContain('All 3 books show');
+  });
+});
+
 describe('SettingsPage about', () => {
   it('states the license and links the license, notices and content notice on GitHub', () => {
     render(<SettingsPage />);
