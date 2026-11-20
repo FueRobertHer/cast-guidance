@@ -1,0 +1,398 @@
+// Each character's own view of the registry (ADR-002, D3, question 1): the
+// shared registry keeps both versions of a changed entry, and a character's
+// view gives it the one its own collection switches pick. A character the
+// shared registry suits gets the shared registry itself.
+import { describe, expect, it } from 'vitest';
+import type { PackAppliesTo } from '@/engine/castGuidance';
+import { RULE_PACK_TYPE, RULE_SET_TYPE } from '@/engine/castGuidance';
+import { writeChange } from '@/features/workshop/copyWriter';
+import type { Entity } from './copyMod';
+import { type EntityRegistry, type EntityType, mergeHomebrew, normalizeDataset } from './normalize';
+import { computeRegistrySignature } from './registry';
+import { type DeviceOffFile, registryViewFor, setDeviceOffFiles } from './registryView';
+
+const AID_TEXT = 'Each target’s Hit Point maximum and current Hit Points increase by 5.';
+
+function release(): Map<string, unknown> {
+  return new Map<string, unknown>([
+    [
+      'spells/spells-xphb.json',
+      {
+        spell: [
+          {
+            name: 'Aid',
+            source: 'XPHB',
+            level: 2,
+            school: 'A',
+            range: { type: 'point', distance: { type: 'feet', amount: 30 } },
+            entries: ['Choose up to three creatures within range.', AID_TEXT],
+          },
+          { name: 'Fireball', source: 'XPHB', edition: 'one', level: 3, entries: ['Boom.'] },
+        ],
+      },
+    ],
+    [
+      'class/class-barbarian.json',
+      {
+        class: [{ name: 'Barbarian', source: 'XPHB', edition: 'one' }],
+        classFeature: [
+          {
+            name: 'Rage',
+            source: 'XPHB',
+            className: 'Barbarian',
+            classSource: 'XPHB',
+            level: 1,
+            entries: ['You can imbue yourself with a primal power called Rage.'],
+          },
+        ],
+      },
+    ],
+  ]);
+}
+
+const BOOK = normalizeDataset(release());
+const bookAid = () => structuredClone(BOOK.get('spell', 'Aid', 'XPHB') as Entity);
+
+/** Aid at +10, with the effect + Effect lands, as Change for your table would store it. */
+function aidChange(): Entity {
+  const aid = bookAid();
+  return writeChange('spell', aid, {
+    ...aid,
+    entries: [(aid.entries as string[])[0], AID_TEXT.replace('5', '10')],
+    castGuidance: { v: 1, effects: [{ kind: 'maxHpBonus', amount: 10 }] },
+  });
+}
+
+const changesFile = (content: Record<string, Entity[]>) => ({
+  _meta: { sources: [{ json: 'MyChanges', full: 'Changes to the books' }] },
+  ...content,
+});
+
+/** A rule pack listing Aid among the entries it replaces. */
+const packFile = (code = 'TBL') => ({
+  _meta: {
+    sources: [{ json: code, full: 'Our Table' }],
+    castGuidance: { v: 1, replaces: [{ type: 'spell', name: 'Aid', source: 'XPHB' }] },
+  },
+  spell: [
+    {
+      name: 'Aid',
+      source: 'XPHB',
+      _copy: {
+        name: 'Aid',
+        source: 'XPHB',
+        _mod: { entries: { mode: 'appendArr', items: ['At our table, it lasts a day.'] } },
+      },
+    },
+  ],
+});
+
+interface Build {
+  changes?: boolean | Entity[];
+  pack?: PackAppliesTo;
+  off?: DeviceOffFile[];
+  /** More files switched on for the device, after its pack: what a view of them switched off must match. */
+  on?: DeviceOffFile[];
+}
+
+function shared({ changes = true, pack, off = [], on = [] }: Build = {}): EntityRegistry {
+  const reg = normalizeDataset(release());
+  reg.setRuleSets([{ name: 'Base', source: 'APP' }]);
+  // An imported collection's content, after the books', so the official part is not the whole list.
+  const files = new Map<string, Record<string, unknown>>([
+    [
+      'brew',
+      { _meta: { sources: [{ json: 'HB' }] }, spell: [{ name: 'Lucky Find', source: 'HB' }] },
+    ],
+  ]);
+  const packs = new Map(pack === undefined ? [] : [['pack', { appliesTo: pack }]]);
+  if (pack !== undefined) files.set('pack', packFile());
+  for (const f of on) {
+    files.set(f.id, structuredClone(f.json));
+    if (f.pack !== undefined) packs.set(f.id, f.pack);
+  }
+  const changeFiles = new Set(on.filter((f) => f.role === 'changes').map((f) => f.id));
+  if (changes !== false) {
+    files.set('changes', changesFile({ spell: changes === true ? [aidChange()] : changes }));
+    changeFiles.add('changes');
+  }
+  mergeHomebrew(reg, files, packs, changeFiles);
+  setDeviceOffFiles(reg, off);
+  return reg;
+}
+
+/** The registry with these files switched on for the device. */
+const deviceOn = (build: Build) => shared(build);
+
+const hild = { id: 'hild', sourceSwitches: { off: ['MyChanges'] } };
+const maren = { id: 'maren' };
+const textOf = (reg: EntityRegistry) =>
+  (reg.get('spell', 'Aid', 'XPHB')?.entries ?? []) as string[];
+const aids = (reg: EntityRegistry) => reg.byType('spell').filter((s) => s.name === 'Aid');
+
+describe('a character with Changes to the books off', () => {
+  it('gets the book’s Aid, while Maren keeps the change in the shared registry itself', () => {
+    const reg = shared();
+    const hers = registryViewFor(reg, hild);
+    expect(hers).not.toBe(reg);
+    expect(textOf(hers)[1]).toBe(AID_TEXT);
+    expect(hers.get('spell', 'Aid', 'XPHB')).toBe(
+      reg.changeOf(reg.get('spell', 'Aid', 'XPHB') as Entity)?.base,
+    );
+    expect(hers.changeOf(hers.get('spell', 'Aid', 'XPHB') as Entity)).toBeUndefined();
+    expect(aids(hers)).toHaveLength(1);
+    expect(registryViewFor(reg, maren)).toBe(reg);
+    expect(textOf(reg)[1]).toContain('increase by 10');
+  });
+
+  it('is matched by the collection’s source without case', () => {
+    const reg = shared();
+    const hers = registryViewFor(reg, { id: 'hild', sourceSwitches: { off: ['mychanges'] } });
+    expect(textOf(hers)[1]).toBe(AID_TEXT);
+  });
+
+  it('another collection switched off leaves her the change', () => {
+    const reg = shared();
+    expect(registryViewFor(reg, { id: 'hild', sourceSwitches: { off: ['KIB'] } })).toBe(reg);
+  });
+
+  it('holds everything else the shared registry holds, as it holds it', () => {
+    const reg = shared({ pack: { characters: ['maren'] } });
+    reg.setRuleSets(reg.byType(RULE_SET_TYPE), true);
+    reg.warnings.push({ entity: 'Lost|HB', message: 'a warning of the shared build' });
+    expect(reg.byType(RULE_PACK_TYPE)).toHaveLength(1);
+    const hers = registryViewFor(reg, hild);
+    const sharedAid = reg.get('spell', 'Aid', 'XPHB');
+    expect(hers.counts()).toEqual(reg.counts());
+    expect(reg.officialCount('spell')).toBeLessThan(reg.byType('spell').length);
+    for (const t of Object.keys(reg.counts()) as EntityType[]) {
+      expect(hers.officialCount(t)).toBe(reg.officialCount(t));
+      reg.byType(t).forEach((e, i) => {
+        if (e !== sharedAid) expect(hers.byType(t)[i]).toBe(e);
+      });
+    }
+    expect(hers.get('spell', 'Fireball', 'XPHB')).toBe(reg.get('spell', 'Fireball', 'XPHB'));
+    expect(hers.sourceCounts()).toEqual(reg.sourceCounts());
+    expect(hers.rulesBooks).toBe(reg.rulesBooks);
+    expect(hers.byType(RULE_PACK_TYPE)).toEqual(reg.byType(RULE_PACK_TYPE));
+    expect(hers.byType(RULE_SET_TYPE)).toEqual(reg.byType(RULE_SET_TYPE));
+    expect(hers.ruleSetsFailed).toBe(true);
+    expect(hers.warnings).toEqual(expect.arrayContaining(reg.warnings));
+    expect(hers.warnings).toContainEqual(expect.objectContaining({ entity: 'Lost|HB' }));
+  });
+});
+
+describe('a view', () => {
+  it('is built once per pick, for every character picking alike, and is its own view', () => {
+    const reg = shared();
+    const hers = registryViewFor(reg, hild);
+    expect(registryViewFor(reg, hild)).toBe(hers);
+    expect(registryViewFor(reg, { id: 'osk', sourceSwitches: { off: ['MyChanges'] } })).toBe(hers);
+    expect(registryViewFor(hers, hild)).toBe(hers);
+    expect(registryViewFor(hers, maren)).toBe(reg);
+    expect(registryViewFor(hers, undefined)).toBe(hers);
+    expect(registryViewFor(reg, undefined)).toBe(reg);
+  });
+
+  it('is new for a new shared registry', () => {
+    expect(registryViewFor(shared(), hild)).not.toBe(registryViewFor(shared(), hild));
+  });
+});
+
+describe('a rule pack’s changes', () => {
+  const lasts = 'At our table, it lasts a day.';
+
+  it('reach the characters its Apply to names, under the player’s own change', () => {
+    const reg = shared({ pack: { characters: ['maren'] } });
+    // Not shared: everyone else's Aid is the player's change alone.
+    expect(textOf(reg)).not.toContain(lasts);
+    expect(registryViewFor(reg, { id: 'osk' })).toBe(reg);
+    const hers = registryViewFor(reg, maren);
+    expect(textOf(hers)).toContain(lasts);
+    expect(textOf(hers)[1]).toContain('increase by 10');
+    const placed = hers.get('spell', 'Aid', 'XPHB') as Entity;
+    const record = hers.changeOf(placed);
+    expect(record?.placed).toBe(placed);
+    expect(record?.layers.map((l) => l.from.kind)).toEqual(['pack', 'changes']);
+    expect(aids(hers)).toHaveLength(1);
+  });
+
+  it('stay with Changes to the books off', () => {
+    const reg = shared({ pack: { characters: ['hild'] } });
+    const hers = registryViewFor(reg, hild);
+    expect(textOf(hers)).toContain(lasts);
+    expect(textOf(hers)[1]).toBe(AID_TEXT);
+  });
+
+  it('applied to every character, stay for her, under no change of hers', () => {
+    const reg = shared({ pack: { characters: [], appDefault: true } });
+    expect(textOf(reg)).toContain(lasts);
+    const hers = registryViewFor(reg, hild);
+    expect(textOf(hers)).toContain(lasts);
+    expect(textOf(hers)[1]).toBe(AID_TEXT);
+  });
+
+  it('follow its Apply to, not a switch on its source, as its patches do', () => {
+    const reg = shared({ changes: false, pack: { characters: ['hild'] } });
+    const hers = registryViewFor(reg, { id: 'hild', sourceSwitches: { off: ['TBL'] } });
+    expect(textOf(hers)).toContain(lasts);
+  });
+});
+
+describe('a collection switched off on the device', () => {
+  const kibbles = (): DeviceOffFile => ({
+    id: 'kib',
+    json: {
+      _meta: { sources: [{ json: 'KIB', full: 'Kibbles’ Compendium' }] },
+      feat: [{ name: 'Ogre’s Grip', source: 'KIB', entries: ['You grip.'] }],
+      spell: [{ name: 'Kindly Aid', source: 'KIB', _copy: { name: 'Aid', source: 'XPHB' } }],
+    },
+  });
+  const osk = { id: 'osk', sourceSwitches: { on: ['kib'] } };
+
+  it('reaches only the character that turns it on', () => {
+    const reg = shared({ off: [kibbles()] });
+    expect(reg.get('feat', 'Ogre’s Grip', 'KIB')).toBeUndefined();
+    expect(registryViewFor(reg, maren)).toBe(reg);
+    const his = registryViewFor(reg, osk);
+    expect(his.get('feat', 'Ogre’s Grip', 'KIB')?.entries).toEqual(['You grip.']);
+    expect(his.byType('feat').filter((f) => f.source === 'KIB')).toHaveLength(1);
+    // Its copies read the book, as they would with the file on for the
+    // device: no copy finds a change (E3).
+    const copied = (r: EntityRegistry) =>
+      (r.get('spell', 'Kindly Aid', 'KIB')?.entries as string[])[1];
+    expect(copied(his)).toBe(AID_TEXT);
+    expect(copied(his)).toBe(copied(deviceOn({ on: [kibbles()] })));
+    expect(his.sourceCounts().get('KIB')).toBe(2);
+    // The changes it picks as the shared registry does are the shared registry's own.
+    expect(his.get('spell', 'Aid', 'XPHB')).toBe(reg.get('spell', 'Aid', 'XPHB'));
+    expect(his.officialCount('spell')).toBe(reg.officialCount('spell'));
+  });
+
+  it('is left as stored, its copies unresolved, whatever views are built from it', () => {
+    const file = kibbles();
+    const stored = structuredClone(file.json);
+    const reg = shared({ off: [file] });
+    registryViewFor(reg, osk);
+    registryViewFor(reg, { id: 'ula', sourceSwitches: { on: ['KIB'], off: ['MyChanges'] } });
+    expect(file.json).toEqual(stored);
+  });
+
+  it('is read again for each view, so a second one resolves as the first did', () => {
+    const reg = shared({ off: [kibbles()] });
+    registryViewFor(reg, osk);
+    const both = registryViewFor(reg, {
+      id: 'osk',
+      sourceSwitches: { on: ['KIB'], off: ['MyChanges'] },
+    });
+    expect((both.get('spell', 'Kindly Aid', 'KIB')?.entries as string[])[1]).toBe(AID_TEXT);
+    expect(both.get('feat', 'Ogre’s Grip', 'KIB')).toBeDefined();
+  });
+
+  it('keeps the device’s rule packs first, and lists its own after them', () => {
+    const offPack: DeviceOffFile = {
+      id: 'offpack',
+      json: packFile('OFF'),
+      pack: { appliesTo: { characters: ['osk'] } },
+    };
+    const reg = shared({ pack: { characters: ['maren'] }, off: [offPack] });
+    const his = registryViewFor(reg, { id: 'osk', sourceSwitches: { on: ['OFF'] } });
+    expect(his.byType(RULE_PACK_TYPE).map((p) => p.source)).toEqual(['TBL', 'OFF']);
+  });
+
+  /** A pack setting Aid's level, which replaces the book's for the characters it applies to. */
+  const levelPack = (level: number, appliesTo: PackAppliesTo): DeviceOffFile => ({
+    id: 'offpack',
+    json: {
+      _meta: {
+        sources: [{ json: 'OFF' }],
+        castGuidance: { v: 1, replaces: [{ type: 'spell', name: 'Aid', source: 'XPHB' }] },
+      },
+      spell: [{ name: 'Aid', source: 'XPHB', level, _copy: { name: 'Aid', source: 'XPHB' } }],
+    },
+    pack: { appliesTo },
+  });
+  const levelChange = (level: number) => {
+    const aid = bookAid();
+    return [writeChange('spell', aid, { ...aid, level })];
+  };
+  const levelOf = (reg: EntityRegistry) => reg.get('spell', 'Aid', 'XPHB')?.level;
+  const aidRecords = (reg: EntityRegistry) =>
+    reg.changedEntries().filter((r) => r.base.name === 'Aid');
+  const turnsOn = (id: string) => ({ id, sourceSwitches: { on: ['OFF'] } });
+
+  it('stacks its pack’s changes under the player’s own, as the device would', () => {
+    const every = { characters: [], appDefault: true };
+    const reg = shared({ changes: levelChange(3), off: [levelPack(4, every)] });
+    const his = registryViewFor(reg, turnsOn('osk'));
+    const device = deviceOn({ changes: levelChange(3), on: [levelPack(4, every)] });
+    expect(levelOf(device)).toBe(3);
+    expect(levelOf(his)).toBe(levelOf(device));
+    expect(aidRecords(his)).toHaveLength(1);
+    expect(aidRecords(his)[0]?.layers.map((l) => l.from.kind)).toEqual(['pack', 'changes']);
+    expect(aids(his)).toHaveLength(1);
+    // With Changes to the books off too, the pack's alone.
+    const without = { id: 'osk', sourceSwitches: { on: ['OFF'], off: ['MyChanges'] } };
+    expect(levelOf(registryViewFor(device, without))).toBe(4);
+    expect(levelOf(registryViewFor(reg, without))).toBe(4);
+  });
+
+  it('gives its pack’s changes to the characters its Apply to names, as the device would', () => {
+    const reg = shared({ changes: false, off: [levelPack(9, { characters: ['osk'] })] });
+    const device = deviceOn({ changes: false, on: [levelPack(9, { characters: ['osk'] })] });
+    expect(levelOf(registryViewFor(device, { id: 'osk' }))).toBe(9);
+    expect(levelOf(registryViewFor(reg, turnsOn('osk')))).toBe(9);
+    // Ula turns it on too, after Osk, but the pack does not name her.
+    const hers = registryViewFor(reg, turnsOn('ula'));
+    expect(levelOf(hers)).toBe(2);
+    expect(hers.get('spell', 'Aid', 'XPHB')).toBe(reg.get('spell', 'Aid', 'XPHB'));
+    expect(registryViewFor(reg, turnsOn('osk'))).not.toBe(hers);
+  });
+
+  it('keeps the shared entry where its pack reaches someone else', () => {
+    const reg = shared({ off: [levelPack(9, { characters: ['maren'] })] });
+    const his = registryViewFor(reg, turnsOn('osk'));
+    expect(his.get('spell', 'Aid', 'XPHB')).toBe(reg.get('spell', 'Aid', 'XPHB'));
+  });
+
+  it('as Changes to the books, places its changes rather than adding a second Aid', () => {
+    const off: DeviceOffFile = {
+      id: 'changes',
+      json: changesFile({ spell: [aidChange()] }),
+      role: 'changes',
+    };
+    const reg = shared({ changes: false, off: [off] });
+    expect(textOf(reg)[1]).toBe(AID_TEXT);
+    const his = registryViewFor(reg, { id: 'osk', sourceSwitches: { on: ['MyChanges'] } });
+    expect(textOf(his)[1]).toContain('increase by 10');
+    expect(aids(his)).toHaveLength(1);
+  });
+
+  it('as Changes to the books under two sources, follows a switch on its first', () => {
+    const json = changesFile({ spell: [aidChange()] });
+    json._meta.sources.push({ json: 'MyChangesToo', full: 'More changes' });
+    const reg = shared({ changes: false, off: [{ id: 'changes', json, role: 'changes' }] });
+    const on = { id: 'osk', sourceSwitches: { on: ['MyChangesToo'] } };
+    expect(textOf(registryViewFor(reg, on))[1]).toContain('increase by 10');
+    // The same character, switching the collection's first source off.
+    const both = { id: 'osk', sourceSwitches: { on: ['MyChangesToo'], off: ['MyChanges'] } };
+    expect(textOf(registryViewFor(reg, both))[1]).toBe(AID_TEXT);
+  });
+});
+
+describe('the registry signature', () => {
+  const on = [{ id: 'a', rev: 1 }];
+
+  it('is what it was for a device with nothing switched off', () => {
+    expect(computeRegistrySignature('t', ['x.json'], on)).toBe('t|x.json|hb:a@1');
+    expect(computeRegistrySignature('t', ['x.json'], on, [])).toBe('t|x.json|hb:a@1');
+  });
+
+  it('moves with a file switched off, and with its edits', () => {
+    const one = computeRegistrySignature('t', ['x.json'], on, [{ id: 'kib', rev: 1 }]);
+    expect(one).not.toBe(computeRegistrySignature('t', ['x.json'], on));
+    expect(one).not.toBe(computeRegistrySignature('t', ['x.json'], on, [{ id: 'kib', rev: 2 }]));
+    // A file moving between the lists moves it too.
+    expect(one).not.toBe(computeRegistrySignature('t', ['x.json'], [...on, { id: 'kib', rev: 1 }]));
+  });
+});

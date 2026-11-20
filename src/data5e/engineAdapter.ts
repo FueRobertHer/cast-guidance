@@ -1,6 +1,7 @@
 import type { EngineContext } from '@/engine/types';
 import { type AppTableRules, appTableRules } from '@/stores/tableRules';
 import type { EntityRegistry, EntityType } from './normalize';
+import { registryViewFor, type ViewCharacter } from './registryView';
 
 const LOOKUPS = new WeakMap<EntityRegistry, Pick<EngineContext, 'get' | 'byType'>>();
 
@@ -22,15 +23,19 @@ export function entityLookup(registry: EntityRegistry): Pick<EngineContext, 'get
 /**
  * Wrap the registry as the engine's minimal lookup surface, with the app's
  * table rules (Settings) as they are now, unless `rules` are given. The
- * registry's built-in rule sets come along (`byType(RULE_SET_TYPE)`).
+ * registry's built-in rule sets come along (`byType(RULE_SET_TYPE)`). Given
+ * the character it derives, the lookups are that character's view of the
+ * registry (`registryViewFor`): the versions its collection switches pick.
  */
 export function engineContextFor(
   registry: EntityRegistry,
   rules: AppTableRules = appTableRules(),
+  character?: ViewCharacter,
 ): EngineContext {
+  const view = registryViewFor(registry, character);
   return {
-    ...entityLookup(registry),
+    ...entityLookup(view),
     rules,
-    ...(registry.ruleSetsFailed ? { ruleSetsFailed: true } : {}),
+    ...(view.ruleSetsFailed ? { ruleSetsFailed: true } : {}),
   };
 }
