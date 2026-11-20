@@ -24,13 +24,17 @@ import type { HomebrewFileMeta } from '@/db/homebrewRepo';
 export interface Collection {
   /**
    * Its address: unique among collections, and the same after an update. Not
-   * a row id (an imported file's is its key): give the repository `fileId`.
+   * always a row id (an imported file's is its key, a compendium's is
+   * `books:`), so never give it to the repository: use `fileId` or `rows`.
    */
   id: string;
   /**
-   * Its newest row's id, what `id` was before keys: the file's own, the
-   * compendium's newest book's, or the newest copy's. This is the id
-   * `homebrewRepo` takes; it changes with every update.
+   * Its first row's id (`rows[0].id`), what `id` was before keys, for
+   * `homebrewRepo`. For a single file it is the file: a file you made is
+   * always one row, and its id never changes. A compendium or copies hold
+   * several rows, and this names one of them (a compendium's books came in
+   * together, so which one is arbitrary): work on each of `rows` instead. An
+   * imported file's row id changes with every update.
    */
   fileId: string;
   name: string;
