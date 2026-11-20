@@ -444,7 +444,8 @@ work:
   Left out: no Changed mark on list rows (the spell list, the Library); a
   feature card the sheet builds anew (a race's traits, a feature whose text a
   card writes) gets no mark, and a trait a change adds shows the book's whole
-  text; the Library and search read the device's data, not a character's
+  text; a subclass's sheet, whose text comes from its features, has the mark
+  but no book's version; the Library and search read the device's data, not a character's
   view; house rules stay under Identity; the Sources section's hidden-count
   line does not yet say when the device and a switch both hide a book.
 
