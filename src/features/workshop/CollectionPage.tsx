@@ -424,28 +424,66 @@ function heldBy(doc: CharacterDoc, test: (name: string, source: string) => boole
  * "Hild has Ember Lance. Osk has Ember Ward and Frost Ward." or nobody, read
  * when asked: the list on screen may not have loaded yet.
  */
-async function losses(test: (name: string, source: string) => boolean): Promise<string> {
+async function losses(
+  test: (name: string, source: string) => boolean,
+  partly = false,
+): Promise<string> {
   const { characters } = await characterRepo.listSafe();
   const lines = characters
     .map((d) => [d.name, heldBy(d, test)] as const)
     .filter(([, held]) => held.length > 0)
     .map(([who, held]) => `${who} has ${andList(held)}.`);
-  return lines.length === 0 ? 'No character has any of it.' : lines.join(' ');
+  if (lines.length > 0) return lines.join(' ');
+  return partly ? 'No character has any of what could be read.' : 'No character has any of it.';
 }
 
 /**
  * Whether an entry is one of a collection's, by its own name and source: an
- * entry can name a source its file does not declare.
+ * entry can name a source its file does not declare. `unread` names each row
+ * whose content could not be read, so what it held is not known.
  */
-async function heldIn(c: Collection): Promise<(name: string, source: string) => boolean> {
+async function heldIn(c: Collection): Promise<{
+  test: (name: string, source: string) => boolean;
+  unread: string[];
+}> {
   const ids = new Set<string>();
+  const unread: string[] = [];
   for (const r of c.rows) {
     const { file } = await homebrewRepo.getSafe(r.id);
+    if (file === undefined) unread.push(r.book ?? r.fileName);
     for (const e of file === undefined ? [] : entriesIn(file.json, false)) {
       if (typeof e.entry.source === 'string') ids.add(`${lower(e.name)}|${lower(e.entry.source)}`);
     }
   }
-  return (name, source) => ids.has(`${lower(name)}|${lower(source)}`);
+  return { test: (name, source) => ids.has(`${lower(name)}|${lower(source)}`), unread };
+}
+
+/** What deleting a collection takes, for its confirm. */
+async function deleteDetail(c: Collection, strays: number): Promise<string> {
+  const parts: string[] = [];
+  if (c.rows.some(isChanges)) {
+    parts.push('Every entry it changes is the book’s again.');
+  } else {
+    const { test, unread } = await heldIn(c);
+    parts.push(`Its entries leave every picker. ${await losses(test, unread.length > 0)}`);
+    if (unread.length > 0) {
+      parts.push(
+        `${andList(unread)} could not be read, so who has ${unread.length === 1 ? 'its' : 'their'} entries is not known.`,
+      );
+    }
+  }
+  if (c.rows.length > 1) {
+    parts.push(
+      `All ${c.rows.length} of its ${c.rows[0]?.book === undefined ? 'copies' : 'books'} go.`,
+    );
+  }
+  // Not deleted by its name: another file can share it.
+  if (strays > 0) {
+    parts.push(
+      `${strays === 1 ? 'One more row' : `${strays} more rows`} named ${c.rows[0]?.fileName ?? c.name} could not be read, so ${strays === 1 ? 'it stays' : 'they stay'}: the Homebrew page says which.`,
+    );
+  }
+  return parts.join(' ');
 }
 
 /** A compendium's books by name, as the Homebrew page lists them; other rows as they come. */
@@ -1090,7 +1128,16 @@ function useChangedEntries(stamp: string): readonly ChangedEntry[] {
   return records;
 }
 
-function Found({ c, stamp }: { c: Collection; stamp: string }) {
+function Found({
+  c,
+  stamp,
+  strays,
+}: {
+  c: Collection;
+  stamp: string;
+  /** Rows of its file name that could not be read: a delete leaves them. */
+  strays: number;
+}) {
   usePageTitle(c.name, 'Workshop');
   const navigate = useNavigate();
   const packs = usePacksHere(c.rows);
@@ -1111,7 +1158,7 @@ function Found({ c, stamp }: { c: Collection; stamp: string }) {
   const removeAll = async () => {
     const ok = await askConfirm({
       title: `Delete ${c.name}?`,
-      detail: `${c.rows.some(isChanges) ? 'Every entry it changes is the book’s again.' : `Its entries leave every picker. ${await losses(await heldIn(c))}`}${c.rows.length > 1 ? ` All ${c.rows.length} of its ${c.rows[0]?.book === undefined ? 'copies' : 'books'} go.` : ''}`,
+      detail: await deleteDetail(c, strays),
       confirmLabel: 'Delete',
       danger: true,
     });
@@ -1245,7 +1292,13 @@ function CollectionAt({ address }: { address: string }) {
   }
   // Keyed by its address, so a book picked or a list opened is kept across an update.
   const stamp = meta.files.map((r) => `${r.id}@${r.rev ?? 0}:${r.enabled}`).join(',');
-  if (c !== undefined) return <Found key={c.id} c={c} stamp={stamp} />;
+  if (c !== undefined) {
+    const names = new Set(c.rows.map((r) => r.fileName));
+    const strays = meta.errors.filter(
+      (e) => e.fileName !== undefined && names.has(e.fileName),
+    ).length;
+    return <Found key={c.id} c={c} stamp={stamp} strays={strays} />;
+  }
   const broken = meta.errors.find((e) => e.id === address);
   if (broken?.id !== undefined) {
     const id = broken.id;

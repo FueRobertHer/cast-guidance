@@ -674,6 +674,58 @@ describe('The books', () => {
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull(), { timeout: WAIT });
     expect(await db.homebrewFiles.count()).toBe(1);
   });
+
+  it('says who has its entries is not known when its content cannot be read', async () => {
+    await character('Hild', { race: { name: 'Lanternfolk', source: 'IMP' } });
+    const row = await homebrewRepo.importJson(IMPORTED, 'imported.json');
+    await db.homebrewJson.delete(row.id);
+    visit(await addressOf(row.id));
+    await heading('imported.json');
+    fireEvent.click(screen.getByRole('button', { name: 'Delete this collection' }));
+    const ask = await screen.findByRole(
+      'dialog',
+      { name: 'Delete imported.json?' },
+      { timeout: WAIT },
+    );
+    expect(ask.textContent).toContain(
+      'imported.json could not be read, so who has its entries is not known.',
+    );
+    expect(ask.textContent).not.toContain('No character has any of it.');
+    fireEvent.click(within(ask).getByRole('button', { name: 'Cancel' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull(), { timeout: WAIT });
+  });
+
+  it('says a row of its file that cannot be read stays after a delete', async () => {
+    const { books } = await homebrewRepo.prepareBooks(
+      {
+        _meta: {
+          sources: [{ json: 'FCA', full: 'Ember Codex' }],
+          convertedFrom: { format: 'fc5-compendium', fileName: 'all.xml' },
+        },
+        spell: [{ name: 'Ember Ward', source: 'FCA', level: 1 }],
+      },
+      'all.xml',
+    );
+    await homebrewRepo.commitBooks(books);
+    const [book] = await db.homebrewFiles.toArray();
+    if (book === undefined) throw new Error('no book');
+    const address = await addressOf(book.id);
+    // A row with no id: nothing can address it, so a delete cannot take it.
+    await db.homebrewFiles.add({ id: '', fileName: 'all.xml' } as never);
+    visit(address);
+    await heading('Ember Codex');
+    fireEvent.click(screen.getByRole('button', { name: 'Delete this collection' }));
+    const ask = await screen.findByRole(
+      'dialog',
+      { name: 'Delete Ember Codex?' },
+      { timeout: WAIT },
+    );
+    expect(ask.textContent).toContain(
+      'One more row named all.xml could not be read, so it stays: the Homebrew page says which.',
+    );
+    fireEvent.click(within(ask).getByRole('button', { name: 'Cancel' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull(), { timeout: WAIT });
+  });
 });
 
 describe('where it is on, source by source', () => {
