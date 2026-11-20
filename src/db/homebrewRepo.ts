@@ -542,9 +542,25 @@ async function rewrite(id: string, next: Record<string, unknown>): Promise<boole
 
 /**
  * What `repoint.ts` builds on, kept out of this file so a move's code loads
- * only with a move. Not for other callers.
+ * only with a move; and `OWNED`, for the Workshop's export of a selection to
+ * take an entry's own features with it. Not for other callers.
  */
 export const internals = { isEntry, rewrite, OWNED } as const;
+
+/** An entry to take out of a file the player owns: its fields, parents' keys and all. */
+export interface EntryPick {
+  fileId: string;
+  type: string;
+  key: EntryKey & Row;
+}
+
+/**
+ * What taking entries out left, for Undo: each file as it was, and the
+ * revision the removal gave it.
+ */
+export interface Removed {
+  files: Array<{ id: string; json: Record<string, unknown>; rev: number }>;
+}
 
 /** A stored file the player owns, with its content, or why it cannot take a save. */
 async function ownedFile(id: string): Promise<HomebrewFile> {
@@ -969,6 +985,48 @@ export const homebrewRepo = {
       withoutOwned(json, type, gone, list);
       json[type] = list;
       return rewrite(fileId, json);
+    });
+  },
+
+  /**
+   * Take several entries out of the player's files as one write, each with
+   * the entries it owns, matched as {@link homebrewRepo.removeEntry} matches
+   * them. One that is no longer there refuses the lot. Characters are left as
+   * they are: their refs name each entry again once Undo puts it back.
+   */
+  async removeEntries(picks: readonly EntryPick[]): Promise<Removed> {
+    return db.transaction('rw', db.homebrewFiles, db.homebrewJson, async () => {
+      const files: Removed['files'] = [];
+      for (const id of new Set(picks.map((p) => p.fileId))) {
+        const file = await ownedFile(id);
+        const json = structuredClone(file.json);
+        for (const { type, key } of picks.filter((p) => p.fileId === id)) {
+          const list: unknown[] = Array.isArray(json[type]) ? [...(json[type] as unknown[])] : [];
+          const at = list.findIndex((e) => finder(type, file.role === 'changes')(e, key));
+          if (at === -1) throw new Error(`${key.name} is no longer in "${file.fileName}"`);
+          withoutOwned(json, type, list.splice(at, 1)[0], list);
+          json[type] = list;
+        }
+        await rewrite(id, json);
+        files.push({ id, json: file.json, rev: (await db.homebrewFiles.get(id))?.rev ?? 0 });
+      }
+      return { files };
+    });
+  },
+
+  /**
+   * Undo {@link homebrewRepo.removeEntries}: each file back as it was, every
+   * entry in its place, as one write. Refused, with nothing changed, when a
+   * file is gone or was changed since.
+   */
+  async restoreEntries(removed: Removed): Promise<void> {
+    await db.transaction('rw', db.homebrewFiles, db.homebrewJson, async () => {
+      for (const f of removed.files) {
+        const row = await db.homebrewFiles.get(f.id);
+        if (row === undefined) throw new Error('that collection is no longer on this device');
+        if ((row.rev ?? 0) !== f.rev) throw new Error('that collection was changed since');
+      }
+      for (const f of removed.files) await rewrite(f.id, f.json);
     });
   },
 };
