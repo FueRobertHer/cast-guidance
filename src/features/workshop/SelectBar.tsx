@@ -15,11 +15,19 @@
  */
 import { Download, Layers, Trash2 } from 'lucide-react';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { invalidateRegistry } from '@/data5e/registry';
+import { engineContextFor } from '@/data5e/engineAdapter';
+import { getRegistry, invalidateRegistry } from '@/data5e/registry';
 import { characterRepo } from '@/db/characterRepo';
 import { type HomebrewFile, homebrewRepo, type Removed } from '@/db/homebrewRepo';
 import type { ImportedMention, Repoint } from '@/db/repoint';
-import type { CharacterDoc, EntityRef } from '@/engine/types';
+import { subraceFor } from '@/engine/effects/race';
+import {
+  type CharacterDoc,
+  type DataEntity,
+  type EngineContext,
+  type EntityRef,
+  subclassOf,
+} from '@/engine/types';
 import { downloadJson } from '@/lib/download';
 import { errorText } from '@/stores/notices';
 import { Button } from '@/ui/Button';
@@ -512,9 +520,40 @@ function MoveSheet({
   );
 }
 
-/** A character's content with its pick keys set aside: what its answers are, not where. */
-const answersOf = (doc: CharacterDoc) =>
-  JSON.stringify({ ...doc, choices: Object.values(doc.choices ?? {}), homebrewDeps: [] });
+/**
+ * A character's content with the keys of its picks and pools set aside: what
+ * it holds and answers, not where they sit.
+ */
+function beyondKeys(doc: CharacterDoc): string {
+  const sorted = (r: Record<string, unknown> | undefined) =>
+    Object.values(r ?? {})
+      .map((v) => JSON.stringify(v))
+      .sort();
+  return JSON.stringify({
+    ...doc,
+    choices: sorted(doc.choices),
+    play: {
+      ...doc.play,
+      resources: doc.play.resources.map((r) => ({ ...r, key: '' })),
+      foretold: sorted(doc.play.foretold),
+    },
+  });
+}
+
+/**
+ * The types whose own picks and pools sit under another type's key, and
+ * whether `doc` holds an entry of that type by `ref`'s name and book: an
+ * optional feature's under a feat's, class's or subclass's, a subrace's under
+ * its race's. When one is there, a key that moved alone is its, not theirs.
+ */
+const HOSTED: Readonly<Record<string, (doc: CharacterDoc, ref: EntityRef) => boolean>> = {
+  optionalfeature: (doc, r) =>
+    doc.feats.some((f) => sameRef(f.ref, r.name, r.source)) ||
+    doc.classes.some(
+      (l) => sameRef(l.ref, r.name, r.source) || sameRef(l.subclass, r.name, r.source),
+    ),
+  subrace: (doc, r) => sameRef(doc.race, r.name, r.source),
+};
 
 const sameRef = (r: EntityRef | undefined, name: unknown, source: unknown) =>
   r !== undefined &&
@@ -523,18 +562,35 @@ const sameRef = (r: EntityRef | undefined, name: unknown, source: unknown) =>
   (typeof source !== 'string' || r.source.toLowerCase() === source.toLowerCase());
 
 /**
- * Whether `doc` has `m` under the parent it is for: a subrace under its race,
- * a subclass under its class. The walker knows them by name and book alone,
- * and a change to one race's Hill is not another race's.
+ * Whether the sheet takes `m` for the subrace or subclass `doc` names by its
+ * name and book: two races can each have a Hill, and the sheet takes the
+ * race's own, else the first (`subraceFor`, `subclassOf`). Without the data
+ * to ask (`ctx` null), or when the engine finds none, it may: it is listed.
  */
-function underParent(doc: CharacterDoc, m: Mine): boolean {
+function takenBy(doc: CharacterDoc, m: Mine, ctx: EngineContext | null): boolean {
   const e = m.entry;
-  if (m.type === 'subrace' && typeof e.raceName === 'string') {
-    return sameRef(doc.race, e.raceName, e.raceSource);
+  if (ctx === null) return true;
+  // A field either lacks says nothing either way.
+  const isPick = (r: DataEntity | undefined, parents: readonly string[]) =>
+    r === undefined ||
+    ['name', 'source', ...parents].every((k) => {
+      const want = e[k];
+      const got = r[k];
+      return (
+        typeof want !== 'string' ||
+        typeof got !== 'string' ||
+        want.toLowerCase() === got.toLowerCase()
+      );
+    });
+  if (m.type === 'subrace') {
+    if (!sameRef(doc.subrace, e.name, e.source)) return true;
+    return isPick(subraceFor(ctx, doc), ['raceName', 'raceSource']);
   }
-  if (m.type === 'subclass' && typeof e.className === 'string') {
-    return doc.classes.some(
-      (l) => sameRef(l.ref, e.className, e.classSource) && sameRef(l.subclass, e.name, e.source),
+  if (m.type === 'subclass') {
+    const levels = doc.classes.filter((l) => sameRef(l.subclass, e.name, e.source));
+    return (
+      levels.length === 0 ||
+      levels.some((l) => isPick(subclassOf(ctx, l), ['className', 'classSource']))
     );
   }
   return true;
@@ -551,27 +607,34 @@ async function usersOf(
   picked: ReadonlyArray<Mine & { change: boolean }>,
   names: ReadonlyMap<string, string>,
 ): Promise<Users> {
-  const [{ repointDoc }, { characters, errors }] = await Promise.all([
+  const [{ repointDoc }, { characters, errors }, ctx] = await Promise.all([
     import('@/db/repoint'),
     characterRepo.listSafe(),
+    getRegistry().then(engineContextFor, () => null),
   ]);
-  return { users: whoUses(characters, picked, names, repointDoc), unreadable: errors.length };
+  const found = whoUses(characters, picked, names, repointDoc, ctx);
+  return { users: found.users, unreadable: errors.length + found.unchecked };
 }
 
 /**
- * Each of `characters` that holds some of `picked`, with a line for each.
- * E5's walker is the finder (`repointDoc`, passed in so the module loads
- * lazily): a character that a rename of an entry would change holds it.
+ * Each of `characters` that holds some of `picked`, with a line for each, and
+ * how many could not be checked. E5's walker is the finder (`repointDoc`,
+ * passed in so the module loads lazily): a character that a rename of an
+ * entry would change holds it. Where it cannot tell, it lists: this is said
+ * before a delete.
  */
 export function whoUses(
   characters: readonly CharacterDoc[],
   picked: ReadonlyArray<Mine & { change: boolean }>,
   names: ReadonlyMap<string, string>,
   repointDoc: (doc: CharacterDoc, changes: readonly Repoint[]) => CharacterDoc,
-): User[] {
+  ctx: EngineContext | null,
+): { users: User[]; unchecked: number } {
   const named = (m: Mine) => String(m.entry.name);
-  return characters.flatMap((doc) => {
-    const was = answersOf(doc);
+  let unchecked = 0;
+  const users = characters.flatMap((doc) => {
+    let was: string | undefined;
+    let failed = false;
     const held = picked.filter((m) => {
       const from = { name: named(m), source: String(m.entry.source) };
       let after: CharacterDoc;
@@ -580,24 +643,42 @@ export function whoUses(
           { type: m.type, from, to: { ...from, name: `${from.name} (deleted)` } },
         ]);
       } catch {
+        failed = true;
         return false;
       }
-      // An optional feature's own picks sit under its host's key, and a
-      // subrace's under its race's: a moved key alone is a same-named host's.
-      return after !== doc && answersOf(after) !== was && underParent(doc, m);
+      if (after === doc) return false;
+      const hosted = HOSTED[m.type];
+      if (hosted?.(doc, from) === true) {
+        // Only keys moved: they are the same-named host's.
+        was ??= beyondKeys(doc);
+        if (beyondKeys(after) === was) return false;
+      }
+      return takenBy(doc, m, ctx);
     });
+    if (failed) unchecked += 1;
     if (held.length === 0) return [];
+    // Two of one name are told apart by kind, parent and collection, and by
+    // book when those are the same too.
+    const tags = (h: Mine) => {
+      const parent = h.entry.raceName ?? h.entry.className;
+      return {
+        kind: kindOf(h.type).toLowerCase(),
+        rest: [...(typeof parent === 'string' ? [parent] : []), names.get(h.fileId) ?? 'Workshop'],
+      };
+    };
     const lines = held.map((m) => {
-      // Two of one name are told apart by kind, parent and collection.
-      const twin = held.some((h) => h !== m && named(h).toLowerCase() === named(m).toLowerCase());
-      const parent = m.entry.raceName ?? m.entry.className;
-      const what = twin
-        ? `${named(m)} (${[
-            kindOf(m.type).toLowerCase(),
-            ...(typeof parent === 'string' ? [parent] : []),
-            names.get(m.fileId) ?? 'Workshop',
-          ].join(', ')})`
-        : named(m);
+      const twins = held.filter(
+        (h) => h !== m && named(h).toLowerCase() === named(m).toLowerCase(),
+      );
+      const mine = tags(m);
+      const same = twins.some((h) => {
+        const theirs = tags(h);
+        return theirs.kind === mine.kind && theirs.rest.join('|') === mine.rest.join('|');
+      });
+      const what =
+        twins.length === 0
+          ? named(m)
+          : `${named(m)} (${[mine.kind, ...(same ? [String(m.entry.source)] : []), ...mine.rest].join(', ')})`;
       return {
         key: mineKey(m),
         text: m.change ? `${what} goes back to the book’s.` : `${what} leaves the sheet.`,
@@ -605,6 +686,7 @@ export function whoUses(
     });
     return [{ id: doc.id, name: doc.name, lines }];
   });
+  return { users, unchecked };
 }
 
 function DeleteSheet({

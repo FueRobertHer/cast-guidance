@@ -116,16 +116,15 @@ describe('newSource', () => {
     expect(newSource('A very long name for a collection indeed')).toHaveLength(24);
   });
 
-  it('never makes what reads as a book code: short or capital names get Homebrew after them', () => {
+  it('puts Homebrew after a short or capitals-only name', () => {
     expect(newSource('MM')).toBe('MMHomebrew');
     expect(newSource('Sky')).toBe('SkyHomebrew');
     expect(newSource('XGE 2')).toBe('XGE2Homebrew');
+    expect(newSource('ABCDEFGHIJKLMNOPQRSTUVWXYZ')).toBe('ABCDEFGHIJKLMNOPHomebrew');
   });
 
-  it('never makes a published book’s code, in any case', () => {
+  it('puts Homebrew after a published book’s code, in any case', () => {
     expect(newSource('DSotDQ')).toBe('DSotDQHomebrew');
     expect(newSource('dsotdq')).toBe('DsotdqHomebrew');
-    expect(newSource('Lantern Coast')).toBe('LanternCoast');
-    expect(newSource('ABCDEFGHIJKLMNOPQRSTUVWXYZ').length).toBeLessThanOrEqual(24);
   });
 });

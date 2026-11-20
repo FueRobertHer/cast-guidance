@@ -585,13 +585,17 @@ export function Component() {
     const to = focusTo.current;
     if (to === null) return;
     focusTo.current = null;
-    page.current?.querySelector<HTMLElement>(to)?.focus({ preventScroll: true });
+    focusOn(to);
   }, [inSelect]);
   // The list emptied with no sheet open (another tab took the last entry):
   // select mode ends rather than coming back with the next entry made.
   // biome-ignore lint/correctness/useExhaustiveDependencies: only when the list or a sheet changes
   useEffect(() => {
-    if (selecting && mine !== undefined && shown.length === 0 && !sheetOpen) select(false, null);
+    if (selecting && mine !== undefined && shown.length === 0 && !sheetOpen) {
+      // Select mode has already left the page: the keyboard goes back now.
+      select(false, null);
+      focusOn('[data-select-start]');
+    }
   }, [mine, sheetOpen]);
   const toggle = (key: string) =>
     setChosen((was) => {
@@ -609,6 +613,13 @@ export function Component() {
     [owned],
   );
   const [undoFocus, setUndoFocus] = useState(0);
+  const page = useRef<HTMLElement>(null);
+  /** The keyboard's way back onto the page: Select, or search when there is nothing to select. */
+  const focusOn = (to: string) =>
+    (
+      page.current?.querySelector<HTMLElement>(to) ??
+      page.current?.querySelector<HTMLElement>('input[type="search"]')
+    )?.focus({ preventScroll: true });
   // "Undone" waits for the write, so an Undo another tab's change refuses never says it.
   const [restoring, setRestoring] = useState(false);
   const deleted = useUndoOffer<Revisions>({
@@ -626,12 +637,13 @@ export function Component() {
           setRestoring(false);
           deleted.dismiss();
           notifyFailure('Undo', err);
+          // The Undo button went with the offer.
+          focusOn('[data-select-start]');
         },
       );
     },
   });
   const importing = params.has(IMPORT_PARAM);
-  const page = useRef<HTMLElement>(null);
   const closedImport = useRef(false);
   const closeImport = (shelfAfter?: Shelf) => {
     const next = new URLSearchParams(params);
