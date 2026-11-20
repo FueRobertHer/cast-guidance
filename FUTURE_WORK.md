@@ -277,6 +277,14 @@ work:
   (emptied, it is none); the subrace links leave the species editor without
   the unsaved-changes question, as the subclass links do; two subraces of one
   name in one collection clash, whatever species each names.
+- A change to any box in a Workshop editor re-renders the whole editor, the
+  origin fields included: `WorkshopPage`'s `change` is a new function on every
+  render, and `FeatBody` and the species editor's `OriginParts` hand each
+  field a new closure, so nothing is memoized. In the feat editor's card
+  tests (jsdom, coverage on), U5b's sections made each card change about 1.7
+  times as long, about 1.5 s of the Reroll walk's 9.8 s in
+  `paidRollCards.test.tsx`. A stable `change` (`setDraft` already is) and
+  memoized sections would skip that work.
 - Add regression fixtures that exercise the documented export-format
   compatibility matrix (the format itself is documented in
   `docs/export-format.md`).
