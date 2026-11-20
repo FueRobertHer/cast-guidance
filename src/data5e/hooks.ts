@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { useDataStatus } from '@/stores/dataStatus';
+import { RegistryViewContext } from '@/stores/registryViewContext';
 import { getRevision, markDataChanged, subscribeRevision } from './landing';
 import { ensureTypePacks, repairTypePacks } from './loader';
 import type { EntityRegistry } from './normalize';
@@ -13,6 +14,7 @@ import {
   registrySignature,
   subscribeRegistryRefreshing,
 } from './registry';
+import { registryViewFor } from './registryView';
 import { ensureSearchIndex, onSearchIndexLost } from './search/client';
 
 export type AsyncStatus = 'loading' | 'ready' | 'error';
@@ -97,12 +99,17 @@ export function useRegistryState(packs: readonly PackId[] = []): RegistryState {
     };
   }, [key, phase, revision, nonce]);
 
+  const character = useContext(RegistryViewContext);
+  const view = useMemo(
+    () => (registry === null ? null : registryViewFor(registry, character)),
+    [registry, character],
+  );
   // A registry already in hand outranks a failed refresh: the pages reading it
   // are still correct, and replacing a working screen with an error because a
   // later rebuild failed loses more than it reports.
   const status: AsyncStatus = registry !== null ? 'ready' : error !== null ? 'error' : 'loading';
   return {
-    registry,
+    registry: view,
     status,
     error,
     retry: () => {

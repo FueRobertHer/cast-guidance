@@ -15,7 +15,7 @@ import {
   Swords,
   Trash2,
 } from 'lucide-react';
-import { type MouseEvent, type ReactNode, useEffect, useRef, useState } from 'react';
+import { type MouseEvent, type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Link,
   NavLink,
@@ -30,7 +30,9 @@ import { useBack } from '@/lib/useBack';
 import { usePageTitle } from '@/lib/usePageTitle';
 import { useStickyHeight } from '@/lib/useStickyHeight';
 import { announce } from '@/stores/announcer';
+import { useCharacterSession } from '@/stores/characterSession';
 import { notifyFailure } from '@/stores/notices';
+import { RegistryViewProvider } from '@/stores/registryViewContext';
 import { Banner } from '@/ui/Banner';
 import { Button, ButtonCount, buttonClass } from '@/ui/Button';
 import { GameDataProblem } from '@/ui/GameDataProblem';
@@ -179,6 +181,39 @@ function TabPill({ active, children }: { active: boolean; children: ReactNode })
 
 export function Component() {
   const { id } = useParams();
+  return (
+    <CharacterView id={id}>
+      <Sheet id={id} />
+    </CharacterView>
+  );
+}
+
+/**
+ * This character's view of the game data around everything the sheet draws
+ * (ADR-002, D3): the header, every tab, the pickers and the info sheets read
+ * the versions its own collection switches pick. Keyed by what the switches
+ * say, since each edit clones the doc, and only once the route's character
+ * has loaded, as `useCharacterSheet` reads it, so no other character's view
+ * shows for a frame.
+ */
+function CharacterView({ id, children }: { id: string | undefined; children: ReactNode }) {
+  const doc = useCharacterSession((s) =>
+    id !== undefined && s.requestedId === id && s.loadStatus === 'ready' && s.doc?.id === id
+      ? s.doc
+      : null,
+  );
+  const switches = doc === null ? undefined : JSON.stringify(doc.sourceSwitches ?? {});
+  const character = useMemo(
+    () =>
+      id === undefined || switches === undefined
+        ? undefined
+        : { id, sourceSwitches: JSON.parse(switches) },
+    [id, switches],
+  );
+  return <RegistryViewProvider value={character}>{children}</RegistryViewProvider>;
+}
+
+function Sheet({ id }: { id: string | undefined }) {
   // Published for a tab's own sticky bar to sit under, and for the scroll
   // padding that keeps a focused control out from behind the header.
   const header = useStickyHeight('--sheet-header-h');

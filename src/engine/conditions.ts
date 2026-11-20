@@ -13,6 +13,7 @@
 import { pickForVersion } from '../data5e/rulesVersion';
 import { type StoredProblem, storedInPlay } from './activeEffects';
 import { guidanceVersion, isRecord, own } from './castGuidance';
+import type { MomentSubject } from './moments';
 import type { Ability, ActiveEffect, EffectPart, RollFilter } from './types';
 
 export type Edition = '2014' | '2024';
@@ -583,16 +584,22 @@ export function conditionProblemLine(name: string, p: ConditionProblem): string 
  * One homebrew condition can hold off another with an immunity among its
  * effects, as Petrified holds off Poisoned. Only one that counts holds
  * another off, so the immunities the sheet lists are the ones that held.
+ *
+ * `subjects` are the entries in force whose `castGuidance` holds moments, for
+ * `collectMoments`: those that count, and those with moments alone that no
+ * condition that counts holds off.
  */
 export function homebrewConditionEffects(
   conditions: unknown,
   entryOf: (name: string) => unknown,
   options: ConditionOptions = {},
-): { effects: ActiveEffect[]; problems: string[] } {
+): { effects: ActiveEffect[]; problems: string[]; subjects: MomentSubject[] } {
   const problems: string[] = [];
   const held = heldNames(options);
   const seen = new Set<string>();
-  const read: Array<{ id: string; key: string; parts: EffectPart[] }> = [];
+  type Read = { id: string; key: string; parts: EffectPart[]; entry: Record<string, unknown> };
+  const read: Read[] = [];
+  const momentsOnly: Read[] = [];
   // A stored document: a condition it cannot read does nothing here.
   const list = Array.isArray(conditions) ? Array.from(conditions as unknown[]) : [];
   for (const raw of list) {
@@ -603,12 +610,14 @@ export function homebrewConditionEffects(
     seen.add(key);
     if (own(raw, 'ignored') === true || held.has(key)) continue;
     const entry = entryOf(id);
-    if (entry === undefined) continue;
+    if (!isRecord(entry)) continue;
     const mechanics = conditionMechanics(entry);
     for (const p of mechanics.problems) problems.push(conditionProblemLine(id, p));
-    if (mechanics.parts.length > 0) read.push({ id, key, parts: mechanics.parts });
+    const each = { id, key, parts: mechanics.parts, entry };
+    if (mechanics.parts.length > 0) read.push(each);
+    else if (holdsMoments(entry)) momentsOnly.push(each);
   }
-  const holdsOff = (a: (typeof read)[number], b: (typeof read)[number]) =>
+  const holdsOff = (a: Read, b: Read) =>
     a !== b &&
     a.parts.some((p) => p.kind === 'conditionImmune' && p.condition.trim().toLowerCase() === b.key);
   // Settled in rounds: those nothing still unsettled holds off count, and what
@@ -624,7 +633,16 @@ export function homebrewConditionEffects(
   const effects = read
     .filter((c) => counted.includes(c))
     .map((c) => ({ id: `condition:${c.id}`, name: c.id, parts: c.parts }));
-  return { effects, problems };
+  const subjects = [...counted, ...momentsOnly.filter((c) => !counted.some((o) => holdsOff(o, c)))]
+    .filter((c) => holdsMoments(c.entry))
+    .map((c) => ({ entry: c.entry, label: c.id }));
+  return { effects, problems, subjects };
+}
+
+/** Whether an entry's own `castGuidance` names moments (`moments.ts` reads them). */
+function holdsMoments(entry: Record<string, unknown>): boolean {
+  const guidance = own(entry, 'castGuidance');
+  return isRecord(guidance) && own(guidance, 'moments') !== undefined;
 }
 
 /**
@@ -674,8 +692,8 @@ export function homebrewConditionsInForce(
   data: { byType(type: string): readonly unknown[] },
   edition: Edition,
   immune: () => ReadonlyArray<ConditionImmunity>,
-): { effects: ActiveEffect[]; problems: string[] } {
-  if (!hasHomebrewCondition(conditions)) return { effects: [], problems: [] };
+): ReturnType<typeof homebrewConditionEffects> {
+  if (!hasHomebrewCondition(conditions)) return { effects: [], problems: [], subjects: [] };
   const list = Array.from(conditions as unknown[]);
   return homebrewConditionEffects(list, conditionEntries(data.byType('condition'), edition), {
     immune: immune(),

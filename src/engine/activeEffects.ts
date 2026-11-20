@@ -32,6 +32,8 @@ const oneOf =
     values.includes(x);
 const listOf = (x: unknown, each: (v: unknown) => boolean) =>
   Array.isArray(x) && x.length > 0 && x.every(each);
+/** The kinds of weapon a bonus reaches (`weapons`), by name. */
+const optWeapons = (x: unknown) => x === undefined || listOf(x, isStr);
 /** "1d4", "d8", "2d6": what a die field holds. Never "0d4" or "1d0". */
 const isDice = (x: unknown) => typeof x === 'string' && /^([1-9]\d?)?d[1-9]\d{0,2}$/.test(x);
 
@@ -64,7 +66,10 @@ const VALID: Record<ActivePartKind, (p: Raw) => boolean> = {
     isNum(p.amount) &&
     (p.attack === undefined || oneOf('weapon', 'spell', 'any')(p.attack)) &&
     optAbility(p.ability) &&
-    optStr(p.weapon),
+    optStr(p.weapon) &&
+    optBool(p.weaponsOnly) &&
+    optWeapons(p.weapons) &&
+    optStr(p.className),
   checkBonus: (p) =>
     isNum(p.amount) &&
     ('every' in p
@@ -76,7 +81,12 @@ const VALID: Record<ActivePartKind, (p: Raw) => boolean> = {
   critRange: (p) => Number.isInteger(p.min) && (p.min as number) >= 2 && (p.min as number) <= 20,
   cue: (p) => oneOf('help', 'ward', 'warn', 'info')(p.tone) && isStr(p.text),
   damageBonus: (p) =>
-    isScope(p.scope) && isNum(p.amount) && optAbility(p.ability) && optStr(p.weapon),
+    isScope(p.scope) &&
+    isNum(p.amount) &&
+    optAbility(p.ability) &&
+    optStr(p.weapon) &&
+    optBool(p.weaponsOnly) &&
+    optWeapons(p.weapons),
   damageDie: (p) =>
     isScope(p.scope) &&
     isDice(p.dice) &&
@@ -97,7 +107,7 @@ const VALID: Record<ActivePartKind, (p: Raw) => boolean> = {
   saveBonus: (p) =>
     isNum(p.amount) && (p.abilities === undefined || listOf(p.abilities, isAbility)),
   sense: (p) => isStr(p.sense) && isNum(p.range) && p.range >= 0,
-  spellDcBonus: (p) => isNum(p.amount) && optStr(p.className),
+  spellDcBonus: (p) => isNum(p.amount) && optStr(p.className) && optAbility(p.ability),
   speedBonus: (p) =>
     isNum(p.amount) && (p.unless === undefined || oneOf('heavyArmor', 'armorOrShield')(p.unless)),
   speedMultiplier: (p) => isNum(p.factor) && p.factor > 0,
@@ -117,12 +127,21 @@ const FIELDS: Record<ActivePartKind, readonly string[]> = {
   acBonus: ['amount'],
   acFormula: ['label', 'base', 'addAbilities', 'dexMax'],
   acMin: ['min'],
-  attackBonus: ['scope', 'amount', 'attack', 'ability', 'weapon'],
+  attackBonus: [
+    'scope',
+    'amount',
+    'attack',
+    'ability',
+    'weapon',
+    'weaponsOnly',
+    'weapons',
+    'className',
+  ],
   checkBonus: ['amount', 'skills', 'ability', 'every'],
   conditionImmune: ['condition', 'note'],
   critRange: ['min'],
   cue: ['tone', 'text'],
-  damageBonus: ['scope', 'amount', 'ability', 'weapon'],
+  damageBonus: ['scope', 'amount', 'ability', 'weapon', 'weaponsOnly', 'weapons'],
   damageDie: ['scope', 'dice', 'damageType', 'weapon', 'weaponsOnly'],
   extraAction: ['label', 'note'],
   immune: ['damageType', 'note'],
@@ -135,7 +154,7 @@ const FIELDS: Record<ActivePartKind, readonly string[]> = {
   rollOffer: ['dice', 'on', 'once', 'ifFailed'],
   saveBonus: ['amount', 'abilities'],
   sense: ['sense', 'range'],
-  spellDcBonus: ['amount', 'className'],
+  spellDcBonus: ['amount', 'className', 'ability'],
   speedBonus: ['amount', 'unless'],
   speedMultiplier: ['factor'],
   tempHpEachTurn: ['amount'],

@@ -1182,6 +1182,19 @@ const KINDS = new Map<Kind, Build>([
     }),
   ],
   ['saveProf', (o, r) => ({ ability: req(o, r, 'ability', ability) })],
+  [
+    'spellListAdd',
+    // Spells by name, any printing. Never "filters": the data's own spell
+    // filter syntax, which a file names spells in place of.
+    (o, r) => {
+      if (own(o, 'filters') !== undefined) throw new Bad('names its spells, not "filters"');
+      return {
+        spells: req(o, r, 'spells', list(spellName, 50)),
+        filters: [],
+        ...opt(o, r, 'className', text()),
+      };
+    },
+  ],
   ['toolProf', named],
   ['armorProf', named],
   ['weaponProf', named],
@@ -1211,6 +1224,13 @@ const KINDS = new Map<Kind, Build>([
     }),
   ],
   [
+    'armorPenaltyLift',
+    (o, r) => ({
+      penalty: req(o, r, 'penalty', oneOf('strength', 'stealth')),
+      ...opt(o, r, 'armor', oneOf('light', 'medium', 'heavy')),
+    }),
+  ],
+  [
     'speedMultiplier',
     (o, r) => ({
       factor: req(o, r, 'factor', (v) => {
@@ -1234,6 +1254,9 @@ const KINDS = new Map<Kind, Build>([
       amount: req(o, r, 'amount', amount),
       ...opt(o, r, 'attack', oneOf('weapon', 'spell', 'any')),
       ...opt(o, r, 'ability', ability),
+      ...opt(o, r, 'weaponsOnly', flag),
+      ...opt(o, r, 'weapons', list(text(), 20)),
+      ...opt(o, r, 'className', text()),
     }),
   ],
   [
@@ -1242,6 +1265,8 @@ const KINDS = new Map<Kind, Build>([
       ...scope(o, r),
       amount: req(o, r, 'amount', amount),
       ...opt(o, r, 'ability', ability),
+      ...opt(o, r, 'weaponsOnly', flag),
+      ...opt(o, r, 'weapons', list(text(), 20)),
     }),
   ],
   [
@@ -1255,7 +1280,11 @@ const KINDS = new Map<Kind, Build>([
   ],
   [
     'spellDcBonus',
-    (o, r) => ({ amount: req(o, r, 'amount', amount), ...opt(o, r, 'className', text()) }),
+    (o, r) => ({
+      amount: req(o, r, 'amount', amount),
+      ...opt(o, r, 'className', text()),
+      ...opt(o, r, 'ability', ability),
+    }),
   ],
   [
     'spellDamageBonus',
