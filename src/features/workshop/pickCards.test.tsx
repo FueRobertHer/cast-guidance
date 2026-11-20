@@ -58,8 +58,9 @@ function withCards(effects: Json[], taken: readonly string[] = []) {
   return () => ((latest.castGuidance as Json | undefined)?.effects ?? []) as Json[];
 }
 
-const pick = (label: string, value: string) =>
-  fireEvent.change(screen.getByLabelText(label), { target: { value } });
+/** Set the box labelled `label` in `at` (the screen, or one list of cards). */
+const pick = (label: string, value: string, at: Pick<typeof screen, 'getByLabelText'> = screen) =>
+  fireEvent.change(at.getByLabelText(label), { target: { value } });
 const box = (label: string) => screen.getByLabelText(label) as HTMLSelectElement;
 const has = (label: string) => screen.queryByLabelText(label) !== null;
 const choices = (label: string) => [...box(label).options].map((o) => o.value);
@@ -75,11 +76,15 @@ const check = (label: string) => fireEvent.click(screen.getByLabelText(label));
 
 /**
  * Boxes on screen showing a choice other than the value they hold: a value
- * none of a box's choices is would show as its first choice, unsaid.
+ * none of a box's choices is would show as its first choice, unsaid. Every
+ * select on the page is found by its tag, since a role query works out the
+ * role of every select and input and whether each is hidden, many times the
+ * cost; like that query, it fails with no box on screen.
  */
 function misshown(): string[] {
-  return screen.getAllByRole('combobox').flatMap((select) => {
-    if (!(select instanceof HTMLSelectElement)) return [];
+  const selects = [...document.body.querySelectorAll('select')];
+  if (selects.length === 0) throw new Error('no box on screen');
+  return selects.flatMap((select) => {
     const props = Object.entries(select).find(([k]) => k.startsWith('__reactProps'))?.[1] as
       | { value?: unknown }
       | undefined;
@@ -99,13 +104,18 @@ async function addPick(at: Pick<typeof screen, 'getByRole' | 'findByLabelText'> 
   await at.findByLabelText('Pick: Asks for');
 }
 
-/** The entry's own cards: a feat's benefits have cards of their own, with a More each. */
-const ownCards = () =>
-  within(
-    screen
-      .getByRole('heading', { name: 'What it does on the sheet' })
-      .closest('section') as HTMLElement,
+/**
+ * The entry's own cards: a feat's benefits have cards of their own, with a
+ * More each. Found by its heading's tag and words, since a role query over
+ * the whole editor costs many times more.
+ */
+function ownCards() {
+  const headings = [...document.querySelectorAll('section > h2')].filter(
+    (h) => h.textContent === 'What it does on the sheet',
   );
+  if (headings.length !== 1) throw new Error(`${headings.length} sections of cards on screen`);
+  return within(headings[0]?.parentElement as HTMLElement);
+}
 
 /** The homebrew feat Gift with these effects, taken by a Warrior 4, its answers `answers`. */
 function collect(effects: Json[], answers: Record<string, string[]> = {}) {
@@ -827,8 +837,8 @@ describe('a shipped pick on a card', () => {
       expect(document.body.textContent, key).not.toMatch(/undefined|NaN|\[object/);
       expect(screen.getByText(pickWords(effect)), key).toBeTruthy();
       expect(misshown(), key).toEqual([]);
-      pick('Pick: Rules', '2014');
-      pick('Pick: Rules', '');
+      pick('Pick: Rules', '2014', ownCards());
+      pick('Pick: Rules', '', ownCards());
       expect(effects(), key).toEqual([effect]);
       cleanup();
     }

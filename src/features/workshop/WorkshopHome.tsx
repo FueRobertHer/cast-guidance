@@ -10,10 +10,14 @@
  * The search looks in theirs first, then their collections, then the books.
  * The shelf is kept in the address (`?shelf=`), so Back from a collection
  * comes back to Collections.
+ *
+ * Import opens the one Import sheet (board 7, `ImportSheet`) over the home,
+ * kept in the address too (`?import`), so its links stay links. What it lands
+ * is a collection: the home says so and shows Collections.
  */
 import { useLiveQuery } from 'dexie-react-hooks';
 import { ChevronRight, FileUp, Plus, Search } from 'lucide-react';
-import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, type ReactNode, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router';
 import { useRegistry, useRegistryState, useSearchState } from '@/data5e/hooks';
 import { getActiveTag } from '@/data5e/loader';
@@ -108,10 +112,27 @@ function MakeLink() {
   );
 }
 
-/** Where a file comes in, until the Import sheet (U7): the Homebrew page. */
+/** The address's word for an open Import sheet. */
+const IMPORT_PARAM = 'import';
+
+/** The Import sheet, loaded once it is first opened. */
+const ImportSheet = lazy(() => import('./ImportSheet'));
+
+/**
+ * Where a file comes in: the Import sheet (U7), opened over this page by
+ * `?import`, so the way in stays a link and Back leaves the page as before.
+ */
 function ImportLink({ label }: { label: string }) {
+  const [params] = useSearchParams();
+  const next = new URLSearchParams(params);
+  next.set(IMPORT_PARAM, '');
   return (
-    <Link to="/homebrew" className={buttonClass({ variant: 'outline', block: true })}>
+    <Link
+      to={{ search: `?${next.toString()}` }}
+      replace
+      data-import-link=""
+      className={buttonClass({ variant: 'outline', block: true })}
+    >
       <FileUp size={16} aria-hidden />
       {label}
     </Link>
@@ -143,7 +164,8 @@ function YoursShelf({
         </p>
         <ImportLink label="Import a file or a link" />
         <p className={NOTE}>
-          Someone shared a homebrew file or a Fight Club 5e compendium? Import it there.
+          Someone shared a homebrew file or a Fight Club 5e compendium? Import it, and it lands as a
+          collection.
         </p>
       </section>
     );
@@ -198,7 +220,15 @@ function CollectionsShelf({
 }) {
   return (
     <>
-      <ImportLink label="Import or manage files" />
+      <ImportLink label="Import a file or a link" />
+      {/* Until the collection page does it (U6), files are turned off and
+          removed on the Homebrew page. */}
+      <p className={NOTE}>
+        To turn a file off or remove it:{' '}
+        <Link to="/homebrew" className={LINK}>
+          Import or manage files
+        </Link>
+      </p>
       {rows === undefined ? (
         <p className={NOTE}>Loading…</p>
       ) : (
@@ -456,6 +486,26 @@ export function Component() {
     for (const f of owned?.files ?? []) out.set(f.id, madeName(f.json) ?? f.fileName);
     return out;
   }, [owned]);
+  // What the last import did, on screen and said once (A11Y-002).
+  const [outcome, setOutcome] = useState<string>();
+  const importing = params.has(IMPORT_PARAM);
+  const page = useRef<HTMLElement>(null);
+  const closedImport = useRef(false);
+  const closeImport = (shelfAfter?: Shelf) => {
+    const next = new URLSearchParams(params);
+    next.delete(IMPORT_PARAM);
+    if (shelfAfter !== undefined) next.set('shelf', shelfAfter);
+    closedImport.current = true;
+    setParams(next, { replace: true });
+  };
+  // The sheet has no trigger of its own to give focus back to, and swaps one
+  // dialog for the preview's, so focus goes back to the way in on the shelf
+  // it closes to: a keyboard is not left at the top of the page.
+  useEffect(() => {
+    if (importing || !closedImport.current) return;
+    closedImport.current = false;
+    page.current?.querySelector<HTMLElement>('[data-import-link]')?.focus({ preventScroll: true });
+  }, [importing]);
   const query = q.trim();
   const searching = query.length >= MIN_QUERY;
   const found = searching
@@ -468,11 +518,17 @@ export function Component() {
     : [];
 
   return (
-    <main className="flex flex-1 flex-col gap-4 px-4 pt-5 pb-4">
+    <main ref={page} className="flex flex-1 flex-col gap-4 px-4 pt-5 pb-4">
       <header className="flex flex-wrap items-end justify-between gap-x-3 gap-y-2">
         <h1 className="font-display text-title-page">Workshop</h1>
         <MakeLink />
       </header>
+      {/* Said through the announcer when it is set, so this is no live region. */}
+      {outcome !== undefined && (
+        <p data-import-status="" className="text-caption text-ink-muted">
+          {outcome}
+        </p>
+      )}
       <div className="relative">
         <Search
           size={20}
@@ -511,6 +567,19 @@ export function Component() {
           )}
           {shelf === 'rules' && <RulesShelf rows={meta?.files} />}
         </>
+      )}
+      {importing && (
+        <Suspense fallback={null}>
+          <ImportSheet
+            onClose={() => closeImport()}
+            onDone={(text, landed) => {
+              setOutcome(text);
+              announce(text, { key: 'import', repeat: true });
+              // What came in is a collection: the shelf it is on. Nothing else moves the page.
+              closeImport(landed ? 'collections' : undefined);
+            }}
+          />
+        </Suspense>
       )}
     </main>
   );

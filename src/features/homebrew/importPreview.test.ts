@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { EntityRegistry, type EntityType, mergeHomebrew } from '@/data5e/normalize';
+import {
+  EntityRegistry,
+  type EntityType,
+  identityKey,
+  mergeHomebrew,
+  normalizeDataset,
+} from '@/data5e/normalize';
 import type { HomebrewFileRow } from '@/db/db';
 import type { HomebrewFile } from '@/db/homebrewRepo';
 import { newCharacterDoc } from '@/engine/types';
@@ -10,7 +16,11 @@ import {
   MAX_LISTED_COLLISIONS,
   type OfficialIndex,
   officialIndexFrom,
+  type PackReplacement,
+  packReplaces,
+  packReview,
   previewHomebrewImport,
+  replacedRow,
   WINNER_POLICY,
 } from './importPreview';
 
@@ -803,5 +813,246 @@ describe('previewHomebrewImport for a file stored a book at a time', () => {
       },
     );
     expect(p.entityCollisions[0]?.against).toEqual({ id: 'emb', fileName: 'EMB Book' });
+  });
+});
+
+describe('a rule pack’s replaces in the preview (ADR-002, D2)', () => {
+  const ref = (name: string, source: string, extra: Json = {}) => ({
+    type: 'spell',
+    name,
+    source,
+    ...extra,
+  });
+  /** A pack, its `replaces` and its content. */
+  const pack = (replaces: unknown, spells: Json[] = []): Json => ({
+    _meta: {
+      sources: [{ json: 'TBL', full: 'Our Table' }],
+      castGuidance: { v: 1, replaces },
+    },
+    spell: spells,
+  });
+  const book = (complete = true) => official({ spell: ['Aid|XPHB', 'Fireball|XPHB'] }, complete);
+  const grimoire = () => local('twg', { _meta: meta(['TWG']), spell: [spell('Riptide', 'TWG')] });
+  const everyone = { characters: [], appDefault: true };
+
+  it('names each entry once, as the merge reads the list', () => {
+    const read = packReplaces(
+      pack(
+        [
+          ref('Aid', 'XPHB'),
+          ref('aid', 'xphb'),
+          ref('Riptide', 'TWG'),
+          { type: 'spell', name: 'No source' },
+          { type: 'monster', name: 'Goblin', source: 'XMM' },
+          'Fireball',
+        ],
+        [
+          { name: 'Aid', source: 'XPHB', level: 3 },
+          // Its identity is what it leaves to its copy.
+          { _copy: { name: 'Riptide', source: 'TWG' }, level: 2 },
+        ],
+      ),
+    );
+    expect(read?.entries.map((r) => [r.words, r.inPack])).toEqual([
+      ['Aid (spell, XPHB)', true],
+      ['Riptide (spell, TWG)', true],
+    ]);
+    expect(read).toMatchObject({ over: 0, unread: 3 });
+    expect(read).not.toHaveProperty('notAList');
+    expect(packReplaces(pack('Aid'))).toMatchObject({ entries: [], unread: 0, notAList: true });
+    expect(packReplaces({ _meta: { sources: [{ json: 'HB' }] } })).toBeUndefined();
+  });
+
+  it('names a feature by its class and level', () => {
+    const read = packReplaces(
+      pack([
+        {
+          type: 'classFeature',
+          name: 'Rage',
+          source: 'XPHB',
+          className: 'Barbarian',
+          classSource: 'XPHB',
+          level: 1,
+        },
+      ]),
+    );
+    expect(read?.entries[0]?.words).toBe('Rage (class feature, XPHB, Barbarian, level 1)');
+  });
+
+  it('reads no more than a pack may name, and says what it left', () => {
+    const many = Array.from({ length: 502 }, (_, i) => ref(`Spell ${i}`, 'XPHB'));
+    const review = packReview(pack(many));
+    expect(review?.replaces?.entries).toHaveLength(500);
+    expect(review?.problems).toContain(
+      'It names 2 more entries to replace than a pack may (500), so those replace nothing',
+    );
+    expect(packReview(pack('Aid'))?.problems).toContain(
+      'Its "replaces" is not a list of entries, so it replaces nothing',
+    );
+    expect(packReview(pack([{ type: 'spell' }, { name: 'x' }]))?.problems).toContain(
+      '2 entries it names to replace have no type, name or source, so they replace nothing',
+    );
+  });
+
+  it('counts a pack that only replaces entries as holding them', () => {
+    const review = packReview(
+      pack([ref('Aid', 'XPHB'), ref('Fireball', 'XPHB')], [spell('Aid', 'XPHB')]),
+    );
+    expect(review?.holds).toBe('2 changed entries');
+    expect(review?.changes.map((r) => r.value)).toEqual([
+      "The pack's own version, in place of the one here, for the characters it applies to",
+      'Not in this pack, so it replaces nothing',
+    ]);
+  });
+
+  it('says what each lands over here: the book’s, a collection’s, or nothing yet', () => {
+    const json = pack(
+      [
+        ref('Aid', 'XPHB'),
+        ref('Riptide', 'TWG'),
+        ref('Moonbeam', 'XPHB'),
+        ref('Ice Knife', 'XPHB'),
+      ],
+      [spell('Aid', 'XPHB'), spell('Riptide', 'TWG'), spell('Moonbeam', 'XPHB')],
+    );
+    const lands = (opts: Parameters<typeof preview>[1]) =>
+      (preview(json, opts).pack?.changes ?? []).map((r) => r.value);
+    expect(lands({ official: book(), existing: [grimoire()] })).toEqual([
+      "The pack's own version, in place of the book's, for the characters it applies to",
+      'The pack\'s own version, in place of the one in "twg.json", for the characters it applies to',
+      'Nothing here has it, so it replaces nothing until it is here',
+      'Not in this pack, so it replaces nothing',
+    ]);
+    // Before every book is here, an entry found nowhere may be in one still to come.
+    expect(lands({ official: book(false), existing: [] })[2]).toBe(
+      "Not found yet: not all game data is on this device, so it may replace the book's once the rest is",
+    );
+    // A collection that is off, another pack's own change, or the player's
+    // Changes to the books is nothing to land over: none of them is content.
+    const off = { ...grimoire(), enabled: false };
+    const otherPack = local('other', pack([ref('Riptide', 'TWG')], [spell('Riptide', 'TWG')]));
+    const mine: HomebrewFile = {
+      ...local('mine', { _meta: meta(['MyChanges']), spell: [spell('Riptide', 'TWG')] }),
+      role: 'changes',
+    };
+    for (const existing of [[off], [otherPack], [mine]]) {
+      expect(lands({ official: book(), existing })[1]).toBe(
+        'Nothing here has it, so it replaces nothing until it is here',
+      );
+    }
+  });
+
+  it('claims no clash for an entry it replaces, and keeps the rest’s', () => {
+    const p = preview(
+      pack(
+        [ref('Aid', 'XPHB'), ref('Riptide', 'TWG')],
+        [spell('Aid', 'XPHB'), spell('Riptide', 'TWG'), spell('Fireball', 'XPHB')],
+      ),
+      { official: book(), existing: [grimoire()] },
+    );
+    expect(p.entityCollisions.map((c) => `${c.name}|${c.source}`)).toEqual(['Fireball|XPHB']);
+  });
+
+  it('agrees with the merge on what each replaced entry stands over', () => {
+    const release = new Map<string, unknown>([
+      [
+        'spells/spells-xphb.json',
+        {
+          spell: [
+            { name: 'Aid', source: 'XPHB', level: 2, entries: ['Five.'] },
+            { name: 'Fireball', source: 'XPHB', level: 3, entries: ['Boom.'] },
+          ],
+        },
+      ],
+    ]);
+    const twg = grimoire();
+    // Another pack here, ahead of the grimoire, lists Riptide: its Riptide is
+    // no content to stand on, so the grimoire's is what the new pack's is over.
+    const other = local(
+      'other',
+      pack([ref('Riptide', 'TWG')], [spell('Riptide', 'TWG', { level: 9 })]),
+      { addedAt: 0 },
+    );
+    const json = pack(
+      [ref('Aid', 'XPHB'), ref('Riptide', 'TWG'), ref('Moonbeam', 'XPHB')],
+      [
+        { name: 'Aid', source: 'XPHB', _copy: { name: 'Aid', source: 'XPHB', _mod: {} } },
+        { name: 'Riptide', source: 'TWG', level: 5, entries: ['Ours.'] },
+        spell('Moonbeam', 'XPHB'),
+      ],
+    );
+    // What the device has before: the books, the grimoire and the other pack.
+    const before = normalizeDataset(release);
+    mergeHomebrew(
+      before,
+      new Map([
+        [other.id, other.json],
+        [twg.id, twg.json],
+      ]),
+    );
+    const p = preview(json, { official: officialIndexFrom(before), existing: [other, twg] });
+    // What it has after, the new pack on for every character.
+    const after = normalizeDataset(release);
+    mergeHomebrew(
+      after,
+      new Map([
+        [other.id, other.json],
+        [twg.id, twg.json],
+        ['new-file', json],
+      ]),
+      new Map([['new-file', { appliesTo: everyone }]]),
+    );
+    const placed = after
+      .changedEntries()
+      .filter((c) => c.layers.some((l) => l.from.fileId === 'new-file'))
+      .map((c) => [identityKey(c.type, c.base), c.base.source])
+      .sort();
+    expect(placed).toEqual([
+      ['aid|xphb', 'XPHB'],
+      ['riptide|twg', 'TWG'],
+    ]);
+    const read = packReplaces(json)?.entries ?? [];
+    const rows = (p.pack?.changes ?? []).map((r) => r.value);
+    expect(rows).toEqual([
+      replacedRow(read[0] as PackReplacement, { kind: 'book' }).value,
+      replacedRow(read[1] as PackReplacement, { kind: 'collection', fileName: 'twg.json' }).value,
+      'Nothing here has it, so it replaces nothing until it is here',
+    ]);
+    // Each entry the preview says it lands over is one the merge changed, and no other.
+    const landsOver = read.filter((_, i) => rows[i]?.startsWith("The pack's own version"));
+    expect(landsOver.map((r) => r.identity).sort()).toEqual(placed.map(([id]) => id));
+  });
+
+  it('names them on an Update of a pack that keeps its Apply to', () => {
+    const key = 'file:tbl|our table';
+    const old: HomebrewFile = {
+      ...local('tbl-old', pack([ref('Aid', 'XPHB')], [spell('Aid', 'XPHB')])),
+      key,
+      pack: { appliesTo: everyone },
+    };
+    const json = pack(
+      [ref('Aid', 'XPHB'), ref('Fireball', 'XPHB')],
+      [spell('Aid', 'XPHB'), spell('Fireball', 'XPHB')],
+    );
+    const p = previewHomebrewImport({
+      row: { ...row(json), key },
+      bytes: 10,
+      existing: [old],
+      official: book(),
+      characters: [],
+    });
+    expect(p.updates?.id).toBe('tbl-old');
+    expect(p.packIn?.appliesTo).toEqual(everyone);
+    expect(p.pack?.changes.map((r) => [r.key, r.value])).toEqual([
+      [
+        'Aid (spell, XPHB)',
+        "The pack's own version, in place of the book's, for the characters it applies to",
+      ],
+      [
+        'Fireball (spell, XPHB)',
+        "The pack's own version, in place of the book's, for the characters it applies to",
+      ],
+    ]);
+    expect(p.entityCollisions).toEqual([]);
   });
 });

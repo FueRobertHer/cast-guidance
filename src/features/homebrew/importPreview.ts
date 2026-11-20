@@ -15,8 +15,13 @@
  * in its own file, then official data, then every other enabled file, so
  * whether a copy resolves does not depend on import order.
  */
-import { type Entity, uidOf } from '@/data5e/copyMod';
-import { ENTITY_TYPES, type EntityRegistry, type EntityType } from '@/data5e/normalize';
+import { type Entity, textOf, uidOf } from '@/data5e/copyMod';
+import {
+  ENTITY_TYPES,
+  type EntityRegistry,
+  type EntityType,
+  identityKey,
+} from '@/data5e/normalize';
 import {
   type PackFile,
   packGuidance,
@@ -32,6 +37,7 @@ import type { HomebrewFile } from '@/db/homebrewRepo';
 import {
   CAST_GUIDANCE_LIMITS,
   clip,
+  ENTRY_PARENT_KEYS,
   guidanceVersion,
   own,
   PACK_PARTS,
@@ -85,6 +91,12 @@ export interface OfficialIndex {
   clashKeys: Map<EntityType, Set<string>>;
   /** Lowercased source ids. */
   sources: Set<string>;
+  /**
+   * {@link identityKey} per type: what a change to the books, or a rule
+   * pack's `replaces`, takes the place of. Left out by an index built by
+   * hand, which then knows no book entry a pack replaces.
+   */
+  identities?: Map<EntityType, Set<string>>;
   complete: boolean;
 }
 
@@ -150,22 +162,26 @@ export function officialIndexFrom(
   if (index === undefined) {
     const uids = new Map<EntityType, Set<string>>();
     const clashKeys = new Map<EntityType, Set<string>>();
+    const identities = new Map<EntityType, Set<string>>();
     const sources = new Set<string>();
     for (const type of ENTITY_TYPES) {
       const official = reg.byType(type).slice(0, reg.officialCount(type));
       if (official.length === 0) continue;
       const ids = new Set<string>();
       const keys = new Set<string>();
+      const known = new Set<string>();
       for (const e of official) {
         ids.add(uidOf(e));
+        known.add(identityKey(type, e));
         const key = clashKey(type, e);
         if (key !== undefined) keys.add(key);
         if (typeof e.source === 'string' && e.source !== '') sources.add(e.source.toLowerCase());
       }
       uids.set(type, ids);
       clashKeys.set(type, keys);
+      identities.set(type, known);
     }
-    index = { uids, clashKeys, sources };
+    index = { uids, clashKeys, sources, identities };
     indexCache.set(reg, index);
   }
   return { ...index, complete };
@@ -499,7 +515,14 @@ const uidKey = (_: EntityType, e: Entity) => (named(e) === undefined ? undefined
 
 export function previewHomebrewImport(input: HomebrewPreviewInput): HomebrewPreview {
   const { row, existing, official } = input;
-  const pack = packReview(row.json);
+  const read = packReview(row.json);
+  // The identities a pack's `replaces` names: its entries of those are changes.
+  const listed = new Map<string, Set<string>>();
+  for (const r of read?.replaces?.entries ?? []) {
+    const ids = listed.get(r.type) ?? new Set<string>();
+    ids.add(r.identity);
+    listed.set(r.type, ids);
+  }
   const ownSources = new Set(row.sourceIds.map(lower));
   const books = input.books === undefined ? undefined : bookChoices(input.books, existing);
   const oldImports = books === undefined ? [] : oldWholeImports(row.fileName, existing);
@@ -583,6 +606,10 @@ export function previewHomebrewImport(input: HomebrewPreviewInput): HomebrewPrev
   const copies: { type: EntityType; name: string; target: { name: string; source: string } }[] = [];
   for (const type of HOMEBREW_ENTITY_KEYS) {
     for (const e of entitiesOf(row.json, type)) {
+      // An entry the pack replaces is no content: it takes the place of the
+      // entry below it, so it clashes with nothing and completes no copy. Its
+      // own row says what it replaces.
+      if (listed.get(type)?.has(changeIdentity(type, e) ?? '') === true) continue;
       const target = copyTarget(e);
       const id = named(e);
       if (target !== undefined) copies.push({ type, name: id?.name ?? target.name, target });
@@ -612,6 +639,44 @@ export function previewHomebrewImport(input: HomebrewPreviewInput): HomebrewPrev
   const enabledSources = new Set(enabled.flatMap((f) => f.sourceIds.map(lower)));
   const disabledSources = new Set(disabled.flatMap((f) => f.sourceIds.map(lower)));
   const officialKnown = official?.complete === true;
+  const pack = read?.replaces === undefined ? read : withBelow(read, read.replaces);
+
+  /**
+   * What each entry a pack replaces takes the place of here, as the merge
+   * finds it: the first of its identity in the type's list, the book's, else
+   * the first collection's that is on (`placeChanges`, `normalize.ts`).
+   */
+  function withBelow(review: PackReview, replaces: PackReplaces): PackReview {
+    const inBooks = (r: PackReplacement) => {
+      const type = r.type as EntityType;
+      const known = official?.identities?.get(type);
+      if (known !== undefined) return known.has(r.identity);
+      // An index built without identities: `name|source` is the identity of a type without a parent.
+      return !Object.hasOwn(ENTRY_PARENT_KEYS, type) && official?.uids.get(type)?.has(r.identity);
+    };
+    const belowOf = (r: PackReplacement): ReplacedBelow | undefined => {
+      if (!r.inPack) return undefined;
+      if (inBooks(r) === true) return { kind: 'book' };
+      for (const f of enabled) {
+        // The player's changes are changes too, not what a pack's stands on.
+        if (f.role === 'changes') continue;
+        // Nor is what another pack here replaces: the merge takes it out of content.
+        const itsOwn = packReplaces(f.json)?.entries.filter((o) => o.type === r.type);
+        const content = entitiesOf(f.json, r.type).filter((e) => {
+          const id = itsOwn?.length ? changeIdentity(r.type, e) : undefined;
+          return id === undefined || !itsOwn?.some((o) => o.identity === id);
+        });
+        if (content.some((e) => identityKey(r.type, e) === r.identity))
+          return { kind: 'collection', fileName: fileLabel(f) };
+      }
+      return { kind: 'missing', complete: officialKnown };
+    };
+    const patches = review.changes.slice(0, review.changes.length - replaces.entries.length);
+    return {
+      ...review,
+      changes: [...patches, ...replaces.entries.map((r) => replacedRow(r, belowOf(r)))],
+    };
+  }
   const statusOf = (sourceId: string): DependencyStatus => {
     const s = lower(sourceId);
     if (official?.sources.has(s) === true) return 'official';
@@ -909,6 +974,174 @@ export interface PackReview {
   problems: string[];
   /** "3 rules, 2 changed entries, 1 moment": the Homebrew page's line for it. */
   holds: string;
+  /**
+   * The entries its `replaces` names, for a pack that has one. Each is also a
+   * row of `changes`, after the patches, so every place that shows a pack
+   * names them one by one.
+   */
+  replaces?: PackReplaces;
+}
+
+/** One entry a rule pack's `replaces` names (ADR-002, D2). */
+export interface PackReplacement {
+  type: string;
+  name: string;
+  source: string;
+  /** Its identity as the registry keys it (`identityKey`), with its parent's. */
+  identity: string;
+  /** How a row names it: "Rage (class feature, XPHB, Barbarian, level 1)". */
+  words: string;
+  /** Whether the pack holds an entry of that identity. Without one it replaces nothing. */
+  inPack: boolean;
+}
+
+/** What a pack's `replaces` names, read as the merge reads it (`replacersOf`, `normalize.ts`). */
+export interface PackReplaces {
+  /** Every entry it names, once each, up to `replacesPerPack`. */
+  entries: PackReplacement[];
+  /** How many it names past `replacesPerPack`: those replace nothing. */
+  over: number;
+  /** How many it names without a type, a name or a source: those replace nothing. */
+  unread: number;
+  /** Its `replaces` is no list, so the merge reads none of it. */
+  notAList?: true;
+}
+
+/** A kind as a replaced entry's row names it. */
+const KIND_WORDS: Readonly<Record<string, string>> = {
+  race: 'species',
+  subrace: 'subrace',
+  optionalfeature: 'optional feature',
+  baseitem: 'equipment',
+  itemGroup: 'item group',
+  magicvariant: 'magic item variant',
+  classFeature: 'class feature',
+  subclassFeature: 'subclass feature',
+  variantrule: 'rule',
+};
+const kindWords = (type: string) => (Object.hasOwn(KIND_WORDS, type) ? KIND_WORDS[type] : type);
+
+/** "Rage (class feature, XPHB, Barbarian, level 1)": what an entry a pack replaces is. */
+function replacedWords(type: string, ref: Record<string, unknown>): string {
+  const parts = [kindWords(type), textOf(own(ref, 'source'))];
+  const parent = (key: string) => {
+    const v = own(ref, key);
+    return v === undefined || v === null || textOf(v) === '' ? undefined : textOf(v);
+  };
+  const of = type === 'subrace' ? parent('raceName') : parent('className');
+  if (of !== undefined) parts.push(of);
+  const sub = type === 'subclassFeature' ? parent('subclassShortName') : undefined;
+  if (sub !== undefined) parts.push(sub);
+  const level = parent('level');
+  if (level !== undefined) parts.push(`level ${level}`);
+  return `${textOf(own(ref, 'name'))} (${parts.join(', ')})`;
+}
+
+/**
+ * The identity an entry of a pack's content stands for when its `replaces`
+ * names it: its own, with what it leaves to its `_copy`, or undefined when
+ * the two disagree, as the merge reads it (`changeIdentity`, `normalize.ts`).
+ */
+function changeIdentity(type: string, change: Entity): string | undefined {
+  const copy = isRecord(change._copy) ? change._copy : undefined;
+  const probe: Entity = {};
+  const parents = Object.hasOwn(ENTRY_PARENT_KEYS, type) ? ENTRY_PARENT_KEYS[type] : [];
+  for (const key of ['name', 'source', ...(parents ?? [])]) {
+    const mine = own(change, key);
+    const its = copy === undefined ? undefined : own(copy, key);
+    if (
+      mine !== undefined &&
+      its !== undefined &&
+      textOf(mine).toLowerCase() !== textOf(its).toLowerCase()
+    ) {
+      return undefined;
+    }
+    const v = mine ?? its;
+    if (v !== undefined) probe[key] = v;
+  }
+  return identityKey(type, probe);
+}
+
+/**
+ * The entries a rule pack's `replaces` names, as the merge reads them: each
+ * must give a type a homebrew file holds, a name and a source (and, for a
+ * subclass or a feature, its parent's fields, or it matches nothing); only the
+ * first `replacesPerPack` are read. Undefined for a file that is no pack, or
+ * a pack with no `replaces`.
+ */
+export function packReplaces(json: unknown): PackReplaces | undefined {
+  const guidance = packGuidance(json);
+  const listed = guidance === undefined ? undefined : own(guidance, 'replaces');
+  if (listed === undefined) return undefined;
+  const list: unknown[] = Array.isArray(listed) ? listed : [];
+  const cap = CAST_GUIDANCE_LIMITS.replacesPerPack;
+  const content = new Map<string, Set<string>>();
+  for (const type of HOMEBREW_ENTITY_KEYS) {
+    const ids = new Set<string>();
+    for (const e of entitiesOf(json, type)) {
+      const id = changeIdentity(type, e);
+      if (id !== undefined) ids.add(id);
+    }
+    if (ids.size > 0) content.set(type, ids);
+  }
+  const seen = new Set<string>();
+  const entries: PackReplacement[] = [];
+  let unread = 0;
+  for (const ref of list.slice(0, cap)) {
+    const type = isRecord(ref) ? own(ref, 'type') : undefined;
+    if (
+      !isRecord(ref) ||
+      typeof type !== 'string' ||
+      !(HOMEBREW_ENTITY_KEYS as readonly string[]).includes(type) ||
+      typeof own(ref, 'name') !== 'string' ||
+      typeof own(ref, 'source') !== 'string'
+    ) {
+      unread += 1;
+      continue;
+    }
+    const identity = identityKey(type, ref);
+    if (seen.has(`${type}:${identity}`)) continue;
+    seen.add(`${type}:${identity}`);
+    entries.push({
+      type,
+      name: textOf(own(ref, 'name')),
+      source: textOf(own(ref, 'source')),
+      identity,
+      words: replacedWords(type, ref),
+      inPack: content.get(type)?.has(identity) === true,
+    });
+  }
+  return {
+    entries,
+    over: Math.max(0, list.length - cap),
+    unread,
+    ...(Array.isArray(listed) ? {} : { notAList: true as const }),
+  };
+}
+
+/** What a pack's version of an entry takes the place of on this device. */
+export type ReplacedBelow =
+  | { kind: 'book' }
+  | { kind: 'collection'; fileName: string }
+  /** Nothing here has it; `complete` says whether all game data was looked in. */
+  | { kind: 'missing'; complete: boolean };
+
+/** One replaced entry's row: what it does, said with what is below it when known. */
+export function replacedRow(r: PackReplacement, below?: ReplacedBelow): PackReviewRow {
+  const forWhom = ', for the characters it applies to';
+  let value: string;
+  if (!r.inPack) value = 'Not in this pack, so it replaces nothing';
+  else if (below === undefined)
+    value = `The pack's own version, in place of the one here${forWhom}`;
+  else if (below.kind === 'book')
+    value = `The pack's own version, in place of the book's${forWhom}`;
+  else if (below.kind === 'collection')
+    value = `The pack's own version, in place of the one in "${below.fileName}"${forWhom}`;
+  else if (below.complete) value = 'Nothing here has it, so it replaces nothing until it is here';
+  else
+    value =
+      "Not found yet: not all game data is on this device, so it may replace the book's once the rest is";
+  return { key: r.words, value };
 }
 
 const plural = (count: number, one: string, many = `${one}s`) =>
@@ -1069,6 +1302,27 @@ export function packReview(json: unknown): PackReview | undefined {
     .filter(isRecord)
     .filter((p) => text(own(p, 'target')) !== '')
     .map((p) => ({ key: targetWords(text(own(p, 'target'))), value: changeWords(p) }));
+  // Every entry it names to replace, one row each after the patches, so the
+  // player sees each before the pack lands (ADR-002, D2).
+  const replaces = packReplaces(json);
+  if (replaces !== undefined) {
+    for (const r of replaces.entries) changes.push(replacedRow(r));
+    if (replaces.over > 0) {
+      problems.add(
+        `It names ${replaces.over} more entries to replace than a pack may (${CAST_GUIDANCE_LIMITS.replacesPerPack}), so those replace nothing`,
+      );
+    }
+    if (replaces.notAList === true) {
+      problems.add('Its "replaces" is not a list of entries, so it replaces nothing');
+    }
+    if (replaces.unread > 0) {
+      problems.add(
+        replaces.unread === 1
+          ? 'One entry it names to replace has no type, name or source, so it replaces nothing'
+          : `${replaces.unread} entries it names to replace have no type, name or source, so they replace nothing`,
+      );
+    }
+  }
   const moments: PackReviewRow[] = [];
   for (const m of listOf(guidance, 'moments')) {
     if (!isRecord(m)) continue;
@@ -1107,6 +1361,7 @@ export function packReview(json: unknown): PackReview | undefined {
     moments,
     problems: [...problems],
     holds: holds.length === 0 ? 'Nothing the app reads yet' : holds.join(', '),
+    ...(replaces === undefined ? {} : { replaces }),
   };
 }
 
