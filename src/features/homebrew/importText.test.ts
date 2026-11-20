@@ -33,7 +33,10 @@ import {
   ImportCancelledError,
   NothingToImportError,
   parseImportFile,
+  parseImportPaste,
   parseImportText,
+  pastedFileName,
+  pastedKind,
 } from './importText';
 
 vi.stubGlobal('Worker', InlineImportWorker);
@@ -283,5 +286,39 @@ describe('parseImportFile', () => {
     await expect(
       parseImportFile(new File(['<elements><element/></elements>'], 'aurora.xml')),
     ).rejects.toMatchObject({ name: 'UnsupportedFormatError' });
+  });
+});
+
+describe('pasted text', () => {
+  it('is a file when it starts as JSON or XML, and words otherwise', () => {
+    expect(pastedKind('  \n ')).toBe('empty');
+    expect(pastedKind('\n  { "spell": [] }')).toBe('file');
+    expect(pastedKind('<?xml version="1.0"?><compendium/>')).toBe('file');
+    expect(pastedKind('Riptide\n1st-level conjuration')).toBe('words');
+    expect(pastedKind('[1, 2]')).toBe('words');
+  });
+
+  it('is named from what it is, never the time, so the same file keeps its name', () => {
+    const named = (sources: unknown) => pastedFileName({ _meta: { sources } });
+    expect(named([{ json: 'TWG', full: 'Tidewater Grimoire' }])).toBe('Tidewater Grimoire.json');
+    expect(named([{ json: 'TWG', full: '  ' }])).toBe('TWG.json');
+    expect(named([{ json: 'A', full: 'Spells: "Big" / Small' }])).toBe('Spells Big Small.json');
+    expect(named([{ full: 'x'.repeat(200) }])).toBe(`${'x'.repeat(80)}.json`);
+    expect(named([])).toBe('Pasted homebrew.json');
+    expect(pastedFileName('nope')).toBe('Pasted homebrew.json');
+    expect(pastedFileName({ _meta: { sources: [{ json: '???' }] } })).toBe('Pasted homebrew.json');
+  });
+
+  it('reads as a file does, held to the JSON limit, with its name and size', async () => {
+    const text = JSON.stringify({
+      _meta: { sources: [{ json: 'TWG', full: 'Tidewater Grimoire' }] },
+    });
+    await expect(parseImportPaste(text)).resolves.toMatchObject({
+      fileName: 'Tidewater Grimoire.json',
+      bytes: text.length,
+    });
+    const over = `{"a":"${'x'.repeat(IMPORT_LIMITS.maxImportBytes)}"}`;
+    await expect(parseImportPaste(over)).rejects.toBeInstanceOf(ResponseTooLargeError);
+    await expect(parseImportPaste('{ nope')).rejects.toBeInstanceOf(SyntaxError);
   });
 });

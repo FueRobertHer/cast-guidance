@@ -90,6 +90,23 @@ export interface PreparedImport {
   books?: HomebrewFileRow[];
 }
 
+/**
+ * What an import would store, writing nothing, the same whichever way the
+ * file came in (a file, a link or pasted text). A file converted from another
+ * app is a compendium of books, so it is stored a book at a time; a homebrew
+ * JSON file is stored whole, as its author made it.
+ */
+export async function prepareHomebrewImport(
+  raw: unknown,
+  fileName: string,
+  conversion: ConversionReport | undefined,
+  url?: string,
+): Promise<PreparedImport> {
+  if (conversion === undefined) return { row: await homebrewRepo.prepare(raw, fileName, url) };
+  const { whole, books } = await homebrewRepo.prepareBooks(raw, fileName, url);
+  return { row: whole, books };
+}
+
 /** A count of books, in words. */
 const booksText = (n: number) => `${n} ${n === 1 ? 'book' : 'books'}`;
 
@@ -450,8 +467,11 @@ export default function HomebrewImportPreview({
   onImport,
   onCancel,
   onKeepExisting,
+  listedAt = 'in your list below',
 }: {
   preview: HomebrewPreview;
+  /** Where the page lists the files here, for "It is … Turn it on there". */
+  listedAt?: string;
   /** Set for a file converted from another app: what carried over. */
   conversion?: ConversionReport;
   /**
@@ -528,6 +548,8 @@ export default function HomebrewImportPreview({
       ? []
       : clashLines(packsThen, packIn.id, true, appRules, update !== undefined);
 
+  // The order board 7 reads in: what it is and adds, what shares a name with
+  // the books, what needs a look, who it touches, then the rest.
   return (
     <ImportPreviewDialog
       title={
@@ -551,29 +573,35 @@ export default function HomebrewImportPreview({
       onDismiss={dup !== undefined ? onKeepExisting : onCancel}
       actions={actions}
     >
-      {pack !== undefined && (
-        <>
-          {clashes.length > 0 && (
-            <PreviewList>
-              {clashes.map((c) => (
-                <StatusItem key={c} tone="warn">
-                  {c}
+      {dup !== undefined && (
+        <PreviewSection heading="Already on this device">
+          <PreviewList>
+            <StatusItem tone="good" status="Already imported">
+              on {new Date(dup.addedAt).toLocaleDateString()}. This is the same file, so importing
+              it again would add nothing.
+            </StatusItem>
+            {!dup.enabled &&
+              (books !== undefined && dup.booksOff !== undefined && dup.booksOff < books.length ? (
+                <StatusItem
+                  tone="warn"
+                  status={`${dup.booksOff} of ${booksText(books.length)} turned off.`}
+                >
+                  They are {listedAt}. Turn them on there to use them.
+                </StatusItem>
+              ) : (
+                <StatusItem tone="warn" status="Turned off.">
+                  It is {listedAt}. Turn it on there to use it.
                 </StatusItem>
               ))}
-            </PreviewList>
-          )}
-          <PackDetails review={pack} />
-          {asks && <ApplyTo value={applyTo} onChange={setApplyTo} />}
-          {asks && !appliesToAnyone(applyTo) && (
-            <p className="text-ink-muted">Choose a character, or Every character, to add it.</p>
-          )}
-        </>
+          </PreviewList>
+        </PreviewSection>
       )}
+
       {update !== undefined && (
         <PreviewSection heading="Updates a collection here">
           <PreviewList>
             <StatusItem tone="good" status={`"${update.fileName}"`}>
-              {`imported on ${new Date(update.addedAt).toLocaleDateString()}. This version takes its place and keeps its switch, its place in the order${
+              {`imported on ${new Date(update.addedAt).toLocaleDateString()}. This copy is different, so it takes its place and keeps its switch, its place in the order${
                 kept === undefined ? '' : ' and who it applies to'
               }.`}
             </StatusItem>
@@ -586,7 +614,7 @@ export default function HomebrewImportPreview({
             )}
             {!update.enabled && (
               <StatusItem tone="warn" status="Turned off.">
-                It stays off. Turn it on in your list below to use it.
+                It stays off. Turn it on {listedAt} to use it.
               </StatusItem>
             )}
           </PreviewList>
@@ -614,8 +642,6 @@ export default function HomebrewImportPreview({
         ]}
       />
 
-      {conversion !== undefined && dup === undefined && <ConversionSection report={conversion} />}
-
       {picking && dup === undefined && (
         <>
           <BookPicker books={books} chosen={chosen} onChange={setChosen} />
@@ -627,67 +653,21 @@ export default function HomebrewImportPreview({
         </>
       )}
 
-      {dup !== undefined && (
-        <PreviewSection heading="Already on this device">
-          <PreviewList>
-            <StatusItem tone="good" status="Already imported">
-              on {new Date(dup.addedAt).toLocaleDateString()}. This is the same file, so importing
-              it again would add nothing.
-            </StatusItem>
-            {!dup.enabled &&
-              (books !== undefined && dup.booksOff !== undefined && dup.booksOff < books.length ? (
-                <StatusItem
-                  tone="warn"
-                  status={`${dup.booksOff} of ${booksText(books.length)} turned off.`}
-                >
-                  They are in your list below. Turn them on there to use them.
-                </StatusItem>
-              ) : (
-                <StatusItem tone="warn" status="Turned off.">
-                  It is in your list below. Turn it on there to use it.
+      {/* A pack's rules and changes are what it adds, each entry it replaces
+          named one by one (ADR-002, D2) before anything lands. */}
+      {pack !== undefined && (
+        <>
+          {clashes.length > 0 && (
+            <PreviewList>
+              {clashes.map((c) => (
+                <StatusItem key={c} tone="warn">
+                  {c}
                 </StatusItem>
               ))}
-          </PreviewList>
-        </PreviewSection>
-      )}
-
-      {p.replacesOldImport !== undefined && dup === undefined && (
-        <PreviewSection heading="Replaces an earlier import">
-          <PreviewList>
-            {p.replacesOldImport.map((f) => (
-              <StatusItem key={f.id} tone="info" status={`"${f.fileName}"`}>
-                {`Imported before as one file${
-                  f.sourceIds.length === 1
-                    ? `, under the source ${f.sourceIds[0]}`
-                    : ` of ${booksText(f.sourceIds.length)}`
-                }. Importing replaces it, so each entry shows once, under its book.`}
-              </StatusItem>
-            ))}
-            {(p.oldImportCharacters ?? []).map((c) => (
-              <StatusItem key={c.id} tone="warn" status={c.name}>
-                Uses entries from that earlier import. They show as missing until picked again from
-                their books.
-              </StatusItem>
-            ))}
-          </PreviewList>
-        </PreviewSection>
-      )}
-
-      {p.dependencies.length > 0 && (
-        <PreviewSection heading="Depends on">
-          <PreviewList>
-            {p.dependencies.map((d) => (
-              <StatusItem
-                key={d.sourceId}
-                tone={dependencyLine(d.status, p.officialCoverage).tone}
-                status={d.sourceId}
-              >
-                {dependencyLine(d.status, p.officialCoverage).text}
-                {d.via === 'copy' && ' Entries in this file copy from it.'}
-              </StatusItem>
-            ))}
-          </PreviewList>
-        </PreviewSection>
+            </PreviewList>
+          )}
+          <PackDetails review={pack} />
+        </>
       )}
 
       {hasClashes && (
@@ -714,18 +694,8 @@ export default function HomebrewImportPreview({
         </PreviewSection>
       )}
 
-      {p.disabledClashes.length > 0 && (
-        <PreviewSection heading="Clashes with turned-off files">
-          <PreviewList>
-            {p.disabledClashes.map((c) => (
-              <StatusItem key={`${c.type}:${c.name}|${c.source}:${c.against.id}`} tone="info">
-                {c.name} ({c.source}) is also in "{c.against.fileName}", which is turned off.
-              </StatusItem>
-            ))}
-          </PreviewList>
-          {more(p.disabledClashTotal, p.disabledClashes.length, 'clashes')}
-        </PreviewSection>
-      )}
+      {/* Needs a look: what will not count in full once it is in. */}
+      {conversion !== undefined && dup === undefined && <ConversionSection report={conversion} />}
 
       {p.copyIssues.length > 0 && (
         <PreviewSection heading="Copies that will not load in full">
@@ -741,6 +711,77 @@ export default function HomebrewImportPreview({
         </PreviewSection>
       )}
 
+      {p.dependencies.length > 0 && (
+        <PreviewSection heading="Depends on">
+          <PreviewList>
+            {p.dependencies.map((d) => (
+              <StatusItem
+                key={d.sourceId}
+                tone={dependencyLine(d.status, p.officialCoverage).tone}
+                status={d.sourceId}
+              >
+                {dependencyLine(d.status, p.officialCoverage).text}
+                {d.via === 'copy' && ' Entries in this file copy from it.'}
+              </StatusItem>
+            ))}
+          </PreviewList>
+        </PreviewSection>
+      )}
+
+      {/* Who it touches. */}
+      {p.affectedCharacters.length > 0 && (
+        <PreviewSection heading="Characters that use its sources">
+          <p className="text-ink-muted">What these sheets show can change after the import.</p>
+          <PreviewList>
+            {p.affectedCharacters.map((c) => (
+              <StatusItem key={c.id} tone="info">
+                {c.name}
+              </StatusItem>
+            ))}
+          </PreviewList>
+        </PreviewSection>
+      )}
+
+      {p.replacesOldImport !== undefined && dup === undefined && (
+        <PreviewSection heading="Replaces an earlier import">
+          <PreviewList>
+            {p.replacesOldImport.map((f) => (
+              <StatusItem key={f.id} tone="info" status={`"${f.fileName}"`}>
+                {`Imported before as one file${
+                  f.sourceIds.length === 1
+                    ? `, under the source ${f.sourceIds[0]}`
+                    : ` of ${booksText(f.sourceIds.length)}`
+                }. Importing replaces it, so each entry shows once, under its book.`}
+              </StatusItem>
+            ))}
+            {(p.oldImportCharacters ?? []).map((c) => (
+              <StatusItem key={c.id} tone="warn" status={c.name}>
+                Uses entries from that earlier import. They show as missing until picked again from
+                their books.
+              </StatusItem>
+            ))}
+          </PreviewList>
+        </PreviewSection>
+      )}
+
+      {pack !== undefined && asks && <ApplyTo value={applyTo} onChange={setApplyTo} />}
+      {pack !== undefined && asks && !appliesToAnyone(applyTo) && (
+        <p className="text-ink-muted">Choose a character, or Every character, to add it.</p>
+      )}
+
+      {p.disabledClashes.length > 0 && (
+        <PreviewSection heading="Clashes with turned-off files">
+          <PreviewList>
+            {p.disabledClashes.map((c) => (
+              <StatusItem key={`${c.type}:${c.name}|${c.source}:${c.against.id}`} tone="info">
+                {c.name} ({c.source}) is also in "{c.against.fileName}", which is turned off.
+              </StatusItem>
+            ))}
+          </PreviewList>
+          {more(p.disabledClashTotal, p.disabledClashes.length, 'clashes')}
+        </PreviewSection>
+      )}
+
       {p.satisfiesCopies.length > 0 && (
         <PreviewSection heading="Copies this file completes">
           <PreviewList>
@@ -749,19 +790,6 @@ export default function HomebrewImportPreview({
                 In "{s.file.fileName}": {s.entries.map((e) => e.name).join(', ')}{' '}
                 {s.entries.length === 1 ? 'copies' : 'copy'} from this file and will load in full
                 after the import.
-              </StatusItem>
-            ))}
-          </PreviewList>
-        </PreviewSection>
-      )}
-
-      {p.affectedCharacters.length > 0 && (
-        <PreviewSection heading="Characters that use its sources">
-          <p className="text-ink-muted">What these sheets show can change after the import.</p>
-          <PreviewList>
-            {p.affectedCharacters.map((c) => (
-              <StatusItem key={c.id} tone="info">
-                {c.name}
               </StatusItem>
             ))}
           </PreviewList>

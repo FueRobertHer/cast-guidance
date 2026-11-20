@@ -1,10 +1,98 @@
 # Import formats
 
-The Homebrew page imports 5etools homebrew JSON, and converts files from other
-apps into that same JSON as they come in. The app stores and reads only the
-5etools shape, so a converted file is homebrew like any other: it can be turned
-off, deleted and downloaded. (Source of truth: `src/convert/`,
-`src/features/homebrew/importText.ts`, `src/features/homebrew/convertImport.ts`.)
+The Workshop's Import sheet and the Homebrew page import 5etools homebrew JSON,
+and convert files from other apps into that same JSON as they come in. The app
+stores and reads only the 5etools shape, so a converted file is homebrew like
+any other: it can be turned off, deleted and downloaded. (Source of truth:
+`src/convert/`, `src/features/homebrew/importText.ts`,
+`src/features/homebrew/convertImport.ts`, `src/features/workshop/ImportSheet.tsx`.)
+
+## Three ways in, one collection
+
+The Workshop's Import sheet (ADR-002 U7) takes a file, a link or pasted text,
+reads each into the same preview, and lands it through the same path
+(`homebrewRepo.commit`). What it lands is a collection, shown under
+Collections.
+
+- **A file** is read as below. A compendium may be far larger than a JSON file,
+  since the converter reads it as it streams.
+- **A link** is fetched over https from the hosts the app may read
+  (`HOMEBREW_FETCH_ORIGINS`, checked by `checkHomebrewUrl` in
+  `homebrewUrl.ts`; a GitHub file page is read as its raw file). Any other
+  link is refused before a request is made, with "Bring it in as a file" to
+  save it and pick it.
+- **Pasted text** that starts with `{`, or reads as XML, is a file, held to
+  the JSON file limit. It is stored under a name made from what it is: its
+  first source's title (`Tidewater Grimoire.json`), else that source's id,
+  else `Pasted homebrew.json`, and a compendium as `Pasted compendium.xml`. The
+  name never holds the time, so pasting a file again names it the same.
+  Any other text is one entry's words: it opens the Workshop's editor for the
+  kind picked ("These words are"), seeded with the text, and saves nothing on
+  its own.
+
+### When an import updates a collection
+
+The same content is the same file whichever way it comes: the stored row's
+id is a hash of the content alone, so the preview says it is already here. A
+changed copy updates the collection it is a copy of, in place, keeping its
+switch, its place in the merge order and its pack settings, when it has that
+collection's key (`collectionKey`, `src/db/homebrewOrder.ts`; ADR-002 D4):
+
+| The file | Its key |
+| --- | --- |
+| Made in the app, stamped with `_meta.castGuidanceCollection` | `made:<that id>` |
+| One book of a compendium stored a book at a time | `book:<source>\|<file name>` |
+| Brought in by a link | `url:<the link>` |
+| Any other file | `file:<first source>\|<file name>` |
+
+So a changed copy updates when it comes the way the first one did: by the same
+link, or as a file (or pasted text) with the same first source and file name.
+A changed copy brought in another way lands beside the first one, since a link
+and a file are keyed apart.
+
+`_meta.castGuidanceCollection` is a string (a uuid) the app writes into the
+`_meta` of a collection it makes, and keeps through every save, Download and
+character export. A file made anywhere else need not have one. Only a short
+(at most 64 characters), non-blank string is read.
+
+## What a rule pack replaces
+
+A rule pack (`_meta.castGuidance`, see `docs/rule-sets.md`) may list entries
+its own versions take the place of, in `replaces` (ADR-002 D2):
+
+```json
+"_meta": {
+  "sources": [{ "json": "TBL", "full": "Our Table" }],
+  "castGuidance": {
+    "v": 1,
+    "replaces": [
+      { "type": "spell", "name": "Aid", "source": "XPHB" },
+      { "type": "classFeature", "name": "Rage", "source": "XPHB",
+        "className": "Barbarian", "classSource": "XPHB", "level": 1 }
+    ]
+  }
+},
+"spell": [{ "name": "Aid", "source": "XPHB",
+            "_copy": { "name": "Aid", "source": "XPHB", "_mod": { "…": "…" } } }]
+```
+
+- Each entry gives a type a homebrew file holds, a `name` and a `source`, and
+  for a subrace, subclass or feature its parent's fields
+  (`ENTRY_PARENT_KEYS`). One without them replaces nothing. At most 500 are
+  read.
+- The pack's content must hold an entry of exactly that identity, written whole
+  or as changes with a `_copy` of itself. That entry is no content of its own:
+  it is laid over the entry below it, the book's, else the first collection's
+  that is on, for the characters the pack applies to.
+- The import preview names each one before anything lands, with what it takes
+  the place of here, and says when it is not in the pack, or nothing here has
+  it yet.
+
+A change also carries `castGuidance.basedOnFields`: for each field it changes,
+a fingerprint of that field as the entry below had it when the change was made
+(at most 64 are read). When the entry below moves (a new release, an updated
+collection), a field whose fingerprint no longer matches is marked Needs a
+look, and the change stays on top.
 
 ## How a file is recognized
 

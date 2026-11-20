@@ -115,8 +115,9 @@ describe('the Workshop home', () => {
     expect(screen.getByRole('link', { name: 'Make your own' }).getAttribute('href')).toBe(
       '/workshop/new',
     );
+    // The Import sheet opens over the home, by its address.
     expect(screen.getByRole('link', { name: 'Import a file or a link' }).getAttribute('href')).toBe(
-      '/homebrew',
+      '/workshop?import=',
     );
     const nav = screen.getByRole('navigation', { name: 'Main' });
     expect(within(nav).getByRole('link', { name: 'Workshop' }).getAttribute('aria-current')).toBe(
@@ -193,7 +194,112 @@ describe('the Workshop home', () => {
     expect(screen.getByRole('link', { name: 'Import or manage files' }).getAttribute('href')).toBe(
       '/homebrew',
     );
+    expect(screen.getByRole('link', { name: 'Import a file or a link' }).getAttribute('href')).toBe(
+      '/workshop?shelf=collections&import=',
+    );
     expect(namelessControls()).toEqual([]);
+  });
+
+  it('opens the Import sheet from a shelf and closes it back to the same shelf', async () => {
+    const router = await visit('/workshop?shelf=collections');
+    fireEvent.click(
+      await screen.findByRole('link', { name: 'Import a file or a link' }, { timeout: WAIT }),
+    );
+    const sheet = await screen.findByRole('dialog', { name: 'Import' }, { timeout: WAIT });
+    expect(
+      within(within(sheet).getByRole('group', { name: 'Bring in' }))
+        .getAllByRole('button')
+        .map((b) => b.textContent),
+    ).toEqual(['A file', 'A link', 'Text']);
+    expect(namelessControls()).toEqual([]);
+    fireEvent.keyDown(sheet, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Import' })).toBeNull(), {
+      timeout: WAIT,
+    });
+    expect(router.state.location.search).toBe('?shelf=collections');
+    // The sheet has no trigger to hand focus back to: the home gives it to the way in.
+    await waitFor(() =>
+      expect(document.activeElement).toBe(
+        screen.getByRole('link', { name: 'Import a file or a link' }),
+      ),
+    );
+  });
+
+  it('stays on the shelf when the preview is canceled, and says nothing was added', async () => {
+    const router = await visit('/workshop');
+    fireEvent.click(
+      await screen.findByRole('link', { name: 'Import a file or a link' }, { timeout: WAIT }),
+    );
+    const sheet = await screen.findByRole('dialog', { name: 'Import' }, { timeout: WAIT });
+    fireEvent.click(within(sheet).getByRole('button', { name: 'Text' }));
+    fireEvent.change(within(sheet).getByRole('textbox', { name: /^Paste a homebrew file/ }), {
+      target: {
+        value: JSON.stringify({
+          _meta: { sources: [{ json: 'TWG', full: 'Tidewater Grimoire' }] },
+          spell: [{ name: 'Riptide', source: 'TWG', level: 1, entries: ['Pull.'] }],
+        }),
+      },
+    });
+    fireEvent.click(within(sheet).getByRole('button', { name: 'Read it' }));
+    const preview = await screen.findByRole(
+      'dialog',
+      { name: 'Import "Tidewater Grimoire.json"?' },
+      { timeout: WAIT },
+    );
+    fireEvent.click(within(preview).getByRole('button', { name: 'Cancel' }));
+    expect(
+      await screen.findByText('Import canceled. Nothing was added.', {}, { timeout: WAIT }),
+    ).toBeTruthy();
+    expect(router.state.location.search).toBe('');
+    expect(screen.getByRole('button', { name: 'Yours' }).getAttribute('aria-pressed')).toBe('true');
+  });
+
+  it('lands a pasted file as a collection, says so, and shows it under Collections', async () => {
+    const router = await visit('/workshop');
+    fireEvent.click(
+      await screen.findByRole('link', { name: 'Import a file or a link' }, { timeout: WAIT }),
+    );
+    const sheet = await screen.findByRole('dialog', { name: 'Import' }, { timeout: WAIT });
+    fireEvent.click(within(sheet).getByRole('button', { name: 'Text' }));
+    fireEvent.change(within(sheet).getByRole('textbox', { name: /^Paste a homebrew file/ }), {
+      target: {
+        value: JSON.stringify({
+          _meta: { sources: [{ json: 'TWG', full: 'Tidewater Grimoire' }] },
+          spell: [{ name: 'Riptide', source: 'TWG', level: 1, entries: ['Pull.'] }],
+        }),
+      },
+    });
+    fireEvent.click(within(sheet).getByRole('button', { name: 'Read it' }));
+    const preview = await screen.findByRole(
+      'dialog',
+      { name: 'Import "Tidewater Grimoire.json"?' },
+      { timeout: WAIT },
+    );
+    fireEvent.click(within(preview).getByRole('button', { name: 'Import' }));
+    expect(
+      await screen.findByText(
+        'Imported "Tidewater Grimoire.json" (1 spell)',
+        {},
+        { timeout: WAIT },
+      ),
+    ).toBeTruthy();
+    expect(router.state.location.search).toBe('?shelf=collections');
+    expect(
+      await screen.findByRole('link', { name: /^Tidewater Grimoire\.json/ }, { timeout: WAIT }),
+    ).toBeTruthy();
+    // From the empty Yours shelf to Collections: focus goes to the way in there.
+    await waitFor(() =>
+      expect(document.activeElement).toBe(
+        screen.getByRole('link', { name: 'Import a file or a link' }),
+      ),
+    );
+    await waitFor(
+      () =>
+        expect(getAnnouncerState().messages.map((m) => m.text)).toContain(
+          'Imported "Tidewater Grimoire.json" (1 spell)',
+        ),
+      { timeout: WAIT },
+    );
   });
 
   it('lists the table rules by the value each plays by, opening the Rules page', async () => {
