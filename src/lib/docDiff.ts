@@ -433,7 +433,7 @@ function switchState(raw: unknown): (source: string) => 'on' | 'off' | 'as this 
  * books off"). Read as the pickers read them, so junk or a respelling the
  * reader canonicalizes is no change; `undefined` when nothing moved.
  */
-function switchesLine(from: unknown, to: unknown): string | undefined {
+export function switchesLine(from: unknown, to: unknown): string | undefined {
   const before = switchState(from);
   const after = switchState(to);
   const a = characterSourceSwitches(from);

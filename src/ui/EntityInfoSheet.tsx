@@ -1,12 +1,14 @@
 import { BookOpen } from 'lucide-react';
-import { type ReactNode, useState } from 'react';
+import { type ReactNode, useContext, useState } from 'react';
 import type { Entity } from '@/data5e/copyMod';
 import { EntriesView } from '@/data5e/entries/renderEntries';
 import { useRegistry } from '@/data5e/hooks';
 import type { ChangedEntry, EntityRegistry } from '@/data5e/normalize';
+import type { ViewCharacter } from '@/data5e/registryView';
 import { sourceName } from '@/data5e/sourceNames';
 import { RULE_PACK_TYPE } from '@/engine/castGuidance';
 import { headerFacts } from '@/features/library/fmt';
+import { RegistryViewContext } from '@/stores/registryViewContext';
 import { Badge } from './Badge';
 import { Button } from './Button';
 import { Sheet, SheetStandIn, useSheetOpenOnMount } from './sheet';
@@ -28,9 +30,23 @@ export function changeIn(
     : undefined;
 }
 
-/** Who gives the version this character plays: the top change over it. */
-function changedBy(registry: EntityRegistry, record: ChangedEntry): string {
-  const top = record.layers[record.layers.length - 1];
+/**
+ * Who gives the version this sheet shows: the top change applied to it. The
+ * shared registry lists a pack applied to some characters among the layers
+ * without applying it (E3); a character's view keeps only the layers that
+ * reach that character, and applies each (E4).
+ */
+export function changedBy(
+  registry: EntityRegistry,
+  record: ChangedEntry,
+  character?: Pick<ViewCharacter, 'id'>,
+): string {
+  const applied = record.layers.filter(
+    (l) =>
+      l.shared ||
+      (character !== undefined && l.from.reach?.characters?.includes(character.id) === true),
+  );
+  const top = applied[applied.length - 1];
   if (top === undefined || top.from.kind === 'changes') return 'Changes to the books';
   const source = top.from.source.toLowerCase();
   const pack = registry
@@ -69,8 +85,10 @@ export function ChangedVersions({
   record: ChangedEntry;
   book: boolean;
   same?: boolean;
-  onFlip: () => void;
+  /** Absent where the sheet shows text its caller wrote, which has no book's version here. */
+  onFlip?: () => void;
 }) {
+  const character = useContext(RegistryViewContext);
   return (
     <div className="mb-3 flex shrink-0 flex-col items-start gap-2">
       <p aria-live="polite" className="rounded-control bg-surface-raised px-3 py-2.5 text-caption">
@@ -81,16 +99,18 @@ export function ChangedVersions({
           </>
         ) : (
           <>
-            <strong>Your table&apos;s version,</strong> from {changedBy(registry, record)}. The
-            sheet counts this one.
+            <strong>Your table&apos;s version,</strong> from{' '}
+            {changedBy(registry, record, character)}. The sheet counts this one.
           </>
         )}
         {same && ' The words are the same: the change is in what it does on the sheet.'}
       </p>
-      <Button variant="outline" size="sm" onClick={onFlip}>
-        <BookOpen size={16} aria-hidden />
-        {book ? 'Show your table’s version' : 'Show the book’s version'}
-      </Button>
+      {onFlip !== undefined && (
+        <Button variant="outline" size="sm" onClick={onFlip}>
+          <BookOpen size={16} aria-hidden />
+          {book ? 'Show your table’s version' : 'Show the book’s version'}
+        </Button>
+      )}
     </div>
   );
 }
@@ -136,16 +156,24 @@ function EntityInfoSheetContent({
   const record = changeIn(registry, entity);
   const [book, setBook] = useState(false);
   // The book's version whole, facts and all, while the player asks for it.
-  const shown = book && record !== undefined ? record.base : entity;
+  // Text the caller wrote (a subclass's, from its features) has no book's
+  // version here, so that sheet offers none.
+  const flips = record !== undefined && entriesOverride === undefined;
+  const shown = book && flips ? record.base : entity;
   const facts = headerFacts(type, shown);
   const entries = entriesOverride ?? shown.entries;
   const hasEntries = Array.isArray(entries) && entries.length > 0;
 
   // Mounted by the press that opens it; see `useSheetOpenOnMount`.
   const [open, setOpen] = useSheetOpenOnMount();
+  // Opened again, the sheet shows the version the sheet counts.
+  const onOpenChange = (next: boolean) => {
+    setOpen(next);
+    if (!next) setBook(false);
+  };
 
   return (
-    <Sheet.Root open={open} onOpenChange={setOpen}>
+    <Sheet.Root open={open} onOpenChange={onOpenChange}>
       <Sheet.Trigger asChild>{trigger}</Sheet.Trigger>
       <Sheet.Portal>
         <Sheet.Scrim />
@@ -162,8 +190,8 @@ function EntityInfoSheetContent({
               registry={registry}
               record={record}
               book={book}
-              same={sameWords(record.base.entries, entity.entries)}
-              onFlip={() => setBook((b) => !b)}
+              same={flips && sameWords(record.base.entries, entity.entries)}
+              onFlip={flips ? () => setBook((b) => !b) : undefined}
             />
           )}
           <div className="min-h-0 flex-1 overflow-y-auto">

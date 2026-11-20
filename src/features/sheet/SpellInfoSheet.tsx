@@ -104,8 +104,14 @@ function SpellInfoSheetContent({
   const facts = shown !== undefined ? headerFacts('spell', shown) : [];
   const higher = shown?.entriesHigherLevel;
 
+  // Opened again, the sheet shows the version the sheet counts.
+  const onOpenChange = (next: boolean) => {
+    setOpen(next);
+    if (!next) setBook(false);
+  };
+
   return (
-    <Sheet.Root open={open} onOpenChange={setOpen}>
+    <Sheet.Root open={open} onOpenChange={onOpenChange}>
       <Sheet.Trigger asChild>{trigger}</Sheet.Trigger>
       <Sheet.Portal>
         <Sheet.Scrim />

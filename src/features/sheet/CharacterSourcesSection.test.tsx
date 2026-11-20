@@ -253,7 +253,7 @@ describe("CharacterSourcesSection with the character's collection switches", () 
     expect(screen.getByText(/Twilight Domain/)).toBeTruthy();
     expect(
       screen.getByText(
-        'These stay. The list and the switches under Content only narrow what you pick next.',
+        'These stay. The list only narrows what you pick next; Content says what each switch there changes.',
       ),
     ).toBeTruthy();
     expect(screen.queryByText('These stay. The list only narrows what you pick next.')).toBeNull();

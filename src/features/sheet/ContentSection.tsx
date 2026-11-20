@@ -15,6 +15,7 @@ import {
   switchedTo,
 } from '@/features/workshop/collectionSwitches';
 import { BOOKS_PATH, type Collection, collectionsOf } from '@/features/workshop/collections';
+import { switchesLine } from '@/lib/docDiff';
 import type { DocUpdater } from '@/stores/characterSession';
 import { Button, buttonClass } from '@/ui/Button';
 import { Chip } from '@/ui/Chip';
@@ -79,7 +80,7 @@ export function ContentSection({
         <p className="text-caption text-ink-muted">
           What {doc.name}&apos;s pickers offer and {doc.name}&apos;s sheet counts, over this
           device&apos;s choice. Off for {doc.name}, a collection leaves {doc.name}&apos;s pickers;
-          what is already on the sheet keeps counting.
+          what is already on the sheet keeps counting, unless this device has it off too.
         </p>
         {/* Read only while open, as the Sources checklist is. */}
         {open && <ContentBody doc={doc} update={update} registry={registry} />}
@@ -126,17 +127,19 @@ function ContentBody({
     ...all.filter((c) => !c.rows.some(isChanges)),
   ];
 
-  const write = (rows: Collection['rows'], on: boolean | 'device') => (d: CharacterDoc) => {
+  const write = (rows: Collection['rows'], on: boolean) => (d: CharacterDoc) => {
     const next = switchedTo(d, rows, device, on);
     // No switches left is no field, so the character keys as before it had any.
     if (next === undefined) delete d.sourceSwitches;
     else d.sourceSwitches = next;
   };
+  // History names a switch as the restore preview does (docDiff): the
+  // history's own labels have no word for one.
+  const named = (next: unknown) => switchesLine(doc.sourceSwitches, next);
   const { on, off } = characterSourceSwitches(doc.sourceSwitches);
-  const switched = [...on, ...off].map((s) => s.toLowerCase());
-  const anySwitched = collections.some((c) =>
-    c.rows.some((r) => r.sourceIds.some((s) => switched.includes(s.toLowerCase()))),
-  );
+  // Any switch, a collection's no longer here too (deleted, or the character
+  // came from another device), which only this clears.
+  const anySwitched = on.length + off.length > 0;
 
   return (
     <>
@@ -156,10 +159,12 @@ function ContentBody({
                 c={c}
                 doc={doc}
                 device={device}
-                // Named for history as the restore preview names it (docDiff):
-                // the history's own labels have no word for a switch.
                 onPress={(next) =>
-                  update(write(c.rows, next), `Collections: ${c.name} ${next ? 'on' : 'off'}`)
+                  update(
+                    write(c.rows, next),
+                    named(switchedTo(doc, c.rows, device, next)) ??
+                      `Collections: ${c.name} ${next ? 'on' : 'off'}`,
+                  )
                 }
               />
             ))}
@@ -172,8 +177,8 @@ function ContentBody({
             className="self-start"
             onClick={() =>
               update((d) => {
-                for (const c of collections) write(c.rows, 'device')(d);
-              }, 'Collections: as this device')
+                delete d.sourceSwitches;
+              }, named(undefined) ?? 'Collections: as this device')
             }
           >
             Every collection as this device
@@ -261,7 +266,10 @@ function CollectionRow({
         <p className="px-4 pb-2 text-caption text-guide">
           {changes
             ? `Off: ${doc.name}'s sheet uses the book's version of each entry it changes.`
-            : `Off: it leaves ${doc.name}'s pickers. What is already on ${doc.name}'s sheet keeps counting.`}
+            : !here
+              ? // Off on the device too, its entries are in no view of hers (E4).
+                `Off: it is off on this device too, so it leaves ${doc.name}'s pickers and ${doc.name}'s sheet.`
+              : `Off: it leaves ${doc.name}'s pickers. What is already on ${doc.name}'s sheet keeps counting.`}
         </p>
       )}
     </li>

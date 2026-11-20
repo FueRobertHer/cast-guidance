@@ -72,6 +72,21 @@ function pathTo(node: unknown, target: unknown, depth = 0): Step[] | undefined {
   return undefined;
 }
 
+/** The first part named `name` under `node`, through `entries` and `items`. */
+function named(node: unknown, name: unknown, depth = 0): Record<string, unknown> | undefined {
+  if (!isNode(node) || depth > 16) return undefined;
+  for (const key of ['entries', 'items'] as const) {
+    const list = node[key];
+    if (!Array.isArray(list)) continue;
+    for (const part of list) {
+      if (isNode(part) && part.name === name) return part;
+      const deeper = named(part, name, depth + 1);
+      if (deeper !== undefined) return deeper;
+    }
+  }
+  return undefined;
+}
+
 function follow(node: unknown, path: readonly Step[]): unknown {
   let at = node;
   for (const [key, i] of path) {
@@ -97,15 +112,17 @@ export function changeHolding(
     if (record.placed === record.base) continue;
     const path = pathTo(record.placed, entries);
     if (path === undefined) continue;
+    if (path.length === 0) return { record, book: record.base.entries ?? [] };
+    // A part (a race's trait): the book's part of its name, wherever the
+    // change moved it; none, and the change added it, so the book's whole
+    // text is what lies below. A part the change left as the book has it is
+    // not what changed, so its card is not marked.
     const mine = follow(record.placed, path);
-    const theirs = follow(record.base, path);
-    // The book's part at the same place, when it is the same part; else the
-    // book's whole text, as a change that adds a part has nothing below it.
-    const same = path.length === 0 || (isNode(mine) && isNode(theirs) && mine.name === theirs.name);
-    return {
-      record,
-      book: same && isNode(theirs) ? (theirs.entries ?? []) : (record.base.entries ?? []),
-    };
+    const theirs =
+      isNode(mine) && mine.name !== undefined ? named(record.base, mine.name) : undefined;
+    if (theirs === undefined) return { record, book: record.base.entries ?? [] };
+    const book = theirs.entries ?? [];
+    return sameWords(book, entries) ? undefined : { record, book };
   }
   return undefined;
 }
@@ -141,9 +158,14 @@ function FeatureInfoSheetContent({ title, subtitle, entries, trigger }: FeatureI
   const registry = useRegistry();
   const change = useMemo(() => changeHolding(registry, entries), [registry, entries]);
   const [book, setBook] = useState(false);
+  // Opened again, the sheet shows the version the sheet counts.
+  const onOpenChange = (next: boolean) => {
+    setOpen(next);
+    if (!next) setBook(false);
+  };
 
   return (
-    <Sheet.Root open={open} onOpenChange={setOpen}>
+    <Sheet.Root open={open} onOpenChange={onOpenChange}>
       <Sheet.Trigger asChild>{trigger}</Sheet.Trigger>
       <Sheet.Portal>
         <Sheet.Scrim />

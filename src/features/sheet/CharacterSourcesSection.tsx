@@ -173,7 +173,7 @@ export function CharacterSourcesSection({
             <p>{outside.map((p) => `${p.label} (${sourceName(p.source)})`).join(', ')}.</p>
             <p className="text-ink-muted">
               {hasSwitches
-                ? 'These stay. The list and the switches under Content only narrow what you pick next.'
+                ? 'These stay. The list only narrows what you pick next; Content says what each switch there changes.'
                 : 'These stay. The list only narrows what you pick next.'}
             </p>
           </div>

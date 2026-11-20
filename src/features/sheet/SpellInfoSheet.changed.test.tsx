@@ -170,6 +170,15 @@ function Probe() {
           trigger={<button type="button">Open the item</button>}
         />
       )}
+      {/* As a subclass's sheet shows its features' text in its own place. */}
+      {rope !== undefined && (
+        <EntityInfoSheet
+          type="item"
+          entity={rope}
+          entriesOverride={['Text the caller wrote.']}
+          trigger={<button type="button">Open the item's own text</button>}
+        />
+      )}
     </>
   );
 }
@@ -248,6 +257,31 @@ describe('the Changed badge and the Content row (ADR-002 U11)', () => {
     expect(within(sheet).getByText(/Your table plays the changed one\./)).toBeTruthy();
     fireEvent.click(within(sheet).getByRole('button', { name: 'Show your table’s version' }));
     expect(within(sheet).getByText(TABLE_AID)).toBeTruthy();
+  });
+
+  it.each([
+    'Open the spell',
+    'Open the feature',
+    'Open the item',
+  ])('opens again on the table’s version after the book’s was shown (%s)', async (trigger) => {
+    await visit('/c/maren');
+    let sheet = await openSheet(trigger);
+    fireEvent.click(within(sheet).getByRole('button', { name: 'Show the book’s version' }));
+    expect(within(sheet).getByRole('button', { name: 'Show your table’s version' })).toBeTruthy();
+    fireEvent.keyDown(sheet, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    sheet = await openSheet(trigger);
+    expect(within(sheet).getByText(/Your table's version/)).toBeTruthy();
+    expect(within(sheet).getByRole('button', { name: 'Show the book’s version' })).toBeTruthy();
+    if (trigger === 'Open the spell') expect(within(sheet).getByText(TABLE_AID)).toBeTruthy();
+  });
+
+  it('offers no book’s version where the sheet shows text its caller wrote', async () => {
+    await visit('/c/maren');
+    const sheet = await openSheet("Open the item's own text");
+    expect(within(sheet).getByText('Changed')).toBeTruthy();
+    expect(within(sheet).getByText(/from Changes to the books/)).toBeTruthy();
+    expect(within(sheet).queryByRole('button', { name: /version/ })).toBeNull();
   });
 
   it('marks Maren’s Rage Changed, its words the book’s, and Hild’s not', async () => {

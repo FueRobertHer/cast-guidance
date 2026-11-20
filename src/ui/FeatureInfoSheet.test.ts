@@ -84,4 +84,25 @@ describe('changeHolding', () => {
     expect(changeHolding(reg, ['Sees far.'])).toBeUndefined();
     expect(changeHolding(null, added)).toBeUndefined();
   });
+
+  it('marks no trait the change left as the book has it, and the race whole still', () => {
+    const { reg, placed } = changed([
+      { type: 'entries', name: 'Toughness', entries: ['Very tough.'] },
+      { type: 'entries', name: 'Stonecunning', entries: ['Stone sense.'] },
+    ]);
+    const stone = (placed.entries as Array<{ entries: unknown }>)[1]?.entries;
+    expect(changeHolding(reg, stone)).toBeUndefined();
+    expect(changeHolding(reg, placed.entries)?.record.placed).toBe(placed);
+  });
+
+  it("finds the book's trait by its name when the change moves it", () => {
+    const { reg, placed } = changed([
+      { type: 'entries', name: 'Deep Sight', entries: ['Sees far.'] },
+      { type: 'entries', name: 'Toughness', entries: ['Very tough.'] },
+      { type: 'entries', name: 'Stonecunning', entries: ['Stone sense.'] },
+    ]);
+    const [, tough, stone] = placed.entries as Array<{ entries: unknown }>;
+    expect(changeHolding(reg, tough?.entries)?.book).toEqual(['Tough.']);
+    expect(changeHolding(reg, stone?.entries)).toBeUndefined();
+  });
 });

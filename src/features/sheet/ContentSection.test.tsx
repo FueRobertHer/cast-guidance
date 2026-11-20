@@ -14,6 +14,7 @@ import { setHomebrewSourceNames } from '@/data5e/sourceNames';
 import { db } from '@/db/db';
 import { homebrewRepo } from '@/db/homebrewRepo';
 import { type CharacterDoc, newCharacterDoc } from '@/engine/types';
+import { diffDocs } from '@/lib/docDiff';
 import type { DocUpdater } from '@/stores/characterSession';
 import { namelessControls } from '../../../tests-fixtures/a11y';
 import { ContentSection, contentSummary } from './ContentSection';
@@ -73,6 +74,7 @@ beforeEach(async () => {
       ['MyChanges', 'Changes to the books'],
       ['KIB', 'Kibbles’ Compendium'],
       ['GRIT', 'Gritty realism'],
+      ['LC', 'Lantern Coast'],
     ]),
   );
   await homebrewRepo.saveEntry(
@@ -95,7 +97,18 @@ beforeEach(async () => {
     },
     'gritty.json',
   );
+  await homebrewRepo.importJson(
+    {
+      _meta: { sources: [{ json: 'LC', full: 'Lantern Coast' }] },
+      item: [{ name: 'Sea Rope', source: 'LC', type: 'G' }],
+    },
+    'lantern.json',
+  );
 });
+
+/** The restore preview's lines from `from` to what the section last wrote. */
+const preview = (from: CharacterDoc) =>
+  latest === undefined ? [] : diffDocs(from, latest).map((c) => c.line);
 
 afterEach(() => {
   cleanup();
@@ -171,14 +184,45 @@ describe('the Content row (ADR-002 U11)', () => {
     expect(latest?.sourceSwitches).toEqual({ on: ['KIB'], off: ['MyChanges'] });
     fireEvent.click(screen.getByRole('button', { name: 'Kibbles’ Compendium for Maren' }));
     expect(latest?.sourceSwitches).toEqual({ off: ['MyChanges'] });
+    // Off on the device as well, its entries leave her view of the data (E4).
+    expect(
+      screen.getByText(
+        "Off: it is off on this device too, so it leaves Maren's pickers and Maren's sheet.",
+      ),
+    ).toBeTruthy();
+    // On on the device, off for her leaves her pickers alone (D3).
+    fireEvent.click(screen.getByRole('button', { name: 'Lantern Coast for Maren' }));
+    expect(latest?.sourceSwitches).toEqual({ off: ['MyChanges', 'LC'] });
     expect(
       screen.getByText(
         "Off: it leaves Maren's pickers. What is already on Maren's sheet keeps counting.",
       ),
     ).toBeTruthy();
+    const before = structuredClone(latest) as CharacterDoc;
     fireEvent.click(screen.getByRole('button', { name: 'Every collection as this device' }));
     expect(latest !== undefined && 'sourceSwitches' in latest).toBe(false);
-    expect(label).toBe('Collections: as this device');
+    expect(label).toBe(
+      'Collections: Changes to the books as this device, Lantern Coast as this device',
+    );
+    expect(preview(before)).toContain(label);
     expect(screen.queryByRole('button', { name: 'Every collection as this device' })).toBeNull();
+  });
+
+  it('clears a switch for a collection no longer on this device', async () => {
+    render(<Harness initial={character('maren', { off: ['GONE'] })} />);
+    open();
+    fireEvent.click(await screen.findByRole('button', { name: 'Every collection as this device' }));
+    expect(latest !== undefined && 'sourceSwitches' in latest).toBe(false);
+  });
+
+  it('names a switch in history as the restore preview does', async () => {
+    const initial = character('maren', { off: ['MyChanges'] });
+    render(<Harness initial={initial} />);
+    open();
+    // On on the device, so On for her is no switch: as this device.
+    fireEvent.click(await screen.findByRole('button', { name: 'Changes to the books for Maren' }));
+    expect(latest !== undefined && 'sourceSwitches' in latest).toBe(false);
+    expect(label).toBe('Collections: Changes to the books as this device');
+    expect(preview(initial)).toContain(label);
   });
 });
