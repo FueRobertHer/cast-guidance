@@ -446,8 +446,9 @@ work:
   card writes) gets no mark, and a trait a change adds shows the book's whole
   text; a subclass's sheet, whose text comes from its features, has the mark
   but no book's version; the Library and search read the device's data, not a character's
-  view; house rules stay under Identity; the Sources section's hidden-count
-  line does not yet say when the device and a switch both hide a book.
+  view; house rules stay under Identity. A picker's offer names the device's
+  settings and the character's switches together when both hide books, with
+  one count for both.
 
 ### Maintainability and diagnostics
 

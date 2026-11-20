@@ -636,7 +636,7 @@ function ClassSpells({
                               {addedBy}
                             </span>
                           )}
-                          {scope === 'character' && !policyAllows(policy, sourceOf(s)) && (
+                          {scope !== 'device' && !policyAllows(policy, sourceOf(s)) && (
                             <OutsideSourcesChip />
                           )}
                           <SourceBadge source={sourceOf(s)} />

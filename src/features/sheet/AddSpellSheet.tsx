@@ -269,9 +269,7 @@ function AddSpellPanel({
               </span>
             </span>
             <span className="flex shrink-0 items-center gap-1.5">
-              {scope === 'character' && !policyAllows(policy, sourceOf(e)) && (
-                <OutsideSourcesChip />
-              )}
+              {scope !== 'device' && !policyAllows(policy, sourceOf(e)) && <OutsideSourcesChip />}
               <span className="text-caption text-ink-muted">{sourceOf(e)}</span>
               <ChevronRight size={16} aria-hidden="true" className="text-ink-muted" />
             </span>

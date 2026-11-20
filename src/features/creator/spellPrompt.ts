@@ -103,7 +103,7 @@ export function fillSpellPrompt(
         label: (printings.get(nameOf(s)) ?? 0) > 1 ? `${nameOf(s)} (${sourceOf(s)})` : nameOf(s),
         description: spellMeta(s, { withLevel: query.levels.length !== 1 }),
         ...disabled(nameOf(s)),
-        ...(scope === 'character' && !policyAllows(policy, sourceOf(s))
+        ...(scope !== 'device' && !policyAllows(policy, sourceOf(s))
           ? { advisory: `${OUTSIDE_CHARACTER_ADVISORY}.` }
           : {}),
       };

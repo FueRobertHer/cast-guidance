@@ -46,7 +46,7 @@ import { fillSpellPrompt } from './spellPrompt';
  * up when a 2014 character holds a 2024 grant: a species offering a feat from a
  * category only 2024 books print has nothing in that character's own edition.
  *
- * Under a character's own list (`scope` 'character'), an option that stays
+ * Under a character's own sources (`scope` other than 'device'), an option that stays
  * listed from a book outside it (already chosen, or kept by that fallback)
  * says so in its advisory, after any prerequisite advisory it already has.
  */
@@ -87,7 +87,7 @@ export function filterEntityPrompt(
   const options = prompt.options.filter(
     (o) => selected.has(o.id) || !sourceById.has(o.id) || kept.has(o.id),
   );
-  if (scope !== 'character') return { ...prompt, options };
+  if (scope === 'device') return { ...prompt, options };
   return {
     ...prompt,
     options: options.map((o) => {

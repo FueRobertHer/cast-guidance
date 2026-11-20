@@ -413,7 +413,7 @@ export function EntityCardList({
           const label = switched ? `${nameOf(e)}, ${sourceBadgeLabel(sourceOf(e))}` : nameOf(e);
           const blurb = describe?.(e);
           const selected = selectedUid === uidOf(e);
-          const outside = scope === 'character' && !policyAllows(policy, sourceOf(e));
+          const outside = scope !== 'device' && !policyAllows(policy, sourceOf(e));
           // The aria-label hides the blurb and the out-of-sources cue from the
           // name, so they are the description.
           const blurbFor = blurb !== undefined ? `${blurbId}-${i}` : undefined;
