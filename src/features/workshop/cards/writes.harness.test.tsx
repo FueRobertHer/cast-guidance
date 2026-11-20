@@ -327,6 +327,115 @@ const SEEDS: ReadonlyArray<readonly [string, Json[]]> = [
   ],
   ['damageBonus', [{ kind: 'damageBonus', amount: 1, scope: 'all' }]],
   ['damageBonus ranged', [{ kind: 'damageBonus', amount: 2, scope: 'ranged' }]],
+  // U4b: the boxes that narrow a bonus, and the new cards, with a file's odd values.
+  ['attackBonus ability', [{ kind: 'attackBonus', amount: 1, scope: 'all', ability: 'str' }]],
+  [
+    'attackBonus weaponsOnly',
+    [{ kind: 'attackBonus', amount: 1, scope: 'melee', weaponsOnly: true }],
+  ],
+  [
+    'attackBonus weapons',
+    [{ kind: 'attackBonus', amount: 1, scope: 'all', weapons: ['longsword', 'rapier'] }],
+  ],
+  [
+    'attackBonus every ability',
+    [{ kind: 'attackBonus', amount: 1, scope: 'all', attack: 'any', ability: 'dex' }],
+  ],
+  [
+    'attackBonus every class',
+    [{ kind: 'attackBonus', amount: 1, scope: 'all', attack: 'any', className: 'Wizard' }],
+  ],
+  [
+    'attackBonus spell class',
+    [{ kind: 'attackBonus', amount: 1, attack: 'spell', className: 'Wizard' }],
+  ],
+  [
+    'attackBonus spell ability',
+    [{ kind: 'attackBonus', amount: 1, attack: 'spell', ability: 'int' }],
+  ],
+  ['attackBonus odd ability', [{ kind: 'attackBonus', amount: 1, scope: 'all', ability: 'luck' }]],
+  ['damageBonus ability', [{ kind: 'damageBonus', amount: 2, scope: 'melee', ability: 'str' }]],
+  [
+    'damageBonus weapons',
+    [{ kind: 'damageBonus', amount: 1, scope: 'all', weaponsOnly: true, weapons: ['handaxe'] }],
+  ],
+  ['spellDcBonus class', [{ kind: 'spellDcBonus', amount: 1, className: 'Wizard' }]],
+  ['spellDcBonus ability', [{ kind: 'spellDcBonus', amount: 1, ability: 'cha' }]],
+  ['damageDie', [{ kind: 'damageDie', scope: 'all', dice: '1d4', damageType: 'fire' }]],
+  ['damageDie as weapon', [{ kind: 'damageDie', scope: 'melee', dice: '1d6' }]],
+  [
+    'damageDie odd',
+    [{ kind: 'damageDie', scope: 'ranged', dice: '2d6', damageType: 'Sonic', weaponsOnly: true }],
+  ],
+  ['critRange', [{ kind: 'critRange', min: 19 }]],
+  ['critRange odd', [{ kind: 'critRange', min: 1 }]],
+  [
+    'naturalWeapon',
+    [
+      {
+        kind: 'naturalWeapon',
+        label: 'Claws',
+        dice: '1d6',
+        damageType: 'slashing',
+        ability: 'str',
+      },
+    ],
+  ],
+  [
+    'naturalWeapon odd',
+    [{ kind: 'naturalWeapon', label: 'Tail', dice: '1d8', damageType: 'Sonic', ability: 'luck' }],
+  ],
+  ['unarmedDamage', [{ kind: 'unarmedDamage', label: 'Tavern Brawler', dice: '1d4' }]],
+  ['unarmedDamage odd', [{ kind: 'unarmedDamage', label: 'Fists', dice: 'd8' }]],
+  [
+    'spellDamageBonus',
+    [
+      {
+        kind: 'spellDamageBonus',
+        amount: { f: 'mod.cha' },
+        cantrips: true,
+        spells: ['Eldritch Blast'],
+      },
+    ],
+  ],
+  [
+    'spellDamageBonus school',
+    [{ kind: 'spellDamageBonus', amount: 2, school: 'V', oneRoll: true, className: 'Wizard' }],
+  ],
+  ['spellDamageBonus ownClass', [{ kind: 'spellDamageBonus', amount: 1, ownClass: true }]],
+  ['spellDamageBonus formula', [{ kind: 'spellDamageBonus', amount: { f: 'prof' }, school: 'Q' }]],
+  ['spellListAdd', [{ kind: 'spellListAdd', spells: ['Fireball'] }]],
+  [
+    'spellListAdd class',
+    [{ kind: 'spellListAdd', spells: ['Fireball', 'Haste'], className: 'Warlock' }],
+  ],
+  ['checkBonus skill', [{ kind: 'checkBonus', amount: 1, skills: ['Athletics'] }]],
+  ['checkBonus skills', [{ kind: 'checkBonus', amount: 1, skills: ['Arcana', 'History'] }]],
+  ['checkBonus ability', [{ kind: 'checkBonus', amount: 2, ability: 'str' }]],
+  ['checkBonus every', [{ kind: 'checkBonus', amount: { f: 'prof' }, every: true }]],
+  ['checkBonus odd skill', [{ kind: 'checkBonus', amount: 1, skills: ['Luck'] }]],
+  ['rollOffer', [{ kind: 'rollOffer', dice: '1d4', on: { rolls: ['check'] }, ifFailed: true }]],
+  ['rollOffer once', [{ kind: 'rollOffer', dice: '1d4', on: { rolls: ['check'] }, once: true }]],
+  [
+    'rollOffer save',
+    [{ kind: 'rollOffer', dice: '1d6', on: { rolls: ['save'], abilities: ['wis'] } }],
+  ],
+  [
+    'rollOffer initiative',
+    [
+      {
+        kind: 'rollOffer',
+        dice: '1d4',
+        on: { rolls: ['check'], initiative: true },
+        ifFailed: true,
+      },
+    ],
+  ],
+  ['extraAction', [{ kind: 'extraAction', label: 'Attack once' }]],
+  ['extraAction note', [{ kind: 'extraAction', label: 'Dash', note: 'Only while hasted' }]],
+  ['resourceRegain', [KI, { kind: 'resourceRegain', key: 'ki', amount: 1 }]],
+  ['resourceRegain elsewhere', [{ kind: 'resourceRegain', key: 'superiority', amount: 1 }]],
+  ['note', [{ kind: 'note', text: 'Ask the DM before using this' }]],
   ['resource', [{ kind: 'resource', key: 'uses', label: 'Uses', max: 1, reset: 'long' }]],
   ['resource short', [KI]],
   [
