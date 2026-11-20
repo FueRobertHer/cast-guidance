@@ -65,6 +65,12 @@ export interface HpLimits {
   /** The character's moments (`momentsInForce`). Absent, no moment fires. */
   moments?: MomentsInForce;
   /**
+   * The temporary hit points the build gives itself at the start of each turn
+   * (a feat's or an item's own `tempHpEachTurn`), the best of them, without
+   * the effects in play's: `newTurn` reads theirs from play itself.
+   */
+  tempHpEachTurn?: { amount: number; origin: string };
+  /**
    * Finds a homebrew condition's entry by name, in the character's edition
    * (`conditionEntries`), so current HP follows a maximum one moves as it
    * comes on, comes off or is switched (`conditionsMoved`). Absent, a homebrew
@@ -725,8 +731,9 @@ export function endEffects(play: PlayState, ids: ReadonlySet<string>, hp: HpLimi
 /**
  * The start of the character's turn: each effect counting turns has one fewer
  * (one at 1 ends now), then the `turnStart` moments fire, and then the best
- * temporary hit points an effect gives each turn are offered, kept only if
- * more than the character has.
+ * temporary hit points an effect or the build gives each turn are offered,
+ * kept only if more than the character has. The build's belong to no effect,
+ * so they stay when one ends.
  */
 export function newTurn(
   play: PlayState,
@@ -750,7 +757,11 @@ export function newTurn(
     endWhere(play, (e) => ending.has(e), hp),
   );
 
-  let best: { amount: number; source: string; id: string } | undefined;
+  const build = hp.tempHpEachTurn;
+  let best: { amount: number; source: string; id?: string } | undefined =
+    build !== undefined && build.amount > 0
+      ? { amount: build.amount, source: build.origin }
+      : undefined;
   for (const e of countingEffects(readActiveEffects(play.activeEffects).effects).inputs) {
     if (
       e.kind === 'tempHpEachTurn' &&

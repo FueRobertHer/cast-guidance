@@ -4,7 +4,8 @@
  * to be present first.
  */
 import { dataCacheRepo } from '@/db/dataCacheRepo';
-import { homebrewRepo } from '@/db/homebrewRepo';
+import { compareMergeOrder } from '@/db/homebrewOrder';
+import { type HomebrewFile, type HomebrewFileMeta, homebrewRepo } from '@/db/homebrewRepo';
 import { singleFlight } from '@/lib/singleFlight';
 import { attachBuiltInRules, loadBuiltInRules } from './builtInRules';
 import { getLandedCount, getRevision, subscribeLanded } from './landing';
@@ -18,6 +19,7 @@ import {
 } from './loader';
 import { type EntityRegistry, mergeHomebrew, normalizeDataset } from './normalize';
 import type { PackId } from './packs';
+import { setDeviceOffFiles } from './registryView';
 import type { PackLocal } from './rulePack';
 import { setRulesBooks } from './rulesVersion';
 import { setHomebrewSourceNames } from './sourceNames';
@@ -53,19 +55,39 @@ async function cachedFilesMap(tag: string): Promise<Map<string, unknown>> {
  * this) is not served stale. Including the tag does the same for an install:
  * releases share their file lists, so without it the session that installed
  * one kept serving the registry of the release it replaced, and never built
- * the one that confirms the install. Pure so it can be unit-tested.
+ * the one that confirms the install. The files switched off on the device are
+ * kept beside the registry for the characters that turn one on (ADR-002, D3),
+ * so they count too, after the rest, and only when there are any. Pure so it
+ * can be unit-tested.
  */
 export function computeRegistrySignature(
   tag: string,
   filePaths: Iterable<string>,
   brews: ReadonlyArray<{ id: string; rev?: number }>,
+  off: ReadonlyArray<{ id: string; rev?: number }> = [],
 ): string {
   const files = [...filePaths].sort().join(',');
-  const hb = brews
-    .map((b) => `${b.id}@${b.rev ?? 0}`)
-    .sort()
-    .join(',');
-  return `${tag}|${files}|hb:${hb}`;
+  const list = (rows: typeof brews) =>
+    rows
+      .map((b) => `${b.id}@${b.rev ?? 0}`)
+      .sort()
+      .join(',');
+  return `${tag}|${files}|hb:${list(brews)}${off.length > 0 ? `|off:${list(off)}` : ''}`;
+}
+
+/**
+ * The files switched off on this device, oldest import first, with their
+ * content: a character's own switch can turn one on for itself (ADR-002, D3),
+ * so its view needs them, though the shared registry never merges them. `meta`
+ * is what the signature is read from, as `readRegistry` reads it, so a row
+ * whose content cannot be read does not rebuild the registry on every read.
+ */
+async function deviceOffFilesSafe(): Promise<{ meta: HomebrewFileMeta[]; files: HomebrewFile[] }> {
+  const meta = (await homebrewRepo.listMetaSafe()).files.filter((f) => !f.enabled);
+  const read = await Promise.all(
+    meta.sort(compareMergeOrder).map((f) => homebrewRepo.getSafe(f.id)),
+  );
+  return { meta, files: read.flatMap((r) => (r.file?.enabled === false ? [r.file] : [])) };
 }
 
 /**
@@ -154,9 +176,14 @@ async function readRegistry(): Promise<EntityRegistry> {
     // revisions, and the content is read only for a build.
     const [paths, { files: brewMeta }] = await Promise.all([
       dataCacheRepo.cachedPaths(tag),
-      homebrewRepo.enabledMetaSafe(),
+      homebrewRepo.listMetaSafe(),
     ]);
-    const signature = computeRegistrySignature(tag, paths, brewMeta);
+    const signature = computeRegistrySignature(
+      tag,
+      paths,
+      brewMeta.filter((b) => b.enabled),
+      brewMeta.filter((b) => !b.enabled),
+    );
     if (current !== null && signature === currentSignature) return current;
     const reg = await singleFlight(rebuilds, `${startedAt}|${signature}`, () =>
       rebuild({ startedAt, tag, paths }),
@@ -193,15 +220,20 @@ async function rebuild({
   // throw out of here, and every view needs the compendium. The signature is
   // the one of what is read here: a file imported since the caller's check is
   // in this build, and the next check sees the registry current.
-  const [files, { files: brews }, builtInRules] = await Promise.all([
+  const [files, { files: brews }, offRows, builtInRules] = await Promise.all([
     cachedFilesMap(tag),
     homebrewRepo.enabledSafe(),
+    deviceOffFilesSafe(),
     loadBuiltInRules(),
   ]);
-  const signature = computeRegistrySignature(tag, paths, brews);
+  // A file switched on between the two reads is merged, not kept aside too.
+  const isOff = (f: { id: string }) => !brews.some((b) => b.id === f.id);
+  const off = offRows.files.filter(isOff);
+  const signature = computeRegistrySignature(tag, paths, brews, offRows.meta.filter(isOff));
   // Before the registry is published, so the first render that can show a
-  // brew's badge already has its title.
-  setHomebrewSourceNames(homebrewSourceNames(brews));
+  // brew's badge already has its title. A file switched off is named too, for
+  // the characters that turn it on; the files switched on win a shared code.
+  setHomebrewSourceNames(homebrewSourceNames([...off, ...brews]));
   let reg: EntityRegistry;
   try {
     reg = normalizeDataset(files);
@@ -237,6 +269,7 @@ async function rebuild({
     if (b.role === 'changes') changeFiles.add(b.id);
   }
   mergeHomebrew(reg, brewMap, packs, changeFiles);
+  setDeviceOffFiles(reg, off);
   // Only if nothing invalidated the registry while this was reading. The
   // caller still gets what was built, which is the best answer available to
   // it; what it must not do is leave that answer behind as the current one.
