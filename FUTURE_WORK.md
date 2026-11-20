@@ -300,13 +300,16 @@ work:
   book's `or: [{ str: 13, dex: 13 }]` as needing both (`multiclass.ts`), and a
   copy that stops preparing writes `preparedSpells: null`, which
   `classSpellcastingMode` (`slots.ts`) still reads as preparing. For whoever
-  next owns `src/data5e/registry.ts`: a registry read that fails leaves
-  `isRegistryRefreshing()` true with nothing in flight (`getRegistry` raises
-  `builtThrough` only on success), until a later read succeeds, while
-  `useRegistryState` keeps the old registry. A class's gear boxes stay open
-  for this reason, but their "Loading the items" note stays up over a
-  registry that is not loading; any page that waits on the flag waits the
-  same.
+  next owns `src/data5e/registry.ts`: a registry read that fails after a
+  file has landed leaves `isRegistryRefreshing()` true with nothing in
+  flight (`getRegistry` raises `builtThrough` only on success), until a
+  later read succeeds, while `useRegistryState` keeps the old registry and
+  reads again only on a new landing, a phase change or a retry. The comment
+  at `getRegistry` that a page with a failed read never shows the raised
+  flag does not hold for a page that keeps an old registry. A class's gear
+  boxes stay open for this reason, but their "Loading the items" note stays
+  up over a registry that is not loading; any page that waits on the flag
+  waits the same.
 - A change to any box in a Workshop editor re-renders the whole editor, the
   origin fields included: `WorkshopPage`'s `change` is a new function on every
   render, and `FeatBody` and the species editor's `OriginParts` hand each

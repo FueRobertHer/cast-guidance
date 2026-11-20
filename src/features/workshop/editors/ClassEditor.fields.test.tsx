@@ -126,7 +126,7 @@ function world(changes: Record<string, Json[]> = {}, mine?: Record<string, unkno
 }
 
 /** The class editor on screen; the draft as it stands, and how often it changed. */
-function mount(start: Json, registry: EntityRegistry, original?: Json) {
+function mount(start: Json, registry: EntityRegistry, original?: Json, readOnly = false) {
   let latest = start;
   let changes = 0;
   function Harness() {
@@ -146,7 +146,7 @@ function mount(start: Json, registry: EntityRegistry, original?: Json) {
         change={change}
         original={original}
         registry={registry}
-        readOnly={false}
+        readOnly={readOnly}
       />
     );
   }
@@ -350,7 +350,7 @@ describe('starting equipment', () => {
     expect(gear()).toEqual(['longsword|phb']);
   });
 
-  it('keeps gear typeable while the items load, and says a name typed then is kept as words', () => {
+  it('keeps gear typeable while the items load, and says a name not found then is kept as words', () => {
     const start = {
       name: 'Lantern',
       ...editor.blank(),
@@ -358,11 +358,17 @@ describe('starting equipment', () => {
     };
     const box = () => screen.getByLabelText('Gear 1') as HTMLInputElement;
     const note = () =>
-      screen.queryByText('Loading the items. A name typed now is kept as written.');
+      screen.queryByText(
+        'Loading the items. Until they arrive, a name not found is kept as written.',
+      );
     packs.status = 'loading';
     mount(structuredClone(start), world());
     expect(box().disabled).toBe(false);
     expect(note()).not.toBeNull();
+    // Nothing can be typed in a copy shown but not editable: no note.
+    cleanup();
+    mount(structuredClone(start), world(), undefined, true);
+    expect(note()).toBeNull();
     cleanup();
     packs.status = 'ready';
     mount(structuredClone(start), world());
@@ -370,7 +376,8 @@ describe('starting equipment', () => {
     expect(note()).toBeNull();
     // Downloaded, while the registry the editor reads is made again with them.
     // A rebuild that fails leaves the flag up just the same, until a later one
-    // succeeds: the box stays open, and the note stays true.
+    // succeeds: the box stays open, and the note stays up. What it says of a
+    // name holds either way: a base item is found, a name not found is words.
     cleanup();
     const bare = normalizeDataset(
       new Map<string, unknown>([['items-base.json', { baseitem: ITEMS.slice(0, 2) }]]),
@@ -379,8 +386,9 @@ describe('starting equipment', () => {
     const at = mount(structuredClone(start), bare);
     expect(box().disabled).toBe(false);
     expect(note()).not.toBeNull();
-    type('Gear 1', 'Bag of Holding');
+    type('Gear 1', 'longsword, Bag of Holding');
     expect(((at.draft().startingEquipment as Json).defaultData as Json[])[0]?._).toEqual([
+      'longsword|phb',
       { special: 'Bag of Holding' },
     ]);
     // The player's own items are not the book's.
@@ -420,6 +428,9 @@ describe('starting equipment', () => {
     expect(
       screen.getByText(/could not be loaded, so a name not found is kept as written/),
     ).toBeTruthy();
+    cleanup();
+    mount(structuredClone(start), bare, undefined, true);
+    expect(screen.queryByText(/could not be loaded/)).toBeNull();
   });
 
   it('adds an option beside one keyed `_`, which stays one of the options', () => {

@@ -1295,12 +1295,12 @@ function StartingGear({
     );
   }
   const items = [...registry.byType('baseitem'), ...registry.byType('item')] as Json[];
-  // Until the items are in the registry, a name typed is kept as words, not
-  // the item, and the player is told so. A first download puts them there a
-  // moment after the pack says it is ready, while the registry is made again
-  // (the player's own items do not count). The boxes stay open throughout: the
-  // flag can stay up after a failed rebuild, and a box that waits on it could
-  // wait for good.
+  // Until the items are in the registry, a name not found among the base items
+  // (or the player's own) is kept as words, not the item, and the player is
+  // told so. A first download puts them there a moment after the pack says it
+  // is ready, while the registry is made again (the player's own items do not
+  // count). The boxes stay open throughout: the flag can stay up after a
+  // failed rebuild, and a box that waits on it could wait for good.
   const loading =
     packs === 'loading' ||
     (packs === 'ready' && refreshing && registry.officialCount('item') === 0);
@@ -1418,12 +1418,13 @@ function StartingGear({
             in words only, kept as written until gear is added here.
           </Kept>
         )}
-      {loading && (
+      {/* How a name typed is read: nothing to say where nothing can be typed. */}
+      {!readOnly && loading && (
         <p className="text-caption text-ink-muted">
-          Loading the items. A name typed now is kept as written.
+          Loading the items. Until they arrive, a name not found is kept as written.
         </p>
       )}
-      {packs === 'error' && (
+      {!readOnly && packs === 'error' && (
         <p className="text-caption text-ink-muted">
           Some items could not be loaded, so a name not found is kept as written.
         </p>
