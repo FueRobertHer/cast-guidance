@@ -335,6 +335,23 @@ work:
   change to it, where the device reads the changed race; copies of a changed
   entry keep the version they were copied from (E3), whatever the character's
   switch.
+- Change for your table and Make one like it (ADR-002 U10) are on every
+  Library entry the Workshop can edit, and on class features, which the
+  class page now links. A copy of a changed entry starts from the table's
+  version and keeps it as it was when copied. Left out: a class or subclass
+  is not changed whole (board 6's Berserker, feature by feature), and a
+  subclass's features have no Library page to change them from; the book's
+  own mechanics are one Keep or Remove (the "Also does what" box), not a row
+  each with what the sheet counts; no character count ("Hild has Aid
+  prepared") and no Try it on for a change; a class's or subclass's own
+  editor still reads a stored copy's features against the table's version
+  (U5c). Changes to the books finds a change by its identity
+  (`homebrewRepo.saveEntry` and `removeEntry`), so every Ability Score
+  Improvement, each class's at each level, can be changed apart. A
+  condition the app counts by its own rules (Poisoned) is not offered: a
+  change would not reach the sheet. The Workshop's list of your entries
+  shows only kinds with an editor, so a change to a class feature is found
+  again from its Library page alone.
 
 ### Maintainability and diagnostics
 
