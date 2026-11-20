@@ -46,7 +46,7 @@ import { SegmentedControl } from '@/ui/SegmentedControl';
 import { listClass, listRowClass } from '@/ui/surfaces';
 import { fieldClass } from '@/ui/TextField';
 import { UndoBar } from '@/ui/UndoBar';
-import { collectionPath, collectionsOf, holdsOf, madeName } from './collections';
+import { BOOKS_PATH, collectionPath, collectionsOf, holdsOf, madeName } from './collections';
 import { copiedFrom } from './copyWriter';
 import { editPath, entriesOf, inFile, kindOf, labelOf, type Mine, mineKey } from './yours';
 
@@ -315,10 +315,10 @@ function CollectionsShelf({
           ))}
           <li className="flex flex-col">
             <CollectionCard
-              to="/settings"
+              to={BOOKS_PATH}
               name="The books"
               from={`Game data ${getActiveTag()}`}
-              holds="Choose which books show, in Settings"
+              holds="Choose which books show"
             />
           </li>
         </ul>

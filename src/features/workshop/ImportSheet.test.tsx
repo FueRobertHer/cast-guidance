@@ -106,7 +106,7 @@ function EditorStandIn() {
   return <p data-testid="editor">{JSON.stringify({ at: location.pathname, ...location.state })}</p>;
 }
 
-function renderSheet() {
+function renderSheet(link?: string) {
   done = [];
   closed = 0;
   const router = createMemoryRouter(
@@ -115,6 +115,7 @@ function renderSheet() {
         path: '/workshop',
         element: (
           <ImportSheet
+            link={link}
             onClose={() => {
               closed += 1;
             }}
@@ -224,6 +225,19 @@ describe('the Import sheet', () => {
     fireEvent.click(readIt);
     expect(document.querySelector('[data-import-status] p')).toBeNull();
     expect(namelessControls()).toEqual([]);
+  });
+
+  it("opens on A link with a collection's own link filled, to update it from there", async () => {
+    renderSheet(LINK);
+    const s = await sheet();
+    const ways = within(within(s).getByRole('group', { name: 'Bring in' }));
+    expect(ways.getByRole('button', { name: 'A link' }).getAttribute('aria-pressed')).toBe('true');
+    expect(
+      (within(s).getByLabelText('Link to a JSON homebrew file') as HTMLInputElement).value,
+    ).toBe(LINK);
+    expect(
+      within(s).getByRole('button', { name: 'Read it' }).getAttribute('aria-disabled'),
+    ).not.toBe('true');
   });
 
   it('lands the same file as the same collection whichever way it comes', async () => {

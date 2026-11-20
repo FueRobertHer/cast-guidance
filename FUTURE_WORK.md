@@ -379,6 +379,17 @@ work:
   change would not reach the sheet. The Workshop's list of your entries
   shows only kinds with an editor, so a change to a class feature is found
   again from its Library page alone.
+- A collection's page (ADR-002 U6) does what the Homebrew page's file card
+  and the Builder did, at an address that outlives an update (E1's key), and
+  The books (Content sources) is listed in Collections. Left out: board 8's
+  Everyone, Some or Off as one control (a device switch and a chip per
+  character instead), the queue of entries kept as text and Keep as text, an
+  update's delta ("2 added, 1 changed"), Undo after Keep yours or a delete,
+  checking a link for a newer copy, and renaming a collection. Needs a look
+  cannot give back the player's words when an update rewords the very text a
+  change's `_mod` step replaced: the step misses, the collection's words show,
+  and the change's mark is a hash, so the page offers Use the collection's
+  and Change it in the Library.
 - Select mode on Yours (ADR-002 U8) moves, exports and deletes several of the
   player's entries at once; a delete is one write with Undo, and characters
   are never written, so Undo puts each entry back on every sheet. Left out: a

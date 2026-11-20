@@ -14,6 +14,7 @@ import {
   writeSourcePolicy,
 } from '@/data5e/sourceFilter';
 import {
+  knownSources,
   SOURCE_GROUP_LABELS,
   SOURCE_GROUPS,
   type SourceGroup,
@@ -30,6 +31,9 @@ type Section = SourceGroup | 'homebrew';
 const SECTION_LABELS: Record<Section, string> = { ...SOURCE_GROUP_LABELS, homebrew: 'Homebrew' };
 const SECTION_ORDER: readonly Section[] = [...SOURCE_GROUPS, 'homebrew'];
 
+/** Every book the source table knows. */
+const KNOWN = new Set(knownSources());
+
 interface Row {
   source: string;
   name: string;
@@ -40,14 +44,17 @@ interface Row {
 
 function SourceToggle({ row, onToggle }: { row: Row; onToggle: (enabled: boolean) => void }) {
   return (
-    <label className="flex min-h-tap items-center gap-2.5 px-3 py-2 text-body hover:bg-surface-raised">
+    <label className="flex min-h-tap flex-wrap items-center gap-x-2.5 gap-y-1 px-3 py-2 text-body hover:bg-surface-raised">
       <input
         type="checkbox"
         checked={row.enabled}
         onChange={(e) => onToggle(e.target.checked)}
         className="size-4 shrink-0 accent-ink"
       />
-      <span className={`min-w-0 flex-1 truncate ${row.enabled ? '' : 'text-ink-muted'}`}>
+      {/* Wraps, never cut off: a long book name, or its code and count past the edge at large text (bug 11). */}
+      <span
+        className={`min-w-0 flex-1 basis-32 break-words ${row.enabled ? '' : 'text-ink-muted'}`}
+      >
         {row.name}
       </span>
       <span className="shrink-0 text-ink-muted text-overline uppercase">{row.source}</span>
@@ -56,7 +63,13 @@ function SourceToggle({ row, onToggle }: { row: Row; onToggle: (enabled: boolean
   );
 }
 
-export function SourcesSection() {
+/**
+ * Which books show, on this device. In Settings (until U9 swaps it for a row
+ * opening The books) and on The books page in the Workshop (ADR-002, D1),
+ * which passes `books` and gives the page its own heading: there the
+ * collections are left out, since each has its own switch on its page.
+ */
+export function SourcesSection({ books = false }: { books?: boolean } = {}) {
   const registry = useRegistry();
   const policy = useSourcePolicy();
   const brewSources = useLiveQuery(
@@ -74,10 +87,12 @@ export function SourcesSection() {
         section: brewSources?.has(source) === true ? ('homebrew' as const) : sourceGroup(source),
         enabled: policyAllows(policy, source),
       }))
+      .filter((r) => !books || r.section !== 'homebrew')
       .sort((a, b) => a.name.localeCompare(b.name));
-  }, [registry, policy, brewSources]);
+  }, [registry, policy, brewSources, books]);
 
   const shown = rows.filter((r) => r.enabled).length;
+  const listed = new Set(rows.map((r) => r.source));
 
   const setPolicy = (next: SourcePolicy) => {
     // The toggles read from the stored policy, so a rejected write leaves them
@@ -95,22 +110,53 @@ export function SourcesSection() {
     void updateSourcePolicy(edit).catch((err: unknown) => notifyFailure('Save sources', err));
   };
 
+  /**
+   * On The books a preset is a choice of books alone: each collection stays as
+   * it was, since its own page has its switch and this page does not list it.
+   * The page waits for the collections' sources before it offers one, so a
+   * tap reads them here, in order with the taps before it.
+   */
+  const choosePreset = (next: SourcePolicy) => {
+    if (!books) return setPolicy(next);
+    const brews = [...(brewSources ?? [])];
+    editPolicy((current) =>
+      brews.reduce((p, code) => withSource(p, code, policyAllows(current, code)), next),
+    );
+  };
+  /**
+   * The books a policy names, on The books: a collection's source is its own
+   * page's, and a code no book has (a collection deleted since) names nothing.
+   */
+  const bookPart = (p: SourcePolicy) =>
+    (p.mode === 'all' ? p.except : p.sources).filter(
+      (s) => !books || (brewSources?.has(s) !== true && (KNOWN.has(s) || listed.has(s))),
+    );
+
   const setGroup = (group: Section, enabled: boolean) => {
     const codes = rows.filter((r) => r.section === group).map((r) => r.source);
     editPolicy((current) => codes.reduce((p, code) => withSource(p, code, enabled), current));
   };
 
+  // Until the collections' sources are read, The books cannot tell a book from a collection.
+  if (books && brewSources === undefined) {
+    return (
+      <section className="flex flex-col gap-2" aria-label="Which books show">
+        <p className="px-1 text-caption text-ink-muted">Loading…</p>
+      </section>
+    );
+  }
+
   const activePreset = SOURCE_PRESETS.find((p) => {
     const target = p.policy();
     if (target.mode !== policy.mode) return false;
-    const a = target.mode === 'all' ? target.except : target.sources;
-    const b = policy.mode === 'all' ? policy.except : policy.sources;
+    const a = bookPart(target);
+    const b = bookPart(policy);
     return a.length === b.length && a.every((s, i) => s === b[i]);
   });
 
   return (
-    <section className="flex flex-col gap-2">
-      <h2 className="px-1 text-heading">Content sources</h2>
+    <section className="flex flex-col gap-2" aria-label={books ? 'Which books show' : undefined}>
+      {!books && <h2 className="px-1 text-heading">Content sources</h2>}
       <p className="px-1 text-caption text-ink-muted">
         Narrow what you pick from when building a character, and what the library and search show. A
         shorter list is a much easier list. This only affects what you browse: characters already
@@ -127,7 +173,7 @@ export function SourcesSection() {
             tone="outline"
             pressed={activePreset?.id === p.id}
             title={p.detail}
-            onClick={() => setPolicy(p.policy())}
+            onClick={() => choosePreset(p.policy())}
           >
             {p.label}
           </Chip>
@@ -148,7 +194,7 @@ export function SourcesSection() {
           <span>Nothing is selected, so every list in the app is empty.</span>
           <button
             type="button"
-            onClick={() => setPolicy(ALLOW_ALL)}
+            onClick={() => choosePreset(ALLOW_ALL)}
             className="tap font-bold underline underline-offset-3"
           >
             Show everything
@@ -182,7 +228,7 @@ export function SourcesSection() {
                   size={14}
                   className="shrink-0 text-ink-muted transition-transform group-open:rotate-90"
                 />
-                <span className="min-w-0 flex-1 truncate">{SECTION_LABELS[section]}</span>
+                <span className="min-w-0 flex-1 break-words">{SECTION_LABELS[section]}</span>
                 <span className="shrink-0 font-normal text-caption text-ink-muted">
                   {on}/{group.length}
                 </span>
