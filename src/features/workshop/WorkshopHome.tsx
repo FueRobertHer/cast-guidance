@@ -136,9 +136,16 @@ interface Revisions {
   removed?: Removed;
 }
 
-/** Whether every file `b` names is at the revision it says in `a`. */
+/**
+ * Whether no file `b` names has moved past the revision it says, in `a`. The
+ * list can lag the delete's own write for a moment, and an Undo then still
+ * counts; the repo's restore checks the revision itself.
+ */
 const sameRevisions = (a: Revisions, b: Revisions) =>
-  Object.entries(b.revs).every(([id, rev]) => a.revs[id] === rev);
+  Object.entries(b.revs).every(([id, rev]) => {
+    const now = a.revs[id];
+    return now !== undefined && now <= rev;
+  });
 
 /**
  * Where a file comes in: the Import sheet (U7), opened over this page by
@@ -557,11 +564,14 @@ export function Component() {
   // picked, so a kind filter never leaves a hidden entry picked.
   const [selecting, setSelecting] = useState(false);
   const [chosen, setChosen] = useState<ReadonlySet<string>>(() => new Set());
+  // A move or delete sheet over the bar: it keeps select mode on to the end,
+  // even if another tab empties the list meanwhile.
+  const [sheetOpen, setSheetOpen] = useState(false);
   const kinds = new Set((mine ?? []).map((m) => m.type));
   const shownKind = kinds.has(kind) ? kind : 'all';
   const shown = (mine ?? []).filter((m) => shownKind === 'all' || m.type === shownKind);
   const picked = shown.filter((m) => chosen.has(mineKey(m)));
-  const inSelect = selecting && shelf === 'yours' && shown.length > 0;
+  const inSelect = selecting && shelf === 'yours' && (shown.length > 0 || sheetOpen);
   // Where the keyboard goes once select mode starts or stops: its first
   // control, or back to Select. After a delete it goes to Undo instead.
   const focusTo = useRef<string | null>(null);
@@ -577,6 +587,12 @@ export function Component() {
     focusTo.current = null;
     page.current?.querySelector<HTMLElement>(to)?.focus({ preventScroll: true });
   }, [inSelect]);
+  // The list emptied with no sheet open (another tab took the last entry):
+  // select mode ends rather than coming back with the next entry made.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: only when the list or a sheet changes
+  useEffect(() => {
+    if (selecting && mine !== undefined && shown.length === 0 && !sheetOpen) select(false, null);
+  }, [mine, sheetOpen]);
   const toggle = (key: string) =>
     setChosen((was) => {
       const next = new Set(was);
@@ -593,15 +609,25 @@ export function Component() {
     [owned],
   );
   const [undoFocus, setUndoFocus] = useState(0);
+  // "Undone" waits for the write, so an Undo another tab's change refuses never says it.
+  const [restoring, setRestoring] = useState(false);
   const deleted = useUndoOffer<Revisions>({
     current: revisions,
     same: sameRevisions,
     restore: (before) => {
       if (before.removed === undefined) return;
-      homebrewRepo.restoreEntries(before.removed).then(invalidateRegistry, (err: unknown) => {
-        deleted.dismiss();
-        notifyFailure('Undo', err);
-      });
+      setRestoring(true);
+      homebrewRepo.restoreEntries(before.removed).then(
+        () => {
+          setRestoring(false);
+          invalidateRegistry();
+        },
+        (err: unknown) => {
+          setRestoring(false);
+          deleted.dismiss();
+          notifyFailure('Undo', err);
+        },
+      );
     },
   });
   const importing = params.has(IMPORT_PARAM);
@@ -650,7 +676,7 @@ export function Component() {
       )}
       <UndoBar
         pending={deleted.pending}
-        undone={deleted.undone}
+        undone={restoring ? null : deleted.undone}
         onUndo={() => void deleted.run()}
         focusRequest={undoFocus}
       />
@@ -679,10 +705,17 @@ export function Component() {
             <Button
               variant="ghost"
               size="sm"
+              // Over the rows on show only: a pick a kind filter hides stays as it was.
               onClick={() =>
-                setChosen(
-                  new Set(picked.length === shown.length ? [] : shown.map((m) => mineKey(m))),
-                )
+                setChosen((was) => {
+                  const next = new Set(was);
+                  const all = picked.length === shown.length;
+                  for (const m of shown) {
+                    if (all) next.delete(mineKey(m));
+                    else next.add(mineKey(m));
+                  }
+                  return next;
+                })
               }
             >
               {picked.length === shown.length ? 'Select none' : 'Select all'}
@@ -761,6 +794,7 @@ export function Component() {
               announce(text, { key: 'workshop-select', repeat: true });
             }}
             onEscape={() => select(false, '[data-select-start]')}
+            onSheet={setSheetOpen}
             onDeleted={(removed, title, detail) => {
               select(false, null);
               setOutcome(undefined);

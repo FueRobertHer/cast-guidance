@@ -15,6 +15,7 @@ import { characterRepo } from '@/db/characterRepo';
 import { db } from '@/db/db';
 import { COLLECTION_ID_KEY } from '@/db/homebrewOrder';
 import { homebrewRepo } from '@/db/homebrewRepo';
+import { repointDoc } from '@/db/repoint';
 import { deriveSheet } from '@/engine/derive';
 import type { CharacterDoc } from '@/engine/types';
 import { downloadJson } from '@/lib/download';
@@ -25,6 +26,8 @@ import {
   seedWorld,
   sorcerer,
 } from '../../../tests-fixtures/sheetHarness';
+import { whoUses } from './SelectBar';
+import type { Mine } from './yours';
 
 vi.mock('@/data5e/loader', () =>
   import('../../../tests-fixtures/sheetHarnessMocks').then((m) => m.loaderStub),
@@ -173,6 +176,11 @@ describe('select mode on Yours', () => {
     expect(screen.getByText('2 selected')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Select none' }));
     expect(screen.getByText('Select entries')).toBeTruthy();
+    // Select all and none reach the rows on show only: the hidden feat stays picked.
+    fireEvent.click(screen.getByRole('button', { name: /^All/ }));
+    expect(screen.getByText('1 selected')).toBeTruthy();
+    expect((row('Gift') as HTMLInputElement).checked).toBe(true);
+    fireEvent.click(screen.getByRole('button', { name: /^Items/ }));
 
     fireEvent.keyDown(row('Lamp'), { key: 'Escape' });
     await waitFor(() => expect(screen.queryByRole('group', { name: /selected/ })).toBeNull());
@@ -358,7 +366,13 @@ describe('select mode on Yours', () => {
     fireEvent.click(row('Shell'));
     fireEvent.click(screen.getByRole('button', { name: 'Move' }));
     const sheet = await screen.findByRole('dialog', { name: 'Move 3 entries' }, { timeout: WAIT });
-    fireEvent.click(within(sheet).getByRole('radio', { name: /^Harbor/ }));
+    // The one collection none of them is in comes picked.
+    const choice = within(sheet).getByRole('radio', { name: /^Harbor/ }) as HTMLInputElement;
+    expect(choice.checked).toBe(true);
+    expect(within(sheet).queryByText(/already/)).toBeNull();
+    fireEvent.click(within(sheet).getByRole('radio', { name: /^Reef/ }));
+    expect(within(sheet).getByText('1 of them is in Reef already and stays there.')).toBeTruthy();
+    fireEvent.click(choice);
     fireEvent.click(within(sheet).getByRole('button', { name: 'Move here' }));
     const report = await screen.findByRole('dialog', { name: 'Moved' }, { timeout: WAIT });
     expect(within(report).getByText('Moved 1 entry to Harbor.')).toBeTruthy();
@@ -483,6 +497,174 @@ describe('select mode on Yours', () => {
     );
     expect(screen.getByRole('group', { name: 'With what is selected' })).toBeTruthy();
     expect(vi.mocked(downloadJson)).toHaveBeenCalledTimes(1);
+
+    // And Move has nothing to move: it says so and opens no sheet.
+    fireEvent.click(screen.getByRole('button', { name: 'Move' }));
+    expect(document.querySelector('[data-import-status]')?.textContent).toBe(
+      'Changes to the books stay where they are: a change keeps the book’s name and source.',
+    );
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(screen.getByRole('group', { name: 'With what is selected' })).toBeTruthy();
     await act(async () => undefined);
+  });
+
+  it('moves to a collection none of them is in, else names those there already', async () => {
+    await world();
+    await visit();
+    await selectMode();
+    fireEvent.click(row('Lamp'));
+    fireEvent.click(screen.getByRole('button', { name: 'Move' }));
+    let sheet = await screen.findByRole('dialog', { name: 'Move 1 entry' }, { timeout: WAIT });
+    const tide = within(sheet).getByRole('radio', { name: /^Tidewater/ }) as HTMLInputElement;
+    expect(tide.checked).toBe(true);
+    fireEvent.click(within(sheet).getByRole('button', { name: 'Cancel' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+
+    // From both collections there are, one of them comes picked, and the sheet says what stays.
+    fireEvent.click(row('Rope'));
+    fireEvent.click(screen.getByRole('button', { name: 'Move' }));
+    sheet = await screen.findByRole('dialog', { name: 'Move 2 entries' }, { timeout: WAIT });
+    const on = within(sheet)
+      .getAllByRole('radio')
+      .find((r) => (r as HTMLInputElement).checked);
+    const place = on?.closest('label')?.textContent ?? '';
+    const home = place.startsWith('Tidewater') ? 'Tidewater' : 'Lantern Coast';
+    expect(place.startsWith(home)).toBe(true);
+    expect(
+      within(sheet).getByText(`1 of them is in ${home} already and stays there.`),
+    ).toBeTruthy();
+    const go = within(sheet).getByRole('button', { name: 'Move here' });
+    expect(go.getAttribute('aria-disabled')).toBe('false');
+    fireEvent.click(within(sheet).getByRole('button', { name: 'Cancel' }));
+    await act(async () => undefined);
+  });
+
+  it('keeps an open sheet when another tab empties the list, then ends select mode', async () => {
+    await seedWorld();
+    const solo = await collection('Solo', 'SO', {
+      item: [{ name: 'Lamp', source: 'SO', type: 'G', entries: ['Bright.'] }],
+    });
+    await visit();
+    await selectMode();
+    fireEvent.click(row('Lamp'));
+    fireEvent.click(screen.getByRole('button', { name: 'Move' }));
+    const sheet = await screen.findByRole('dialog', { name: 'Move 1 entry' }, { timeout: WAIT });
+    // Their only collection is not offered as the place to go.
+    const fresh = within(sheet).getByRole('radio', { name: /^Start a new collection/ });
+    expect((fresh as HTMLInputElement).checked).toBe(true);
+    await homebrewRepo.removeEntry(solo, 'item', { name: 'Lamp', source: 'SO' });
+    await waitFor(
+      () => expect(screen.queryAllByRole('checkbox', { name: /^Lamp/, hidden: true })).toEqual([]),
+      { timeout: WAIT },
+    );
+    expect(screen.getByRole('dialog', { name: 'Move 1 entry' })).toBe(sheet);
+    fireEvent.click(within(sheet).getByRole('button', { name: 'Make and move' }));
+    expect((await within(sheet).findByRole('alert', {}, { timeout: WAIT })).textContent).toMatch(
+      /^Lamp from Solo did not move/,
+    );
+    fireEvent.click(within(sheet).getByRole('button', { name: 'Cancel' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    await waitFor(() =>
+      expect(screen.queryByRole('group', { name: 'With what is selected' })).toBeNull(),
+    );
+    // A new entry later lists as a link, not a row to pick.
+    await homebrewRepo.saveEntry(
+      'item',
+      { name: 'Wick', source: 'SO', type: 'G' },
+      { fileId: solo },
+    );
+    await screen.findByRole('link', { name: /^Wick\s*,/ }, { timeout: WAIT });
+    expect(screen.queryByRole('group', { name: 'With what is selected' })).toBeNull();
+  });
+
+  it('says Undone only once the entries are back, and nothing when the Undo fails', async () => {
+    const { lantern } = await world();
+    await visit();
+    await selectMode();
+    fireEvent.click(row('Lamp'));
+    fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+    const sheet = await screen.findByRole('dialog', { name: 'Delete 1 entry?' }, { timeout: WAIT });
+    await within(sheet).findByText('No character uses them.', {}, { timeout: WAIT });
+    fireEvent.click(within(sheet).getByRole('button', { name: 'Delete 1 entry' }));
+    const undo = await screen.findByRole(
+      'button',
+      { name: 'Undo: Deleted 1 entry' },
+      { timeout: WAIT },
+    );
+    const restore = vi
+      .spyOn(homebrewRepo, 'restoreEntries')
+      .mockRejectedValue(new Error('changed meanwhile'));
+    fireEvent.click(undo);
+    expect(screen.queryByText(/Undone/)).toBeNull();
+    await waitFor(() => expect(screen.queryByRole('button', { name: /^Undo: / })).toBeNull(), {
+      timeout: WAIT,
+    });
+    expect(restore).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText(/Undone/)).toBeNull();
+    expect((await content(lantern)).item).toEqual([]);
+    restore.mockRestore();
+  });
+});
+
+describe('who uses an entry being deleted', () => {
+  const names = new Map([
+    ['lantern', 'Lantern Coast'],
+    ['tide', 'Tidewater'],
+  ]);
+  const pick = (type: string, entry: Row, fileId = 'lantern', change = false) => ({
+    type,
+    entry,
+    fileId,
+    change,
+  });
+  const lines = (doc: CharacterDoc, picked: Array<Mine & { change: boolean }>) =>
+    whoUses([doc], picked, names, repointDoc).flatMap((u) => u.lines.map((l) => l.text));
+
+  it('counts an optional feature by its own picks, not a same-named feat’s', () => {
+    const doc = sorcerer();
+    doc.feats = [{ ref: { name: 'Gift', source: 'HB' }, instanceId: 'gift' }];
+    doc.choices = { 'feat:gift|hb:skill:0': 'arcana' };
+    const option = pick('optionalfeature', { name: 'Gift', source: 'HB' });
+    expect(lines(doc, [option])).toEqual([]);
+    expect(lines(doc, [pick('feat', gift('HB'))])).toEqual(['Gift leaves the sheet.']);
+    doc.choices = { 'class:sorcerer|tst:optfeature:metamagic:0': 'gift|hb' };
+    expect(lines(doc, [option])).toEqual(['Gift leaves the sheet.']);
+  });
+
+  it('counts a subrace or subclass under its own parent only', () => {
+    const doc = sorcerer();
+    doc.race = { name: 'Dwarf', source: 'HB' };
+    doc.subrace = { name: 'Hill', source: 'HB' };
+    const hill = (raceName: string) =>
+      pick('subrace', { name: 'Hill', source: 'HB', raceName, raceSource: 'HB' }, 'lantern', true);
+    expect(lines(doc, [hill('Gnome')])).toEqual([]);
+    expect(lines(doc, [hill('Dwarf')])).toEqual(['Hill goes back to the book’s.']);
+
+    const [level] = doc.classes;
+    if (level === undefined) throw new Error('no class');
+    level.subclass = { name: 'Storm', source: 'HB' };
+    const storm = (className: string) =>
+      pick('subclass', { name: 'Storm', source: 'HB', className, classSource: 'TST' });
+    expect(lines(doc, [storm('Wizard')])).toEqual([]);
+    expect(lines(doc, [storm('Sorcerer')])).toEqual(['Storm leaves the sheet.']);
+  });
+
+  it('tells two of one name apart by kind and collection', () => {
+    const doc = sorcerer();
+    doc.feats = [{ ref: { name: 'Gift', source: 'HB' }, instanceId: 'gift' }];
+    doc.equipment = [
+      { id: 'g', ref: { name: 'Gift', source: 'TW' }, qty: 1, equipped: false, attuned: false },
+    ];
+    const [user] = whoUses(
+      [doc],
+      [pick('feat', gift('HB')), pick('item', { name: 'Gift', source: 'TW' }, 'tide')],
+      names,
+      repointDoc,
+    );
+    expect(user?.lines.map((l) => l.text)).toEqual([
+      'Gift (feat, Lantern Coast) leaves the sheet.',
+      'Gift (item, Tidewater) leaves the sheet.',
+    ]);
+    expect(new Set(user?.lines.map((l) => l.key)).size).toBe(2);
   });
 });

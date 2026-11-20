@@ -4,6 +4,7 @@
  * the other.
  */
 
+import { canonicalSource, isKnownSource } from '@/data5e/sourceNames';
 import { type EntryPick, type HomebrewFile, internals } from '@/db/homebrewRepo';
 import { ENTRY_PARENT_KEYS } from '@/engine/castGuidance';
 import { TYPE_LABELS } from '@/features/library/browseTypes';
@@ -126,9 +127,10 @@ export function selectionFile(files: readonly HomebrewFile[], picked: readonly M
 
 /**
  * A source for a collection started on the move sheet, from its name
- * (`Lantern Coast` as `LanternCoast`), as `MyHomebrew` is. A short or capital
- * name (`MM`) gets `Homebrew` after it, so it is never a book's short code;
- * the repo makes it unique among the files here.
+ * (`Lantern Coast` as `LanternCoast`), as `MyHomebrew` is. A name that is a
+ * published book's code in any case (`DSotDQ`), or reads like one (short, or
+ * capitals only: `MM`), gets `Homebrew` after it; the repo makes it unique
+ * among the files here.
  */
 export function newSource(name: string): string {
   const words = name.match(/[A-Za-z0-9]+/g) ?? [];
@@ -137,5 +139,6 @@ export function newSource(name: string): string {
     .join('')
     .slice(0, 24);
   if (joined === '') return 'MyCollection';
-  return joined.length < 6 || !/[a-z]/.test(joined) ? `${joined}Homebrew` : joined;
+  const book = joined.length < 6 || !/[a-z]/.test(joined) || isKnownSource(canonicalSource(joined));
+  return book ? `${joined.slice(0, 16)}Homebrew` : joined;
 }

@@ -18,13 +18,14 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { invalidateRegistry } from '@/data5e/registry';
 import { characterRepo } from '@/db/characterRepo';
 import { type HomebrewFile, homebrewRepo, type Removed } from '@/db/homebrewRepo';
-import type { ImportedMention } from '@/db/repoint';
+import type { ImportedMention, Repoint } from '@/db/repoint';
+import type { CharacterDoc, EntityRef } from '@/engine/types';
 import { downloadJson } from '@/lib/download';
 import { errorText } from '@/stores/notices';
 import { Button } from '@/ui/Button';
 import { DialogFrame } from '@/ui/dialogs';
 import { fieldClass } from '@/ui/TextField';
-import { entriesOf, type Mine, newSource, pickOf, selectionFile } from './yours';
+import { entriesOf, kindOf, type Mine, mineKey, newSource, pickOf, selectionFile } from './yours';
 
 /** "1 entry", "3 entries". */
 export const words = (n: number) => (n === 1 ? '1 entry' : `${n} entries`);
@@ -51,11 +52,11 @@ interface Moved {
   skipped: number;
 }
 
-/** A character that uses some of the picked entries. */
-interface User {
+/** A character that uses some of the picked entries, a line for each. */
+export interface User {
   id: string;
   name: string;
-  lines: string[];
+  lines: Array<{ key: string; text: string }>;
 }
 
 export interface SelectBarProps {
@@ -69,6 +70,8 @@ export interface SelectBarProps {
   onDone: (message: string, stay?: boolean) => void;
   /** Escape on the bar: select mode ends, as it does from a row. */
   onEscape: () => void;
+  /** A sheet opened or closed: select mode stays on under it, even if the list empties. */
+  onSheet: (open: boolean) => void;
   /** Entries were deleted: what was taken out, for Undo, and what to call it. */
   onDeleted: (removed: Removed, title: string, detail: string) => void;
 }
@@ -79,6 +82,7 @@ export default function SelectBar({
   names,
   onDone,
   onEscape,
+  onSheet,
   onDeleted,
 }: SelectBarProps) {
   const [sheet, setSheet] = useState<'move' | 'delete' | null>(null);
@@ -87,9 +91,22 @@ export default function SelectBar({
   const none = picked.length === 0;
   const changes = new Set(files.filter((f) => f.role === 'changes').map((f) => f.id));
   const isChange = (m: Mine) => changes.has(m.fileId);
+  const told = useRef(onSheet);
+  told.current = onSheet;
+  useEffect(() => {
+    told.current(sheet !== null);
+    return () => told.current(false);
+  }, [sheet]);
 
   const open = (which: 'move' | 'delete', from: HTMLButtonElement | null) => {
     if (none) return;
+    if (which === 'move' && picked.every(isChange)) {
+      onDone(
+        'Changes to the books stay where they are: a change keeps the book’s name and source.',
+        true,
+      );
+      return;
+    }
     opener.current = from;
     setSheet(which);
   };
@@ -259,8 +276,13 @@ function MoveSheet({
   const stay = picked.length - movable.length;
   const places = files.filter((f) => f.role === undefined);
   const homes = new Set(movable.map((m) => m.fileId));
+  // A collection none of them is in, else any but their only one.
   const [to, setTo] = useState(
-    () => places.find((f) => !(homes.size === 1 && homes.has(f.id)))?.id ?? NEW,
+    () =>
+      (
+        places.find((f) => !homes.has(f.id)) ??
+        places.find((f) => !(homes.size === 1 && homes.has(f.id)))
+      )?.id ?? NEW,
   );
   const [name, setName] = useState('New collection');
   const [busy, setBusy] = useState(false);
@@ -448,6 +470,14 @@ function MoveSheet({
         {movable.length > 0 && going.length === 0 && (
           <p className={NOTE}>They are in {target} already.</p>
         )}
+        {going.length > 0 && going.length < movable.length && (
+          <p className={NOTE}>
+            {movable.length - going.length === 1
+              ? '1 of them is'
+              : `${movable.length - going.length} of them are`}{' '}
+            in {target} already and {movable.length - going.length === 1 ? 'stays' : 'stay'} there.
+          </p>
+        )}
         {/* One refusal a line, when every collection they come from refused. */}
         {error !== undefined && (
           <p role="alert" className="whitespace-pre-line text-body text-danger">
@@ -482,40 +512,99 @@ function MoveSheet({
   );
 }
 
+/** A character's content with its pick keys set aside: what its answers are, not where. */
+const answersOf = (doc: CharacterDoc) =>
+  JSON.stringify({ ...doc, choices: Object.values(doc.choices ?? {}), homebrewDeps: [] });
+
+const sameRef = (r: EntityRef | undefined, name: unknown, source: unknown) =>
+  r !== undefined &&
+  typeof name === 'string' &&
+  r.name.toLowerCase() === name.toLowerCase() &&
+  (typeof source !== 'string' || r.source.toLowerCase() === source.toLowerCase());
+
+/**
+ * Whether `doc` has `m` under the parent it is for: a subrace under its race,
+ * a subclass under its class. The walker knows them by name and book alone,
+ * and a change to one race's Hill is not another race's.
+ */
+function underParent(doc: CharacterDoc, m: Mine): boolean {
+  const e = m.entry;
+  if (m.type === 'subrace' && typeof e.raceName === 'string') {
+    return sameRef(doc.race, e.raceName, e.raceSource);
+  }
+  if (m.type === 'subclass' && typeof e.className === 'string') {
+    return doc.classes.some(
+      (l) => sameRef(l.ref, e.className, e.classSource) && sameRef(l.subclass, e.name, e.source),
+    );
+  }
+  return true;
+}
+
 /** Who uses the entries being deleted, and how many characters could not be read to say. */
 interface Users {
   users: User[];
   unreadable: number;
 }
 
-/**
- * The characters holding any of `picked`, each with what it holds. E5's walker
- * is the finder: a character that a rename of an entry would change holds it.
- */
-async function usersOf(picked: ReadonlyArray<Mine & { change: boolean }>): Promise<Users> {
+/** The characters holding any of `picked`, each with what it holds. */
+async function usersOf(
+  picked: ReadonlyArray<Mine & { change: boolean }>,
+  names: ReadonlyMap<string, string>,
+): Promise<Users> {
   const [{ repointDoc }, { characters, errors }] = await Promise.all([
     import('@/db/repoint'),
     characterRepo.listSafe(),
   ]);
-  const users = characters.flatMap((doc) => {
+  return { users: whoUses(characters, picked, names, repointDoc), unreadable: errors.length };
+}
+
+/**
+ * Each of `characters` that holds some of `picked`, with a line for each.
+ * E5's walker is the finder (`repointDoc`, passed in so the module loads
+ * lazily): a character that a rename of an entry would change holds it.
+ */
+export function whoUses(
+  characters: readonly CharacterDoc[],
+  picked: ReadonlyArray<Mine & { change: boolean }>,
+  names: ReadonlyMap<string, string>,
+  repointDoc: (doc: CharacterDoc, changes: readonly Repoint[]) => CharacterDoc,
+): User[] {
+  const named = (m: Mine) => String(m.entry.name);
+  return characters.flatMap((doc) => {
+    const was = answersOf(doc);
     const held = picked.filter((m) => {
-      const from = { name: String(m.entry.name), source: String(m.entry.source) };
+      const from = { name: named(m), source: String(m.entry.source) };
+      let after: CharacterDoc;
       try {
-        const to = { ...from, name: `${from.name} (deleted)` };
-        return repointDoc(doc, [{ type: m.type, from, to }]) !== doc;
+        after = repointDoc(doc, [
+          { type: m.type, from, to: { ...from, name: `${from.name} (deleted)` } },
+        ]);
       } catch {
         return false;
       }
+      // An optional feature's own picks sit under its host's key, and a
+      // subrace's under its race's: a moved key alone is a same-named host's.
+      return after !== doc && answersOf(after) !== was && underParent(doc, m);
     });
     if (held.length === 0) return [];
-    const lines = held.map((m) =>
-      m.change
-        ? `${String(m.entry.name)} goes back to the book’s.`
-        : `${String(m.entry.name)} leaves the sheet.`,
-    );
+    const lines = held.map((m) => {
+      // Two of one name are told apart by kind, parent and collection.
+      const twin = held.some((h) => h !== m && named(h).toLowerCase() === named(m).toLowerCase());
+      const parent = m.entry.raceName ?? m.entry.className;
+      const what = twin
+        ? `${named(m)} (${[
+            kindOf(m.type).toLowerCase(),
+            ...(typeof parent === 'string' ? [parent] : []),
+            names.get(m.fileId) ?? 'Workshop',
+          ].join(', ')})`
+        : named(m);
+      return {
+        key: mineKey(m),
+        text: m.change ? `${what} goes back to the book’s.` : `${what} leaves the sheet.`,
+      };
+    });
     return [{ id: doc.id, name: doc.name, lines }];
   });
-  return { users, unreadable: errors.length };
 }
 
 function DeleteSheet({
@@ -540,14 +629,14 @@ function DeleteSheet({
   const [error, setError] = useState<string>();
   useEffect(() => {
     let alive = true;
-    usersOf(gone).then(
+    usersOf(gone, names).then(
       (u) => alive && setFound(u),
       () => alive && setFound(null),
     );
     return () => {
       alive = false;
     };
-  }, [gone]);
+  }, [gone, names]);
   const homes = andList([...new Set(gone.map((m) => names.get(m.fileId) ?? 'Workshop'))]);
 
   const run = async () => {
@@ -584,8 +673,8 @@ function DeleteSheet({
               <li key={u.id} className={ITEM}>
                 <span className="text-body-strong">{u.name}</span>
                 {u.lines.map((l) => (
-                  <span key={l} className="text-caption text-ink-muted">
-                    {l}
+                  <span key={l.key} className="text-caption text-ink-muted">
+                    {l.text}
                   </span>
                 ))}
               </li>

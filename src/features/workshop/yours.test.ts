@@ -121,4 +121,11 @@ describe('newSource', () => {
     expect(newSource('Sky')).toBe('SkyHomebrew');
     expect(newSource('XGE 2')).toBe('XGE2Homebrew');
   });
+
+  it('never makes a published book’s code, in any case', () => {
+    expect(newSource('DSotDQ')).toBe('DSotDQHomebrew');
+    expect(newSource('dsotdq')).toBe('DsotdqHomebrew');
+    expect(newSource('Lantern Coast')).toBe('LanternCoast');
+    expect(newSource('ABCDEFGHIJKLMNOPQRSTUVWXYZ').length).toBeLessThanOrEqual(24);
+  });
 });
