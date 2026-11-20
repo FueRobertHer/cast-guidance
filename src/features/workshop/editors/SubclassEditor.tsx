@@ -627,8 +627,9 @@ function SubclassBody({ draft, change, original, registry, readOnly }: EditorPro
         />
       </Section>
       {/* Its own columns in the class's table: its spells' (set here), and the book's (a Psi Warrior's dice). */}
+      {/* Without spells, only while it has a book column to show: its spell columns go with them. */}
       {(typeof draft.casterProgression === 'string' ||
-        (Array.isArray(draft.subclassTableGroups) && draft.subclassTableGroups.length > 0)) && (
+        LEVELS.some((l) => bookAt(draft, 'subclassTableGroups')(l).length > 0)) && (
         <Suspense fallback={<p className="text-body text-ink-muted">Loading the table…</p>}>
           <ClassTable
             name={String(draft.name || 'Your subclass')}

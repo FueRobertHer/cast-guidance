@@ -233,3 +233,87 @@ describe('background fields', () => {
     expect(on.skills.Insight?.prof).toBeGreaterThan(0);
   });
 });
+
+describe('a choice the Build tab can make', () => {
+  it('a kind said with "a" or in capitals is that kind, which the sheet offers', () => {
+    const one = (from: string[]) => ({ names: [], choice: { count: 1, from } });
+    expect(grantedWith(one(['a gaming set']), 'any', TOOL_KINDS)).toEqual([{ anyGamingSet: 1 }]);
+    expect(grantedWith(one(['Gaming Set']), 'any', TOOL_KINDS)).toEqual([{ anyGamingSet: 1 }]);
+    // Beside a name, the kind is kept in the words the sheet reads.
+    expect(grantedWith(one(["thieves' tools", 'A Gaming Set']), 'any', TOOL_KINDS)).toEqual([
+      { choose: { from: ["thieves' tools", 'gaming set'] } },
+    ]);
+    const at = mount(structuredClone(NEW));
+    type('Tools of your choice', '1');
+    type('Tools chosen from', 'A gaming set');
+    const stored = save(at.draft());
+    expect(stored.toolProficiencies).toEqual([{ anyGamingSet: 1 }]);
+    const { asked } = hero(stored);
+    expect(asked.some((p) => p.options.some((o) => /dice set/i.test(o.label)))).toBe(true);
+  });
+
+  it('will not save more of a choice than it names, a kind naming many', () => {
+    const with_ = (patch: Json) => editor.check?.({ ...structuredClone(NEW), ...patch });
+    const choose = (from: string[], count: number) => [{ choose: { from, count } }];
+    expect(with_({ skillProficiencies: choose(['arcana', 'history'], 3) })).toBe(
+      'The skills of your choice are 3, from a list of 2. Name more, or choose fewer.',
+    );
+    expect(with_({ toolProficiencies: choose(["thieves' tools"], 2) })).toBe(
+      'The tools of your choice are 2, from a list of 1. Name more, or choose fewer.',
+    );
+    expect(with_({ languageProficiencies: choose(['elvish'], 2) })).toBe(
+      'The languages of your choice are 2, from a list of 1. Name more, or choose fewer.',
+    );
+    expect(with_({ skillProficiencies: choose(['arcana', 'history'], 2) })).toBeUndefined();
+    expect(
+      with_({ toolProficiencies: choose(['gaming set', "thieves' tools"], 3) }),
+    ).toBeUndefined();
+  });
+
+  it('shows a skill the list has no chip for, to be seen and taken off', () => {
+    const at = mount({
+      ...structuredClone(NEW),
+      skillProficiencies: [{ 'dream lore': true, choose: { from: ['arcana', 'star lore'] } }],
+    });
+    expect(pressed('Skill proficiencies', 'dream lore')).toBe('true');
+    expect(pressed('Skills chosen from', 'star lore')).toBe('true');
+    chip('Skill proficiencies', 'dream lore');
+    chip('Skills chosen from', 'star lore');
+    expect(at.draft().skillProficiencies).toEqual([{ choose: { from: ['arcana'] } }]);
+  });
+
+  it('a choice of any tool, or of tools named, is asked on the sheet', () => {
+    const at = mount(structuredClone(NEW));
+    type('Tools of your choice', '1');
+    const any = save(at.draft());
+    expect(any.toolProficiencies).toEqual([{ any: 1 }]);
+    const anyPick = hero(any).asked.find((p) => p.options.some((o) => /dice set/i.test(o.label)));
+    expect(anyPick?.options.some((o) => /thieves/i.test(o.label))).toBe(true);
+    type('Tools chosen from', "thieves' tools, herbalism kit");
+    const named = save(at.draft());
+    expect(named.toolProficiencies).toEqual([
+      { choose: { from: ["thieves' tools", 'herbalism kit'] } },
+    ]);
+    const namedPick = hero(named).asked.find((p) =>
+      p.options.some((o) => /herbalism/i.test(o.label)),
+    );
+    expect(namedPick?.options).toHaveLength(2);
+  });
+
+  it('saves its own cards, read on the sheet', () => {
+    const at = mount({
+      ...structuredClone(NEW),
+      castGuidance: { v: 1, effects: [{ kind: 'acBonus', amount: 1 }] },
+    });
+    const section = screen
+      .getByRole('heading', { name: 'What it does on the sheet' })
+      .closest('section');
+    fireEvent.change(within(section as HTMLElement).getByLabelText('Armor Class: Amount'), {
+      target: { value: '2' },
+    });
+    const stored = save(at.draft());
+    expect(stored.castGuidance).toMatchObject({ effects: [{ kind: 'acBonus', amount: 2 }] });
+    const { sheet } = hero(stored);
+    expect(sheet.ac.parts.some((p) => p.label === 'Wayfarer' && p.amount === 2)).toBe(true);
+  });
+});

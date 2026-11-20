@@ -170,6 +170,16 @@ describe('its own spellcasting and table', () => {
     expect(again.changes()).toBe(0);
   });
 
+  it('shows no table without spells of its own or a column of the book to show', async () => {
+    const spellsOnly = [{ colLabels: ['Spells Known'], rows: [[3]] }];
+    mount({ ...structuredClone(NEW), subclassTableGroups: spellsOnly }, world());
+    expect(screen.queryByRole('list', { name: 'Lantern by level' })).toBeNull();
+    cleanup();
+    const dice = [{ colLabels: ['Psi Dice'], rows: [['d6']] }];
+    mount({ ...structuredClone(NEW), subclassTableGroups: dice }, world());
+    expect(await screen.findByRole('list', { name: 'Lantern by level' })).toBeTruthy();
+  });
+
   it('says the class casts on its own, where the sheet reads the class', () => {
     mount({ ...structuredClone(NEW), className: 'Paladin' }, world());
     expect(screen.getByText(/Paladin casts spells of its own/)).toBeTruthy();

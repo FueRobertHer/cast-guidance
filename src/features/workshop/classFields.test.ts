@@ -49,6 +49,10 @@ describe('spells by class level', () => {
       },
     ]);
     expect(levelSpellsOf('prepared', [{ level: 1, spells: [' '] }])).toBeUndefined();
+    // Its ability alone gives no spells: the block goes with its list.
+    expect(
+      levelSpellsOf('prepared', [], { ability: 'cha', prepared: { '3': ['bless|xphb'] } }),
+    ).toBeUndefined();
   });
 
   it('keeps what it cannot show: alternatives, both lists, spells by spell level', () => {

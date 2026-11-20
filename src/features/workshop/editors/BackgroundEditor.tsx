@@ -170,15 +170,25 @@ export function grantedOf(raw: unknown, anyKey: string, kinds: Options = []): Gr
   return choices.length > 1 ? undefined : { names, choice: choices[0] };
 }
 
+/** The kind `word` names, said with or without "a" or "any", in any letters. */
+const kindOf = (kinds: Options, word: string) => {
+  const w = word
+    .trim()
+    .toLowerCase()
+    .replace(/^(an?|any)\s+/, '');
+  return kinds.find(([, k]) => k === w);
+};
+
 /** The list for `g`: a choice of any is `anyKey`, of one kind its key, else `choose`. */
 export function grantedWith(g: Granted, anyKey: string, kinds: Options = []): unknown {
   const out: Json = Object.fromEntries(g.names.map((n) => [n, true]));
   const c = g.choice;
   if (c !== undefined && c.count > 0) {
-    const kind = c.from.length === 1 ? kinds.find(([, w]) => w === c.from[0]) : undefined;
-    if (c.from.length === 0) out[anyKey] = c.count;
+    const from = c.from.map((f) => kindOf(kinds, f)?.[1] ?? f);
+    const kind = from.length === 1 ? kindOf(kinds, from[0] ?? '') : undefined;
+    if (from.length === 0) out[anyKey] = c.count;
     else if (kind !== undefined) out[kind[0]] = c.count;
-    else out.choose = { from: c.from, ...(c.count !== 1 ? { count: c.count } : {}) };
+    else out.choose = { from, ...(c.count !== 1 ? { count: c.count } : {}) };
   }
   return Object.keys(out).length > 0 ? [out] : undefined;
 }
@@ -212,12 +222,20 @@ function GrantChoice({
   const set = (patch: Partial<Granted>) => onChange(grantedWith({ ...g, ...patch }, anyKey, kinds));
   const count = g.choice?.count ?? 0;
   const from = g.choice?.from ?? [];
+  // A name the list has no chip for (homebrew's own skill) gets one, so it can be seen and taken off.
+  const chips = (value: readonly string[]): Options =>
+    options === undefined
+      ? []
+      : [
+          ...options,
+          ...value.filter((v) => !options.some(([o]) => o === v)).map((v) => [v, v] as const),
+        ];
   return (
     <div className="flex flex-col gap-3">
       {options !== undefined ? (
         <ChipPicks
           label={labels.names}
-          options={options}
+          options={chips(g.names)}
           value={g.names}
           disabled={readOnly}
           onChange={(names) => set({ names })}
@@ -240,7 +258,7 @@ function GrantChoice({
         (options !== undefined ? (
           <ChipPicks
             label={labels.from}
-            options={options}
+            options={chips(from)}
             value={from}
             disabled={readOnly}
             onChange={(next) => set({ choice: { count, from: next } })}
@@ -410,8 +428,24 @@ export const editor: EditorSpec = {
   Body: BackgroundBody,
   check: (draft: Json) => {
     const picks = backgroundAbilities(draft.ability);
-    return picks !== undefined && picks.length !== 0 && picks.length !== 3
-      ? 'Pick three ability scores, or none.'
-      : undefined;
+    if (picks !== undefined && picks.length !== 0 && picks.length !== 3)
+      return 'Pick three ability scores, or none.';
+    // A choice of more than it names cannot be made on the Build tab; a kind
+    // (a gaming set) names many.
+    for (const [raw, anyKey, kinds, what] of [
+      [draft.skillProficiencies, 'any', [], 'skills'],
+      [draft.toolProficiencies, 'any', TOOL_KINDS, 'tools'],
+      [draft.languageProficiencies, 'anyStandard', [], 'languages'],
+    ] as const) {
+      const c = grantedOf(raw, anyKey, kinds)?.choice;
+      if (
+        c !== undefined &&
+        c.from.length > 0 &&
+        c.count > c.from.length &&
+        !c.from.some((f) => kindOf(kinds, f) !== undefined)
+      )
+        return `The ${what} of your choice are ${c.count}, from a list of ${c.from.length}. Name more, or choose fewer.`;
+    }
+    return undefined;
   },
 };

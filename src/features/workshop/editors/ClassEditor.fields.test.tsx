@@ -7,7 +7,7 @@
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { useState } from 'react';
 import { MemoryRouter } from 'react-router';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Entity } from '@/data5e/copyMod';
 import { engineContextFor } from '@/data5e/engineAdapter';
 import { type EntityRegistry, mergeHomebrew, normalizeDataset } from '@/data5e/normalize';
@@ -15,6 +15,7 @@ import { deriveSheet } from '@/engine/derive';
 import { meetsMulticlassRequirements } from '@/engine/multiclass';
 import { type CharacterDoc, newCharacterDoc } from '@/engine/types';
 import { coinLabel, parseStartingEquipment } from '@/features/creator/startingEquipment';
+import { bookAt, spellColumns } from '../classFields';
 import { writeChange } from '../copyWriter';
 import type { Json } from '../editorTypes';
 import {
@@ -30,7 +31,22 @@ import {
   writeClass,
 } from './ClassEditor';
 
-afterEach(cleanup);
+// The items are in, unless a test says they are still loading.
+const packs = vi.hoisted(() => ({ status: 'ready' as 'loading' | 'ready' }));
+vi.mock('@/data5e/hooks', async (load) => ({
+  ...(await load<typeof import('@/data5e/hooks')>()),
+  useTypePacks: () => ({
+    status: packs.status,
+    error: null,
+    offline: false,
+    retry: () => undefined,
+  }),
+}));
+
+afterEach(() => {
+  cleanup();
+  packs.status = 'ready';
+});
 
 const ref = (name: string, level: number) => `${name}|Monk|XPHB|${level}`;
 const feature = (name: string, level: number, entries: unknown[]): Json => ({
@@ -180,6 +196,9 @@ describe('multiclassing requirements', () => {
     expect(needsOf(undefined)).toEqual({ abilities: [], score: 13, any: false });
     expect(needsOf({ str: 13, dex: 15 })).toBeUndefined();
     expect(needsOf({ cha: 13, or: [{ str: 13 }] })).toBeUndefined();
+    // "Strength and Constitution 13, or Intelligence 13" is more than one list of scores says.
+    expect(needsOf({ or: [{ str: 13, con: 13 }, { int: 13 }] })).toBeUndefined();
+    expect(needsOf({ or: [] })).toBeUndefined();
   });
 
   it('writes one of them as one score each, which the Build tab checks as either', () => {
@@ -195,6 +214,13 @@ describe('multiclassing requirements', () => {
     };
     expect(meetsMulticlassRequirements(all, scores)).toBe(false);
     expect(needsWith({ abilities: [], score: 13, any: false })).toBeUndefined();
+  });
+
+  it('needs no score past 30', () => {
+    const at = mount({ name: 'Lantern', ...editor.blank() }, world());
+    chip('Scores it needs', 'Strength');
+    type('Score needed', '45');
+    expect((at.draft().multiclassing as Json).requirements).toEqual({ str: 30 });
   });
 });
 
@@ -223,6 +249,91 @@ describe('starting equipment', () => {
     // What the option had in the same words is kept as it was, its tags too.
     const kept = { item: 'shield|phb', displayName: 'a shield' };
     expect(gearFrom('shield', [kept], items)).toBe(kept);
+  });
+
+  it('reads coins of more than one kind, one of several kinds, and the same gear retyped', () => {
+    expect(gearFrom('15 gp 5 sp', [], items)).toEqual({ value: 1550 });
+    expect(gearFrom(gearText({ value: 1550 }) ?? '', [], items)).toEqual({ value: 1550 });
+    expect(gearFrom('2 GP 3 cp', [], items)).toEqual({ value: 203 });
+    expect(gearFrom("a musical instrument or artisan's tools x2", [], items)).toEqual({
+      equipmentTypes: ['instrumentMusical', 'toolArtisan'],
+      quantity: 2,
+    });
+    // A kind the creator has no words for stays that kind, its count retyped.
+    const ranged = { equipmentType: 'weaponMartialRanged' };
+    expect(gearFrom('weaponMartialRanged x2', [ranged], items)).toEqual({
+      equipmentType: 'weaponMartialRanged',
+      quantity: 2,
+    });
+    // In other letters, or with a count, a pouch keeps the coins its words do not show.
+    const pouch = { item: 'pouch|phb', containsValue: 1500 };
+    expect(gearFrom('Pouch', [pouch], items)).toEqual({ item: 'Pouch|phb', containsValue: 1500 });
+    expect(gearFrom('pouch x3', [pouch], items)).toEqual({ ...pouch, quantity: 3 });
+    // Coins are their words: retyped, they are what the words now say.
+    expect(gearFrom('5 gp', [{ value: 1000 }], items)).toEqual({ value: 500 });
+  });
+
+  it("keeps a pouch's coins while its count is typed a key at a time", () => {
+    const pouch = { item: 'pouch|phb', containsValue: 1500 };
+    const at = mount(
+      { name: 'Lantern', ...editor.blank(), startingEquipment: { defaultData: [{ _: [pouch] }] } },
+      world(),
+    );
+    const gear = () => ((at.draft().startingEquipment as Json).defaultData as Json[])[0]?._;
+    fireEvent.focus(screen.getByLabelText('Gear 1'));
+    type('Gear 1', 'pouch x');
+    expect(gear()).toEqual([{ special: 'pouch x' }]);
+    type('Gear 1', 'pouch x2');
+    expect(gear()).toEqual([{ ...pouch, quantity: 2 }]);
+    type('Gear 1', 'pouch x');
+    type('Gear 1', 'pouch');
+    expect(gear()).toEqual([pouch]);
+  });
+
+  it("keeps a pouch's coins in a box that now holds other gear, from when it is entered", () => {
+    const pouch = { item: 'pouch|phb', containsValue: 1500 };
+    const at = mount(
+      {
+        name: 'Lantern',
+        ...editor.blank(),
+        startingEquipment: { defaultData: [{ _: ['longsword|phb'] }, { _: [pouch] }] },
+      },
+      world(),
+    );
+    press('Remove gear 1');
+    const gear = () => ((at.draft().startingEquipment as Json).defaultData as Json[])[0]?._;
+    expect(box('Gear 1')).toBe('pouch');
+    fireEvent.focus(screen.getByLabelText('Gear 1'));
+    type('Gear 1', 'pouch x');
+    type('Gear 1', 'pouch x2');
+    expect(gear()).toEqual([{ ...pouch, quantity: 2 }]);
+  });
+
+  it('waits for the items before gear can be typed, else a name would be kept as words', () => {
+    const start = {
+      name: 'Lantern',
+      ...editor.blank(),
+      startingEquipment: { defaultData: [{ _: ['longsword|phb'] }] },
+    };
+    packs.status = 'loading';
+    mount(structuredClone(start), world());
+    expect((screen.getByLabelText('Gear 1') as HTMLInputElement).disabled).toBe(true);
+    expect(screen.getByText('Loading the items…')).toBeTruthy();
+    cleanup();
+    packs.status = 'ready';
+    mount(structuredClone(start), world());
+    expect((screen.getByLabelText('Gear 1') as HTMLInputElement).disabled).toBe(false);
+    expect(screen.queryByText('Loading the items…')).toBeNull();
+  });
+
+  it('adds an option beside gear for all, which stays gear for all', () => {
+    const group = { _: ['longsword|phb'], a: ['javelin|phb'] };
+    const at = mount(
+      { name: 'Lantern', ...editor.blank(), startingEquipment: { defaultData: [group] } },
+      world(),
+    );
+    press('Add an option');
+    expect((at.draft().startingEquipment as Json).defaultData).toEqual([{ ...group, b: [] }]);
   });
 
   it('saves the choices typed, which the creator offers, and opens them again unchanged', () => {
@@ -291,10 +402,47 @@ describe('starting equipment', () => {
       registry,
     );
     press('Remove choice 1, option B');
+    // One option left is gear, not a choice of one.
     expect(at.draft().startingEquipment).toEqual({
       additionalFromBackground: true,
-      defaultData: [{ a: ['longsword|phb'] }],
+      defaultData: [{ _: ['longsword|phb'] }],
     });
+    expect(box('Gear 1')).toBe('longsword');
+  });
+
+  it("keeps the book's words for its kit while what the creator gives is as it was", () => {
+    const words = { default: ['(a) a longsword'], entries: ['A longsword.'] };
+    const at = mount(
+      {
+        name: 'Lantern',
+        ...editor.blank(),
+        startingEquipment: { ...words, defaultData: [{ _: ['longsword|phb'] }] },
+      },
+      world(),
+    );
+    const se = () => at.draft().startingEquipment as Json;
+    press('Make it a choice');
+    expect(se()).toEqual({ ...words, defaultData: [{ A: ['longsword|phb'], B: [] }] });
+    press('Remove choice 1, option B');
+    expect(se()).toEqual({ ...words, defaultData: [{ _: ['longsword|phb'] }] });
+    press('Add gear');
+    expect(se()).toMatchObject(words);
+    type('Gear 2', 'javelin');
+    expect(se()).toEqual({ defaultData: [{ _: ['longsword|phb'] }, { _: ['javelin|phb'] }] });
+  });
+
+  it('says a kit in words alone is kept until gear is added', () => {
+    mount(
+      {
+        name: 'Lantern',
+        ...editor.blank(),
+        startingEquipment: { default: ['A sword and a shield.'] },
+      },
+      world(),
+    );
+    expect(
+      screen.getByText(/in words only, kept as written until gear is added here/),
+    ).toBeTruthy();
   });
 });
 
@@ -343,6 +491,7 @@ describe('the Basics fields', () => {
       engineContextFor(sheetWorld, {}),
     );
     expect(second.armorProfs).toContain('light');
+    expect(second.toolProfs).toContain("Thieves' tools");
 
     cleanup();
     const again = mount(openClass(structuredClone(entry), { registry }), registry);
@@ -380,6 +529,45 @@ describe('the Basics fields', () => {
     );
     type('Skills to choose', '0');
     expect(at.draft().startingProficiencies).toBeUndefined();
+  });
+
+  it('will not save more skills to choose than it names', () => {
+    const base = { name: 'Lantern', ...editor.blank() };
+    const choose = (from: string[], count: number) => ({ skills: [{ choose: { from, count } }] });
+    expect(
+      editor.check?.({ ...base, startingProficiencies: choose(['history', 'insight'], 3) }),
+    ).toBe('The skills to choose are 3, from a list of 2. Name more, or choose fewer.');
+    expect(
+      editor.check?.({ ...base, multiclassing: { proficienciesGained: choose(['history'], 2) } }),
+    ).toBe('The skills gained are 2, from a list of 1. Name more, or choose fewer.');
+    expect(
+      editor.check?.({ ...base, startingProficiencies: choose(['history', 'insight'], 2) }),
+    ).toBeUndefined();
+    // A choice from no list is from every skill, as the creator offers it.
+    expect(editor.check?.({ ...base, startingProficiencies: choose([], 3) })).toBeUndefined();
+  });
+
+  it('starts a table of prepared spells for a copy whose formula is none', () => {
+    const at = mount({ name: 'Lantern', ...editor.blank(), preparedSpells: null }, world());
+    fireEvent.change(screen.getByLabelText('Spellcasting'), { target: { value: 'full' } });
+    expect(at.draft().preparedSpellsProgression).toEqual(Array(20).fill(0));
+  });
+
+  it('keeps a list of none: a class knowing no spells at level 1 still knows its spells', async () => {
+    const at = mount(
+      {
+        name: 'Lantern',
+        ...editor.blank(),
+        casterProgression: 'full',
+        spellcastingAbility: 'int',
+        spellsKnownProgression: Array(20).fill(1),
+      },
+      world(),
+    );
+    press('Table');
+    fireEvent.change(await screen.findByLabelText('Known at level 1'), { target: { value: '0' } });
+    expect(at.draft().spellsKnownProgression).toEqual(Array(20).fill(0));
+    expect(at.draft()).not.toHaveProperty('preparedSpellsProgression');
   });
 
   it("keeps a tool's tag while its words are as they were", () => {
@@ -444,8 +632,9 @@ describe('the Basics fields', () => {
 
 describe('optional features by level', () => {
   it('counts a list the class names, read the same from a list of twenty, a table or its *', () => {
+    // Past the list's end, the most so far, as the sheet gives it.
     expect(optionalValues({ progression: [0, 2, 2, 2, 3] }).slice(0, 6)).toEqual([
-      0, 2, 2, 2, 3, 0,
+      0, 2, 2, 2, 3, 3,
     ]);
     expect(optionalValues({ progression: { '2': 2, '5': 3 } }).slice(0, 6)).toEqual([
       0, 2, 2, 2, 3, 3,
@@ -470,6 +659,29 @@ describe('optional features by level', () => {
     // A list read as far as it goes, its numbers only, as the sheet reads it.
     expect(editor.check?.(style([1, 1, 2]))).toBeUndefined();
     expect(editor.check?.(style([1, null, 2]))).toBeUndefined();
+  });
+
+  it('shows a count that falls as the list says it, to be set right', async () => {
+    const at = mount(
+      {
+        name: 'Lantern',
+        ...editor.blank(),
+        optionalfeatureProgression: [
+          { name: 'Fighting Style', featureType: ['FS:F'], progression: [2, 2, 1] },
+        ],
+      },
+      world(),
+    );
+    press('Table');
+    const row = await screen.findByRole('button', { name: /^Level 3,/ });
+    expect(row.getAttribute('aria-label')).toContain('Fighting Style 1');
+    // Past the list's end, the most so far, as the sheet gives it.
+    const fourth = screen.getByRole('button', { name: /^Level 4,/ });
+    expect(fourth.getAttribute('aria-label')).toContain('Fighting Style 2');
+    expect(editor.check?.(at.draft())).toMatch(/at level 3/);
+    fireEvent.click(row);
+    type('Fighting Style at level 3', '2');
+    expect(editor.check?.(at.draft())).toBeUndefined();
   });
 
   it('saves a list to pick from and how many by level, a pick on the sheet', async () => {
@@ -510,7 +722,7 @@ describe('the number of spells it prepares', () => {
     ).spellcasting[0]?.preparedMax;
 
   /** A copy of the Cleric saved with the spellcasting the player set, on the sheet. */
-  function copied(set: () => void) {
+  async function copied(set: () => unknown) {
     cleanup();
     const registry = world();
     const cls = registry.get('class', 'Cleric', 'PHB') as Json;
@@ -520,7 +732,7 @@ describe('the number of spells it prepares', () => {
         name: 'Basics',
       }),
     );
-    set();
+    await set();
     const draft = { ...at.draft(), name: 'Shrine' };
     const { entry } = writeClass({
       original: cls,
@@ -533,14 +745,9 @@ describe('the number of spells it prepares', () => {
     return world({}, { class: [structuredClone(entry)] });
   }
 
-  it('is the formula the copy keeps, half its level with a formula changed', () => {
-    expect(
-      preparedAt(
-        copied(() => {}),
-        5,
-      ),
-    ).toBe(8);
-    const half = copied(() =>
+  it('is the formula the copy keeps, half its level with a formula changed', async () => {
+    expect(preparedAt(await copied(() => {}), 5)).toBe(8);
+    const half = await copied(() =>
       fireEvent.change(screen.getByLabelText('How many it prepares'), {
         target: { value: 'half' },
       }),
@@ -548,8 +755,8 @@ describe('the number of spells it prepares', () => {
     expect(preparedAt(half, 5)).toBe(5);
   });
 
-  it('follows the table once a formula class sets one, its formula stored as none', () => {
-    const table = copied(() =>
+  it('follows the table once a formula class sets one, its formula stored as none', async () => {
+    const table = await copied(() =>
       fireEvent.change(screen.getByLabelText('How many it prepares'), {
         target: { value: 'table' },
       }),
@@ -557,6 +764,26 @@ describe('the number of spells it prepares', () => {
     expect((table.get('class', 'Shrine', 'MyHomebrew') as Json).preparedSpells).toBeNull();
     // Started from the counts of the first full caster with a table: none here, so 0s to set.
     expect(preparedAt(table, 5)).toBe(0);
+  });
+
+  it('gives the counts set in its table, level by level', async () => {
+    const table = await copied(async () => {
+      fireEvent.change(screen.getByLabelText('How many it prepares'), {
+        target: { value: 'table' },
+      });
+      fireEvent.click(
+        within(screen.getByRole('group', { name: 'Part of the class' })).getByRole('button', {
+          name: 'Table',
+        }),
+      );
+      fireEvent.change(await screen.findByLabelText('Prepared at level 1'), {
+        target: { value: '4' },
+      });
+      fireEvent.click(screen.getByRole('button', { name: /^Level 5,/ }));
+      type('Prepared at level 5', '6');
+    });
+    expect(preparedAt(table, 4)).toBe(4);
+    expect(preparedAt(table, 5)).toBe(6);
   });
 });
 
@@ -615,6 +842,24 @@ describe('its own slot table, saved again and again', () => {
     // After a save the Workshop reads the registry again; the draft's table is as it opened.
     const refreshed = world({}, { class: [structuredClone(first)] });
     expect(slotsOf(save(full, refreshed))).toEqual(slotsOf(first));
+  });
+
+  it('shows the slots Save writes: its own until the progression changes, then the new ones', () => {
+    const { registry, draft } = opened();
+    const top = (d: Json) => spellColumns(d, () => undefined).find((c) => c.key === 'slot')?.values;
+    // Its own table: a 1st-level slot at level 1, which 1/3 gives none of.
+    expect(top(draft)?.[0]).toBe('1st');
+    const full = { ...draft, casterProgression: 'full' };
+    expect(top(full)?.[16]).toBe('9th');
+    const first = save(full, registry);
+    expect(slotsOf(first)?.[16]?.[8]).toBe(1);
+    // After Save the draft is kept, its table as it opened: it still shows what was saved.
+    const refreshed = world({}, { class: [structuredClone(first)] });
+    const reopened = openClass(
+      structuredClone(refreshed.get('class', 'Lantern', 'MyHomebrew') as Json),
+      { registry: refreshed },
+    );
+    expect(top(full)).toEqual(top(reopened));
   });
 
   it('opened new, makes the slots its progression gives', () => {
@@ -688,5 +933,17 @@ describe('a copy of a class whose feature a table changed (U10)', () => {
       file: { _meta: {}, ...file },
     });
     expect(editsOf(draft).changed[at]?.entries).toEqual(['Two strikes.']);
+  });
+});
+
+describe("the book's own columns", () => {
+  it('leaves out a slot table headed by spell levels alone, as the Spellcaster sidekick has', () => {
+    const draft = {
+      classTableGroups: [
+        { colLabels: ['{@filter 1st|spells|level=1}', '2nd'], rows: [[2, 0]] },
+        { colLabels: ['Psi Dice'], rows: [['d6']] },
+      ],
+    };
+    expect(bookAt(draft)(1)).toEqual([['Psi Dice', 'd6']]);
   });
 });

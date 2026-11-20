@@ -33,7 +33,7 @@
  * them wherever it is read.
  */
 import { Info, Plus, X } from 'lucide-react';
-import { lazy, type ReactNode, Suspense, useMemo, useState } from 'react';
+import { lazy, type ReactNode, Suspense, useMemo, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router';
 import { plainEntryText } from '@/data5e/entries/plainText';
 import { useTypePacks } from '@/data5e/hooks';
@@ -60,7 +60,6 @@ import {
   spellBase,
   spellColumns,
   spellGroupsFor,
-  twenty,
   withOpened,
 } from '../classFields';
 import { basedOnKey, changeCount, copiedFrom, readStored, same, writeEntry } from '../copyWriter';
@@ -736,6 +735,18 @@ function check(draft: Json, at?: Omit<WriteContext, 'draft'>): string | undefine
   }
   if (typeof draft.casterProgression === 'string' && typeof draft.spellcastingAbility !== 'string')
     return 'Pick the ability it casts its spells with.';
+  // A choice of more than it names cannot be made on the Build tab.
+  for (const [start, what] of [
+    [draft.startingProficiencies, 'skills to choose'],
+    [
+      isRecord(draft.multiclassing) ? draft.multiclassing.proficienciesGained : undefined,
+      'skills gained',
+    ],
+  ] as const) {
+    const c = isRecord(start) ? skillChoice(start) : undefined;
+    if (c && c.from.length > 0 && c.count > c.from.length)
+      return `The ${what} are ${c.count}, from a list of ${c.from.length}. Name more, or choose fewer.`;
+  }
   for (const o of optionalOf(draft)) {
     const name = String(o.name ?? '').trim();
     if (name === '') return 'Every optional feature list needs a name.';
@@ -958,6 +969,14 @@ export function needsOf(req: unknown): Needs | undefined {
   const { or, ...base } = req;
   if (or !== undefined && (!Array.isArray(or) || Object.keys(base).length > 0)) return undefined;
   const parts: unknown[] = or === undefined ? [base] : or;
+  // One of several, each needing more than one score ("Strength and
+  // Constitution, or Intelligence"), is more than one list of scores can say.
+  if (
+    or !== undefined &&
+    (parts.length === 0 ||
+      (parts.length > 1 && parts.some((p) => !isRecord(p) || Object.keys(p).length !== 1)))
+  )
+    return undefined;
   const abilities: string[] = [];
   const scores = new Set<number>();
   for (const part of parts) {
@@ -1009,7 +1028,8 @@ function Multiclassing({
               value={needs.score}
               min={1}
               disabled={readOnly}
-              onChange={(score) => setNeeds({ score })}
+              // No score goes past 30.
+              onChange={(score) => setNeeds({ score: Math.min(30, score) })}
             />
           )}
           {needs.abilities.length > 1 &&
@@ -1074,6 +1094,14 @@ function coins(cp: number): string {
   return shown.length > 0 ? shown.join(' ') : '0 gp';
 }
 
+/** A piece of gear's words without its count. */
+function gearName(e: unknown): string | undefined {
+  const t = gearText(e);
+  return t !== undefined && isRecord(e) && typeof e.quantity === 'number'
+    ? t.replace(/ x\d+$/, '')
+    : t;
+}
+
 /** One piece of gear in words: "chain mail", "javelin x8", "any martial weapon", "15 gp". */
 export function gearText(e: unknown): string | undefined {
   if (typeof e === 'string') return e.split('|')[0];
@@ -1102,15 +1130,39 @@ export function gearText(e: unknown): string | undefined {
 export function gearFrom(text: string, was: readonly unknown[], items: readonly Json[]): unknown {
   const kept = was.find((e) => gearText(e) === text);
   if (kept !== undefined) return kept;
-  const coins = /^(\d+)\s*(gp|sp|cp)$/i.exec(text);
-  if (coins !== null)
-    return { value: Number(coins[1]) * (COIN[String(coins[2]).toLowerCase()] ?? 1) };
+  // Coins in one or more kinds: "15 gp 5 sp".
+  if (/^(\s*\d+\s*(gp|sp|cp))+\s*$/i.test(text)) {
+    let cp = 0;
+    for (const [, n, coin] of text.matchAll(/(\d+)\s*(gp|sp|cp)/gi))
+      cp += Number(n) * (COIN[String(coin).toLowerCase()] ?? 1);
+    return { value: cp };
+  }
   const counted = /^(.*?)\s+x\s*(\d+)$/i.exec(text);
   const name = (counted?.[1] ?? text).trim();
   // A count of none is still one: the creator gives what a gear names.
   const many = counted === null ? {} : { quantity: Math.max(1, Number(counted[2])) };
+  // The same gear with another count, or in other letters, keeps what its
+  // words do not show: a pouch's coins, a kind the creator has no words for.
+  const like = was.find((e) => gearName(e)?.toLowerCase() === name.toLowerCase());
+  if (
+    like !== undefined &&
+    typeof like !== 'string' &&
+    isRecord(like) &&
+    like.value === undefined
+  ) {
+    const { quantity: _, ...rest } = like;
+    if (typeof rest.item === 'string') rest.item = `${name}|${rest.item.split('|')[1] ?? ''}`;
+    if (typeof rest.special === 'string') rest.special = name;
+    return { ...rest, ...many };
+  }
   const kind = GEAR_KINDS.find(([, w]) => w.toLowerCase() === name.toLowerCase());
   if (kind !== undefined) return { equipmentType: kind[0], ...many };
+  // One of several kinds: "a musical instrument or artisan's tools".
+  const kinds = name
+    .split(/\s+or\s+/i)
+    .map((w) => GEAR_KINDS.find(([, k]) => k.toLowerCase() === w.toLowerCase())?.[0]);
+  if (kinds.length > 1 && kinds.every((k) => k !== undefined))
+    return { equipmentTypes: kinds, ...many };
   const hit = items.find((i) => String(i.name).toLowerCase() === name.toLowerCase());
   if (hit !== undefined) {
     const ref = `${name}|${String(hit.source).toLowerCase()}`;
@@ -1120,6 +1172,20 @@ export function gearFrom(text: string, was: readonly unknown[], items: readonly 
 }
 
 type GearGroup = Record<string, unknown[]>;
+
+/**
+ * What the creator gives from `groups`, to tell a change from none: empty
+ * options dropped, and an option alone the same gear under any letter.
+ */
+function gearContent(groups: readonly GearGroup[]): string {
+  return JSON.stringify(
+    groups.flatMap((g) => {
+      const full = Object.entries(g).filter(([, l]) => l.length > 0);
+      if (full.length === 0) return [];
+      return [full.length === 1 ? { _: full[0]?.[1] } : Object.fromEntries(full)];
+    }),
+  );
+}
 
 /** `defaultData` as choices of options; undefined for a shape the editor cannot show. */
 export function gearGroups(raw: unknown): GearGroup[] | undefined {
@@ -1148,15 +1214,26 @@ function GearBox({
 }) {
   const shown = list.flatMap((e) => gearText(e) ?? []);
   const kept = list.filter((e) => gearText(e) === undefined);
+  // What the option held when the box was entered: typing "pouch x2" passes
+  // through "pouch x", which matches nothing, and the pouch's coins are still
+  // to be found by the time the 2 comes.
+  const before = useRef(list);
   return (
     <>
-      <NamesBox
-        label={label}
-        value={shown}
-        placeholder="Chain mail, any martial weapon, 10 gp"
-        disabled={disabled}
-        onChange={(names) => onChange([...names.map((n) => gearFrom(n, list, items)), ...kept])}
-      />
+      <div className="contents" onFocusCapture={() => (before.current = list)}>
+        <NamesBox
+          label={label}
+          value={shown}
+          placeholder="Chain mail, any martial weapon, 10 gp"
+          disabled={disabled}
+          onChange={(names) =>
+            onChange([
+              ...names.map((n) => gearFrom(n, [...before.current, ...list], items)),
+              ...kept,
+            ])
+          }
+        />
+      </div>
       {kept.length > 0 && <Kept label={label}>and {kept.length} more, kept as written.</Kept>}
     </>
   );
@@ -1168,7 +1245,8 @@ function StartingGear({
   readOnly,
   registry,
 }: Pick<EditorProps, 'draft' | 'change' | 'readOnly' | 'registry'>) {
-  useTypePacks('item');
+  // Until the items are in, a name typed would be kept as words, not the item.
+  const loading = useTypePacks('item').status === 'loading';
   const se = isRecord(draft.startingEquipment) ? draft.startingEquipment : {};
   const groups = gearGroups(se.defaultData);
   if (groups === undefined) {
@@ -1181,15 +1259,18 @@ function StartingGear({
     );
   }
   const items = [...registry.byType('baseitem'), ...registry.byType('item')] as Json[];
-  // The book's words for the kit (`default`, `entries`) describe the old one, so they go.
-  const set = (next: GearGroup[]) =>
+  // The book's words for the kit (`default`, `entries`) describe the old one,
+  // so they go once the gear itself changes; an empty box added, or a gear
+  // made a choice of one, changes nothing the creator gives.
+  const set = (next: GearGroup[]) => {
+    const changed = gearContent(next) !== gearContent(groups);
     change({
       startingEquipment: patched(se, {
         defaultData: next.length > 0 ? next : undefined,
-        default: undefined,
-        entries: undefined,
+        ...(changed ? { default: undefined, entries: undefined } : {}),
       }),
     });
+  };
   const setGroup = (i: number, g: GearGroup) => set(groups.map((x, j) => (j === i ? g : x)));
   const addOption = (i: number) => {
     const g = groups[i] ?? {};
@@ -1198,13 +1279,17 @@ function StartingGear({
     const letters = 'abcdefghijklmnopqrstuvwxyz'
       .split('')
       .map((l) => (upper ? l.toUpperCase() : l));
-    const named: GearGroup = '_' in g ? { [letters[0] ?? 'A']: g._ ?? [] } : { ...g };
+    // Gear alone becomes the first option; beside options, `_` stays one of them.
+    const named: GearGroup =
+      '_' in g && keys.length === 0 ? { [letters[0] ?? 'A']: g._ ?? [] } : { ...g };
     const free = letters.find((l) => !(l in named)) ?? `${Object.keys(named).length + 1}`;
     setGroup(i, { ...named, [free]: [] });
   };
   const removeOption = (i: number, key: string) => {
     const { [key]: _, ...rest } = groups[i] ?? {};
-    setGroup(i, rest);
+    // One option left is gear, as the creator gives it: not a choice of one.
+    const left = Object.keys(rest);
+    setGroup(i, left.length === 1 && left[0] !== '_' ? { _: rest[left[0] ?? ''] ?? [] } : rest);
   };
   return (
     <Section title="Starting equipment">
@@ -1239,7 +1324,7 @@ function StartingGear({
                         label={one ? `Gear ${i + 1}` : `Choice ${i + 1}, option ${k.toUpperCase()}`}
                         list={g[k] ?? []}
                         items={items}
-                        disabled={readOnly}
+                        disabled={readOnly || loading}
                         onChange={(list) => setGroup(i, { ...g, [k]: list })}
                       />
                     </div>
@@ -1282,6 +1367,12 @@ function StartingGear({
           Add gear
         </Button>
       )}
+      {groups.length === 0 && Array.isArray(se.default) && se.default.length > 0 && (
+        <Kept label="Starting equipment">
+          in words only, kept as written until gear is added here.
+        </Kept>
+      )}
+      {loading && <p className="text-caption text-ink-muted">Loading the items…</p>}
       <OnSheet>
         the character creator's Equipment step, which gives all of each gear and one option of each
         choice.
@@ -1424,7 +1515,20 @@ const optionalOf = (draft: Json): Json[] =>
  * reads both; its `*` is every level, so level 1 on.
  */
 export function optionalValues(o: Json): number[] {
-  if (Array.isArray(o.progression)) return twenty(o.progression);
+  if (Array.isArray(o.progression)) {
+    // As stated where the list says a number; past its end, or where it says
+    // none, the most so far, which is what the sheet gives there.
+    const list: unknown[] = o.progression;
+    let most = 0;
+    return LEVELS.map((_, i) => {
+      const v = list[i];
+      if (typeof v === 'number') {
+        most = Math.max(most, v);
+        return v;
+      }
+      return most;
+    });
+  }
   if (!isRecord(o.progression)) return byLevelValues(undefined);
   const { '*': all, ...rest } = o.progression;
   if (typeof all !== 'number') return byLevelValues(rest);

@@ -194,11 +194,17 @@ export function bookAt(
     });
 }
 
-/** Slots per spell level at each class level, as the sheet works them out. */
+/**
+ * Slots per spell level at each class level, as the sheet works them out: the
+ * entry's own slot table while Save keeps it (its progression as it opened,
+ * or nothing to compare with), else the progression's.
+ */
 export function slotRows(draft: Json, key: TableKey = 'classTableGroups'): number[][] | undefined {
   const p = draft.casterProgression;
   if (typeof p !== 'string' || p === 'pact') return undefined;
-  for (const g of groupsOf(draft, key)) {
+  const opened = draft[OPENED];
+  const own = !isRecord(opened) || same(opened.casterProgression, p);
+  for (const g of own ? groupsOf(draft, key) : []) {
     const rows = isRecord(g) ? g.rowsSpellProgression : undefined;
     if (Array.isArray(rows) && rows.length > 0) {
       return LEVELS.map((_, i) => {
@@ -353,10 +359,9 @@ export function spellColumns(
       label,
       values: values.map(String),
       numbers: values,
-      set: (level, v) => {
-        const next = setFrom(values, level, v);
-        change({ [field]: next.some((n) => n > 0) ? next : undefined });
-      },
+      // A list of none stays: whether it is there says how the class casts
+      // (knows or prepares, knows cantrips), which only the choices above change.
+      set: (level, v) => change({ [field]: setFrom(values, level, v) }),
     });
   }
   const top = topSlots(draft, key);
@@ -494,7 +499,8 @@ export function Spellcasting({
     const field = prepares ? 'preparedSpellsProgression' : 'spellsKnownProgression';
     const like = countsFrom(registry, type, p, field);
     const patch: Json = { casterProgression: p };
-    if (!Array.isArray(draft[field]) && draft.preparedSpells === undefined)
+    // A copy's `preparedSpells: null` is no formula, as undefined is.
+    if (!Array.isArray(draft[field]) && draft.preparedSpells == null)
       patch[field] = like?.[field] ?? LEVELS.map(() => 0);
     if (!Array.isArray(draft.cantripProgression) && Array.isArray(like?.cantripProgression))
       patch.cantripProgression = like.cantripProgression;
@@ -692,7 +698,9 @@ export function levelSpellsOf(how: GivenHow, rows: readonly LevelRow[], block: J
     } else next[k] = v;
   }
   if (list !== undefined) next[how] = list;
-  return Object.keys(next).length > 0 ? [next] : undefined;
+  // A block left giving no spells (its ability alone) goes with them.
+  const gives = ['known', 'prepared', 'expanded', 'innate'].some((k) => next[k] !== undefined);
+  return gives ? [next] : undefined;
 }
 
 /** What a block gives besides its list, in words, for the line saying it is kept. */
