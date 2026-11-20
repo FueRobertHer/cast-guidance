@@ -156,7 +156,11 @@ function ContentBody({
                 c={c}
                 doc={doc}
                 device={device}
-                onPress={(next) => update(write(c.rows, next))}
+                // Named for history as the restore preview names it (docDiff):
+                // the history's own labels have no word for a switch.
+                onPress={(next) =>
+                  update(write(c.rows, next), `Collections: ${c.name} ${next ? 'on' : 'off'}`)
+                }
               />
             ))}
           </ul>
@@ -169,7 +173,7 @@ function ContentBody({
             onClick={() =>
               update((d) => {
                 for (const c of collections) write(c.rows, 'device')(d);
-              })
+              }, 'Collections: as this device')
             }
           >
             Every collection as this device

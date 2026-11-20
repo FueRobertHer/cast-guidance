@@ -28,11 +28,13 @@ function registryWithPack(): EntityRegistry {
 }
 
 let latest: CharacterDoc | undefined;
+let label: unknown;
 
 /** The section over a doc the updater really changes, as the session does. */
 function Harness({ initial }: { initial: CharacterDoc }) {
   const [doc, setDoc] = useState(initial);
-  const update: DocUpdater = (recipe) => {
+  const update: DocUpdater = (recipe, named) => {
+    label = named;
     const next = structuredClone(doc);
     recipe(next);
     latest = next;
@@ -65,6 +67,7 @@ const summary = () => screen.getByText('Content').nextElementSibling?.textConten
 beforeEach(async () => {
   await Promise.all(db.tables.map((t) => t.clear()));
   latest = undefined;
+  label = undefined;
   setHomebrewSourceNames(
     new Map([
       ['MyChanges', 'Changes to the books'],
@@ -148,6 +151,8 @@ describe('the Content row (ADR-002 U11)', () => {
     expect(await screen.findByText('On for Hild')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Changes to the books for Hild' }));
     expect(latest?.sourceSwitches).toEqual({ off: ['MyChanges'] });
+    // History's entry says it as the restore preview does.
+    expect(label).toBe('Collections: Changes to the books off');
     expect(summary()).toBe('Changes to the books off');
     // D3's wording: the book's version, not "it leaves her sheet".
     expect(
@@ -173,6 +178,7 @@ describe('the Content row (ADR-002 U11)', () => {
     ).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Every collection as this device' }));
     expect(latest !== undefined && 'sourceSwitches' in latest).toBe(false);
+    expect(label).toBe('Collections: as this device');
     expect(screen.queryByRole('button', { name: 'Every collection as this device' })).toBeNull();
   });
 });
