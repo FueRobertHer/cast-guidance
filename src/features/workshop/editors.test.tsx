@@ -454,7 +454,7 @@ describe('OptionalFeatureEditor', () => {
   it("changes the level in a class's prerequisite and keeps the class", () => {
     const pre = [{ level: { level: 2, class: { name: 'Warlock', source: 'XPHB' } }, spell: ['x'] }];
     const draft = mount(optional, { name: 'Blast', featureType: ['EI'], prerequisite: pre });
-    expect(screen.getByText(/a spell, kept as it is/)).toBeTruthy();
+    expect((screen.getByLabelText('Spell known') as HTMLInputElement).value).toBe('x');
     type('Character level needed', '5');
     expect(draft().prerequisite).toEqual([
       { level: { level: 5, class: { name: 'Warlock', source: 'XPHB' } }, spell: ['x'] },
