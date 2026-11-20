@@ -79,6 +79,7 @@ export function PartList({
   onChange,
   readOnly,
   withEffects = false,
+  inheritsOwn = true,
 }: {
   title: string;
   noun: string;
@@ -88,6 +89,13 @@ export function PartList({
   onChange: (entries: unknown[]) => void;
   readOnly: boolean;
   withEffects?: boolean;
+  /**
+   * Whether a part inherits what the original's part did on the sheet: a
+   * species' trait does (its curated row, its text). A feat's benefit does
+   * not, since what the feat inherits is read for the whole feat, so its cards
+   * offer no "Also does what it does" or prices on what it inherits.
+   */
+  inheritsOwn?: boolean;
 }) {
   const list = Array.isArray(entries) ? entries : [];
   const was = Array.isArray(original) ? original.filter((b) => partName(b) !== undefined) : [];
@@ -195,7 +203,9 @@ export function PartList({
                     : undefined
                 }
                 withEffects={withEffects}
-                inherits={row.was !== undefined ? (partName(row.was) ?? label) : undefined}
+                inherits={
+                  inheritsOwn && row.was !== undefined ? (partName(row.was) ?? label) : undefined
+                }
                 onChange={(next) => replaceAt(row.index, next)}
                 onRename={(name) => {
                   const now = row.now as Json;

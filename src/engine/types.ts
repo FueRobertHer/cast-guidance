@@ -553,6 +553,11 @@ export interface ActionRegain {
 /** What a walking speed bonus does not hold with (`speedBonus.unless`). */
 export type SpeedBonusUnless = 'heavyArmor' | 'armorOrShield';
 
+/** What armor's data says it costs its wearer: speed under its Strength, or Stealth. */
+export type ArmorPenalty = 'strength' | 'stealth';
+/** Armor by its weight, as an item's type says (`LA`, `MA`, `HA`). */
+export type ArmorWeight = 'light' | 'medium' | 'heavy';
+
 /**
  * One thing that changes the sheet, and where it comes from. `while`: it counts
  * only while every state holds. `formulas`: numbers worked out at fold time.
@@ -581,8 +586,10 @@ export type EffectInput = {
    * own. `spells` are refs as the data writes them ("burning hands",
    * "armor of agathys|xphb"); `filters` are spell filters ("level=1|class=Cleric").
    * A class's or subclass's widens that class; any other origin's, every one.
+   * `className` (any case) widens that class alone, by its name or its
+   * subclass caster's, whatever gives it: a feat's "the Wizard spell list".
    */
-  | { kind: 'spellListAdd'; spells: string[]; filters: string[] }
+  | { kind: 'spellListAdd'; spells: string[]; filters: string[]; className?: string }
   /**
    * A kind of weapon whose mastery property the character can use, by its base
    * item's name ("Longsword"): a 2024 class's Weapon Mastery pick, Weapon Master's.
@@ -603,6 +610,13 @@ export type EffectInput = {
    */
   | { kind: 'speedBonus'; amount: number; unless?: SpeedBonusUnless }
   /**
+   * Worn armor costs nothing of this `penalty`: no speed lost under its
+   * Strength requirement (a 2014 dwarf in heavy armor, an Armorer's Arcane
+   * Armor), or no disadvantage on Stealth checks (Medium Armor Master).
+   * `armor` limits it to armor of that weight.
+   */
+  | { kind: 'armorPenaltyLift'; penalty: ArmorPenalty; armor?: ArmorWeight }
+  /**
    * Walking speed times this, after every addition and after what conditions
    * take away (Haste). Two of them do not multiply: the largest counts.
    */
@@ -616,6 +630,12 @@ export type EffectInput = {
        * `scope: 'all'` reaches them. `ability` limits it to attacks made with it.
        * `weapon` limits it to one carried weapon, by its equipment entry's id
        * (Magic Weapon): no other attack, natural or unarmed, gets it.
+       * `weaponsOnly`: carried weapons' attacks alone, not an unarmed strike's
+       * or a natural weapon's (an item's bonus to attacks "with weapons").
+       * `weapons`: carried weapons of these kinds alone, by the weapon's own
+       * kind in any case (Bracers of Archery: longbow, shortbow). `className`
+       * (any case): spell attacks with that class's spells alone, by its name
+       * or its subclass caster's (Rod of the Pact Keeper: Warlock).
        */
       kind: 'attackBonus';
       scope: 'melee' | 'ranged' | 'all';
@@ -623,10 +643,13 @@ export type EffectInput = {
       attack?: 'weapon' | 'spell' | 'any';
       ability?: Ability;
       weapon?: string;
+      weaponsOnly?: boolean;
+      weapons?: string[];
+      className?: string;
     }
   /**
    * Weapon damage; `ability` limits it to attacks made with it (Rage:
-   * Strength), `weapon` to one carried weapon, as for `attackBonus`.
+   * Strength), `weapon`, `weaponsOnly` and `weapons` as for `attackBonus`.
    */
   | {
       kind: 'damageBonus';
@@ -634,6 +657,8 @@ export type EffectInput = {
       amount: number;
       ability?: Ability;
       weapon?: string;
+      weaponsOnly?: boolean;
+      weapons?: string[];
     }
   /**
    * A die of extra damage on every weapon hit, rolled apart (Enlarge), or on
@@ -649,8 +674,11 @@ export type EffectInput = {
       weapon?: string;
       weaponsOnly?: boolean;
     }
-  /** Spell save DC; `className` limits it to that class's spells (2024 Innate Sorcery). */
-  | { kind: 'spellDcBonus'; amount: number; className?: string }
+  /**
+   * Spell save DC; `className` limits it to that class's spells (2024 Innate
+   * Sorcery), `ability` to spells cast with it (Jester's Mask: Charisma).
+   */
+  | { kind: 'spellDcBonus'; amount: number; className?: string; ability?: Ability }
   /**
    * Added to a spell's damage rolls (Agonizing Blast's Charisma). Every limit
    * given must hold: a spell named in `spells`, one cast as a spell of the class
@@ -1291,7 +1319,11 @@ export interface DerivedSheet {
   critRange?: { min: number; origin: string };
   /** What adds to spells' damage, worked out, with the limits of each (`spellDamageBonus`). */
   spellDamageBonuses: SpellDamageBonus[];
-  /** The most temporary hit points offered at the start of each turn. */
+  /**
+   * The most temporary hit points the build gives itself at the start of each
+   * turn (a feat's or an item's own), without the effects in play's, which the
+   * start of a turn reads from play (`newTurn`, given this as `HpLimits`).
+   */
   tempHpEachTurn?: { amount: number; origin: string };
   cues: Array<{ tone: 'help' | 'ward' | 'warn' | 'info'; text: string; origin: string }>;
   /**

@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
 // An entry's way into the Workshop: Edit for one the player's own file holds,
-// Edit a copy for everything else. It used to offer Edit whenever any file of
-// theirs declared the entry's book, so a collection named after a book turned
-// every entry of that book into an Edit that opened nothing.
+// Change for your table and Make one like it for everything else (board 6, C).
+// It used to offer Edit whenever any file of theirs declared the entry's book,
+// so a collection named after a book turned every entry of that book into an
+// Edit that opened nothing.
 import 'fake-indexeddb/auto';
 import { screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -28,14 +29,16 @@ afterEach(resetSheetHarness);
 const WAIT = 30_000;
 
 describe("an entry's Workshop link", () => {
-  it('copies a book entry, even with a collection of yours named after its book', async () => {
+  it('changes or copies a book entry, even with a collection of yours named after its book', async () => {
     await homebrewRepo.createEditable('Test book', 'TST');
     const sheet = await renderSheet(sorcerer());
     await sheet.visit('/library/spell/aid%7Ctst');
     await screen.findByRole('heading', { name: 'Aid' }, { timeout: WAIT });
 
-    const link = await screen.findByRole('link', { name: 'Edit a copy' }, { timeout: WAIT });
-    expect(link.getAttribute('href')).toBe('/workshop/copy/spell/Aid%7CTST');
+    const like = await screen.findByRole('link', { name: /^Make one like it/ }, { timeout: WAIT });
+    expect(like.getAttribute('href')).toBe('/workshop/copy/spell/Aid%7CTST');
+    const change = screen.getByRole('link', { name: /^Change for your table/ });
+    expect(change.getAttribute('href')).toBe('/workshop/change/spell/aid%7Ctst');
     expect(screen.queryByRole('link', { name: 'Edit' })).toBeNull();
   });
 

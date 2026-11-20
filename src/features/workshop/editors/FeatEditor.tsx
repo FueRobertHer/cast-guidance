@@ -1,6 +1,7 @@
 /**
- * Feats: what kind of feat it is, what it needs, the ability score it raises,
- * its text and benefits, and what it does on the sheet.
+ * Feats: what kind of feat it is, the ability score it raises, what it needs,
+ * the proficiencies, senses and spells it gives, its text and benefits, and
+ * what it does on the sheet.
  */
 import { isRecord } from '@/engine/castGuidance';
 import { EntryEffects } from '../EffectCards';
@@ -10,12 +11,74 @@ import {
   ChipPicks,
   Field,
   Kept,
-  PrerequisiteField,
+  NumberField,
   Section,
   Select,
   TextBlocks,
 } from '../fields';
+import {
+  ARMOR_WORDS,
+  absent,
+  GrantField,
+  LANGUAGE_WORDS,
+  OnSheet,
+  Prerequisites,
+  SKILL_WORDS,
+  SpellsGiven,
+} from '../originFields';
 import { PartList } from '../PartList';
+
+const SENSES = ['darkvision', 'blindsight', 'tremorsense', 'truesight'] as const;
+
+/** A feat's senses (`[{ darkvision: 60 }]`) as feet, when that is all the list says. */
+export function sensesShape(senses: unknown): Json | undefined {
+  if (absent(senses)) return {};
+  if (!Array.isArray(senses) || senses.length !== 1 || !isRecord(senses[0])) return undefined;
+  return Object.values(senses[0]).every((v) => typeof v === 'number') ? senses[0] : undefined;
+}
+
+function Senses({ draft, change, readOnly }: EditorProps) {
+  const shape = sensesShape(draft.senses);
+  if (shape === undefined) return <Kept label="Senses">more than one list, kept as it is.</Kept>;
+  const others = Object.keys(shape).filter((k) => !(SENSES as readonly string[]).includes(k));
+  return (
+    <>
+      {others.length > 0 && (
+        <Kept label="Senses">{`also ${others.join(', ')}, kept as it is.`}</Kept>
+      )}
+      <SenseBoxes shape={shape} change={change} readOnly={readOnly} />
+    </>
+  );
+}
+
+function SenseBoxes({
+  shape,
+  change,
+  readOnly,
+}: {
+  shape: Json;
+  change: EditorProps['change'];
+  readOnly: boolean;
+}) {
+  return (
+    <div className="grid grid-cols-2 gap-2">
+      {SENSES.map((sense) => (
+        <NumberField
+          key={sense}
+          label={`${sense[0]?.toUpperCase()}${sense.slice(1)} in feet`}
+          value={typeof shape[sense] === 'number' ? (shape[sense] as number) : undefined}
+          placeholder="None"
+          disabled={readOnly}
+          onChange={(feet) => {
+            const next: Json = { ...shape, [sense]: feet };
+            if (feet === undefined || feet === 0) delete next[sense];
+            change({ senses: Object.keys(next).length > 0 ? [next] : undefined });
+          }}
+        />
+      ))}
+    </div>
+  );
+}
 
 const CATEGORIES: ReadonlyArray<readonly [string, string]> = [
   ['', 'No category'],
@@ -58,12 +121,18 @@ export function abilityFor(picks: readonly string[], extra: Json): unknown {
   return [{ choose: { from: ordered }, ...extra }];
 }
 
-function FeatBody({ draft, change, original, readOnly }: EditorProps) {
+function FeatBody(props: EditorProps) {
+  const { draft, change, original, readOnly, registry } = props;
   const category = typeof draft.category === 'string' ? draft.category : '';
   const ability = abilityPicks(draft.ability);
   const options = CATEGORIES.some(([v]) => v === category)
     ? CATEGORIES
     : [...CATEGORIES, [category, category] as const];
+  const grant = (field: string) => ({
+    raw: draft[field],
+    readOnly,
+    onChange: (next: unknown) => change({ [field]: next }),
+  });
   return (
     <>
       <Section title="About it">
@@ -82,11 +151,6 @@ function FeatBody({ draft, change, original, readOnly }: EditorProps) {
             ))}
           </Select>
         </Field>
-        <PrerequisiteField
-          value={draft.prerequisite}
-          readOnly={readOnly}
-          onChange={(prerequisite) => change({ prerequisite })}
-        />
         <label className="flex min-h-tap items-center gap-2.5 text-body">
           <input
             type="checkbox"
@@ -109,6 +173,63 @@ function FeatBody({ draft, change, original, readOnly }: EditorProps) {
           <Kept label="Ability scores">more than one increase, kept as it is.</Kept>
         )}
       </Section>
+      <Section title="What it needs">
+        <Prerequisites
+          value={draft.prerequisite}
+          readOnly={readOnly}
+          onChange={(prerequisite) => change({ prerequisite })}
+        />
+        <OnSheet>the feat lists say what it needs, and warn one who may not have it.</OnSheet>
+      </Section>
+      <Section title="Proficiencies">
+        <GrantField
+          {...grant('skillProficiencies')}
+          label="Skills"
+          options={SKILL_WORDS}
+          anyKey="any"
+          anyLabel="Skills of their choice"
+        />
+        <GrantField
+          {...grant('expertise')}
+          label="Expertise"
+          options={SKILL_WORDS}
+          anyKey="anyProficientSkill"
+          anyLabel="Expertise in skills of their choice"
+        />
+        <GrantField
+          {...grant('toolProficiencies')}
+          label="Tools"
+          placeholder="Thieves' tools, smith's tools"
+          anyKey="any"
+          anyLabel="Tools of their choice"
+        />
+        <GrantField
+          {...grant('languageProficiencies')}
+          label="Languages"
+          options={LANGUAGE_WORDS}
+          anyKey="anyStandard"
+          anyLabel="Languages of their choice"
+        />
+        <GrantField {...grant('weaponProficiencies')} label="Weapons" placeholder="Martial" />
+        <GrantField {...grant('armorProficiencies')} label="Armor" options={ARMOR_WORDS} />
+        <OnSheet>
+          proficiencies and languages, on the Stats tab; a choice is asked when taken.
+        </OnSheet>
+      </Section>
+      <Section title="Senses">
+        <Senses {...props} />
+        <OnSheet>senses, on the Stats tab.</OnSheet>
+      </Section>
+      <Section title="Spells">
+        <SpellsGiven
+          raw={draft.additionalSpells}
+          registry={registry}
+          draft={draft}
+          readOnly={readOnly}
+          onChange={(additionalSpells) => change({ additionalSpells })}
+        />
+        <OnSheet>the Spells tab, each from the character level it names.</OnSheet>
+      </Section>
       <Section title="Text">
         <TextBlocks
           label="Paragraphs"
@@ -126,7 +247,10 @@ function FeatBody({ draft, change, original, readOnly }: EditorProps) {
           source={original !== undefined ? String(original.source) : undefined}
           readOnly={readOnly}
           onChange={(entries) => change({ entries })}
+          withEffects
+          inheritsOwn={false}
         />
+        <OnSheet>each benefit's cards count with the feat's own.</OnSheet>
       </Section>
       <EntryEffects draft={draft} change={change} original={original} readOnly={readOnly} />
     </>
