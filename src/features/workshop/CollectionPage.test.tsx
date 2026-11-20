@@ -82,6 +82,13 @@ async function addressOf(fileId: string): Promise<string> {
   return collectionPath(c.id);
 }
 
+/** Pick a compendium's book by its name in the Book list. */
+function pickBook(name: string) {
+  const box = screen.getByRole('combobox', { name: 'Book' });
+  const option = within(box).getByRole<HTMLOptionElement>('option', { name });
+  fireEvent.change(box, { target: { value: option.value } });
+}
+
 /** Answer the row's More menu with `choice`. */
 async function more(entry: string, choice: string) {
   fireEvent.click(screen.getByRole('button', { name: `More for ${entry}` }));
@@ -156,15 +163,63 @@ describe('a collection page', () => {
     // Only the book picked is read: each lists its own entries.
     const held = await screen.findByRole('list', { name: 'In all.xml' }, { timeout: WAIT });
     await within(held).findByText('Ember Ward', {}, { timeout: WAIT });
-    fireEvent.change(screen.getByRole('combobox', { name: 'Book' }), {
-      target: { value: other.id },
-    });
+    pickBook('Frost Codex');
     await within(screen.getByRole('list', { name: 'In all.xml' })).findByText(
       'Frost Ward',
       {},
       { timeout: WAIT },
     );
     expect(screen.queryByText('Ember Ward')).toBeNull();
+  });
+
+  it('keeps the book picked when an update brings its books in again', async () => {
+    const codex = (ward: string) => ({
+      _meta: {
+        sources: [
+          { json: 'FCA', full: 'Ember Codex' },
+          { json: 'FCB', full: 'Frost Codex' },
+        ],
+        convertedFrom: { format: 'fc5-compendium', fileName: 'all.xml' },
+      },
+      spell: [
+        { name: 'Ember Ward', source: 'FCA', level: 1 },
+        { name: ward, source: 'FCB', level: 1 },
+      ],
+    });
+    await homebrewRepo.commitBooks(
+      (await homebrewRepo.prepareBooks(codex('Frost Ward'), 'all.xml')).books,
+    );
+    visit(await addressOf((await db.homebrewFiles.toArray())[0]?.id ?? ''));
+    await heading('all.xml');
+    await screen.findByRole('list', { name: 'In all.xml' }, { timeout: WAIT });
+    pickBook('Frost Codex');
+    const held = () => screen.getByRole('list', { name: 'In all.xml' });
+    await waitFor(() => expect(within(held()).getByText('Frost Ward')).toBeTruthy(), {
+      timeout: WAIT,
+    });
+    // The update stores Frost Codex under a new row.
+    await homebrewRepo.commitBooks(
+      (await homebrewRepo.prepareBooks(codex('Frost Wall'), 'all.xml')).books,
+    );
+    await waitFor(() => expect(within(held()).getByText('Frost Wall')).toBeTruthy(), {
+      timeout: WAIT,
+    });
+    expect(screen.queryByText('Ember Ward')).toBeNull();
+  });
+
+  it('names each copy apart, even two added the same day', async () => {
+    const row = await homebrewRepo.importJson(IMPORTED, 'imported.json');
+    const meta = await db.homebrewFiles.get(row.id);
+    if (meta === undefined) throw new Error('no row');
+    await db.homebrewFiles.add({ ...meta, id: 'older-copy', addedAt: meta.addedAt - 1 });
+    await db.homebrewJson.add({ id: 'older-copy', json: IMPORTED });
+    visit(await addressOf(row.id));
+    const list = await screen.findByRole('list', { name: 'Its copies' }, { timeout: WAIT });
+    const labels = within(list)
+      .getAllByRole('button')
+      .map((b) => b.getAttribute('aria-label'));
+    expect(labels).toHaveLength(4);
+    expect(new Set(labels).size).toBe(4);
   });
 
   it('turns it off and on for one character, over the device', async () => {
@@ -218,6 +273,45 @@ describe('a collection page', () => {
       { timeout: WAIT },
     );
     expect(namelessControls()).toEqual([]);
+  });
+
+  it('keeps each character’s switch busy until its own write ends', async () => {
+    await character('Hild');
+    await character('Osk');
+    const row = await homebrewRepo.importJson(IMPORTED, 'imported.json');
+    visit(await addressOf(row.id));
+    await heading('imported.json');
+    const chip = (who: string) =>
+      screen.findByRole('button', { name: `${who} picks from it` }, { timeout: WAIT });
+    // Each save waits for its own release.
+    const save = characterRepo.save.bind(characterRepo);
+    const gates = new Map<string, () => void>();
+    const held = vi.spyOn(characterRepo, 'save').mockImplementation(async (doc, ...rest) => {
+      await new Promise<void>((go) => gates.set(doc.name, go));
+      return save(doc, ...rest);
+    });
+    try {
+      fireEvent.click(await chip('Hild'));
+      fireEvent.click(await chip('Osk'));
+      await waitFor(() => expect([...gates.keys()].sort()).toEqual(['Hild', 'Osk']), {
+        timeout: WAIT,
+      });
+      expect((await chip('Hild')).hasAttribute('disabled')).toBe(true);
+      expect((await chip('Osk')).hasAttribute('disabled')).toBe(true);
+      gates.get('Hild')?.();
+      await waitFor(async () => expect((await chip('Hild')).hasAttribute('disabled')).toBe(false), {
+        timeout: WAIT,
+      });
+      // Osk's write has not ended, so its switch is still busy.
+      expect((await chip('Osk')).hasAttribute('disabled')).toBe(true);
+      gates.get('Osk')?.();
+      await waitFor(async () => expect((await chip('Osk')).hasAttribute('disabled')).toBe(false), {
+        timeout: WAIT,
+      });
+    } finally {
+      for (const go of gates.values()) go();
+      held.mockRestore();
+    }
   });
 
   it("keeps a character's other switches and old list, and writes no switch it does not need", async () => {
@@ -350,6 +444,53 @@ describe('a collection page', () => {
     expect(ask.textContent).toContain('Hild has Lanternfolk.');
     fireEvent.click(within(ask).getByRole('button', { name: 'Delete' }));
     await waitFor(async () => expect((await json(fileId)).race).toEqual([]), { timeout: WAIT });
+  });
+
+  it('shows every entry again when the last of the kind picked is deleted', async () => {
+    const { fileId } = await homebrewRepo.saveEntry('feat', {
+      name: 'Ogre Grip',
+      source: 'MyHomebrew',
+      entries: ['Grip.'],
+    });
+    await homebrewRepo.saveEntry('race', {
+      name: 'Lanternfolk',
+      source: 'MyHomebrew',
+      entries: ['Bright.'],
+    });
+    visit(await addressOf(fileId));
+    fireEvent.click(await screen.findByRole('button', { name: 'Feats, 1' }, { timeout: WAIT }));
+    await waitFor(() => expect(screen.queryByRole('link', { name: /^Lanternfolk/ })).toBeNull(), {
+      timeout: WAIT,
+    });
+    await more('Ogre Grip', 'Delete');
+    const ask = await screen.findByRole('dialog', { name: 'Delete Ogre Grip?' }, { timeout: WAIT });
+    fireEvent.click(within(ask).getByRole('button', { name: 'Delete' }));
+    await waitFor(async () => expect((await json(fileId)).feat).toEqual([]), { timeout: WAIT });
+    // One kind is left, so no chips: the list shows it, not the empty Feats.
+    expect(
+      await screen.findByRole('link', { name: /^Lanternfolk/ }, { timeout: WAIT }),
+    ).toBeTruthy();
+  });
+
+  it('asks to turn on only a collection that is off, not a kind the Library does not list', async () => {
+    const row = await homebrewRepo.importJson(
+      { ...IMPORTED, monster: [{ name: 'Gloomhound', source: 'IMP' }] },
+      'imported.json',
+    );
+    visit(await addressOf(row.id));
+    const hound = await screen.findByText('Gloomhound', {}, { timeout: WAIT });
+    const item = hound.closest('li');
+    expect(item?.querySelector('a')).toBeNull();
+    expect(item?.textContent).not.toContain('Turn it on');
+    // Off, the kinds the Library lists say how to open them.
+    fireEvent.click(screen.getByRole('button', { name: 'Use imported.json' }));
+    await waitFor(
+      () =>
+        expect(screen.getByText('Glimmer').closest('li')?.textContent).toContain(
+          'Turn it on to open it in the Library',
+        ),
+      { timeout: WAIT },
+    );
   });
 
   it('exports the file as it leaves this device', async () => {
@@ -528,5 +669,90 @@ describe('The books', () => {
       { timeout: WAIT },
     );
     expect(ask.textContent).toContain('Hild has Mothkin.');
+    // Answered, so no open dialog hides the next test's page.
+    fireEvent.click(within(ask).getByRole('button', { name: 'Cancel' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull(), { timeout: WAIT });
+    expect(await db.homebrewFiles.count()).toBe(1);
+  });
+});
+
+describe('where it is on, source by source', () => {
+  /** A file declaring two sources, one entry in each. */
+  const TWO = {
+    _meta: {
+      sources: [
+        { json: 'FCA', full: 'Ember Codex' },
+        { json: 'FCB', full: 'Frost Codex' },
+      ],
+    },
+    spell: [
+      { name: 'Ember Ward', source: 'FCA', level: 1 },
+      { name: 'Frost Ward', source: 'FCB', level: 1 },
+    ],
+  };
+  const chip = (name: string) =>
+    screen.findByRole('button', { name: `${name} picks from it` }, { timeout: WAIT });
+
+  it('turns off a file of two sources for a character while the choice of books hides one', async () => {
+    const hild = await character('Hild');
+    await writeSourcePolicy({ mode: 'all', except: ['FCB'] });
+    const row = await homebrewRepo.importJson(TWO, 'two.json');
+    visit(await addressOf(row.id));
+    // Ember Ward still reaches Hild's pickers, so she picks from it.
+    await waitFor(
+      async () => expect((await chip('Hild')).getAttribute('aria-pressed')).toBe('true'),
+      {
+        timeout: WAIT,
+      },
+    );
+    fireEvent.click(await chip('Hild'));
+    await waitFor(async () => expect(await switchesOf(hild.id)).toEqual({ off: ['FCA'] }), {
+      timeout: WAIT,
+    });
+  });
+
+  it('turned on for a character, leaves out a book the choice of books hides here, and says so up top', async () => {
+    const hild = await character('Hild');
+    await writeSourcePolicy({ mode: 'all', except: ['FCB'] });
+    const { books } = await homebrewRepo.prepareBooks(
+      {
+        _meta: { ...TWO._meta, convertedFrom: { format: 'fc5-compendium', fileName: 'all.xml' } },
+        spell: TWO.spell,
+      },
+      'all.xml',
+    );
+    await homebrewRepo.commitBooks(books);
+    const [first] = await db.homebrewFiles.toArray();
+    if (first === undefined) throw new Error('no book');
+    visit(await addressOf(first.id));
+    await heading('all.xml');
+    fireEvent.click(await chip('Hild'));
+    await waitFor(async () => expect(await switchesOf(hild.id)).toEqual({ off: ['FCA'] }), {
+      timeout: WAIT,
+    });
+    await waitFor(
+      async () => expect((await chip('Hild')).getAttribute('aria-pressed')).toBe('false'),
+      {
+        timeout: WAIT,
+      },
+    );
+    fireEvent.click(await chip('Hild'));
+    // On as the device has it: Frost Codex stays hidden for her too.
+    await waitFor(async () => expect(await switchesOf(hild.id)).toBeUndefined(), { timeout: WAIT });
+    // Frost Codex is on, and hidden by The books: one of two shows here.
+    expect(
+      await screen.findByText(/2 entries\. 1 of 2 books on\./, {}, { timeout: WAIT }),
+    ).toBeTruthy();
+  });
+
+  it('says a file the choice of books hides is off, up top as below', async () => {
+    await writeSourcePolicy({ mode: 'all', except: ['IMP'] });
+    const row = await homebrewRepo.importJson(IMPORTED, 'imported.json');
+    visit(await addressOf(row.id));
+    await heading('imported.json');
+    expect(
+      await screen.findByText('Hidden by The books’ choice of what shows', {}, { timeout: WAIT }),
+    ).toBeTruthy();
+    expect(screen.getByText(/2 entries\. Off\./)).toBeTruthy();
   });
 });

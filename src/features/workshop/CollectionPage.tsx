@@ -19,11 +19,10 @@ import { type ChangedEntry, type ChangeLayer, identityKey } from '@/data5e/norma
 import { getRegistry, invalidateRegistry } from '@/data5e/registry';
 import { sharedFile } from '@/data5e/rulePack';
 import {
-  characterPolicy,
   characterSourceSwitches,
   ensureSourcesVisible,
+  readSourcePolicy,
   type SourcePolicy,
-  useSourcePolicy,
 } from '@/data5e/sourceFilter';
 import { characterRepo } from '@/db/characterRepo';
 import {
@@ -47,6 +46,7 @@ import { Chip } from '@/ui/Chip';
 import { askChoice, askConfirm, askText } from '@/ui/dialogs';
 import { FilterChips } from '@/ui/FilterChips';
 import { listClass, listRowClass } from '@/ui/surfaces';
+import { deviceOn, isChanges, reachesRow, switchedTo } from './collectionSwitches';
 import {
   BOOKS_ID,
   type Collection,
@@ -86,83 +86,8 @@ const andList = (names: readonly string[]) =>
 // ---------------------------------------------------------------------------
 // Where it is on
 
-/** Whether `policy` shows `source`, without case. */
-function allows(policy: SourcePolicy, source: string): boolean {
-  const s = lower(source);
-  return policy.mode === 'all'
-    ? !policy.except.some((x) => lower(x) === s)
-    : policy.sources.some((x) => lower(x) === s);
-}
-
-/**
- * The player's Changes to the books: its entries stand in the books' place,
- * so no choice of books hides it, and a character's view reads only its own
- * switch for it (E4).
- */
-const isChanges = (r: HomebrewFileMeta) => r.role === 'changes';
-
-/** On for this device: switched on, and not hidden by The books' choice of what shows. */
-const deviceOn = (r: HomebrewFileMeta, device: SourcePolicy) =>
-  r.enabled && (isChanges(r) || r.sourceIds.every((s) => allows(device, s)));
-
 const names = (list: readonly string[], of: readonly string[]) =>
   list.some((x) => of.some((s) => lower(s) === lower(x)));
-
-/**
- * Whether a character picks from a row, as its pickers decide (E2, E4): its
- * own switch first, off winning; else the device's, through its old list
- * of books when it has one.
- */
-function picksFrom(doc: CharacterDoc, r: HomebrewFileMeta, device: SourcePolicy): boolean {
-  const { on, off } = characterSourceSwitches(doc.sourceSwitches);
-  if (names(off, r.sourceIds)) return false;
-  if (names(on, r.sourceIds)) return true;
-  return byDefault(doc, r, device);
-}
-
-/** Without a switch of its own. */
-function byDefault(doc: CharacterDoc, r: HomebrewFileMeta, device: SourcePolicy): boolean {
-  if (!r.enabled) return false;
-  if (isChanges(r)) return true;
-  const base = characterPolicy(doc.allowedSources) ?? device;
-  return r.sourceIds.every((s) => allows(base, s));
-}
-
-/**
- * A character's switches with this collection's sources set so it picks
- * from every row (`on`) or none: a row it would reach anyway gets no switch,
- * so a later change on the device still reaches it. `undefined` is none.
- */
-function switchedTo(
-  doc: CharacterDoc,
-  rows: readonly HomebrewFileMeta[],
-  device: SourcePolicy,
-  on: boolean | 'device',
-): CharacterDoc['sourceSwitches'] {
-  const ours = rows.flatMap((r) => r.sourceIds);
-  const now = characterSourceSwitches(doc.sourceSwitches);
-  const keep = (list: readonly string[]) => list.filter((s) => !names([s], ours));
-  const next = { on: keep(now.on), off: keep(now.off) };
-  if (on !== 'device') {
-    // On, it reaches what this device uses: a copy or a book switched off
-    // here stays off for it (a switch that names its source would bring it
-    // in, E4), unless every one is: then the newest copy, or every book.
-    const used = rows.filter((r) => r.enabled);
-    const newest = rows[0]?.book === undefined ? rows.slice(0, 1) : rows;
-    const reach = !on ? rows : used.length > 0 ? used : newest;
-    for (const r of reach) {
-      if (byDefault(doc, r, device) === on) continue;
-      (on ? next.on : next.off).push(
-        ...r.sourceIds.filter((s) => !names([s], on ? next.on : next.off)),
-      );
-    }
-  }
-  const out = {
-    ...(next.on.length > 0 ? { on: next.on } : {}),
-    ...(next.off.length > 0 ? { off: next.off } : {}),
-  };
-  return out.on === undefined && out.off === undefined ? undefined : out;
-}
 
 /**
  * Write a character's switches, as its sheet would save: against the
@@ -250,33 +175,73 @@ async function share(r: HomebrewFileMeta, name: string): Promise<void> {
   }
 }
 
+/**
+ * Each row's name in the list of copies or books: a book by its name, a copy
+ * by its file and the day it came in, with the time when two share a day and
+ * a number when they share that too, so no two switches have one name.
+ */
+function rowNames(rows: readonly HomebrewFileMeta[]): Map<string, string> {
+  const out = new Map<string, string>();
+  const by = (name: (r: HomebrewFileMeta) => string, list: readonly HomebrewFileMeta[]) => {
+    const groups = new Map<string, HomebrewFileMeta[]>();
+    for (const r of list) groups.set(name(r), [...(groups.get(name(r)) ?? []), r]);
+    return groups;
+  };
+  const day = (r: HomebrewFileMeta) =>
+    r.book ?? `${r.fileName}, added ${new Date(r.addedAt).toLocaleDateString()}`;
+  const time = (r: HomebrewFileMeta) =>
+    r.book ?? `${r.fileName}, added ${new Date(r.addedAt).toLocaleString()}`;
+  for (const [first, same] of by(day, rows)) {
+    if (same.length === 1) {
+      out.set(same[0]?.id ?? '', first);
+      continue;
+    }
+    for (const [second, still] of by(time, same)) {
+      for (const [i, r] of still.entries())
+        out.set(r.id, still.length === 1 ? second : `${second} (${i + 1} of ${still.length})`);
+    }
+  }
+  return out;
+}
+
 function OnSection({
   c,
+  device,
   characters,
   pack,
 }: {
   c: Collection;
+  /** The books' choice of what shows, as read: never the default while it loads. */
+  device: SourcePolicy;
   characters: readonly CharacterDoc[] | undefined;
-  pack: boolean;
+  /** Undefined while it is not yet known whether a rule pack is here. */
+  pack: boolean | undefined;
 }) {
-  const device = useSourcePolicy();
-  const [busy, setBusy] = useState<string>();
+  // Every character whose write has not ended: taps on two run side by side.
+  const [busy, setBusy] = useState<ReadonlySet<string>>(new Set());
   const many = c.rows.length > 1;
   const books = c.rows[0]?.book !== undefined;
+  const named = rowNames(c.rows);
   const ours = c.rows.flatMap((r) => r.sourceIds);
   const anyOn = c.rows.some((r) => deviceOn(r, device));
 
   const write = (doc: CharacterDoc, on: boolean | 'device') => {
-    setBusy(doc.id);
+    setBusy((b) => new Set(b).add(doc.id));
     void setSwitches(doc.id, (now) => switchedTo(now, c.rows, device, on))
       .catch((err: unknown) => notifyFailure(`Switch for ${doc.name}`, err))
-      .finally(() => setBusy(undefined));
+      .finally(() =>
+        setBusy((b) => {
+          const next = new Set(b);
+          next.delete(doc.id);
+          return next;
+        }),
+      );
   };
   const switched = (characters ?? []).filter((d) => {
     const { on, off } = characterSourceSwitches(d.sourceSwitches);
     return names(on, ours) || names(off, ours);
   });
-  const who = (characters ?? []).filter((d) => c.rows.some((r) => picksFrom(d, r, device)));
+  const who = (characters ?? []).filter((d) => c.rows.some((r) => reachesRow(d, r, device)));
 
   return (
     <section aria-labelledby="where-on" className="flex flex-col gap-2">
@@ -286,8 +251,7 @@ function OnSection({
       {many ? (
         <ul className={listClass} aria-label={books ? 'Its books' : 'Its copies'}>
           {inOrder(c).map((r) => {
-            const name =
-              r.book ?? `${r.fileName}, added ${new Date(r.addedAt).toLocaleDateString()}`;
+            const name = named.get(r.id) ?? r.fileName;
             const on = deviceOn(r, device);
             return (
               <li key={r.id} className={`${listRowClass} flex-wrap`}>
@@ -334,7 +298,7 @@ function OnSection({
           A rule pack reaches the characters its review applies it to, so it has no switch for each
           character here.
         </p>
-      ) : characters === undefined ? null : characters.length === 0 ? (
+      ) : characters === undefined || pack === undefined ? null : characters.length === 0 ? (
         <p className={`px-1 ${CAPTION}`}>No characters yet.</p>
       ) : (
         <>
@@ -344,14 +308,14 @@ function OnSection({
           {/* biome-ignore lint/a11y/useSemanticElements: a group of toggle buttons, not a fieldset of inputs */}
           <div role="group" aria-labelledby="for-each" className="-mx-1.5 flex flex-wrap">
             {characters.map((d) => {
-              const on = c.rows.some((r) => picksFrom(d, r, device));
+              const on = c.rows.some((r) => reachesRow(d, r, device));
               return (
                 <Chip
                   key={d.id}
                   tone="outline"
                   pressed={on}
                   aria-label={`${d.name} picks from it`}
-                  disabled={busy === d.id}
+                  disabled={busy.has(d.id)}
                   onClick={() => write(d, !on)}
                 >
                   {d.name}
@@ -484,8 +448,10 @@ function EntriesSection({ c, looks }: { c: Collection; looks: ReadonlySet<string
   const navigate = useNavigate();
   const books = c.rows[0]?.book !== undefined && c.rows.length > 1;
   const rows = inOrder(c);
-  const [bookId, setBookId] = useState(rows[0]?.id ?? '');
-  const row = rows.find((r) => r.id === bookId) ?? rows[0];
+  // A book by its name: an update stores it under a new row, and it stays picked.
+  const bookOf = (r: HomebrewFileMeta) => r.book ?? r.id;
+  const [picked, setPicked] = useState(rows[0] === undefined ? '' : bookOf(rows[0]));
+  const row = rows.find((r) => bookOf(r) === picked) ?? rows[0];
   const read = useLiveQuery(
     () => (row === undefined ? undefined : homebrewRepo.getSafe(row.id)),
     [row?.id],
@@ -498,7 +464,9 @@ function EntriesSection({ c, looks }: { c: Collection; looks: ReadonlySet<string
   // A file you made keeps its features with their class; a change to one stands alone.
   const list = read?.file === undefined ? undefined : entriesIn(read.file.json, own);
   const kinds = [...new Set((list ?? []).map((e) => e.type))];
-  const shown = (list ?? []).filter((e) => kind === 'all' || e.type === kind);
+  // A kind picked whose last entry went: every entry again, as its chip went too.
+  const showing = kinds.length > 1 && kinds.includes(kind) ? kind : 'all';
+  const shown = (list ?? []).filter((e) => showing === 'all' || e.type === showing);
 
   const hrefOf = (e: Entry): string | undefined =>
     own
@@ -578,16 +546,16 @@ function EntriesSection({ c, looks }: { c: Collection; looks: ReadonlySet<string
         <label className="flex flex-col gap-1 px-1 text-caption">
           <span className="text-ink-muted">Book</span>
           <select
-            value={row.id}
+            value={bookOf(row)}
             onChange={(ev) => {
-              setBookId(ev.target.value);
+              setPicked(ev.target.value);
               setKind('all');
               setAll(false);
             }}
             className="min-h-tap rounded-control bg-surface px-2 text-body ring-1 ring-line-strong ring-inset"
           >
             {rows.map((r) => (
-              <option key={r.id} value={r.id}>
+              <option key={r.id} value={bookOf(r)}>
                 {r.book ?? r.fileName}
               </option>
             ))}
@@ -607,7 +575,7 @@ function EntriesSection({ c, looks }: { c: Collection; looks: ReadonlySet<string
           {kinds.length > 1 && (
             <FilterChips
               label="Show"
-              value={kind}
+              value={showing}
               onChange={(k) => {
                 setKind(k);
                 setAll(false);
@@ -626,7 +594,8 @@ function EntriesSection({ c, looks }: { c: Collection; looks: ReadonlySet<string
             {(all ? shown : shown.slice(0, PAGE)).map((e, i) => {
               const href = hrefOf(e);
               const look = looks.has(`${e.type}:${identityKey(e.type, e.entry)}`);
-              const caption = `${kindOf(e.type)}${href === undefined && !own ? '. Turn it on to open it in the Library' : ''}`;
+              // Only when off: some kinds have no Library page at all.
+              const caption = `${kindOf(e.type)}${href === undefined && !own && !row.enabled ? '. Turn it on to open it in the Library' : ''}`;
               const body = (
                 <>
                   <span className="flex min-w-0 flex-1 flex-col">
@@ -1036,7 +1005,7 @@ function Found({ c, stamp }: { c: Collection; stamp: string }) {
   usePageTitle(c.name, 'Workshop');
   const navigate = useNavigate();
   const packs = usePacksHere(c.rows);
-  const pack = packs?.some((p) => c.rows.some((r) => r.id === p.id)) === true;
+  const pack = packs?.some((p) => c.rows.some((r) => r.id === p.id));
   const characters = useLiveQuery(() => characterRepo.listSafe().then((r) => r.characters), []);
   const [importing, setImporting] = useState<{ link?: string }>();
   const [status, setStatus] = useState<string>();
@@ -1049,6 +1018,9 @@ function Found({ c, stamp }: { c: Collection; stamp: string }) {
     [looks],
   );
   const [single] = c.rows.length === 1 ? c.rows : [];
+  // Read here, not through `useSourcePolicy`, whose default while it loads
+  // shows every book: a tap then would write switches for the wrong choice.
+  const device = useLiveQuery(() => readSourcePolicy(), []);
 
   const removeAll = async () => {
     const ok = await askConfirm({
@@ -1068,12 +1040,19 @@ function Found({ c, stamp }: { c: Collection; stamp: string }) {
     }
   };
 
+  if (device === undefined) {
+    return (
+      <Frame>
+        <p className={NOTE}>Loading…</p>
+      </Frame>
+    );
+  }
   return (
     <Frame>
       <header className="flex flex-col gap-1">
         <h1 className="font-display text-title-page break-words">{c.name}</h1>
         <p className="text-caption text-ink-muted">
-          {c.from}. {holdsOf(c)}.
+          {c.from}. {holdsOf(c, (r) => deviceOn(r, device))}.
         </p>
       </header>
       {status !== undefined && (
@@ -1082,7 +1061,7 @@ function Found({ c, stamp }: { c: Collection; stamp: string }) {
         </p>
       )}
       <EntriesSection c={c} looks={looked} />
-      <OnSection c={c} characters={characters} pack={pack} />
+      <OnSection c={c} device={device} characters={characters} pack={pack} />
       <NeedsLookSection c={c} items={looks} />
       <FromSection c={c} onImport={(link) => setImporting({ link })} />
       <section aria-labelledby="share-delete" className="flex flex-col gap-2">

@@ -14,10 +14,10 @@ import {
   writeSourcePolicy,
 } from '@/data5e/sourceFilter';
 import {
+  knownSources,
   SOURCE_GROUP_LABELS,
   SOURCE_GROUPS,
   type SourceGroup,
-  knownSources,
   sourceGroup,
   sourceName,
 } from '@/data5e/sourceNames';

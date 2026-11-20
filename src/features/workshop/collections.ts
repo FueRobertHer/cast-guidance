@@ -134,12 +134,17 @@ export function collectionWith(
 
 /**
  * How much a collection holds and whether this device uses it ("2 entries.
- * On"). Only the device's switch: a character can turn a collection off for
- * itself (`sourceSwitches`), so "on" is never "on for every character".
+ * On"). Only the device: a character can turn a collection off for itself
+ * (`sourceSwitches`), so "on" is never "on for every character". `isOn` reads
+ * a row as on; its switch alone by default, and the page passes its own
+ * reading, which The books' choice of what shows can also hide.
  */
-export function holdsOf(c: Collection): string {
+export function holdsOf(
+  c: Collection,
+  isOn: (r: HomebrewFileMeta) => boolean = (r) => r.enabled,
+): string {
   const holds = c.entries === 0 ? 'Empty' : `${c.entries} ${c.entries === 1 ? 'entry' : 'entries'}`;
-  const on = c.rows.filter((r) => r.enabled).length;
+  const on = c.rows.filter(isOn).length;
   const of = c.rows[0]?.book === undefined ? 'copies' : 'books';
   const where =
     on === c.rows.length ? 'On' : on === 0 ? 'Off' : `${on} of ${c.rows.length} ${of} on`;
