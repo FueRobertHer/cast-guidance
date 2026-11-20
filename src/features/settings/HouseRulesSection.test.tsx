@@ -22,12 +22,14 @@ const gritty = {
 // The shared registry, read before Gritty was applied, and the one read now.
 const stale = registryOf([]);
 const reads = vi.hoisted(() => [] as Array<(r: unknown) => void>);
+const fails = vi.hoisted(() => [] as Array<(e: unknown) => void>);
 vi.mock('@/data5e/hooks', () => ({ useRegistry: () => stale }));
 vi.mock('@/data5e/registry', () => ({
   invalidateRegistry: vi.fn(),
   getRegistry: () =>
-    new Promise((resolve) => {
+    new Promise((resolve, reject) => {
       reads.push(resolve);
+      fails.push(reject);
     }),
 }));
 
@@ -46,6 +48,7 @@ function Probe() {
 afterEach(() => {
   cleanup();
   reads.length = 0;
+  fails.length = 0;
 });
 
 describe('useAppRules', () => {
@@ -58,6 +61,14 @@ describe('useAppRules', () => {
     expect(probe()).toBe('reading standard none');
     reads[0]?.(registryOf([gritty]));
     await waitFor(() => expect(probe()).toBe('ready gritty Gritty'));
+  });
+
+  it('is ready on the choices made when its read fails, not Loading for good', async () => {
+    render(<Probe />);
+    const probe = () => screen.getByTestId('probe').textContent;
+    await waitFor(() => expect(fails).toHaveLength(1));
+    fails[0]?.(new Error('no data'));
+    await waitFor(() => expect(probe()).toBe('ready standard none'));
   });
 
   it('keeps the last read started when an older one lands after it', async () => {

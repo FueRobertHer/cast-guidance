@@ -69,9 +69,10 @@ export interface AppRules {
  * only from the stored rows. So it reads the registry once the rows are known,
  * again on each change there and on each new shared read (a download landing),
  * the last read started winning: a read begun before a pack change never has
- * the last word. Until its first read is in, it shows the shared registry but
- * is not ready, since that one may have been read before a pack change. A
- * read that fails leaves the last one standing.
+ * the last word. Until its first read is settled, it shows the shared
+ * registry but is not ready, since that one may have been read before a pack
+ * change. A read that fails leaves the last one standing and counts as
+ * settled: the choices made still show, rather than Loading for good.
  */
 function useRulesRegistry(): { registry: EntityRegistry | null; ready: boolean } {
   const shared = useRegistry();
@@ -84,6 +85,7 @@ function useRulesRegistry(): { registry: EntityRegistry | null; ready: boolean }
   );
   const latest = useRef(0);
   const [own, setOwn] = useState<EntityRegistry>();
+  const [failed, setFailed] = useState(false);
   // biome-ignore lint/correctness/useExhaustiveDependencies: a new shared registry is a trigger, read again so an older read never wins
   useEffect(() => {
     if (packs === undefined) return;
@@ -93,10 +95,12 @@ function useRulesRegistry(): { registry: EntityRegistry | null; ready: boolean }
       (registry) => {
         if (read === latest.current) setOwn(registry);
       },
-      () => undefined,
+      () => {
+        if (read === latest.current) setFailed(true);
+      },
     );
   }, [packs, shared]);
-  return { registry: own ?? shared, ready: own !== undefined };
+  return { registry: own ?? shared, ready: own !== undefined || failed };
 }
 
 /**
