@@ -332,25 +332,28 @@ function SpellDamageFields({
   const mod = modOf(effect.amount);
   return (
     <>
-      <Field label="Adds">
-        <Select
-          aria-label={`${title}: Adds`}
-          value={mod ?? NUMBER}
-          onChange={(e) =>
-            onChange({
-              ...effect,
-              amount: e.target.value === NUMBER ? 1 : { f: `mod.${e.target.value}` },
-            })
-          }
-        >
-          <option value={NUMBER}>A number</option>
-          {ABILITY.map(([v, text]) => (
-            <option key={v} value={v}>
-              {text} modifier
-            </option>
-          ))}
-        </Select>
-      </Field>
+      {/* The whole row for "Charisma modifier", which half of a phone cuts off; beside Amount for a number. */}
+      <div className={mod === undefined ? undefined : 'col-span-2'}>
+        <Field label="Adds">
+          <Select
+            aria-label={`${title}: Adds`}
+            value={mod ?? NUMBER}
+            onChange={(e) =>
+              onChange({
+                ...effect,
+                amount: e.target.value === NUMBER ? 1 : { f: `mod.${e.target.value}` },
+              })
+            }
+          >
+            <option value={NUMBER}>A number</option>
+            {ABILITY.map(([v, text]) => (
+              <option key={v} value={v}>
+                {text} modifier
+              </option>
+            ))}
+          </Select>
+        </Field>
+      </div>
       {mod === undefined && (
         <Field label="Amount">
           <input

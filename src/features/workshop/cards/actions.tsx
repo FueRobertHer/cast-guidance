@@ -15,7 +15,17 @@ import { fieldClass } from '@/ui/TextField';
 import { Field, Select } from '../fields';
 import { KEPT_ASKS, NEW_PICK, PickFields } from '../PickFields';
 import type { Eff, KindSpec, Options } from './kit/types';
-import { amount, held, isByLevel, isString, offering, omit, words } from './kit/words';
+import {
+  amount,
+  held,
+  isByLevel,
+  isString,
+  offering,
+  omit,
+  shown,
+  stored,
+  words,
+} from './kit/words';
 
 /**
  * Whether a pool's or an action's name says the class that gives it: never,
@@ -574,28 +584,41 @@ function RegainFields({
   );
 }
 
-/** One more action's note: a line under it, left out while empty. */
-function NoteBox({
+/**
+ * A text box across the card, for words half a phone's width cuts off: it
+ * stores what a text field of the same key does, or, when `optional`, leaves
+ * the field out while empty.
+ */
+export function WideText({
   effect,
   title,
+  field,
+  label,
+  placeholder,
+  optional = false,
   onChange,
 }: {
   effect: Eff;
   title: string;
+  field: string;
+  label: string;
+  placeholder?: string;
+  optional?: boolean;
   onChange: (next: Eff) => void;
 }) {
+  const f = { key: field, label, type: 'text' } as const;
   return (
     <div className="col-span-2">
-      <Field label="Note">
+      <Field label={label}>
         <input
-          aria-label={`${title}: Note`}
-          value={typeof effect.note === 'string' ? effect.note : ''}
-          placeholder="Only on your turn"
+          aria-label={`${title}: ${label}`}
+          value={shown(effect, f)}
+          placeholder={placeholder}
           onChange={(e) =>
             onChange(
-              e.target.value.trim() === ''
-                ? omit(effect, ['note'])
-                : { ...effect, note: e.target.value },
+              optional && e.target.value.trim() === ''
+                ? omit(effect, [field])
+                : { ...effect, [field]: stored(f, e.target.value) },
             )
           }
           className={fieldClass}
@@ -677,12 +700,31 @@ export const cards: readonly KindSpec[] = [
     add: 'One more action',
     does: 'One more action on your turn, as Haste gives: what it may be used for',
     make: () => ({ kind: 'extraAction', label: 'Attack once, Dash or Disengage' }),
-    fields: [{ key: 'label', label: 'Used for', type: 'text' }],
+    fields: [],
     line: (e) =>
       `One more action: ${String(e.label)}${
         typeof e.note === 'string' && e.note.trim() !== '' ? `. ${e.note.trim()}` : ''
       }`,
-    boxes: (p) => <NoteBox effect={p.effect} title={p.title} onChange={p.onChange} />,
+    boxes: (p) => (
+      <>
+        <WideText
+          effect={p.effect}
+          title={p.title}
+          field="label"
+          label="Used for"
+          onChange={p.onChange}
+        />
+        <WideText
+          effect={p.effect}
+          title={p.title}
+          field="note"
+          label="Note"
+          placeholder="Only on your turn"
+          optional
+          onChange={p.onChange}
+        />
+      </>
+    ),
   },
   {
     kinds: ['resourceRegain'],

@@ -819,23 +819,26 @@ function OfferFields({
   const failed = effect.ifFailed === true ? 'failed' : '';
   return (
     <>
-      <Box
-        title={title}
-        label="Offered"
-        value={failed}
-        options={
-          onInitiative(effect)
-            ? offering(
-                OFFERED.filter(([v]) => v !== 'failed'),
-                failed,
-                FAILED_ON_INITIATIVE,
-              )
-            : OFFERED
-        }
-        onPick={(v) =>
-          onChange(v === 'failed' ? { ...effect, ifFailed: true } : omit(effect, ['ifFailed']))
-        }
-      />
+      {/* Across the card: half a phone's width cuts "After a failed roll" off. */}
+      <div className="col-span-2">
+        <Box
+          title={title}
+          label="Offered"
+          value={failed}
+          options={
+            onInitiative(effect)
+              ? offering(
+                  OFFERED.filter(([v]) => v !== 'failed'),
+                  failed,
+                  FAILED_ON_INITIATIVE,
+                )
+              : OFFERED
+          }
+          onPick={(v) =>
+            onChange(v === 'failed' ? { ...effect, ifFailed: true } : omit(effect, ['ifFailed']))
+          }
+        />
+      </div>
       <label className="col-span-2 flex min-h-tap items-center gap-2.5 text-body">
         <input
           type="checkbox"
