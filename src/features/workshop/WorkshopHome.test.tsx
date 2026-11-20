@@ -316,12 +316,10 @@ describe('the Workshop home', () => {
       expect(
         await screen.findByRole('heading', { level: 1, name: 'Rules' }, { timeout: WAIT }),
       ).toBeTruthy();
-      expect(screen.getByRole('link', { name: 'Open Settings' }).getAttribute('href')).toBe(
-        '/settings',
-      );
       expect(
-        screen.getByRole('link', { name: 'Open the Homebrew page' }).getAttribute('href'),
-      ).toBe('/homebrew');
+        (await screen.findByRole('button', { name: /^Critical hits/ }, { timeout: WAIT }))
+          .textContent,
+      ).toContain('Max the dice, then roll them');
     } finally {
       setAppTableRule('critDamage', undefined);
     }

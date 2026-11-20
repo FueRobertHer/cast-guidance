@@ -192,8 +192,8 @@ const ROUTES: Route[] = [
     name: 'workshop rules page',
     open: (page) => gotoHeading(page, '/workshop/rules', 'Rules'),
     primary: (page) => [
-      page.getByRole('link', { name: 'Open Settings', exact: true }),
-      page.getByRole('link', { name: 'Open the Homebrew page', exact: true }),
+      page.getByRole('button', { name: /^Critical hits/ }),
+      page.getByRole('button', { name: 'Write a rule pack', exact: true }),
     ],
   },
   {

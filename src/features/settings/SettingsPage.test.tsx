@@ -4,7 +4,16 @@
 // only reaches the console leaves the page asserting something untrue.
 import { existsSync } from 'node:fs';
 import path from 'node:path';
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render as renderInto,
+  screen,
+  waitFor,
+} from '@testing-library/react';
+import type { ReactElement } from 'react';
+import { MemoryRouter } from 'react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const loader = vi.hoisted(() => ({
@@ -21,13 +30,21 @@ vi.mock('@/data5e/loader', () => ({
   ...loader,
   CompendiumNotDownloadedError: class extends Error {},
 }));
-vi.mock('@/data5e/registry', () => ({ invalidateRegistry: vi.fn() }));
+// Never read here, so Settings' rules row stays Loading (see "rows into the Workshop").
+vi.mock('@/data5e/registry', () => ({
+  invalidateRegistry: vi.fn(),
+  getRegistry: () => new Promise(() => undefined),
+}));
 vi.mock('@/db/dataCacheRepo', () => ({
   dataCacheRepo: { totalBytes: () => Promise.resolve(0) },
 }));
 vi.mock('@/db/reset', () => ({ resetAppData: vi.fn() }));
 vi.mock('@/ui/dialogs', () => ({ askConfirm: () => Promise.resolve(true) }));
-vi.mock('./SourcesSection', () => ({ SourcesSection: () => null }));
+// The books row counts the books; the page does not need the registry for it.
+vi.mock('./SourcesSection', () => ({
+  useBooksShown: () => ({ shown: 3, total: 3 }),
+  booksShownWords: () => 'All 3 books show',
+}));
 // House rules read rule packs from the registry; with none, every rule is as written.
 vi.mock('@/data5e/hooks', () => ({ useRegistry: () => null }));
 
@@ -41,6 +58,9 @@ import { DataBanner } from '@/ui/DataBanner';
 import { listenForAnnouncements } from '../../../tests-fixtures/announcements';
 import { quotaExceeded } from '../../../tests-fixtures/idbFaults';
 import { ABOUT_LINKS, OFFLINE_DOWNLOADED_TEXT, Component as SettingsPage } from './SettingsPage';
+
+/** The page links into the Workshop, so it renders under a router. */
+const render = (ui: ReactElement) => renderInto(ui, { wrapper: MemoryRouter });
 
 /** The failure line under the control that failed, a plain visual now. */
 const failureLine = async (text: RegExp) => {
@@ -481,6 +501,21 @@ describe('SettingsPage data and privacy', () => {
     expect(ask.hasAttribute('disabled')).toBe(false);
     const status = await screen.findByText('Not protected');
     await waitFor(() => expect(document.activeElement).toBe(status));
+  });
+});
+
+describe('SettingsPage rows into the Workshop', () => {
+  it('opens the Rules page and The books, saying Loading for the rules until packs are read', () => {
+    // The registry is never read here (`getRegistry` never settles), so an
+    // every-character pack could still set a rule: no value is claimed yet.
+    render(<SettingsPage />);
+    const rules = screen.getByRole('link', { name: /^Table rules and rule packs/ });
+    expect(rules.getAttribute('href')).toBe('/workshop/rules');
+    expect(rules.textContent).toContain('Loading…');
+    expect(rules.textContent).not.toContain('Every rule as written');
+    const books = screen.getByRole('link', { name: /^The books/ });
+    expect(books.getAttribute('href')).toBe('/workshop/collection/books');
+    expect(books.textContent).toContain('All 3 books show');
   });
 });
 

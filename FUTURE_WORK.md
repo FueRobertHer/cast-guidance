@@ -437,6 +437,18 @@ work:
   collection holds two entries of one name and book (only a hand-edited
   import does), a delete takes the first. No long press to start selecting,
   no sort, and Collections has no select mode.
+- The Rules shelf (ADR-002 U9) sets the table rules and orders and applies
+  the rule packs in one place, and Settings opens it; Write a rule pack makes
+  a pack of the table rules and Changes to the books that anyone can import.
+  Left out: links to one rule or one pack (`?rule=`, `?pack=`); what is below
+  each replaced entry in a pack's review; a pack's source is unique only on
+  the device that wrote it, so two players' packs can share a code, as any
+  two homebrew files can; a pack's row says only whether it came from a link,
+  since a written pack keeps its key through export; any screen other than the
+  rules that holds the registry misses a pack change until it remounts, since
+  `invalidateRegistry` tells no mounted reader (the rules read it again for
+  themselves); the Homebrew page keeps its own pack review and order; the
+  Build tab and the rule sheet still say a character follows Settings.
 
 ### Maintainability and diagnostics
 
