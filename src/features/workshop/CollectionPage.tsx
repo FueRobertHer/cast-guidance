@@ -937,14 +937,17 @@ function settleLabel(shapes: readonly Shape[]): string {
 }
 
 const keyOfLook = ({ record, layer }: Look) => `${lookKey(record)}:${layer.from.fileId}`;
+/** A look as it stands: the same change over the same marks. */
+const stateOfLook = (l: Look) => `${keyOfLook(l)}#${l.layer.needsLook.join('|')}`;
 
 function NeedsLookSection({ c, items }: { c: Collection; items: readonly Look[] }) {
   const [busy, setBusy] = useState(false);
-  // Settled, a look leaves the list before the registry is read again, so a
-  // second tap on it cannot land; a new list (read again) starts clean.
-  const [done, setDone] = useState<{ of: readonly Look[]; keys: ReadonlySet<string> }>();
-  const gone = done?.of === items ? done.keys : new Set<string>();
-  const open = items.filter((l) => !gone.has(keyOfLook(l)));
+  // Settled, a look stays off the list as it stood: the rows land before the
+  // registry is read again (slow over a whole release), and until then the
+  // list still holds it, so a second tap cannot land. Once read again, a
+  // settled change has new marks or is gone.
+  const [done, setDone] = useState<ReadonlySet<string>>(() => new Set());
+  const open = items.filter((l) => !done.has(stateOfLook(l)));
   if (open.length === 0) return null;
 
   /**
@@ -967,10 +970,7 @@ function NeedsLookSection({ c, items }: { c: Collection; items: readonly Look[] 
         await homebrewRepo.saveEntry(record.type, entry, { role: 'changes', replaces: was });
       }
       invalidateRegistry();
-      setDone((d) => ({
-        of: items,
-        keys: new Set([...(d?.of === items ? d.keys : []), keyOfLook({ record, layer })]),
-      }));
+      setDone((d) => new Set([...d, stateOfLook({ record, layer })]));
       notify({ title: `${label}: ${String(placed.name)}`, tone: 'good' });
     } catch (err) {
       notifyFailure(label, err);

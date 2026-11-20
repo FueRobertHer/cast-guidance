@@ -35,6 +35,16 @@ vi.mock('@/data5e/loader', () =>
 vi.mock('@/app/AppShell', () =>
   import('../../../tests-fixtures/sheetHarnessMocks').then((m) => m.appShellStub),
 );
+// Open unless a test holds it: the page's reads of the registry wait on it.
+const registryGate = vi.hoisted(() => ({ wait: Promise.resolve() }));
+vi.mock('@/data5e/registry', async (importOriginal) => {
+  const real = await importOriginal<typeof import('@/data5e/registry')>();
+  return {
+    ...real,
+    getRegistry: (...a: Parameters<typeof real.getRegistry>) =>
+      registryGate.wait.then(() => real.getRegistry(...a)),
+  };
+});
 
 vi.setConfig({ testTimeout: HARNESS_TIMEOUT });
 
@@ -442,6 +452,43 @@ describe('Needs a look', () => {
     await new Promise((go) => setTimeout(go, 50));
     const again = screen.queryByRole('button', { name: 'Use the collection’s: Glimmer' });
     expect(again === null || again.hasAttribute('disabled')).toBe(true);
+  });
+
+  it('keeps a settled look off the list while the registry is read again', async () => {
+    const { fileKey } = await changedUnderneath(
+      ['Glow brightly.', 'Shine.'],
+      ['Glow softly.', 'Shine.'],
+    );
+    const list = await lookAt(fileKey);
+    // A real settle: the change's row moves before the registry is read again.
+    const name = 'Use the collection’s: Glimmer';
+    let tapped = false;
+    let back = false;
+    const watch = new MutationObserver(() => {
+      const b = screen.queryByRole('button', { name });
+      if (tapped && b !== null && !b.hasAttribute('disabled')) back = true;
+    });
+    watch.observe(document.body, { subtree: true, childList: true, attributes: true });
+    // The registry is slow to read again (a whole release, in the app): the
+    // stored rows land first.
+    let open = () => {};
+    registryGate.wait = new Promise<void>((go) => {
+      open = go;
+    });
+    try {
+      fireEvent.click(within(list).getByRole('button', { name }));
+      tapped = true;
+      await waitFor(() => expect(noticeStore.getState().notice?.tone).toBe('good'), {
+        timeout: WAIT,
+      });
+      await new Promise((go) => setTimeout(go, 300));
+    } finally {
+      open();
+      registryGate.wait = Promise.resolve();
+    }
+    await settled();
+    watch.disconnect();
+    expect(back).toBe(false);
   });
 
   it('says so when settling finds the change already gone', async () => {
