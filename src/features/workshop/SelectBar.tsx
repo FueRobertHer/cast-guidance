@@ -15,19 +15,11 @@
  */
 import { Download, Layers, Trash2 } from 'lucide-react';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { engineContextFor } from '@/data5e/engineAdapter';
-import { getRegistry, invalidateRegistry } from '@/data5e/registry';
+import { invalidateRegistry } from '@/data5e/registry';
 import { characterRepo } from '@/db/characterRepo';
 import { type HomebrewFile, homebrewRepo, type Removed } from '@/db/homebrewRepo';
 import type { ImportedMention, Repoint } from '@/db/repoint';
-import { subraceFor } from '@/engine/effects/race';
-import {
-  type CharacterDoc,
-  type DataEntity,
-  type EngineContext,
-  type EntityRef,
-  subclassOf,
-} from '@/engine/types';
+import type { CharacterDoc, EntityRef } from '@/engine/types';
 import { downloadJson } from '@/lib/download';
 import { errorText } from '@/stores/notices';
 import { Button } from '@/ui/Button';
@@ -561,41 +553,6 @@ const sameRef = (r: EntityRef | undefined, name: unknown, source: unknown) =>
   r.name.toLowerCase() === name.toLowerCase() &&
   (typeof source !== 'string' || r.source.toLowerCase() === source.toLowerCase());
 
-/**
- * Whether the sheet takes `m` for the subrace or subclass `doc` names by its
- * name and book: two races can each have a Hill, and the sheet takes the
- * race's own, else the first (`subraceFor`, `subclassOf`). Without the data
- * to ask (`ctx` null), or when the engine finds none, it may: it is listed.
- */
-function takenBy(doc: CharacterDoc, m: Mine, ctx: EngineContext | null): boolean {
-  const e = m.entry;
-  if (ctx === null) return true;
-  // A field either lacks says nothing either way.
-  const isPick = (r: DataEntity | undefined, parents: readonly string[]) =>
-    r === undefined ||
-    ['name', 'source', ...parents].every((k) => {
-      const want = e[k];
-      const got = r[k];
-      return (
-        typeof want !== 'string' ||
-        typeof got !== 'string' ||
-        want.toLowerCase() === got.toLowerCase()
-      );
-    });
-  if (m.type === 'subrace') {
-    if (!sameRef(doc.subrace, e.name, e.source)) return true;
-    return isPick(subraceFor(ctx, doc), ['raceName', 'raceSource']);
-  }
-  if (m.type === 'subclass') {
-    const levels = doc.classes.filter((l) => sameRef(l.subclass, e.name, e.source));
-    return (
-      levels.length === 0 ||
-      levels.some((l) => isPick(subclassOf(ctx, l), ['className', 'classSource']))
-    );
-  }
-  return true;
-}
-
 /** Who uses the entries being deleted, and how many characters could not be read to say. */
 interface Users {
   users: User[];
@@ -607,12 +564,11 @@ async function usersOf(
   picked: ReadonlyArray<Mine & { change: boolean }>,
   names: ReadonlyMap<string, string>,
 ): Promise<Users> {
-  const [{ repointDoc }, { characters, errors }, ctx] = await Promise.all([
+  const [{ repointDoc }, { characters, errors }] = await Promise.all([
     import('@/db/repoint'),
     characterRepo.listSafe(),
-    getRegistry().then(engineContextFor, () => null),
   ]);
-  const found = whoUses(characters, picked, names, repointDoc, ctx);
+  const found = whoUses(characters, picked, names, repointDoc);
   return { users: found.users, unreadable: errors.length + found.unchecked };
 }
 
@@ -621,14 +577,15 @@ async function usersOf(
  * how many could not be checked. E5's walker is the finder (`repointDoc`,
  * passed in so the module loads lazily): a character that a rename of an
  * entry would change holds it. Where it cannot tell, it lists: this is said
- * before a delete.
+ * before a delete. So a subrace or subclass of its name and book is listed
+ * whatever its parent: the sheet's own choice between two of them depends on
+ * each character's view of the data.
  */
 export function whoUses(
   characters: readonly CharacterDoc[],
   picked: ReadonlyArray<Mine & { change: boolean }>,
   names: ReadonlyMap<string, string>,
   repointDoc: (doc: CharacterDoc, changes: readonly Repoint[]) => CharacterDoc,
-  ctx: EngineContext | null,
 ): { users: User[]; unchecked: number } {
   const named = (m: Mine) => String(m.entry.name);
   let unchecked = 0;
@@ -647,13 +604,10 @@ export function whoUses(
         return false;
       }
       if (after === doc) return false;
-      const hosted = HOSTED[m.type];
-      if (hosted?.(doc, from) === true) {
-        // Only keys moved: they are the same-named host's.
-        was ??= beyondKeys(doc);
-        if (beyondKeys(after) === was) return false;
-      }
-      return takenBy(doc, m, ctx);
+      if (HOSTED[m.type]?.(doc, from) !== true) return true;
+      // Only keys moved: they are the same-named host's.
+      was ??= beyondKeys(doc);
+      return beyondKeys(after) !== was;
     });
     if (failed) unchecked += 1;
     if (held.length === 0) return [];

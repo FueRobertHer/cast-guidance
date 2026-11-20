@@ -614,11 +614,15 @@ export function Component() {
   );
   const [undoFocus, setUndoFocus] = useState(0);
   const page = useRef<HTMLElement>(null);
-  /** The keyboard's way back onto the page: Select, or search when there is nothing to select. */
+  /**
+   * The keyboard's way back onto the page: `to` (Select), else search when
+   * there is nothing to select, else Stop selecting while select mode is on.
+   */
   const focusOn = (to: string) =>
     (
       page.current?.querySelector<HTMLElement>(to) ??
-      page.current?.querySelector<HTMLElement>('input[type="search"]')
+      page.current?.querySelector<HTMLElement>('input[type="search"]') ??
+      page.current?.querySelector<HTMLElement>('[data-select-stop]')
     )?.focus({ preventScroll: true });
   // "Undone" waits for the write, so an Undo another tab's change refuses never says it.
   const [restoring, setRestoring] = useState(false);

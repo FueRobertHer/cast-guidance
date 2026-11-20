@@ -17,7 +17,7 @@ import { COLLECTION_ID_KEY } from '@/db/homebrewOrder';
 import { homebrewRepo } from '@/db/homebrewRepo';
 import { repointDoc } from '@/db/repoint';
 import { deriveSheet } from '@/engine/derive';
-import type { CharacterDoc, DataEntity, EngineContext } from '@/engine/types';
+import type { CharacterDoc } from '@/engine/types';
 import { downloadJson } from '@/lib/download';
 import { resetAnnouncer } from '@/stores/announcer';
 import {
@@ -306,8 +306,9 @@ describe('select mode on Yours', () => {
     expect((await sheetOf(doc)).speedWalk.value).toBe(before.speedWalk.value - 10);
   });
 
-  it('leaves out a character whose sheet takes its own race\u2019s subrace of that name', async () => {
-    // The gnome's Hill is in the books; the dwarf's, of the same name and book, is the player's.
+  it('names a character that switches on a collection this device has off', async () => {
+    // The gnome's Hill is in the books; the dwarf's, of the same name and book,
+    // is in a collection switched off here, which Pebble switches back on.
     await seedWorld({
       race: [{ name: 'Gnome', source: 'HB', size: ['S'], speed: 25, entries: ['Small.'] }],
       subrace: [
@@ -321,7 +322,7 @@ describe('select mode on Yours', () => {
         },
       ],
     });
-    await collection('Lantern Coast', 'HB', {
+    const lantern = await collection('Lantern Coast', 'HB', {
       race: [{ name: 'Dwarf', source: 'HB', size: ['M'], speed: 25, entries: ['Short.'] }],
       subrace: [
         {
@@ -334,17 +335,17 @@ describe('select mode on Yours', () => {
         },
       ],
     });
-    const gnome = sorcerer();
-    gnome.race = { name: 'Gnome', source: 'HB' };
-    gnome.subrace = { name: 'Hill', source: 'HB' };
-    await characterRepo.put(gnome);
-    const dwarf = sorcerer();
-    dwarf.name = 'Pebble';
-    dwarf.race = { name: 'Dwarf', source: 'HB' };
-    dwarf.subrace = { name: 'Hill', source: 'HB' };
-    await characterRepo.put(dwarf);
-    expect((await sheetOf(gnome)).speedWalk.value).toBe(30);
-    expect((await sheetOf(dwarf)).speedWalk.value).toBe(35);
+    await homebrewRepo.setEnabled(lantern, false);
+    const doc = sorcerer();
+    doc.name = 'Pebble';
+    doc.race = { name: 'Dwarf', source: 'HB' };
+    doc.subrace = { name: 'Hill', source: 'HB' };
+    doc.sourceSwitches = { on: ['HB'] };
+    await characterRepo.put(doc);
+    invalidateRegistry();
+    const own = async () =>
+      deriveSheet(doc, engineContextFor(await getRegistry(), undefined, doc)).speedWalk.value;
+    expect(await own()).toBe(35);
     await visit();
     await selectMode();
     fireEvent.click(row('Hill'));
@@ -352,12 +353,10 @@ describe('select mode on Yours', () => {
     const sheet = await screen.findByRole('dialog', { name: 'Delete 1 entry?' }, { timeout: WAIT });
     await within(sheet).findByText('Pebble', {}, { timeout: WAIT });
     expect(within(sheet).getByText('Hill leaves the sheet.')).toBeTruthy();
-    expect(within(sheet).queryByText('Sparks')).toBeNull();
     fireEvent.click(within(sheet).getByRole('button', { name: 'Delete 1 entry' }));
     await screen.findByRole('button', { name: 'Undo: Deleted 1 entry' }, { timeout: WAIT });
-    // The gnome's sheet is as it was; the dwarf's lost its Hill.
-    expect((await sheetOf(gnome)).speedWalk.value).toBe(30);
-    expect((await sheetOf(dwarf)).speedWalk.value).not.toBe(35);
+    invalidateRegistry();
+    expect(await own()).not.toBe(35);
   });
 
   it('drops the Undo offer once the collection changes again, and says when no check could be made', async () => {
@@ -741,6 +740,36 @@ describe('select mode on Yours', () => {
     restore.mockRestore();
   });
 
+  it('keeps the keyboard in select mode when an Undo pressed from it fails', async () => {
+    await world();
+    await visit();
+    await selectMode();
+    fireEvent.click(row('Lamp'));
+    fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+    const sheet = await screen.findByRole('dialog', { name: 'Delete 1 entry?' }, { timeout: WAIT });
+    await within(sheet).findByText('No character uses them.', {}, { timeout: WAIT });
+    fireEvent.click(within(sheet).getByRole('button', { name: 'Delete 1 entry' }));
+    const undo = await screen.findByRole(
+      'button',
+      { name: 'Undo: Deleted 1 entry' },
+      { timeout: WAIT },
+    );
+    // Select mode again, with the offer still up.
+    await selectMode();
+    const restore = vi
+      .spyOn(homebrewRepo, 'restoreEntries')
+      .mockRejectedValue(new Error('changed meanwhile'));
+    // Pressed from the keyboard: focus is on Undo, which goes with the offer.
+    undo.focus();
+    expect(document.activeElement).toBe(undo);
+    fireEvent.click(undo);
+    await waitFor(() => expect(screen.queryByRole('button', { name: /^Undo: / })).toBeNull(), {
+      timeout: WAIT,
+    });
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Stop selecting' }));
+    restore.mockRestore();
+  });
+
   it('gives the keyboard to the search box when a failed Undo leaves nothing to select', async () => {
     await seedWorld();
     await collection('Solo', 'SO', {
@@ -783,26 +812,8 @@ describe('who uses an entry being deleted', () => {
     fileId,
     change,
   });
-  /** The data the sheet reads, as the registry would give it: `[type, entity]` pairs. */
-  const ctxOf = (list: Array<[string, DataEntity]>): EngineContext => {
-    const low = (v: unknown) => String(v).toLowerCase();
-    return {
-      get: (type, name, source) =>
-        list.find(
-          ([t, e]) =>
-            t === type &&
-            low(e.name) === low(name) &&
-            (source === undefined || low(e.source) === low(source)),
-        )?.[1],
-      byType: (type) => list.filter(([t]) => t === type).map(([, e]) => e),
-    };
-  };
-  const lines = (
-    doc: CharacterDoc,
-    picked: Array<Mine & { change: boolean }>,
-    ctx: EngineContext | null = null,
-  ) =>
-    whoUses([doc], picked, names, repointDoc, ctx).users.flatMap((u) => u.lines.map((l) => l.text));
+  const lines = (doc: CharacterDoc, picked: Array<Mine & { change: boolean }>) =>
+    whoUses([doc], picked, names, repointDoc).users.flatMap((u) => u.lines.map((l) => l.text));
 
   it('counts an optional feature by its own picks, not a same-named feat’s', () => {
     const doc = sorcerer();
@@ -857,78 +868,32 @@ describe('who uses an entry being deleted', () => {
     ]);
   });
 
-  it('counts a subrace by the one the sheet takes, its race’s, else the first of its name', () => {
+  it('lists a subrace or subclass of its name and book whatever its parent', () => {
+    // Which of two the sheet takes depends on each character's view of the
+    // data, so both are listed: the gnome's Hill for a dwarf too.
     const doc = sorcerer();
     doc.race = { name: 'Dwarf', source: 'HB' };
     doc.subrace = { name: 'Hill', source: 'HB' };
-    const hill = (raceName: string): Row => ({
-      name: 'Hill',
-      source: 'HB',
-      raceName,
-      raceSource: 'HB',
-    });
-    const both = ctxOf([
-      ['subrace', hill('Gnome')],
-      ['subrace', hill('Dwarf')],
-    ]);
-    const change = (raceName: string) => pick('subrace', hill(raceName), 'changes', true);
-    expect(lines(doc, [change('Gnome')], both)).toEqual([]);
-    expect(lines(doc, [change('Dwarf')], both)).toEqual(['Hill goes back to the book’s.']);
-    // No Hill of the dwarf's: the sheet takes the first, the gnome's.
-    const gnomes = ctxOf([['subrace', hill('Gnome')]]);
-    expect(lines(doc, [change('Gnome')], gnomes)).toEqual(['Hill goes back to the book’s.']);
-    // Without the data to ask, every one that might be is listed: no data, no
-    // Hill in it, or a Hill that does not say its race's book.
+    const change = (raceName: string) =>
+      pick('subrace', { name: 'Hill', source: 'HB', raceName, raceSource: 'HB' }, 'changes', true);
+    expect(lines(doc, [change('Dwarf')])).toEqual(['Hill goes back to the book’s.']);
     expect(lines(doc, [change('Gnome')])).toEqual(['Hill goes back to the book’s.']);
-    expect(lines(doc, [change('Gnome')], ctxOf([]))).toEqual(['Hill goes back to the book’s.']);
-    const bare = ctxOf([['subrace', { name: 'Hill', source: 'HB', raceName: 'Gnome' }]]);
-    expect(lines(doc, [change('Gnome')], bare)).toEqual(['Hill goes back to the book’s.']);
-  });
 
-  it('counts a subclass by the one the sheet takes, a copied class’s too', () => {
-    const doc = sorcerer();
     const [level] = doc.classes;
     if (level === undefined) throw new Error('no class');
     // A Workshop copy of the class, offered its original's subclasses.
     level.ref = { name: 'Sorcerer', source: 'MyHB' };
     level.subclass = { name: 'Storm', source: 'HB' };
-    const storm = (className: string): Row => ({
-      name: 'Storm',
-      source: 'HB',
-      className,
-      classSource: 'XPHB',
-    });
-    const one = ctxOf([['subclass', storm('Sorcerer')]]);
-    expect(lines(doc, [pick('subclass', storm('Sorcerer'))], one)).toEqual([
-      'Storm leaves the sheet.',
-    ]);
-    const both = ctxOf([
-      ['subclass', storm('Wizard')],
-      ['subclass', storm('Sorcerer')],
-    ]);
-    expect(lines(doc, [pick('subclass', storm('Wizard'))], both)).toEqual([]);
-    expect(lines(doc, [pick('subclass', storm('Sorcerer'))], both)).toEqual([
-      'Storm leaves the sheet.',
-    ]);
-    expect(lines(doc, [pick('subclass', storm('Wizard'))])).toEqual(['Storm leaves the sheet.']);
-    // Its own picks with no level holding it: listed, as nothing says whose they are.
-    level.subclass = undefined;
-    doc.choices = { 'subclass:storm|hb:skill:0': 'nature' };
-    expect(lines(doc, [pick('subclass', storm('Wizard'))], both)).toEqual([
-      'Storm leaves the sheet.',
-    ]);
+    const storm = (className: string) =>
+      pick('subclass', { name: 'Storm', source: 'HB', className, classSource: 'XPHB' });
+    expect(lines(doc, [storm('Sorcerer')])).toEqual(['Storm leaves the sheet.']);
+    expect(lines(doc, [storm('Wizard')])).toEqual(['Storm leaves the sheet.']);
   });
 
   it('counts a character the walker cannot read as not checked', () => {
-    const found = whoUses(
-      [sorcerer()],
-      [pick('feat', gift('HB'))],
-      names,
-      () => {
-        throw new Error('bad row');
-      },
-      null,
-    );
+    const found = whoUses([sorcerer()], [pick('feat', gift('HB'))], names, () => {
+      throw new Error('bad row');
+    });
     expect(found).toEqual({ users: [], unchecked: 1 });
   });
 
@@ -943,7 +908,6 @@ describe('who uses an entry being deleted', () => {
       [pick('feat', gift('HB')), pick('item', { name: 'Gift', source: 'TW' }, 'tide')],
       names,
       repointDoc,
-      null,
     ).users;
     expect(user?.lines.map((l) => l.text)).toEqual([
       'Gift (feat, Lantern Coast) leaves the sheet.',
