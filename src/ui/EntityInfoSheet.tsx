@@ -55,7 +55,7 @@ export function changedBy(
   return pack === undefined ? 'a rule pack' : `the rule pack ${String(pack.name)}`;
 }
 
-/** Whether two versions' rules text reads the same. */
+/** Whether two versions' text or header facts read the same. */
 export const sameWords = (a: unknown, b: unknown): boolean =>
   JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
 
@@ -71,8 +71,8 @@ export function ChangedBadge() {
 /**
  * Whose version a sheet shows, and the one tap to the other (board 11): the
  * table's, which the sheet counts, or the book's (`record.base`, the entry
- * below every change). `same` says the words do not differ, only what the
- * entry does on the sheet.
+ * below every change). `same` says the shown text and header facts do not
+ * differ, only what the entry does on the sheet.
  */
 export function ChangedVersions({
   registry,
@@ -191,7 +191,11 @@ function EntityInfoSheetContent({
               registry={registry}
               record={record}
               book={book}
-              same={flips && sameWords(record.base.entries, entity.entries)}
+              same={
+                flips &&
+                sameWords(record.base.entries, entity.entries) &&
+                sameWords(headerFacts(type, record.base), headerFacts(type, entity))
+              }
               onFlip={flips ? () => setBook((b) => !b) : undefined}
             />
           )}

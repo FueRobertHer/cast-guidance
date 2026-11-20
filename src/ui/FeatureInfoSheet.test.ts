@@ -110,6 +110,67 @@ describe('changeHolding', () => {
     expect(changeHolding(reworded.reg, bigger)?.book).toEqual(['Small print.']);
   });
 
+  const itemOver = (entries: unknown[]) => {
+    const book = new Map<string, unknown>([
+      [
+        'races.json',
+        {
+          race: [
+            {
+              name: 'Dwarf',
+              source: 'XPHB',
+              entries: [
+                {
+                  type: 'list',
+                  items: [{ type: 'item', name: 'Defense', entry: '+1 AC.' }],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    ]);
+    const reg = normalizeDataset(book);
+    mergeHomebrew(
+      reg,
+      new Map([
+        [
+          'c',
+          {
+            _meta: { sources: [{ json: 'MyChanges' }] },
+            race: [
+              {
+                name: 'Dwarf',
+                source: 'XPHB',
+                entries: [
+                  {
+                    type: 'list',
+                    items: [{ type: 'item', name: 'Defense', entries }],
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      ]),
+      new Map(),
+      new Set(['c']),
+    );
+    const placed = reg.get('race', 'Dwarf', 'XPHB') as Entity;
+    const list = (placed.entries as Array<{ items: Array<{ entries: unknown }> }>)[0];
+    return { reg, defense: list?.items[0]?.entries };
+  };
+
+  it("treats a book item's singular entry as unchanged when the change matches its words", () => {
+    const { reg, defense } = itemOver(['+1 AC.']);
+    expect(changeHolding(reg, defense)).toBeUndefined();
+  });
+
+  it("returns a book item's singular entry as the book's text when the change rewords it", () => {
+    const { reg, defense } = itemOver(['+2 AC.']);
+    expect(changeHolding(reg, defense)?.book).toEqual(['+1 AC.']);
+  });
+
   it("prefers the book's part at the same place, and reads names as the card finder does", () => {
     // A part of one name nested earlier in the book: the card's own place wins.
     const book = new Map<string, unknown>([
@@ -181,5 +242,64 @@ describe('changeHolding', () => {
     const [, tough, stone] = placed.entries as Array<{ entries: unknown }>;
     expect(changeHolding(reg, tough?.entries)?.book).toEqual(['Tough.']);
     expect(changeHolding(reg, stone?.entries)).toBeUndefined();
+  });
+
+  it('matches a moved trait to a namesake at its own depth before one nested earlier', () => {
+    const ancestry = {
+      type: 'entries',
+      name: 'Ancestry',
+      entries: [
+        'Pick one.',
+        { type: 'entries', name: 'Breath Weapon', entries: ['Ancestry note.'] },
+      ],
+    };
+    const book = new Map<string, unknown>([
+      [
+        'races.json',
+        {
+          race: [
+            {
+              name: 'Dwarf',
+              source: 'XPHB',
+              entries: [ancestry, { type: 'entries', name: 'Breath Weapon', entries: ['Exhale.'] }],
+            },
+          ],
+        },
+      ],
+    ]);
+    const over = (breathEntries: unknown[]) => {
+      const reg = normalizeDataset(book);
+      mergeHomebrew(
+        reg,
+        new Map([
+          [
+            'c',
+            {
+              _meta: { sources: [{ json: 'MyChanges' }] },
+              race: [
+                {
+                  name: 'Dwarf',
+                  source: 'XPHB',
+                  entries: [
+                    { type: 'entries', name: 'New Trait', entries: ['Added first.'] },
+                    structuredClone(ancestry),
+                    { type: 'entries', name: 'Breath Weapon', entries: breathEntries },
+                  ],
+                },
+              ],
+            },
+          ],
+        ]),
+        new Map(),
+        new Set(['c']),
+      );
+      const placed = reg.get('race', 'Dwarf', 'XPHB') as Entity;
+      const breath = (placed.entries as Array<{ entries: unknown }>)[2];
+      return { reg, breath: breath?.entries };
+    };
+    const kept = over(['Exhale.']);
+    expect(changeHolding(kept.reg, kept.breath)).toBeUndefined();
+    const reworded = over(['Exhale twice.']);
+    expect(changeHolding(reworded.reg, reworded.breath)?.book).toEqual(['Exhale.']);
   });
 });

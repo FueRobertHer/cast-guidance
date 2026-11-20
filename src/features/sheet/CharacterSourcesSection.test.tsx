@@ -227,6 +227,22 @@ describe("CharacterSourcesSection with the character's collection switches", () 
     expect(update).not.toHaveBeenCalled();
   });
 
+  it('lets an off switch override a book in the character list', () => {
+    const { update } = renderSection((d) => {
+      d.allowedSources = ['PHB', 'XGE'];
+      d.sourceSwitches = { off: ['XGE'] };
+    });
+    open();
+    const off = screen.getByRole('checkbox', { name: /Xanathar's Guide/ }) as HTMLInputElement;
+    expect(off.checked).toBe(false);
+    expect(off.disabled).toBe(true);
+    expect(off.closest('label')?.textContent).toContain('Switched off under Content');
+    expect(off.getAttribute('aria-describedby')).not.toBeNull();
+    const phb = screen.getByRole('checkbox', { name: /^Player's Handbook \(2014\)/ });
+    expect((phb as HTMLInputElement).checked).toBe(true);
+    expect(update).not.toHaveBeenCalled();
+  });
+
   it('ticks a book switched off with no list, where it used to read as allowed', () => {
     renderSection((d) => {
       d.sourceSwitches = { off: ['XGE'] };

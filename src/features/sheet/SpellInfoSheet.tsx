@@ -137,7 +137,8 @@ function SpellInfoSheetContent({
               book={book}
               same={
                 sameWords(record.base.entries, spell.entries) &&
-                sameWords(record.base.entriesHigherLevel, spell.entriesHigherLevel)
+                sameWords(record.base.entriesHigherLevel, spell.entriesHigherLevel) &&
+                sameWords(headerFacts('spell', record.base), headerFacts('spell', spell))
               }
               onFlip={() => setBook((b) => !b)}
             />

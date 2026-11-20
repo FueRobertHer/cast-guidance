@@ -241,6 +241,7 @@ function CollectionRow({
 }) {
   const on = c.rows.some((r) => reachesRow(doc, r, device));
   const here = c.rows.some((r) => deviceOn(r, device));
+  const enabled = c.rows.some((r) => r.enabled);
   const changes = c.rows.some(isChanges);
   const holds = c.entries === 1 ? '1 entry' : `${c.entries} entries`;
   return (
@@ -266,8 +267,8 @@ function CollectionRow({
         <p className="px-4 pb-2 text-caption text-guide">
           {changes
             ? `Off: ${doc.name}'s sheet uses the book's version of each entry it changes.`
-            : !here
-              ? // Off on the device too, its entries are in no view of hers (E4).
+            : !enabled
+              ? // Only switched-off files leave her view (E4); the policy only filters pickers.
                 `Off: it is off on this device too, so it leaves ${doc.name}'s pickers and ${doc.name}'s sheet.`
               : `Off: it leaves ${doc.name}'s pickers. What is already on ${doc.name}'s sheet keeps counting.`}
         </p>

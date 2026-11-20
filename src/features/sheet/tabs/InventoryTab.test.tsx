@@ -347,7 +347,9 @@ describe("InventoryTab item search under a character's collection switches (ADR-
           "2 hidden by your source settings and this character's switches. Show them anyway",
         ),
       );
-      // Each one shown from outside her sources says so, as under her own list.
+      // The item hidden by Osk's switch carries the outside-sources label,
+      // while an allowed item does not. Sword of Answering (hidden only by the
+      // device) is left unchecked while its label under 'both' is undecided.
       expect(screen.getByRole('button', { name: /Sword of the Tide/ }).textContent).toContain(
         "Not in this character's sources",
       );

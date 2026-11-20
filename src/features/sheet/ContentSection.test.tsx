@@ -7,9 +7,10 @@ import 'fake-indexeddb/auto';
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { useState } from 'react';
 import { MemoryRouter } from 'react-router';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Entity } from '@/data5e/copyMod';
 import { EntityRegistry } from '@/data5e/normalize';
+import { writeSourcePolicy } from '@/data5e/sourceFilter';
 import { setHomebrewSourceNames } from '@/data5e/sourceNames';
 import { db } from '@/db/db';
 import { homebrewRepo } from '@/db/homebrewRepo';
@@ -116,23 +117,33 @@ afterEach(() => {
 });
 
 describe('the Content row (ADR-002 U11)', () => {
-  it("says what this character's switches change, closed and without reading anything", () => {
+  it("says what this character's switches change, closed and without reading anything", async () => {
     expect(contentSummary(undefined)).toBe('As this device');
     expect(contentSummary({ off: ['MyChanges'] })).toBe('Changes to the books off');
     expect(contentSummary({ on: ['KIB', 'MyChanges'], off: ['MyChanges'] })).toBe(
       'Changes to the books off, Kibbles’ Compendium on',
     );
     expect(contentSummary({ off: ['A', 'B', 'C'] })).toBe('A off, B off +1 more');
-    render(
-      <MemoryRouter>
-        <ContentSection
-          doc={character('hild', { off: ['MyChanges'] })}
-          update={() => undefined}
-          registry={registryWithPack()}
-        />
-      </MemoryRouter>,
-    );
-    expect(summary()).toBe('Changes to the books off');
+    const listMeta = vi.spyOn(homebrewRepo, 'listMetaSafe');
+    try {
+      render(
+        <MemoryRouter>
+          <ContentSection
+            doc={character('hild', { off: ['MyChanges'] })}
+            update={() => undefined}
+            registry={registryWithPack()}
+          />
+        </MemoryRouter>,
+      );
+      expect(summary()).toBe('Changes to the books off');
+      // Flush microtasks so an accidentally mounted body's live query runs too.
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(listMeta).not.toHaveBeenCalled();
+    } finally {
+      listMeta.mockRestore();
+    }
   });
 
   it('lists each collection with its switch for this character, and no switch for a pack', async () => {
@@ -206,6 +217,28 @@ describe('the Content row (ADR-002 U11)', () => {
     );
     expect(preview(before)).toContain(label);
     expect(screen.queryByRole('button', { name: 'Every collection as this device' })).toBeNull();
+  });
+
+  it('says an enabled collection hidden by the device policy keeps counting', async () => {
+    await writeSourcePolicy({ mode: 'all', except: ['LC'] });
+    render(<Harness initial={character('maren')} />);
+    open();
+    const lc = await screen.findByRole('button', { name: 'Lantern Coast for Maren' });
+    expect(lc.getAttribute('aria-pressed')).toBe('false');
+    const row = lc.closest('li');
+    expect(row).not.toBeNull();
+    if (row === null) return;
+    expect(row.textContent).toContain('Off on this device');
+    expect(
+      within(row).getByText(
+        "Off: it leaves Maren's pickers. What is already on Maren's sheet keeps counting.",
+      ),
+    ).toBeTruthy();
+    expect(
+      within(row).queryByText(
+        "Off: it is off on this device too, so it leaves Maren's pickers and Maren's sheet.",
+      ),
+    ).toBeNull();
   });
 
   it('clears a switch for a collection no longer on this device', async () => {

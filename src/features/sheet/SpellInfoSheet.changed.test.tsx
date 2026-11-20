@@ -54,7 +54,9 @@ vi.mock('@/features/dice/DiceTray', () => ({ DiceTray: () => null }));
 
 const BOOK_AID = 'Each target’s Hit Point maximum and current Hit Points increase by 5.';
 const TABLE_AID = BOOK_AID.replace('5', '10');
+const BOOK_BLESS = 'You bless up to three creatures within range.';
 const BOOK_ROPE = 'A rope of 60 feet.';
+const BOOK_LANTERN = 'A lantern casts bright light.';
 
 const RELEASE = new Map<string, unknown>([
   [
@@ -70,6 +72,16 @@ const RELEASE = new Map<string, unknown>([
           range: { type: 'point', distance: { type: 'feet', amount: 30 } },
           duration: [{ type: 'timed', duration: { type: 'hour', amount: 8 } }],
           entries: ['Choose up to three creatures within range.', BOOK_AID],
+        },
+        {
+          name: 'Bless',
+          source: 'XPHB',
+          level: 1,
+          school: 'E',
+          time: [{ number: 1, unit: 'action' }],
+          range: { type: 'point', distance: { type: 'feet', amount: 30 } },
+          duration: [{ type: 'timed', duration: { type: 'minute', amount: 1 } }],
+          entries: [BOOK_BLESS],
         },
       ],
     },
@@ -99,17 +111,30 @@ const RELEASE = new Map<string, unknown>([
       ],
     },
   ],
-  ['items.json', { item: [{ name: 'Rope', source: 'XPHB', type: 'G', entries: [BOOK_ROPE] }] }],
+  [
+    'items.json',
+    {
+      item: [
+        { name: 'Rope', source: 'XPHB', type: 'G', entries: [BOOK_ROPE] },
+        { name: 'Lantern', source: 'XPHB', type: 'G', weight: 2, entries: [BOOK_LANTERN] },
+      ],
+    },
+  ],
 ]);
 
-/** The shared registry: the release with Aid at +10, Rage with 2 more HP a level, and a longer Rope. */
+/**
+ * The shared registry: the release with Aid at +10, Bless at 60 feet, Rage
+ * with 2 more HP a level, a longer Rope, and a heavier Lantern.
+ */
 function registryWithChanges(): EntityRegistry {
   const reg = normalizeDataset(RELEASE);
   const book = (type: string, name: string) =>
     structuredClone(reg.byType(type as never).find((e) => e.name === name) as Entity);
   const aid = book('spell', 'Aid');
+  const bless = book('spell', 'Bless');
   const rage = book('classFeature', 'Rage');
   const rope = book('item', 'Rope');
+  const lantern = book('item', 'Lantern');
   const changes = {
     _meta: { sources: [{ json: 'MyChanges', full: 'Changes to the books' }] },
     spell: [
@@ -118,6 +143,10 @@ function registryWithChanges(): EntityRegistry {
         entries: [(aid.entries as string[])[0], TABLE_AID],
         castGuidance: { v: 1, effects: [{ kind: 'maxHpBonus', amount: 10 }] },
       }),
+      writeChange('spell', bless, {
+        ...bless,
+        range: { type: 'point', distance: { type: 'feet', amount: 60 } },
+      }),
     ],
     classFeature: [
       writeChange('classFeature', rage, {
@@ -125,7 +154,10 @@ function registryWithChanges(): EntityRegistry {
         castGuidance: { v: 1, effects: [{ kind: 'hpPerLevel', amount: 2 }] },
       }),
     ],
-    item: [writeChange('item', rope, { ...rope, entries: ['A rope of 90 feet.'] })],
+    item: [
+      writeChange('item', rope, { ...rope, entries: ['A rope of 90 feet.'] }),
+      writeChange('item', lantern, { ...lantern, weight: 3 }),
+    ],
   };
   mergeHomebrew(reg, new Map([['changes', changes]]), new Map(), new Set(['changes']));
   return reg;
@@ -147,6 +179,7 @@ function Probe() {
   if (doc === null || sheet === null || registry === null) return null;
   const rage = findFeatureInfo(sheet.features, 'Rage');
   const rope = registry.get('item', 'Rope', 'XPHB');
+  const lantern = registry.get('item', 'Lantern', 'XPHB');
   const rageEntry = registry.byType('classFeature').find((e) => e.name === 'Rage');
   return (
     <>
@@ -156,6 +189,12 @@ function Probe() {
         source="XPHB"
         version="2024"
         trigger={<button type="button">Open the spell</button>}
+      />
+      <SpellInfoSheet
+        name="Bless"
+        source="XPHB"
+        version="2024"
+        trigger={<button type="button">Open Bless</button>}
       />
       {rage !== undefined && (
         <FeatureInfoSheet
@@ -169,6 +208,13 @@ function Probe() {
           type="item"
           entity={rope}
           trigger={<button type="button">Open the item</button>}
+        />
+      )}
+      {lantern !== undefined && (
+        <EntityInfoSheet
+          type="item"
+          entity={lantern}
+          trigger={<button type="button">Open the lantern</button>}
         />
       )}
       {rageEntry !== undefined && (
@@ -323,5 +369,28 @@ describe('the Changed badge and the Content row (ADR-002 U11)', () => {
     const hilds = await openSheet('Open the item');
     expect(within(hilds).getByText(BOOK_ROPE)).toBeTruthy();
     expect(within(hilds).queryByText('Changed')).toBeNull();
+  });
+
+  it('omits the same-words note when a changed spell differs only in its range', async () => {
+    await visit('/c/maren');
+    const sheet = await openSheet('Open Bless');
+    expect(await within(sheet).findByText(BOOK_BLESS)).toBeTruthy();
+    expect(within(sheet).getByText('Changed')).toBeTruthy();
+    expect(within(sheet).queryByText(/The words are the same/)).toBeNull();
+    expect(within(sheet).getByText(/60/)).toBeTruthy();
+    fireEvent.click(within(sheet).getByRole('button', { name: 'Show the book’s version' }));
+    expect(within(sheet).getByText(/30/)).toBeTruthy();
+    expect(within(sheet).queryByText(/The words are the same/)).toBeNull();
+  });
+
+  it('omits the same-words note when a changed item differs only in a fact', async () => {
+    await visit('/c/maren');
+    const sheet = await openSheet('Open the lantern');
+    expect(await within(sheet).findByText(BOOK_LANTERN)).toBeTruthy();
+    expect(within(sheet).getByText('Changed')).toBeTruthy();
+    expect(within(sheet).getByText(/3 lb\./)).toBeTruthy();
+    expect(within(sheet).queryByText(/The words are the same/)).toBeNull();
+    fireEvent.click(within(sheet).getByRole('button', { name: 'Show the book’s version' }));
+    expect(within(sheet).getByText(/2 lb\./)).toBeTruthy();
   });
 });

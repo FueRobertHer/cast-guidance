@@ -76,31 +76,48 @@ function pathTo(node: unknown, target: unknown, depth = 0): Step[] | undefined {
 const nameKey = (name: unknown): string | undefined =>
   typeof name === 'string' ? name.trim().toLowerCase() : undefined;
 
-/** The first part named `key` under `node`, through `entries` and `items`. */
-function named(node: unknown, key: string, depth = 0): Record<string, unknown> | undefined {
-  if (!isNode(node) || depth > 16) return undefined;
-  for (const list of [node.entries, node.items]) {
-    if (!Array.isArray(list)) continue;
-    for (const part of list) {
-      if (isNode(part) && nameKey(part.name) === key) return part;
-      const deeper = named(part, key, depth + 1);
-      if (deeper !== undefined) return deeper;
+/**
+ * The first part named `key` under `node`, through `entries` and `items`.
+ * When `atDepth` is set, only parts that many steps from `node` match.
+ */
+function named(node: unknown, key: string, atDepth?: number): Record<string, unknown> | undefined {
+  const walk = (cur: unknown, depth: number): Record<string, unknown> | undefined => {
+    if (!isNode(cur) || depth > 16) return undefined;
+    const step = depth + 1;
+    if (atDepth !== undefined && step > atDepth) return undefined;
+    for (const list of [cur.entries, cur.items]) {
+      if (!Array.isArray(list)) continue;
+      for (const part of list) {
+        if (
+          (atDepth === undefined || step === atDepth) &&
+          isNode(part) &&
+          nameKey(part.name) === key
+        ) {
+          return part;
+        }
+        if (atDepth === undefined || step < atDepth) {
+          const deeper = walk(part, step);
+          if (deeper !== undefined) return deeper;
+        }
+      }
     }
-  }
-  return undefined;
+    return undefined;
+  };
+  return walk(node, 0);
 }
 
 /**
  * The book's part a changed part stands for: the one at the same place when
- * its name matches (unnamed matching unnamed), else the first of its name
- * wherever the change moved it.
+ * its name matches (unnamed matching unnamed), else the first of its name at
+ * the same depth, else the first of its name anywhere in the entry.
  */
 function bookPart(base: unknown, path: readonly Step[], mine: unknown) {
   if (!isNode(mine)) return undefined;
   const key = nameKey(mine.name);
   const at = follow(base, path);
   if (isNode(at) && nameKey(at.name) === key) return at;
-  return key === undefined ? undefined : named(base, key);
+  if (key === undefined) return undefined;
+  return named(base, key, path.length) ?? named(base, key);
 }
 
 function follow(node: unknown, path: readonly Step[]): unknown {
@@ -135,7 +152,9 @@ export function changeHolding(
     // not marked.
     const theirs = bookPart(record.base, path, follow(record.placed, path));
     if (theirs === undefined) return { record, book: record.base.entries ?? [] };
-    const book = theirs.entries ?? [];
+    // A 5etools list item often holds a singular `entry` instead of `entries`.
+    const book =
+      theirs.entries ?? (theirs.entry !== undefined && theirs.entry !== null ? [theirs.entry] : []);
     return sameWords(book, entries) ? undefined : { record, book };
   }
   return undefined;
