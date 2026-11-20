@@ -36,6 +36,7 @@ import {
 import type { EditorProps } from './editorTypes';
 import { Field, Section, Select } from './fields';
 import { EntryVersions, freshPickId, pickIdsIn } from './pickIds';
+import { SpellChoices } from './spellChoices';
 
 export { amendWords } from './cards/actions';
 export type { SpellOption } from './cards/kit/types';
@@ -84,18 +85,29 @@ const ORDER = [
   'Weapon',
   'Resistance',
   'Condition immunity',
+  'Ability check bonus',
   'Advantage',
   'Added die',
+  'Die offered after a roll',
   'Paid extra',
   'Reroll',
   'Spell attacks',
   'Spell save DC',
+  'Spell damage',
+  'Spells added to a class list',
   'Cast a spell',
   'Attack rolls',
   'Damage',
+  'Extra die on a hit',
+  'Critical hit range',
+  'Natural weapon',
+  'Bigger unarmed strike',
   'Uses per rest',
+  'Uses back on a short rest',
   'Action',
+  'One more action',
   'Reminder',
+  'Note',
   'Pick',
 ];
 
@@ -442,7 +454,7 @@ export function EffectCards({
   inherits,
   replace,
   onReplace,
-  spells,
+  spells: hostSpells,
   hide,
   holdsCharges = false,
   resources,
@@ -476,7 +488,10 @@ export function EffectCards({
   inherits?: string;
   replace?: boolean;
   onReplace?: (replace: boolean) => void;
-  /** The spells a "Cast a spell" card can name; without them it is not offered. */
+  /**
+   * The spells a "Cast a spell" card can name; without them those of the page
+   * (`SpellChoices`), and without those it is not offered.
+   */
   spells?: readonly SpellOption[];
   /** Effects another control of the editor shows, left out of the cards (an item's charges). */
   hide?: (e: Eff) => boolean;
@@ -517,6 +532,9 @@ export function EffectCards({
   /** The name what a moment puts on goes on the sheet under: the entry's. */
   momentName?: string;
 }) {
+  const pageSpells = useContext(SpellChoices);
+  // A page with no spells in its books has none to name, so Cast a spell waits.
+  const spells = hostSpells ?? (pageSpells?.length ? pageSpells : undefined);
   const list: Eff[] = Array.isArray(effects) ? (effects as Eff[]) : [];
   const amends: Eff[] = Array.isArray(amend) ? (amend as Eff[]) : [];
   const inPick = fills !== undefined;
@@ -656,7 +674,7 @@ export function EffectCards({
   /**
    * Where `x` names `from`, as `place` and the field: a pool's key (the same
    * pool for the other rules version, `edition`), the uses a spell is cast
-   * with, and on an action or a price on what a copy inherits (`priced`), its
+   * with, the pool some uses come back to on a short rest, and on an action or a price on what a copy inherits (`priced`), its
    * cost (and the points a slot gives back), what buys a use back and the use
    * it gives back. A pick's are those of what it gives, its options' too.
    */
@@ -666,6 +684,7 @@ export function EffectCards({
     ),
     ...(x.kind === 'resource' && x.key === from ? [`${place} key`] : []),
     ...(x.kind === 'grantSpell' && x.resourceKey === from ? [`${place} resourceKey`] : []),
+    ...(x.kind === 'resourceRegain' && x.key === from ? [`${place} regain`] : []),
     ...PRICE_KEYS.flatMap(([key, fields]) => {
       const price = x[key];
       return priced && isRecord(price)
@@ -702,6 +721,7 @@ export function EffectCards({
         ...regiven(x, (g, at, k) => (isRecord(g) ? renamed(g as Eff, `${place} ${at} ${k}`) : g)),
         ...(at.has(`${place} key`) ? { key: to, label: next.label } : {}),
         ...(at.has(`${place} resourceKey`) ? { resourceKey: to } : {}),
+        ...(at.has(`${place} regain`) ? { key: to } : {}),
         ...Object.assign(
           {},
           ...PRICE_KEYS.map(([key]) =>
