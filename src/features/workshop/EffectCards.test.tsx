@@ -166,8 +166,8 @@ describe('the Attack rolls card', () => {
     const effects = withCards([
       { kind: 'attackBonus', amount: 2, scope: 'melee', attack: 'any', ability: 'str' },
     ]);
-    // Melee or ranged reach no spell attack, so it reads as melee attacks.
-    shown('+2 to melee attack rolls');
+    // Melee or ranged reach no spell attack, so it reads as melee attacks, with the ability it names.
+    shown('+2 to melee attack rolls, using Strength');
     expect(misshown()).toEqual([]);
     pick('Attack rolls: Which', ':every');
     expect(effects()).toEqual([
