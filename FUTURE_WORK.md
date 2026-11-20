@@ -294,7 +294,9 @@ work:
   does not follow it); a subclass's own number columns other than its spells
   show, but are not edited; a background's spells added to a list by spell
   level are kept as written; starting gear in words alone (`default`) gives
-  way to the item list once edited. Outside the Workshop: the engine reads a
+  way to the item list once edited; the book's words for a kit go once its
+  gear changes, and do not come back if it is changed back to how it opened.
+  Outside the Workshop: the engine reads a
   book's `or: [{ str: 13, dex: 13 }]` as needing both (`multiclass.ts`), and a
   copy that stops preparing writes `preparedSpells: null`, which
   `classSpellcastingMode` (`slots.ts`) still reads as preparing.
