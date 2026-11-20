@@ -76,8 +76,9 @@ const addPrice = () => fireEvent.click(screen.getByRole('button', { name: /Chang
 
 /** Boxes showing a choice other than the value they hold (see paidRollCards.test.tsx). */
 function misshown(): string[] {
-  return screen.getAllByRole('combobox').flatMap((select) => {
-    if (!(select instanceof HTMLSelectElement)) return [];
+  const selects = [...document.body.querySelectorAll('select')];
+  if (selects.length === 0) throw new Error('no box on screen');
+  return selects.flatMap((select) => {
     const props = Object.entries(select).find(([k]) => k.startsWith('__reactProps'))?.[1] as
       | { value?: unknown }
       | undefined;
@@ -249,9 +250,10 @@ describe('the price card', () => {
     const { amend } = onScreen(LANTERN, { effects: [POOL], amend: [{ cost: { amount: 1 } }] });
     const seen = new Set<string>();
     for (let step = 0; step < 400; step++) {
-      const boxes = screen
-        .getAllByRole('combobox')
-        .filter((b) => b.getAttribute('aria-label')?.startsWith('Price:'));
+      // Found by tag, as misshown finds them: a role query costs many times more.
+      const boxes = [...document.body.querySelectorAll('select')].filter((b) =>
+        b.getAttribute('aria-label')?.startsWith('Price:'),
+      );
       const b = boxes[next(boxes.length)] as HTMLSelectElement;
       const options = [...b.options].map((o) => o.value);
       fireEvent.change(b, { target: { value: options[next(options.length)] } });
