@@ -1,4 +1,5 @@
 import { type PackLocal, readPackLocal } from '@/data5e/rulePack';
+import { ENTRY_PARENT_KEYS, own } from '@/engine/castGuidance';
 import {
   assertHomebrewFile,
   assertJsonWithinLimits,
@@ -337,6 +338,44 @@ function isEntry(e: unknown, key: EntryKey): boolean {
     e.name.toLowerCase() === key.name.toLowerCase() &&
     e.source.toLowerCase() === key.source.toLowerCase()
   );
+}
+
+/** `String(v)`, which a homebrew object (`{"toString": 1}`) can make throw. */
+function text(v: unknown): string {
+  try {
+    return String(v);
+  } catch {
+    return '?';
+  }
+}
+
+/**
+ * A change to the books' identity, as the merge reads it (`identityKey`): its
+ * name and book and, for a subrace or a feature, its parent's keys
+ * (`ENTRY_PARENT_KEYS`), each its own or else its `_copy`'s, without case.
+ * Two features of one name and book (each class's Ability Score Improvement)
+ * are two changes.
+ */
+function changeIdentity(type: string, e: Row): string {
+  const copy = isRecord(e._copy) ? e._copy : {};
+  const parents = Object.hasOwn(ENTRY_PARENT_KEYS, type) ? (ENTRY_PARENT_KEYS[type] ?? []) : [];
+  return ['name', 'source', ...parents]
+    .map((k) => {
+      const v = own(e, k) ?? own(copy, k);
+      return v === undefined || v === null ? '' : text(v);
+    })
+    .join('|')
+    .toLowerCase();
+}
+
+/**
+ * How a file finds an entry: the changes file by the change's identity, so a
+ * key there names a feature's class and level too; every other file by name
+ * and book.
+ */
+function finder(type: string, changes: boolean): (e: unknown, key: EntryKey) => boolean {
+  if (!changes) return isEntry;
+  return (e, key) => isRecord(e) && changeIdentity(type, e) === changeIdentity(type, { ...key });
 }
 
 /** The player's Workshop file among stored rows: theirs to edit, in the Workshop's book. */
@@ -790,6 +829,8 @@ export const homebrewRepo = {
    * renamed or not); without `replaces` it is added. An entry of that type with
    * the new name and book already, other than the one it replaces, refuses the
    * save (`EntryClash`): neither a new entry nor a rename ever overwrites one.
+   * In the changes file, entries and `replaces` are matched by the change's
+   * identity instead (`changeIdentity`: a feature's class and level too).
    *
    * `owned`, for a type that owns entries (a subclass's features), replaces
    * every one the entry it replaces owned, in the same write. Another entry
@@ -844,8 +885,9 @@ export const homebrewRepo = {
       const json = structuredClone(file?.json ?? (row?.json as Record<string, unknown>));
       const list: unknown[] = Array.isArray(json[type]) ? [...(json[type] as unknown[])] : [];
       const { replaces } = opts;
-      const at = replaces === undefined ? -1 : list.findIndex((e) => isEntry(e, replaces));
-      if (list.some((e, i) => i !== at && isEntry(e, entry))) {
+      const is = finder(type, changes || file?.role === 'changes');
+      const at = replaces === undefined ? -1 : list.findIndex((e) => is(e, replaces));
+      if (list.some((e, i) => i !== at && is(e, entry))) {
         throw new EntryClash(`you already have one called ${entry.name}`);
       }
       const own = OWNED[type];
@@ -912,14 +954,16 @@ export const homebrewRepo = {
 
   /**
    * Take one entry out of a file the player owns, with the entries it owns (a
-   * subclass's features). False when it was not there.
+   * subclass's features). False when it was not there. In the changes file,
+   * `key` is matched by the change's identity, so it names a feature's class
+   * and level too.
    */
   async removeEntry(fileId: string, type: string, key: EntryKey): Promise<boolean> {
     return db.transaction('rw', db.homebrewFiles, db.homebrewJson, async () => {
       const file = await ownedFile(fileId);
       const json = structuredClone(file.json);
       const list: unknown[] = Array.isArray(json[type]) ? [...(json[type] as unknown[])] : [];
-      const at = list.findIndex((e) => isEntry(e, key));
+      const at = list.findIndex((e) => finder(type, file.role === 'changes')(e, key));
       if (at === -1) return false;
       const [gone] = list.splice(at, 1);
       withoutOwned(json, type, gone, list);

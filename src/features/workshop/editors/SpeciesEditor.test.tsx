@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
-// The size chips offer Tiny to Large. A species from a file can be bigger
-// (Huge, Gargantuan) or have a size that varies: tapping a chip used to
-// rewrite the list from the chips alone and drop those.
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+// The size chips offer every size the data writes: Tiny to Gargantuan, and
+// Varies (the player's pick). A size code the chips do not know is kept when
+// another is tapped: tapping a chip used to rewrite the list from the chips
+// alone and drop it (bug 8, F1).
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { useState } from 'react';
 import { MemoryRouter } from 'react-router';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -36,32 +37,43 @@ function mount(start: Json) {
   return () => latest;
 }
 
-const tap = (name: string) => fireEvent.click(screen.getByRole('button', { name }));
+const tap = (name: string) =>
+  fireEvent.click(
+    within(screen.getByRole('group', { name: 'Size' })).getByRole('button', { name }),
+  );
 
 describe('the size chips', () => {
-  it('keep a size they do not offer when another is tapped', () => {
-    const draft = mount({ name: 'Giantkin', size: ['L', 'H'], entries: [] });
+  it('offer Huge, Gargantuan and Varies, in the data order', () => {
+    const draft = mount({ name: 'Giantkin', size: ['L'], entries: [] });
+    tap('Gargantuan');
+    tap('Huge');
+    expect(draft().size).toEqual(['L', 'H', 'G']);
+    tap('Large');
+    expect(draft().size).toEqual(['H', 'G']);
+  });
+
+  it('take Varies alone, and drop it for a size', () => {
+    const draft = mount({ name: 'Shifter', size: ['S', 'M'], entries: [] });
+    tap('Varies');
+    expect(draft().size).toEqual(['V']);
     tap('Medium');
-    expect(draft().size).toEqual(['M', 'L', 'H']);
-    tap('Large');
-    expect(draft().size).toEqual(['M', 'H']);
+    expect(draft().size).toEqual(['M']);
   });
 
-  it('keep it when the last size they offer is taken away', () => {
-    const draft = mount({ name: 'Titanborn', size: ['L', 'G'], entries: [] });
-    tap('Large');
-    expect(draft().size).toEqual(['G']);
-  });
-
-  it('say which sizes are kept without a chip', () => {
-    mount({ name: 'Shifter', size: ['M', 'H', 'V'], entries: [] });
-    expect(screen.getByText(/Huge and Varies, kept as they are/)).toBeTruthy();
+  it('keep a size they do not offer when another is tapped, and say so', () => {
+    const draft = mount({ name: 'Oddling', size: ['M', 'X'], entries: [] });
+    expect(screen.getByText(/also X, kept as it is/)).toBeTruthy();
+    tap('Small');
+    expect(draft().size).toEqual(['S', 'M', 'X']);
+    tap('Small');
+    tap('Medium');
+    expect(draft().size).toEqual(['X']);
   });
 
   it('say nothing more when every size has a chip', () => {
-    const draft = mount({ name: 'Folk', size: ['M'], entries: [] });
+    const draft = mount({ name: 'Folk', size: ['M', 'H', 'V'], entries: [] });
     expect(screen.queryByText(/kept as/)).toBeNull();
     tap('Medium');
-    expect(draft().size).toBeUndefined();
+    expect(draft().size).toEqual(['H', 'V']);
   });
 });

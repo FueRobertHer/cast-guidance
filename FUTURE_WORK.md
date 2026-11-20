@@ -259,6 +259,24 @@ work:
   unsupported fields. (The import preview itself, covering counts, duplicates,
   `_copy` warnings, size, and affected characters, is IMP-002; this row is only
   the editing surface behind it.)
+- The Workshop's origin fields (ADR-002 U5b, `src/features/workshop/originFields.tsx`):
+  a species' ability scores, fly, swim and climb speeds, blindsight, defenses,
+  proficiencies, languages, spells and every size; a feat's proficiencies,
+  expertise, senses, spells and prerequisites; an optional feature's
+  prerequisites; and the spells an item casts. A shape the fields cannot show
+  (alternatives, a choice of spell, a shared daily count) is kept as written.
+  Subraces have an editor of their own (`editors/SubraceEditor.tsx`), listed
+  on a saved species, and a feat's benefits carry effect cards of their own.
+  Left out: a species' senses beyond darkvision and blindsight, which the
+  engine does not read; a copy of an official item with a built-in spell row
+  still casts the row's spells, not the edited list; no box writes a speed
+  "as fast as walking" (one read is kept); a subrace trait cannot be marked to
+  replace its species' trait of that name (`data.overwrite`, kept when read);
+  the subrace's species list offers the species versions the builder offers;
+  a copy of a subrace cannot hand a field it replaces back to its species
+  (emptied, it is none); the subrace links leave the species editor without
+  the unsaved-changes question, as the subclass links do; two subraces of one
+  name in one collection clash, whatever species each names.
 - Add regression fixtures that exercise the documented export-format
   compatibility matrix (the format itself is documented in
   `docs/export-format.md`).
@@ -336,6 +354,23 @@ work:
   change to it, where the device reads the changed race; copies of a changed
   entry keep the version they were copied from (E3), whatever the character's
   switch.
+- Change for your table and Make one like it (ADR-002 U10) are on every
+  Library entry the Workshop can edit, and on class features, which the
+  class page now links. A copy of a changed entry starts from the table's
+  version and keeps it as it was when copied. Left out: a class or subclass
+  is not changed whole (board 6's Berserker, feature by feature), and a
+  subclass's features have no Library page to change them from; the book's
+  own mechanics are one Keep or Remove (the "Also does what" box), not a row
+  each with what the sheet counts; no character count ("Hild has Aid
+  prepared") and no Try it on for a change; a class's or subclass's own
+  editor still reads a stored copy's features against the table's version
+  (U5c). Changes to the books finds a change by its identity
+  (`homebrewRepo.saveEntry` and `removeEntry`), so every Ability Score
+  Improvement, each class's at each level, can be changed apart. A
+  condition the app counts by its own rules (Poisoned) is not offered: a
+  change would not reach the sheet. The Workshop's list of your entries
+  shows only kinds with an editor, so a change to a class feature is found
+  again from its Library page alone.
 
 ### Maintainability and diagnostics
 
