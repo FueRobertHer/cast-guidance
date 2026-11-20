@@ -218,7 +218,7 @@ describe('its own slot table, saved again and again', () => {
   };
   const slotsOf = (e: Json) =>
     (e.subclassTableGroups as Json[]).find((g) => Array.isArray(g.rowsSpellProgression))
-      ?.rowsSpellProgression;
+      ?.rowsSpellProgression as unknown[][] | undefined;
   /** Opened as the Workshop opens the stored entry. */
   const opened = () => {
     const registry = world({}, { subclass: [structuredClone(STORED)] });
@@ -242,7 +242,9 @@ describe('its own slot table, saved again and again', () => {
     expect((entry.subclassTableGroups as Json[])[0]?.rows).toEqual(
       Array.from({ length: 20 }, () => [3]),
     );
-    expect(sheetOf(world({}, { subclass: [structuredClone(entry)] }), 1).spellcasting[0]?.slots[0]).toBe(2);
+    expect(
+      sheetOf(world({}, { subclass: [structuredClone(entry)] }), 1).spellcasting[0]?.slots[0],
+    ).toBe(2);
   });
 
   it('makes its slots again for a new progression, the same on every save after', () => {
@@ -257,7 +259,7 @@ describe('its own slot table, saved again and again', () => {
 
   it('keeps its table under a new name, and as a file edit left it', () => {
     const { registry, draft } = opened();
-    const renamed = { ...draft, name: 'Lamplight' };
+    const renamed: Json = { ...draft, name: 'Lamplight' };
     const both = [KEY, { name: 'Lamplight', source: 'MyHomebrew' }];
     expect(save(renamed, registry, both).subclassTableGroups).toEqual(STORED.subclassTableGroups);
     // Edited as a file, the draft holds no spell fields of its own: the entry

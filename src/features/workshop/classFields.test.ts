@@ -87,7 +87,9 @@ describe("the table's spell columns", () => {
 
   it('with nothing to compare with, keeps a slot table there and makes one where there is none', () => {
     const slots = (groups: Json[]) =>
-      groups.find((g) => Array.isArray(g.rowsSpellProgression))?.rowsSpellProgression;
+      groups.find((g) => Array.isArray(g.rowsSpellProgression))?.rowsSpellProgression as
+        | unknown[][]
+        | undefined;
     expect(slots(spellGroupsFor(structuredClone(BOOK), undefined))).toEqual([[2]]);
     expect(slots(spellGroupsFor({ casterProgression: 'full' }, undefined))?.[0]).toEqual([
       2, 0, 0, 0, 0, 0, 0, 0, 0,

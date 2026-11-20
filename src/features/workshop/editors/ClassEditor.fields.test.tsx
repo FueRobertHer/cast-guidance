@@ -257,7 +257,8 @@ describe('starting equipment', () => {
   it('keeps a count as it is typed: x1 on the way to x10', () => {
     const at = mount({ name: 'Lantern', ...editor.blank() }, world());
     press('Add gear');
-    const gear = () => Object.values((at.draft().startingEquipment as Json).defaultData[0])[0];
+    const gear = () =>
+      Object.values(((at.draft().startingEquipment as Json).defaultData as Json[])[0] ?? {})[0];
     type('Gear 1', 'javelin x1');
     expect(box('Gear 1')).toBe('javelin x1');
     expect(gear()).toEqual([{ item: 'javelin|phb', quantity: 1 }]);
@@ -266,7 +267,9 @@ describe('starting equipment', () => {
     expect(gear()).toEqual([{ item: 'javelin|phb', quantity: 10 }]);
     type('Gear 1', 'any martial weapon x1');
     expect(box('Gear 1')).toBe('any martial weapon x1');
-    const parsed = parseStartingEquipment({ startingEquipment: at.draft().startingEquipment } as never);
+    const parsed = parseStartingEquipment({
+      startingEquipment: at.draft().startingEquipment,
+    } as never);
     expect(parsed[0]?.[0]?.items[0]?.quantity).toBe(1);
   });
 
