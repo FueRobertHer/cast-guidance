@@ -1,7 +1,7 @@
 /** Board 4's rolls: saving throw bonuses, advantage, an added die, paid extras and rerolls. */
 import { isRecord } from '@/engine/castGuidance';
 import { readStoredEffects } from '@/engine/effects/mechanics';
-import type { RollFilter } from '@/engine/types';
+import { type RollFilter, SKILLS } from '@/engine/types';
 import { rollsWords } from '@/features/sheet/effectsInPlay';
 import { fieldClass } from '@/ui/TextField';
 import { Field, Select } from '../fields';
@@ -740,6 +740,118 @@ const paidClaim = (p: { effect: Eff; title: string; onChange: (next: Eff) => voi
     />
   );
 
+/**
+ * The checks an ability check bonus reaches, as its Checks box holds them:
+ * every check, one ability's (its skills and the plain check), or one skill's.
+ */
+const CHECKS: Options = [
+  ['every', 'Every ability check'],
+  ...ABILITY.map(([v, text]) => [`ability:${v}`, `${text} checks`] as const),
+  ...SKILLS.map((s) => [`skill:${s.name}`, s.name] as const),
+];
+
+/** What a check bonus reaches, as its Checks box holds it; '' for one it cannot show. */
+function checksOf(e: Eff): string {
+  if (e.every === true) return 'every';
+  if (typeof e.ability === 'string') return `ability:${e.ability}`;
+  if (Array.isArray(e.skills) && e.skills.length === 1) return `skill:${String(e.skills[0])}`;
+  return '';
+}
+
+/** The checks a bonus reaches, as its line says them. */
+function checksWords(e: Eff): string {
+  if (e.every === true) return 'every ability check';
+  if (typeof e.ability === 'string') return `${word(ABILITY, e.ability)} checks`;
+  const skills = Array.isArray(e.skills) ? e.skills.map(String) : [];
+  return skills.length > 0 ? `${listed(skills)} checks` : 'checks';
+}
+
+/** An ability check bonus's Checks box: one of every, an ability or skills, as the reader takes. */
+function CheckFields({
+  effect,
+  title,
+  onChange,
+}: {
+  effect: Eff;
+  title: string;
+  onChange: (next: Eff) => void;
+}) {
+  const value = checksOf(effect);
+  const written = `${checksWords(effect)}, as written`;
+  return (
+    <div className="col-span-2">
+      <Box
+        title={title}
+        label="Checks"
+        value={value}
+        options={offering(CHECKS, value, written)}
+        onPick={(v) => {
+          const rest = omit(effect, ['every', 'ability', 'skills']);
+          if (v === 'every') onChange({ ...rest, every: true });
+          else if (v.startsWith('ability:')) onChange({ ...rest, ability: v.slice(8) });
+          else if (v.startsWith('skill:')) onChange({ ...rest, skills: [v.slice(6)] });
+        }}
+      />
+    </div>
+  );
+}
+
+/** What a die offered after a roll is, as the sheet words it in play (`effectsInPlay`). */
+const offerLine = (e: Eff) =>
+  `Add ${String(e.dice)} to ${e.once === true ? 'one of your' : 'your'} ${rollWords(e)}, after you see the d20${
+    e.ifFailed === true ? ', if it failed' : ''
+  }`;
+
+/**
+ * A die offered after a roll's own controls: when the prompt offers it (after
+ * any roll, or only one that failed, never on initiative, which cannot fail),
+ * and whether it is spent once taken (Guidance), or offered on every roll.
+ */
+function OfferFields({
+  effect,
+  title,
+  onChange,
+}: {
+  effect: Eff;
+  title: string;
+  onChange: (next: Eff) => void;
+}) {
+  const failed = effect.ifFailed === true ? 'failed' : '';
+  return (
+    <>
+      <Box
+        title={title}
+        label="Offered"
+        value={failed}
+        options={
+          onInitiative(effect)
+            ? offering(
+                OFFERED.filter(([v]) => v !== 'failed'),
+                failed,
+                FAILED_ON_INITIATIVE,
+              )
+            : OFFERED
+        }
+        onPick={(v) =>
+          onChange(v === 'failed' ? { ...effect, ifFailed: true } : omit(effect, ['ifFailed']))
+        }
+      />
+      <label className="col-span-2 flex min-h-tap items-center gap-2.5 text-body">
+        <input
+          type="checkbox"
+          className="size-4.5 accent-ink"
+          aria-label={`${title}: Used once`}
+          checked={effect.once === true}
+          onChange={(x) =>
+            onChange(x.target.checked ? { ...effect, once: true } : omit(effect, ['once']))
+          }
+        />
+        Used once, then it is gone
+      </label>
+    </>
+  );
+}
+
 /** The heading its cards are listed under on the add sheet. */
 export const group = 'Rolls';
 
@@ -790,6 +902,35 @@ export const cards: readonly KindSpec[] = [
     fields: [{ key: 'dice', label: 'Dice', type: 'dice' }],
     line: (e) => `+${String(e.dice)} to ${rollWords(e)}`,
     boxes: (p) => <RollFields effect={p.effect} title={p.title} onChange={p.onChange} />,
+  },
+  {
+    kinds: ['checkBonus'],
+    add: 'Ability check bonus',
+    does: "Raises or lowers ability checks: every one, one ability's or one skill's",
+    make: () => ({ kind: 'checkBonus', amount: 1, skills: ['Athletics'] }),
+    fields: [amountField],
+    line: (e) => `${amount(e.amount)} to ${checksWords(e)}`,
+    boxes: (p) => <CheckFields effect={p.effect} title={p.title} onChange={p.onChange} />,
+  },
+  {
+    kinds: ['rollOffer'],
+    add: 'Die offered after a roll',
+    does: 'A die you may add after you see the d20, as Guidance or Bardic Inspiration offers',
+    make: () => ({
+      kind: 'rollOffer',
+      dice: '1d4',
+      on: { rolls: ['check'] },
+      ifFailed: true,
+      once: true,
+    }),
+    fields: [{ key: 'dice', label: 'Dice', type: 'dice' }],
+    line: offerLine,
+    boxes: (p) => (
+      <>
+        {paidOn(p)}
+        <OfferFields effect={p.effect} title={p.title} onChange={p.onChange} />
+      </>
+    ),
   },
   {
     kinds: ['rollPaid'],
