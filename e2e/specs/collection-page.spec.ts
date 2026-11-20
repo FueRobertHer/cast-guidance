@@ -1,9 +1,10 @@
 /**
  * A collection's page and The books at phone width (ADR-002, U6; bug 11 of
  * the One Workshop canvas: the homebrew file row cut its name and status off
- * at 375 px). At 320 px, with text at 100% and at 200%, nothing on either page
- * is cut off (no ellipsis, no clipped line) and the page never scrolls
- * sideways.
+ * at 375 px). At 320 px, with text at 100% and at 200%, nothing on any of
+ * them is cut off (no ellipsis, no clipped line) and the page never scrolls
+ * sideways: a file, a compendium of two books (its book list and each
+ * book's switch), a collection the player made, and The books.
  */
 import type { Page } from '@playwright/test';
 import { jsonFile } from '../fixtures/characterFile.ts';
@@ -13,6 +14,7 @@ import {
   createBlankCharacter,
   gotoRosterSettled,
   importHomebrewFile,
+  importPreview,
   skipOfflineReadyNotice,
 } from '../support/app.ts';
 import { expect, test } from '../support/test.ts';
@@ -25,6 +27,22 @@ const LONG_BREW = jsonFile(LONG_NAME, {
   feat: [{ name: LONG_ENTRY, source: 'LONGBREW', entries: ['Glow.'] }],
   spell: [{ name: 'Harbourlight', source: 'LONGBREW', level: 1, entries: ['Shine.'] }],
 });
+
+const LONG_XML = 'a-very-long-compendium-converted-from-another-app.xml';
+const LONG_BOOK = 'Ember Codex of the Western Coast and Every Harbour Beyond';
+const COMPENDIUM = {
+  name: LONG_XML,
+  mimeType: 'text/xml',
+  buffer: Buffer.from(
+    `<compendium version="5">
+  <feat><name>${LONG_ENTRY}</name><text>Glow.
+Source: ${LONG_BOOK} p. 3</text></feat>
+  <feat><name>Frost Ward</name><text>Cold.
+Source: Frost Codex p. 9</text></feat>
+</compendium>`,
+  ),
+};
+const MADE = 'The Lantern Coast Brews of a Very Long Campaign';
 
 /**
  * A wide font on every machine, so the check measures what a wide font
@@ -103,6 +121,23 @@ test.describe('the collection page at phone width', () => {
     await expect(page.getByRole('heading', { level: 1, name: 'Homebrew' })).toBeVisible();
     await importHomebrewFile(page, LONG_BREW);
     await answerImportPreview(page, `Import "${LONG_NAME}"?`);
+    await importHomebrewFile(page, COMPENDIUM);
+    // A compendium's preview imports its books: "Import 2 books".
+    const books = importPreview(page, `Import "${LONG_XML}"?`);
+    await books.getByRole('button', { name: 'Import 2 books', exact: true }).click();
+    await expect(books).toBeHidden();
+    await expect(page.locator('[data-import-status]')).toContainText('2 books');
+    // A collection of the player's own, as the Homebrew page starts one.
+    await page.getByRole('button', { name: 'Create your own homebrew' }).click();
+    await page.getByRole('textbox', { name: 'Homebrew collection name' }).fill(MADE);
+    await page.getByRole('button', { name: 'OK', exact: true }).click();
+    await page.getByRole('button', { name: 'OK', exact: true }).click();
+    await expect(page).toHaveURL(/\/homebrew\/edit\//);
+    const fromShelf = async (link: RegExp, heading: string) => {
+      await page.goto('/workshop?shelf=collections');
+      await page.getByRole('link', { name: link }).click();
+      await expect(page.getByRole('heading', { level: 1, name: heading })).toBeVisible();
+    };
 
     const pages = [
       {
@@ -118,6 +153,22 @@ test.describe('the collection page at phone width', () => {
           // Its address (the file's key) holds through a reload of the built app.
           await page.reload();
           await expect(page.getByRole('heading', { level: 1, name: LONG_NAME })).toBeVisible();
+        },
+      },
+      {
+        name: 'compendium',
+        open: async () => {
+          await fromShelf(/^a-very-long-compendium/, LONG_XML);
+          await expect(page.getByRole('combobox', { name: 'Book' })).toBeVisible();
+          await expect(page.getByRole('list', { name: 'Its books' })).toContainText(LONG_BOOK);
+          await expect(page.getByRole('list', { name: `In ${LONG_XML}` })).not.toBeEmpty();
+        },
+      },
+      {
+        name: 'made',
+        open: async () => {
+          await fromShelf(new RegExp(`^${MADE}`), MADE);
+          await expect(page.getByRole('link', { name: `Add to ${MADE}` })).toBeVisible();
         },
       },
       {
