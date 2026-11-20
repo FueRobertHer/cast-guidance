@@ -29,6 +29,7 @@
  */
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '@/db/db';
+import { CHANGES_SOURCE } from '@/db/homebrewOrder';
 import type { SearchSourceFilter } from './search/protocol';
 import {
   characterSourceList,
@@ -242,10 +243,13 @@ export function withSwitches(
  * picker empty, and the table's list is the one that says what this character
  * may take. The character's switches then go over whichever applies.
  *
- * The scope is the character's when its list is set or one of its switches
- * hides a source that would otherwise show. A switch that only turns sources
- * on leaves the device in charge of what stays hidden, so the reveal offer
- * keeps naming the device's settings.
+ * The scope is the character's when its list is set, or when a switch hides a
+ * source that would otherwise show (or `'both'` when the device still hides
+ * books after the character's `on` switches). Switching off `CHANGES_SOURCE`
+ * hides no picker entry because its entries keep the book's own source, so
+ * that switch does not count toward hiding anything. A switch that only turns
+ * sources on also leaves the device in charge of what stays hidden, so the
+ * reveal offer keeps naming the device's settings.
  */
 export function pickPolicy(
   device: SourcePolicy,
@@ -255,7 +259,9 @@ export function pickPolicy(
   const own = characterPolicy(characterRaw);
   const base = own ?? device;
   const switches = characterSourceSwitches(switchesRaw);
-  const hidesMore = switches.off.some((s) => policyAllows(base, s));
+  const changes = CHANGES_SOURCE.toLowerCase();
+  // Switching off Changes to the books hides no picker entry, so ignore it here.
+  const hidesMore = switches.off.some((s) => s.toLowerCase() !== changes && policyAllows(base, s));
   // Switches hiding more over a device that still hides books once the `on`
   // switches bring theirs back: what a picker hides is both's doing.
   const deviceHides = isPolicyNarrowed(withSwitches(device, { on: switches.on, off: [] }));

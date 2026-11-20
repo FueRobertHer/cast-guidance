@@ -348,10 +348,12 @@ describe("a character's collection switches (ADR-002 E2)", () => {
           expect(now.policy).toEqual(then.policy);
           if (now.scope === 'both') {
             reached++;
-            // Only where the old scope was the character's, with no list of its own.
+            // Only where the old scope was the character's, with no list of its own,
+            // and the device still hides books after the character's `on` switches.
             expect(then.scope).toBe('character');
             expect(characterPolicy(list)).toBeUndefined();
-            expect(isPolicyNarrowed(device)).toBe(true);
+            const { on } = characterSourceSwitches(switches);
+            expect(isPolicyNarrowed(withSwitches(device, { on, off: [] }))).toBe(true);
           } else {
             expect(now.scope).toBe(then.scope);
           }
@@ -367,6 +369,24 @@ describe("a character's collection switches (ADR-002 E2)", () => {
     const picked = pickPolicy(everything, [], { off: ['KIB'] });
     expect(picked.scope).toBe('device');
     expect(policyAllows(picked.policy, 'KIB')).toBe(false);
+  });
+
+  it('does not count Changes to the books off as hiding books (ADR-002 U11)', () => {
+    const hidingXge: SourcePolicy = { mode: 'all', except: ['XGE'] };
+    for (const code of ['MyChanges', 'mychanges']) {
+      expect(pickPolicy(hidingXge, undefined, { off: [code] })).toEqual({
+        policy: { mode: 'all', except: ['XGE', code] },
+        scope: 'device',
+      });
+      expect(pickPolicy(ALLOW_ALL, undefined, { off: [code] })).toEqual({
+        policy: { mode: 'all', except: [code] },
+        scope: 'device',
+      });
+    }
+    expect(pickPolicy(hidingXge, undefined, { off: ['MyChanges', 'MyHomebrew'] })).toEqual({
+      policy: { mode: 'all', except: ['XGE', 'MyChanges', 'MyHomebrew'] },
+      scope: 'both',
+    });
   });
 
   it('reads a source on both lists as off, respells ids and drops junk', () => {
