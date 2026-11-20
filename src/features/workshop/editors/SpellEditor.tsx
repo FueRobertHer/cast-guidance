@@ -610,8 +610,8 @@ function Tags({ draft, change, readOnly }: EditorProps) {
       </summary>
       <div className="flex flex-col gap-3 px-3 pb-3">
         <Reads>
-          Kept in the file as 5etools writes them, for apps that search by them. The sheet does not
-          read these yet.
+          Written as 5etools writes them. A feat or other pick that asks for a spell by 5etools’
+          filters (area style, creature types, ability check, a flag) finds this one by them.
         </Reads>
         {TAG_FIELDS.map(([key, label, options]) => (
           <TagPicks

@@ -24,6 +24,7 @@ vi.mock('@/ui/dialogs', () => ({
 }));
 
 import { classSpellUidsFromEntities, subclassSpellUidsFromEntities } from '@/data5e/spellLookup';
+import { parseSpellFilter, spellFitsQuery } from '@/engine/spellQuery';
 import { headerFacts } from '@/features/library/fmt';
 import { spellMeta } from '@/features/sheet/spellMeta';
 import { readStored, writeEntry } from './copyWriter';
@@ -268,7 +269,14 @@ describe('the tags 5etools files a spell under (board 5)', () => {
     expect(pressed('Creature types it affects')).toEqual(['Undead']);
     expect(pressed('Ability checks it calls for')).toEqual(['Strength']);
     expect(pressed('Flags')).toEqual(['Requires sight']);
-    expect(screen.getByText(/The sheet does not read these yet/)).toBeTruthy();
+    expect(screen.getByText(/finds this one by them/)).toBeTruthy();
+    // Where they are read: a pick that filters by 5etools' tag keys.
+    const pick = parseSpellFilter(
+      'area style=MT|affects creature types=undead|ability check=strength|components & miscellaneous=sgt',
+    );
+    expect(pick !== undefined && spellFitsQuery(saved, pick)).toBe(true);
+    const other = parseSpellFilter('affects creature types=fey');
+    expect(other !== undefined && spellFitsQuery(saved, other)).toBe(false);
   });
 
   it('keeps a tag it has no chip for as one that takes it away, and shows the Healing tag', () => {
