@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { EntityRegistry } from '@/data5e/normalize';
 import { ALLOW_ALL, type SourcePolicy } from '@/data5e/sourceFilter';
+import { parseSpellFilter } from '@/engine/spellQuery';
 import type { ChoicePrompt, EffectOrigin } from '@/engine/types';
 import { fillSpellPrompt, type SpellPool } from './spellPrompt';
 
@@ -47,6 +48,23 @@ describe('fillSpellPrompt', () => {
   it('lists the spells that fit the query, lowest level first', () => {
     const filled = fillSpellPrompt(promptFor({ schools: ['E', 'A'] }), pool(), undefined);
     expect(ids(filled)).toEqual(['Fake Alarm|HB', 'Fake Charm|HB', 'Fake Ward|HB']);
+  });
+
+  it("lists only the homebrew spells a 5etools tag filter names, as a feat's pick reads it", () => {
+    const brew = new EntityRegistry();
+    brew.addAll('spell', [
+      { name: 'Mend Song', source: 'MyHomebrew', level: 1, school: 'V', miscTags: ['HL'] },
+      { name: 'Royal Mend', source: 'MyHomebrew', level: 1, school: 'V', components: { r: true } },
+      { name: 'Plain Bolt', source: 'MyHomebrew', level: 1, school: 'V', areaTags: ['ST'] },
+    ]);
+    const spellQuery = parseSpellFilter('level=1|components & miscellaneous=hl;royalty');
+    if (spellQuery === undefined) throw new Error('unread');
+    const filled = fillSpellPrompt(
+      { ...promptFor({}), spellQuery },
+      pool({ registry: brew }),
+      undefined,
+    );
+    expect(ids(filled)).toEqual(['Mend Song|MyHomebrew', 'Royal Mend|MyHomebrew']);
   });
 
   it('draws on the class lists, any of those named', () => {
