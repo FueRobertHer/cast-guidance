@@ -401,6 +401,21 @@ work:
   change would not reach the sheet. The Workshop's list of your entries
   shows only kinds with an editor, so a change to a class feature is found
   again from its Library page alone.
+- Select mode on Yours (ADR-002 U8) moves, exports and deletes several of the
+  player's entries at once; a delete is one write with Undo, and characters
+  are never written, so Undo puts each entry back on every sheet. Left out: a
+  move has no Undo (moving back is the way); a move from several collections
+  is one write per collection, so one refused leaves the others moved, each
+  refusal reported; an export leaves out changes to the books (a rule pack,
+  U9); Undo puts whole files back, so any later change to one of them ends
+  the offer; the who-uses list finds characters as a move would (E5), so it
+  shares a move's blind spots (history snapshots, creator drafts), and it
+  names every character with a subrace or subclass of that name and book,
+  whatever its parent (which of two the sheet takes depends on each
+  character's own view of the data, as `useCharacterSheet` builds it); where a
+  collection holds two entries of one name and book (only a hand-edited
+  import does), a delete takes the first. No long press to start selecting,
+  no sort, and Collections has no select mode.
 
 ### Maintainability and diagnostics
 
