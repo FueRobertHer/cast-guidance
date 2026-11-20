@@ -30,7 +30,11 @@ vi.mock('@/data5e/loader', () => ({
   ...loader,
   CompendiumNotDownloadedError: class extends Error {},
 }));
-vi.mock('@/data5e/registry', () => ({ invalidateRegistry: vi.fn() }));
+// Never read here, so Settings' rules row stays Loading (see "rows into the Workshop").
+vi.mock('@/data5e/registry', () => ({
+  invalidateRegistry: vi.fn(),
+  getRegistry: () => new Promise(() => undefined),
+}));
 vi.mock('@/db/dataCacheRepo', () => ({
   dataCacheRepo: { totalBytes: () => Promise.resolve(0) },
 }));
@@ -502,7 +506,7 @@ describe('SettingsPage data and privacy', () => {
 
 describe('SettingsPage rows into the Workshop', () => {
   it('opens the Rules page and The books, saying Loading for the rules until packs are read', () => {
-    // The registry is not read here (`useRegistry` gives null), so an
+    // The registry is never read here (`getRegistry` never settles), so an
     // every-character pack could still set a rule: no value is claimed yet.
     render(<SettingsPage />);
     const rules = screen.getByRole('link', { name: /^Table rules and rule packs/ });

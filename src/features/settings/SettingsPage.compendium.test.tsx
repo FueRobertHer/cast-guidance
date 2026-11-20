@@ -20,7 +20,11 @@ const loader = vi.hoisted(() => {
 });
 
 vi.mock('@/data5e/loader', () => loader);
-vi.mock('@/data5e/registry', () => ({ invalidateRegistry: vi.fn() }));
+// Never read here, so Settings' rules row stays Loading (see "rows into the Workshop").
+vi.mock('@/data5e/registry', () => ({
+  invalidateRegistry: vi.fn(),
+  getRegistry: () => new Promise(() => undefined),
+}));
 vi.mock('@/db/dataCacheRepo', () => ({
   // Some bytes on disk: essentials that only partly landed still read as not
   // downloaded, so the answer cannot rest on the cache being empty.

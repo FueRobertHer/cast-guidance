@@ -63,14 +63,17 @@ export interface AppRules {
 }
 
 /**
- * The registry as the rules read it. A pack turned on or off, moved, or
- * applied to every character changes the rules with no download, and a screen
- * already holding the registry hears of that only from the stored rows. Once
- * they change, it reads the registry again on each change there and on each
- * new shared read, the last read started winning: a read begun before a pack
- * change (the first build, a download landing) never has the last word.
+ * The registry as the rules read it, and whether it is read yet. A pack
+ * turned on or off, moved, or applied to every character changes the rules
+ * with no download, and a screen already holding the registry hears of that
+ * only from the stored rows. So it reads the registry once the rows are known,
+ * again on each change there and on each new shared read (a download landing),
+ * the last read started winning: a read begun before a pack change never has
+ * the last word. Until its first read is in, it shows the shared registry but
+ * is not ready, since that one may have been read before a pack change. A
+ * read that fails leaves the last one standing.
  */
-function useRulesRegistry(): EntityRegistry | null {
+function useRulesRegistry(): { registry: EntityRegistry | null; ready: boolean } {
   const shared = useRegistry();
   const packs = useLiveQuery(
     async () =>
@@ -79,27 +82,21 @@ function useRulesRegistry(): EntityRegistry | null {
       ),
     [],
   );
-  const first = useRef<string>(undefined);
-  const changed = useRef(false);
   const latest = useRef(0);
   const [own, setOwn] = useState<EntityRegistry>();
   // biome-ignore lint/correctness/useExhaustiveDependencies: a new shared registry is a trigger, read again so an older read never wins
   useEffect(() => {
     if (packs === undefined) return;
-    first.current ??= packs;
-    if (packs !== first.current) changed.current = true;
-    if (!changed.current) return;
     latest.current += 1;
     const read = latest.current;
     getRegistry().then(
       (registry) => {
         if (read === latest.current) setOwn(registry);
       },
-      // The registry in hand stands: the shared read reports a failure.
       () => undefined,
     );
   }, [packs, shared]);
-  return own ?? shared;
+  return { registry: own ?? shared, ready: own !== undefined };
 }
 
 /**
@@ -108,7 +105,7 @@ function useRulesRegistry(): EntityRegistry | null {
  * so they never disagree.
  */
 export function useAppRules(): AppRules {
-  const registry = useRulesRegistry();
+  const { registry, ready } = useRulesRegistry();
   const chosen = useAppTableRules();
   const app = appRulesFor(
     {
@@ -117,7 +114,7 @@ export function useAppRules(): AppRules {
     },
     '2024',
   );
-  return { rules: app.rules, chosen, packs: app.packs, ready: registry !== null };
+  return { rules: app.rules, chosen, packs: app.packs, ready };
 }
 
 /** Whether a rule plays as written. */

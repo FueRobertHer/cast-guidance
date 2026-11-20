@@ -255,6 +255,7 @@ export default function WritePackSheet({
   ]);
   const picks = picked ?? defaults;
   const toggle = (key: string) => {
+    if (loading) return;
     const next = new Set(picks);
     if (next.has(key)) next.delete(key);
     else next.add(key);
