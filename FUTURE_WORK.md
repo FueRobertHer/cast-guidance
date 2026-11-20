@@ -277,6 +277,27 @@ work:
   (emptied, it is none); the subrace links leave the species editor without
   the unsaved-changes question, as the subclass links do; two subraces of one
   name in one collection clash, whatever species each names.
+- The Workshop's class fields (ADR-002 U5c, `src/features/workshop/classFields.tsx`
+  and the class, subclass and background editors): a class's multiclassing
+  (the scores it needs, all or one of them, and what a later class gains),
+  tools, starting gear (items, kinds of weapon, coins and choices), how many
+  spells it prepares (a number by level, or its level or half its level plus
+  its casting modifier), optional features by level, the spells it gives by
+  class level and what the whole class does on the sheet; a subclass's own
+  spellcasting, its spell columns in the class table, its spells and what it
+  does on the sheet; a background's choice of skills, tools (of a kind:
+  a gaming set), languages by name, spells and what it does on the sheet. A
+  shape a field cannot show (alternatives, two choices, spells by spell level)
+  is kept as written, and a copy of a class or subclass reads and writes its
+  features against the entry below a table's change. Left out: the optional
+  features' column sits beside the book's own (a Warlock's Invocations Known
+  does not follow it); a subclass's own number columns other than its spells
+  show, but are not edited; a background's spells added to a list by spell
+  level are kept as written; starting gear in words alone (`default`) gives
+  way to the item list once edited. Outside the Workshop: the engine reads a
+  book's `or: [{ str: 13, dex: 13 }]` as needing both (`multiclass.ts`), and a
+  copy that stops preparing writes `preparedSpells: null`, which
+  `classSpellcastingMode` (`slots.ts`) still reads as preparing.
 - A change to any box in a Workshop editor re-renders the whole editor, the
   origin fields included: `WorkshopPage`'s `change` is a new function on every
   render, and `FeatBody` and the species editor's `OriginParts` hand each
@@ -370,9 +391,8 @@ work:
   subclass's features have no Library page to change them from; the book's
   own mechanics are one Keep or Remove (the "Also does what" box), not a row
   each with what the sheet counts; no character count ("Hild has Aid
-  prepared") and no Try it on for a change; a class's or subclass's own
-  editor still reads a stored copy's features against the table's version
-  (U5c). Changes to the books finds a change by its identity
+  prepared") and no Try it on for a change. Changes to the books finds a
+  change by its identity
   (`homebrewRepo.saveEntry` and `removeEntry`), so every Ability Score
   Improvement, each class's at each level, can be changed apart. A
   condition the app counts by its own rules (Poisoned) is not offered: a

@@ -1,0 +1,319 @@
+// @vitest-environment jsdom
+// U5c (ADR-002, board 5): the subclass fields. Its own spellcasting and its
+// table, the spells it gives by class level, and its effects: each saved as
+// Save writes it, read on the sheet, and opened again unchanged. A copy whose
+// feature a table's change placed reads and writes it against the feature
+// below the change, as the merge resolves the copy (U10).
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { useState } from 'react';
+import { MemoryRouter } from 'react-router';
+import { afterEach, describe, expect, it } from 'vitest';
+import type { Entity } from '@/data5e/copyMod';
+import { engineContextFor } from '@/data5e/engineAdapter';
+import { type EntityRegistry, mergeHomebrew, normalizeDataset } from '@/data5e/normalize';
+import { deriveSheet } from '@/engine/derive';
+import { newCharacterDoc } from '@/engine/types';
+import { writeChange } from '../copyWriter';
+import type { Json } from '../editorTypes';
+import { editor, editsOf, featureTree, openSubclass, writeSubclass } from './SubclassEditor';
+
+afterEach(cleanup);
+
+const ref = (name: string, level: number) => `${name}|Fighter|XPHB|Knight|XPHB|${level}`;
+const KNIGHT: Json = {
+  name: 'Knight',
+  shortName: 'Knight',
+  source: 'XPHB',
+  className: 'Fighter',
+  classSource: 'XPHB',
+  subclassFeatures: [ref('Knight', 3), ref('Bulwark', 15)],
+};
+const feature = (name: string, level: number, entries: unknown[]): Json => ({
+  name,
+  source: 'XPHB',
+  className: 'Fighter',
+  classSource: 'XPHB',
+  subclassShortName: 'Knight',
+  subclassSource: 'XPHB',
+  level,
+  entries,
+});
+const BOOK = {
+  class: [
+    { name: 'Fighter', source: 'XPHB', hd: { number: 1, faces: 10 }, classFeatures: [] },
+    {
+      name: 'Paladin',
+      source: 'XPHB',
+      hd: { number: 1, faces: 10 },
+      casterProgression: '1/2',
+      spellcastingAbility: 'cha',
+      classFeatures: [],
+    },
+  ],
+  subclass: [KNIGHT],
+  subclassFeature: [
+    feature('Knight', 3, ['You are a knight.']),
+    feature('Bulwark', 15, ['Allies near you take less damage.']),
+  ],
+};
+const SPELLS = [
+  { name: 'Shield', source: 'XPHB', level: 1, school: 'A' },
+  { name: 'Light', source: 'XPHB', level: 0, school: 'V' },
+];
+
+function world(changes: Record<string, Json[]> = {}, mine?: Record<string, unknown>) {
+  const registry = normalizeDataset(
+    new Map<string, unknown>([
+      ['class/class-fighter.json', BOOK],
+      ['spells/spells-xphb.json', { spell: SPELLS }],
+    ]),
+  );
+  const files = new Map<string, Record<string, unknown>>();
+  if (Object.keys(changes).length > 0)
+    files.set('table', { _meta: { sources: [{ json: 'MyChanges' }] }, ...changes });
+  if (mine !== undefined)
+    files.set('mine', { _meta: { sources: [{ json: 'MyHomebrew' }] }, ...mine });
+  if (files.size > 0) mergeHomebrew(registry, files, new Map(), new Set(['table']));
+  return registry;
+}
+
+function mount(start: Json, registry: EntityRegistry, original?: Json) {
+  let latest = start;
+  let changes = 0;
+  function Harness() {
+    const [draft, setDraft] = useState(start);
+    latest = draft;
+    const change = (patch: Json) => {
+      changes++;
+      setDraft((d) => {
+        const next = { ...d, ...patch };
+        for (const [k, v] of Object.entries(patch)) if (v === undefined) delete next[k];
+        return next;
+      });
+    };
+    return (
+      <editor.Body
+        draft={draft}
+        change={change}
+        original={original}
+        registry={registry}
+        readOnly={false}
+      />
+    );
+  }
+  render(
+    <MemoryRouter>
+      <Harness />
+    </MemoryRouter>,
+  );
+  return { draft: () => latest, changes: () => changes };
+}
+
+const type = (label: string, value: string) =>
+  fireEvent.change(screen.getByLabelText(label), { target: { value } });
+const box = (label: string) => (screen.getByLabelText(label) as HTMLInputElement).value;
+const press = (name: string) => fireEvent.click(screen.getByRole('button', { name }));
+
+/** Saved as a new subclass of the player's own. */
+const saveNew = (
+  draft: Json,
+  registry: EntityRegistry,
+  stored?: { name: string; source: string },
+) => writeSubclass({ draft, source: 'MyHomebrew', mode: 'full', registry, stored });
+
+/** A Fighter of `levels` with this subclass, as the sheet derives it. */
+function sheetOf(registry: EntityRegistry, levels: number, name = 'Lantern') {
+  const doc = newCharacterDoc('c', 'Hero', 't');
+  doc.classes = [
+    {
+      ref: { name: 'Fighter', source: 'XPHB' },
+      levels,
+      hp: Array(levels).fill('avg'),
+      subclass: { name, source: 'MyHomebrew' },
+    },
+  ];
+  doc.abilities = { ...doc.abilities, base: { ...doc.abilities.base, int: 16 } };
+  return deriveSheet(doc, engineContextFor(registry, {}));
+}
+
+const NEW: Json = { name: 'Lantern', className: 'Fighter', classSource: 'XPHB', ...editor.blank() };
+
+describe('its own spellcasting and table', () => {
+  it('casts for a class with none, its table saved for the subclass and read on the sheet', async () => {
+    const registry = world();
+    const at = mount(structuredClone(NEW), registry);
+    type('Its own spellcasting', '1/3');
+    expect(editor.check?.(at.draft())).toBe('Pick the ability it casts its spells with.');
+    type('Casts with', 'int');
+    fireEvent.change(screen.getByLabelText('Its spells'), { target: { value: 'known' } });
+    fireEvent.change(await screen.findByLabelText('Known at level 1'), { target: { value: '3' } });
+    expect(editor.check?.(at.draft())).toBeUndefined();
+    const { entry } = saveNew(at.draft(), registry);
+    expect(entry.casterProgression).toBe('1/3');
+    const table = entry.subclassTableGroups as Json[];
+    expect(
+      table.every(
+        (g) => JSON.stringify(g.subclasses) === '[{"name":"Lantern","source":"MyHomebrew"}]',
+      ),
+    ).toBe(true);
+    expect(table.some((g) => Array.isArray(g.rowsSpellProgression))).toBe(true);
+    const sheet = sheetOf(world({}, { subclass: [structuredClone(entry)] }), 3);
+    const block = sheet.spellcasting[0];
+    expect(block?.mode).toBe('known');
+    expect(block?.slots[0]).toBe(2);
+    expect(block?.spellsKnownMax).toBe(3);
+    cleanup();
+    const again = mount(openSubclass(structuredClone(entry), { registry }), registry);
+    expect((screen.getByLabelText('Its own spellcasting') as HTMLSelectElement).value).toBe('1/3');
+    expect(await screen.findByLabelText('Known at level 1')).toBeTruthy();
+    expect(box('Known at level 1')).toBe('3');
+    expect(again.changes()).toBe(0);
+  });
+
+  it('says the class casts on its own, where the sheet reads the class', () => {
+    mount({ ...structuredClone(NEW), className: 'Paladin' }, world());
+    expect(screen.getByText(/Paladin casts spells of its own/)).toBeTruthy();
+  });
+
+  it("keeps the table it came with while its spellcasting is as it was, and shows the book's columns", async () => {
+    const groups = [
+      {
+        subclasses: [{ name: 'Lantern', source: 'MyHomebrew' }],
+        colLabels: ['Energy Dice'],
+        rows: Array.from({ length: 20 }, (_, i) => [i < 2 ? 0 : 4]),
+      },
+    ];
+    const stored = { ...structuredClone(NEW), source: 'MyHomebrew', subclassTableGroups: groups };
+    const mine = world({}, { subclass: [structuredClone(stored)] });
+    mount(structuredClone(stored), mine);
+    fireEvent.click(await screen.findByRole('button', { name: /^Level 3,/ }));
+    expect(screen.getByText(/The book's table at level 3: Energy Dice 4/)).toBeTruthy();
+    const { entry } = saveNew(structuredClone(stored), mine, {
+      name: 'Lantern',
+      source: 'MyHomebrew',
+    });
+    expect(entry.subclassTableGroups).toEqual(groups);
+  });
+});
+
+describe('the spells it gives', () => {
+  it('saves them by class level from its first, read on the sheet, and opens them unchanged', () => {
+    const registry = world();
+    const at = mount(structuredClone(NEW), registry);
+    press('Add spells at a level');
+    expect(box('Spell row 1: from level')).toBe('3');
+    type('Spell row 1: spells', 'Shield');
+    expect(at.draft().additionalSpells).toEqual([{ prepared: { '3': ['Shield|XPHB'] } }]);
+    const { entry } = saveNew(
+      { ...at.draft(), casterProgression: '1/3', spellcastingAbility: 'int' },
+      registry,
+    );
+    const sheet = sheetOf(world({}, { subclass: [structuredClone(entry)] }), 3);
+    expect(sheet.grantedSpells.find((s) => s.name === 'Shield')?.usage).toBe('prepared');
+    cleanup();
+    const again = mount(openSubclass(structuredClone(entry), { registry }), registry);
+    expect(box('Spell row 1: spells')).toBe('Shield');
+    expect(again.changes()).toBe(0);
+  });
+
+  it('keeps the cantrips it knows beside the list, and says so', () => {
+    const registry = world();
+    const start = {
+      ...structuredClone(NEW),
+      additionalSpells: [{ known: { '3': ['light|xphb#c'] }, prepared: { '3': ['shield|xphb'] } }],
+    };
+    const at = mount(start, registry);
+    expect(screen.getByText(/the spells it knows, kept as written/)).toBeTruthy();
+    press('Add spells at a level');
+    type('Spell row 2: spells', 'Light');
+    expect(at.draft().additionalSpells).toEqual([
+      { known: { '3': ['light|xphb#c'] }, prepared: { '3': ['shield|xphb'], '5': ['Light|XPHB'] } },
+    ]);
+  });
+});
+
+describe('what the whole subclass does on the sheet', () => {
+  it('saves its own cards, counted from its first level', () => {
+    const registry = world();
+    const at = mount(
+      {
+        ...structuredClone(NEW),
+        castGuidance: { v: 1, effects: [{ kind: 'acBonus', amount: 1 }] },
+      },
+      registry,
+    );
+    const section = screen
+      .getByRole('heading', { name: 'What it does on the sheet' })
+      .closest('section');
+    fireEvent.change(within(section as HTMLElement).getByLabelText('Armor Class: Amount'), {
+      target: { value: '2' },
+    });
+    const { entry } = saveNew(at.draft(), registry);
+    expect(entry.castGuidance).toMatchObject({ effects: [{ kind: 'acBonus', amount: 2 }] });
+    const sheet = sheetOf(world({}, { subclass: [structuredClone(entry)] }), 3);
+    expect(sheet.ac.parts.some((p) => p.label === 'Lantern' && p.amount === 2)).toBe(true);
+  });
+});
+
+describe('a copy of a subclass whose feature a table changed (U10)', () => {
+  const bulwarkChange = () => {
+    const base = normalizeDataset(new Map([['class/class-fighter.json', BOOK]]));
+    const bulwark = base.get('subclassFeature', 'Bulwark', 'XPHB') as Json;
+    return [
+      writeChange('subclassFeature', bulwark, {
+        ...bulwark,
+        entries: ['Allies take none.'],
+      }) as Entity,
+    ];
+  };
+  const tableWorld = (mine?: Record<string, unknown>) =>
+    world({ subclassFeature: bulwarkChange() }, mine);
+
+  function renamed(entries?: unknown[]) {
+    const registry = tableWorld();
+    const sub = registry.get('subclass', 'Knight', 'XPHB') as Json;
+    const node = featureTree(sub, registry).find((n) => n.entity?.name === 'Bulwark');
+    if (node === undefined) throw new Error('no Bulwark');
+    expect(node.base.entries).toEqual(['Allies take none.']);
+    const draft = openSubclass(structuredClone(sub), { original: sub, registry });
+    draft.name = 'Lantern';
+    draft._features = {
+      ...editsOf(draft),
+      changed: { [node.ref]: { ...node.base, name: 'Rampart', ...(entries ? { entries } : {}) } },
+    };
+    const written = writeSubclass({
+      original: sub,
+      copied: sub,
+      draft,
+      source: 'MyHomebrew',
+      mode: 'changes',
+      registry,
+    });
+    const file = {
+      subclass: [structuredClone(written.entry)],
+      subclassFeature: structuredClone(written.owned),
+    };
+    return { written, file, loaded: tableWorld(structuredClone(file)), ref: node.ref };
+  }
+
+  it("keeps the table's change in the copy, as the sheet resolves it", () => {
+    const { loaded } = renamed();
+    expect(loaded.get('subclassFeature', 'Rampart', 'MyHomebrew')?.entries).toEqual([
+      'Allies take none.',
+    ]);
+  });
+
+  it('reads a copy that went back to the book below the change as the book, not the table', () => {
+    const { written, file, loaded, ref: at } = renamed(['Allies near you take less damage.']);
+    expect(loaded.get('subclassFeature', 'Rampart', 'MyHomebrew')?.entries).toEqual([
+      'Allies near you take less damage.',
+    ]);
+    const sub = loaded.get('subclass', 'Knight', 'XPHB') as Json;
+    const draft = openSubclass(structuredClone(written.entry), {
+      original: sub,
+      registry: loaded,
+      file: { _meta: {}, ...file },
+    });
+    expect(editsOf(draft).changed[at]?.entries).toEqual(['Allies near you take less damage.']);
+  });
+});

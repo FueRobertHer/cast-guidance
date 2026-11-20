@@ -1,14 +1,17 @@
 /**
- * Backgrounds: the skills, tools and languages they give, the three ability
- * scores a 2024 background raises, the origin feat, and their text. What a
- * background does on the sheet comes from these fields; the sheet does not
- * read effect cards on a background yet, so this editor has none.
+ * Backgrounds: the skills, tools and languages they give (by name, and a
+ * choice of more), the three ability scores a 2024 background raises, the
+ * origin feat, the spells it gives, what it does on the sheet, and their text.
+ * The sheet reads the fields as what a background inherits (background.ts):
+ * its own effects add to them, and turning off what the original does turns
+ * them off too.
  */
 import { useState } from 'react';
 import { isRecord } from '@/engine/castGuidance';
 import { isLanguageOrToolMix } from '@/engine/effects/readers';
 import { SKILLS } from '@/engine/types';
 import { fieldClass } from '@/ui/TextField';
+import { EntryEffects } from '../EffectCards';
 import type { EditorProps, EditorSpec, Json } from '../editorTypes';
 import {
   ABILITY_WORDS,
@@ -20,6 +23,7 @@ import {
   Select,
   TextBlocks,
 } from '../fields';
+import { OnSheet, SpellsGiven } from '../originFields';
 import { PartList } from '../PartList';
 
 const SKILL_KEYS: ReadonlyArray<readonly [string, string]> = SKILLS.map(
@@ -84,11 +88,13 @@ function NamesField({
   value,
   onChange,
   readOnly,
+  placeholder = 'None',
 }: {
   label: string;
   value: readonly string[];
   onChange: (names: string[]) => void;
   readOnly: boolean;
+  placeholder?: string;
 }) {
   const [typed, setTyped] = useState(() => value.join(', '));
   const parse = (t: string) =>
@@ -102,7 +108,7 @@ function NamesField({
       <input
         value={text}
         disabled={readOnly}
-        placeholder="None"
+        placeholder={placeholder}
         onChange={(e) => {
           setTyped(e.target.value);
           onChange(parse(e.target.value));
@@ -113,23 +119,163 @@ function NamesField({
   );
 }
 
+type Options = ReadonlyArray<readonly [string, string]>;
+
+/** A proficiency list's choice: how many, and from what (nothing named: any). */
+export interface Choice {
+  count: number;
+  from: string[];
+}
+
+/** A proficiency list as the names it gives and one choice of more. */
+export interface Granted {
+  names: string[];
+  choice?: Choice;
+}
+
+/** The tool kinds the data keys as `any…`, in the words the sheet's tool list also reads. */
+export const TOOL_KINDS: Options = [
+  ['anyGamingSet', 'gaming set'],
+  ['anyArtisansTool', "artisan's tools"],
+  ['anyMusicalInstrument', 'musical instrument'],
+];
+
+const kindWord = (kinds: Options, key: string) =>
+  kinds.find(([k]) => k.toLowerCase() === key.toLowerCase())?.[1] ?? key;
+
+/**
+ * A `*Proficiencies` list (`[{ insight: true, choose: { from, count } }]`) as
+ * names and one choice: from a list (`choose`), of any (`anyKey`: any skill,
+ * any standard language), or of a kind (`kinds`: a gaming set). Undefined for
+ * more: alternatives, or two choices.
+ */
+export function grantedOf(raw: unknown, anyKey: string, kinds: Options = []): Granted | undefined {
+  if (raw === undefined || raw === null || (Array.isArray(raw) && raw.length === 0))
+    return { names: [] };
+  if (!Array.isArray(raw) || raw.length !== 1 || !isRecord(raw[0])) return undefined;
+  const names: string[] = [];
+  const choices: Choice[] = [];
+  for (const [k, v] of Object.entries(raw[0])) {
+    if (v === true) names.push(k);
+    else if (k === 'choose') {
+      if (
+        !isRecord(v) ||
+        !Array.isArray(v.from) ||
+        !v.from.every((x) => typeof x === 'string') ||
+        (v.count !== undefined && typeof v.count !== 'number') ||
+        Object.keys(v).some((x) => x !== 'from' && x !== 'count')
+      )
+        return undefined;
+      choices.push({
+        count: typeof v.count === 'number' ? v.count : 1,
+        from: v.from.map((x: string) => kindWord(kinds, x)),
+      });
+    } else if (k === anyKey && typeof v === 'number') choices.push({ count: v, from: [] });
+    else if (typeof v === 'number' && kinds.some(([kind]) => kind === k))
+      choices.push({ count: v, from: [kindWord(kinds, k)] });
+    else return undefined;
+  }
+  return choices.length > 1 ? undefined : { names, choice: choices[0] };
+}
+
+/** The list for `g`: a choice of any is `anyKey`, of one kind its key, else `choose`. */
+export function grantedWith(g: Granted, anyKey: string, kinds: Options = []): unknown {
+  const out: Json = Object.fromEntries(g.names.map((n) => [n, true]));
+  const c = g.choice;
+  if (c !== undefined && c.count > 0) {
+    const kind = c.from.length === 1 ? kinds.find(([, w]) => w === c.from[0]) : undefined;
+    if (c.from.length === 0) out[anyKey] = c.count;
+    else if (kind !== undefined) out[kind[0]] = c.count;
+    else out.choose = { from: c.from, ...(c.count !== 1 ? { count: c.count } : {}) };
+  }
+  return Object.keys(out).length > 0 ? [out] : undefined;
+}
+
+/**
+ * One kind of proficiency a background gives: by name (chips, or a box of
+ * names), and how many more of the player's choice, from a list or of any.
+ */
+function GrantChoice({
+  raw,
+  onChange,
+  readOnly,
+  anyKey,
+  kinds,
+  options,
+  labels,
+  sheet,
+}: {
+  raw: unknown;
+  onChange: (next: unknown) => void;
+  readOnly: boolean;
+  anyKey: string;
+  kinds?: Options;
+  /** Chips for the names, where the kind has a set list (skills); a box of names otherwise. */
+  options?: Options;
+  labels: { names: string; count: string; from: string; any: string };
+  sheet: string;
+}) {
+  const g = grantedOf(raw, anyKey, kinds);
+  if (g === undefined) return <Kept label={labels.names}>a choice, kept as it is.</Kept>;
+  const set = (patch: Partial<Granted>) => onChange(grantedWith({ ...g, ...patch }, anyKey, kinds));
+  const count = g.choice?.count ?? 0;
+  const from = g.choice?.from ?? [];
+  return (
+    <div className="flex flex-col gap-3">
+      {options !== undefined ? (
+        <ChipPicks
+          label={labels.names}
+          options={options}
+          value={g.names}
+          disabled={readOnly}
+          onChange={(names) => set({ names })}
+        />
+      ) : (
+        <NamesField
+          label={labels.names}
+          value={g.names}
+          readOnly={readOnly}
+          onChange={(names) => set({ names })}
+        />
+      )}
+      <NumberField
+        label={labels.count}
+        value={count === 0 ? undefined : count}
+        placeholder="None"
+        disabled={readOnly}
+        onChange={(n) =>
+          set({ choice: n === undefined || n === 0 ? undefined : { count: n, from } })
+        }
+      />
+      {count > 0 &&
+        (options !== undefined ? (
+          <ChipPicks
+            label={labels.from}
+            options={options}
+            value={from}
+            disabled={readOnly}
+            onChange={(next) => set({ choice: { count, from: next } })}
+          />
+        ) : (
+          <NamesField
+            label={labels.from}
+            value={from}
+            placeholder={labels.any}
+            readOnly={readOnly}
+            onChange={(next) => set({ choice: { count, from: next } })}
+          />
+        ))}
+      {count > 0 && from.length === 0 && (
+        <p className="text-caption text-ink-muted">With none named, {labels.any.toLowerCase()}.</p>
+      )}
+      <OnSheet>{sheet}</OnSheet>
+    </div>
+  );
+}
+
 function BackgroundBody({ draft, change, original, registry, readOnly }: EditorProps) {
-  const skills = trueKeys(draft.skillProficiencies, new Set(SKILL_KEYS.map(([k]) => k)));
-  const tools = trueKeys(draft.toolProficiencies);
-  const langs = draft.languageProficiencies;
   // Custom Background's languages and tools in any mix stand in for its languages.
   const mixed = isLanguageOrToolMix(draft.skillToolLanguageProficiencies);
-  const anyLangs = mixed
-    ? undefined
-    : langs === undefined || langs === null
-      ? 0
-      : Array.isArray(langs) &&
-          langs.length === 1 &&
-          isRecord(langs[0]) &&
-          Object.keys(langs[0]).length === 1 &&
-          typeof langs[0].anyStandard === 'number'
-        ? langs[0].anyStandard
-        : undefined;
   const abilities = backgroundAbilities(draft.ability);
   const feat = trueKeys(draft.feats);
   const featKey = feat?.[0] ?? '';
@@ -152,44 +298,50 @@ function BackgroundBody({ draft, change, original, registry, readOnly }: EditorP
   return (
     <>
       <Section title="What it gives">
-        {skills !== undefined ? (
-          <ChipPicks
-            label="Skill proficiencies"
-            options={SKILL_KEYS}
-            value={skills}
-            disabled={readOnly}
-            onChange={(keys) => change({ skillProficiencies: trueList(keys) })}
-          />
-        ) : (
-          <Kept label="Skill proficiencies">a choice, kept as it is.</Kept>
-        )}
-        {tools !== undefined ? (
-          <NamesField
-            label="Tool proficiencies"
-            value={tools}
-            readOnly={readOnly}
-            onChange={(keys) => change({ toolProficiencies: trueList(keys) })}
-          />
-        ) : (
-          <Kept label="Tool proficiencies">a choice, kept as it is.</Kept>
-        )}
-        {anyLangs !== undefined ? (
-          <NumberField
-            label="Languages of your choice"
-            value={anyLangs === 0 ? undefined : anyLangs}
-            placeholder="None"
-            disabled={readOnly}
-            onChange={(n) =>
-              change({
-                languageProficiencies:
-                  n === undefined || n === 0 ? undefined : [{ anyStandard: n }],
-              })
-            }
-          />
-        ) : mixed ? (
+        <GrantChoice
+          raw={draft.skillProficiencies}
+          onChange={(skillProficiencies) => change({ skillProficiencies })}
+          readOnly={readOnly}
+          anyKey="any"
+          options={SKILL_KEYS}
+          labels={{
+            names: 'Skill proficiencies',
+            count: 'Skills of your choice',
+            from: 'Skills chosen from',
+            any: 'Any skill',
+          }}
+          sheet="the Skills list, those of your choice a pick on the Build tab."
+        />
+        <GrantChoice
+          raw={draft.toolProficiencies}
+          onChange={(toolProficiencies) => change({ toolProficiencies })}
+          readOnly={readOnly}
+          anyKey="any"
+          kinds={TOOL_KINDS}
+          labels={{
+            names: 'Tool proficiencies',
+            count: 'Tools of your choice',
+            from: 'Tools chosen from',
+            any: 'Any tool',
+          }}
+          sheet="the Proficiencies list, those of your choice a pick on the Build tab. A gaming set, artisan's tools or a musical instrument is any of that kind."
+        />
+        {mixed ? (
           <Kept label="Languages">languages or tools of your choice, kept as they are.</Kept>
         ) : (
-          <Kept label="Languages">named languages, kept as they are.</Kept>
+          <GrantChoice
+            raw={draft.languageProficiencies}
+            onChange={(languageProficiencies) => change({ languageProficiencies })}
+            readOnly={readOnly}
+            anyKey="anyStandard"
+            labels={{
+              names: 'Languages by name',
+              count: 'Languages of your choice',
+              from: 'Languages chosen from',
+              any: 'Any standard language',
+            }}
+            sheet="the Languages list, those of your choice a pick on the Build tab."
+          />
         )}
         {abilities !== undefined ? (
           <ChipPicks
@@ -223,6 +375,23 @@ function BackgroundBody({ draft, change, original, registry, readOnly }: EditorP
           <Kept label="Feats">a choice, kept as it is.</Kept>
         )}
       </Section>
+      <Section title="Spells">
+        <SpellsGiven
+          raw={draft.additionalSpells}
+          registry={registry}
+          draft={draft}
+          readOnly={readOnly}
+          onChange={(additionalSpells) => change({ additionalSpells })}
+        />
+        <OnSheet>the Spells tab, each from the character level it names.</OnSheet>
+      </Section>
+      {original !== undefined && (
+        <p className="text-caption text-ink-muted">
+          Turning off what {String(original.name)} does below turns off what the fields above give
+          too.
+        </p>
+      )}
+      <EntryEffects draft={draft} change={change} original={original} readOnly={readOnly} />
       <Section title="Text">
         <TextBlocks
           label="Paragraphs"
