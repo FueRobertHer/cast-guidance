@@ -9,13 +9,15 @@
  * spell puts on its target while it lasts has no such field: that is the
  * spell's own `castGuidance.effects`.
  */
-import { CircleAlert, Plus, X } from 'lucide-react';
+import { ChevronRight, CircleAlert, Plus, X } from 'lucide-react';
 import { type ReactNode, useState } from 'react';
 import { DAMAGE_TYPES } from '@/convert/fc5/text';
 import { useTypePacks } from '@/data5e/hooks';
+import { editionOf } from '@/data5e/rulesVersion';
+import { storedInPlay } from '@/engine/activeEffects';
 import { isRecord } from '@/engine/castGuidance';
 import { SPELL_SCHOOLS } from '@/engine/spellQuery';
-import { castingTime, spellDuration, spellRange } from '@/features/library/fmt';
+import { castingTime, spellComponents, spellDuration, spellRange } from '@/features/library/fmt';
 import { spellMeta, spellSaves } from '@/features/sheet/spellMeta';
 import { spellRollActions } from '@/features/sheet/spellRolls';
 import { entriesToText, textToEntries } from '@/lib/entriesText';
@@ -354,7 +356,277 @@ const RANGES: Options = [
   ['feet', 'Feet'],
   ['sight', 'Sight'],
   ['unlimited', 'Unlimited'],
+  ['area', 'Self, in an area'],
 ];
+
+// Board 5's fields, in the words 5etools gives each value. Every list is the
+// set of values the data release holds (cylinder is homebrew's alone).
+
+/** The shapes a spell fills from its caster: a `range.type` other than a point. */
+const SHAPES: Options = [
+  ['cone', 'Cone'],
+  ['cube', 'Cube'],
+  ['cylinder', 'Cylinder'],
+  ['emanation', 'Emanation'],
+  ['hemisphere', 'Hemisphere'],
+  ['line', 'Line'],
+  ['radius', 'Radius'],
+  ['sphere', 'Sphere'],
+];
+const isShape = (type: unknown) => SHAPES.some(([v]) => v === type);
+
+/** The six abilities as a spell's fields name them: `savingThrow`, `abilityCheck`. */
+const ABILITY_NAME: Options = ABILITY_WORDS.map(([, v]) => [v.toLowerCase(), v] as const);
+
+/** `areaTags`. */
+const AREA_TAGS: Options = [
+  ['ST', 'Single target'],
+  ['MT', 'Multiple targets'],
+  ['C', 'Cube'],
+  ['N', 'Cone'],
+  ['Y', 'Cylinder'],
+  ['S', 'Sphere'],
+  ['R', 'Circle'],
+  ['Q', 'Square'],
+  ['L', 'Line'],
+  ['H', 'Hemisphere'],
+  ['W', 'Wall'],
+  ['E', 'Emanation'],
+];
+
+/** `affectsCreatureType`. */
+const CREATURE_TYPES: Options = [
+  'aberration',
+  'beast',
+  'celestial',
+  'construct',
+  'dragon',
+  'elemental',
+  'fey',
+  'fiend',
+  'giant',
+  'humanoid',
+  'monstrosity',
+  'ooze',
+  'plant',
+  'undead',
+].map((t) => [t, cap(t)] as const);
+
+/** `miscTags`: the flags past Ritual that 5etools files a spell under. */
+const MISC_TAGS: Options = [
+  ['HL', 'Healing'],
+  ['THP', 'Grants temporary hit points'],
+  ['SGT', 'Requires sight'],
+  ['PRM', 'Permanent effects'],
+  ['SCL', 'Scaling effects'],
+  ['SCT', 'Scaling targets'],
+  ['SMN', 'Summons a creature'],
+  ['MAC', 'Modifies AC'],
+  ['TP', 'Teleportation'],
+  ['FMV', 'Forced movement'],
+  ['RO', 'Rollable effects'],
+  ['LGTS', 'Creates sunlight'],
+  ['LGT', 'Creates light'],
+  ['UA', 'Uses an action'],
+  ['UBA', 'Uses a bonus action'],
+  ['PS', 'Plane shifting'],
+  ['OBS', 'Obscures vision'],
+  ['DFT', 'Difficult terrain'],
+  ['AAD', 'Additional attack damage'],
+  ['OBJ', 'Affects objects'],
+  ['ADV', 'Grants advantage'],
+  ['PIR', 'Permanent if repeated'],
+  ['BO', 'Burns objects'],
+  ['WLT', 'Targets willing creatures'],
+  ['ALT', 'Targets allies'],
+];
+
+/** The components, in the order the data writes them; R is royalty (Acquisitions Incorporated). */
+const COMPONENTS: Options = [
+  ['v', 'Verbal'],
+  ['s', 'Somatic'],
+  ['m', 'Material'],
+  ['r', 'Royalty'],
+];
+const given = (v: unknown) => v !== undefined && v !== false;
+
+/**
+ * `components` with only `picked` of V, S, M and R: in the data's order, a
+ * material's text and any other key kept as they were.
+ */
+export function withComponents(comp: Json, picked: readonly string[]): Json | undefined {
+  const next: Json = {};
+  for (const [k] of COMPONENTS) {
+    if (picked.includes(k)) next[k] = given(comp[k]) ? comp[k] : k === 'm' ? '' : true;
+  }
+  for (const [k, v] of Object.entries(comp)) {
+    if (!COMPONENTS.some(([c]) => c === k)) next[k] = v;
+  }
+  return Object.keys(next).length > 0 ? next : undefined;
+}
+
+/** A spell list beyond the class list: a subclass's own (`classes.fromSubclass`). */
+interface SubclassList {
+  key: string;
+  label: string;
+  entry: Json;
+}
+
+const subclassKey = (className: unknown, name: unknown) =>
+  `${String(className)}|${String(name)}`.toLowerCase();
+
+/** A `fromSubclass` entry's key: its class and subclass names. */
+function listKey(e: Json): string {
+  const c = isRecord(e.class) ? e.class : {};
+  const s = isRecord(e.subclass) ? e.subclass : {};
+  return subclassKey(c.name, s.name);
+}
+
+/** A `fromSubclass` entry's class and the names its subclass goes by, lowercased. */
+function listNames(e: Json): { className: string; names: string[] } {
+  const c = isRecord(e.class) ? e.class : {};
+  const s = isRecord(e.subclass) ? e.subclass : {};
+  const names = [s.name, s.shortName].filter((n) => typeof n === 'string');
+  return {
+    className: String(c.name).toLowerCase(),
+    names: names.map((n) => String(n).toLowerCase()),
+  };
+}
+
+/**
+ * The offered list a `fromSubclass` entry is: the same class, and a subclass
+ * that goes by one of the same names, full or short, as files differ in which
+ * they write.
+ */
+function listFor(e: Json, offered: readonly SubclassList[]): SubclassList | undefined {
+  const want = listNames(e);
+  return offered.find((s) => {
+    const has = listNames(s.entry);
+    return has.className === want.className && has.names.some((n) => want.names.includes(n));
+  });
+}
+
+/** How a `fromSubclass` entry the chips do not offer reads: subclass (class). */
+function listLabel(e: Json): string {
+  const c = isRecord(e.class) ? e.class : {};
+  const s = isRecord(e.subclass) ? e.subclass : {};
+  return `${String(s.name ?? '?')} (${String(c.name ?? '?')})`;
+}
+
+/**
+ * The subclasses in the player's data that cast from a list of their own (the
+ * Eldritch Knight's): those with a caster progression, as the Spells tab gives
+ * one its own block. One a class and name, the printing in the spell's own
+ * rules edition where the data has it, as `onePerName` picks a class.
+ */
+function subclassLists(props: EditorProps): SubclassList[] {
+  const want = editionOf(props.draft);
+  const byKey = new Map<string, SubclassList & { fits: boolean }>();
+  for (const s of props.registry.byType('subclass')) {
+    if (typeof s.casterProgression !== 'string') continue;
+    if (typeof s.name !== 'string' || typeof s.className !== 'string') continue;
+    const key = subclassKey(s.className, s.name);
+    const fits = editionOf(s) === want;
+    const had = byKey.get(key);
+    if (had !== undefined && (had.fits || !fits)) continue;
+    byKey.set(key, {
+      key,
+      label: `${s.name} (${s.className})`,
+      entry: {
+        class: { name: s.className, source: String(s.classSource ?? '') },
+        subclass: {
+          name: s.name,
+          shortName: typeof s.shortName === 'string' ? s.shortName : s.name,
+          source: String(s.source ?? ''),
+        },
+      },
+      fits,
+    });
+  }
+  return [...byKey.values()]
+    .map(({ key, label, entry }) => ({ key, label, entry }))
+    .sort((a, b) => a.label.localeCompare(b.label));
+}
+
+/** A field's one caption: where the sheet reads it, or that nothing does yet. */
+function Reads({ children }: { children: ReactNode }) {
+  return <p className="text-caption text-ink-muted">{children}</p>;
+}
+
+/**
+ * `options` with a chip for each value they lack, named as written: it stays
+ * pressed while kept, and pressing it takes it away.
+ */
+function withWritten(options: Options, value: readonly string[]): Options {
+  const written = [...new Set(value)].filter((v) => !options.some(([o]) => o === v));
+  return [...options, ...written.map((v) => [v, `${v}, as written`] as const)];
+}
+
+/** Toggle chips over a list field, with any value the chips lack kept and named. */
+function TagPicks({
+  label,
+  options,
+  value,
+  disabled,
+  onChange,
+}: {
+  label: string;
+  options: Options;
+  value: readonly string[];
+  disabled: boolean;
+  onChange: (v: string[]) => void;
+}) {
+  return (
+    <ChipPicks
+      label={label}
+      options={withWritten(options, value)}
+      value={value}
+      disabled={disabled}
+      onChange={onChange}
+    />
+  );
+}
+
+/** The data's tag lists, by field: where 5etools files a spell, kept in the player's file. */
+const TAG_FIELDS: ReadonlyArray<readonly [string, string, Options]> = [
+  ['areaTags', 'Area of effect', AREA_TAGS],
+  ['affectsCreatureType', 'Creature types it affects', CREATURE_TYPES],
+  ['abilityCheck', 'Ability checks it calls for', ABILITY_NAME],
+  ['miscTags', 'Flags', MISC_TAGS],
+];
+
+function Tags({ draft, change, readOnly }: EditorProps) {
+  const set = TAG_FIELDS.reduce((n, [key]) => n + strings(draft[key]).length, 0);
+  return (
+    <details className="group rounded-control ring-1 ring-line ring-inset">
+      <summary className="flex min-h-tap cursor-pointer list-none items-center gap-2 px-3 text-body-strong">
+        <ChevronRight
+          aria-hidden
+          size={14}
+          className="shrink-0 text-ink-muted transition-transform group-open:rotate-90"
+        />
+        <span className="flex-1">Tags for search</span>
+        <span className="text-caption text-ink-muted">{set === 0 ? 'None' : `${set} set`}</span>
+      </summary>
+      <div className="flex flex-col gap-3 px-3 pb-3">
+        <Reads>
+          Written as 5etools writes them. A feat or other pick that asks for a spell by 5etools’
+          filters (area style, creature types, ability check, a flag) finds this one by them.
+        </Reads>
+        {TAG_FIELDS.map(([key, label, options]) => (
+          <TagPicks
+            key={key}
+            label={label}
+            options={options}
+            value={strings(draft[key])}
+            disabled={readOnly}
+            onChange={(v) => change({ [key]: v.length > 0 ? v : undefined })}
+          />
+        ))}
+      </div>
+    </details>
+  );
+}
 const timed = (type: string, amount: number) => ({ type: 'timed', duration: { type, amount } });
 const DURATIONS: ReadonlyArray<readonly [string, string, Json]> = [
   ['round', '1 round', timed('round', 1)],
@@ -440,13 +712,33 @@ function About(props: EditorProps) {
   const range = isRecord(draft.range) ? draft.range : undefined;
   const distance = isRecord(range?.distance) ? range.distance : undefined;
   const rangeKey =
-    range?.type === 'point' && typeof distance?.type === 'string' ? distance.type : '';
+    range?.type === 'point' && typeof distance?.type === 'string'
+      ? distance.type
+      : isShape(range?.type)
+        ? 'area'
+        : '';
   const comp = isRecord(draft.components) ? draft.components : {};
   const material = typeof comp.m === 'string' ? comp.m : isRecord(comp.m) ? comp.m.text : undefined;
   const classes = isRecord(draft.classes) ? draft.classes : {};
   const picked = list(classes.fromClassList).filter(isRecord);
   const casters = classOptions(props);
   const pickedNames = picked.map((c) => String(c.name).toLowerCase());
+  const subPicked = list(classes.fromSubclass).filter(isRecord);
+  const subLists = subclassLists(props);
+  // Each entry as the chip it is: an offered list, or its own, named as written.
+  const subKeys = subPicked.map((e) => listFor(e, subLists)?.key ?? listKey(e));
+  const subOptions: Options = [
+    ...subLists.map((s) => [s.key, s.label] as const),
+    ...subPicked
+      .filter((e, i) => listFor(e, subLists) === undefined && subKeys.indexOf(listKey(e)) === i)
+      .map((e) => [listKey(e), `${listLabel(e)}, as written`] as const),
+  ];
+  /** `classes` with one of its lists set, gone when nothing is left in it. */
+  const setClasses = (key: string, next: Json[]) => {
+    const { [key]: _, ...rest } = classes;
+    const out = next.length > 0 ? { ...rest, [key]: next } : rest;
+    change({ classes: Object.keys(out).length > 0 ? out : undefined });
+  };
   const meta = isRecord(draft.meta) ? draft.meta : {};
   return (
     <Section title="About it">
@@ -494,11 +786,23 @@ function About(props: EditorProps) {
           disabled={readOnly}
           onChange={(type) =>
             change({
-              range: {
-                type: 'point',
-                distance:
-                  type === 'feet' ? { type, amount: Number(distance?.amount ?? 60) } : { type },
-              },
+              range:
+                type === 'area'
+                  ? { type: 'cone', distance: { type: 'feet', amount: 15 } }
+                  : {
+                      type: 'point',
+                      distance:
+                        type === 'feet'
+                          ? {
+                              type,
+                              // Feet carried over from feet; miles start again at 60.
+                              amount:
+                                distance?.type === 'feet' && typeof distance.amount === 'number'
+                                  ? distance.amount
+                                  : 60,
+                            }
+                          : { type },
+                    },
             })
           }
         />
@@ -512,24 +816,53 @@ function About(props: EditorProps) {
             }
           />
         )}
+        {rangeKey === 'area' && (
+          <>
+            <Field label="Area">
+              <Select
+                value={String(range?.type)}
+                disabled={readOnly}
+                onChange={(e) => change({ range: { ...range, type: e.target.value } })}
+              >
+                {SHAPES.map(([v, t]) => (
+                  <option key={v} value={v}>
+                    {t}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+            <NumberField
+              label={distance?.type === 'miles' ? 'Miles' : 'Feet'}
+              value={typeof distance?.amount === 'number' ? distance.amount : undefined}
+              disabled={readOnly}
+              onChange={(amount) =>
+                change({
+                  range: { ...range, distance: { type: 'feet', ...distance, amount: amount ?? 0 } },
+                })
+              }
+            />
+          </>
+        )}
       </div>
+      {rangeKey === 'area' && (
+        <Reads>
+          Its range reads “{spellRange(draft.range)}” in the Library and on its rules sheet, and “
+          {spellRange(draft.range).replace(/\bfeet\b/, 'ft')}” in its row on the Spells tab.
+        </Reads>
+      )}
       <ChipPicks
         label="Components"
-        options={[
-          ['v', 'Verbal'],
-          ['s', 'Somatic'],
-          ['m', 'Material'],
-        ]}
-        value={['v', 's', 'm'].filter((k) => comp[k] !== undefined && comp[k] !== false)}
+        options={COMPONENTS}
+        value={COMPONENTS.flatMap(([k]) => (given(comp[k]) ? [k] : []))}
         disabled={readOnly}
-        onChange={(on) => {
-          const next: Json = {};
-          if (on.includes('v')) next.v = true;
-          if (on.includes('s')) next.s = true;
-          if (on.includes('m')) next.m = comp.m !== undefined && comp.m !== false ? comp.m : '';
-          change({ components: Object.keys(next).length > 0 ? next : undefined });
-        }}
+        onChange={(picks) => change({ components: withComponents(comp, picks) })}
       />
+      {given(comp.r) && (
+        <Reads>
+          Its components read “{spellComponents(comp, level)}” in the Library and on its rules
+          sheet: royalty costs a gold piece a spell level.
+        </Reads>
+      )}
       {material !== undefined && (
         <Field label="Material">
           <input
@@ -573,10 +906,7 @@ function About(props: EditorProps) {
             (c) =>
               names.includes(c.name.toLowerCase()) && !pickedNames.includes(c.name.toLowerCase()),
           );
-          const fromClassList = [...kept, ...added];
-          const { fromClassList: _, ...rest } = classes;
-          const next = fromClassList.length > 0 ? { ...rest, fromClassList } : rest;
-          change({ classes: Object.keys(next).length > 0 ? next : undefined });
+          setClasses('fromClassList', [...kept, ...added]);
         }}
       />
       {casters.length === 0 && (
@@ -585,6 +915,28 @@ function About(props: EditorProps) {
           character can still add it on their Spells tab.
         </p>
       )}
+      {(subLists.length > 0 || subPicked.length > 0) && (
+        <>
+          <ChipPicks
+            label="On a subclass’s own list"
+            options={subOptions}
+            value={subKeys}
+            disabled={readOnly}
+            onChange={(keys) => {
+              const kept = subPicked.filter((_, i) => keys.includes(subKeys[i] ?? ''));
+              const added = subLists
+                .filter((s) => keys.includes(s.key) && !subKeys.includes(s.key))
+                .map((s) => s.entry);
+              setClasses('fromSubclass', [...kept, ...added]);
+            }}
+          />
+          <Reads>
+            On the Spells tab, a character with that subclass finds it on the subclass’s own list
+            (an Eldritch Knight’s, say), beside the book’s spells.
+          </Reads>
+        </>
+      )}
+      <Tags {...props} />
     </Section>
   );
 }
@@ -780,9 +1132,17 @@ function DiceField({
   );
 }
 
-const ABILITY_NAME: Options = ABILITY_WORDS.map(
-  ([k, v]) => [k === 'str' ? 'strength' : v.toLowerCase(), v] as const,
-);
+/**
+ * Whether + Effect puts one effect on a target, read as it reads a homebrew
+ * spell's (`homebrewLanding`): the cards offer only these, so none is added
+ * that then does nothing. Cast a spell is not among them: a target holds
+ * numbers and rolls, and the list is given no spells to name anyway.
+ */
+function landsOnATarget(e: unknown, draft: Json): boolean {
+  const name = String(draft.name ?? '').trim() || 'This spell';
+  return storedInPlay([e], 'an effect on a target', undefined, name).problems.length === 0;
+}
+
 const CONDITION_OPTIONS: Options = CONDITIONS.map((c) => [c, cap(c)] as const);
 const DAMAGE_OPTIONS: Options = DAMAGE_TYPES.map((t) => [t, cap(t)] as const);
 
@@ -1018,6 +1378,7 @@ function Cards({ draft, change, readOnly }: EditorProps) {
             effects={effects}
             readOnly={readOnly}
             inPlay
+            counts={(e) => landsOnATarget(e, draft)}
             onChange={(next) =>
               set({
                 castGuidance: guidanceWith(draft.castGuidance, {

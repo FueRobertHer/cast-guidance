@@ -170,6 +170,90 @@ describe('spell levels on the Spells tab', () => {
     expect(screen.queryByRole('button', { name: 'Learn Guidance' })).toBeNull();
   });
 
+  it("adds a homebrew spell on a subclass's own list to that subclass caster's list", async () => {
+    const doc = testCharacter('Knight', [classEntry('Warrior', 7)], { int: 14 });
+    const [entry] = doc.classes;
+    if (entry !== undefined) entry.subclass = { name: 'Spell Knight', source: 'TST' };
+    /** A level 1 spell whose own list names one subclass, as 5etools writes it. */
+    const own = (name: string, subclass: Record<string, string>, className = 'Warrior') => ({
+      name,
+      source: 'TST',
+      level: 1,
+      school: 'V',
+      entries: ['A spark.'],
+      classes: {
+        fromSubclass: [
+          { class: { name: className, source: 'TST' }, subclass: { ...subclass, source: 'TST' } },
+        ],
+      },
+    });
+    await renderSheet(doc, {
+      path: 'spells',
+      extra: {
+        spell: [
+          own('Rune Spark', { name: 'Spell Knight', shortName: 'SpellKnight' }),
+          // A file may give the full name alone, or the short name as the name.
+          own('Knight Word', { name: 'Spell Knight' }),
+          own('Short Word', { name: 'SpellKnight' }),
+          // Or a full name worded its own way, with the short name to match.
+          own('Alias Word', { name: 'Knight of Spells', shortName: 'SpellKnight' }),
+          own('Other Order', { name: 'Hex Knight', shortName: 'HexKnight' }),
+          own('Wrong Class', { name: 'Spell Knight' }, 'Mage'),
+        ],
+      },
+      lists: { 'Searing Bolt|TST': ['Warrior: SpellKnight'] },
+    });
+    await chooseSpells();
+    for (const name of ['Searing Bolt', 'Rune Spark', 'Knight Word', 'Short Word', 'Alias Word']) {
+      expect(screen.getByRole('button', { name: `Learn ${name}` })).toBeTruthy();
+    }
+    for (const name of ['Other Order', 'Wrong Class']) {
+      expect(screen.queryByRole('button', { name: `Learn ${name}` })).toBeNull();
+    }
+  });
+
+  it("reads a homebrew spell on the original's subclass list for a Workshop copy of the class", async () => {
+    const doc = testCharacter('Warden', [classEntry('Warden', 7)], { int: 14 });
+    const [entry] = doc.classes;
+    if (entry !== undefined) entry.subclass = { name: 'Spell Knight', source: 'TST' };
+    await renderSheet(doc, {
+      path: 'spells',
+      extra: {
+        class: [
+          {
+            name: 'Warden',
+            source: 'TST',
+            hd: { number: 1, faces: 10 },
+            proficiency: ['str', 'con'],
+            classFeatures: [],
+            castGuidance: { v: 1, basedOn: 'Warrior|TST' },
+          },
+        ],
+        spell: [
+          {
+            name: 'Rune Spark',
+            source: 'TST',
+            level: 1,
+            school: 'V',
+            entries: ['A spark.'],
+            // The original's name, as a file written for the Warrior's subclass says it.
+            classes: {
+              fromSubclass: [
+                {
+                  class: { name: 'Warrior', source: 'TST' },
+                  subclass: { name: 'Spell Knight', shortName: 'SpellKnight', source: 'TST' },
+                },
+              ],
+            },
+          },
+        ],
+      },
+    });
+    await chooseSpells();
+    expect(spellBlock('Spell Knight').mode).toBe('Known');
+    expect(screen.getByRole('button', { name: 'Learn Rune Spark' })).toBeTruthy();
+  });
+
   it('sends focus to the class heading when the offer goes with nothing left to hide', async () => {
     await renderSheet(freshSorcerer(1), { path: 'spells', lists: LISTS });
     await chooseSpells();

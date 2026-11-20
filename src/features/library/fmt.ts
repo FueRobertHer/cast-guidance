@@ -106,9 +106,14 @@ export function spellRange(range: unknown): string {
   return r.type === 'point' ? dist : `Self (${dist} ${r.type})`;
 }
 
-export function spellComponents(comp: unknown): string {
+/**
+ * A spell's components as the book lists them. Royalty (`r`) comes last,
+ * priced at a gold piece a spell level as 5etools prices it, or the letter
+ * alone without a `level`.
+ */
+export function spellComponents(comp: unknown, level?: unknown): string {
   if (typeof comp !== 'object' || comp === null) return '?';
-  const c = comp as { v?: boolean; s?: boolean; m?: unknown };
+  const c = comp as { v?: boolean; s?: boolean; m?: unknown; r?: unknown };
   const parts: string[] = [];
   if (c.v) parts.push('V');
   if (c.s) parts.push('S');
@@ -120,6 +125,9 @@ export function spellComponents(comp: unknown): string {
           ? (c.m as { text?: string }).text
           : undefined;
     parts.push(text !== undefined ? `M (${text})` : 'M');
+  }
+  if (c.r !== undefined && c.r !== false) {
+    parts.push(typeof level === 'number' ? `R (${level} gp)` : 'R');
   }
   return parts.join(', ') || '—';
 }
@@ -243,7 +251,7 @@ export function headerFacts(type: string, e: Entity): Array<[string, string]> {
       push('School', typeof e.school === 'string' ? (SCHOOLS[e.school] ?? e.school) : undefined);
       push('Casting time', castingTime(e.time));
       push('Range', spellRange(e.range));
-      push('Components', spellComponents(e.components));
+      push('Components', spellComponents(e.components, e.level));
       push('Duration', spellDuration(e.duration));
       break;
     case 'item':
