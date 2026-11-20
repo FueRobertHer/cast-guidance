@@ -196,6 +196,77 @@ describe('its own spellcasting and table', () => {
   });
 });
 
+describe('its own slot table, saved again and again', () => {
+  // A converted subclass's slots, from level 1: not what 1/3 gives, read first
+  // by the sheet. Its table has no cantrips column, which a table made again would.
+  const ODD = Array.from({ length: 20 }, (_, i) => (i < 6 ? [2] : [3, 1]));
+  const KEY = { name: 'Lantern', source: 'MyHomebrew' };
+  const STORED: Json = {
+    ...structuredClone(NEW),
+    source: 'MyHomebrew',
+    casterProgression: '1/3',
+    spellcastingAbility: 'int',
+    cantripProgression: Array(20).fill(2),
+    subclassTableGroups: [
+      {
+        subclasses: [KEY],
+        title: 'Spell Slots per Spell Level',
+        colLabels: ['1st', '2nd'],
+        rowsSpellProgression: ODD,
+      },
+    ],
+  };
+  const slotsOf = (e: Json) =>
+    (e.subclassTableGroups as Json[]).find((g) => Array.isArray(g.rowsSpellProgression))
+      ?.rowsSpellProgression;
+  /** Opened as the Workshop opens the stored entry. */
+  const opened = () => {
+    const registry = world({}, { subclass: [structuredClone(STORED)] });
+    const e = registry.get('subclass', 'Lantern', 'MyHomebrew') as Json;
+    return { registry, draft: openSubclass(structuredClone(e), { registry }) };
+  };
+  const save = (draft: Json, registry: EntityRegistry, storedAs = [KEY]) =>
+    writeSubclass({
+      draft,
+      source: 'MyHomebrew',
+      mode: 'full',
+      registry,
+      stored: storedAs.at(-1),
+      storedAs,
+    }).entry;
+
+  it('keeps its slots when a count changes', () => {
+    const { registry, draft } = opened();
+    const entry = save({ ...draft, cantripProgression: Array(20).fill(3) }, registry);
+    expect(slotsOf(entry)).toEqual(ODD);
+    expect((entry.subclassTableGroups as Json[])[0]?.rows).toEqual(
+      Array.from({ length: 20 }, () => [3]),
+    );
+    expect(sheetOf(world({}, { subclass: [structuredClone(entry)] }), 1).spellcasting[0]?.slots[0]).toBe(2);
+  });
+
+  it('makes its slots again for a new progression, the same on every save after', () => {
+    const { registry, draft } = opened();
+    const full = { ...draft, casterProgression: 'full' };
+    const first = save(full, registry);
+    expect(slotsOf(first)?.[2]).toEqual([4, 2, 0, 0, 0, 0, 0, 0, 0]);
+    // After a save the Workshop reads the registry again; the draft's table is as it opened.
+    const refreshed = world({}, { subclass: [structuredClone(first)] });
+    expect(slotsOf(save(full, refreshed))).toEqual(slotsOf(first));
+  });
+
+  it('keeps its table under a new name, and as a file edit left it', () => {
+    const { registry, draft } = opened();
+    const renamed = { ...draft, name: 'Lamplight' };
+    const both = [KEY, { name: 'Lamplight', source: 'MyHomebrew' }];
+    expect(save(renamed, registry, both).subclassTableGroups).toEqual(STORED.subclassTableGroups);
+    // Edited as a file, the draft holds no spell fields of its own: the entry
+    // saved under its first name is what it is compared with.
+    const { _spellsOpened: _, ...asFile } = renamed;
+    expect(save(asFile, registry, both).subclassTableGroups).toEqual(STORED.subclassTableGroups);
+  });
+});
+
 describe('the spells it gives', () => {
   it('saves them by class level from its first, read on the sheet, and opens them unchanged', () => {
     const registry = world();
@@ -214,6 +285,21 @@ describe('the spells it gives', () => {
     const again = mount(openSubclass(structuredClone(entry), { registry }), registry);
     expect(box('Spell row 1: spells')).toBe('Shield');
     expect(again.changes()).toBe(0);
+  });
+
+  it('waits for the next digit when a level is retyped', () => {
+    const at = mount(structuredClone(NEW), world());
+    press('Add spells at a level');
+    type('Spell row 1: spells', 'Shield');
+    type('Spell row 1: from level', '');
+    // Emptied, the box stays empty and the row keeps its level, so 5 is 5, not 15.
+    expect(box('Spell row 1: from level')).toBe('');
+    expect(at.draft().additionalSpells).toEqual([{ prepared: { '3': ['Shield|XPHB'] } }]);
+    type('Spell row 1: from level', '5');
+    expect(box('Spell row 1: from level')).toBe('5');
+    expect(at.draft().additionalSpells).toEqual([{ prepared: { '5': ['Shield|XPHB'] } }]);
+    type('Spell row 1: from level', '25');
+    expect(at.draft().additionalSpells).toEqual([{ prepared: { '20': ['Shield|XPHB'] } }]);
   });
 
   it('keeps the cantrips it knows beside the list, and says so', () => {

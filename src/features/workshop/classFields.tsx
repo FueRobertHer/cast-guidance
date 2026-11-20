@@ -17,11 +17,12 @@ import { ownCasterLevel, PACT_SLOTS, STANDARD_SLOTS } from '@/engine/calc/slots'
 import { isRecord, own } from '@/engine/castGuidance';
 import { Button } from '@/ui/Button';
 import { SegmentedControl } from '@/ui/SegmentedControl';
+import { fieldClass } from '@/ui/TextField';
 import type { TableColumn } from './ClassTable';
 import { same } from './copyWriter';
 import type { EditorProps, Json, WriteContext } from './editorTypes';
-import { ABILITY_WORDS, Field, Kept, NumberField, Select } from './fields';
-import { NamesBox, OnSheet } from './originFields';
+import { ABILITY_WORDS, Field, Kept, Select } from './fields';
+import { HeldNumber, NamesBox, OnSheet } from './originFields';
 
 export const LEVELS = Array.from({ length: 20 }, (_, i) => i + 1);
 
@@ -34,16 +35,46 @@ export const belowChanges = (registry: EntityRegistry, e: Json): Json =>
   (registry.changeOf(e as never)?.base as Json | undefined) ?? e;
 
 /**
- * The entry Save compares the spell fields with, to tell whether the table is
- * made again: the one copied, or the one as stored before. A table the player's
- * own entry came with (a converted one's) stays while its spellcasting does.
+ * The entry Save compares the spell fields with when the draft holds none of
+ * its own (one edited as a file): the one copied, or the one as stored before,
+ * under any name it was saved under while the editor was open.
  */
 export function savedBefore(at: WriteContext, type: 'class' | 'subclass'): Json | undefined {
   if (at.copied !== undefined) return at.copied;
-  const s = at.stored;
-  return s === undefined
-    ? undefined
-    : (at.registry.get(type, s.name, s.source) as Json | undefined);
+  for (const s of [at.stored, ...[...(at.storedAs ?? [])].reverse()]) {
+    const e = s === undefined ? undefined : at.registry.get(type, s.name, s.source);
+    if (e !== undefined) return e as Json;
+  }
+  return undefined;
+}
+
+/**
+ * Where a draft keeps the spell fields it opened with: the ones its table was
+ * made for. A save leaves the draft's table as it opened, and the registry
+ * is read again after it, so this, not the entry stored, tells Save whether
+ * the table is to be made again.
+ */
+export const OPENED = '_spellsOpened';
+
+/** The draft with the spell fields `entry` has, unless it holds them already. */
+export function withOpened(draft: Json, entry: Json): Json {
+  if (isRecord(draft[OPENED])) return draft;
+  const was: Json = {};
+  for (const k of SPELL_FIELDS) {
+    const v = own(entry, k);
+    if (v !== undefined) was[k] = v;
+  }
+  return { ...draft, [OPENED]: was };
+}
+
+/** The spell fields Save compares the draft's with: as it opened, else as saved before. */
+export function spellBase(
+  draft: Json,
+  at: WriteContext,
+  type: 'class' | 'subclass',
+): Json | undefined {
+  const opened = draft[OPENED];
+  return isRecord(opened) ? opened : savedBefore(at, type);
 }
 
 // ---------------------------------------------------------------------------
@@ -217,8 +248,10 @@ const COUNT_LABEL: Readonly<Record<CountKind, string>> = {
 
 /**
  * The table's groups with its spell columns and slots made to match the
- * spellcasting the entry now has (where that changed, or for a new one).
- * The book's other columns stay as they are.
+ * spellcasting the entry now has (where that changed from `original`, or with
+ * nothing to compare with). The book's other columns stay as they are, and so
+ * do its slots while its slots' progression does: a converted table the
+ * progression does not explain is what the sheet reads (`ownSlotTable`).
  */
 export function spellGroupsFor(
   draft: Json,
@@ -226,10 +259,13 @@ export function spellGroupsFor(
   key: TableKey = 'classTableGroups',
 ): Json[] {
   let groups: Json[] = structuredClone(groupsOf(draft, key)).filter(isRecord);
+  const p = draft.casterProgression;
+  const castChanged =
+    original === undefined ||
+    !same(own(original, 'casterProgression'), own(draft, 'casterProgression'));
   const changed =
-    original === undefined || SPELL_FIELDS.some((k) => !same(own(original, k), own(draft, k)));
+    castChanged || SPELL_FIELDS.some((k) => !same(own(original as Json, k), own(draft, k)));
   if (changed) {
-    const p = draft.casterProgression;
     const caster = typeof p === 'string';
     const want: Partial<Record<CountKind, unknown[]>> = {};
     for (const [kind, field] of Object.entries(COUNT_FIELD) as [CountKind, string][]) {
@@ -276,9 +312,14 @@ export function spellGroupsFor(
         rows: LEVELS.map((_, i) => missing.map((k) => want[k]?.[i] ?? 0)),
       });
     }
-    // The slot table the sheet reads, as the progression has it.
+  }
+  // The slot table the sheet reads, as the progression has it, made again only
+  // when the progression changed. With nothing to compare with, a slot table
+  // there stays for a progression with one.
+  const slots = slotRows({ casterProgression: p });
+  const keep = original === undefined && slots !== undefined && groups.some(isSlotGroup);
+  if (castChanged && !keep) {
     groups = groups.filter((g) => !isSlotGroup(g));
-    const slots = slotRows({ casterProgression: p });
     if (slots !== undefined) {
       const top = Math.max(0, ...slots.map((r) => r.findLastIndex((n) => n > 0) + 1));
       if (top > 0) {
@@ -323,6 +364,49 @@ export function spellColumns(
   const top = topSlots(draft, key);
   if (top !== undefined) cols.push({ key: 'slot', label: 'Top slot', values: top });
   return cols;
+}
+
+/**
+ * How many of a choice: emptied, the box waits for the next number, so the
+ * list the choice is from stays; left empty, or 0, it is none.
+ */
+export function HeldCount({
+  label,
+  value,
+  onChange,
+  disabled,
+}: {
+  label: string;
+  value: number | undefined;
+  onChange: (n: number | undefined) => void;
+  disabled?: boolean;
+}) {
+  const [typed, setTyped] = useState<string | undefined>(undefined);
+  return (
+    <Field label={label}>
+      <input
+        inputMode="numeric"
+        value={typed ?? (value === undefined ? '' : String(value))}
+        placeholder="None"
+        disabled={disabled}
+        onChange={(e) => {
+          const digits = e.target.value.replace(/\D/g, '');
+          const n = Number.parseInt(digits, 10);
+          if (Number.isNaN(n)) {
+            setTyped(digits);
+            return;
+          }
+          setTyped(undefined);
+          onChange(n === 0 ? undefined : Math.min(999, n));
+        }}
+        onBlur={() => {
+          if (typed === '') onChange(undefined);
+          setTyped(undefined);
+        }}
+        className={fieldClass}
+      />
+    </Field>
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -726,11 +810,12 @@ export function LevelSpells({
         // biome-ignore lint/suspicious/noArrayIndexKey: see above
         <div key={i} className="flex flex-wrap items-end gap-2">
           <div className="w-24">
-            <NumberField
+            <HeldNumber
               label={`Spell row ${i + 1}: from level`}
               value={row.level}
+              min={1}
               disabled={readOnly}
-              onChange={(l) => setRow(i, { ...row, level: Math.min(20, Math.max(1, l ?? 1)) })}
+              onChange={(l) => setRow(i, { ...row, level: Math.min(20, l) })}
             />
           </div>
           <div className="min-w-40 flex-1">

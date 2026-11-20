@@ -34,10 +34,12 @@ import {
   belowChanges,
   bookAt,
   LevelSpells,
+  OPENED,
   Spellcasting,
-  savedBefore,
+  spellBase,
   spellColumns,
   spellGroupsFor,
+  withOpened,
 } from '../classFields';
 import { changeCount, copiedFrom, readStored, same, writeEntry } from '../copyWriter';
 import { amendPatch, EffectCards, guidanceWith } from '../EffectCards';
@@ -192,9 +194,15 @@ function ownGuidance(f: Json): Json {
  * The draft a subclass opens on: `_features` worked out by walking what the
  * entry lists against the original's features. One of the player's features
  * that names an original one (`basedOn`) is that one changed; one that names
- * none is new; an original one nowhere in the entry was removed.
+ * none is new; an original one nowhere in the entry was removed. It keeps
+ * the spell fields its table was made for (`OPENED`).
  */
-export function openSubclass(
+export const openSubclass = (
+  entry: Json,
+  at: { original?: Json; registry: EntityRegistry; file?: Json },
+): Json => withOpened(openFeatures(entry, at), entry);
+
+function openFeatures(
   entry: Json,
   { original, registry, file }: { original?: Json; registry: EntityRegistry; file?: Json },
 ): Json {
@@ -369,10 +377,10 @@ export function writeSubclass(at: WriteContext): Written {
     items.splice(after + 1, 0, { ref: ownRef(f), level });
   }
 
-  const { [KEY]: _, ...rest } = draft;
+  const { [KEY]: _, [OPENED]: __, ...rest } = draft;
   // Its own table (`subclassTableGroups`) matches its spellcasting; a table
   // made again names this subclass as the one it is for.
-  const table = spellGroupsFor(rest, savedBefore(at, 'subclass'), 'subclassTableGroups');
+  const table = spellGroupsFor(rest, spellBase(draft, at, 'subclass'), 'subclassTableGroups');
   const was = Array.isArray(rest.subclassTableGroups) ? rest.subclassTableGroups : [];
   const groups = same(table, was)
     ? table
@@ -416,7 +424,7 @@ export function summarize(draft: Json, original: Json, registry: EntityRegistry)
     if (n.entity !== undefined) count[statusOf(edits, n)] += 1;
   }
   // The list and the short name are the features' doing, counted above.
-  const { [KEY]: _, ...rest } = draft;
+  const { [KEY]: _, [OPENED]: __, ...rest } = draft;
   const own = {
     ...rest,
     subclassFeatures: original.subclassFeatures,

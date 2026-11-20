@@ -175,6 +175,21 @@ describe('background fields', () => {
     expect(box('Tools chosen from')).toBe('gaming set');
   });
 
+  it('keeps the list a choice is from while its count is retyped, and none once left empty', () => {
+    const languages = [{ choose: { from: ['elvish', 'dwarvish', 'gnomish'] } }];
+    const at = mount({ ...structuredClone(NEW), languageProficiencies: languages });
+    type('Languages of your choice', '');
+    expect(box('Languages of your choice')).toBe('');
+    expect(at.draft().languageProficiencies).toEqual(languages);
+    type('Languages of your choice', '2');
+    expect(at.draft().languageProficiencies).toEqual([
+      { choose: { from: ['elvish', 'dwarvish', 'gnomish'], count: 2 } },
+    ]);
+    type('Languages of your choice', '');
+    fireEvent.blur(screen.getByLabelText('Languages of your choice'));
+    expect(at.draft().languageProficiencies).toBeUndefined();
+  });
+
   it('languages by name reach the Languages list, beside a choice of any', () => {
     const at = mount(structuredClone(NEW));
     type('Languages by name', 'Elvish, Dwarvish');

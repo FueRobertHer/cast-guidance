@@ -11,18 +11,10 @@ import { isRecord } from '@/engine/castGuidance';
 import { isLanguageOrToolMix } from '@/engine/effects/readers';
 import { SKILLS } from '@/engine/types';
 import { fieldClass } from '@/ui/TextField';
+import { HeldCount } from '../classFields';
 import { EntryEffects } from '../EffectCards';
 import type { EditorProps, EditorSpec, Json } from '../editorTypes';
-import {
-  ABILITY_WORDS,
-  ChipPicks,
-  Field,
-  Kept,
-  NumberField,
-  Section,
-  Select,
-  TextBlocks,
-} from '../fields';
+import { ABILITY_WORDS, ChipPicks, Field, Kept, Section, Select, TextBlocks } from '../fields';
 import { OnSheet, SpellsGiven } from '../originFields';
 import { PartList } from '../PartList';
 
@@ -238,14 +230,11 @@ function GrantChoice({
           onChange={(names) => set({ names })}
         />
       )}
-      <NumberField
+      <HeldCount
         label={labels.count}
         value={count === 0 ? undefined : count}
-        placeholder="None"
         disabled={readOnly}
-        onChange={(n) =>
-          set({ choice: n === undefined || n === 0 ? undefined : { count: n, from } })
-        }
+        onChange={(n) => set({ choice: n === undefined ? undefined : { count: n, from } })}
       />
       {count > 0 &&
         (options !== undefined ? (

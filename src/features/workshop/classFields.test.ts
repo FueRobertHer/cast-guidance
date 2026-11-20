@@ -85,6 +85,20 @@ describe("the table's spell columns", () => {
     ],
   };
 
+  it('with nothing to compare with, keeps a slot table there and makes one where there is none', () => {
+    const slots = (groups: Json[]) =>
+      groups.find((g) => Array.isArray(g.rowsSpellProgression))?.rowsSpellProgression;
+    expect(slots(spellGroupsFor(structuredClone(BOOK), undefined))).toEqual([[2]]);
+    expect(slots(spellGroupsFor({ casterProgression: 'full' }, undefined))?.[0]).toEqual([
+      2, 0, 0, 0, 0, 0, 0, 0, 0,
+    ]);
+    // A count changed: the counts follow, the slots stay.
+    const more = { ...structuredClone(BOOK), spellsKnownProgression: Array(20).fill(4) };
+    const groups = spellGroupsFor(more, BOOK);
+    expect(slots(groups)).toEqual([[2]]);
+    expect((groups[0]?.rows as unknown[][])[0]).toEqual(['d6', 4]);
+  });
+
   it('stays as it is while the spellcasting does', () => {
     const draft = structuredClone(BOOK);
     expect(spellGroupsFor(draft, BOOK)).toEqual(BOOK.classTableGroups);

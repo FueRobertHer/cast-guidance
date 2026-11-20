@@ -51,14 +51,17 @@ import {
   belowChanges,
   bookAt,
   byLevelValues,
+  HeldCount,
   LEVELS,
   LevelSpells,
+  OPENED,
   Spellcasting,
-  savedBefore,
   setFrom,
+  spellBase,
   spellColumns,
   spellGroupsFor,
   twenty,
+  withOpened,
 } from '../classFields';
 import { basedOnKey, changeCount, copiedFrom, readStored, same, writeEntry } from '../copyWriter';
 import {
@@ -73,7 +76,7 @@ import {
 } from '../EffectCards';
 import type { EditorProps, EditorSpec, Json, WriteContext, Written } from '../editorTypes';
 import { FeatureRow, type FeatureStatus } from '../FeatureRow';
-import { ABILITY_WORDS, ChipPicks, Field, Kept, NumberField, Section, Select } from '../fields';
+import { ABILITY_WORDS, ChipPicks, Field, Kept, Section, Select } from '../fields';
 import { HeldNumber, NamesBox, OnSheet } from '../originFields';
 
 export { asByLevel, bookAt, byLevelValues, LEVELS, setFrom };
@@ -412,10 +415,16 @@ export function tableGroupsFor(draft: Json, original: Json | undefined): unknown
 
 /**
  * The draft a class opens on: `_features` worked out by walking what the entry
- * lists against the original's features (as the subclass editor does), and
- * its table without the pools' column, which Save writes again.
+ * lists against the original's features (as the subclass editor does), its
+ * table without the pools' column, which Save writes again, and the spell
+ * fields its table was made for (`OPENED`).
  */
-export function openClass(
+export const openClass = (
+  entry: Json,
+  at: { original?: Json; registry: EntityRegistry; file?: Json },
+): Json => withOpened(openFeatures(entry, at), entry);
+
+function openFeatures(
   entry: Json,
   { original, registry, file }: { original?: Json; registry: EntityRegistry; file?: Json },
 ): Json {
@@ -653,8 +662,8 @@ export function writeClass(at: WriteContext): Written {
     items.splice(after + 1, 0, { item: itemFor(undefined, ref, sub === true), level });
   }
 
-  const { [KEY]: _, ...rest } = draft;
-  const groups = tableGroupsFor(rest, savedBefore(at, 'class'));
+  const { [KEY]: _, [OPENED]: __, ...rest } = draft;
+  const groups = tableGroupsFor(rest, spellBase(draft, at, 'class'));
   const entry = writeEntry({
     original: at.original,
     draft: { ...rest, classFeatures: items.map((i) => i.item), classTableGroups: groups },
@@ -677,7 +686,7 @@ export function summarize(draft: Json, original: Json, registry: EntityRegistry)
   for (const n of featureTree(original, registry)) {
     if (n.entity !== undefined) count[statusOf(edits, n)] += 1;
   }
-  const { [KEY]: _, ...rest } = draft;
+  const { [KEY]: _, [OPENED]: __, ...rest } = draft;
   // The list is the features' doing, counted above; the pools' column is theirs.
   const fields = changeCount(original, {
     ...rest,
@@ -732,6 +741,11 @@ function check(draft: Json, at?: Omit<WriteContext, 'draft'>): string | undefine
     if (name === '') return 'Every optional feature list needs a name.';
     if (!Array.isArray(o.featureType) || o.featureType.length === 0)
       return `Pick the list ${name} picks from.`;
+    // The sheet gives the most a level so far has given (`progressionCount`).
+    const values = optionalValues(o);
+    const fewer = values.findIndex((v, i) => i > 0 && v < Math.max(...values.slice(0, i)));
+    if (fewer !== -1)
+      return `${name} has fewer at level ${fewer + 1} than before. The sheet keeps the most so far, so set it no lower.`;
   }
   const pools = poolsOf(draft);
   const poolNames = pools.map((p) => lower(firstWords(p.label ?? '').trim()));
@@ -892,14 +906,14 @@ function Proficiencies({
         <Kept label="Skills">kept as {of} has them.</Kept>
       ) : (
         <>
-          <NumberField
+          <HeldCount
             label={label.count}
             value={skills?.count}
             disabled={readOnly}
             onChange={(count) =>
               setStart({
                 skills:
-                  count === undefined || count === 0
+                  count === undefined
                     ? undefined
                     : [{ choose: { from: skills?.from ?? [], count } }],
               })
@@ -1058,7 +1072,8 @@ function coins(cp: number): string {
 export function gearText(e: unknown): string | undefined {
   if (typeof e === 'string') return e.split('|')[0];
   if (!isRecord(e)) return undefined;
-  const times = typeof e.quantity === 'number' && e.quantity > 1 ? ` x${e.quantity}` : '';
+  // A count as written, 1 too: "dart x1" is on its way to "dart x10".
+  const times = typeof e.quantity === 'number' ? ` x${e.quantity}` : '';
   if (typeof e.item === 'string') return `${e.item.split('|')[0]}${times}`;
   if (typeof e.special === 'string') return `${e.special}${times}`;
   const kinds =
@@ -1086,14 +1101,13 @@ export function gearFrom(text: string, was: readonly unknown[], items: readonly 
     return { value: Number(coins[1]) * (COIN[String(coins[2]).toLowerCase()] ?? 1) };
   const counted = /^(.*?)\s+x\s*(\d+)$/i.exec(text);
   const name = (counted?.[1] ?? text).trim();
-  const quantity = counted === null ? 1 : Number(counted[2]);
-  const many = quantity > 1 ? { quantity } : {};
+  const many = counted === null ? {} : { quantity: Number(counted[2]) };
   const kind = GEAR_KINDS.find(([, w]) => w.toLowerCase() === name.toLowerCase());
   if (kind !== undefined) return { equipmentType: kind[0], ...many };
   const hit = items.find((i) => String(i.name).toLowerCase() === name.toLowerCase());
   if (hit !== undefined) {
     const ref = `${name}|${String(hit.source).toLowerCase()}`;
-    return quantity > 1 ? { item: ref, quantity } : ref;
+    return counted === null ? ref : { item: ref, ...many };
   }
   return { special: name, ...many };
 }

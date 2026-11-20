@@ -254,6 +254,22 @@ describe('starting equipment', () => {
     expect(again.changes()).toBe(0);
   });
 
+  it('keeps a count as it is typed: x1 on the way to x10', () => {
+    const at = mount({ name: 'Lantern', ...editor.blank() }, world());
+    press('Add gear');
+    const gear = () => Object.values((at.draft().startingEquipment as Json).defaultData[0])[0];
+    type('Gear 1', 'javelin x1');
+    expect(box('Gear 1')).toBe('javelin x1');
+    expect(gear()).toEqual([{ item: 'javelin|phb', quantity: 1 }]);
+    type('Gear 1', 'javelin x10');
+    expect(box('Gear 1')).toBe('javelin x10');
+    expect(gear()).toEqual([{ item: 'javelin|phb', quantity: 10 }]);
+    type('Gear 1', 'any martial weapon x1');
+    expect(box('Gear 1')).toBe('any martial weapon x1');
+    const parsed = parseStartingEquipment({ startingEquipment: at.draft().startingEquipment } as never);
+    expect(parsed[0]?.[0]?.items[0]?.quantity).toBe(1);
+  });
+
   it("drops the book's words for the old kit once the kit is changed", () => {
     const registry = world();
     const at = mount(
@@ -332,6 +348,24 @@ describe('the Basics fields', () => {
     expect(again.changes()).toBe(0);
   });
 
+  it('keeps the skills to choose from while their count is retyped, and none once left empty', () => {
+    const skills = [{ choose: { from: ['history', 'insight', 'medicine'], count: 2 } }];
+    const at = mount(
+      { name: 'Lantern', ...editor.blank(), startingProficiencies: { skills } },
+      world(),
+    );
+    type('Skills to choose', '');
+    expect(box('Skills to choose')).toBe('');
+    expect((at.draft().startingProficiencies as Json).skills).toEqual(skills);
+    type('Skills to choose', '3');
+    expect((at.draft().startingProficiencies as Json).skills).toEqual([
+      { choose: { from: ['history', 'insight', 'medicine'], count: 3 } },
+    ]);
+    type('Skills to choose', '');
+    fireEvent.blur(screen.getByLabelText('Skills to choose'));
+    expect(at.draft().startingProficiencies).toBeUndefined();
+  });
+
   it("keeps a tool's tag while its words are as they were", () => {
     const registry = world();
     const at = mount(
@@ -403,6 +437,19 @@ describe('optional features by level', () => {
     expect(optionalValues({ progression: { '*': 1, '5': 3 } }).slice(0, 6)).toEqual([
       1, 1, 1, 1, 3, 3,
     ]);
+  });
+
+  it('will not save a count that falls, which the sheet would not give', () => {
+    const style = (progression: unknown) => ({
+      name: 'Lantern',
+      ...editor.blank(),
+      optionalfeatureProgression: [{ name: 'Fighting Style', featureType: ['FS:F'], progression }],
+    });
+    expect(editor.check?.(style({ '1': 2, '10': 1 }))).toBe(
+      'Fighting Style has fewer at level 10 than before. The sheet keeps the most so far, so set it no lower.',
+    );
+    expect(editor.check?.(style([2, 2, 1]))).toMatch(/at level 3/);
+    expect(editor.check?.(style({ '1': 1, '10': 2 }))).toBeUndefined();
   });
 
   it('saves a list to pick from and how many by level, a pick on the sheet', async () => {
