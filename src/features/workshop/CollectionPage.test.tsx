@@ -11,7 +11,7 @@ import { StrictMode } from 'react';
 import { createMemoryRouter, RouterProvider } from 'react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { routes } from '@/app/routes';
-import { policyAllows, readSourcePolicy } from '@/data5e/sourceFilter';
+import { policyAllows, readSourcePolicy, writeSourcePolicy } from '@/data5e/sourceFilter';
 import { characterRepo } from '@/db/characterRepo';
 import { db } from '@/db/db';
 import { homebrewRepo } from '@/db/homebrewRepo';
@@ -428,7 +428,10 @@ describe('The books', () => {
     visit(BOOKS_PATH);
     await heading('The books');
     const books = screen.getByRole('region', { name: 'Which books show' });
-    fireEvent.click(within(books).getByRole('button', { name: '2024 core only' }));
+    // The choices wait for the collections' sources, which tell a book from a collection.
+    fireEvent.click(
+      await within(books).findByRole('button', { name: '2024 core only' }, { timeout: WAIT }),
+    );
     await waitFor(async () => expect(policyAllows(await readSourcePolicy(), 'XPHB')).toBe(true), {
       timeout: WAIT,
     });
@@ -436,6 +439,41 @@ describe('The books', () => {
     expect(policyAllows(policy, 'PHB')).toBe(false);
     // The collection is not on this page, and stays shown: its own page has its switch.
     expect(policyAllows(policy, 'IMP')).toBe(true);
+    await waitFor(
+      () =>
+        expect(
+          within(books)
+            .getByRole('button', { name: '2024 core only' })
+            .getAttribute('aria-pressed'),
+        ).toBe('true'),
+      { timeout: WAIT },
+    );
+  });
+
+  it('shows every book again from an empty choice, and keeps each collection as it was', async () => {
+    await seedWorld();
+    await homebrewRepo.importJson(IMPORTED, 'imported.json');
+    // No book shows, and neither does the collection, which the player hid.
+    await writeSourcePolicy({ mode: 'only', sources: [] });
+    visit(BOOKS_PATH);
+    await heading('The books');
+    const books = screen.getByRole('region', { name: 'Which books show' });
+    fireEvent.click(
+      await within(books).findByRole('button', { name: 'Show everything' }, { timeout: WAIT }),
+    );
+    await waitFor(async () => expect(policyAllows(await readSourcePolicy(), 'TST')).toBe(true), {
+      timeout: WAIT,
+    });
+    expect(policyAllows(await readSourcePolicy(), 'IMP')).toBe(false);
+  });
+
+  it('names the choice of books after a collection it kept is deleted', async () => {
+    await seedWorld();
+    // "2024 core only" picked with a collection kept shown, then the collection deleted.
+    await writeSourcePolicy({ mode: 'only', sources: ['XDMG', 'XMM', 'XPHB', 'GONE'] });
+    visit(BOOKS_PATH);
+    await heading('The books');
+    const books = screen.getByRole('region', { name: 'Which books show' });
     await waitFor(
       () =>
         expect(

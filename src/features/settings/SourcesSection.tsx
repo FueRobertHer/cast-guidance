@@ -17,6 +17,7 @@ import {
   SOURCE_GROUP_LABELS,
   SOURCE_GROUPS,
   type SourceGroup,
+  knownSources,
   sourceGroup,
   sourceName,
 } from '@/data5e/sourceNames';
@@ -29,6 +30,9 @@ type Section = SourceGroup | 'homebrew';
 
 const SECTION_LABELS: Record<Section, string> = { ...SOURCE_GROUP_LABELS, homebrew: 'Homebrew' };
 const SECTION_ORDER: readonly Section[] = [...SOURCE_GROUPS, 'homebrew'];
+
+/** Every book the source table knows. */
+const KNOWN = new Set(knownSources());
 
 interface Row {
   source: string;
@@ -88,6 +92,7 @@ export function SourcesSection({ books = false }: { books?: boolean } = {}) {
   }, [registry, policy, brewSources, books]);
 
   const shown = rows.filter((r) => r.enabled).length;
+  const listed = new Set(rows.map((r) => r.source));
 
   const setPolicy = (next: SourcePolicy) => {
     // The toggles read from the stored policy, so a rejected write leaves them
@@ -108,24 +113,38 @@ export function SourcesSection({ books = false }: { books?: boolean } = {}) {
   /**
    * On The books a preset is a choice of books alone: each collection stays as
    * it was, since its own page has its switch and this page does not list it.
+   * The page waits for the collections' sources before it offers one, so a
+   * tap reads them here, in order with the taps before it.
    */
   const choosePreset = (next: SourcePolicy) => {
     if (!books) return setPolicy(next);
-    // Read at the tap, not from the list on screen, which may not have loaded.
-    void (async () => {
-      const brews = (await homebrewRepo.listMetaSafe()).files.flatMap((r) => r.sourceIds);
-      await updateSourcePolicy((current) =>
-        brews.reduce((p, code) => withSource(p, code, policyAllows(current, code)), next),
-      );
-    })().catch((err: unknown) => notifyFailure('Save sources', err));
+    const brews = [...(brewSources ?? [])];
+    editPolicy((current) =>
+      brews.reduce((p, code) => withSource(p, code, policyAllows(current, code)), next),
+    );
   };
+  /**
+   * The books a policy names, on The books: a collection's source is its own
+   * page's, and a code no book has (a collection deleted since) names nothing.
+   */
   const bookPart = (p: SourcePolicy) =>
-    (p.mode === 'all' ? p.except : p.sources).filter((s) => !books || brewSources?.has(s) !== true);
+    (p.mode === 'all' ? p.except : p.sources).filter(
+      (s) => !books || (brewSources?.has(s) !== true && (KNOWN.has(s) || listed.has(s))),
+    );
 
   const setGroup = (group: Section, enabled: boolean) => {
     const codes = rows.filter((r) => r.section === group).map((r) => r.source);
     editPolicy((current) => codes.reduce((p, code) => withSource(p, code, enabled), current));
   };
+
+  // Until the collections' sources are read, The books cannot tell a book from a collection.
+  if (books && brewSources === undefined) {
+    return (
+      <section className="flex flex-col gap-2" aria-label="Which books show">
+        <p className="px-1 text-caption text-ink-muted">Loading…</p>
+      </section>
+    );
+  }
 
   const activePreset = SOURCE_PRESETS.find((p) => {
     const target = p.policy();
@@ -175,7 +194,7 @@ export function SourcesSection({ books = false }: { books?: boolean } = {}) {
           <span>Nothing is selected, so every list in the app is empty.</span>
           <button
             type="button"
-            onClick={() => setPolicy(ALLOW_ALL)}
+            onClick={() => choosePreset(ALLOW_ALL)}
             className="tap font-bold underline underline-offset-3"
           >
             Show everything
