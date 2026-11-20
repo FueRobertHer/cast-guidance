@@ -307,6 +307,16 @@ describe("a character's collection switches (ADR-002 E2)", () => {
     expect(backToSourcesLabel('both')).toBe("Back to this character's sources");
   });
 
+  it('leaves the device out when the switches bring back every book it hides', () => {
+    // The device hides KIB alone, and her switch turns KIB back on.
+    const picked = pickPolicy(everything, [], { on: ['KIB'], off: ['MyHomebrew'] });
+    expect(picked.scope).toBe('character');
+    expect(policyAllows(picked.policy, 'KIB')).toBe(true);
+    // Another book the device hides still makes it both's doing.
+    const two: SourcePolicy = { mode: 'all', except: ['KIB', 'XGE'] };
+    expect(pickPolicy(two, [], { on: ['KIB'], off: ['MyHomebrew'] }).scope).toBe('both');
+  });
+
   it('reads every character the U11 wording does not reach exactly as before it', () => {
     // pickPolicy as E2 left it, before the scope for both.
     const asE2Left = (device: SourcePolicy, list: unknown, switches?: unknown) => {

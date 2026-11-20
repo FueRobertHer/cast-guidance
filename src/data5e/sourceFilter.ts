@@ -256,16 +256,11 @@ export function pickPolicy(
   const base = own ?? device;
   const switches = characterSourceSwitches(switchesRaw);
   const hidesMore = switches.off.some((s) => policyAllows(base, s));
-  // Switches hiding more over a device that hides books itself: what a picker
-  // hides is both's doing, so its offer names both.
+  // Switches hiding more over a device that still hides books once the `on`
+  // switches bring theirs back: what a picker hides is both's doing.
+  const deviceHides = isPolicyNarrowed(withSwitches(device, { on: switches.on, off: [] }));
   const scope: PolicyScope =
-    own !== undefined
-      ? 'character'
-      : !hidesMore
-        ? 'device'
-        : isPolicyNarrowed(device)
-          ? 'both'
-          : 'character';
+    own !== undefined ? 'character' : !hidesMore ? 'device' : deviceHides ? 'both' : 'character';
   return { policy: withSwitches(base, switches), scope };
 }
 
