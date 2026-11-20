@@ -33,11 +33,20 @@
  * them wherever it is read.
  */
 import { Info, Plus, X } from 'lucide-react';
-import { lazy, type ReactNode, Suspense, useMemo, useState } from 'react';
+import {
+  lazy,
+  type ReactNode,
+  Suspense,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from 'react';
 import { Link, useLocation, useNavigate } from 'react-router';
 import { plainEntryText } from '@/data5e/entries/plainText';
+import { useTypePacks } from '@/data5e/hooks';
 import type { EntityRegistry } from '@/data5e/normalize';
-import { ownCasterLevel, PACT_SLOTS, STANDARD_SLOTS } from '@/engine/calc/slots';
+import { isRegistryRefreshing, subscribeRegistryRefreshing } from '@/data5e/registry';
 import { EFFECT_EDITIONS, isRecord, own, type StoredEffect } from '@/engine/castGuidance';
 import { SKILLS } from '@/engine/types';
 import { Button } from '@/ui/Button';
@@ -46,11 +55,39 @@ import { SegmentedControl } from '@/ui/SegmentedControl';
 import { listClass } from '@/ui/surfaces';
 import { fieldClass } from '@/ui/TextField';
 import type { TableColumn } from '../ClassTable';
+import {
+  asByLevel,
+  belowChanges,
+  bookAt,
+  byLevelValues,
+  HeldCount,
+  LEVELS,
+  LevelSpells,
+  OPENED,
+  Spellcasting,
+  setFrom,
+  spellBase,
+  spellColumns,
+  spellGroupsFor,
+  withOpened,
+} from '../classFields';
 import { basedOnKey, changeCount, copiedFrom, readStored, same, writeEntry } from '../copyWriter';
-import { BY_LEVEL, editionBox, editionOf, firstWords, isByLevel } from '../EffectCards';
+import {
+  amendPatch,
+  BY_LEVEL,
+  EffectCards,
+  editionBox,
+  editionOf,
+  firstWords,
+  guidanceWith,
+  isByLevel,
+} from '../EffectCards';
 import type { EditorProps, EditorSpec, Json, WriteContext, Written } from '../editorTypes';
 import { FeatureRow, type FeatureStatus } from '../FeatureRow';
-import { ABILITY_WORDS, ChipPicks, Field, Kept, NumberField, Section, Select } from '../fields';
+import { ABILITY_WORDS, ChipPicks, Field, Kept, Section, Select } from '../fields';
+import { HeldNumber, NamesBox, OnSheet } from '../originFields';
+
+export { asByLevel, bookAt, byLevelValues, LEVELS, setFrom };
 
 const ClassTable = lazy(() => import('../ClassTable').then((m) => ({ default: m.ClassTable })));
 
@@ -68,7 +105,6 @@ const REF = 'refClassFeature';
  */
 const HOLDS = '_holds';
 const WAS = '_heldAs';
-export const LEVELS = Array.from({ length: 20 }, (_, i) => i + 1);
 
 /** What the player did to a class's features, kept in its draft. */
 export interface FeatureEdits {
@@ -339,43 +375,6 @@ export const isPool = (e: unknown): e is StoredEffect =>
 
 export const poolsOf = (draft: Json): StoredEffect[] => effectsOf(draft).filter(isPool);
 
-/** A level table's value at each level 1 to 20 (0 below its first level). */
-export function byLevelValues(table: unknown): number[] {
-  const rows = isRecord(table) ? Object.entries(table) : [];
-  return LEVELS.map((lv) => {
-    let v = 0;
-    let at = 0;
-    for (const [k, n] of rows) {
-      const l = Number(k);
-      if (typeof n === 'number' && l <= lv && l >= at) {
-        v = n;
-        at = l;
-      }
-    }
-    return v;
-  });
-}
-
-/** Twenty values as a level table: the levels where the number changes. */
-export function asByLevel(values: readonly number[]): Record<string, number> {
-  const out: Record<string, number> = {};
-  values.forEach((v, i) => {
-    if (i === 0 ? v !== 0 : v !== values[i - 1]) out[String(i + 1)] = v;
-  });
-  return Object.keys(out).length > 0 ? out : { '1': 0 };
-}
-
-/**
- * Twenty values with the one at `level` set, and the levels after it that had
- * the same number following it, as a class table reads ("2 until level 5").
- */
-export function setFrom(values: readonly number[], level: number, v: number): number[] {
-  const out = [...values];
-  const was = values[level - 1];
-  for (let i = level - 1; i < out.length && (i === level - 1 || values[i] === was); i++) out[i] = v;
-  return out;
-}
-
 const poolValues = (p: StoredEffect) => byLevelValues(own(p.max as Json, 'byLevel'));
 
 /**
@@ -406,194 +405,13 @@ function withoutPoolGroup(groups: unknown, pools: readonly StoredEffect[]): unkn
   return at === -1 ? groups : groups.filter((_, i) => i !== at);
 }
 
-type CountKind = 'cantrips' | 'prepared' | 'known' | 'pactSlots' | 'slotLevel';
-
-/** What a table column counts, by its heading. */
-function columnKind(label: unknown): CountKind | undefined {
-  const t = plainEntryText(String(label ?? ''))
-    .trim()
-    .toLowerCase();
-  if (t.startsWith('cantrips')) return 'cantrips';
-  if (t.startsWith('prepared')) return 'prepared';
-  if (t === 'spells known') return 'known';
-  if (t === 'spell slots') return 'pactSlots';
-  if (t === 'slot level') return 'slotLevel';
-  return undefined;
-}
-
-/** A cell of a book's class table as text: `2`, `+2`, `1d6`, `+10 ft.`. */
-function cellText(cell: unknown): string {
-  if (typeof cell === 'number') return String(cell);
-  if (typeof cell === 'string') return plainEntryText(cell);
-  if (!isRecord(cell)) return '';
-  if (cell.type === 'bonus') return `+${String(cell.value)}`;
-  if (cell.type === 'bonusSpeed') return `+${String(cell.value)} ft.`;
-  if (cell.type === 'dice' && Array.isArray(cell.toRoll)) {
-    return cell.toRoll
-      .filter(isRecord)
-      .map((d) => `${String(d.number)}d${String(d.faces)}`)
-      .join(' + ');
-  }
-  return '';
-}
-
-const ORDINALS = ['1st', '2nd', '3rd', '4th', '5th', '6th', '7th', '8th', '9th'];
-
-/**
- * A table of slots per spell level: the one the sheet reads
- * (`rowsSpellProgression`), or one only shown, with a column per spell level
- * (the Spellcaster Sidekick's).
- */
-function isSlotGroup(g: Json): boolean {
-  if (Array.isArray(g.rowsSpellProgression)) return true;
-  const labels = Array.isArray(g.colLabels) ? g.colLabels : [];
-  return (
-    labels.length > 0 &&
-    labels.every((l) => ORDINALS.includes(plainEntryText(String(l ?? '')).trim()))
-  );
-}
-
-/** What the book's table says at each level, leaving out the spell columns the editor shows. */
-export function bookAt(draft: Json): (level: number) => Array<[string, string]> {
-  const groups = (Array.isArray(draft.classTableGroups) ? draft.classTableGroups : []).filter(
-    (g): g is Json =>
-      isRecord(g) && Array.isArray(g.colLabels) && Array.isArray(g.rows) && !isSlotGroup(g),
-  );
-  return (level) =>
-    groups.flatMap((g) => {
-      const row = (g.rows as unknown[])[level - 1];
-      if (!Array.isArray(row)) return [];
-      return (g.colLabels as unknown[]).flatMap((label, c): Array<[string, string]> => {
-        if (columnKind(label) !== undefined) return [];
-        const text = cellText(row[c]);
-        return text === '' ? [] : [[plainEntryText(String(label)), text]];
-      });
-    });
-}
-
-/** Slots per spell level at each class level, as the sheet works them out. */
-export function slotRows(draft: Json): number[][] | undefined {
-  const p = draft.casterProgression;
-  if (typeof p !== 'string' || p === 'pact') return undefined;
-  for (const g of Array.isArray(draft.classTableGroups) ? draft.classTableGroups : []) {
-    const rows = isRecord(g) ? g.rowsSpellProgression : undefined;
-    if (Array.isArray(rows) && rows.length > 0) {
-      return LEVELS.map((_, i) => {
-        const r = rows[Math.min(i, rows.length - 1)];
-        return Array.isArray(r) ? r.map((n) => (typeof n === 'number' ? n : 0)) : [];
-      });
-    }
-  }
-  return LEVELS.map((lv) => {
-    const at = ownCasterLevel(p, lv);
-    return at > 0 ? [...(STANDARD_SLOTS[at - 1] ?? [])] : [];
-  });
-}
-
-/** The highest slot at each level, as the table's last column shows it. */
-export function topSlots(draft: Json): string[] | undefined {
-  if (draft.casterProgression === 'pact') {
-    return LEVELS.map((lv) => ORDINALS[(PACT_SLOTS[lv - 1]?.[1] ?? 1) - 1] ?? '');
-  }
-  return slotRows(draft)?.map((r) => {
-    const top = r.findLastIndex((n) => n > 0);
-    return top === -1 ? '-' : (ORDINALS[top] ?? '');
-  });
-}
-
-const SPELL_FIELDS = [
-  'casterProgression',
-  'cantripProgression',
-  'preparedSpellsProgression',
-  'spellsKnownProgression',
-] as const;
-
-const COUNT_FIELD: Readonly<Partial<Record<CountKind, string>>> = {
-  cantrips: 'cantripProgression',
-  prepared: 'preparedSpellsProgression',
-  known: 'spellsKnownProgression',
-};
-const COUNT_LABEL: Readonly<Record<CountKind, string>> = {
-  cantrips: 'Cantrips',
-  prepared: 'Prepared Spells',
-  known: 'Spells Known',
-  pactSlots: 'Spell Slots',
-  slotLevel: 'Slot Level',
-};
-
 /**
  * The class table Save writes: its spell columns and slots made to match the
  * spellcasting the class now has (where that changed, or for a new class),
  * and the pools' column added.
  */
 export function tableGroupsFor(draft: Json, original: Json | undefined): unknown[] | undefined {
-  const start = Array.isArray(draft.classTableGroups) ? draft.classTableGroups : [];
-  let groups: Json[] = structuredClone(start).filter(isRecord);
-  const changed =
-    original === undefined || SPELL_FIELDS.some((k) => !same(own(original, k), own(draft, k)));
-  if (changed) {
-    const p = draft.casterProgression;
-    const caster = typeof p === 'string';
-    const want: Partial<Record<CountKind, unknown[]>> = {};
-    for (const [kind, field] of Object.entries(COUNT_FIELD) as [CountKind, string][]) {
-      const v = own(draft, field);
-      if (caster && Array.isArray(v)) want[kind] = v;
-    }
-    if (p === 'pact') {
-      want.pactSlots = LEVELS.map((lv) => PACT_SLOTS[lv - 1]?.[0] ?? 0);
-      want.slotLevel = LEVELS.map((lv) => ORDINALS[(PACT_SLOTS[lv - 1]?.[1] ?? 1) - 1]);
-    }
-    const found = new Set<CountKind>();
-    groups = groups.map((g) => {
-      if (!Array.isArray(g.colLabels) || !Array.isArray(g.rows)) return g;
-      const kinds = g.colLabels.map(columnKind);
-      // A column the class no longer has goes.
-      const drop = kinds.map((k) =>
-        k === undefined
-          ? false
-          : k === 'pactSlots' || k === 'slotLevel'
-            ? p !== 'pact'
-            : !caster || want[k] === undefined,
-      );
-      const rows = (g.rows as unknown[]).map((row, i) =>
-        Array.isArray(row)
-          ? row.flatMap((cell, c) => {
-              const k = kinds[c];
-              if (drop[c]) return [];
-              const list = k === undefined ? undefined : want[k];
-              return [list !== undefined && i < list.length ? list[i] : cell];
-            })
-          : row,
-      );
-      for (const k of kinds) if (k !== undefined && want[k] !== undefined) found.add(k);
-      return {
-        ...g,
-        colLabels: g.colLabels.filter((_, c) => !drop[c]),
-        rows,
-      };
-    });
-    const missing = (Object.keys(want) as CountKind[]).filter((k) => !found.has(k));
-    if (missing.length > 0) {
-      groups.unshift({
-        colLabels: missing.map((k) => COUNT_LABEL[k]),
-        rows: LEVELS.map((_, i) => missing.map((k) => want[k]?.[i] ?? 0)),
-      });
-    }
-    // The slot table the sheet reads, as the progression has it.
-    groups = groups.filter((g) => !isSlotGroup(g));
-    const slots = slotRows({ casterProgression: p });
-    if (slots !== undefined) {
-      const top = Math.max(0, ...slots.map((r) => r.findLastIndex((n) => n > 0) + 1));
-      if (top > 0) {
-        groups.push({
-          title: 'Spell Slots per Spell Level',
-          colLabels: ORDINALS.slice(0, top),
-          rowsSpellProgression: slots.map((r) => Array.from({ length: top }, (_, j) => r[j] ?? 0)),
-        });
-      }
-    }
-  }
-  groups = groups.filter((g) => !Array.isArray(g.colLabels) || g.colLabels.length > 0);
+  const groups: Json[] = spellGroupsFor(draft, original);
   const pools = poolsOf(draft);
   if (pools.length > 0) groups.push(poolGroup(pools));
   return groups.length > 0 ? groups : undefined;
@@ -605,10 +423,16 @@ export function tableGroupsFor(draft: Json, original: Json | undefined): unknown
 
 /**
  * The draft a class opens on: `_features` worked out by walking what the entry
- * lists against the original's features (as the subclass editor does), and
- * its table without the pools' column, which Save writes again.
+ * lists against the original's features (as the subclass editor does), its
+ * table without the pools' column, which Save writes again, and the spell
+ * fields its table was made for (`OPENED`).
  */
-export function openClass(
+export const openClass = (
+  entry: Json,
+  at: { original?: Json; registry: EntityRegistry; file?: Json },
+): Json => withOpened(openFeatures(entry, at), entry);
+
+function openFeatures(
   entry: Json,
   { original, registry, file }: { original?: Json; registry: EntityRegistry; file?: Json },
 ): Json {
@@ -631,7 +455,11 @@ export function openClass(
         eq(n.entity?.source, copy.source) &&
         n.level === Number(copy.level ?? raw.level),
     )?.entity;
-    return target === undefined ? findFeature(registry, ref) : readStored(raw, target).entry;
+    // Against the feature below the table's change, as it was written and as
+    // the merge reads it: the table's change is in the copy's own changes.
+    return target === undefined
+      ? findFeature(registry, ref)
+      : readStored(raw, belowChanges(registry, target)).entry;
   };
   const edits: FeatureEdits = { changed: {}, removed: [], added: [] };
   const present = new Set<string>();
@@ -781,8 +609,10 @@ export function writeClass(at: WriteContext): Written {
     // this one is written out whole, as is one the data holds as a copy, and
     // one of the player's own, whose books can gain another of that name.
     const alone = registry.get(FEATURE, String(e.name), String(e.source)) === e && isOfficial(e);
+    // Written against the feature below the table's change, which the merge
+    // resolves a `_copy` against, so the copy keeps the table's version.
     const f = writeEntry({
-      original: e,
+      original: belowChanges(registry, e),
       draft: { ...now, entries: heldText(n, now), ...place(n.level) },
       source,
       mode: mode === 'full' || !alone || isRecord(e._copy) ? 'full' : 'changes',
@@ -840,8 +670,8 @@ export function writeClass(at: WriteContext): Written {
     items.splice(after + 1, 0, { item: itemFor(undefined, ref, sub === true), level });
   }
 
-  const { [KEY]: _, ...rest } = draft;
-  const groups = tableGroupsFor(rest, copied);
+  const { [KEY]: _, [OPENED]: __, ...rest } = draft;
+  const groups = tableGroupsFor(rest, spellBase(draft, at, 'class'));
   const entry = writeEntry({
     original: at.original,
     draft: { ...rest, classFeatures: items.map((i) => i.item), classTableGroups: groups },
@@ -864,7 +694,7 @@ export function summarize(draft: Json, original: Json, registry: EntityRegistry)
   for (const n of featureTree(original, registry)) {
     if (n.entity !== undefined) count[statusOf(edits, n)] += 1;
   }
-  const { [KEY]: _, ...rest } = draft;
+  const { [KEY]: _, [OPENED]: __, ...rest } = draft;
   // The list is the features' doing, counted above; the pools' column is theirs.
   const fields = changeCount(original, {
     ...rest,
@@ -914,6 +744,35 @@ function check(draft: Json, at?: Omit<WriteContext, 'draft'>): string | undefine
   }
   if (typeof draft.casterProgression === 'string' && typeof draft.spellcastingAbility !== 'string')
     return 'Pick the ability it casts its spells with.';
+  // A choice of more than it names cannot be made on the Build tab.
+  for (const [start, what] of [
+    [draft.startingProficiencies, 'skills to choose'],
+    [
+      isRecord(draft.multiclassing) ? draft.multiclassing.proficienciesGained : undefined,
+      'skills gained',
+    ],
+  ] as const) {
+    const c = isRecord(start) ? skillChoice(start) : undefined;
+    if (c && c.from.length > 0 && c.count > c.from.length)
+      return `The ${what} are ${c.count}, from a list of ${c.from.length}. Name more, or choose fewer.`;
+  }
+  for (const o of optionalOf(draft)) {
+    const name = String(o.name ?? '').trim();
+    if (name === '') return 'Every optional feature list needs a name.';
+    if (!Array.isArray(o.featureType) || o.featureType.length === 0)
+      return `Pick the list ${name} picks from.`;
+    // The sheet gives the most a level so far has given (`progressionCount`),
+    // reading a list only as far as it goes and only the numbers in it.
+    const stated: unknown[] = Array.isArray(o.progression) ? o.progression : optionalValues(o);
+    let most = 0;
+    const fewer = stated.findIndex((v) => {
+      if (typeof v !== 'number') return false;
+      most = Math.max(most, v);
+      return v < most;
+    });
+    if (fewer !== -1)
+      return `${name} has fewer at level ${fewer + 1} than before. The sheet keeps the most so far, so set it no lower.`;
+  }
   const pools = poolsOf(draft);
   const poolNames = pools.map((p) => lower(firstWords(p.label ?? '').trim()));
   if (poolNames.some((p) => p === '')) return 'Every pool needs a name.';
@@ -945,14 +804,7 @@ const WEAPONS: ReadonlyArray<readonly [string, string]> = [
   ['martial', 'Martial'],
 ];
 const SKILL_WORDS = SKILLS.map((s) => [s.name.toLowerCase(), s.name] as const);
-const CASTING: ReadonlyArray<readonly [string, string]> = [
-  ['', 'No spells'],
-  ['full', 'Full caster, slots up to 9th level'],
-  ['1/2', 'Half caster, slots up to 5th level'],
-  ['artificer', 'Half caster, slots from level 1'],
-  ['1/3', 'Third caster, slots up to 4th level'],
-  ['pact', 'Pact magic, slots back on a short rest'],
-];
+const ABILITY_KEYS = ABILITY_WORDS.map(([k]) => k);
 
 /** The draft's starting proficiencies, to read from and change. */
 const startOf = (draft: Json): Json =>
@@ -975,72 +827,664 @@ function skillChoice(start: Json): { from: string[]; count: number } | undefined
   return { from: c.from.map(String), count: c.count };
 }
 
-/** The first class in the data casting the same way, whose counts a new one starts from. */
-function countsFrom(
-  registry: EntityRegistry,
-  progression: string,
-  field: string,
-): Json | undefined {
-  return registry
-    .byType('class')
-    .find((c) => c.casterProgression === progression && Array.isArray(c[field])) as
-    | Json
-    | undefined;
+const words = (v: unknown) =>
+  (Array.isArray(v) ? v : []).filter((x) => typeof x === 'string').map((x) => x.toLowerCase());
+
+/** A record with `patch` applied, a key set to undefined taken out; undefined once it is empty. */
+function patched(was: Json, patch: Json): Json | undefined {
+  const next: Json = { ...was, ...patch };
+  for (const [k, v] of Object.entries(patch)) if (v === undefined) delete next[k];
+  return Object.keys(next).length > 0 ? next : undefined;
 }
 
-function Basics({ draft, change, readOnly, registry }: EditorProps) {
-  const start = startOf(draft);
-  const setStart = (patch: Json) => {
-    const next: Json = { ...start, ...patch };
-    for (const [k, v] of Object.entries(patch)) if (v === undefined) delete next[k];
-    change({ startingProficiencies: next });
-  };
-  const words = (v: unknown) =>
-    (Array.isArray(v) ? v : []).filter((x) => typeof x === 'string').map((x) => x.toLowerCase());
-  const armor = words(start.armor);
-  const weapons = words(start.weapons);
+const PROF_LABELS = {
+  first: {
+    armor: 'Armor',
+    weapons: 'Weapons',
+    tools: 'Tools',
+    count: 'Skills to choose',
+    from: 'Chosen from',
+    sheet: 'the Proficiencies list when it is the first class, the skills a pick on the Build tab.',
+  },
+  later: {
+    armor: 'Armor gained',
+    weapons: 'Weapons gained',
+    tools: 'Tools gained',
+    count: 'Skills gained',
+    from: 'Skills gained from',
+    sheet:
+      'the Proficiencies list when a character takes it after their first class, the skills a pick on the Build tab.',
+  },
+} as const;
+
+/**
+ * The armor, weapons, tools and skills a class gives as a character's first
+ * (`startingProficiencies`), or taken after it
+ * (`multiclassing.proficienciesGained`), as class.ts reads them.
+ */
+function Proficiencies({
+  start,
+  onChange,
+  readOnly,
+  as,
+  of,
+}: {
+  start: Json;
+  onChange: (next: Json | undefined) => void;
+  readOnly: boolean;
+  as: keyof typeof PROF_LABELS;
+  of: string;
+}) {
+  const label = PROF_LABELS[as];
+  const setStart = (patch: Json) => onChange(patched(start, patch));
   const skills = skillChoice(start);
-  const faces = isRecord(draft.hd) && typeof draft.hd.faces === 'number' ? draft.hd.faces : 0;
-  const progression = typeof draft.casterProgression === 'string' ? draft.casterProgression : '';
-  const prepares = !Array.isArray(draft.spellsKnownProgression);
+  const tools: unknown[] = Array.isArray(start.tools) ? start.tools : [];
+  const toolWords = tools.filter((t): t is string => typeof t === 'string');
+  return (
+    <>
+      <ChipPicks
+        label={label.armor}
+        options={ARMOR}
+        value={words(start.armor)}
+        disabled={readOnly}
+        onChange={(v) => {
+          const list = withPicks(start.armor, ['light', 'medium', 'heavy', 'shield'], v);
+          setStart({
+            armor: list.length > 0 ? list : undefined,
+            // The same list as the 2024 books also write it, kept in step.
+            ...(start.armorProficiencies !== undefined
+              ? {
+                  armorProficiencies:
+                    v.length > 0 ? [Object.fromEntries(v.map((a) => [a, true]))] : undefined,
+                }
+              : {}),
+          });
+        }}
+      />
+      <ChipPicks
+        label={label.weapons}
+        options={WEAPONS}
+        value={words(start.weapons)}
+        disabled={readOnly}
+        onChange={(v) => {
+          const list = withPicks(start.weapons, ['simple', 'martial'], v);
+          setStart({ weapons: list.length > 0 ? list : undefined });
+        }}
+      />
+      <NamesBox
+        label={label.tools}
+        value={toolWords.map((t) => plainEntryText(t))}
+        placeholder="Thieves' tools"
+        disabled={readOnly}
+        onChange={(names) => {
+          // A tool the data tags ("{@item thieves' tools|phb}") keeps its tag
+          // while its words are as they were.
+          const next = [
+            ...names.map((n) => toolWords.find((t) => plainEntryText(t) === n) ?? n),
+            ...tools.filter((t) => typeof t !== 'string'),
+          ];
+          // `toolProficiencies` says the same as keys, and nothing reads a
+          // class's: it goes rather than say something else.
+          setStart({ tools: next.length > 0 ? next : undefined, toolProficiencies: undefined });
+        }}
+      />
+      {skills === null ? (
+        <Kept label="Skills">kept as {of} has them.</Kept>
+      ) : (
+        <>
+          <HeldCount
+            label={label.count}
+            value={skills?.count}
+            disabled={readOnly}
+            onChange={(count) =>
+              setStart({
+                skills:
+                  count === undefined
+                    ? undefined
+                    : [{ choose: { from: skills?.from ?? [], count } }],
+              })
+            }
+          />
+          {skills !== undefined && (
+            <ChipPicks
+              label={label.from}
+              options={SKILL_WORDS}
+              value={skills.from.map((s) => s.toLowerCase())}
+              disabled={readOnly}
+              onChange={(from) => setStart({ skills: [{ choose: { from, count: skills.count } }] })}
+            />
+          )}
+        </>
+      )}
+      <OnSheet>{label.sheet}</OnSheet>
+    </>
+  );
+}
 
-  const setCasting = (p: string) => {
-    if (p === '') {
-      change({
-        casterProgression: undefined,
-        spellcastingAbility: undefined,
-        cantripProgression: undefined,
-        preparedSpellsProgression: undefined,
-        spellsKnownProgression: undefined,
-        preparedSpells: undefined,
-      });
-      return;
+/** The scores a class needs to be taken after the first: all of them, or one. */
+export interface Needs {
+  abilities: string[];
+  score: number;
+  any: boolean;
+}
+
+/**
+ * `multiclassing.requirements` as one score for one or more abilities, all of
+ * them or one (`or`); undefined for more than that (two scores).
+ */
+export function needsOf(req: unknown): Needs | undefined {
+  if (req === undefined || req === null) return { abilities: [], score: 13, any: false };
+  if (!isRecord(req)) return undefined;
+  const { or, ...base } = req;
+  if (or !== undefined && (!Array.isArray(or) || Object.keys(base).length > 0)) return undefined;
+  const parts: unknown[] = or === undefined ? [base] : or;
+  // One of several, each needing more than one score ("Strength and
+  // Constitution, or Intelligence"), is more than one list of scores can say.
+  if (
+    or !== undefined &&
+    (parts.length === 0 ||
+      (parts.length > 1 && parts.some((p) => !isRecord(p) || Object.keys(p).length !== 1)))
+  )
+    return undefined;
+  const abilities: string[] = [];
+  const scores = new Set<number>();
+  for (const part of parts) {
+    if (!isRecord(part)) return undefined;
+    for (const [k, v] of Object.entries(part)) {
+      if (!ABILITY_KEYS.includes(k) || typeof v !== 'number') return undefined;
+      if (!abilities.includes(k)) abilities.push(k);
+      scores.add(v);
     }
-    // A class new to spells starts from the counts of one in the data that
-    // casts the same way, to change level by level in the table.
-    const field = prepares ? 'preparedSpellsProgression' : 'spellsKnownProgression';
-    const like = countsFrom(registry, p, field);
-    const patch: Json = { casterProgression: p };
-    if (!Array.isArray(draft[field]) && draft.preparedSpells === undefined)
-      patch[field] = like?.[field] ?? LEVELS.map(() => 0);
-    if (!Array.isArray(draft.cantripProgression) && Array.isArray(like?.cantripProgression))
-      patch.cantripProgression = like.cantripProgression;
-    change(patch);
-  };
-  const setPrepares = (yes: boolean) => {
-    const counts =
-      (yes ? draft.spellsKnownProgression : draft.preparedSpellsProgression) ?? LEVELS.map(() => 0);
-    change(
-      yes
-        ? { spellsKnownProgression: undefined, preparedSpellsProgression: counts }
-        : {
-            preparedSpellsProgression: undefined,
-            preparedSpells: undefined,
-            spellsKnownProgression: counts,
-          },
-    );
-  };
+  }
+  if (scores.size > 1) return undefined;
+  return { abilities, score: [...scores][0] ?? 13, any: or !== undefined };
+}
 
+/** The requirements for `n`: one of them is a list of one score each, as multiclass.ts reads `or`. */
+export function needsWith(n: Needs): Json | undefined {
+  if (n.abilities.length === 0) return undefined;
+  if (n.any && n.abilities.length > 1) return { or: n.abilities.map((a) => ({ [a]: n.score })) };
+  return Object.fromEntries(n.abilities.map((a) => [a, n.score]));
+}
+
+function Multiclassing({
+  draft,
+  change,
+  readOnly,
+}: Pick<EditorProps, 'draft' | 'change' | 'readOnly'>) {
+  const mc = isRecord(draft.multiclassing) ? draft.multiclassing : {};
+  const setMc = (patch: Json) => change({ multiclassing: patched(mc, patch) });
+  const needs = needsOf(mc.requirements);
+  const of = String(draft.name || 'the original');
+  const setNeeds = (patch: Partial<Needs>) =>
+    needs !== undefined && setMc({ requirements: needsWith({ ...needs, ...patch }) });
+  return (
+    <Section title="Multiclassing">
+      {needs === undefined ? (
+        <Kept label="Scores it needs">kept as {of} has them.</Kept>
+      ) : (
+        <>
+          <ChipPicks
+            label="Scores it needs"
+            options={ABILITY_WORDS}
+            value={needs.abilities}
+            disabled={readOnly}
+            onChange={(abilities) => setNeeds({ abilities })}
+          />
+          {needs.abilities.length > 0 && (
+            <HeldNumber
+              label="Score needed"
+              value={needs.score}
+              min={1}
+              disabled={readOnly}
+              // No score goes past 30.
+              onChange={(score) => setNeeds({ score: Math.min(30, score) })}
+            />
+          )}
+          {needs.abilities.length > 1 &&
+            (readOnly ? (
+              <p className="text-body">{needs.any ? 'One of them' : 'All of them'}</p>
+            ) : (
+              <SegmentedControl
+                label="Needs"
+                block
+                value={needs.any ? 'any' : 'all'}
+                onChange={(v) => setNeeds({ any: v === 'any' })}
+                options={[
+                  { value: 'all', label: 'All of them' },
+                  { value: 'any', label: 'One of them' },
+                ]}
+              />
+            ))}
+          <OnSheet>
+            the Build tab, under each class of a character with more than one, met or not.
+          </OnSheet>
+        </>
+      )}
+      <Proficiencies
+        as="later"
+        of={of}
+        start={isRecord(mc.proficienciesGained) ? mc.proficienciesGained : {}}
+        readOnly={readOnly}
+        onChange={(next) => setMc({ proficienciesGained: next })}
+      />
+    </Section>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Starting equipment (`startingEquipment.defaultData`, read by the creator)
+
+/** A slot of a kind, in the creator's words for it (startingEquipment.ts). */
+const GEAR_KINDS: ReadonlyArray<readonly [string, string]> = [
+  ['weaponSimple', 'any simple weapon'],
+  ['weaponSimpleMelee', 'any simple melee weapon'],
+  ['weaponMartial', 'any martial weapon'],
+  ['weaponMartialMelee', 'any martial melee weapon'],
+  ['instrumentMusical', 'a musical instrument'],
+  ['armorLight', 'any light armor'],
+  ['setGaming', 'a gaming set'],
+  ['toolArtisan', "artisan's tools"],
+  ['focusSpellcastingArcane', 'an arcane focus'],
+  ['focusSpellcastingDruidic', 'a druidic focus'],
+  ['focusSpellcastingHoly', 'a holy symbol'],
+];
+const COIN: Readonly<Record<string, number>> = { gp: 100, sp: 10, cp: 1 };
+
+/** Copper as coins, as the creator says them (`coinLabel`, kept out of its chunk): 1550 is "15 gp 5 sp". */
+function coins(cp: number): string {
+  const shown = Object.entries(COIN)
+    .map(
+      ([coin, worth], i, all) =>
+        [Math.floor((cp % (all[i - 1]?.[1] ?? Infinity)) / worth), coin] as const,
+    )
+    .filter(([n]) => n > 0)
+    .map(([n, coin]) => `${n} ${coin}`);
+  return shown.length > 0 ? shown.join(' ') : '0 gp';
+}
+
+/**
+ * Whether a piece of gear holds more than its words say: that it is an item
+ * (and its printing), a pouch's coins, a kind the creator has no words for.
+ * Coins and gear in words alone (`special`) hold nothing more.
+ */
+function saysMore(e: unknown): boolean {
+  if (typeof e === 'string') return true;
+  return (
+    isRecord(e) &&
+    e.value === undefined &&
+    Object.keys(e).some((k) => k !== 'special' && k !== 'quantity')
+  );
+}
+
+/** A piece of gear's words without its count. */
+function gearName(e: unknown): string | undefined {
+  const t = gearText(e);
+  return t !== undefined && isRecord(e) && typeof e.quantity === 'number'
+    ? t.replace(/ x\d+$/, '')
+    : t;
+}
+
+/** One piece of gear in words: "chain mail", "javelin x8", "any martial weapon", "15 gp". */
+export function gearText(e: unknown): string | undefined {
+  if (typeof e === 'string') return e.split('|')[0];
+  if (!isRecord(e)) return undefined;
+  // A count as written, 1 too: "dart x1" is on its way to "dart x10".
+  const times = typeof e.quantity === 'number' ? ` x${e.quantity}` : '';
+  if (typeof e.item === 'string') return `${e.item.split('|')[0]}${times}`;
+  if (typeof e.special === 'string') return `${e.special}${times}`;
+  const kinds =
+    typeof e.equipmentType === 'string'
+      ? [e.equipmentType]
+      : Array.isArray(e.equipmentTypes)
+        ? e.equipmentTypes.map(String)
+        : [];
+  if (kinds.length > 0)
+    return `${kinds.map((k) => GEAR_KINDS.find(([v]) => v === k)?.[1] ?? k).join(' or ')}${times}`;
+  if (typeof e.value === 'number') return coins(e.value);
+  return undefined;
+}
+
+/**
+ * Gear typed in words, as the creator reads it: what the option had in the
+ * same words stays as it was; coins, a slot of a kind, an item the data has
+ * (named as typed), or else gear by its words.
+ */
+export function gearFrom(text: string, was: readonly unknown[], items: readonly Json[]): unknown {
+  const kept = was.find((e) => gearText(e) === text);
+  if (kept !== undefined) return kept;
+  // Coins in one or more kinds: "15 gp 5 sp".
+  if (/^(\s*\d+\s*(gp|sp|cp))+\s*$/i.test(text)) {
+    let cp = 0;
+    for (const [, n, coin] of text.matchAll(/(\d+)\s*(gp|sp|cp)/gi))
+      cp += Number(n) * (COIN[String(coin).toLowerCase()] ?? 1);
+    return { value: cp };
+  }
+  const counted = /^(.*?)\s+x\s*(\d+)$/i.exec(text);
+  const name = (counted?.[1] ?? text).trim();
+  // A count of none is still one: the creator gives what a gear names.
+  const many = counted === null ? {} : { quantity: Math.max(1, Number(counted[2])) };
+  // The same gear with another count, or in other letters, keeps what its
+  // words do not show: its printing, a pouch's coins, a kind the creator has
+  // no words for. Gear in words alone is read again from the words.
+  const like = was.find((e) => saysMore(e) && gearName(e)?.toLowerCase() === name.toLowerCase());
+  if (typeof like === 'string') {
+    const source = like.split('|')[1];
+    const ref = source === undefined ? name : `${name}|${source}`;
+    return counted === null ? ref : { item: ref, ...many };
+  }
+  if (isRecord(like)) {
+    const { quantity: _, ...rest } = like;
+    if (typeof rest.item === 'string') {
+      const source = rest.item.split('|')[1];
+      rest.item = source === undefined ? name : `${name}|${source}`;
+    }
+    if (typeof rest.special === 'string') rest.special = name;
+    return { ...rest, ...many };
+  }
+  const kind = GEAR_KINDS.find(([, w]) => w.toLowerCase() === name.toLowerCase());
+  if (kind !== undefined) return { equipmentType: kind[0], ...many };
+  // One of several kinds: "a musical instrument or artisan's tools".
+  const kinds = name
+    .split(/\s+or\s+/i)
+    .map((w) => GEAR_KINDS.find(([, k]) => k.toLowerCase() === w.toLowerCase())?.[0]);
+  if (kinds.length > 1 && kinds.every((k) => k !== undefined))
+    return { equipmentTypes: kinds, ...many };
+  const hit = items.find((i) => String(i.name).toLowerCase() === name.toLowerCase());
+  if (hit !== undefined) {
+    const ref = `${name}|${String(hit.source).toLowerCase()}`;
+    return counted === null ? ref : { item: ref, ...many };
+  }
+  return { special: name, ...many };
+}
+
+type GearGroup = Record<string, unknown[]>;
+
+/**
+ * What the creator gives from `groups`, to tell a change from none: empty
+ * options dropped, and an option alone the same gear under any letter.
+ */
+function gearContent(groups: readonly GearGroup[]): string {
+  return JSON.stringify(
+    groups.flatMap((g) => {
+      const full = Object.entries(g).filter(([, l]) => l.length > 0);
+      if (full.length === 0) return [];
+      return [full.length === 1 ? { _: full[0]?.[1] } : Object.fromEntries(full)];
+    }),
+  );
+}
+
+/** `defaultData` as choices of options; undefined for a shape the editor cannot show. */
+export function gearGroups(raw: unknown): GearGroup[] | undefined {
+  if (raw === undefined || raw === null) return [];
+  if (!Array.isArray(raw)) return undefined;
+  const out: GearGroup[] = [];
+  for (const g of raw) {
+    if (!isRecord(g) || !Object.values(g).every(Array.isArray)) return undefined;
+    out.push(g as GearGroup);
+  }
+  return out;
+}
+
+function GearBox({
+  label,
+  list,
+  items,
+  disabled,
+  onChange,
+}: {
+  label: string;
+  list: readonly unknown[];
+  items: readonly Json[];
+  disabled: boolean;
+  onChange: (next: unknown[]) => void;
+}) {
+  const shown = list.flatMap((e) => gearText(e) ?? []);
+  const kept = list.filter((e) => gearText(e) === undefined);
+  // What the option held when the box was entered: typing "pouch x2" passes
+  // through "pouch x", which matches nothing, and the pouch's coins are still
+  // to be found by the time the 2 comes. Gear in words alone is not kept
+  // there, so words taken out and typed again are read again.
+  const before = useRef(list);
+  return (
+    <>
+      <div className="contents" onFocusCapture={() => (before.current = list)}>
+        <NamesBox
+          label={label}
+          value={shown}
+          placeholder="Chain mail, any martial weapon, 10 gp"
+          disabled={disabled}
+          onChange={(names) =>
+            onChange([
+              ...names.map((n) =>
+                gearFrom(n, [...list, ...before.current.filter(saysMore)], items),
+              ),
+              ...kept,
+            ])
+          }
+        />
+      </div>
+      {kept.length > 0 && <Kept label={label}>and {kept.length} more, kept as written.</Kept>}
+    </>
+  );
+}
+
+function StartingGear({
+  draft,
+  change,
+  readOnly,
+  registry,
+}: Pick<EditorProps, 'draft' | 'change' | 'readOnly' | 'registry'>) {
+  const packs = useTypePacks('item').status;
+  // Read here, not through the hook of the same name, so a test mocking the
+  // hooks module whole still renders the editor.
+  const refreshing = useSyncExternalStore(
+    subscribeRegistryRefreshing,
+    isRegistryRefreshing,
+    () => false,
+  );
+  const se = isRecord(draft.startingEquipment) ? draft.startingEquipment : {};
+  const groups = gearGroups(se.defaultData);
+  if (groups === undefined) {
+    return (
+      <Section title="Starting equipment">
+        <Kept label="Starting equipment">
+          kept as {String(draft.name || 'the original')} has it.
+        </Kept>
+      </Section>
+    );
+  }
+  const items = [...registry.byType('baseitem'), ...registry.byType('item')] as Json[];
+  // Until the items are in the registry, a name not found among the base items
+  // (or the player's own) is kept as words, not the item, and the player is
+  // told so. A first download puts them there a moment after the pack says it
+  // is ready, while the registry is made again (the player's own items do not
+  // count). The boxes stay open throughout: the flag can stay up after a
+  // failed rebuild, and a box that waits on it could wait for good.
+  const loading =
+    packs === 'loading' ||
+    (packs === 'ready' && refreshing && registry.officialCount('item') === 0);
+  // The book's words for the kit (`default`, `entries`) describe the old one,
+  // so they go once the gear itself changes; an empty box added, or a gear
+  // made a choice of one, changes nothing the creator gives.
+  const set = (next: GearGroup[]) => {
+    const changed = gearContent(next) !== gearContent(groups);
+    change({
+      startingEquipment: patched(se, {
+        defaultData: next.length > 0 ? next : undefined,
+        ...(changed ? { default: undefined, entries: undefined } : {}),
+      }),
+    });
+  };
+  const setGroup = (i: number, g: GearGroup) => set(groups.map((x, j) => (j === i ? g : x)));
+  const addOption = (i: number) => {
+    const g = groups[i] ?? {};
+    const keys = Object.keys(g).filter((k) => k !== '_');
+    const upper = keys.length === 0 || keys.some((k) => k !== k.toLowerCase());
+    const letters = 'abcdefghijklmnopqrstuvwxyz'
+      .split('')
+      .map((l) => (upper ? l.toUpperCase() : l));
+    // Gear alone becomes the first option; beside options, `_` stays one of them.
+    const named: GearGroup =
+      '_' in g && keys.length === 0 ? { [letters[0] ?? 'A']: g._ ?? [] } : { ...g };
+    const free = letters.find((l) => !(l in named)) ?? `${Object.keys(named).length + 1}`;
+    setGroup(i, { ...named, [free]: [] });
+  };
+  const removeOption = (i: number, key: string) => {
+    const { [key]: _, ...rest } = groups[i] ?? {};
+    // One option left is gear, as the creator gives it: not a choice of one.
+    const left = Object.keys(rest);
+    setGroup(i, left.length === 1 && left[0] !== '_' ? { _: rest[left[0] ?? ''] ?? [] } : rest);
+  };
+  return (
+    <Section title="Starting equipment">
+      {groups.length > 0 && (
+        <ul aria-label="Starting equipment" className={listClass}>
+          {groups.map((g, i) => {
+            const keys = Object.keys(g);
+            const one = keys.length === 1;
+            return (
+              // A choice is its place in the list.
+              // biome-ignore lint/suspicious/noArrayIndexKey: see above
+              <li key={i} className="flex flex-col gap-3 px-4 py-3">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-body-strong">
+                    {one ? `Gear ${i + 1}` : `Choice ${i + 1}: one of`}
+                  </p>
+                  {!readOnly && (
+                    <button
+                      type="button"
+                      aria-label={`Remove ${one ? 'gear' : 'choice'} ${i + 1}`}
+                      onClick={() => set(groups.filter((_, j) => j !== i))}
+                      className="tap rounded-full text-ink-muted hover:bg-surface-raised hover:text-ink"
+                    >
+                      <X size={18} aria-hidden />
+                    </button>
+                  )}
+                </div>
+                {keys.map((k) => (
+                  <div key={k} className="flex items-end gap-2">
+                    <div className="min-w-0 flex-1">
+                      <GearBox
+                        label={one ? `Gear ${i + 1}` : `Choice ${i + 1}, option ${k.toUpperCase()}`}
+                        list={g[k] ?? []}
+                        items={items}
+                        disabled={readOnly}
+                        onChange={(list) => setGroup(i, { ...g, [k]: list })}
+                      />
+                    </div>
+                    {!readOnly && !one && (
+                      <button
+                        type="button"
+                        aria-label={`Remove choice ${i + 1}, option ${k.toUpperCase()}`}
+                        onClick={() => removeOption(i, k)}
+                        className="tap rounded-full text-ink-muted hover:bg-surface-raised hover:text-ink"
+                      >
+                        <X size={18} aria-hidden />
+                      </button>
+                    )}
+                  </div>
+                ))}
+                {!readOnly && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="self-start"
+                    onClick={() => addOption(i)}
+                  >
+                    <Plus size={16} aria-hidden />
+                    {one ? 'Make it a choice' : 'Add an option'}
+                  </Button>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+      {!readOnly && (
+        <Button
+          variant="outline"
+          size="sm"
+          className="self-start"
+          onClick={() => set([...groups, { _: [] }])}
+        >
+          <Plus size={16} aria-hidden />
+          Add gear
+        </Button>
+      )}
+      {groups.length === 0 &&
+        [se.default, se.entries].some((w) => Array.isArray(w) && w.length > 0) && (
+          <Kept label="Starting equipment">
+            in words only, kept as written until gear is added here.
+          </Kept>
+        )}
+      {/* How a name typed is read: nothing to say where nothing can be typed. */}
+      {!readOnly && loading && (
+        <p className="text-caption text-ink-muted">
+          Loading the items. Until they arrive, a name not found is kept as written.
+        </p>
+      )}
+      {!readOnly && packs === 'error' && (
+        <p className="text-caption text-ink-muted">
+          Some items could not be loaded, so a name not found is kept as written.
+        </p>
+      )}
+      <OnSheet>
+        the character creator's Equipment step, which gives all of each gear and one option of each
+        choice.
+      </OnSheet>
+    </Section>
+  );
+}
+
+/** The class's own effects, for the whole class: its pools are set in the table. */
+function ClassEffects({
+  draft,
+  change,
+  original,
+  readOnly,
+}: Pick<EditorProps, 'draft' | 'change' | 'original' | 'readOnly'>) {
+  const g = isRecord(draft.castGuidance) ? draft.castGuidance : {};
+  const set = (patch: Json) => change({ castGuidance: guidanceWith(draft.castGuidance, patch) });
+  return (
+    <Section title="What it does on the sheet">
+      <p className="text-caption text-ink-muted">
+        For the whole class, at every level. A feature's own effects are set on the feature, in the
+        table.
+      </p>
+      <EffectCards
+        effects={g.effects}
+        hide={isPool}
+        resources={poolsOf(draft)}
+        readOnly={readOnly}
+        inherits={original !== undefined ? String(original.name) : undefined}
+        replace={g.replace === true}
+        onReplace={(replace) =>
+          set(replace ? { replace: true, amend: undefined } : { replace: undefined })
+        }
+        onChange={(effects, amend) =>
+          set({ effects: effects.length > 0 ? effects : undefined, ...amendPatch(amend) })
+        }
+        amend={g.amend}
+        onAmend={(amend) => set(amendPatch(amend))}
+        moments={g.moments}
+        momentName={
+          typeof draft.name === 'string' && draft.name.trim() !== '' ? draft.name : undefined
+        }
+        onMoments={(moments, effects) =>
+          set({
+            moments: moments.length > 0 ? moments : undefined,
+            ...(effects === undefined ? {} : { effects: effects.length > 0 ? effects : undefined }),
+          })
+        }
+      />
+    </Section>
+  );
+}
+
+function Basics(props: EditorProps) {
+  const { draft, change, readOnly, registry } = props;
+  const faces = isRecord(draft.hd) && typeof draft.hd.faces === 'number' ? draft.hd.faces : 0;
   return (
     <>
       <Section title="Hit points and proficiencies">
@@ -1062,142 +1506,197 @@ function Basics({ draft, change, readOnly, registry }: EditorProps) {
           disabled={readOnly}
           onChange={(v) => change({ proficiency: v.length > 0 ? v : undefined })}
         />
-        <ChipPicks
-          label="Armor"
-          options={ARMOR}
-          value={armor}
-          disabled={readOnly}
-          onChange={(v) => {
-            const list = withPicks(start.armor, ['light', 'medium', 'heavy', 'shield'], v);
-            setStart({
-              armor: list.length > 0 ? list : undefined,
-              // The same list as the 2024 books also write it, kept in step.
-              ...(start.armorProficiencies !== undefined
-                ? {
-                    armorProficiencies:
-                      v.length > 0 ? [Object.fromEntries(v.map((a) => [a, true]))] : undefined,
-                  }
-                : {}),
-            });
-          }}
+        <Proficiencies
+          as="first"
+          of={String(draft.name || 'the original')}
+          start={startOf(draft)}
+          readOnly={readOnly}
+          onChange={(next) => change({ startingProficiencies: next })}
         />
-        <ChipPicks
-          label="Weapons"
-          options={WEAPONS}
-          value={weapons}
-          disabled={readOnly}
-          onChange={(v) => {
-            const list = withPicks(start.weapons, ['simple', 'martial'], v);
-            setStart({ weapons: list.length > 0 ? list : undefined });
-          }}
-        />
-        {skills === null ? (
-          <Kept label="Skills">kept as {String(draft.name || 'the original')} has them.</Kept>
-        ) : (
-          <>
-            <NumberField
-              label="Skills to choose"
-              value={skills?.count}
-              disabled={readOnly}
-              onChange={(count) =>
-                setStart({
-                  skills:
-                    count === undefined || count === 0
-                      ? undefined
-                      : [{ choose: { from: skills?.from ?? [], count } }],
-                })
-              }
-            />
-            {skills !== undefined && (
-              <ChipPicks
-                label="Chosen from"
-                options={SKILL_WORDS}
-                value={skills.from.map((s) => s.toLowerCase())}
-                disabled={readOnly}
-                onChange={(from) =>
-                  setStart({ skills: [{ choose: { from, count: skills.count } }] })
-                }
-              />
-            )}
-          </>
-        )}
       </Section>
+      <Multiclassing draft={draft} change={change} readOnly={readOnly} />
+      <StartingGear draft={draft} change={change} readOnly={readOnly} registry={registry} />
       <Section title="Spellcasting">
-        <Field label="Spellcasting">
-          <Select
-            value={progression}
-            disabled={readOnly}
-            onChange={(e) => setCasting(e.target.value)}
-          >
-            {CASTING.map(([v, label]) => (
-              <option key={v} value={v}>
-                {label}
-              </option>
-            ))}
-          </Select>
-        </Field>
-        {progression !== '' && (
-          <>
-            <Field label="Casts with">
-              <Select
-                value={
-                  typeof draft.spellcastingAbility === 'string' ? draft.spellcastingAbility : ''
-                }
-                disabled={readOnly}
-                onChange={(e) => change({ spellcastingAbility: e.target.value || undefined })}
-              >
-                <option value="">Pick an ability</option>
-                {ABILITY_WORDS.map(([v, label]) => (
-                  <option key={v} value={v}>
-                    {label}
-                  </option>
-                ))}
-              </Select>
-            </Field>
-            <Field label="Its spells">
-              <Select
-                value={prepares ? 'prepared' : 'known'}
-                disabled={readOnly}
-                onChange={(e) => setPrepares(e.target.value === 'prepared')}
-              >
-                <option value="prepared">Prepares some each day</option>
-                <option value="known">Knows a set number</option>
-              </Select>
-            </Field>
-            <label className="flex min-h-tap items-center gap-2.5 text-body">
-              <input
-                type="checkbox"
-                className="size-4.5 accent-ink"
-                disabled={readOnly}
-                checked={Array.isArray(draft.cantripProgression)}
-                onChange={(e) =>
-                  change({
-                    cantripProgression: e.target.checked
-                      ? (countsFrom(registry, progression, 'cantripProgression')
-                          ?.cantripProgression ?? LEVELS.map(() => 2))
-                      : undefined,
-                  })
-                }
-              />
-              Knows cantrips
-            </label>
-            {typeof draft.preparedSpells === 'string' && (
-              <Kept label="Prepared spells">
-                {plainEntryText(
-                  draft.preparedSpells.replaceAll(/<\$(\w+)\$>/g, (_, w: string) =>
-                    w === 'level' ? 'level' : `${w.replace('_mod', '').toUpperCase()} modifier`,
-                  ),
-                )}
-                , as the original has it.
-              </Kept>
-            )}
-            <p className="text-caption text-ink-muted">
-              Set cantrips and spells for each level in the table.
-            </p>
-          </>
-        )}
+        <Spellcasting
+          draft={draft}
+          change={change}
+          readOnly={readOnly}
+          registry={registry}
+          type="class"
+          label="Spellcasting"
+        />
       </Section>
+      <Section title="Spells it gives">
+        <LevelSpells
+          raw={draft.additionalSpells}
+          onChange={(next) => change({ additionalSpells: next })}
+          registry={registry}
+          readOnly={readOnly}
+          first={1}
+          of="the class"
+        />
+      </Section>
+      <ClassEffects {...props} />
     </>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Optional features by level (`optionalfeatureProgression`, read by optionalFeatures.ts)
+
+/** The lists the books' optional features are on (as the optional feature editor names them). */
+const OPTION_LISTS: ReadonlyArray<readonly [string, string]> = [
+  ['EI', 'Eldritch invocation'],
+  ['MV:B', 'Battle Master maneuver'],
+  ['FS:F', 'Fighter fighting style'],
+  ['FS:P', 'Paladin fighting style'],
+  ['FS:R', 'Ranger fighting style'],
+  ['FS:B', 'Bard fighting style'],
+  ['MM', 'Metamagic'],
+  ['PB', 'Pact boon'],
+  ['AI', 'Artificer infusion'],
+  ['AS', 'Arcane shot'],
+  ['ED', 'Elemental discipline'],
+  ['RN', 'Rune'],
+  ['RP', 'Replicate magic item'],
+];
+
+const optionalOf = (draft: Json): Json[] =>
+  Array.isArray(draft.optionalfeatureProgression)
+    ? draft.optionalfeatureProgression.filter(isRecord)
+    : [];
+
+/**
+ * How many at each level: a list of twenty, or a table by level, as the sheet
+ * reads both; its `*` is every level, so level 1 on.
+ */
+export function optionalValues(o: Json): number[] {
+  if (Array.isArray(o.progression)) {
+    // As stated where the list says a number; past its end, or where it says
+    // none, the most so far, which is what the sheet gives there.
+    const list: unknown[] = o.progression;
+    let most = 0;
+    return LEVELS.map((_, i) => {
+      const v = list[i];
+      if (typeof v === 'number') {
+        most = Math.max(most, v);
+        return v;
+      }
+      return most;
+    });
+  }
+  if (!isRecord(o.progression)) return byLevelValues(undefined);
+  const { '*': all, ...rest } = o.progression;
+  if (typeof all !== 'number') return byLevelValues(rest);
+  return byLevelValues(rest).map((v) => Math.max(v, all));
+}
+
+/** The table's columns for the optional features, set level by level. */
+function optionalColumns(draft: Json, change: EditorProps['change']): TableColumn[] {
+  const all = optionalOf(draft);
+  return all.map((o, i) => {
+    const values = optionalValues(o);
+    return {
+      key: `optional:${i}`,
+      label: String(o.name || 'Optional features'),
+      values: values.map(String),
+      numbers: values,
+      set: (level, v) => {
+        const next = setFrom(values, level, v);
+        // The shape it had stays: a list of twenty, or the levels where it changes.
+        const progression = Array.isArray(o.progression) ? next : asByLevel(next);
+        change({
+          optionalfeatureProgression: all.map((x) => (x === o ? { ...o, progression } : x)),
+        });
+      },
+    };
+  });
+}
+
+/** The optional features' names and lists, under the table; their numbers are set in its rows. */
+function OptionalFeatures({
+  draft,
+  change,
+  readOnly,
+  registry,
+}: Pick<EditorProps, 'draft' | 'change' | 'readOnly' | 'registry'>) {
+  const all = optionalOf(draft);
+  const set = (next: Json[]) =>
+    change({ optionalfeatureProgression: next.length > 0 ? next : undefined });
+  const edit = (o: Json, patch: Json) => set(all.map((x) => (x === o ? { ...o, ...patch } : x)));
+  // The books' lists, and any other a loaded optional feature or this class names.
+  const named = new Set(OPTION_LISTS.map(([k]) => k));
+  const others = new Set(
+    [...registry.byType('optionalfeature'), ...all]
+      .flatMap((f) => (Array.isArray(f.featureType) ? f.featureType.map(String) : []))
+      .filter((k) => !named.has(k)),
+  );
+  const options = [...OPTION_LISTS, ...[...others].map((k) => [k, k] as const)];
+  const add = () => {
+    const taken = new Set(all.map((o) => String(o.name)));
+    let k = 1;
+    let name = 'Optional features';
+    while (taken.has(name)) name = `Optional features ${++k}`;
+    set([...all, { name, featureType: [], progression: { '1': 1 } }]);
+  };
+  return (
+    <Section title="Optional features">
+      <p className="text-caption text-ink-muted">
+        Picks from a list, like Eldritch Invocations or Maneuvers, a column in the table. Open a
+        level to set how many from that level on.
+      </p>
+      {all.length > 0 && (
+        <ul aria-label="Optional features" className={listClass}>
+          {all.map((o, i) => {
+            const name = String(o.name || 'Optional features');
+            return (
+              // biome-ignore lint/suspicious/noArrayIndexKey: their names are typed.
+              <li key={i} className="flex flex-col gap-3 px-4 py-3">
+                <div className="flex items-end gap-2">
+                  <div className="min-w-0 flex-1">
+                    <Field label="Optional feature name">
+                      <input
+                        value={String(o.name ?? '')}
+                        disabled={readOnly}
+                        onChange={(e) => edit(o, { name: e.target.value })}
+                        className={fieldClass}
+                      />
+                    </Field>
+                  </div>
+                  {!readOnly && (
+                    <button
+                      type="button"
+                      aria-label={`Remove ${name}`}
+                      onClick={() => set(all.filter((x) => x !== o))}
+                      className="tap rounded-full text-ink-muted hover:bg-surface-raised hover:text-ink"
+                    >
+                      <X size={18} aria-hidden />
+                    </button>
+                  )}
+                </div>
+                <ChipPicks
+                  label={`${name}: picks from`}
+                  options={options}
+                  value={Array.isArray(o.featureType) ? o.featureType.map(String) : []}
+                  disabled={readOnly}
+                  onChange={(featureType) => edit(o, { featureType })}
+                />
+              </li>
+            );
+          })}
+        </ul>
+      )}
+      {!readOnly && (
+        <Button variant="outline" size="sm" className="self-start" onClick={add}>
+          <Plus size={16} aria-hidden />
+          Add optional features
+        </Button>
+      )}
+      <OnSheet>
+        a pick on the Build tab for each one it has at its level, from the optional features on
+        those lists.
+      </OnSheet>
+    </Section>
   );
 }
 
@@ -1345,7 +1844,7 @@ function Pools({ draft, change, readOnly }: Pick<EditorProps, 'draft' | 'change'
   );
 }
 
-/** The table's number columns: the pools, the spell counts, the top slot. */
+/** The table's number columns: the pools, the optional features, the spell counts, the top slot. */
 function columnsOf(draft: Json, change: EditorProps['change']): TableColumn[] {
   const cols: TableColumn[] = [];
   const all = effectsOf(draft);
@@ -1366,32 +1865,7 @@ function columnsOf(draft: Json, change: EditorProps['change']): TableColumn[] {
       numbers: values,
     });
   }
-  if (typeof draft.casterProgression === 'string') {
-    for (const [field, label] of [
-      ['cantripProgression', 'Cantrips'],
-      ['preparedSpellsProgression', 'Prepared'],
-      ['spellsKnownProgression', 'Known'],
-    ] as const) {
-      const list = draft[field];
-      if (!Array.isArray(list)) continue;
-      const values = LEVELS.map((_, i) =>
-        Array.isArray(list) && typeof list[i] === 'number' ? (list[i] as number) : 0,
-      );
-      cols.push({
-        key: field,
-        label,
-        values: values.map(String),
-        numbers: values,
-        set: (level, v) => {
-          const next = setFrom(values, level, v);
-          change({ [field]: next.some((n) => n > 0) ? next : undefined });
-        },
-      });
-    }
-    const top = topSlots(draft);
-    if (top !== undefined) cols.push({ key: 'slot', label: 'Top slot', values: top });
-  }
-  return cols;
+  return [...cols, ...optionalColumns(draft, change), ...spellColumns(draft, change)];
 }
 
 /** A copy whose original is not loaded: what it lists, the original's waiting. */
@@ -1704,6 +2178,7 @@ function ClassBody(props: EditorProps) {
             </ClassTable>
           </Suspense>
           <Pools draft={draft} change={change} readOnly={readOnly} />
+          <OptionalFeatures draft={draft} change={change} readOnly={readOnly} registry={registry} />
         </>
       )}
       {tab === 'subclasses' && (

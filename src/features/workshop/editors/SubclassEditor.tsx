@@ -24,16 +24,30 @@
  * is found by, unless another subclass of the player's for that class has it.
  */
 import { Info, Plus } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { lazy, Suspense, useMemo, useState } from 'react';
 import type { EntityRegistry } from '@/data5e/normalize';
 import { isRecord, own } from '@/engine/castGuidance';
 import { Button } from '@/ui/Button';
 import { askConfirm } from '@/ui/dialogs';
 import { listClass } from '@/ui/surfaces';
-import { changeCount, copiedFrom, readStored, writeEntry } from '../copyWriter';
+import {
+  belowChanges,
+  bookAt,
+  LevelSpells,
+  OPENED,
+  Spellcasting,
+  spellBase,
+  spellColumns,
+  spellGroupsFor,
+  withOpened,
+} from '../classFields';
+import { changeCount, copiedFrom, readStored, same, writeEntry } from '../copyWriter';
+import { amendPatch, EffectCards, guidanceWith } from '../EffectCards';
 import type { EditorProps, EditorSpec, Json, WriteContext, Written } from '../editorTypes';
 import { FeatureRow, type FeatureStatus } from '../FeatureRow';
 import { Field, Section, Select } from '../fields';
+
+const ClassTable = lazy(() => import('../ClassTable').then((m) => ({ default: m.ClassTable })));
 
 const KEY = '_features';
 const LEVELS = Array.from({ length: 20 }, (_, i) => i + 1);
@@ -180,9 +194,15 @@ function ownGuidance(f: Json): Json {
  * The draft a subclass opens on: `_features` worked out by walking what the
  * entry lists against the original's features. One of the player's features
  * that names an original one (`basedOn`) is that one changed; one that names
- * none is new; an original one nowhere in the entry was removed.
+ * none is new; an original one nowhere in the entry was removed. It keeps
+ * the spell fields its table was made for (`OPENED`).
  */
-export function openSubclass(
+export const openSubclass = (
+  entry: Json,
+  at: { original?: Json; registry: EntityRegistry; file?: Json },
+): Json => withOpened(openFeatures(entry, at), entry);
+
+function openFeatures(
   entry: Json,
   { original, registry, file }: { original?: Json; registry: EntityRegistry; file?: Json },
 ): Json {
@@ -206,7 +226,10 @@ export function openSubclass(
         eq(n.entity?.source, copy.source) &&
         n.level === Number(copy.level ?? raw.level),
     )?.entity;
-    return target === undefined ? findFeature(registry, ref) : readStored(raw, target).entry;
+    // Read against the feature below the table's change, as the merge resolves the copy.
+    return target === undefined
+      ? findFeature(registry, ref)
+      : readStored(raw, belowChanges(registry, target)).entry;
   };
   const edits: FeatureEdits = { changed: {}, removed: [], added: [] };
   const present = new Set<string>();
@@ -327,8 +350,10 @@ export function writeSubclass(at: WriteContext): Written {
     // data holds as a copy of another (the book's features are never resolved):
     // a copy of it would wait on that forever and lose its changes.
     const alone = registry.get(FEATURE, String(e.name), String(e.source)) === e;
+    // Written against the feature below the table's change, as the merge
+    // resolves the copy: the change stays in it (`copiedBase` in WorkshopPage).
     const f = writeEntry({
-      original: e,
+      original: belowChanges(registry, e),
       draft: { ...now, ...place(n.level) },
       source,
       mode: mode === 'full' || !alone || isRecord(e._copy) ? 'full' : 'changes',
@@ -352,10 +377,22 @@ export function writeSubclass(at: WriteContext): Written {
     items.splice(after + 1, 0, { ref: ownRef(f), level });
   }
 
-  const { [KEY]: _, ...rest } = draft;
+  const { [KEY]: _, [OPENED]: __, ...rest } = draft;
+  // Its own table (`subclassTableGroups`) matches its spellcasting; a table
+  // made again names this subclass as the one it is for.
+  const table = spellGroupsFor(rest, spellBase(draft, at, 'subclass'), 'subclassTableGroups');
+  const was = Array.isArray(rest.subclassTableGroups) ? rest.subclassTableGroups : [];
+  const groups = same(table, was)
+    ? table
+    : table.map((g) => ({ ...g, subclasses: [{ name: String(draft.name ?? ''), source }] }));
   const entry = writeEntry({
     original: at.original,
-    draft: { ...rest, shortName: short, subclassFeatures: items.map((i) => i.ref) },
+    draft: {
+      ...rest,
+      shortName: short,
+      subclassFeatures: items.map((i) => i.ref),
+      subclassTableGroups: groups.length > 0 ? groups : undefined,
+    },
     source,
     mode,
   }) as Written['entry'];
@@ -387,7 +424,7 @@ export function summarize(draft: Json, original: Json, registry: EntityRegistry)
     if (n.entity !== undefined) count[statusOf(edits, n)] += 1;
   }
   // The list and the short name are the features' doing, counted above.
-  const { [KEY]: _, ...rest } = draft;
+  const { [KEY]: _, [OPENED]: __, ...rest } = draft;
   const own = {
     ...rest,
     subclassFeatures: original.subclassFeatures,
@@ -406,6 +443,8 @@ export function summarize(draft: Json, original: Json, registry: EntityRegistry)
 /** Why it cannot be saved: a feature without a name, or two the sheet could not tell apart. */
 function check(draft: Json): string | undefined {
   if (!draft.className) return 'Pick the class it belongs to.';
+  if (typeof draft.casterProgression === 'string' && typeof draft.spellcastingAbility !== 'string')
+    return 'Pick the ability it casts its spells with.';
   const edits = editsOf(draft);
   const mine: Json[] = [
     ...Object.entries(edits.changed)
@@ -526,6 +565,22 @@ function SubclassBody({ draft, change, original, registry, readOnly }: EditorPro
     set({ added: edits.added.map((a, j) => (j === i ? next : a)) });
 
   const classes = registry.byType('class');
+  const parent = registry.get(
+    'class',
+    String(draft.className ?? ''),
+    String(draft.classSource ?? ''),
+  ) as Json | undefined;
+  const namesAt = (level: number) => [
+    ...nodes
+      .filter(
+        (n) => n.level === level && n.entity !== undefined && statusOf(edits, n) !== 'removed',
+      )
+      .map((n) => String((edits.changed[n.ref] ?? n.base).name)),
+    ...edits.added.filter((a) => Number(a.level) === level).map((a) => String(a.name ?? '')),
+  ];
+  const g = isRecord(draft.castGuidance) ? draft.castGuidance : {};
+  const setGuidance = (patch: Json) =>
+    change({ castGuidance: guidanceWith(draft.castGuidance, patch) });
   return (
     <>
       {original === undefined && (
@@ -554,12 +609,54 @@ function SubclassBody({ draft, change, original, registry, readOnly }: EditorPro
           </Field>
         </Section>
       )}
-      {original !== undefined && Array.isArray(original.additionalSpells) && (
-        <p className="flex items-start gap-2 rounded-control bg-surface-raised px-3 py-2 text-caption">
-          <Info size={16} aria-hidden className="mt-px shrink-0 text-ink-muted" />
-          Its always-prepared spells are kept as {String(original.name)} has them.
-        </p>
+      <Section title="Spellcasting">
+        {typeof parent?.casterProgression === 'string' && (
+          <p className="flex items-start gap-2 rounded-control bg-surface-raised px-3 py-2 text-caption">
+            <Info size={16} aria-hidden className="mt-px shrink-0 text-ink-muted" />
+            {String(parent.name)} casts spells of its own, so the sheet reads its spellcasting, not
+            the subclass's.
+          </p>
+        )}
+        <Spellcasting
+          draft={draft}
+          change={change}
+          readOnly={readOnly}
+          registry={registry}
+          type="subclass"
+          label="Its own spellcasting"
+        />
+      </Section>
+      {/* Its own columns in the class's table: its spells' (set here), and the book's (a Psi Warrior's dice). */}
+      {/* Without spells, only while it has a book column to show: its spell columns go with them. */}
+      {(typeof draft.casterProgression === 'string' ||
+        LEVELS.some((l) => bookAt(draft, 'subclassTableGroups')(l).length > 0)) && (
+        <Suspense fallback={<p className="text-body text-ink-muted">Loading the table…</p>}>
+          <ClassTable
+            name={String(draft.name || 'Your subclass')}
+            columns={spellColumns(draft, change, 'subclassTableGroups')}
+            book={bookAt(draft, 'subclassTableGroups')}
+            namesAt={namesAt}
+            subAt={() => false}
+            readOnly={readOnly}
+          >
+            {() => (
+              <p className="text-caption text-ink-muted">
+                Its features at this level are set under Features.
+              </p>
+            )}
+          </ClassTable>
+        </Suspense>
       )}
+      <Section title="Spells it gives">
+        <LevelSpells
+          raw={draft.additionalSpells}
+          onChange={(next) => change({ additionalSpells: next })}
+          registry={registry}
+          readOnly={readOnly}
+          first={firstLevel}
+          of="the class"
+        />
+      </Section>
       <Section title="Features">
         {levels.map((level) => (
           <div key={level} className="flex flex-col gap-2">
@@ -633,6 +730,38 @@ function SubclassBody({ draft, change, original, registry, readOnly }: EditorPro
             Add a feature
           </Button>
         )}
+      </Section>
+      <Section title="What it does on the sheet">
+        <p className="text-caption text-ink-muted">
+          For the whole subclass, from its first level. A feature's own effects are set on the
+          feature.
+        </p>
+        <EffectCards
+          effects={g.effects}
+          readOnly={readOnly}
+          inherits={original !== undefined ? String(original.name) : undefined}
+          replace={g.replace === true}
+          onReplace={(replace) =>
+            setGuidance(replace ? { replace: true, amend: undefined } : { replace: undefined })
+          }
+          onChange={(effects, amend) =>
+            setGuidance({ effects: effects.length > 0 ? effects : undefined, ...amendPatch(amend) })
+          }
+          amend={g.amend}
+          onAmend={(amend) => setGuidance(amendPatch(amend))}
+          moments={g.moments}
+          momentName={
+            typeof draft.name === 'string' && draft.name.trim() !== '' ? draft.name : undefined
+          }
+          onMoments={(moments, effects) =>
+            setGuidance({
+              moments: moments.length > 0 ? moments : undefined,
+              ...(effects === undefined
+                ? {}
+                : { effects: effects.length > 0 ? effects : undefined }),
+            })
+          }
+        />
       </Section>
     </>
   );
