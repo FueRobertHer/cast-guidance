@@ -268,6 +268,13 @@ describe('a choice the Build tab can make', () => {
     expect(
       with_({ toolProficiencies: choose(['gaming set', "thieves' tools"], 3) }),
     ).toBeUndefined();
+    // In the sheet's own words, in any letters; other words for a kind name one tool there.
+    expect(
+      with_({ toolProficiencies: choose(['Gaming Set', "thieves' tools"], 3) }),
+    ).toBeUndefined();
+    expect(with_({ toolProficiencies: choose(['a gaming set', "thieves' tools"], 3) })).toBe(
+      'The tools of your choice are 3, from a list of 2. Name more, or choose fewer.',
+    );
   });
 
   it('shows a skill the list has no chip for, to be seen and taken off', () => {

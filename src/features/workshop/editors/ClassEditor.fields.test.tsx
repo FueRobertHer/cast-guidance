@@ -270,6 +270,9 @@ describe('starting equipment', () => {
     const pouch = { item: 'pouch|phb', containsValue: 1500 };
     expect(gearFrom('Pouch', [pouch], items)).toEqual({ item: 'Pouch|phb', containsValue: 1500 });
     expect(gearFrom('pouch x3', [pouch], items)).toEqual({ ...pouch, quantity: 3 });
+    // An item named without a printing stays without one.
+    const bare = { item: 'pouch', containsValue: 1500 };
+    expect(gearFrom('pouch x2', [bare], items)).toEqual({ ...bare, quantity: 2 });
     // Coins are their words: retyped, they are what the words now say.
     expect(gearFrom('5 gp', [{ value: 1000 }], items)).toEqual({ value: 500 });
     // So is gear in words alone: in other letters, or counted, it is read again.

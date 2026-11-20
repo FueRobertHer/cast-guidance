@@ -435,7 +435,7 @@ export const editor: EditorSpec = {
     if (picks !== undefined && picks.length !== 0 && picks.length !== 3)
       return 'Pick three ability scores, or none.';
     // A choice of more than it names cannot be made on the Build tab; a kind
-    // (a gaming set) names many.
+    // in the sheet's own words (gaming set, in any letters) names many.
     for (const [raw, anyKey, kinds, what] of [
       [draft.skillProficiencies, 'any', [], 'skills'],
       [draft.toolProficiencies, 'any', TOOL_KINDS, 'tools'],
@@ -446,7 +446,7 @@ export const editor: EditorSpec = {
         c !== undefined &&
         c.from.length > 0 &&
         c.count > c.from.length &&
-        !c.from.some((f) => kindOf(kinds, f) !== undefined)
+        !c.from.some((f) => kinds.some(([, k]) => k === f.trim().toLowerCase()))
       )
         return `The ${what} of your choice are ${c.count}, from a list of ${c.from.length}. Name more, or choose fewer.`;
     }

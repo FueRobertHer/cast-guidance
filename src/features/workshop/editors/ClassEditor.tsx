@@ -1165,7 +1165,10 @@ export function gearFrom(text: string, was: readonly unknown[], items: readonly 
   }
   if (isRecord(like)) {
     const { quantity: _, ...rest } = like;
-    if (typeof rest.item === 'string') rest.item = `${name}|${rest.item.split('|')[1] ?? ''}`;
+    if (typeof rest.item === 'string') {
+      const source = rest.item.split('|')[1];
+      rest.item = source === undefined ? name : `${name}|${source}`;
+    }
     if (typeof rest.special === 'string') rest.special = name;
     return { ...rest, ...many };
   }
