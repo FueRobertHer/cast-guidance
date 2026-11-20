@@ -166,10 +166,11 @@ function EntityInfoSheetContent({
 
   // Mounted by the press that opens it; see `useSheetOpenOnMount`.
   const [open, setOpen] = useSheetOpenOnMount();
-  // Opened again, the sheet shows the version the sheet counts.
+  // Opened again, the sheet shows the version the sheet counts. Reset on
+  // opening, not closing, so the closing sheet keeps what it showed.
   const onOpenChange = (next: boolean) => {
     setOpen(next);
-    if (!next) setBook(false);
+    if (next) setBook(false);
   };
 
   return (

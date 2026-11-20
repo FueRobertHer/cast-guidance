@@ -87,6 +87,12 @@ function named(node: unknown, name: unknown, depth = 0): Record<string, unknown>
   return undefined;
 }
 
+/** The book's part at `path`, when it too has no name. */
+function unnamedAt(node: unknown, path: readonly Step[]): Record<string, unknown> | undefined {
+  const at = follow(node, path);
+  return isNode(at) && at.name === undefined ? at : undefined;
+}
+
 function follow(node: unknown, path: readonly Step[]): unknown {
   let at = node;
   for (const [key, i] of path) {
@@ -114,12 +120,16 @@ export function changeHolding(
     if (path === undefined) continue;
     if (path.length === 0) return { record, book: record.base.entries ?? [] };
     // A part (a race's trait): the book's part of its name, wherever the
-    // change moved it; none, and the change added it, so the book's whole
-    // text is what lies below. A part the change left as the book has it is
-    // not what changed, so its card is not marked.
+    // change moved it, or an unnamed one at its place; none, and the change
+    // added it, so the book's whole text is what lies below. A part the
+    // change left as the book has it is not what changed, so its card is not
+    // marked.
     const mine = follow(record.placed, path);
-    const theirs =
-      isNode(mine) && mine.name !== undefined ? named(record.base, mine.name) : undefined;
+    const theirs = !isNode(mine)
+      ? undefined
+      : mine.name !== undefined
+        ? named(record.base, mine.name)
+        : unnamedAt(record.base, path);
     if (theirs === undefined) return { record, book: record.base.entries ?? [] };
     const book = theirs.entries ?? [];
     return sameWords(book, entries) ? undefined : { record, book };
@@ -158,10 +168,11 @@ function FeatureInfoSheetContent({ title, subtitle, entries, trigger }: FeatureI
   const registry = useRegistry();
   const change = useMemo(() => changeHolding(registry, entries), [registry, entries]);
   const [book, setBook] = useState(false);
-  // Opened again, the sheet shows the version the sheet counts.
+  // Opened again, the sheet shows the version the sheet counts. Reset on
+  // opening, not closing, so the closing sheet keeps what it showed.
   const onOpenChange = (next: boolean) => {
     setOpen(next);
-    if (!next) setBook(false);
+    if (next) setBook(false);
   };
 
   return (

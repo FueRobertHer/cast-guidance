@@ -35,6 +35,7 @@ describe('changeHolding', () => {
             entries: [
               { type: 'entries', name: 'Toughness', entries: ['Tough.'] },
               { type: 'entries', name: 'Stonecunning', entries: ['Stone sense.'] },
+              { type: 'entries', entries: ['Small print.'] },
             ],
           },
         ],
@@ -93,6 +94,20 @@ describe('changeHolding', () => {
     const stone = (placed.entries as Array<{ entries: unknown }>)[1]?.entries;
     expect(changeHolding(reg, stone)).toBeUndefined();
     expect(changeHolding(reg, placed.entries)?.record.placed).toBe(placed);
+  });
+
+  it('reads an unnamed part against the book’s at its place', () => {
+    const parts = (print: string) => [
+      { type: 'entries', name: 'Toughness', entries: ['Very tough.'] },
+      { type: 'entries', name: 'Stonecunning', entries: ['Stone sense.'] },
+      { type: 'entries', entries: [print] },
+    ];
+    const kept = changed(parts('Small print.'));
+    const plain = (kept.placed.entries as Array<{ entries: unknown }>)[2]?.entries;
+    expect(changeHolding(kept.reg, plain)).toBeUndefined();
+    const reworded = changed(parts('Bigger print.'));
+    const bigger = (reworded.placed.entries as Array<{ entries: unknown }>)[2]?.entries;
+    expect(changeHolding(reworded.reg, bigger)?.book).toEqual(['Small print.']);
   });
 
   it("finds the book's trait by its name when the change moves it", () => {
