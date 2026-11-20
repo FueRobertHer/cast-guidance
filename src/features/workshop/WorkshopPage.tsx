@@ -58,8 +58,9 @@ import {
 } from './copyWriter';
 import { EditorShell, type Problem } from './EditorShell';
 import { EDITORS, type EditorSpec, type Json } from './editorTypes';
-import { Field } from './fields';
+import { Field, onePerName } from './fields';
 import { EntryPicks } from './pickIds';
+import { SpellChoices } from './spellChoices';
 import { TRY_ON_TYPES, TryItOn } from './TryItOn';
 import { editPath, entriesOf, inFile, labelOf, type Mine } from './yours';
 
@@ -761,6 +762,13 @@ function Editor({
       </span>
     );
 
+  // The spells a Cast a spell card can name, one per name in the entry's rules
+  // version, as an item's are: for each list of cards whose editor names none.
+  const { edition, bookEdition, source: from } = draft;
+  const spellChoices = useMemo(
+    () => onePerName(registry.byType('spell'), { edition, bookEdition, source: from }),
+    [registry, edition, bookEdition, from],
+  );
   // The entry as the sheet would hold it once saved, for Try it on.
   const trying = useMemo(
     () => ({ ...draft, name: name || `New ${spec.noun}`, source }),
@@ -868,13 +876,15 @@ function Editor({
       </Field>
       {/* A pick added anywhere in the entry takes an id none of its picks has, nor had. */}
       <EntryPicks draft={draft} before={[subject.draft, ...saves, original]}>
-        <Body
-          draft={draft}
-          change={change}
-          original={original}
-          registry={registry}
-          readOnly={readOnly}
-        />
+        <SpellChoices.Provider value={spellChoices}>
+          <Body
+            draft={draft}
+            change={change}
+            original={original}
+            registry={registry}
+            readOnly={readOnly}
+          />
+        </SpellChoices.Provider>
       </EntryPicks>
       {!readOnly && TRY_ON_TYPES.has(type) && (
         <TryItOn type={type} entry={trying} registry={registry} />

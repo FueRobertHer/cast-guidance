@@ -15,7 +15,17 @@ import { fieldClass } from '@/ui/TextField';
 import { Field, Select } from '../fields';
 import { KEPT_ASKS, NEW_PICK, PickFields } from '../PickFields';
 import type { Eff, KindSpec, Options } from './kit/types';
-import { amount, held, isByLevel, isString, offering, words } from './kit/words';
+import {
+  amount,
+  held,
+  isByLevel,
+  isString,
+  offering,
+  omit,
+  shown,
+  stored,
+  words,
+} from './kit/words';
 
 /**
  * Whether a pool's or an action's name says the class that gives it: never,
@@ -516,6 +526,108 @@ const naming = (p: { effect: Eff; title: string; onChange: (next: Eff) => void }
   <NamingFields effect={p.effect} title={p.title} onChange={p.onChange} />
 );
 
+/**
+ * Which pool a use comes back to on a short rest (`resourceRegain`): one on
+ * the list or kept where it can spend (a class's), or, with none to pick from,
+ * a key typed in. A key no pool here has gives nothing back, unless another
+ * entry gives that pool, so the card says so.
+ */
+function RegainFields({
+  effect,
+  title,
+  resources,
+  onChange,
+}: {
+  effect: Eff;
+  title: string;
+  resources: readonly Eff[];
+  onChange: (next: Eff) => void;
+}) {
+  const key = typeof effect.key === 'string' ? effect.key : '';
+  const found = resources.some((r) => r.key === key);
+  return (
+    <>
+      {resources.length > 0 ? (
+        <Field label="Pool">
+          <Select
+            aria-label={`${title}: Pool`}
+            value={key}
+            onChange={(e) => onChange({ ...effect, key: e.target.value })}
+          >
+            {!found && (
+              <option value={key}>{key === '' ? 'Pick a pool' : `${key}, as written`}</option>
+            )}
+            {resources.map((r) => (
+              <option key={String(r.key)} value={String(r.key)}>
+                {words(r.label)}
+              </option>
+            ))}
+          </Select>
+        </Field>
+      ) : (
+        <Field label="Pool's key">
+          <input
+            aria-label={`${title}: Pool's key`}
+            value={key}
+            placeholder="superiority-dice"
+            onChange={(e) => onChange({ ...effect, key: e.target.value })}
+            className={fieldClass}
+          />
+        </Field>
+      )}
+      {!found && key !== '' && (
+        <p className="col-span-2 text-caption text-ink-muted">
+          No pool here has this key: it gives a use back only if another entry gives that pool.
+        </p>
+      )}
+    </>
+  );
+}
+
+/**
+ * A text box across the card, for words half a phone's width cuts off: it
+ * stores what a text field of the same key does, or, when `optional`, leaves
+ * the field out while empty.
+ */
+export function WideText({
+  effect,
+  title,
+  field,
+  label,
+  placeholder,
+  optional = false,
+  onChange,
+}: {
+  effect: Eff;
+  title: string;
+  field: string;
+  label: string;
+  placeholder?: string;
+  optional?: boolean;
+  onChange: (next: Eff) => void;
+}) {
+  const f = { key: field, label, type: 'text' } as const;
+  return (
+    <div className="col-span-2">
+      <Field label={label}>
+        <input
+          aria-label={`${title}: ${label}`}
+          value={shown(effect, f)}
+          placeholder={placeholder}
+          onChange={(e) =>
+            onChange(
+              optional && e.target.value.trim() === ''
+                ? omit(effect, [field])
+                : { ...effect, [field]: stored(f, e.target.value) },
+            )
+          }
+          className={fieldClass}
+        />
+      </Field>
+    </div>
+  );
+}
+
 /** The heading its cards are listed under on the add sheet. */
 export const group = 'Uses, actions and picks';
 
@@ -582,6 +694,55 @@ export const cards: readonly KindSpec[] = [
     ),
     beforeRules: naming,
     notInPick: true,
+  },
+  {
+    kinds: ['extraAction'],
+    add: 'One more action',
+    does: 'One more action on your turn, as Haste gives: what it may be used for',
+    make: () => ({ kind: 'extraAction', label: 'Attack once, Dash or Disengage' }),
+    fields: [],
+    line: (e) =>
+      `One more action: ${String(e.label)}${
+        typeof e.note === 'string' && e.note.trim() !== '' ? `. ${e.note.trim()}` : ''
+      }`,
+    boxes: (p) => (
+      <>
+        <WideText
+          effect={p.effect}
+          title={p.title}
+          field="label"
+          label="Used for"
+          onChange={p.onChange}
+        />
+        <WideText
+          effect={p.effect}
+          title={p.title}
+          field="note"
+          label="Note"
+          placeholder="Only on your turn"
+          optional
+          onChange={p.onChange}
+        />
+      </>
+    ),
+  },
+  {
+    kinds: ['resourceRegain'],
+    add: 'Uses back on a short rest',
+    does: 'Some uses of a pool come back on a short rest, as a long rest pool may',
+    make: () => ({ kind: 'resourceRegain', key: 'uses', amount: 1 }),
+    fields: [{ key: 'amount', label: 'Uses back', type: 'amount' }],
+    line: (e) =>
+      `${amount(e.amount, false)} ${e.amount === 1 ? 'use' : 'uses'} of ${String(e.key)} back on a short rest`,
+    boxes: (p) => (
+      <RegainFields
+        effect={p.effect}
+        title={p.title}
+        resources={p.resources}
+        onChange={p.onChange}
+      />
+    ),
+    notInPlay: true,
   },
   {
     // Its id is set as it is added (`EffectCards`), one the entry's other picks do not have.
