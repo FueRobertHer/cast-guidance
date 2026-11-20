@@ -248,7 +248,9 @@ function miscOf(spell: DataEntity): string[] {
   const comp = (spell.components ?? {}) as Record<string, unknown>;
   if (comp.v) out.push('verbal');
   if (comp.s) out.push('somatic');
-  if (comp.m) out.push('material');
+  // Given at all, as the Library shows it: the Workshop writes a material not
+  // yet described as ''.
+  if (comp.m !== undefined && comp.m !== null && comp.m !== false) out.push('material');
   if (comp.r) out.push('royalty');
   const m = comp.m as { cost?: unknown; consume?: unknown } | undefined;
   if (typeof m === 'object' && m !== null) {
@@ -323,7 +325,9 @@ export function describeSpellQuery(query: SpellQuery & SpellTagQuery, count: num
     query.creatureTypes?.length
       ? `affecting ${query.creatureTypes.map(capitalized).join(' or ')}`
       : '',
-    query.checks?.length ? `calling for a ${query.checks.map(capitalized).join(' or ')} check` : '',
+    query.checks?.length
+      ? `calling for ${/^[aeiou]/.test(query.checks[0] ?? '') ? 'an' : 'a'} ${query.checks.map(capitalized).join(' or ')} check`
+      : '',
   ].filter((clause) => clause !== '');
   const open =
     query.levels.length +

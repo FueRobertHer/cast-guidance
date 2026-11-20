@@ -155,6 +155,12 @@ describe("spellFitsQuery with 5etools' tag filters", () => {
       'components & miscellaneous=material with cost',
       'components & miscellaneous=material is optionally consumed',
     ],
+    [
+      'a consumed material',
+      'components & miscellaneous=material is consumed',
+      'components & miscellaneous=material is optionally consumed',
+    ],
+    ['a verbal component', 'components & miscellaneous=verbal', 'components & miscellaneous=prm'],
   ])('lets a spell in by %s, and keeps it out on another value', (_key, inFilter, outFilter) => {
     expect(fits(inFilter)).toBe(true);
     expect(fits(outFilter)).toBe(false);
@@ -191,6 +197,15 @@ describe("spellFitsQuery with 5etools' tag filters", () => {
     expect(
       fits('components & miscellaneous=material', { ...plain, components: { m: 'ash' } }),
     ).toBe(true);
+    // A material not yet described, as the Workshop writes one and the Library shows it.
+    expect(fits('components & miscellaneous=material', { ...plain, components: { m: '' } })).toBe(
+      true,
+    );
+    expect(fits('components & miscellaneous=material', plain)).toBe(false);
+    // Somatic alone is somatic, not verbal.
+    const somatic = { ...plain, components: { s: true } };
+    expect(fits('components & miscellaneous=somatic', somatic)).toBe(true);
+    expect(fits('components & miscellaneous=verbal', somatic)).toBe(false);
     // Ritual among others is one of them.
     expect(fits('components & miscellaneous=ritual;hl', { ...plain, meta: { ritual: true } })).toBe(
       true,
@@ -231,6 +246,8 @@ describe('describeSpellQuery', () => {
     ['Spell, area style Cone or Single Target', 'area style=N;ST', 1],
     ['Spells, affecting Undead or Fiend', 'affects creature types=undead;fiend', 2],
     ['Cantrip, calling for a Strength check', 'level=0|ability check=strength', 1],
+    ['Spell, calling for an Intelligence check', 'ability check=intelligence', 1],
+    ['Spells, calling for an Intelligence or Wisdom check', 'ability check=intelligence;wisdom', 2],
     [
       'Level 1 spell, tagged Concentration, area style Sphere, not from XGE',
       'level=1|components & miscellaneous=concentration|area style=S|source=!XGE',

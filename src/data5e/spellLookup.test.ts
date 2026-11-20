@@ -121,6 +121,10 @@ describe('subclassSpellUidsFromEntities (homebrew inline subclass lists)', () =>
     expect([...subclassSpellUidsFromEntities(spells, 'fighter', ['eldritch knight'])]).toEqual([
       'rune spark|hb',
     ]);
+    // An entry's short name matches too, whatever its full name says.
+    expect(subclassSpellUidsFromEntities(spells, 'Bard', ['Spellsong'])).toEqual(
+      new Set(['hum|hb', 'short hum|hb']),
+    );
   });
 
   it('needs the class too, and reads no class list', () => {
