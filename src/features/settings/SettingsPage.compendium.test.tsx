@@ -2,7 +2,9 @@
 // PWA-001: on a device whose first download never got anywhere, counting the
 // offline compendium fails (the indexes it counts against are not there
 // either), and the row read "could not be read", as if storage were broken.
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, render as renderInto, screen } from '@testing-library/react';
+import type { ReactElement } from 'react';
+import { MemoryRouter } from 'react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const loader = vi.hoisted(() => {
@@ -18,7 +20,11 @@ const loader = vi.hoisted(() => {
 });
 
 vi.mock('@/data5e/loader', () => loader);
-vi.mock('@/data5e/registry', () => ({ invalidateRegistry: vi.fn() }));
+// Never read here, so Settings' rules row stays Loading (see "rows into the Workshop").
+vi.mock('@/data5e/registry', () => ({
+  invalidateRegistry: vi.fn(),
+  getRegistry: () => new Promise(() => undefined),
+}));
 vi.mock('@/db/dataCacheRepo', () => ({
   // Some bytes on disk: essentials that only partly landed still read as not
   // downloaded, so the answer cannot rest on the cache being empty.
@@ -26,12 +32,19 @@ vi.mock('@/db/dataCacheRepo', () => ({
 }));
 vi.mock('@/db/reset', () => ({ resetAppData: vi.fn() }));
 vi.mock('@/ui/dialogs', () => ({ askConfirm: () => Promise.resolve(true) }));
-vi.mock('./SourcesSection', () => ({ SourcesSection: () => null }));
+// The books row counts the books; the page does not need the registry for it.
+vi.mock('./SourcesSection', () => ({
+  useBooksShown: () => ({ shown: 3, total: 3 }),
+  booksShownWords: () => 'All 3 books show',
+}));
 // House rules read rule packs from the registry; with none, every rule is as written.
 vi.mock('@/data5e/hooks', () => ({ useRegistry: () => null }));
 
 import { dataStatusStore } from '@/stores/dataStatus';
 import { Component as SettingsPage } from './SettingsPage';
+
+/** The page links into the Workshop, so it renders under a router. */
+const render = (ui: ReactElement) => renderInto(ui, { wrapper: MemoryRouter });
 
 afterEach(() => {
   cleanup();

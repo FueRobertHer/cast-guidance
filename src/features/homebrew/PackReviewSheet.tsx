@@ -1,15 +1,17 @@
 /**
- * Rule packs on the Homebrew page (Packs board, A): what a pack holds, who it
- * applies to, where it clashes with another, and the order that settles a
- * clash. The import preview shows the same details before a pack goes on (H8).
+ * Rule packs on the Workshop's Rules page (board 10, B) and, until it goes,
+ * the Homebrew page (Packs board, A): what a pack holds, who it applies to,
+ * where it clashes with another, and the order that settles a clash. The
+ * import preview shows the same details before a pack goes on (H8).
  *
  * Who a pack reaches is this device's alone, kept on the stored file's row,
  * never in the file (`data5e/rulePack.ts`), so Share, Download and a
  * character's export leave it behind, and an imported file stays as it came.
  */
 import { useLiveQuery } from 'dexie-react-hooks';
-import { ArrowDown, ArrowUp } from 'lucide-react';
+import { ArrowDown, ArrowUp, ChevronRight } from 'lucide-react';
 import { useEffect, useId, useRef, useState } from 'react';
+import { Link } from 'react-router';
 import { invalidateRegistry } from '@/data5e/registry';
 import { type PackLocal, packGuidance, packsInOrder } from '@/data5e/rulePack';
 import { characterRepo } from '@/db/characterRepo';
@@ -143,8 +145,16 @@ export function usePacksHere(
   return read?.packs;
 }
 
+/** Turn a pack on or off for this device. */
+export function togglePack(p: Pick<PackHere, 'id' | 'enabled'>): void {
+  void homebrewRepo
+    .setEnabled(p.id, !p.enabled)
+    .then(invalidateRegistry)
+    .catch((err: unknown) => notifyFailure(p.enabled ? 'Turn off' : 'Turn on', err));
+}
+
 /** The characters here, by name, for Apply to. */
-function useRoster(): Array<{ id: string; name: string }> {
+export function useRoster(): Array<{ id: string; name: string }> {
   const roster = useLiveQuery(() => characterRepo.listSafe().catch(() => ({ characters: [] })), []);
   return (roster?.characters ?? []).map((c) => ({ id: c.id, name: c.name || 'Unnamed' }));
 }
@@ -229,7 +239,7 @@ type Reach = 'every' | 'choose';
 
 /**
  * Apply to: every character, or the ones chosen. Every character makes its
- * table rules the app's default, under a choice made in Settings; chosen
+ * table rules the app's default, under a table rule chosen; chosen
  * characters get them over the app's.
  */
 export function ApplyTo({
@@ -274,7 +284,7 @@ export function ApplyTo({
       />
       <p id={hint} className="text-caption text-ink-muted">
         {reach === 'every'
-          ? 'Its rules become the app’s, under any you set in Settings.'
+          ? 'Its rules become the table rules, under any you choose yourself.'
           : 'Its rules win over the app’s for these characters.'}
       </p>
       {reach === 'choose' &&
@@ -303,6 +313,28 @@ export const appliesToAnyone = (to: PackAppliesTo): boolean =>
   to.appDefault === true || to.characters.length > 0;
 
 /**
+ * Who a pack reaches here, in words ("On for Osk and Hild"): off while its
+ * switch is off, nobody while it breaks a limit. `names` are the characters
+ * here by id; one no longer here is not named.
+ */
+export function reachWords(
+  p: Pick<PackHere, 'enabled' | 'local'> & { review: Pick<PackReview, 'refusals'> },
+  names: ReadonlyMap<string, string>,
+): string {
+  if (p.review.refusals.length > 0) return 'Cannot be added';
+  if (!p.enabled) return 'Off';
+  const to = p.local?.appliesTo;
+  if (to?.appDefault === true) return 'On for every character';
+  const who = (to?.characters ?? []).flatMap((id) => {
+    const name = names.get(id);
+    return name === undefined ? [] : [name];
+  });
+  if (who.length === 0) return 'Applies to no character yet';
+  const last = who.pop() as string;
+  return `On for ${who.length === 0 ? last : `${who.join(', ')} and ${last}`}`;
+}
+
+/**
  * The clash lines for one pack, worded from its side or as the page says them.
  * `updates`: the pack coming in takes the place of one here.
  */
@@ -329,12 +361,15 @@ export function PackReviewSheet({
   packs,
   onToggle,
   onClose,
+  file,
 }: {
   pack: PackHere;
   /** Every pack here, in order, for the clashes. */
   packs: readonly PackHere[];
   onToggle: () => void;
   onClose: () => void;
+  /** Where the file it is kept in has its page (export, update, delete). */
+  file?: string;
 }) {
   // A pack never applied here starts at nobody, so closing the sheet applies it to no one.
   // Kept as the sheet opened: a read of the pack while it is open changes neither.
@@ -384,13 +419,27 @@ export function PackReviewSheet({
       {!refused && !appliesToAnyone(appliesTo) && (
         <p className="text-ink-muted">Choose a character, or it applies to nobody.</p>
       )}
+      {file !== undefined && (
+        <PreviewSection heading="Its file">
+          {/* Closing first saves a changed Apply to, as Done does, before the page goes. */}
+          <Link
+            to={file}
+            onClick={() => close()}
+            className="flex min-h-tap items-center justify-between gap-2 rounded-control px-3 py-2 ring-1 ring-line ring-inset hover:bg-surface-hover"
+          >
+            <span className="min-w-0">Export, update or delete it</span>
+            <ChevronRight size={18} aria-hidden="true" className="shrink-0 text-ink-faint" />
+          </Link>
+        </PreviewSection>
+      )}
     </ImportPreviewDialog>
   );
 }
 
 /**
  * The packs in the player's order, to move. Where two set the same thing, the
- * later one wins, as the banner says.
+ * later one wins, as the banner says; under the list, where the packs that
+ * are on disagree as the order now stands, and which one wins (board 10).
  */
 export function PackOrderSheet({
   packs,
@@ -401,6 +450,18 @@ export function PackOrderSheet({
 }) {
   const [order, setOrder] = useState(() => packs.map((p) => p.id));
   const byId = new Map(packs.map((p) => [p.id, p]));
+  const app = useAppTableRules();
+  const clashes = [
+    ...new Set(
+      packConflicts(
+        order.flatMap((id) => {
+          const p = byId.get(id);
+          return p?.enabled === true ? [inPlay(p)] : [];
+        }),
+        app,
+      ).map(describeConflict),
+    ),
+  ];
   const move = (i: number, by: -1 | 1) => {
     const next = [...order];
     const [moved] = next.splice(i, 1);
@@ -464,6 +525,22 @@ export function PackOrderSheet({
           );
         })}
       </ol>
+      <PreviewSection heading="Where they disagree">
+        {/* Said as it changes: the list answers each move. */}
+        <div aria-live="polite">
+          {clashes.length === 0 ? (
+            <p className="text-ink-muted">Nowhere: no two packs that are on set the same thing.</p>
+          ) : (
+            <PreviewList>
+              {clashes.map((c) => (
+                <StatusItem key={c} tone="info">
+                  {c}
+                </StatusItem>
+              ))}
+            </PreviewList>
+          )}
+        </div>
+      </PreviewSection>
     </ImportPreviewDialog>
   );
 }

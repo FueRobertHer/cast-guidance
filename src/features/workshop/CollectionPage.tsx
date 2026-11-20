@@ -1273,7 +1273,11 @@ function Found({
         </Button>
       </section>
       <p className={NOTE}>
-        A rule pack&rsquo;s review and the order of packs are on the Homebrew page for now.
+        A rule pack&rsquo;s review and the order of packs are on the{' '}
+        <Link to="/workshop/rules" className={LINK}>
+          Rules shelf
+        </Link>
+        .
       </p>
       <Link to="/homebrew" className={`self-start ${buttonClass({ variant: 'outline' })}`}>
         Open the Homebrew page
