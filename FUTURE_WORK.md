@@ -219,7 +219,7 @@ work:
 | Standalone feats | A sheet editor to add/remove feats directly (writing `doc.feats`), for feats gained outside a background or ASI grant (FIX-006 left this as future product scope; the engine already reads `doc.feats`). |
 | Inventory | Edit all modeled custom-item fields; add containers, location, currency transactions, carrying capacity, and table-rule encumbrance. |
 | Export and sharing | Print-friendly accessible sheet/PDF and dependency-minimal sharing. |
-| Source policy | A device-wide browsing `SourcePolicy` ships (allow-all-except / only-these, presets, full book names, homebrew sources named by their own title) and deliberately never touches the registry, so hiding a book cannot break an existing sheet. A character's own `allowedSources` (edited on its Build page) replaces the device policy in that character's pickers and labels earlier picks from other books without removing them. A character's collection switches (`sourceSwitches`, ADR-002 E2) turn a source on or off over either, in that character's pickers only; an `on` switch also brings back a file switched off on the device, for that character alone (E4's per-character view of the registry). Remaining: make `dataTag` and `homebrewDeps` meaningful in provenance, exports, and warnings; give a switch change a history line. |
+| Source policy | A device-wide browsing `SourcePolicy` ships (allow-all-except / only-these, presets, full book names, homebrew sources named by their own title) and deliberately never touches the registry, so hiding a book cannot break an existing sheet. A character's own `allowedSources` (edited on its Build page) replaces the device policy in that character's pickers and labels earlier picks from other books without removing them. A character's collection switches (`sourceSwitches`, ADR-002 E2) turn a source on or off over either, in that character's pickers only; an `on` switch also brings back a file switched off on the device, for that character alone (E4's per-character view of the registry). The Build page's Content row (ADR-002 U11) shows and sets those switches, and a switch change has its own history line. Remaining: make `dataTag` and `homebrewDeps` meaningful in provenance, exports, and warnings. |
 | Table rules | Configurable rest recovery, level cap, point-buy budget, attunement, encumbrance, HP method, and source policy. |
 | Usability research | Test create, level-up, damage/rest, prepare/cast, homebrew import, history recovery, and offline use with new and experienced players. |
 
@@ -437,6 +437,16 @@ work:
   collection holds two entries of one name and book (only a hand-edited
   import does), a delete takes the first. No long press to start selecting,
   no sort, and Collections has no select mode.
+- The Build page's Content row (ADR-002 U11) lists each collection with this
+  character's switch over the device's choice, the rule packs and whom they
+  reach, and links to the Rules shelf and The books; spell, feature and item
+  sheets mark a changed entry Changed, with the book's version one tap away.
+  Left out: no Changed mark on list rows (the spell list, the Library); a
+  feature card the sheet builds anew (a race's traits, a feature whose text a
+  card writes) gets no mark, and a trait a change adds shows the book's whole
+  text; the Library and search read the device's data, not a character's
+  view; house rules stay under Identity; the Sources section's hidden-count
+  line does not yet say when the device and a switch both hide a book.
 
 ### Maintainability and diagnostics
 
