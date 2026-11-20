@@ -350,30 +350,39 @@ describe('starting equipment', () => {
     expect(gear()).toEqual(['longsword|phb']);
   });
 
-  it('waits for the items before gear can be typed, else a name would be kept as words', () => {
+  it('keeps gear typeable while the items load, and says a name typed then is kept as words', () => {
     const start = {
       name: 'Lantern',
       ...editor.blank(),
       startingEquipment: { defaultData: [{ _: ['longsword|phb'] }] },
     };
+    const box = () => screen.getByLabelText('Gear 1') as HTMLInputElement;
+    const note = () =>
+      screen.queryByText('Loading the items. A name typed now is kept as written.');
     packs.status = 'loading';
     mount(structuredClone(start), world());
-    expect((screen.getByLabelText('Gear 1') as HTMLInputElement).disabled).toBe(true);
-    expect(screen.getByText('Loading the items…')).toBeTruthy();
+    expect(box().disabled).toBe(false);
+    expect(note()).not.toBeNull();
     cleanup();
     packs.status = 'ready';
     mount(structuredClone(start), world());
-    expect((screen.getByLabelText('Gear 1') as HTMLInputElement).disabled).toBe(false);
-    expect(screen.queryByText('Loading the items…')).toBeNull();
+    expect(box().disabled).toBe(false);
+    expect(note()).toBeNull();
     // Downloaded, while the registry the editor reads is made again with them.
+    // A rebuild that fails leaves the flag up just the same, until a later one
+    // succeeds: the box stays open, and the note stays true.
     cleanup();
     const bare = normalizeDataset(
       new Map<string, unknown>([['items-base.json', { baseitem: ITEMS.slice(0, 2) }]]),
     );
     packs.refreshing = true;
-    mount(structuredClone(start), bare);
-    expect((screen.getByLabelText('Gear 1') as HTMLInputElement).disabled).toBe(true);
-    expect(screen.getByText('Loading the items…')).toBeTruthy();
+    const at = mount(structuredClone(start), bare);
+    expect(box().disabled).toBe(false);
+    expect(note()).not.toBeNull();
+    type('Gear 1', 'Bag of Holding');
+    expect(((at.draft().startingEquipment as Json).defaultData as Json[])[0]?._).toEqual([
+      { special: 'Bag of Holding' },
+    ]);
     // The player's own items are not the book's.
     cleanup();
     const own = normalizeDataset(
@@ -395,18 +404,19 @@ describe('starting equipment', () => {
     );
     expect(own.byType('item')).toHaveLength(1);
     mount(structuredClone(start), own);
-    expect((screen.getByLabelText('Gear 1') as HTMLInputElement).disabled).toBe(true);
-    // Made again without them (it failed): the box opens rather than wait for good.
+    expect(box().disabled).toBe(false);
+    expect(note()).not.toBeNull();
+    // Made again without them, the read succeeding: nothing is on its way.
     cleanup();
     packs.refreshing = false;
     mount(structuredClone(start), bare);
-    expect((screen.getByLabelText('Gear 1') as HTMLInputElement).disabled).toBe(false);
-    expect(screen.queryByText('Loading the items…')).toBeNull();
+    expect(box().disabled).toBe(false);
+    expect(note()).toBeNull();
     // Not loaded at all: the box is open, and says how a name is read.
     cleanup();
     packs.status = 'error';
     mount(structuredClone(start), bare);
-    expect((screen.getByLabelText('Gear 1') as HTMLInputElement).disabled).toBe(false);
+    expect(box().disabled).toBe(false);
     expect(
       screen.getByText(/could not be loaded, so a name not found is kept as written/),
     ).toBeTruthy();
