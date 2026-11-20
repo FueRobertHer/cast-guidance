@@ -32,7 +32,10 @@ import {
 } from './ClassEditor';
 
 // The items are in, unless a test says they are still loading.
-const packs = vi.hoisted(() => ({ status: 'ready' as 'loading' | 'ready' | 'error' }));
+const packs = vi.hoisted(() => ({
+  status: 'ready' as 'loading' | 'ready' | 'error',
+  refreshing: false,
+}));
 vi.mock('@/data5e/hooks', async (load) => ({
   ...(await load<typeof import('@/data5e/hooks')>()),
   useTypePacks: () => ({
@@ -42,10 +45,15 @@ vi.mock('@/data5e/hooks', async (load) => ({
     retry: () => undefined,
   }),
 }));
+vi.mock('@/data5e/registry', async (load) => ({
+  ...(await load<typeof import('@/data5e/registry')>()),
+  isRegistryRefreshing: () => packs.refreshing,
+}));
 
 afterEach(() => {
   cleanup();
   packs.status = 'ready';
+  packs.refreshing = false;
 });
 
 const ref = (name: string, level: number) => `${name}|Monk|XPHB|${level}`;
@@ -286,6 +294,8 @@ describe('starting equipment', () => {
       quantity: 4,
     });
     expect(gearFrom('Javelin', ['javelin|xphb'], items)).toBe('Javelin|xphb');
+    // An item named without a printing is still an item, and stays without one.
+    expect(gearFrom('pouch x2', ['pouch'], items)).toEqual({ item: 'pouch', quantity: 2 });
   });
 
   it("keeps a pouch's coins while its count is typed a key at a time", () => {
@@ -355,20 +365,50 @@ describe('starting equipment', () => {
     mount(structuredClone(start), world());
     expect((screen.getByLabelText('Gear 1') as HTMLInputElement).disabled).toBe(false);
     expect(screen.queryByText('Loading the items…')).toBeNull();
-    // Downloaded, but not yet in the registry the editor reads.
+    // Downloaded, while the registry the editor reads is made again with them.
     cleanup();
     const bare = normalizeDataset(
       new Map<string, unknown>([['items-base.json', { baseitem: ITEMS.slice(0, 2) }]]),
     );
+    packs.refreshing = true;
     mount(structuredClone(start), bare);
     expect((screen.getByLabelText('Gear 1') as HTMLInputElement).disabled).toBe(true);
+    expect(screen.getByText('Loading the items…')).toBeTruthy();
+    // The player's own items are not the book's.
+    cleanup();
+    const own = normalizeDataset(
+      new Map<string, unknown>([['items-base.json', { baseitem: ITEMS.slice(0, 2) }]]),
+    );
+    mergeHomebrew(
+      own,
+      new Map([
+        [
+          'mine',
+          {
+            _meta: { sources: [{ json: 'MyHomebrew' }] },
+            item: [{ name: 'Charm', source: 'MyHomebrew' }],
+          },
+        ],
+      ]),
+      new Map(),
+      new Set(),
+    );
+    expect(own.byType('item')).toHaveLength(1);
+    mount(structuredClone(start), own);
+    expect((screen.getByLabelText('Gear 1') as HTMLInputElement).disabled).toBe(true);
+    // Made again without them (it failed): the box opens rather than wait for good.
+    cleanup();
+    packs.refreshing = false;
+    mount(structuredClone(start), bare);
+    expect((screen.getByLabelText('Gear 1') as HTMLInputElement).disabled).toBe(false);
+    expect(screen.queryByText('Loading the items…')).toBeNull();
     // Not loaded at all: the box is open, and says how a name is read.
     cleanup();
     packs.status = 'error';
     mount(structuredClone(start), bare);
     expect((screen.getByLabelText('Gear 1') as HTMLInputElement).disabled).toBe(false);
     expect(
-      screen.getByText(/could not be loaded, so a name typed is kept as written/),
+      screen.getByText(/could not be loaded, so a name not found is kept as written/),
     ).toBeTruthy();
   });
 

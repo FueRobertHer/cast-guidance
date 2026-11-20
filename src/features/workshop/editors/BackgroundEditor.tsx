@@ -8,7 +8,7 @@
  */
 import { useState } from 'react';
 import { isRecord } from '@/engine/castGuidance';
-import { isLanguageOrToolMix } from '@/engine/effects/readers';
+import { isLanguageOrToolMix, toolOptions } from '@/engine/effects/readers';
 import { SKILLS } from '@/engine/types';
 import { fieldClass } from '@/ui/TextField';
 import { HeldCount } from '../classFields';
@@ -434,21 +434,19 @@ export const editor: EditorSpec = {
     const picks = backgroundAbilities(draft.ability);
     if (picks !== undefined && picks.length !== 0 && picks.length !== 3)
       return 'Pick three ability scores, or none.';
-    // A choice of more than it names cannot be made on the Build tab; a kind
-    // in the sheet's own words (gaming set, in any letters) names many.
+    // A choice of more than it names cannot be made on the Build tab. Tools
+    // are counted as the sheet offers them: a kind (gaming set) is each of its
+    // tools.
     for (const [raw, anyKey, kinds, what] of [
       [draft.skillProficiencies, 'any', [], 'skills'],
       [draft.toolProficiencies, 'any', TOOL_KINDS, 'tools'],
       [draft.languageProficiencies, 'anyStandard', [], 'languages'],
     ] as const) {
       const c = grantedOf(raw, anyKey, kinds)?.choice;
-      if (
-        c !== undefined &&
-        c.from.length > 0 &&
-        c.count > c.from.length &&
-        !c.from.some((f) => kinds.some(([, k]) => k === f.trim().toLowerCase()))
-      )
-        return `The ${what} of your choice are ${c.count}, from a list of ${c.from.length}. Name more, or choose fewer.`;
+      if (c === undefined || c.from.length === 0) continue;
+      const offered = what === 'tools' ? toolOptions(c.from).length : c.from.length;
+      if (c.count > offered)
+        return `The ${what} of your choice are ${c.count}, from a list of ${offered}. Name more, or choose fewer.`;
     }
     return undefined;
   },

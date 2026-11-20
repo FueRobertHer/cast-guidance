@@ -33,11 +33,20 @@
  * them wherever it is read.
  */
 import { Info, Plus, X } from 'lucide-react';
-import { lazy, type ReactNode, Suspense, useMemo, useRef, useState } from 'react';
+import {
+  lazy,
+  type ReactNode,
+  Suspense,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from 'react';
 import { Link, useLocation, useNavigate } from 'react-router';
 import { plainEntryText } from '@/data5e/entries/plainText';
 import { useTypePacks } from '@/data5e/hooks';
 import type { EntityRegistry } from '@/data5e/normalize';
+import { isRegistryRefreshing, subscribeRegistryRefreshing } from '@/data5e/registry';
 import { EFFECT_EDITIONS, isRecord, own, type StoredEffect } from '@/engine/castGuidance';
 import { SKILLS } from '@/engine/types';
 import { Button } from '@/ui/Button';
@@ -1095,12 +1104,12 @@ function coins(cp: number): string {
 }
 
 /**
- * Whether a piece of gear holds more than its words say: an item's printing,
- * a pouch's coins, a kind the creator has no words for. Coins and gear in
- * words alone (`special`) hold nothing more.
+ * Whether a piece of gear holds more than its words say: that it is an item
+ * (and its printing), a pouch's coins, a kind the creator has no words for.
+ * Coins and gear in words alone (`special`) hold nothing more.
  */
 function saysMore(e: unknown): boolean {
-  if (typeof e === 'string') return e.includes('|');
+  if (typeof e === 'string') return true;
   return (
     isRecord(e) &&
     e.value === undefined &&
@@ -1160,7 +1169,8 @@ export function gearFrom(text: string, was: readonly unknown[], items: readonly 
   // no words for. Gear in words alone is read again from the words.
   const like = was.find((e) => saysMore(e) && gearName(e)?.toLowerCase() === name.toLowerCase());
   if (typeof like === 'string') {
-    const ref = `${name}|${like.split('|')[1] ?? ''}`;
+    const source = like.split('|')[1];
+    const ref = source === undefined ? name : `${name}|${source}`;
     return counted === null ? ref : { item: ref, ...many };
   }
   if (isRecord(like)) {
@@ -1266,6 +1276,13 @@ function StartingGear({
   registry,
 }: Pick<EditorProps, 'draft' | 'change' | 'readOnly' | 'registry'>) {
   const packs = useTypePacks('item').status;
+  // Read here, not through the hook of the same name, so a test mocking the
+  // hooks module whole still renders the editor.
+  const refreshing = useSyncExternalStore(
+    subscribeRegistryRefreshing,
+    isRegistryRefreshing,
+    () => false,
+  );
   const se = isRecord(draft.startingEquipment) ? draft.startingEquipment : {};
   const groups = gearGroups(se.defaultData);
   if (groups === undefined) {
@@ -1280,9 +1297,11 @@ function StartingGear({
   const items = [...registry.byType('baseitem'), ...registry.byType('item')] as Json[];
   // Until the items are in the registry, a name typed would be kept as words,
   // not the item. A first download puts them there a moment after the pack
-  // says it is ready.
+  // says it is ready, while the registry is made again (the player's own
+  // items do not count); once that is over, landed or not, the boxes open.
   const loading =
-    packs === 'loading' || (packs === 'ready' && registry.byType('item').length === 0);
+    packs === 'loading' ||
+    (packs === 'ready' && refreshing && registry.officialCount('item') === 0);
   // The book's words for the kit (`default`, `entries`) describe the old one,
   // so they go once the gear itself changes; an empty box added, or a gear
   // made a choice of one, changes nothing the creator gives.
@@ -1400,7 +1419,7 @@ function StartingGear({
       {loading && <p className="text-caption text-ink-muted">Loading the items…</p>}
       {packs === 'error' && (
         <p className="text-caption text-ink-muted">
-          The items could not be loaded, so a name typed is kept as written.
+          Some items could not be loaded, so a name not found is kept as written.
         </p>
       )}
       <OnSheet>
