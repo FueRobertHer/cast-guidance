@@ -6,7 +6,8 @@
  * boxes, read back from what it wrote, and counted on a sheet beside one
  * without it: on the class it names, and not on the other.
  */
-import { cleanup, fireEvent, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { useState } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { CharacterDoc, DerivedSheet } from '@/engine/types';
 import {
@@ -17,10 +18,18 @@ import {
   renderCards,
   sheetWith,
 } from '../../../../tests-fixtures/cardSheet';
-import { moreKinds } from '../EffectCards';
+import { EffectCards, moreKinds, type SpellOption } from '../EffectCards';
+import { SpellChoices } from '../spellChoices';
 import { cards } from './spells';
 
-vi.mock('@/ui/dialogs', () => ({ askChoice: () => Promise.resolve(undefined) }));
+/** What More last offered. */
+const asked = vi.hoisted(() => ({ ids: [] as string[] }));
+vi.mock('@/ui/dialogs', () => ({
+  askChoice: (req: { options: Array<{ id: string }> }) => {
+    asked.ids = req.options.map((o) => o.id);
+    return Promise.resolve(undefined);
+  },
+}));
 
 afterEach(cleanup);
 
@@ -73,6 +82,19 @@ describe('Spell attacks and Spell save DC, narrowed', () => {
     // Emptied, every class's.
     change('Spell attacks: Only spells of', ' ');
     expect(again.written()).toEqual([{ kind: 'attackBonus', amount: 1, attack: 'spell' }]);
+  });
+
+  it('writes spell attacks for the spells cast with one ability', () => {
+    const cards = renderCards([make('Spell attacks')]);
+    change('Spell attacks: Cast with', 'cha');
+    expect(cards.written()).toEqual([
+      { kind: 'attackBonus', amount: 1, attack: 'spell', ability: 'cha' },
+    ]);
+    noProblems(cards.written());
+    expect(gained(cards.written())).toEqual([
+      { attack: 0, dc: 0 },
+      { attack: 1, dc: 0 },
+    ]);
   });
 
   it('writes a DC for the spells cast with one ability, and for one class', () => {
@@ -183,7 +205,7 @@ describe('Spells added to a class list', () => {
     const start = make(T);
     noProblems([start]);
     const cards = renderCards([start]);
-    line('Fireball joins each of your spell lists');
+    line('Fireball joins the list of the class that gives it, or else each of yours');
     const box = `${T}: Spells`;
     for (const typed of ['Fireball,', 'Fireball, ', 'Fireball, Aid']) {
       change(box, typed);
@@ -215,8 +237,16 @@ describe('Spells added to a class list', () => {
     const cards = renderCards([make(T)]);
     change(`${T}: Spells`, '');
     expect(cards.written()).toEqual([{ kind: 'spellListAdd' }]);
-    line('No spell yet joins each of your spell lists');
+    line('No spell yet joins the list of the class that gives it, or else each of yours');
     expect(screen.getByText(/This does not count yet: name a spell/)).toBeTruthy();
+  });
+
+  it("says the reader's own words for a file's other problem", () => {
+    renderCards([
+      { kind: 'spellListAdd', spells: Array.from({ length: 51 }, (_, i) => `Spell ${i}`) },
+    ]);
+    expect(screen.getByText(/"spells" lists at most 50/)).toBeTruthy();
+    expect(screen.queryByText(/name a spell/)).toBeNull();
   });
 });
 
@@ -230,5 +260,83 @@ describe('where the spell cards are offered', () => {
     expect(moreKinds({ inPlay: false, spells: false })).toEqual(
       expect.arrayContaining(['Spell damage', 'Spells added to a class list']),
     );
+  });
+});
+
+describe('Cast a spell, with the spells of the page', () => {
+  const PAGE: SpellOption[] = [
+    { name: 'Aid', source: 'TST' },
+    { name: 'Guidance', source: 'TST' },
+  ];
+  /** A list whose host names `spells` or none, on a page that has `page`'s. */
+  function onPage(start: Eff[], page?: readonly SpellOption[], spells?: readonly SpellOption[]) {
+    let last = start;
+    function Host() {
+      const [effects, setEffects] = useState<Eff[]>(start);
+      return (
+        <EffectCards
+          effects={effects}
+          readOnly={false}
+          spells={spells}
+          onChange={(next) => {
+            last = next as Eff[];
+            setEffects(next as Eff[]);
+          }}
+        />
+      );
+    }
+    render(
+      <SpellChoices.Provider value={page}>
+        <Host />
+      </SpellChoices.Provider>,
+    );
+    return { written: () => last };
+  }
+  const offered = async () => {
+    asked.ids = [];
+    fireEvent.click(screen.getByRole('button', { name: 'More' }));
+    await waitFor(() => expect(asked.ids.length).toBeGreaterThan(0));
+    return asked.ids;
+  };
+
+  it("offers it where the host names no spells, names the page's, and the sheet casts it", async () => {
+    const cards = onPage([], PAGE);
+    expect(await offered()).toContain('Cast a spell');
+    cleanup();
+
+    const again = onPage([make('Cast a spell')], PAGE);
+    const options = Array.from(
+      document.querySelectorAll<HTMLOptionElement>('datalist option'),
+      (o) => o.value,
+    );
+    expect(options).toEqual(['Aid', 'Guidance']);
+    change('Cast a spell: Spell', 'guidance');
+    expect(again.written()).toEqual([{ kind: 'grantSpell', spell: 'Guidance|TST' }]);
+    line('Cast Guidance at will');
+    noProblems(again.written());
+    expect(
+      sheetWith(again.written()).grantedSpells.filter((g) => g.origin === 'Card Feat'),
+    ).toEqual([expect.objectContaining({ name: 'Guidance', source: 'TST' })]);
+    expect(sheetWith([]).grantedSpells.some((g) => g.name === 'Guidance')).toBe(false);
+    expect(cards.written()).toEqual([]);
+  });
+
+  it("names the host's own spells over the page's", () => {
+    onPage([make('Cast a spell')], PAGE, [{ name: 'Flame Strike', source: 'TST' }]);
+    const options = Array.from(
+      document.querySelectorAll<HTMLOptionElement>('datalist option'),
+      (o) => o.value,
+    );
+    expect(options).toEqual(['Flame Strike']);
+  });
+
+  it('is not offered with no spells to name, nor in play', async () => {
+    onPage([]);
+    expect(await offered()).not.toContain('Cast a spell');
+    cleanup();
+    // A page whose books hold no spells.
+    onPage([], []);
+    expect(await offered()).not.toContain('Cast a spell');
+    expect(moreKinds({ inPlay: true, spells: true })).not.toContain('Cast a spell');
   });
 });

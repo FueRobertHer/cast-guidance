@@ -225,7 +225,9 @@ export const cards: readonly KindSpec[] = [
     ],
     line: (e) =>
       everyAttack(e)
-        ? `${amount(e.amount)} to every attack roll, weapon and spell${reachWords(e)}`
+        ? `${amount(e.amount)} to every attack roll, weapon and ${
+            typeof e.className === 'string' ? `${e.className} ` : ''
+          }spell${reachWords(e)}`
         : `${amount(e.amount)} to ${e.scope === 'all' || e.scope === undefined ? '' : `${String(e.scope)} `}attack rolls${reachWords(e)}`,
     boxes: (p) =>
       everyAttack(p.effect) ? (
@@ -334,6 +336,15 @@ export const cards: readonly KindSpec[] = [
       { key: 'label', label: 'Shown as', type: 'text' },
     ],
     line: (e) => `Your unarmed strike deals ${String(e.dice)}`,
+    // The sheet keeps the biggest die by its average, which it works out for
+    // dice like 1d8 alone (`averageDice`): "d8" or "1d8+1" never wins.
+    ownProblems: (problems, e) =>
+      typeof e.dice === 'string' && e.dice.trim() !== '' && !/^\d+d\d+$/.test(e.dice.trim())
+        ? [
+            ...problems,
+            'dice written as 1d8, a number of dice and their size alone, so the sheet can weigh them',
+          ]
+        : problems,
     notInPlay: true,
   },
 ];

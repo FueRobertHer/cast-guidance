@@ -804,19 +804,25 @@ const offerLine = (e: Eff) =>
 
 /**
  * A die offered after a roll's own controls: when the prompt offers it (after
- * any roll, or only one that failed, never on initiative, which cannot fail),
- * and whether it is spent once taken (Guidance), or offered on every roll.
+ * any roll, or only one that failed; initiative cannot fail, so a file's
+ * failed one there shows as written), and whether it is spent once taken
+ * (Guidance). The sheet spends a die once only for an effect in play (a
+ * spell's while it lasts, Counts when): on an entry's own list it is offered
+ * on every roll, so the tick shows there only to take back one a file holds.
  */
 function OfferFields({
   effect,
   title,
+  inPlay,
   onChange,
 }: {
   effect: Eff;
   title: string;
+  inPlay: boolean;
   onChange: (next: Eff) => void;
 }) {
   const failed = effect.ifFailed === true ? 'failed' : '';
+  const once = effect.once === true;
   return (
     <>
       {/* Across the card: half a phone's width cuts "After a failed roll" off. */}
@@ -830,7 +836,7 @@ function OfferFields({
               ? offering(
                   OFFERED.filter(([v]) => v !== 'failed'),
                   failed,
-                  FAILED_ON_INITIATIVE,
+                  'After a failed roll, as written',
                 )
               : OFFERED
           }
@@ -839,18 +845,25 @@ function OfferFields({
           }
         />
       </div>
-      <label className="col-span-2 flex min-h-tap items-center gap-2.5 text-body">
-        <input
-          type="checkbox"
-          className="size-4.5 accent-ink"
-          aria-label={`${title}: Used once`}
-          checked={effect.once === true}
-          onChange={(x) =>
-            onChange(x.target.checked ? { ...effect, once: true } : omit(effect, ['once']))
-          }
-        />
-        Used once, then it is gone
-      </label>
+      {(inPlay || once) && (
+        <label className="col-span-2 flex min-h-tap items-center gap-2.5 text-body">
+          <input
+            type="checkbox"
+            className="size-4.5 accent-ink"
+            aria-label={`${title}: Used once`}
+            checked={once}
+            onChange={(x) =>
+              onChange(x.target.checked ? { ...effect, once: true } : omit(effect, ['once']))
+            }
+          />
+          Used once, then it is gone
+        </label>
+      )}
+      {once && !inPlay && (
+        <p className="col-span-2 text-caption text-ink-muted">
+          Used once only in play: on this list it is offered on every roll.
+        </p>
+      )}
     </>
   );
 }
@@ -919,19 +932,19 @@ export const cards: readonly KindSpec[] = [
     kinds: ['rollOffer'],
     add: 'Die offered after a roll',
     does: 'A die you may add after you see the d20, as Guidance or Bardic Inspiration offers',
-    make: () => ({
-      kind: 'rollOffer',
-      dice: '1d4',
-      on: { rolls: ['check'] },
-      ifFailed: true,
-      once: true,
-    }),
+    // Offered on every roll: used once is spent only in play (`OfferFields`).
+    make: () => ({ kind: 'rollOffer', dice: '1d4', on: { rolls: ['check'] }, ifFailed: true }),
     fields: [{ key: 'dice', label: 'Dice', type: 'dice' }],
     line: offerLine,
     boxes: (p) => (
       <>
         {paidOn(p)}
-        <OfferFields effect={p.effect} title={p.title} onChange={p.onChange} />
+        <OfferFields
+          effect={p.effect}
+          title={p.title}
+          inPlay={p.inPlay === true || p.atMoment === true}
+          onChange={p.onChange}
+        />
       </>
     ),
   },

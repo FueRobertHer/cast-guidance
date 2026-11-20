@@ -4,7 +4,7 @@
  * uses back on a short rest. Each is worked through its boxes, read back from
  * what it wrote, and counted on a sheet beside one without it.
  */
-import { cleanup, screen } from '@testing-library/react';
+import { cleanup, fireEvent, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   boxValue,
@@ -117,6 +117,27 @@ describe('Uses back on a short rest', () => {
     cleanup();
     renderCards(cards.written());
     expect(boxValue(`${T}: Pool's key`)).toBe('grit');
+  });
+
+  it("follows its pool's rename, and leaves another pool's alone", () => {
+    const cards = renderCards([
+      POOL,
+      OTHER,
+      { kind: 'resourceRegain', key: 'grit', amount: 1 },
+      { kind: 'resourceRegain', key: 'luck', amount: 1 },
+    ]);
+    const name = screen.getAllByLabelText('Uses per rest: Name')[0] as HTMLInputElement;
+    expect(name.value).toBe('Grit');
+    fireEvent.change(name, { target: { value: 'Fury' } });
+    const [pool, , regain, other] = cards.written();
+    expect(pool?.key).not.toBe('grit');
+    expect(regain).toEqual({ kind: 'resourceRegain', key: pool?.key, amount: 1 });
+    expect(other).toEqual({ kind: 'resourceRegain', key: 'luck', amount: 1 });
+    noProblems(cards.written());
+    expect(screen.queryByText(UNKNOWN)).toBeNull();
+    expect(
+      sheetWith(cards.written()).resources.find((r) => r.key === pool?.key)?.regainOnShort,
+    ).toBe(1);
   });
 
   it("lists another entry's pools handed in, as a class's are", () => {

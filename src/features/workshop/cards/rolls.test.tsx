@@ -7,6 +7,7 @@
  */
 import { cleanup, fireEvent, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { conditionMechanics } from '@/engine/conditions';
 import { rollEffects } from '@/engine/playRules';
 import {
   boxValue,
@@ -97,17 +98,22 @@ describe('Die offered after a roll', () => {
   const T = 'Die offered after a roll';
   const offered = (effects: Eff[], test: Parameters<typeof rollEffects>[1]) =>
     rollEffects(sheetWith(effects), test).offers.filter((o) => o.source === 'Card Feat');
+  const caption = /Used once only in play/;
 
-  it("starts as Guidance's, writes its dice, roll, timing and once, and the prompt offers it", () => {
+  it('starts on every failed check, writes its dice, roll and timing, and the prompt offers it', () => {
     const start = make(T);
     noProblems([start]);
     const cards = renderCards([start]);
-    line('Add 1d4 to one of your ability checks, after you see the d20, if it failed');
+    line('Add 1d4 to your ability checks, after you see the d20, if it failed');
+    expect(offered([start], { kind: 'check', ability: 'int' })).toEqual([
+      { dice: '1d4', source: 'Card Feat', once: false, ifFailed: true },
+    ]);
+    // On an entry's own list the sheet spends no die once: no tick to promise it.
+    expect(screen.queryByLabelText(`${T}: Used once`)).toBeNull();
     change(`${T}: Dice`, '1d6');
     change(`${T}: On`, 'save');
     change(`${T}: Ability`, 'wis');
     change(`${T}: Offered`, '');
-    fireEvent.click(tick(`${T}: Used once`));
     expect(cards.written()).toEqual([
       { kind: 'rollOffer', dice: '1d6', on: { rolls: ['save'], abilities: ['wis'] } },
     ]);
@@ -126,31 +132,58 @@ describe('Die offered after a roll', () => {
     expect(boxValue(`${T}: On`)).toBe('save');
     expect(boxValue(`${T}: Ability`)).toBe('wis');
     expect(boxValue(`${T}: Offered`)).toBe('');
-    expect(tick(`${T}: Used once`).checked).toBe(false);
     expect(again.written()).toEqual(cards.written());
   });
 
-  it('offers a failed roll alone, then once', () => {
-    const cards = renderCards([make(T)]);
+  it('is used once in play, as Guidance is', () => {
+    const cards = renderCards([make(T)], { inPlay: true });
+    fireEvent.click(tick(`${T}: Used once`));
     expect(cards.written()).toEqual([
       { kind: 'rollOffer', dice: '1d4', on: { rolls: ['check'] }, ifFailed: true, once: true },
     ]);
-    expect(offered(cards.written(), { kind: 'check', ability: 'int' })).toEqual([
-      { dice: '1d4', source: 'Card Feat', once: true, ifFailed: true },
+    line('Add 1d4 to one of your ability checks, after you see the d20, if it failed');
+    expect(screen.queryByText(caption)).toBeNull();
+    noProblems(cards.written());
+  });
+
+  it("shows a file's once on an entry's own list, says it is not, and takes it back", () => {
+    const cards = renderCards([
+      { kind: 'rollOffer', dice: '1d4', on: { rolls: ['check'] }, once: true },
     ]);
+    expect(tick(`${T}: Used once`).checked).toBe(true);
+    expect(screen.getByText(caption)).toBeTruthy();
+    fireEvent.click(tick(`${T}: Used once`));
+    expect(cards.written()).toEqual([{ kind: 'rollOffer', dice: '1d4', on: { rolls: ['check'] } }]);
+    expect(screen.queryByLabelText(`${T}: Used once`)).toBeNull();
+    expect(screen.queryByText(caption)).toBeNull();
+  });
+
+  it('counts as a new card on a condition, which offers a die on every roll', () => {
+    expect(conditionMechanics({ castGuidance: { v: 1, effects: [make(T)] } }).problems).toEqual([]);
   });
 
   it('never waits on a failed initiative, which cannot fail', () => {
     const cards = renderCards([make(T)]);
     change(`${T}: On`, 'initiative');
     expect(cards.written()).toEqual([
-      { kind: 'rollOffer', dice: '1d4', on: { rolls: ['check'], initiative: true }, once: true },
+      { kind: 'rollOffer', dice: '1d4', on: { rolls: ['check'], initiative: true } },
     ]);
     expect(options(`${T}: Offered`)).toEqual(['']);
     noProblems(cards.written());
     expect(offered(cards.written(), { kind: 'initiative' })).toEqual([
-      { dice: '1d4', source: 'Card Feat', once: true, ifFailed: false },
+      { dice: '1d4', source: 'Card Feat', once: false, ifFailed: false },
     ]);
+    cleanup();
+    // A file's, which the prompt offers with "if it failed", is kept as written.
+    renderCards([
+      {
+        kind: 'rollOffer',
+        dice: '1d4',
+        on: { rolls: ['check'], initiative: true },
+        ifFailed: true,
+      },
+    ]);
+    expect(screen.getByRole('option', { name: 'After a failed roll, as written' })).toBeTruthy();
   });
 
   it('offers the rolls a prompt can wait on: no death or concentration save', () => {

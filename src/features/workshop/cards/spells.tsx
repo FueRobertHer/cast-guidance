@@ -156,11 +156,13 @@ function ClassBox({
   effect,
   title,
   label,
+  placeholder = 'Any class',
   onChange,
 }: {
   effect: Eff;
   title: string;
   label: string;
+  placeholder?: string;
   onChange: (next: Eff) => void;
 }) {
   return (
@@ -168,7 +170,7 @@ function ClassBox({
       <input
         aria-label={`${title}: ${label}`}
         value={typeof effect.className === 'string' ? effect.className : ''}
-        placeholder="Any class"
+        placeholder={placeholder}
         onChange={(e) =>
           onChange(
             e.target.value.trim() === ''
@@ -410,8 +412,10 @@ function addedWords(e: Eff): string {
   const which = named.length === 0 ? 'No spell yet' : listed(named);
   const cls = classWord(e);
   const joins = named.length > 1 ? 'join' : 'joins';
+  // With no class named, a class's or subclass's own feature widens that
+  // class's list alone, and anything else every list (`calc/slots.ts`).
   return cls === ''
-    ? `${which} ${joins} each of your spell lists`
+    ? `${which} ${joins} the list of the class that gives it, or else each of yours`
     : `${which} ${joins} your ${cls}spell list`;
 }
 
@@ -468,10 +472,16 @@ export const cards: readonly KindSpec[] = [
           placeholder="Fireball, Haste"
           onChange={p.onChange}
         />
-        <ClassBox effect={p.effect} title={p.title} label="Class list" onChange={p.onChange} />
+        <ClassBox
+          effect={p.effect}
+          title={p.title}
+          label="Class list"
+          placeholder="Its class, or each"
+          onChange={p.onChange}
+        />
       </>
     ),
-    problemWords: (p) => (p.startsWith('"spells"') ? 'name a spell' : undefined),
+    problemWords: (p) => (p === '"spells" is missing' ? 'name a spell' : undefined),
     notInPlay: true,
   },
   {

@@ -130,6 +130,15 @@ describe('Attack rolls, narrowed', () => {
     change('Attack rolls: With', 'str');
     line('+1 to every attack roll, weapon and spell, using Strength');
     noProblems(cards.written());
+    // Strength's: the Longsword and the punch, not the Shortbow.
+    expect(toHitGained(cards.written())).toEqual([1, 0, 1]);
+  });
+
+  it("says a file's one class's spells, which it has no box for", () => {
+    renderCards([
+      { kind: 'attackBonus', amount: 1, scope: 'all', attack: 'any', className: 'Mage' },
+    ]);
+    line('+1 to every attack roll, weapon and Mage spell');
   });
 });
 
@@ -289,6 +298,29 @@ describe('Bigger unarmed strike', () => {
     cleanup();
     renderCards(cards.written());
     expect(boxValue(`${T}: Dice`)).toBe('1d8');
+  });
+
+  it('says a die the sheet cannot weigh does not count', () => {
+    const cards = renderCards([make(T)]);
+    const why = /dice written as 1d8, a number of dice and their size alone/;
+    for (const dice of ['d8', '1d8+1']) {
+      change(`${T}: Dice`, dice);
+      expect(screen.getByText(why)).toBeTruthy();
+      // The reader takes it, and the sheet's punch stays as it was.
+      noProblems(cards.written());
+      expect(row(sheetWith(cards.written()), 'Unarmed Strike').damage).toBe(
+        row(sheetWith([]), 'Unarmed Strike').damage,
+      );
+    }
+    change(`${T}: Dice`, '1d10');
+    expect(screen.queryByText(why)).toBeNull();
+    // The reader trims what is typed, so spaces round good dice still count.
+    change(`${T}: Dice`, ' 1d10 ');
+    expect(screen.queryByText(why)).toBeNull();
+    expect(row(sheetWith(cards.written()), 'Unarmed Strike').damage).toBe(
+      row(sheetWith([{ kind: 'unarmedDamage', label: 'Fists', dice: '1d10' }]), 'Unarmed Strike')
+        .damage,
+    );
   });
 });
 
