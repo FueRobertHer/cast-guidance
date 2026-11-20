@@ -10,7 +10,9 @@ import { createMemoryRouter, RouterProvider } from 'react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { routes } from '@/app/routes';
 import { markDataChanged } from '@/data5e/landing';
+import { identityKey } from '@/data5e/normalize';
 import { getRegistry, invalidateRegistry } from '@/data5e/registry';
+import { registryViewFor } from '@/data5e/registryView';
 import { writeSourcePolicy } from '@/data5e/sourceFilter';
 import { characterRepo } from '@/db/characterRepo';
 import { db } from '@/db/db';
@@ -317,6 +319,27 @@ describe('Needs a look', () => {
     expect(list.textContent).toContain('Undertow');
   });
 
+  it('appears while the page is open, when the collection updates under a change', async () => {
+    await seedWorld();
+    await homebrewRepo.importJson(tide(BASE), 'Tide.json');
+    const reg = await getRegistry();
+    const placed = reg.get('feat', 'Glimmer', 'TID');
+    if (placed === undefined) throw new Error('no Glimmer');
+    const original = reg.belowOwnChange(placed) as Json;
+    const change = writeChange('feat', original, {
+      ...original,
+      entries: ['Glow brightly.', 'Shine.'],
+    });
+    await homebrewRepo.saveEntry('feat', change as Json & EntryKey, { role: 'changes' });
+    const first = (await db.homebrewFiles.toArray()).find((r) => r.fileName === 'Tide.json');
+    visit(collectionPath(first?.key ?? ''));
+    await screen.findByRole('list', { name: 'In Tide.json' }, { timeout: WAIT });
+    expect(screen.queryByRole('list', { name: 'Needs a look' })).toBeNull();
+    await homebrewRepo.importJson(tide(['Glow.', 'Shine on.']), 'Tide.json');
+    const list = await screen.findByRole('list', { name: 'Needs a look' }, { timeout: WAIT });
+    expect(list.textContent).toContain('Yours: Glow brightly. Shine on.');
+  });
+
   it('appears while the page is open, when the books under a change land new words', async () => {
     const lumen = (entries: unknown[]) => ({
       feat: [{ name: 'Lumen', source: 'TST', entries }],
@@ -417,12 +440,23 @@ describe('Changes to the books', () => {
     await waitFor(async () => expect((await chip()).getAttribute('aria-pressed')).toBe('true'), {
       timeout: WAIT,
     });
+    // What the chip says is what Osk's pickers read: the change, over the book's.
+    const glimmer = async () => {
+      const doc = await characterRepo.get(osk.id);
+      if (doc === undefined) throw new Error('no Osk');
+      return registryViewFor(await getRegistry(), doc).get('feat', 'Glimmer', 'TID')?.entries;
+    };
+    expect(await glimmer()).toEqual(['Glow brightly.']);
     fireEvent.click(await chip());
     await waitFor(
       async () =>
         expect((await characterRepo.get(osk.id))?.sourceSwitches).toEqual({ off: ['MyChanges'] }),
       { timeout: WAIT },
     );
+    await waitFor(async () => expect((await chip()).getAttribute('aria-pressed')).toBe('false'), {
+      timeout: WAIT,
+    });
+    expect(await glimmer()).toEqual(['Glow.']);
   });
 
   it("lists a change to a class's feature, which stands alone", async () => {
@@ -447,5 +481,50 @@ describe('Changes to the books', () => {
     );
     expect(within(held).getByText('Second Wind')).toBeTruthy();
     expect(screen.queryByText('Nothing in it yet.')).toBeNull();
+    // It opens in the Library by its whole identity, and deletes as the change it is.
+    const open = within(held).getByRole('link', { name: /^Second Wind/ });
+    expect(open.getAttribute('href')).toBe(
+      `/library/classFeature/${encodeURIComponent(identityKey('classFeature', keys))}`,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'More for Second Wind' }));
+    const menu = await screen.findByRole('dialog', { name: 'Second Wind' }, { timeout: WAIT });
+    fireEvent.click(within(menu).getByRole('button', { name: /^Delete/ }));
+    const ask = await screen.findByRole(
+      'dialog',
+      { name: 'Delete Second Wind?' },
+      { timeout: WAIT },
+    );
+    fireEvent.click(within(ask).getByRole('button', { name: 'Delete' }));
+    await screen.findByText('Nothing in it yet.', {}, { timeout: WAIT });
+    const { file } = await homebrewRepo.getSafe(fileId);
+    expect(file?.json.classFeature).toEqual([]);
+  });
+
+  it("opens a change to a class's feature on its Library page", async () => {
+    await seedWorld();
+    // A feature the books hold, so its Library page is there.
+    const keys = {
+      name: 'Expertise',
+      source: 'TST',
+      className: 'Sneak',
+      classSource: 'TST',
+      level: 1,
+    };
+    const { fileId } = await homebrewRepo.saveEntry(
+      'classFeature',
+      { ...keys, entries: ['Sharper still.'], _copy: { ...keys } } as Json & EntryKey,
+      { role: 'changes' },
+    );
+    visit(collectionPath(fileId));
+    const held = await screen.findByRole(
+      'list',
+      { name: 'In Changes to the books' },
+      { timeout: WAIT },
+    );
+    fireEvent.click(within(held).getByRole('link', { name: /^Expertise/ }));
+    expect(
+      await screen.findByRole('heading', { level: 1, name: 'Expertise' }, { timeout: WAIT }),
+    ).toBeTruthy();
+    expect(await screen.findByText('Sharper still.', {}, { timeout: WAIT })).toBeTruthy();
   });
 });
