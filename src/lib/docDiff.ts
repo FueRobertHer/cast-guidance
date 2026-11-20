@@ -6,7 +6,7 @@
  * Lines read "from → to", neutral about direction, so the same helper serves a
  * restore preview (current → snapshot) and an undo (now → before).
  */
-import { characterSourceList } from '@/data5e/sourceNames';
+import { characterSourceList, characterSourceSwitches, sourceName } from '@/data5e/sourceNames';
 import type { TableRuleChoices, TableRuleId } from '@/engine/castGuidance';
 import { addedSpellsOf } from '@/engine/effects/addedSpells';
 import {
@@ -421,6 +421,34 @@ function sourcesLine(from: unknown, to: unknown): string {
     : 'Source order';
 }
 
+/** How a character's switches set one source, as its pickers read them (off wins). */
+function switchState(raw: unknown): (source: string) => 'on' | 'off' | 'as this device' {
+  const { on, off } = characterSourceSwitches(raw);
+  return (s) => (off.includes(s) ? 'off' : on.includes(s) ? 'on' : 'as this device');
+}
+
+/**
+ * The character's collection switches (ADR-002, D3): each source whose state
+ * moved, named as the Content row names it ("Collections: Changes to the
+ * books off"). Read as the pickers read them, so junk or a respelling the
+ * reader canonicalizes is no change; `undefined` when nothing moved.
+ */
+function switchesLine(from: unknown, to: unknown): string | undefined {
+  const before = switchState(from);
+  const after = switchState(to);
+  const a = characterSourceSwitches(from);
+  const b = characterSourceSwitches(to);
+  const moved = [...new Set([...a.on, ...a.off, ...b.on, ...b.off])]
+    .filter((s) => before(s) !== after(s))
+    .map((s) => `${sourceName(s)} ${after(s)}`);
+  if (moved.length === 0) return undefined;
+  const shown =
+    moved.length > 3
+      ? `${moved.slice(0, 3).join(', ')} +${moved.length - 3} more`
+      : moved.join(', ');
+  return `Collections: ${shown}`;
+}
+
 function refChange(
   out: DocChange[],
   kind: ChangeKind,
@@ -712,6 +740,8 @@ export function diffDocs(from: CharacterDoc, to: CharacterDoc): DocChange[] {
       structural: false,
     });
   }
+  const switches = switchesLine(from.sourceSwitches, to.sourceSwitches);
+  if (switches !== undefined) out.push({ kind: 'sources', line: switches, structural: false });
   abilityChanges(out, from, to);
   const keys = new Set([...Object.keys(from.choices), ...Object.keys(to.choices)]);
   const differing = [...keys].filter((k) => !same(from.choices[k], to.choices[k])).length;

@@ -55,6 +55,7 @@ import { listClass } from '@/ui/surfaces';
 import { TextField } from '@/ui/TextField';
 import { UndoBar } from '@/ui/UndoBar';
 import { CharacterSourcesSection } from './CharacterSourcesSection';
+import { ContentSection } from './ContentSection';
 import {
   cueKey,
   type EditionCue,
@@ -533,6 +534,9 @@ export function Component() {
           </span>
         </button>
       )}
+
+      {/* First, as it decides what the pickers below offer (board 11). */}
+      <ContentSection doc={doc} update={update} registry={registry} />
 
       <Section title="Identity" summary={`${doc.rulesVersion} rules`} defaultOpen>
         <TextField

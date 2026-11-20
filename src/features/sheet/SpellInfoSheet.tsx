@@ -5,6 +5,7 @@ import { useRegistry, useTypePacks } from '@/data5e/hooks';
 import { pickForVersion, type RulesVersion } from '@/data5e/rulesVersion';
 import { headerFacts } from '@/features/library/fmt';
 import { useDbLifecycle } from '@/stores/dbLifecycle';
+import { ChangedBadge, ChangedVersions, changeIn, sameWords } from '@/ui/EntityInfoSheet';
 import { PackProblem } from '@/ui/PackProblem';
 import { Sheet, SheetStandIn, useSheetOpenOnMount } from '@/ui/sheet';
 
@@ -95,8 +96,13 @@ function SpellInfoSheetContent({
     return version !== undefined ? pickForVersion(cands, version) : cands[0];
   }, [registry, name, source, version]);
 
-  const facts = spell !== undefined ? headerFacts('spell', spell) : [];
-  const higher = spell?.entriesHigherLevel;
+  // A change to the books this character plays (ADR-002, D2 and D3), and the
+  // book's version whole, facts and higher-level text too, one tap away.
+  const record = changeIn(registry, spell);
+  const [book, setBook] = useState(false);
+  const shown = book && record !== undefined ? record.base : spell;
+  const facts = shown !== undefined ? headerFacts('spell', shown) : [];
+  const higher = shown?.entriesHigherLevel;
 
   return (
     <Sheet.Root open={open} onOpenChange={setOpen}>
@@ -114,10 +120,23 @@ function SpellInfoSheetContent({
           className="flex max-h-[80dvh] flex-col"
         >
           <Sheet.Heading aside={subtitle}>
-            <span className="capitalize">{spell !== undefined ? String(spell.name) : name}</span>
+            <span className="capitalize">{shown !== undefined ? String(shown.name) : name}</span>
+            {record !== undefined && <ChangedBadge />}
           </Sheet.Heading>
+          {registry !== null && record !== undefined && spell !== undefined && (
+            <ChangedVersions
+              registry={registry}
+              record={record}
+              book={book}
+              same={
+                sameWords(record.base.entries, spell.entries) &&
+                sameWords(record.base.entriesHigherLevel, spell.entriesHigherLevel)
+              }
+              onFlip={() => setBook((b) => !b)}
+            />
+          )}
           <div className="min-h-0 flex-1 overflow-y-auto text-body">
-            {spell === undefined ? (
+            {shown === undefined ? (
               packs.status === 'error' ? (
                 // Inside the modal the shell's banner is hidden, so this is
                 // the one alert about the failure (docs/a11y-audit.md).
@@ -145,7 +164,7 @@ function SpellInfoSheetContent({
                     ))}
                   </div>
                 )}
-                <EntriesView entries={spell.entries} />
+                <EntriesView entries={shown.entries} />
                 {Array.isArray(higher) && higher.length > 0 && <EntriesView entries={higher} />}
               </>
             )}

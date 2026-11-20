@@ -1,7 +1,10 @@
-import { type ReactNode, useState } from 'react';
+import { type ReactNode, useMemo, useState } from 'react';
 import { EntriesView } from '@/data5e/entries/renderEntries';
+import { useRegistry } from '@/data5e/hooks';
+import type { ChangedEntry, EntityRegistry } from '@/data5e/normalize';
 import type { FeatureCard } from '@/engine/types';
 import { stripTrailingParenthetical } from '@/lib/trailingParenthetical';
+import { ChangedBadge, ChangedVersions, sameWords } from './EntityInfoSheet';
 import { Sheet, SheetStandIn, useSheetOpenOnMount } from './sheet';
 
 /**
@@ -49,6 +52,64 @@ export function findFeatureInfo(
   return undefined;
 }
 
+type Step = readonly ['entries' | 'items', number];
+
+const isNode = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null;
+
+/** The steps from `node` to the part whose `entries` are `target`, by identity. */
+function pathTo(node: unknown, target: unknown, depth = 0): Step[] | undefined {
+  if (!isNode(node)) return undefined;
+  if (node.entries === target) return [];
+  if (depth >= 16) return undefined;
+  for (const key of ['entries', 'items'] as const) {
+    const list = node[key];
+    if (!Array.isArray(list)) continue;
+    for (let i = 0; i < list.length; i++) {
+      const rest = pathTo(list[i], target, depth + 1);
+      if (rest !== undefined) return [[key, i], ...rest];
+    }
+  }
+  return undefined;
+}
+
+function follow(node: unknown, path: readonly Step[]): unknown {
+  let at = node;
+  for (const [key, i] of path) {
+    const list = isNode(at) ? at[key] : undefined;
+    at = Array.isArray(list) ? list[i] : undefined;
+  }
+  return at;
+}
+
+/**
+ * The change to the books whose rules text a feature card shows (ADR-002,
+ * D2), and that text as the book has it. A card holds its entry's own
+ * `entries` (a class feature's, a feat's, a race's), or a part of them found
+ * by name (a race's trait), so the record is the one whose changed version
+ * holds them. Text a card builds anew finds none, and shows no badge.
+ */
+export function changeHolding(
+  registry: EntityRegistry | null,
+  entries: unknown,
+): { record: ChangedEntry; book: unknown } | undefined {
+  if (registry === null || !Array.isArray(entries)) return undefined;
+  for (const record of registry.changedEntries()) {
+    if (record.placed === record.base) continue;
+    const path = pathTo(record.placed, entries);
+    if (path === undefined) continue;
+    const mine = follow(record.placed, path);
+    const theirs = follow(record.base, path);
+    // The book's part at the same place, when it is the same part; else the
+    // book's whole text, as a change that adds a part has nothing below it.
+    const same = path.length === 0 || (isNode(mine) && isNode(theirs) && mine.name === theirs.name);
+    return {
+      record,
+      book: same && isNode(theirs) ? (theirs.entries ?? []) : (record.base.entries ?? []),
+    };
+  }
+  return undefined;
+}
+
 /**
  * Tap-to-explain bottom sheet: shows a feature's full rules text right where
  * the player is, instead of sending them hunting through the Features tab.
@@ -77,6 +138,9 @@ export function FeatureInfoSheet(props: FeatureInfoSheetProps) {
 function FeatureInfoSheetContent({ title, subtitle, entries, trigger }: FeatureInfoSheetProps) {
   // Mounted by the press that opens it; see `useSheetOpenOnMount`.
   const [open, setOpen] = useSheetOpenOnMount();
+  const registry = useRegistry();
+  const change = useMemo(() => changeHolding(registry, entries), [registry, entries]);
+  const [book, setBook] = useState(false);
 
   return (
     <Sheet.Root open={open} onOpenChange={setOpen}>
@@ -87,12 +151,24 @@ function FeatureInfoSheetContent({ title, subtitle, entries, trigger }: FeatureI
           {/* The subtitle (where it comes from, what it costs) can run long,
               so it takes a line under the title rather than the heading's
               aside on its right. */}
-          <Sheet.Heading>{title}</Sheet.Heading>
+          <Sheet.Heading>
+            {title}
+            {change !== undefined && <ChangedBadge />}
+          </Sheet.Heading>
           {subtitle !== undefined && (
             <p className="-mt-2 mb-3 shrink-0 text-caption text-ink-muted">{subtitle}</p>
           )}
+          {registry !== null && change !== undefined && (
+            <ChangedVersions
+              registry={registry}
+              record={change.record}
+              book={book}
+              same={sameWords(change.book, entries)}
+              onFlip={() => setBook((b) => !b)}
+            />
+          )}
           <div className="min-h-0 flex-1 overflow-y-auto text-body">
-            <EntriesView entries={entries} />
+            <EntriesView entries={book && change !== undefined ? change.book : entries} />
           </div>
         </Sheet.Panel>
       </Sheet.Portal>

@@ -10,6 +10,7 @@ import {
   useSourcePolicy,
 } from '@/data5e/sourceFilter';
 import {
+  characterSourceSwitches,
   SOURCE_GROUP_LABELS,
   SOURCE_GROUPS,
   type SourceGroup,
@@ -25,6 +26,30 @@ import { Chip } from '@/ui/Chip';
 import { outOfPolicyPicks } from './sourceCues';
 
 const sorted = (list: Iterable<string>) => [...list].sort();
+
+/** A character's switches as its pickers read them: off wins, codes compared exactly. */
+interface Switches {
+  on: readonly string[];
+  off: readonly string[];
+}
+
+/** How a switch under Content sets a book, over the list: `undefined` when none names it. */
+function switchOf(switches: Switches, source: string): 'on' | 'off' | undefined {
+  if (switches.off.includes(source)) return 'off';
+  return switches.on.includes(source) ? 'on' : undefined;
+}
+
+/**
+ * The section's summary, from the list and the switches together (E2): a
+ * character with switches and no list is not "No restriction".
+ */
+export function sourcesSummary(list: readonly string[], switches: Switches): string {
+  const n = new Set([...switches.off, ...switches.on]).size;
+  const listed = `${list.length} book${list.length === 1 ? '' : 's'}`;
+  if (n === 0) return list.length === 0 ? 'No restriction' : listed;
+  const switched = `${n} switched under Content`;
+  return list.length === 0 ? `No list, ${switched}` : `${listed}, ${switched}`;
+}
 const sameList = (a: readonly string[], b: readonly string[]) =>
   a.length === b.length && a.every((s, i) => s === b[i]);
 
@@ -80,6 +105,9 @@ export function CharacterSourcesSection({
 }) {
   const [open, setOpen] = useState(false);
   const list = useMemo(() => sorted(characterSourceList(doc.allowedSources)), [doc.allowedSources]);
+  // Read as the pickers read them: the reader lets off win.
+  const switches = useMemo(() => characterSourceSwitches(doc.sourceSwitches), [doc.sourceSwitches]);
+  const hasSwitches = switches.on.length > 0 || switches.off.length > 0;
   const outside = useMemo(
     () => outOfPolicyPicks(doc, sheet.resolvedChoices),
     [doc, sheet.resolvedChoices],
@@ -103,9 +131,7 @@ export function CharacterSourcesSection({
       <summary className="flex min-h-tap cursor-pointer flex-wrap items-center justify-between gap-x-2 px-4 py-2.5">
         <span className="text-heading">Sources</span>
         <span className="flex items-center gap-2 text-caption text-ink-muted">
-          {list.length === 0
-            ? 'No restriction'
-            : `${list.length} book${list.length === 1 ? '' : 's'}`}
+          {sourcesSummary(list, switches)}
           <ChevronUp size={16} aria-hidden className="transition-transform group-open:rotate-180" />
         </span>
       </summary>
@@ -114,6 +140,8 @@ export function CharacterSourcesSection({
           The books this character&apos;s table allows. With a list here, this character&apos;s
           pickers show only these books instead of this device&apos;s source settings. Nothing
           already on the character is removed.
+          {hasSwitches &&
+            ' The switches under Content go over this list: a book switched off there stays off here.'}
         </p>
         {/* Chips with a 44px tap from their transparent border, so the row
             pulls in by that border to line up with the text (as Settings'
@@ -143,12 +171,16 @@ export function CharacterSourcesSection({
               Already on this character from books outside its sources ({outside.length})
             </span>
             <p>{outside.map((p) => `${p.label} (${sourceName(p.source)})`).join(', ')}.</p>
-            <p className="text-ink-muted">These stay. The list only narrows what you pick next.</p>
+            <p className="text-ink-muted">
+              {hasSwitches
+                ? 'These stay. The list and the switches under Content only narrow what you pick next.'
+                : 'These stay. The list only narrows what you pick next.'}
+            </p>
           </div>
         )}
         {/* The full checklist only renders while the section is open: it can
             run to a couple of hundred books, and it needs the registry. */}
-        {open && <SourceChecklist list={list} onChange={write} />}
+        {open && <SourceChecklist list={list} switches={switches} onChange={write} />}
       </div>
     </details>
   );
@@ -169,9 +201,11 @@ interface Row {
 
 function SourceChecklist({
   list,
+  switches,
   onChange,
 }: {
   list: readonly string[];
+  switches: Switches;
   onChange: (next: string[]) => void;
 }) {
   const registry = useRegistry();
@@ -184,6 +218,7 @@ function SourceChecklist({
     [],
   );
   const lastHintId = useId();
+  const switchHintId = useId();
   const onDevice = useMemo(() => sorted(registry?.sourceCounts().keys() ?? []), [registry]);
 
   const rows: Row[] = useMemo(() => {
@@ -199,7 +234,12 @@ function SourceChecklist({
   }, [onDevice, list, brewSources]);
 
   const restricted = list.length > 0;
-  const isOn = (source: string) => !restricted || list.includes(source);
+  // A switch under Content wins over the list, as in the pickers, so its
+  // book is ticked as the switch says and left to the switch.
+  const isOn = (source: string) => {
+    const by = switchOf(switches, source);
+    return by === undefined ? !restricted || list.includes(source) : by === 'on';
+  };
 
   const toggle = (source: string, enabled: boolean) => {
     // From no restriction, unticking one book means "every book here but
@@ -218,6 +258,7 @@ function SourceChecklist({
     // Unticking the only book would leave an empty list, which means no
     // restriction at all: the opposite of what the tap asked for.
     const last = restricted && list.length === 1 && list[0] === r.source;
+    const by = switchOf(switches, r.source);
     return (
       <label
         key={r.source}
@@ -226,14 +267,17 @@ function SourceChecklist({
         <input
           type="checkbox"
           checked={isOn(r.source)}
-          disabled={last}
-          aria-describedby={last ? lastHintId : undefined}
+          disabled={last || by !== undefined}
+          aria-describedby={by !== undefined ? switchHintId : last ? lastHintId : undefined}
           onChange={(e) => toggle(r.source, e.target.checked)}
           className="size-4 shrink-0 accent-ink"
         />
         <span className={`min-w-0 flex-1 truncate ${isOn(r.source) ? '' : 'text-ink-muted'}`}>
           {r.name}
         </span>
+        {by !== undefined && (
+          <span className="shrink-0 text-xs text-ink-muted">Switched {by} under Content</span>
+        )}
         {!r.onDevice && <span className="shrink-0 text-xs text-ink-muted">Not on this device</span>}
         <span className="shrink-0 text-ink-muted text-overline uppercase">{r.source}</span>
       </label>
@@ -257,6 +301,11 @@ function SourceChecklist({
           Game data is still downloading. Unticking a book from No restriction, or copying a device
           setting that hides a few books, writes out the books here now, so it can miss some that
           are still on the way. Check the list again once the download finishes.
+        </p>
+      )}
+      {(switches.on.length > 0 || switches.off.length > 0) && (
+        <p id={switchHintId} className="text-caption text-ink-muted">
+          A book switched on or off under Content follows that switch here. Change it there.
         </p>
       )}
       {restricted && list.length === 1 && (
