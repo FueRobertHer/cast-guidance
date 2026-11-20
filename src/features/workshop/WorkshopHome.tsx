@@ -636,7 +636,7 @@ export function Component() {
   return (
     <main
       ref={page}
-      className={`flex flex-1 flex-col gap-4 px-4 pt-5 ${inSelect ? 'pb-24' : 'pb-4'}`}
+      className={`flex flex-1 flex-col gap-4 px-4 pt-5 ${inSelect ? 'pb-[calc(var(--select-bar-h,6rem)+1rem)]' : 'pb-4'}`}
     >
       <header className="flex flex-wrap items-end justify-between gap-x-3 gap-y-2">
         <h1 className="font-display text-title-page">Workshop</h1>

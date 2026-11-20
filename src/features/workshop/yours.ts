@@ -110,12 +110,15 @@ export function selectionFile(files: readonly HomebrewFile[], picked: readonly M
     if (own !== undefined && owned.length > 0) (out[own.type] ??= []).push(...owned);
     const meta = isJson(file.json._meta) ? file.json._meta : {};
     // Its book, and its own entries' (a feature can keep a book of its own).
+    // A file that declares the book beats one that only names it, in any order.
     for (const e of [m.entry, ...owned]) {
+      if (typeof e.source !== 'string' || e.source === '') continue;
       const book = lower(e.source);
-      if (sources.has(book)) continue;
       const declared = listOf(meta.sources).find((s) => isJson(s) && lower(s.json) === book);
-      const source = String(e.source);
-      sources.set(book, declared ?? { json: source, abbreviation: source, full: source });
+      sources.set(
+        book,
+        declared ?? sources.get(book) ?? { json: e.source, abbreviation: e.source, full: e.source },
+      );
     }
   }
   return { _meta: { sources: [...sources.values()] }, ...out };

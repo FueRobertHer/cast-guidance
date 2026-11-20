@@ -73,6 +73,22 @@ describe('selectionFile', () => {
     ]);
   });
 
+  it('takes a book as another picked file declares it, whichever comes first', () => {
+    const bare = file('bare', { feat: [{ name: 'A', source: 'HB' }] });
+    const named = file('named', {
+      _meta: { sources: [{ json: 'HB', full: 'Lantern Coast' }] },
+      feat: [{ name: 'B', source: 'HB' }, { name: 'C' }],
+    });
+    for (const order of [
+      [bare, named],
+      [named, bare],
+    ]) {
+      expect(selectionFile(order, entriesOf(order))._meta).toEqual({
+        sources: [{ json: 'HB', full: 'Lantern Coast' }],
+      });
+    }
+  });
+
   it('names a book the file does not declare by its code', () => {
     const spell = entriesOf([LANTERN]).filter((m) => m.type === 'spell');
     expect(selectionFile([LANTERN], spell)._meta).toEqual({

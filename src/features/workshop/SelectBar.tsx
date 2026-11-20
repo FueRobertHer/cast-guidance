@@ -1,7 +1,7 @@
 /**
  * What the Workshop's Yours shelf does with the entries picked in select mode
- * (the One Workshop canvas, board 9): the bar that takes the tab bar's place,
- * and its three actions.
+ * (the One Workshop canvas, board 9): the bar above the tab bar, and its
+ * three actions.
  *
  * - Move: to another collection of the player's, or one started here. Each
  *   entry takes its new collection's source, and every character holding it
@@ -14,7 +14,7 @@
  * Loaded once select mode is first opened.
  */
 import { Download, Layers, Trash2 } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { invalidateRegistry } from '@/data5e/registry';
 import { characterRepo } from '@/db/characterRepo';
 import { type HomebrewFile, homebrewRepo, type Removed } from '@/db/homebrewRepo';
@@ -83,6 +83,7 @@ export default function SelectBar({
 }: SelectBarProps) {
   const [sheet, setSheet] = useState<'move' | 'delete' | null>(null);
   const opener = useRef<HTMLButtonElement | null>(null);
+  const bar = useClearOfBar();
   const none = picked.length === 0;
   const changes = new Set(files.filter((f) => f.role === 'changes').map((f) => f.id));
   const isChange = (m: Mine) => changes.has(m.fileId);
@@ -133,7 +134,10 @@ export default function SelectBar({
     <>
       {/* Above the tab bar on a phone, which stays in reach; at the foot of the
           page beside the rail on a wide screen. */}
-      <div className="fixed inset-x-0 bottom-[calc(var(--spacing-tabbar)+1px+env(safe-area-inset-bottom))] z-20 border-line border-t bg-surface lg:bottom-0 lg:left-40">
+      <div
+        ref={bar}
+        className="fixed inset-x-0 bottom-[calc(var(--spacing-tabbar)+1px+env(safe-area-inset-bottom))] z-20 border-line border-t bg-surface lg:bottom-0 lg:left-40"
+      >
         <fieldset
           className="flex flex-wrap items-center gap-2 px-3 py-2"
           onKeyDown={(e) => {
@@ -202,6 +206,37 @@ export default function SelectBar({
       )}
     </>
   );
+}
+
+/**
+ * Keeps the page clear of the bar while it is up. Its height goes on the root
+ * as `--select-bar-h`, which the page pads its foot by, so the last row scrolls
+ * out from under it; and the page's bottom scroll padding grows to the bar's
+ * top, so Tab never lands on a row behind it. Measured, because large text
+ * wraps the three buttons onto more lines.
+ */
+function useClearOfBar(): (el: HTMLElement | null) => void {
+  const [el, ref] = useState<HTMLElement | null>(null);
+  useLayoutEffect(() => {
+    if (el === null) return;
+    const root = document.documentElement.style;
+    const was = root.scrollPaddingBottom;
+    const measure = () => {
+      root.setProperty('--select-bar-h', `${el.offsetHeight}px`);
+      root.scrollPaddingBottom = `${Math.max(0, window.innerHeight - el.getBoundingClientRect().top)}px`;
+    };
+    measure();
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(measure);
+    observer?.observe(el);
+    window.addEventListener('resize', measure);
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener('resize', measure);
+      root.removeProperty('--select-bar-h');
+      root.scrollPaddingBottom = was;
+    };
+  }, [el]);
+  return ref;
 }
 
 function MoveSheet({
@@ -289,7 +324,7 @@ function MoveSheet({
     if (made !== undefined && count === 0) await homebrewRepo.delete(made).catch(() => undefined);
     setBusy(false);
     if (count === 0) {
-      setError(refused.join(' '));
+      setError(refused.join('\n'));
       return;
     }
     const followed =
@@ -309,8 +344,9 @@ function MoveSheet({
       <DialogFrame title="Moved" onDismiss={() => onMoved(moved.summary)}>
         <div className="flex flex-col gap-3">
           <p className="text-body">{moved.summary}</p>
-          {moved.refused.map((r) => (
-            <p key={r} className="text-body text-danger">
+          {moved.refused.map((r, i) => (
+            // biome-ignore lint/suspicious/noArrayIndexKey: two refusals can read the same, and the list never reorders.
+            <p key={i} className="text-body text-danger">
               {r}
             </p>
           ))}
@@ -412,8 +448,9 @@ function MoveSheet({
         {movable.length > 0 && going.length === 0 && (
           <p className={NOTE}>They are in {target} already.</p>
         )}
+        {/* One refusal a line, when every collection they come from refused. */}
         {error !== undefined && (
-          <p role="alert" className="text-body text-danger">
+          <p role="alert" className="whitespace-pre-line text-body text-danger">
             {error}
           </p>
         )}
