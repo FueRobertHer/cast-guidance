@@ -14,6 +14,7 @@
  */
 import { FileUp } from 'lucide-react';
 import { useEffect, useId, useRef, useState } from 'react';
+import { flushSync } from 'react-dom';
 import { useNavigate } from 'react-router';
 import type { ConversionReport } from '@/convert/types';
 import { ensureSourcesVisible } from '@/data5e/sourceFilter';
@@ -166,6 +167,22 @@ export default function ImportSheet({
     const stopIfStopped = () => {
       if (run.signal.aborted) throw new ImportCancelledError();
     };
+    /**
+     * End the read with what it found, on screen at once. Rendered in the same
+     * task as its last check of Stop, so there is no moment when Stop is
+     * still there to press but the read is over and it stops nothing. Focus on
+     * Stop, which goes with the read, goes back to Read it.
+     */
+    const end = (show: () => void) => {
+      const form = stop.current?.closest('form');
+      const onStop = stop.current !== null && document.activeElement === stop.current;
+      reading.current = undefined;
+      flushSync(() => {
+        show();
+        setChecking(undefined);
+      });
+      if (onStop) form?.querySelector<HTMLElement>('button[type="submit"]')?.focus();
+    };
     try {
       let got: Read;
       if (from === 'file' && file !== undefined) {
@@ -192,47 +209,45 @@ export default function ImportSheet({
       stopIfStopped();
       if (request !== latest.current) return;
       cancelAnnouncement('import-check');
-      setStatusState(undefined);
-      setPending({
-        prepared,
-        preview,
-        ...(got.conversion === undefined ? {} : { conversion: got.conversion }),
+      end(() => {
+        setStatusState(undefined);
+        setPending({
+          prepared,
+          preview,
+          ...(got.conversion === undefined ? {} : { conversion: got.conversion }),
+        });
       });
     } catch (err) {
+      // A newer read, or a closed sheet, has taken over: this one says nothing.
       if (request !== latest.current) return;
-      if (err instanceof NothingToImportError) {
-        setStatus(`${err.message} Nothing was added.`, !err.allInstalled);
-      } else if (err instanceof ImportCancelledError) {
-        setStatus('Stopped. Nothing was added.');
-      } else if (err instanceof HomebrewUrlRefusedError) {
-        // Refused before any request: say why and offer the way that works.
-        setStatusState(undefined);
-        cancelAnnouncement('import-check');
-        setRefused({ url: err.url, reason: err.message });
-        announce(refusedText(err.message), { key: 'import', repeat: true });
-      } else if (from === 'link') {
-        // `fetch` rejects with a bare TypeError for a host that is down and
-        // one that does not let the app read the file alike.
-        const advice =
-          err instanceof TypeError
-            ? ' The site may be down or may not let the app read the file: download it and bring it in as a file.'
-            : '';
-        setStatus(`That link could not be read (${errorText(err)}).${advice}`, true);
-      } else if (from === 'text' && err instanceof SyntaxError) {
-        setStatus(`That text is not a homebrew file: ${err.message}`, true);
-      } else {
-        setStatus(`Import failed: ${errorText(err)}`, true);
-      }
-    } finally {
-      if (request === latest.current) {
-        // Stop goes away with the read: focus on it goes back to Read it.
-        const here = stop.current;
-        if (here !== null && document.activeElement === here) {
-          here.closest('form')?.querySelector<HTMLElement>('button[type="submit"]')?.focus();
-        }
-        setChecking(undefined);
-        reading.current = undefined;
-      }
+      end(() => sayWhy(err, from));
+    }
+  };
+
+  /** Why a read ended with nothing to preview, in the sheet and said once. */
+  const sayWhy = (err: unknown, from: Way) => {
+    if (err instanceof NothingToImportError) {
+      setStatus(`${err.message} Nothing was added.`, !err.allInstalled);
+    } else if (err instanceof ImportCancelledError) {
+      setStatus('Stopped. Nothing was added.');
+    } else if (err instanceof HomebrewUrlRefusedError) {
+      // Refused before any request: say why and offer the way that works.
+      setStatusState(undefined);
+      cancelAnnouncement('import-check');
+      setRefused({ url: err.url, reason: err.message });
+      announce(refusedText(err.message), { key: 'import', repeat: true });
+    } else if (from === 'link') {
+      // `fetch` rejects with a bare TypeError for a host that is down and
+      // one that does not let the app read the file alike.
+      const advice =
+        err instanceof TypeError
+          ? ' The site may be down or may not let the app read the file: download it and bring it in as a file.'
+          : '';
+      setStatus(`That link could not be read (${errorText(err)}).${advice}`, true);
+    } else if (from === 'text' && err instanceof SyntaxError) {
+      setStatus(`That text is not a homebrew file: ${err.message}`, true);
+    } else {
+      setStatus(`Import failed: ${errorText(err)}`, true);
     }
   };
 

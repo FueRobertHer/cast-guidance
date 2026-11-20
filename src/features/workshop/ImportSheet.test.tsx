@@ -11,8 +11,14 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import { createMemoryRouter, RouterProvider, useLocation } from 'react-router';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { ensureSourcesVisible } = vi.hoisted(() => ({
+const { ensureSourcesVisible, gate } = vi.hoisted(() => ({
   ensureSourcesVisible: vi.fn(() => Promise.resolve()),
+  /**
+   * Where a test holds a read: at the game data, its last wait. By then the
+   * text is read and stored, and the rest of the read is promise work alone,
+   * so what happens next does not hang on timing.
+   */
+  gate: { hold: undefined as Promise<void> | undefined, reached: 0 },
 }));
 
 vi.mock('@/data5e/sourceFilter', () => ({ ensureSourcesVisible }));
@@ -34,11 +40,14 @@ vi.mock('@/data5e/registry', async () => {
         new Map(files.map((f) => [f.id, f.json])),
         new Map(files.flatMap((f) => (f.pack === undefined ? [] : [[f.id, f.pack]]))),
       );
+      gate.reached += 1;
+      if (gate.hold !== undefined) await gate.hold;
       return reg;
     },
   };
 });
 
+import { characterRepo } from '@/db/characterRepo';
 import { db } from '@/db/db';
 import { homebrewRepo } from '@/db/homebrewRepo';
 import { getAnnouncerState, resetAnnouncer } from '@/stores/announcer';
@@ -62,6 +71,8 @@ beforeAll(() => {
 beforeEach(async () => {
   await Promise.all(db.tables.map((t) => t.clear()));
   resetAnnouncer();
+  gate.hold = undefined;
+  gate.reached = 0;
 });
 afterEach(() => {
   cleanup();
@@ -161,6 +172,42 @@ async function land(way: Way, content: Json, title: string, answer: string) {
 }
 
 const stored = async () => (await homebrewRepo.listSafe()).files;
+
+/**
+ * Hold the next read at the game data. `held` resolves once it is held there
+ * with its other reads (the files and characters here) done too; `release`
+ * lets it go on, and from then to its end is promise work alone.
+ */
+function holdRead(): { held: () => Promise<void>; release: () => void } {
+  let release: () => void = () => undefined;
+  gate.hold = new Promise<void>((r) => {
+    release = r;
+  });
+  const reads: Promise<unknown>[] = [];
+  for (const repo of [homebrewRepo, characterRepo] as const) {
+    const real = repo.listSafe.bind(repo);
+    vi.spyOn(repo, 'listSafe').mockImplementation(() => {
+      const read = real();
+      reads.push(read);
+      return read as never;
+    });
+  }
+  return {
+    held: async () => {
+      await waitFor(() => expect(gate.reached).toBe(1), { timeout: WAIT });
+      await Promise.all(reads);
+    },
+    release: () => {
+      gate.hold = undefined;
+      release();
+    },
+  };
+}
+
+/** Every promise step queued now, and the ones they queue: no timers run. */
+async function settlePromises() {
+  for (let i = 0; i < 200; i += 1) await Promise.resolve();
+}
 
 describe('the Import sheet', () => {
   it('names every control, and offers a file, a link and text', async () => {
@@ -374,12 +421,15 @@ describe('the Import sheet', () => {
   });
 
   it('stops a read part way, after the text is read, and adds nothing', async () => {
+    const read = holdRead();
     renderSheet();
     await bringIn('Text', grimoire());
+    await read.held();
     const s = await sheet();
     const stop = within(s).getByRole('button', { name: 'Stop reading' });
     stop.focus();
     fireEvent.click(stop);
+    read.release();
     await waitFor(
       () =>
         expect(document.querySelector('[data-import-status] p')?.textContent).toBe(
@@ -394,21 +444,40 @@ describe('the Import sheet', () => {
     expect(await stored()).toEqual([]);
   });
 
-  it('offers Stop for the read in progress, not the way picked since', async () => {
+  it('never leaves Stop on screen once the read has ended', async () => {
+    const read = holdRead();
     renderSheet();
     await bringIn('Text', grimoire());
+    await read.held();
+    expect(screen.getByRole('button', { name: 'Stop reading' })).toBeTruthy();
+    read.release();
+    await settlePromises();
+    // The read's last check and its preview land together, so there is no
+    // moment when Stop is still there to press but stops nothing.
+    expect(screen.queryByRole('button', { name: 'Stop reading' })).toBeNull();
+    expect(screen.getByRole('dialog', { name: `Import "${NAME}"?` })).toBeTruthy();
+  });
+
+  it('offers Stop for the read in progress, not the way picked since', async () => {
+    const read = holdRead();
+    renderSheet();
+    await bringIn('Text', grimoire());
+    await read.held();
     const s = await sheet();
     fireEvent.click(within(s).getByRole('button', { name: 'A link' }));
     expect(within(s).getByRole('button', { name: 'Stop reading' })).toBeTruthy();
+    read.release();
     await findDialog(`Import "${NAME}"?`);
   });
 
   it('says nothing more once closed part way through a read', async () => {
+    const read = holdRead();
     renderSheet();
     await bringIn('Text', grimoire());
+    await read.held();
     cleanup();
-    // Long enough for the read to have finished, had it gone on.
-    await new Promise((r) => setTimeout(r, 1000));
+    read.release();
+    await settlePromises();
     expect(getAnnouncerState().messages.map((m) => m.text)).not.toContain(
       'Stopped. Nothing was added.',
     );
