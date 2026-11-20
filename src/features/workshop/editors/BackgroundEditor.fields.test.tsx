@@ -282,6 +282,15 @@ describe('a choice the Build tab can make', () => {
     expect(at.draft().skillProficiencies).toEqual([{ choose: { from: ['arcana'] } }]);
   });
 
+  it("shows a skill in other letters on the list's own chip, once", () => {
+    const at = mount({ ...structuredClone(NEW), skillProficiencies: [{ Arcana: true }] });
+    const group = screen.getByRole('group', { name: 'Skill proficiencies' });
+    expect(within(group).getAllByRole('button', { name: 'Arcana' })).toHaveLength(1);
+    expect(pressed('Skill proficiencies', 'Arcana')).toBe('true');
+    chip('Skill proficiencies', 'Arcana');
+    expect(at.draft().skillProficiencies).toBeUndefined();
+  });
+
   it('a choice of any tool, or of tools named, is asked on the sheet', () => {
     const at = mount(structuredClone(NEW));
     type('Tools of your choice', '1');

@@ -1094,6 +1094,20 @@ function coins(cp: number): string {
   return shown.length > 0 ? shown.join(' ') : '0 gp';
 }
 
+/**
+ * Whether a piece of gear holds more than its words say: an item's printing,
+ * a pouch's coins, a kind the creator has no words for. Coins and gear in
+ * words alone (`special`) hold nothing more.
+ */
+function saysMore(e: unknown): boolean {
+  if (typeof e === 'string') return e.includes('|');
+  return (
+    isRecord(e) &&
+    e.value === undefined &&
+    Object.keys(e).some((k) => k !== 'special' && k !== 'quantity')
+  );
+}
+
 /** A piece of gear's words without its count. */
 function gearName(e: unknown): string | undefined {
   const t = gearText(e);
@@ -1142,14 +1156,14 @@ export function gearFrom(text: string, was: readonly unknown[], items: readonly 
   // A count of none is still one: the creator gives what a gear names.
   const many = counted === null ? {} : { quantity: Math.max(1, Number(counted[2])) };
   // The same gear with another count, or in other letters, keeps what its
-  // words do not show: a pouch's coins, a kind the creator has no words for.
-  const like = was.find((e) => gearName(e)?.toLowerCase() === name.toLowerCase());
-  if (
-    like !== undefined &&
-    typeof like !== 'string' &&
-    isRecord(like) &&
-    like.value === undefined
-  ) {
+  // words do not show: its printing, a pouch's coins, a kind the creator has
+  // no words for. Gear in words alone is read again from the words.
+  const like = was.find((e) => saysMore(e) && gearName(e)?.toLowerCase() === name.toLowerCase());
+  if (typeof like === 'string') {
+    const ref = `${name}|${like.split('|')[1] ?? ''}`;
+    return counted === null ? ref : { item: ref, ...many };
+  }
+  if (isRecord(like)) {
     const { quantity: _, ...rest } = like;
     if (typeof rest.item === 'string') rest.item = `${name}|${rest.item.split('|')[1] ?? ''}`;
     if (typeof rest.special === 'string') rest.special = name;
@@ -1216,7 +1230,8 @@ function GearBox({
   const kept = list.filter((e) => gearText(e) === undefined);
   // What the option held when the box was entered: typing "pouch x2" passes
   // through "pouch x", which matches nothing, and the pouch's coins are still
-  // to be found by the time the 2 comes.
+  // to be found by the time the 2 comes. Gear in words alone is not kept
+  // there, so words taken out and typed again are read again.
   const before = useRef(list);
   return (
     <>
@@ -1228,7 +1243,9 @@ function GearBox({
           disabled={disabled}
           onChange={(names) =>
             onChange([
-              ...names.map((n) => gearFrom(n, [...before.current, ...list], items)),
+              ...names.map((n) =>
+                gearFrom(n, [...list, ...before.current.filter(saysMore)], items),
+              ),
               ...kept,
             ])
           }
@@ -1245,8 +1262,7 @@ function StartingGear({
   readOnly,
   registry,
 }: Pick<EditorProps, 'draft' | 'change' | 'readOnly' | 'registry'>) {
-  // Until the items are in, a name typed would be kept as words, not the item.
-  const loading = useTypePacks('item').status === 'loading';
+  const packs = useTypePacks('item').status;
   const se = isRecord(draft.startingEquipment) ? draft.startingEquipment : {};
   const groups = gearGroups(se.defaultData);
   if (groups === undefined) {
@@ -1259,6 +1275,11 @@ function StartingGear({
     );
   }
   const items = [...registry.byType('baseitem'), ...registry.byType('item')] as Json[];
+  // Until the items are in the registry, a name typed would be kept as words,
+  // not the item. A first download puts them there a moment after the pack
+  // says it is ready.
+  const loading =
+    packs === 'loading' || (packs === 'ready' && registry.byType('item').length === 0);
   // The book's words for the kit (`default`, `entries`) describe the old one,
   // so they go once the gear itself changes; an empty box added, or a gear
   // made a choice of one, changes nothing the creator gives.
@@ -1367,12 +1388,18 @@ function StartingGear({
           Add gear
         </Button>
       )}
-      {groups.length === 0 && Array.isArray(se.default) && se.default.length > 0 && (
-        <Kept label="Starting equipment">
-          in words only, kept as written until gear is added here.
-        </Kept>
-      )}
+      {groups.length === 0 &&
+        [se.default, se.entries].some((w) => Array.isArray(w) && w.length > 0) && (
+          <Kept label="Starting equipment">
+            in words only, kept as written until gear is added here.
+          </Kept>
+        )}
       {loading && <p className="text-caption text-ink-muted">Loading the items…</p>}
+      {packs === 'error' && (
+        <p className="text-caption text-ink-muted">
+          The items could not be loaded, so a name typed is kept as written.
+        </p>
+      )}
       <OnSheet>
         the character creator's Equipment step, which gives all of each gear and one option of each
         choice.

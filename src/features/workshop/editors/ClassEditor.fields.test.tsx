@@ -32,7 +32,7 @@ import {
 } from './ClassEditor';
 
 // The items are in, unless a test says they are still loading.
-const packs = vi.hoisted(() => ({ status: 'ready' as 'loading' | 'ready' }));
+const packs = vi.hoisted(() => ({ status: 'ready' as 'loading' | 'ready' | 'error' }));
 vi.mock('@/data5e/hooks', async (load) => ({
   ...(await load<typeof import('@/data5e/hooks')>()),
   useTypePacks: () => ({
@@ -103,6 +103,7 @@ function world(changes: Record<string, Json[]> = {}, mine?: Record<string, unkno
       ['class/class-monk.json', MONK_FILE],
       ['class/class-cleric.json', { class: [CLERIC] }],
       ['items-base.json', { baseitem: ITEMS.slice(0, 2) }],
+      ['items.json', { item: [{ name: 'Bag of Holding', source: 'DMG' }] }],
       ['spells/spells-phb.json', { spell: SPELLS }],
       ['optionalfeatures.json', { optionalfeature: INVOCATIONS }],
     ]),
@@ -271,6 +272,17 @@ describe('starting equipment', () => {
     expect(gearFrom('pouch x3', [pouch], items)).toEqual({ ...pouch, quantity: 3 });
     // Coins are their words: retyped, they are what the words now say.
     expect(gearFrom('5 gp', [{ value: 1000 }], items)).toEqual({ value: 500 });
+    // So is gear in words alone: in other letters, or counted, it is read again.
+    expect(gearFrom('Longsword x2', [{ special: 'longsword' }], items)).toEqual({
+      item: 'Longsword|phb',
+      quantity: 2,
+    });
+    // An item keeps its printing, which its words do not show.
+    expect(gearFrom('javelin x4', ['javelin|xphb'], items)).toEqual({
+      item: 'javelin|xphb',
+      quantity: 4,
+    });
+    expect(gearFrom('Javelin', ['javelin|xphb'], items)).toBe('Javelin|xphb');
   });
 
   it("keeps a pouch's coins while its count is typed a key at a time", () => {
@@ -309,6 +321,22 @@ describe('starting equipment', () => {
     expect(gear()).toEqual([{ ...pouch, quantity: 2 }]);
   });
 
+  it('reads words taken out and typed again afresh, not as the words they were', () => {
+    const at = mount(
+      {
+        name: 'Lantern',
+        ...editor.blank(),
+        startingEquipment: { defaultData: [{ _: [{ special: 'longsword' }] }] },
+      },
+      world(),
+    );
+    const gear = () => ((at.draft().startingEquipment as Json).defaultData as Json[])[0]?._;
+    fireEvent.focus(screen.getByLabelText('Gear 1'));
+    type('Gear 1', '');
+    type('Gear 1', 'longsword');
+    expect(gear()).toEqual(['longsword|phb']);
+  });
+
   it('waits for the items before gear can be typed, else a name would be kept as words', () => {
     const start = {
       name: 'Lantern',
@@ -324,9 +352,24 @@ describe('starting equipment', () => {
     mount(structuredClone(start), world());
     expect((screen.getByLabelText('Gear 1') as HTMLInputElement).disabled).toBe(false);
     expect(screen.queryByText('Loading the items…')).toBeNull();
+    // Downloaded, but not yet in the registry the editor reads.
+    cleanup();
+    const bare = normalizeDataset(
+      new Map<string, unknown>([['items-base.json', { baseitem: ITEMS.slice(0, 2) }]]),
+    );
+    mount(structuredClone(start), bare);
+    expect((screen.getByLabelText('Gear 1') as HTMLInputElement).disabled).toBe(true);
+    // Not loaded at all: the box is open, and says how a name is read.
+    cleanup();
+    packs.status = 'error';
+    mount(structuredClone(start), bare);
+    expect((screen.getByLabelText('Gear 1') as HTMLInputElement).disabled).toBe(false);
+    expect(
+      screen.getByText(/could not be loaded, so a name typed is kept as written/),
+    ).toBeTruthy();
   });
 
-  it('adds an option beside gear for all, which stays gear for all', () => {
+  it('adds an option beside one keyed `_`, which stays one of the options', () => {
     const group = { _: ['longsword|phb'], a: ['javelin|phb'] };
     const at = mount(
       { name: 'Lantern', ...editor.blank(), startingEquipment: { defaultData: [group] } },
@@ -443,6 +486,18 @@ describe('starting equipment', () => {
     expect(
       screen.getByText(/in words only, kept as written until gear is added here/),
     ).toBeTruthy();
+    cleanup();
+    mount(
+      {
+        name: 'Lantern',
+        ...editor.blank(),
+        startingEquipment: { entries: ['You start with a sword and a shield.'] },
+      },
+      world(),
+    );
+    expect(
+      screen.getByText(/in words only, kept as written until gear is added here/),
+    ).toBeTruthy();
   });
 });
 
@@ -529,6 +584,23 @@ describe('the Basics fields', () => {
     );
     type('Skills to choose', '0');
     expect(at.draft().startingProficiencies).toBeUndefined();
+  });
+
+  it('keeps what a spell block has besides its spells while they are typed again', () => {
+    const at = mount(
+      {
+        name: 'Lantern',
+        ...editor.blank(),
+        additionalSpells: [{ ability: 'cha', prepared: { '3': ['Bless|PHB'] } }],
+      },
+      world(),
+    );
+    type('Spell row 1: spells', '');
+    expect(at.draft().additionalSpells).toBeUndefined();
+    type('Spell row 1: spells', 'Shield');
+    expect(at.draft().additionalSpells).toEqual([
+      { ability: 'cha', prepared: { '3': ['Shield|PHB'] } },
+    ]);
   });
 
   it('will not save more skills to choose than it names', () => {

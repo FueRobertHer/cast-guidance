@@ -222,14 +222,18 @@ function GrantChoice({
   const set = (patch: Partial<Granted>) => onChange(grantedWith({ ...g, ...patch }, anyKey, kinds));
   const count = g.choice?.count ?? 0;
   const from = g.choice?.from ?? [];
-  // A name the list has no chip for (homebrew's own skill) gets one, so it can be seen and taken off.
-  const chips = (value: readonly string[]): Options =>
-    options === undefined
-      ? []
-      : [
-          ...options,
-          ...value.filter((v) => !options.some(([o]) => o === v)).map((v) => [v, v] as const),
-        ];
+  // A name the list has no chip for (homebrew's own skill) gets one, so it can
+  // be seen and taken off; one in other letters ("Arcana") is the list's chip.
+  const chips = (value: readonly string[]): Options => {
+    if (options === undefined) return [];
+    const is = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
+    return [
+      ...options.map(([o, label]) => [value.find((v) => is(v, o)) ?? o, label] as const),
+      ...[...new Set(value)]
+        .filter((v) => !options.some(([o]) => is(o, v)))
+        .map((v) => [v, v] as const),
+    ];
+  };
   return (
     <div className="flex flex-col gap-3">
       {options !== undefined ? (

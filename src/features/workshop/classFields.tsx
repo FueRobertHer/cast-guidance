@@ -781,8 +781,10 @@ export function LevelSpells({
   if (read === undefined)
     return <Kept label="Spells">a choice or a filter of spells, kept as it is.</Kept>;
   // Written from elsewhere (the file view, Undo): what the field holds is shown.
+  // Its spells all taken out, the block goes, and what else it had (its
+  // ability) is held here for spells typed again.
   const shown: Given = same(levelSpellsOf(held.how, held.rows, read.block), raw ?? undefined)
-    ? { ...held, block: read.block }
+    ? { ...held, block: read.block ?? held.block }
     : read.rows.length > 0
       ? read
       : { ...read, how: held.how };
