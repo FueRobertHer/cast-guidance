@@ -63,19 +63,51 @@ function SourceToggle({ row, onToggle }: { row: Row; onToggle: (enabled: boolean
   );
 }
 
+/** The sources the stored files declare: a collection's, never a book's. Undefined until read. */
+function useBrewSources(): Set<string> | undefined {
+  return useLiveQuery(
+    async () => new Set((await homebrewRepo.listMetaSafe()).files.flatMap((r) => r.sourceIds)),
+    [],
+  );
+}
+
 /**
- * Which books show, on this device. In Settings (until U9 swaps it for a row
- * opening The books) and on The books page in the Workshop (ADR-002, D1),
- * which passes `books` and gives the page its own heading: there the
- * collections are left out, since each has its own switch on its page.
+ * How many of the books show on this device, as The books lists them
+ * (collections left out): Settings' row says it. Undefined until the
+ * collections' sources are read, since before that a book cannot be told
+ * from a collection.
+ */
+export function useBooksShown(): { shown: number; total: number } | undefined {
+  const registry = useRegistry();
+  const policy = useSourcePolicy();
+  const brewSources = useBrewSources();
+  if (brewSources === undefined) return undefined;
+  const books = [...(registry?.sourceCounts() ?? new Map<string, number>()).keys()].filter(
+    (s) => !brewSources.has(s),
+  );
+  return { shown: books.filter((s) => policyAllows(policy, s)).length, total: books.length };
+}
+
+/** Settings' words for which books show ("12 of 119 books show"). */
+export function booksShownWords(shown: { shown: number; total: number } | undefined): string {
+  if (shown === undefined) return 'Loading…';
+  if (shown.total === 0) return 'No game data yet';
+  if (shown.shown === shown.total) return `All ${shown.total} books show`;
+  return `${shown.shown} of ${shown.total} books show`;
+}
+
+/**
+ * Which books show, on this device, on The books page in the Workshop
+ * (ADR-002, D1), which passes `books` and gives the page its own heading:
+ * there the collections are left out, since each has its own switch on its
+ * page. Without `books` it is the old Content sources list, collections
+ * included, which Settings showed until U9 swapped it for a row opening The
+ * books.
  */
 export function SourcesSection({ books = false }: { books?: boolean } = {}) {
   const registry = useRegistry();
   const policy = useSourcePolicy();
-  const brewSources = useLiveQuery(
-    async () => new Set((await homebrewRepo.listMetaSafe()).files.flatMap((r) => r.sourceIds)),
-    [],
-  );
+  const brewSources = useBrewSources();
 
   const rows: Row[] = useMemo(() => {
     const counts = registry?.sourceCounts() ?? new Map<string, number>();

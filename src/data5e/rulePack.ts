@@ -142,6 +142,8 @@ export function packRefusals(guidance: Record<string, unknown>): string[] {
     if (count > max) reasons.add(`it has ${n(count)} ${what}; a pack has at most ${n(max)}`);
   };
   most('patches', L.patchesPerPack, 'changes to entries');
+  // Past the limit the merge would read only the first ones, so the pack is refused whole.
+  most('replaces', L.replacesPerPack, 'entries it replaces');
   most('moments', L.momentsPerPack, 'moments');
   most('cues', L.cuesPerPack, 'cues');
   list('patches').forEach((p, i) => {

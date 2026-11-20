@@ -1,16 +1,20 @@
+import { useLiveQuery } from 'dexie-react-hooks';
 import { ChevronRight } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { useRegistry } from '@/data5e/hooks';
-import type { TableRuleId } from '@/engine/castGuidance';
-import { appRulesFor } from '@/engine/rules';
-import { useAppTableRules } from '@/stores/tableRules';
+import type { EntityRegistry } from '@/data5e/normalize';
+import { getRegistry } from '@/data5e/registry';
+import { homebrewRepo } from '@/db/homebrewRepo';
+import type { TableRuleChoices, TableRuleId } from '@/engine/castGuidance';
+import { appRulesFor, asWritten } from '@/engine/rules';
+import { type AppTableRules, useAppTableRules } from '@/stores/tableRules';
 import { listClass, listRowClass } from '@/ui/surfaces';
 import { choiceTitle, RULE_ORDER, RULE_TITLES, RuleSheet } from './RuleSheet';
 
 /**
  * One rule as a row (the Rules board, A): its name over the value it plays
  * by, and what decides it when that is not the app's choice, opening its
- * option sheet. Settings and the Build tab both list them.
+ * option sheet. The Rules page and the Build tab both list them.
  */
 export function RuleRow({
   id,
@@ -46,23 +50,116 @@ export function RuleRow({
   );
 }
 
+/** The table rules every character plays by, and where each comes from. */
+export interface AppRules {
+  /** The value of each rule: a choice made, else an every-character pack's, else as written. */
+  rules: TableRuleChoices;
+  /** The choices made, as stored. */
+  chosen: AppTableRules;
+  /** The every-character pack that sets a rule, by name, where it does. */
+  packs: Partial<Record<TableRuleId, string>>;
+}
+
 /**
- * House rules in Settings (the Rules board, A): a row per rule with the value
- * the app plays by, which every character follows unless one sets its own on
- * its Build tab. A rule chosen nowhere shows as written, or as a rule pack made
- * the app's default says, naming it.
+ * The registry as the rules read it. A pack turned on or off, moved, or
+ * applied to every character changes the rules with no download, and a screen
+ * already holding the registry hears of that only from the stored rows: on a
+ * change there, it reads the registry again, keeping the one it has until the
+ * new one is in. A later read of the shared registry (a download landing)
+ * takes over again.
  */
-export function HouseRulesSection({ heading }: { heading: string }) {
-  const registry = useRegistry();
-  const rules = useAppTableRules();
-  const [open, setOpen] = useState<TableRuleId | null>(null);
+function useRulesRegistry(): EntityRegistry | null {
+  const shared = useRegistry();
+  const packs = useLiveQuery(
+    async () =>
+      JSON.stringify(
+        (await homebrewRepo.listMetaSafe()).files.map((r) => [r.id, r.enabled, r.pack ?? null]),
+      ),
+    [],
+  );
+  const seen = useRef(packs);
+  const [fresh, setFresh] = useState<{ registry: EntityRegistry; over: EntityRegistry | null }>();
+  useEffect(() => {
+    if (packs === seen.current) return;
+    const first = seen.current === undefined;
+    seen.current = packs;
+    if (first) return;
+    let alive = true;
+    getRegistry().then(
+      (registry) => {
+        if (alive) setFresh({ registry, over: shared });
+      },
+      // The shared registry stands: its own read reports a failure.
+      () => undefined,
+    );
+    return () => {
+      alive = false;
+    };
+  }, [packs, shared]);
+  return fresh !== undefined && fresh.over === shared ? fresh.registry : shared;
+}
+
+/**
+ * The table rules as every character plays them, read one way for every
+ * screen that shows them (the Rules page, Settings' row, the Rules shelf),
+ * so they never disagree.
+ */
+export function useAppRules(): AppRules {
+  const registry = useRulesRegistry();
+  const chosen = useAppTableRules();
   const app = appRulesFor(
-    { byType: registry === null ? () => [] : (type) => registry.byType(type as never), rules },
+    {
+      byType: registry === null ? () => [] : (type) => registry.byType(type as never),
+      rules: chosen,
+    },
     '2024',
   );
+  return { rules: app.rules, chosen, packs: app.packs };
+}
+
+/** Whether a rule plays as written. */
+export const isAsWritten = (id: TableRuleId, rules: TableRuleChoices): boolean =>
+  rules[id] === asWritten('2024')[id];
+
+/**
+ * The house rules in a line, as Settings' row says them: each rule that is
+ * not as written, by name and value, in the screens' order.
+ */
+export function houseRulesWords(rules: TableRuleChoices): string {
+  const house = RULE_ORDER.filter((id) => !isAsWritten(id, rules));
+  if (house.length === 0) return 'Every rule as written';
+  return house.map((id) => `${RULE_TITLES[id]}: ${choiceTitle(id, rules[id])}`).join('. ');
+}
+
+/**
+ * The table rules as a list (the Rules board, B, on the Workshop's Rules
+ * page): a row per rule with the value the app plays by, which every
+ * character follows unless one sets its own on its Build tab. A rule chosen
+ * nowhere shows as written, or as a rule pack applied to every character
+ * says, naming it.
+ */
+export function HouseRulesSection({
+  heading,
+  title = 'House rules',
+  aside,
+}: {
+  /** The heading's classes. */
+  heading: string;
+  title?: string;
+  /** Said at the heading's end ("Every character"). */
+  aside?: string;
+}) {
+  const { rules, chosen, packs } = useAppRules();
+  const [open, setOpen] = useState<TableRuleId | null>(null);
+  const label = useId();
   return (
-    <section className="flex flex-col gap-2">
-      <h2 className={heading}>House rules</h2>
+    <section aria-labelledby={label} className="flex flex-col gap-2">
+      <div className="flex flex-wrap items-baseline justify-between gap-x-2">
+        <h2 id={label} className={heading}>
+          {title}
+        </h2>
+        {aside !== undefined && <span className="px-1 text-caption text-ink-muted">{aside}</span>}
+      </div>
       <p className="px-1 text-caption text-ink-muted">
         For every character, unless one sets its own on its Build tab.
       </p>
@@ -71,8 +168,8 @@ export function HouseRulesSection({ heading }: { heading: string }) {
           <RuleRow
             key={id}
             id={id}
-            value={choiceTitle(id, app.rules[id])}
-            from={rules[id] === undefined ? app.packs[id] : undefined}
+            value={choiceTitle(id, rules[id])}
+            from={chosen[id] === undefined ? packs[id] : undefined}
             onOpen={setOpen}
           />
         ))}

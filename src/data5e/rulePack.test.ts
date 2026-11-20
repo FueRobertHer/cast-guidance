@@ -142,6 +142,16 @@ describe('a pack past a limit is refused, with the reason', () => {
       { patches: many(L.patchesPerPack + 1, { target: 'a|b' }) },
       /501 changes to entries; a pack has at most 500/,
     ],
+    [
+      'replaced entries',
+      { replaces: many(L.replacesPerPack + 1, { type: 'spell', name: 'Aid', source: 'XPHB' }) },
+      /501 entries it replaces; a pack has at most 500/,
+    ],
+    [
+      'a replaced entry’s name',
+      { replaces: [{ type: 'spell', name: 'x'.repeat(L.labelLength + 1), source: 'XPHB' }] },
+      /a name or label is at most/,
+    ],
     ['moments', { moments: many(L.momentsPerPack + 1, { at: 'zeroHp', do: [] }) }, /201 moments/],
     ['cues', { cues: many(L.cuesPerPack + 1, { at: 'zeroHp', text: 'x' }) }, /201 cues/],
     [
@@ -305,8 +315,32 @@ describe('a pack past a limit is refused, with the reason', () => {
           do: many(64, { kind: 'cue', text: 'x'.repeat(500) }),
         }),
         cues: many(L.cuesPerPack, { at: 'zeroHp', text: 'x' }),
+        replaces: many(L.replacesPerPack, { type: 'spell', name: 'Aid', source: 'XPHB' }),
       }),
     ).toEqual([]);
+  });
+
+  it('leaves a replaced entry it cannot read to the readers, without refusing the pack', () => {
+    // The preview counts it unread and the merge skips it; the rest of the pack still counts.
+    expect(packRefusals({ v: 1, replaces: [{ name: 'Aid' }, 'Aid', { type: 'spell' }] })).toEqual(
+      [],
+    );
+  });
+
+  it('reaches nobody past the replaced entries’ limit, though applied to everyone', () => {
+    const json = {
+      _meta: {
+        sources: [{ json: 'BIG', full: 'Big' }],
+        castGuidance: {
+          v: 1,
+          replaces: many(L.replacesPerPack + 1, { type: 'spell', name: 'Aid', source: 'XPHB' }),
+        },
+      },
+    };
+    const [entry] = rulePackEntries([
+      { id: 'big', json, pack: { appliesTo: { characters: [], appDefault: true } } },
+    ]);
+    expect(entry?.appliesTo).toBeUndefined();
   });
 
   it('takes a reference as long as the effect reader does', () => {

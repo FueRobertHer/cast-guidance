@@ -1,5 +1,6 @@
-import { ChevronDown } from 'lucide-react';
+import { ChevronDown, ChevronRight } from 'lucide-react';
 import { useCallback, useEffect, useId, useRef, useState, useSyncExternalStore } from 'react';
+import { Link } from 'react-router';
 import { GAME_DATA_DOWNLOAD_SIZE } from '@/data5e/downloadSize';
 import { getRevision, subscribeRevision } from '@/data5e/landing';
 import {
@@ -24,13 +25,17 @@ import { offlineReadyAnnounced } from '@/stores/offlineReady';
 import { onboardingStore } from '@/stores/onboarding';
 import { Button, buttonClass } from '@/ui/Button';
 import { askConfirm } from '@/ui/dialogs';
-import { cardClass } from '@/ui/surfaces';
+import { cardClass, listClass, listRowClass } from '@/ui/surfaces';
 import { fieldClass } from '@/ui/TextField';
 import { PERSIST_DENIED_TEXT, PersistStatus, STORAGE_DETAILS_ID } from '../onboarding/Status';
+import { BOOKS_PATH } from '../workshop/collections';
 import { ConditionMotionSwitch } from './ConditionMotionSwitch';
-import { HouseRulesSection } from './HouseRulesSection';
-import { SourcesSection } from './SourcesSection';
+import { houseRulesWords, useAppRules } from './HouseRulesSection';
+import { booksShownWords, useBooksShown } from './SourcesSection';
 import { ThemePicker } from './ThemePicker';
+
+/** Where the table rules and rule packs are set (ADR-002, D1; board 10, B). */
+const RULES_PATH = '/workshop/rules';
 
 /** Said once a requested download completes; it matches the line that turns to "ready". */
 export const OFFLINE_DOWNLOADED_TEXT = 'Game data downloaded. The offline compendium is ready.';
@@ -92,6 +97,60 @@ const linkedToDetails = () => window.location.hash === `#${STORAGE_DETAILS_ID}`;
 
 /** A section's heading, in the screen's `heading` style (DS-001). */
 const H2 = 'px-1 text-heading';
+
+/**
+ * A row that opens where a setting now lives, in the Workshop: its name over
+ * what it is set to, so Settings still says it.
+ */
+function WorkshopRow({ to, title, caption }: { to: string; title: string; caption: string }) {
+  return (
+    <div className={listClass}>
+      <Link to={to} className={`${listRowClass} hover:bg-surface-hover`}>
+        <span className="flex min-w-0 flex-1 flex-col">
+          <span className="text-body-strong">{title}</span>
+          {/* A flex column draws no space between its items; a name read aloud needs one. */}
+          <span className="sr-only">,</span>{' '}
+          <span className="text-caption text-ink-muted">{caption}</span>
+        </span>
+        <ChevronRight size={20} aria-hidden="true" className="shrink-0 text-ink-faint" />
+      </Link>
+    </div>
+  );
+}
+
+/** The table rules every character plays by, in short, opening the Rules page. */
+export function TableRulesRow() {
+  const { rules } = useAppRules();
+  return (
+    <section className="flex flex-col gap-2">
+      <h2 className={H2}>House rules</h2>
+      <WorkshopRow
+        to={RULES_PATH}
+        title="Table rules and rule packs"
+        caption={houseRulesWords(rules)}
+      />
+      <p className="px-1 text-caption text-ink-muted">
+        In the Workshop, under Rules, for every character. A character can set its own on its Build
+        tab.
+      </p>
+    </section>
+  );
+}
+
+/** Which books show, opening The books in the Workshop. */
+export function BooksRow() {
+  const shown = useBooksShown();
+  return (
+    <section className="flex flex-col gap-2">
+      <h2 className={H2}>Content sources</h2>
+      <WorkshopRow to={BOOKS_PATH} title="The books" caption={booksShownWords(shown)} />
+      <p className="px-1 text-caption text-ink-muted">
+        In the Workshop, under Collections: which books you pick from, and what the Library and
+        search show.
+      </p>
+    </section>
+  );
+}
 
 export function Component() {
   usePageTitle('Settings');
@@ -296,7 +355,7 @@ export function Component() {
         </div>
       </section>
 
-      <HouseRulesSection heading={H2} />
+      <TableRulesRow />
 
       <section className="flex flex-col gap-2">
         <h2 className={H2}>Game data</h2>
@@ -460,7 +519,7 @@ export function Component() {
         </p>
       </section>
 
-      <SourcesSection />
+      <BooksRow />
 
       <section className="flex flex-col gap-2">
         <h2 className={H2}>Your data &amp; privacy</h2>
