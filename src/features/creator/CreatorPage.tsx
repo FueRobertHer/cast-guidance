@@ -145,8 +145,9 @@ function OptionCheck({ on }: { on: boolean }) {
 /**
  * The heading over what a pick brings with it, under the picked card, and
  * whether any of it still waits: the guide's count (DS-001), or done.
- * `unpicked` is a pick the count leaves out (a subrace, which the rules
- * engine treats as optional): it says nothing rather than done.
+ * `unpicked` is an optional pick left open (a subrace the race can go
+ * without): it says nothing rather than done. A subrace the race needs is
+ * in `waiting` instead.
  */
 function ChoicesHeading({
   name,
@@ -1322,7 +1323,16 @@ export function Component() {
 
       case 'spells':
         return sheet !== null ? (
-          <div data-pending-choice={spellsShort.length > 0 ? '' : undefined}>
+          <div className="flex flex-col gap-3">
+            {spellsShort.length > 0 && (
+              <p className={`${HINT} flex-col bg-guide-soft`} data-pending-choice="">
+                {spellsShort.map((short) => (
+                  <span key={short.className}>
+                    {short.className}: {shortfallWords(short)} still to choose
+                  </span>
+                ))}
+              </p>
+            )}
             <SpellManager doc={doc} sheet={sheet} update={update} />
           </div>
         ) : null;
@@ -1617,8 +1627,8 @@ export function Component() {
               aria-label={`${toChoose} to choose: ${pendingHere ? 'show the first on this step' : `go to the ${STEP_LABELS[pendingTarget]} step`}`}
               title={
                 pendingHere
-                  ? 'Decisions like skills and languages are waiting on this step'
-                  : `Decisions like skills and languages are waiting on the ${STEP_LABELS[pendingTarget]} step`
+                  ? 'Picks still to make are on this step'
+                  : `Picks still to make are on the ${STEP_LABELS[pendingTarget]} step`
               }
             >
               {toChoose} to choose <ChevronRight size={16} aria-hidden />

@@ -1,6 +1,6 @@
 import type { Entity } from '@/data5e/copyMod';
 import { subraceBelongsTo } from '@/data5e/subraceOptions';
-import type { CharacterDoc, DerivedSheet, EntityRef } from '@/engine/types';
+import type { CharacterDoc, ChoicePrompt, DerivedSheet, EntityRef } from '@/engine/types';
 import { classifyKnown } from '@/features/sheet/SpellManager';
 import { countPrepared, spellLimits } from '@/features/sheet/spellTrim';
 
@@ -23,7 +23,10 @@ export function subraceMissing(
   offered: readonly Entity[],
 ): boolean {
   const race = doc.race;
-  if (race === undefined || doc.subrace !== undefined || offered.length === 0) return false;
+  if (race === undefined || doc.subrace !== undefined) return false;
+  // Only a subrace that names this printing makes one required: one offered by
+  // its race's name alone (hand-written homebrew) may be meant for another.
+  if (!offered.some((s) => typeof s.raceSource === 'string')) return false;
   return !allSubraces.some((s) => typeof s.name !== 'string' && subraceBelongsTo(s, race));
 }
 
@@ -51,7 +54,7 @@ export function spellShortfalls(
     const cantripsLeft = Math.max(0, (limits.cantrips ?? 0) - cantrips);
     const spellsLeft =
       limits.known !== undefined
-        ? Math.max(0, limits.known - leveled)
+        ? Math.max(0, limits.known - leveled - classPicksLeft(doc, sheet.pending, block.classUid))
         : limits.prepared !== undefined
           ? Math.max(0, limits.prepared - countPrepared(state.prepared, limits, levelOf))
           : 0;
@@ -59,6 +62,34 @@ export function spellShortfalls(
       ? [{ className: block.className, cantrips: cantripsLeft, spells: spellsLeft }]
       : [];
   });
+}
+
+/**
+ * The picks a class's own spell prompts still wait for (a 2014 Bard's Magical
+ * Secrets). Each one the class learns takes a place in its spells known once
+ * picked, so the engine's prompt already asks for it: counting it here as well
+ * would ask twice. Cantrip picks do not take a place, so they are left out.
+ */
+function classPicksLeft(
+  doc: CharacterDoc,
+  pending: readonly ChoicePrompt[],
+  classUid: string,
+): number {
+  const prefix = `class:${classUid}:known:`;
+  return pending
+    .filter((p) => p.kind === 'spell' && p.id.startsWith(prefix) && !onlyCantrips(p))
+    .reduce((sum, p) => {
+      const stored = doc.choices[p.id];
+      const held = Array.isArray(stored) ? stored.length : stored === undefined ? 0 : 1;
+      return sum + Math.max(0, p.count - held);
+    }, 0);
+}
+
+/** Whether a spell prompt can only pick a cantrip, as the engine reads it. */
+function onlyCantrips(p: ChoicePrompt): boolean {
+  return p.spellQuery !== undefined
+    ? p.spellQuery.levels.length > 0 && p.spellQuery.levels.every((level) => level === 0)
+    : p.options.length > 0 && p.options.every((o) => /#c\b/i.test(o.id));
 }
 
 /** "2 cantrips and 1 spell", for a shortfall. */

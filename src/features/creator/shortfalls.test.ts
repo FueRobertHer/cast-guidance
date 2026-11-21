@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { type DerivedSheet, newCharacterDoc, type SpellcastingBlock } from '@/engine/types';
+import {
+  type ChoicePrompt,
+  type DerivedSheet,
+  newCharacterDoc,
+  type SpellcastingBlock,
+} from '@/engine/types';
 import { shortfallWords, spellShortfalls, subraceMissing } from './shortfalls';
 
 const elf = { name: 'Elf', source: 'PHB' };
@@ -23,6 +28,13 @@ describe('subraceMissing', () => {
     doc.race = { name: 'Orc', source: 'PHB' };
     expect(subraceMissing(doc, [], [])).toBe(false);
   });
+
+  it('does not for subraces that name the race alone, with no printing', () => {
+    const doc = newCharacterDoc('a', 'A', 't');
+    doc.race = elf;
+    const homebrew = { name: 'Moon', source: 'HB', raceName: 'Elf' };
+    expect(subraceMissing(doc, [homebrew], [homebrew])).toBe(false);
+  });
 });
 
 const block = (b: Partial<SpellcastingBlock>): SpellcastingBlock =>
@@ -43,9 +55,38 @@ describe('spellShortfalls', () => {
         block({ cantripsKnown: 3, preparedMax: 2 }),
         block({ classUid: 'bard|tst', className: 'Bard', mode: 'known', spellsKnownMax: 1 }),
       ],
+      pending: [],
     } as unknown as DerivedSheet;
     expect(spellShortfalls(doc, sheet, levelOf)).toEqual([
       { className: 'Mage', cantrips: 2, spells: 2 },
+    ]);
+  });
+
+  it("leaves out a known caster's own spell picks, which the engine prompt asks for", () => {
+    const doc = newCharacterDoc('a', 'A', 't');
+    doc.spellcasting = { 'bard|tst': { known: [], prepared: [] } };
+    const spellPick = (id: string, levels: number[], count: number): ChoicePrompt => ({
+      id,
+      origin: { label: 'Bard', uid: 'bard|tst', type: 'class' },
+      kind: 'spell',
+      label: id,
+      count,
+      options: [],
+      spellQuery: { levels, classes: [], schools: [], ritual: false, attacks: [] },
+    });
+    // Two leveled picks, one of them made already; a cantrip pick takes no place.
+    doc.choices = { 'class:bard|tst:known:10:0': ['bolt|tst'] };
+    const sheet = {
+      spellcasting: [
+        block({ classUid: 'bard|tst', className: 'Bard', mode: 'known', spellsKnownMax: 4 }),
+      ],
+      pending: [
+        spellPick('class:bard|tst:known:10:0', [1, 2, 3], 2),
+        spellPick('class:bard|tst:known:10:1', [0], 1),
+      ],
+    } as unknown as DerivedSheet;
+    expect(spellShortfalls(doc, sheet, levelOf)).toEqual([
+      { className: 'Bard', cantrips: 0, spells: 3 },
     ]);
   });
 

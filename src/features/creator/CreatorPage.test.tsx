@@ -772,6 +772,53 @@ describe('changes that take something away', () => {
       // Counted in the header's "to choose" too.
       expect(screen.getByRole('button', { name: /^\d+ to choose: go to the / })).toBeTruthy();
     });
+
+    it('counts a subrace the race needs, and Review names it', () => {
+      const toChoose = () =>
+        Number(
+          /^(\d+) to choose/.exec(
+            screen.getByRole('button', { name: /^\d+ to choose: / }).getAttribute('aria-label') ??
+              '',
+          )?.[1],
+        );
+      // A race with no picks of its own whose every subrace has a name, as the
+      // 2014 Elf.
+      const base = makeTestContext();
+      const extra: Array<[string, Record<string, unknown>]> = [
+        ['race', { name: 'Woodfolk', source: 'TST', size: ['M'], speed: 30 }],
+        ['subrace', { name: 'Deep', source: 'TST', raceName: 'Woodfolk', raceSource: 'TST' }],
+      ];
+      registry.current = {
+        get: (type: string, name: string, source?: string) =>
+          extra.find(
+            ([t, e]) =>
+              t === type &&
+              String(e.name).toLowerCase() === name.toLowerCase() &&
+              (source === undefined || String(e.source).toLowerCase() === source.toLowerCase()),
+          )?.[1] ?? base.get(type as never, name, source),
+        byType: (type: string) => [
+          ...extra.filter(([t]) => t === type).map(([, e]) => e),
+          ...base.byType(type as never),
+        ],
+      };
+      // The header's count shows once there is a class; the Warrior's own
+      // picks are the same in both drafts.
+      const warrior = { ref: { name: 'Warrior', source: 'TST' }, levels: 1, hp: ['avg' as const] };
+      renderDraft('review', (d) => {
+        d.classes = [warrior];
+        d.race = { name: 'Woodfolk', source: 'TST' };
+        d.subrace = { name: 'Deep', source: 'TST' };
+      });
+      const withSubrace = toChoose();
+      expect(screen.queryByText(/^No subrace picked/)).toBeNull();
+      cleanup();
+      renderDraft('review', (d) => {
+        d.classes = [warrior];
+        d.race = { name: 'Woodfolk', source: 'TST' };
+      });
+      expect(screen.getByText('No subrace picked for Woodfolk')).toBeTruthy();
+      expect(toChoose()).toBe(withSubrace + 1);
+    });
   });
 
   describe('picking another class', () => {
