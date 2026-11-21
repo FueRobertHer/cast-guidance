@@ -42,6 +42,23 @@ describe('spellRowFacts', () => {
       }),
     ).toBe('Evocation · 1 bonus action · 120 feet · concentration');
     expect(spellRowFacts({ name: 'Bare', source: 'TST', school: 'D' })).toBe('Divination');
+    // Units read as a phrase, and a range's word is capitalized like Self.
+    expect(
+      spellRowFacts({
+        name: 'Long',
+        source: 'TST',
+        time: [{ number: 10, unit: 'minute' }],
+        range: { type: 'special' },
+      }),
+    ).toBe('10 minutes · Special');
+    expect(
+      spellRowFacts({
+        name: 'Far',
+        source: 'TST',
+        time: [{ number: 1, unit: 'hour' }],
+        range: { type: 'point', distance: { type: 'miles', amount: 1 } },
+      }),
+    ).toBe('1 hour · 1 mile');
     expect(spellRowFacts({ name: 'Nothing', source: 'TST' })).toBe('');
   });
 });
@@ -73,9 +90,16 @@ describe('the spell list rows', () => {
   it('give each spell its facts, and mark one the species already gives', async () => {
     const doc = sorcerer(1);
     doc.race = { name: 'Testfolk', source: 'TST' };
+    // Testfolk's grant written with no book, as real data often has it.
+    const testfolk = {
+      name: 'Testfolk',
+      source: 'TST',
+      additionalSpells: [{ ability: 'wis', known: { _: ['guidance'] } }],
+    };
     doc.spellcasting = { 'sorcerer|tst': { known: [], prepared: [] } };
     await renderSheet(doc, {
       path: 'spells',
+      extra: { race: [testfolk] },
       lists: { 'Guidance|TST': ['Sorcerer'], 'Searing Bolt|TST': ['Sorcerer'] },
     });
     await chooseSpells();

@@ -129,10 +129,21 @@ export function classifyKnown(
  */
 export function spellRowFacts(e: Entity): string {
   const school = typeof e.school === 'string' ? (SCHOOLS[e.school] ?? e.school) : undefined;
+  // "1 bonus action", "10 minutes": the Library's words, read as a phrase.
   const time = Array.isArray(e.time)
-    ? castingTime(e.time).replace(/ bonus$/, ' bonus action')
+    ? castingTime(e.time)
+        .replace(/ bonus$/, ' bonus action')
+        .replace(/^(\d+) (minute|hour|round|day)$/, (all, n: string, unit: string) =>
+          n === '1' ? all : `${n} ${unit}s`,
+        )
     : undefined;
-  const range = typeof e.range === 'object' && e.range !== null ? spellRange(e.range) : undefined;
+  // "1 mile", not "1 miles"; "Special", as "Self" and "Touch" are.
+  const rawRange =
+    typeof e.range === 'object' && e.range !== null
+      ? spellRange(e.range).replace(/^1 miles$/, '1 mile')
+      : undefined;
+  const range =
+    rawRange !== undefined ? rawRange.charAt(0).toUpperCase() + rawRange.slice(1) : undefined;
   return [school, time, range, spellNeedsConcentration(e) ? 'concentration' : undefined]
     .filter((f) => f !== undefined && f !== '' && f !== '?')
     .join(' · ');
@@ -184,7 +195,7 @@ function ClassSpells({
    * Spells the character has already from elsewhere (a species' cantrip, a
    * feat's, a domain's), so a row on this list can say so (review item 3).
    */
-  granted?: ReadonlyArray<{ name: string; source: string; origin: string }>;
+  granted?: ReadonlyArray<{ name: string; origin: string; className?: string }>;
 }) {
   const registry = useRegistry();
   const [filter, setFilter] = useState('');
@@ -219,10 +230,16 @@ function ClassSpells({
     block.mode === 'spellbook' && subclassOf === undefined
       ? spellbookSize(classEntity?.spellsKnownProgressionFixed, classLevel)
       : undefined;
-  // What already has each granted spell, by uid: the first grant names it.
+  // What already has each granted spell, by name: a grant's ref often names
+  // no book ("thaumaturgy#c"), and the list may show another printing of it.
+  // The first grant names it. A grant of this same class is its own business
+  // (a 2024 Ranger's Hunter's Mark, always prepared), not something from
+  // elsewhere, so it says nothing here.
+  const ownClass = (subclassOf ?? block.className).toLowerCase();
   const grantedBy = new Map<string, string>();
   for (const g of granted) {
-    const key = `${g.name}|${g.source}`.toLowerCase();
+    if (g.className?.toLowerCase() === ownClass) continue;
+    const key = g.name.toLowerCase();
     if (!grantedBy.has(key)) grantedBy.set(key, g.origin);
   }
   const who = classLevel !== undefined ? `${levelClass} ${classLevel}` : levelClass;
@@ -464,10 +481,9 @@ function ClassSpells({
           )}
           {bookMax !== undefined && (
             <>
-              {' · spellbook '}
-              <span className={knownLeveled > bookMax ? OVER : undefined}>
-                {knownLeveled}/{bookMax}
-              </span>
+              {/* Not flagged past its size: a wizard copies found spells in,
+                  so a fuller book is ordinary play. */}
+              {` · spellbook ${knownLeveled}/${bookMax}`}
             </>
           )}
           {knownMax !== undefined && (
@@ -629,7 +645,7 @@ function ClassSpells({
                       : expandedFrom(s);
                   const addedBy = from === block.className ? 'Expanded list' : from;
                   const facts = spellRowFacts(s);
-                  const already = grantedBy.get(uid);
+                  const already = grantedBy.get(nameOf(s).toLowerCase());
                   return (
                     <div
                       key={uid}
@@ -673,7 +689,7 @@ function ClassSpells({
                           controls' transparent tap borders space them
                           already. */}
                       <span className="ml-auto flex max-w-full shrink-0 flex-wrap items-center justify-end">
-                        <span className="mr-1 flex items-center gap-1">
+                        <span className="mr-1 flex flex-wrap items-center justify-end gap-1">
                           {/* Allowed, and flagged in the guide's colour with
                               words, as an over-limit count is. */}
                           {locked && (known || prepared) && (
