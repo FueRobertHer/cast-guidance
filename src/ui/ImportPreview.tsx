@@ -6,8 +6,8 @@
  * Presentational only. The previews themselves are worked out by the pure
  * builders in `features/homebrew/importPreview.ts` and
  * `features/characters/importPreview.ts`; this only draws them. It is loaded
- * with the Homebrew page and, on the roster, only once an import starts, so
- * none of it is in the entry chunk.
+ * only once an import starts, in the Workshop and on the roster, so none of
+ * it is in the entry chunk.
  */
 // Icons the app already ships elsewhere, so the preview adds no icon chunks.
 import { Check, ChevronRight, Plus, TriangleAlert } from 'lucide-react';

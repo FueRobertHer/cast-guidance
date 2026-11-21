@@ -1,13 +1,18 @@
 // @vitest-environment jsdom
-// IMP-002 and TEST-003: importing homebrew shows what the file would do before
-// anything is written, and Import or Cancel decide. Real repositories over
-// fake-indexeddb, the real page and the real preview; only the registry is a
-// small stand-in, built from the official entries below plus every enabled
-// file merged by the real `mergeHomebrew`, so "who wins" is what the app
-// would actually resolve.
+// IMP-002 and TEST-003, on the Workshop's Import sheet: importing homebrew
+// shows what the file would do before anything is written, and Import or
+// Cancel decide. Real repositories over fake-indexeddb, the real sheet and the
+// real preview; only the registry is a small stand-in, built from the
+// official entries below plus every enabled file merged by the real
+// `mergeHomebrew`, so "who wins" is what the app would actually resolve.
+//
+// An outcome the sheet hands back (imported, kept, canceled) is its `onDone`
+// message, which the home shows and says (see WorkshopHome.test.tsx). A read
+// that ends with nothing to preview stays in the sheet's own line, which the
+// announcer must have said.
 import 'fake-indexeddb/auto';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { MemoryRouter } from 'react-router';
+import { createMemoryRouter, RouterProvider } from 'react-router';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { ensureSourcesVisible, invalidateRegistry, registry } = vi.hoisted(() => ({
@@ -53,9 +58,9 @@ import { dataStatusStore } from '@/stores/dataStatus';
 import { noticeStore } from '@/stores/notices';
 import { recordAnnouncer } from '../../../tests-fixtures/announcements';
 import { InlineImportWorker } from '../../../tests-fixtures/importWorker';
-import { Component as ManageHomebrewPage } from './ManageHomebrewPage';
+import ImportSheet from './ImportSheet';
 
-/** Everything the announcer says in a test; see `outcome`. */
+/** Everything the announcer says in a test; see `said`. */
 let heard = recordAnnouncer();
 beforeEach(() => {
   heard.stop();
@@ -105,28 +110,60 @@ function brew(source: string, spells: Json[], meta: Json = {}): Json {
 
 const ZAP_1 = brew('HB', [{ name: 'Zap', source: 'HB', level: 1 }]);
 
-function renderPage() {
-  render(
-    <MemoryRouter>
-      <ManageHomebrewPage />
-    </MemoryRouter>,
+/** What the sheet handed back when it closed with an outcome. */
+let done: { message: string; landed: boolean }[] = [];
+
+/** The sheet as the Workshop home opens it, at `?import`. */
+function renderSheet() {
+  done = [];
+  const router = createMemoryRouter(
+    [
+      {
+        path: '/workshop',
+        element: (
+          <ImportSheet
+            onClose={() => undefined}
+            onDone={(message, landed) => done.push({ message, landed })}
+          />
+        ),
+      },
+    ],
+    { initialEntries: ['/workshop?import='] },
   );
+  render(<RouterProvider router={router} />);
 }
 
-/** Choose a file through the page's Import file button, as a person would. */
-function chooseFile(name: string, content: unknown) {
-  const button = screen.getByRole('button', { name: 'Import file', hidden: true });
-  button.focus();
+/** Reads hash the file and build a registry: slow when the machine is busy. */
+const WAIT = 5000;
+const sheet = () => screen.findByRole('dialog', { name: 'Import' }, { timeout: WAIT });
+const findDialog = (name: string) => screen.findByRole('dialog', { name }, { timeout: WAIT });
+const fileCount = () => db.homebrewFiles.count();
+
+/** Choose a file in the sheet and press Read it, as a person would. Returns Read it. */
+async function readFile(name: string, content: unknown): Promise<HTMLElement> {
+  const s = await sheet();
   const text = typeof content === 'string' ? content : JSON.stringify(content);
-  const input = document.querySelector<HTMLInputElement>('input[type="file"]');
+  const input = s.querySelector<HTMLInputElement>('input[type="file"]');
   if (input === null) throw new Error('no file input');
   fireEvent.change(input, {
     target: { files: [new File([text], name, { type: 'application/json' })] },
   });
-  return button;
+  const readIt = within(s).getByRole('button', { name: 'Read it' });
+  fireEvent.click(readIt);
+  return readIt;
 }
 
-/** The import messages under the controls: a plain visual now (A11Y-002). */
+/** Bring in a link, on A link, and press Read it. */
+async function readLink(url: string) {
+  const s = await sheet();
+  fireEvent.click(within(s).getByRole('button', { name: 'A link' }));
+  fireEvent.change(within(s).getByRole('textbox', { name: 'Link to a JSON homebrew file' }), {
+    target: { value: url },
+  });
+  fireEvent.click(within(s).getByRole('button', { name: 'Read it' }));
+}
+
+/** The sheet's own messages, under Read it: a plain visual (A11Y-002). */
 function importLine(): HTMLElement {
   const line = document.querySelector<HTMLElement>('[data-import-status]');
   if (line === null) throw new Error('no import line');
@@ -134,34 +171,46 @@ function importLine(): HTMLElement {
 }
 
 /**
- * The message on the import line, which the announcer must have said too, as
- * the latest thing it said: the line is no longer a live region, so a message
- * shown and never heard would otherwise pass.
+ * The message on the sheet's line, which the announcer must have said too, as
+ * the latest thing it said: the line is no live region, so a message shown
+ * and never heard would otherwise pass.
  */
-function outcome(): string {
-  const shown = importLine().textContent ?? '';
-  // The message itself: a refusal's block also holds its Open file and
-  // Import file links, which are not part of what is said.
-  const message = importLine().querySelector('p')?.textContent ?? shown;
+function said(): string {
+  const message = importLine().querySelector('p')?.textContent;
+  if (message === undefined) throw new Error('no message on the line yet');
   expect(heard.lines.at(-1)).toBe(message);
-  return shown;
+  return message;
 }
-/**
- * The wait for an outcome that follows another in the same test. Each line on
- * the import key waits out the announcer's throttle after the one before
- * (THROTTLE_MS), and an import that is slow under load adds its own time to
- * that, so the default second could run out with the line still to come.
- */
-const afterAnother = { timeout: THROTTLE_MS + 2000 };
 
-/** The first preview also waits for its chunk to load, so it gets longer. */
-const findDialog = (name: string) => screen.findByRole('dialog', { name }, { timeout: 5000 });
-const fileCount = () => db.homebrewFiles.count();
+/** The outcome the sheet handed back, once it has. */
+async function handedBack(): Promise<{ message: string; landed: boolean }> {
+  await waitFor(() => expect(done).toHaveLength(1), { timeout: WAIT });
+  const [out] = done;
+  if (out === undefined) throw new Error('no outcome');
+  return out;
+}
 
-describe('homebrew import preview', () => {
+/** No preview is up: the one dialog on screen is the sheet itself. */
+function onlyTheSheet() {
+  expect(screen.getAllByRole('dialog')).toHaveLength(1);
+  expect(screen.getByRole('dialog', { name: 'Import' })).toBeTruthy();
+}
+
+/** Hold the next registry read until `release` is called. */
+function holdRegistry(): () => void {
+  let release: () => void = () => undefined;
+  registry.gates.push(
+    new Promise<void>((resolve) => {
+      release = resolve;
+    }),
+  );
+  return () => release();
+}
+
+describe('the Import sheet preview', () => {
   it('shows what the file holds before writing anything, and Import stores it', async () => {
-    renderPage();
-    const opener = chooseFile(
+    renderSheet();
+    await readFile(
       'brew.json',
       brew('HB', [
         { name: 'Zap', source: 'HB', level: 1 },
@@ -185,63 +234,72 @@ describe('homebrew import preview', () => {
 
     fireEvent.click(within(dialog).getByRole('button', { name: 'Import' }));
 
-    await waitFor(() => expect(outcome()).toBe('Imported "brew.json" (2 spell)'));
+    expect(await handedBack()).toEqual({
+      message: 'Imported "brew.json" (2 spell)',
+      landed: true,
+    });
     expect(await fileCount()).toBe(1);
     expect(ensureSourcesVisible).toHaveBeenCalledWith(['HB']);
     expect(invalidateRegistry).toHaveBeenCalled();
-    expect(screen.queryByRole('dialog')).toBeNull();
-    // Focus is back on the button the import started from.
-    await waitFor(() => expect(document.activeElement).toBe(opener));
   });
 
   it('still uses a stored file when showing its sources fails', async () => {
     ensureSourcesVisible.mockImplementationOnce(() => Promise.reject(new Error('quota')));
-    renderPage();
-    chooseFile('brew.json', ZAP_1);
+    renderSheet();
+    await readFile('brew.json', ZAP_1);
     const dialog = await findDialog('Import "brew.json"?');
 
     fireEvent.click(within(dialog).getByRole('button', { name: 'Import' }));
 
-    await waitFor(() => expect(outcome()).toBe('Imported "brew.json" (1 spell)'));
+    expect(await handedBack()).toEqual({
+      message: 'Imported "brew.json" (1 spell)',
+      landed: true,
+    });
     expect(await fileCount()).toBe(1);
     expect(invalidateRegistry).toHaveBeenCalled();
     expect(noticeStore.getState().notice?.title).toBe('Show sources failed');
   });
 
-  it('writes nothing on Cancel', async () => {
-    renderPage();
-    const opener = chooseFile('brew.json', ZAP_1);
+  it('writes nothing on Cancel, and shows no sources', async () => {
+    renderSheet();
+    await readFile('brew.json', ZAP_1);
     const dialog = await findDialog('Import "brew.json"?');
 
     fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
 
-    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
-    expect(outcome()).toBe('Import canceled. Nothing was added.');
+    expect(await handedBack()).toEqual({
+      message: 'Import canceled. Nothing was added.',
+      landed: false,
+    });
+    expect(screen.queryByRole('dialog', { name: 'Import "brew.json"?' })).toBeNull();
     expect(await fileCount()).toBe(0);
     expect(await db.settings.count()).toBe(0);
     expect(ensureSourcesVisible).not.toHaveBeenCalled();
     expect(invalidateRegistry).not.toHaveBeenCalled();
-    await waitFor(() => expect(document.activeElement).toBe(opener));
   });
 
   it('offers to keep a file that is already here, and changes nothing', async () => {
     const existing = await homebrewRepo.importJson(ZAP_1, 'zap.json');
     await homebrewRepo.setEnabled(existing.id, false);
-    renderPage();
-    chooseFile('zap-again.json', ZAP_1);
+    renderSheet();
+    await readFile('zap-again.json', ZAP_1);
 
     const dialog = await findDialog('"zap-again.json" is already here');
     expect(within(dialog).getByRole('heading', { name: 'Already on this device' })).toBeTruthy();
     expect(dialog.textContent).toContain(
       `Already imported on ${new Date(existing.addedAt).toLocaleDateString()}.`,
     );
-    expect(dialog.textContent).toContain('Turned off. It is in your list below.');
+    // The files here are under Collections in the Workshop.
+    expect(dialog.textContent).toContain('Turned off. It is under Collections.');
     // One answer: there is nothing to import.
     expect(within(dialog).queryByRole('button', { name: 'Import' })).toBeNull();
 
     fireEvent.click(within(dialog).getByRole('button', { name: 'Keep the existing file' }));
 
-    await waitFor(() => expect(outcome()).toBe('Kept the existing "zap.json". Nothing was added.'));
+    expect(await handedBack()).toEqual({
+      message: 'Kept the existing "zap.json". Nothing was added.',
+      landed: false,
+    });
     expect((await homebrewRepo.listSafe()).files).toEqual([{ ...existing, enabled: false }]);
     // As the old flow did for a file imported twice.
     await waitFor(() => expect(ensureSourcesVisible).toHaveBeenCalledWith(['HB']));
@@ -249,8 +307,8 @@ describe('homebrew import preview', () => {
 
   it('names the file that wins a clash, and the registry agrees', async () => {
     await homebrewRepo.importJson(ZAP_1, 'older.json');
-    renderPage();
-    chooseFile('newer.json', brew('HB', [{ name: 'Zap', source: 'HB', level: 5 }]));
+    renderSheet();
+    await readFile('newer.json', brew('HB', [{ name: 'Zap', source: 'HB', level: 5 }]));
 
     const dialog = await findDialog('Import "newer.json"?');
     expect(dialog.textContent).toContain('"older.json" also declares the source HB.');
@@ -264,7 +322,7 @@ describe('homebrew import preview', () => {
     );
 
     fireEvent.click(within(dialog).getByRole('button', { name: 'Import' }));
-    await waitFor(() => expect(outcome()).toContain('Imported "newer.json"'));
+    expect((await handedBack()).message).toContain('Imported "newer.json"');
 
     // What a character would get: the version in the file the preview named.
     const winner = (await getRegistry()).get('spell', 'Zap', 'HB');
@@ -279,8 +337,8 @@ describe('homebrew import preview', () => {
   it('says a clash with a turned-off file is used only while that file stays off', async () => {
     const off = await homebrewRepo.importJson(ZAP_1, 'off.json');
     await homebrewRepo.setEnabled(off.id, false);
-    renderPage();
-    chooseFile('zap5.json', brew('HB', [{ name: 'Zap', source: 'HB', level: 5 }]));
+    renderSheet();
+    await readFile('zap5.json', brew('HB', [{ name: 'Zap', source: 'HB', level: 5 }]));
 
     const dialog = await findDialog('Import "zap5.json"?');
     const section = within(dialog).getByRole('region', { name: 'Clashes with turned-off files' });
@@ -291,8 +349,8 @@ describe('homebrew import preview', () => {
   });
 
   it('explains a missing dependency without blocking the import', async () => {
-    renderPage();
-    chooseFile('needs.json', brew('HB', [], { dependencies: { spell: ['XYZ'] } }));
+    renderSheet();
+    await readFile('needs.json', brew('HB', [], { dependencies: { spell: ['XYZ'] } }));
 
     const dialog = await findDialog('Import "needs.json"?');
     const deps = within(dialog).getByRole('region', { name: 'Depends on' });
@@ -301,7 +359,7 @@ describe('homebrew import preview', () => {
     );
 
     fireEvent.click(within(dialog).getByRole('button', { name: 'Import' }));
-    await waitFor(() => expect(outcome()).toContain('Imported "needs.json"'));
+    expect((await handedBack()).message).toContain('Imported "needs.json"');
     expect(await fileCount()).toBe(1);
   });
 
@@ -312,8 +370,8 @@ describe('homebrew import preview', () => {
     'idle',
   ] as const)('says only that not all game data is here when the download is %s', async (phase) => {
     dataStatusStore.getState().setPhase(phase);
-    renderPage();
-    chooseFile('needs.json', brew('HB', [], { dependencies: { spell: ['XYZ'] } }));
+    renderSheet();
+    await readFile('needs.json', brew('HB', [], { dependencies: { spell: ['XYZ'] } }));
 
     const dialog = await findDialog('Import "needs.json"?');
     expect(dialog.textContent).toContain(
@@ -328,8 +386,8 @@ describe('homebrew import preview', () => {
 
   it('agrees with its note when no game data could be read', async () => {
     registry.fail = true;
-    renderPage();
-    chooseFile('needs.json', brew('HB', [], { dependencies: { spell: ['XYZ'] } }));
+    renderSheet();
+    await readFile('needs.json', brew('HB', [], { dependencies: { spell: ['XYZ'] } }));
 
     const dialog = await findDialog('Import "needs.json"?');
     expect(within(dialog).getByRole('region', { name: 'Depends on' }).textContent).toContain(
@@ -346,8 +404,8 @@ describe('homebrew import preview', () => {
       'off.json',
     );
     await homebrewRepo.setEnabled(off.id, false);
-    renderPage();
-    chooseFile(
+    renderSheet();
+    await readFile(
       'child.json',
       brew('HB', [{ name: 'Child', source: 'HB', _copy: { name: 'Base', source: 'OFF' } }]),
     );
@@ -369,8 +427,8 @@ describe('homebrew import preview', () => {
       ...newCharacterDoc('hero-2', 'Broken', 't'),
       spellcasting: { wizard: {} },
     } as never);
-    renderPage();
-    chooseFile('brew.json', ZAP_1);
+    renderSheet();
+    await readFile('brew.json', ZAP_1);
 
     const dialog = await findDialog('Import "brew.json"?');
     const characters = within(dialog).getByRole('region', {
@@ -384,8 +442,8 @@ describe('homebrew import preview', () => {
   });
 
   it('describes the dialog and lets a keyboard scroll its details', async () => {
-    renderPage();
-    chooseFile('brew.json', ZAP_1);
+    renderSheet();
+    await readFile('brew.json', ZAP_1);
 
     const dialog = await findDialog('Import "brew.json"?');
     const describedBy = dialog.getAttribute('aria-describedby');
@@ -396,33 +454,35 @@ describe('homebrew import preview', () => {
     expect(within(dialog).getByRole('region', { name: 'Import details' }).tabIndex).toBe(0);
   });
 
-  it('keeps the newest preview when an earlier check finishes late', async () => {
-    let release: () => void = () => undefined;
-    registry.gates.push(
-      new Promise<void>((resolve) => {
-        release = resolve;
-      }),
+  // The old page let a newer file start a newer check, and kept the newest
+  // preview. The sheet starts no second read while one is checked, so the
+  // preview that comes is always for the read in progress.
+  it('starts no second read while one is checked, and previews the one it was reading', async () => {
+    const release = holdRegistry();
+    renderSheet();
+    const readIt = await readFile(
+      'a.json',
+      brew('AAA', [{ name: 'Slow', source: 'AAA', level: 1 }]),
     );
-    renderPage();
-    const opener = chooseFile('a.json', brew('AAA', [{ name: 'Slow', source: 'AAA', level: 1 }]));
-    await waitFor(() => expect(registry.calls).toBe(1));
-    // While a file is checked, the button says it is busy and starts nothing.
-    expect(opener.getAttribute('aria-disabled')).toBe('true');
+    await waitFor(() => expect(registry.calls).toBe(1), { timeout: WAIT });
+    // While a file is checked, Read it says it is busy and starts nothing.
+    expect(readIt.getAttribute('aria-disabled')).toBe('true');
+    expect(readIt.getAttribute('aria-busy')).toBe('true');
     // The Checking line is announced, and no busy ancestor holds it back.
-    expect(outcome()).toBe('Checking "a.json"…');
+    expect(said()).toBe('Checking "a.json"…');
     expect(importLine().closest('[aria-busy="true"]')).toBeNull();
 
-    chooseFile('b.json', brew('BBB', [{ name: 'Quick', source: 'BBB', level: 1 }]));
-    const dialog = await findDialog('Import "b.json"?');
+    await readFile('b.json', brew('BBB', [{ name: 'Quick', source: 'BBB', level: 1 }]));
+    // A read begins by saying what it checks: none began for b.json.
+    expect(said()).toBe('Checking "a.json"…');
     release();
-    // The late answer for a.json does not take b.json's place.
-    await new Promise((r) => setTimeout(r, 50));
-    expect(screen.queryByRole('dialog', { name: 'Import "a.json"?' })).toBeNull();
+    const dialog = await findDialog('Import "a.json"?');
+    expect(screen.queryByRole('dialog', { name: 'Import "b.json"?' })).toBeNull();
 
     fireEvent.click(within(dialog).getByRole('button', { name: 'Import' }));
-    await waitFor(() => expect(outcome()).toBe('Imported "b.json" (1 spell)'));
-    expect((await db.homebrewFiles.toArray()).map((f) => f.fileName)).toEqual(['b.json']);
-    expect(opener.getAttribute('aria-disabled')).toBe('false');
+    expect(await handedBack()).toEqual({ message: 'Imported "a.json" (1 spell)', landed: true });
+    expect((await db.homebrewFiles.toArray()).map((f) => f.fileName)).toEqual(['a.json']);
+    expect(registry.calls).toBe(1);
   });
 
   it('lists the copies a file completes and the characters that use its sources', async () => {
@@ -433,8 +493,8 @@ describe('homebrew import preview', () => {
     const hero = newCharacterDoc('hero-1', 'Brin', 't');
     hero.homebrewDeps = ['BBB'];
     await characterRepo.put(hero);
-    renderPage();
-    chooseFile('provider.json', brew('BBB', [{ name: 'Base', source: 'BBB', level: 3 }]));
+    renderSheet();
+    await readFile('provider.json', brew('BBB', [{ name: 'Base', source: 'BBB', level: 3 }]));
 
     const dialog = await findDialog('Import "provider.json"?');
     expect(
@@ -447,87 +507,140 @@ describe('homebrew import preview', () => {
   });
 
   it('refuses a file that is not JSON without a preview', async () => {
-    renderPage();
-    chooseFile('broken.json', '{ not json');
+    renderSheet();
+    await readFile('broken.json', '{ not json');
 
-    await waitFor(() => expect(outcome()).toMatch(/^Import failed: /));
-    expect(screen.queryByRole('dialog')).toBeNull();
+    await waitFor(() => expect(said()).toMatch(/^Import failed: /), { timeout: WAIT });
+    onlyTheSheet();
+    expect(done).toEqual([]);
     expect(await fileCount()).toBe(0);
   });
 });
 
-describe('homebrew import from a URL', () => {
+describe('the Import sheet, from a link', () => {
   const URL_RAW = 'https://raw.githubusercontent.com/me/brews/main/brew.json';
 
-  function submitUrl(url: string) {
-    fireEvent.change(screen.getByRole('textbox', { name: 'Homebrew JSON URL' }), {
-      target: { value: url },
-    });
-    fireEvent.click(screen.getByRole('button', { name: 'Import from URL' }));
-  }
-
-  it('previews a fetched file, keeps the URL until Import, then stores it', async () => {
+  it('previews a fetched file from a GitHub page link, then stores it under the raw link', async () => {
     const fetchSpy = vi
       .spyOn(globalThis, 'fetch')
       .mockResolvedValue(new Response(JSON.stringify(ZAP_1)));
-    renderPage();
-    const field = screen.getByRole<HTMLInputElement>('textbox', { name: 'Homebrew JSON URL' });
-    submitUrl('https://github.com/me/brews/blob/main/brew.json');
+    renderSheet();
+    await readLink('https://github.com/me/brews/blob/main/brew.json');
 
     const dialog = await findDialog('Import "brew.json"?');
     expect(fetchSpy).toHaveBeenCalledWith(URL_RAW, expect.anything());
     expect(await fileCount()).toBe(0);
-    expect(field.value).not.toBe('');
 
     fireEvent.click(within(dialog).getByRole('button', { name: 'Import' }));
 
-    await waitFor(() => expect(outcome()).toBe('Imported "brew.json" (1 spell)'));
+    expect(await handedBack()).toEqual({
+      message: 'Imported "brew.json" (1 spell)',
+      landed: true,
+    });
     expect((await db.homebrewFiles.toArray()).map((f) => f.url)).toEqual([URL_RAW]);
-    expect(field.value).toBe('');
   });
 
-  it('keeps the URL and writes nothing when the preview is canceled', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify(ZAP_1)));
-    renderPage();
-    submitUrl(URL_RAW);
-
-    const dialog = await findDialog('Import "brew.json"?');
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
-
-    await waitFor(() => expect(outcome()).toBe('Import canceled. Nothing was added.'));
-    expect(screen.getByRole<HTMLInputElement>('textbox', { name: 'Homebrew JSON URL' }).value).toBe(
-      URL_RAW,
-    );
-    expect(await fileCount()).toBe(0);
-  });
-
-  it('still gives the network advice when the host cannot be reached', async () => {
+  it('gives the network advice when the host cannot be reached', async () => {
     vi.spyOn(globalThis, 'fetch').mockRejectedValue(new TypeError('Failed to fetch'));
-    renderPage();
-    submitUrl(URL_RAW);
+    renderSheet();
+    await readLink(URL_RAW);
 
-    await waitFor(() =>
-      expect(outcome()).toBe(
-        'URL import failed (Failed to fetch). The host may be down or may not allow the app to read the file; download it and use Import file instead.',
-      ),
+    await waitFor(
+      () =>
+        expect(said()).toBe(
+          'That link could not be read (Failed to fetch). The site may be down or may not let the app read the file: download it and bring it in as a file.',
+        ),
+      { timeout: WAIT },
     );
-    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(importLine().querySelector('p')?.className).toContain('text-danger');
+    onlyTheSheet();
     expect(await fileCount()).toBe(0);
   });
 
-  it('still refuses a host off the list before any request, with the file route', async () => {
-    const fetchSpy = vi.spyOn(globalThis, 'fetch');
-    renderPage();
-    submitUrl('https://example.com/x.json');
+  it('reports an HTTP failure as itself, without network advice', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('nope', { status: 404 }));
+    renderSheet();
+    await readLink(URL_RAW);
 
-    await waitFor(() => expect(outcome()).toContain('only from GitHub'));
-    expect(within(importLine()).getByRole('button', { name: 'Import file' })).toBeTruthy();
+    await waitFor(() => expect(said()).toBe('That link could not be read (HTTP 404).'), {
+      timeout: WAIT,
+    });
+    onlyTheSheet();
+  });
+
+  it('refuses a host off the list without fetching, with a link to the file and the file route', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch');
+    renderSheet();
+    await readLink('https://example.com/x.json');
+
+    await waitFor(() => expect(said()).toContain('only from GitHub'), { timeout: WAIT });
+    const line = importLine();
+    expect(line.textContent).toContain(
+      'For other sites, open the file, save it to this device, and bring it in as a file.',
+    );
+    const open = within(line).getByRole('link', { name: 'Open the file' });
+    expect(open.getAttribute('href')).toBe('https://example.com/x.json');
+    expect(open.getAttribute('rel')).toContain('noopener');
+    expect(within(line).getByRole('button', { name: 'Bring it in as a file' })).toBeTruthy();
     expect(fetchSpy).not.toHaveBeenCalled();
-    expect(screen.queryByRole('dialog')).toBeNull();
+    onlyTheSheet();
+    expect(await fileCount()).toBe(0);
+  });
+
+  // A link that is no URL at all never gets this far: the field is a URL
+  // field, so the browser refuses it before the sheet reads anything.
+  it('gives an http link its own fix, not the other-sites advice', async () => {
+    renderSheet();
+    await readLink('http://raw.githubusercontent.com/me/brews/main/brew.json');
+    await waitFor(() => expect(said()).toBe('Only https URLs are fetched.'), { timeout: WAIT });
+    expect(importLine().textContent).not.toContain('For other sites');
+  });
+
+  it('sends a GitHub folder page to the Raw button', async () => {
+    renderSheet();
+    await readLink('https://github.com/me/brews/tree/main/dir');
+
+    await waitFor(() => expect(said()).toContain('Raw button'), { timeout: WAIT });
+    expect(importLine().textContent).not.toContain('For other sites');
+  });
+
+  it('links nothing for a refused link that is not http(s)', async () => {
+    renderSheet();
+    await readLink('javascript:alert(1)');
+
+    await waitFor(() => expect(said()).toBe('Only https URLs are fetched.'), { timeout: WAIT });
+    // The refusal is up, with its file route, and links nowhere.
+    expect(
+      within(importLine()).getByRole('button', { name: 'Bring it in as a file' }),
+    ).toBeTruthy();
+    expect(within(importLine()).queryByRole('link')).toBeNull();
+  });
+
+  it('says why a link was refused, with the advice the sheet shows, from no live region', async () => {
+    renderSheet();
+    await readLink('https://example.com/x.json');
+    const guidance = await screen.findByText(/only from GitHub/, {}, { timeout: WAIT });
+    // Said once, after the check that came before it.
+    await waitFor(() =>
+      expect(heard.lines).toEqual(['Checking the file at that link…', guidance.textContent]),
+    );
+    expect(guidance.closest('[aria-live],[role="status"],[role="alert"],output')).toBeNull();
+  });
+
+  it('says a refusal again when the same link is read again', async () => {
+    renderSheet();
+    await readLink('https://example.com/x.json');
+    await screen.findByText(/only from GitHub/, {}, { timeout: WAIT });
+    // A second press answers a second read; silence would sound like nothing happened.
+    await new Promise((resolve) => setTimeout(resolve, THROTTLE_MS + 100));
+    await readLink('https://example.com/x.json');
+    const refusals = () => heard.lines.filter((line) => !line.startsWith('Checking'));
+    await waitFor(() => expect(refusals()).toHaveLength(2));
+    expect(refusals()[0]).toBe(refusals()[1]);
   });
 });
 
-describe('importing a Fight Club 5e compendium', () => {
+describe('the Import sheet, with a Fight Club 5e compendium', () => {
   /** Made-up entries in the shape Fight Club writes, one of them official here. */
   const COMPENDIUM = `<?xml version="1.0" encoding="UTF-8"?>
 <compendium version="5">
@@ -550,9 +663,11 @@ describe('importing a Fight Club 5e compendium', () => {
   <class><name>Ember Knight</name></class>
 </compendium>`;
 
+  const AURORA = '<elements><element name="Ember Knight" type="Class"/></elements>';
+
   it('previews what carried over, and Import stores the converted file', async () => {
-    renderPage();
-    chooseFile('embers.xml', COMPENDIUM);
+    renderSheet();
+    await readFile('embers.xml', COMPENDIUM);
 
     const dialog = await findDialog('Import "embers.xml"?');
     expect(
@@ -571,7 +686,10 @@ describe('importing a Fight Club 5e compendium', () => {
 
     fireEvent.click(within(dialog).getByRole('button', { name: 'Import' }));
 
-    await waitFor(() => expect(outcome()).toBe('Imported "embers.xml" (2 spell)'));
+    expect(await handedBack()).toEqual({
+      message: 'Imported "embers.xml" (2 spell)',
+      landed: true,
+    });
     const [stored] = (await homebrewRepo.listSafe()).files;
     expect(stored?.fileName).toBe('embers.xml');
     const json = stored?.json as { _meta: Json; spell: Json[] };
@@ -602,9 +720,19 @@ describe('importing a Fight Club 5e compendium', () => {
     .join('')}
 </compendium>`;
 
+  /** Bring `content` in as a file in a fresh sheet and press `answer` on its preview. */
+  async function landBooks(content: string, answer: string) {
+    cleanup();
+    renderSheet();
+    await readFile('library.xml', content);
+    const dialog = await findDialog('Import "library.xml"?');
+    fireEvent.click(within(dialog).getByRole('button', { name: answer }));
+    return handedBack();
+  }
+
   it('stores a compendium a book at a time, the books the player picks', async () => {
-    renderPage();
-    chooseFile('library.xml', LIBRARY(['Ash Bolt', 'Ash Veil']));
+    renderSheet();
+    await readFile('library.xml', LIBRARY(['Ash Bolt', 'Ash Veil']));
 
     let dialog = await findDialog('Import "library.xml"?');
     const books = within(dialog).getByRole('region', { name: 'Books' });
@@ -615,32 +743,29 @@ describe('importing a Fight Club 5e compendium', () => {
 
     fireEvent.click(ember);
     fireEvent.click(within(dialog).getByRole('button', { name: 'Import 1 book' }));
-    await waitFor(() => expect(outcome()).toBe('Imported 1 book from "library.xml" (2 spell)'));
+    expect(await handedBack()).toEqual({
+      message: 'Imported 1 book from "library.xml" (2 spell)',
+      landed: true,
+    });
     expect((await homebrewRepo.listMetaSafe()).files.map((f) => f.book)).toEqual(['Ashen Tome']);
 
     // Again, with the Ashen Tome grown: the stored copy is replaced, and the
     // Ember Codex comes in now that it is ticked.
-    chooseFile('library.xml', LIBRARY(['Ash Bolt', 'Ash Veil', 'Ash Storm']));
+    cleanup();
+    renderSheet();
+    await readFile('library.xml', LIBRARY(['Ash Bolt', 'Ash Veil', 'Ash Storm']));
     dialog = await findDialog('Import "library.xml"?');
     expect(dialog.textContent).toContain('Replaces the copy from "library.xml".');
     fireEvent.click(within(dialog).getByRole('button', { name: 'Import 2 books' }));
-    await waitFor(
-      () =>
-        expect(outcome()).toBe(
-          'Imported 2 books from "library.xml" (4 spell), replacing 1 book imported before',
-        ),
-      afterAnother,
-    );
+    expect(await handedBack()).toEqual({
+      message: 'Imported 2 books from "library.xml" (4 spell), replacing 1 book imported before',
+      landed: true,
+    });
     const stored = (await homebrewRepo.listMetaSafe()).files;
     expect(stored.map((f) => [f.book, f.counts]).sort()).toEqual([
       ['Ashen Tome', { spell: 3 }],
       ['Ember Codex', { spell: 1 }],
     ]);
-
-    // The list keeps them together, under the file's name.
-    expect(
-      await screen.findByRole('button', { name: 'Delete library.xml, all 2 books' }),
-    ).toBeTruthy();
   });
 
   it('refuses books the browser clearly has no room for, before writing any', async () => {
@@ -650,31 +775,34 @@ describe('importing a Fight Club 5e compendium', () => {
       value: { estimate: async () => ({ usage: 1000, quota: 1000 + room }) },
     });
     try {
-      renderPage();
-      chooseFile('library.xml', LIBRARY(['Ash Bolt']));
+      renderSheet();
+      await readFile('library.xml', LIBRARY(['Ash Bolt']));
       let dialog = await findDialog('Import "library.xml"?');
       fireEvent.click(within(dialog).getByRole('button', { name: 'Import 2 books' }));
-      await waitFor(() =>
-        expect(outcome()).toMatch(
-          /^Import failed: It needs about \d+ KB, and the browser has 100 bytes left for the app\. This device is out of storage space/,
-        ),
+      // The sheet comes back with the reason, and nothing has landed.
+      await waitFor(
+        () =>
+          expect(said()).toMatch(
+            /^Import failed: It needs about \d+ KB, and the browser has 100 bytes left for the app\. This device is out of storage space/,
+          ),
+        { timeout: WAIT },
       );
+      onlyTheSheet();
+      expect(done).toEqual([]);
       expect(await fileCount()).toBe(0);
 
-      // With room, they come in; a book that takes the place of its own
-      // older copy then needs no more room than it had.
+      // With room, they come in: the file is still chosen, so Read it again.
       room = 10_000_000;
-      chooseFile('library.xml', LIBRARY(['Ash Bolt']));
+      fireEvent.click(within(await sheet()).getByRole('button', { name: 'Read it' }));
       dialog = await findDialog('Import "library.xml"?');
       fireEvent.click(within(dialog).getByRole('button', { name: 'Import 2 books' }));
-      await waitFor(() => expect(outcome()).toMatch(/^Imported 2 books/), afterAnother);
+      expect((await handedBack()).message).toMatch(/^Imported 2 books/);
+
+      // A book that takes the place of its own older copy then needs no more
+      // room than it had.
       room = 100;
-      chooseFile('library.xml', LIBRARY(['Ash Bolt', 'Ash Veil']));
-      dialog = await findDialog('Import "library.xml"?');
-      fireEvent.click(within(dialog).getByRole('button', { name: 'Import 1 book' }));
-      await waitFor(
-        () => expect(outcome()).toMatch(/^Imported 1 book .*replacing 1 book/),
-        afterAnother,
+      expect((await landBooks(LIBRARY(['Ash Bolt', 'Ash Veil']), 'Import 1 book')).message).toMatch(
+        /^Imported 1 book .*replacing 1 book/,
       );
     } finally {
       Reflect.deleteProperty(navigator, 'storage');
@@ -696,70 +824,81 @@ describe('importing a Fight Club 5e compendium', () => {
       'library.xml',
     );
     await putHomebrewRow(whole);
-    renderPage();
-    chooseFile('library.xml', LIBRARY(['Ash Bolt']));
+    renderSheet();
+    await readFile('library.xml', LIBRARY(['Ash Bolt']));
     const dialog = await findDialog('Import "library.xml"?');
     expect(dialog.textContent).toContain(
       'Imported before as one file of 2 books. Importing replaces it, so each entry shows once',
     );
     fireEvent.click(within(dialog).getByRole('button', { name: 'Import 2 books' }));
-    await waitFor(() => expect(outcome()).toMatch(/^Imported 2 books .*replacing 1 book/));
+    expect((await handedBack()).message).toMatch(/^Imported 2 books .*replacing 1 book/);
     const stored = (await homebrewRepo.listMetaSafe()).files;
     expect(stored.map((f) => f.book).sort()).toEqual(['Ashen Tome', 'Ember Codex']);
   });
 
   it('says how many books are off when every book of the file is already here', async () => {
-    renderPage();
-    chooseFile('library.xml', LIBRARY(['Ash Bolt']));
-    let dialog = await findDialog('Import "library.xml"?');
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Import 2 books' }));
-    await waitFor(() => expect(outcome()).toMatch(/^Imported 2 books/));
+    expect((await landBooks(LIBRARY(['Ash Bolt']), 'Import 2 books')).message).toMatch(
+      /^Imported 2 books/,
+    );
     const ashen = (await homebrewRepo.listMetaSafe()).files.find((f) => f.book === 'Ashen Tome');
     await homebrewRepo.setEnabled(ashen?.id ?? '', false);
 
-    chooseFile('library.xml', LIBRARY(['Ash Bolt']));
-    dialog = await findDialog('"library.xml" is already here');
+    cleanup();
+    renderSheet();
+    await readFile('library.xml', LIBRARY(['Ash Bolt']));
+    const dialog = await findDialog('"library.xml" is already here');
     expect(dialog.textContent).toContain('1 of 2 books turned off.');
-    expect(dialog.textContent).not.toContain('Turned off. It is in your list below.');
+    expect(dialog.textContent).toContain('They are under Collections. Turn them on there');
+    expect(dialog.textContent).not.toContain('Turned off. It is under Collections.');
   });
 
   it('turns Import off while no book that is new is ticked', async () => {
-    renderPage();
-    chooseFile('library.xml', LIBRARY(['Ash Bolt']));
+    renderSheet();
+    await readFile('library.xml', LIBRARY(['Ash Bolt']));
     const dialog = await findDialog('Import "library.xml"?');
+    const books = within(dialog).getByRole('region', { name: 'Books' });
     fireEvent.click(within(dialog).getByRole('button', { name: 'Select none' }));
     const importButton = within(dialog).getByRole('button', { name: 'Import' });
     expect(importButton.getAttribute('aria-disabled')).toBe('true');
     expect(dialog.textContent).toContain('Tick a book that is not already on this device');
     fireEvent.click(importButton);
     expect(screen.queryByRole('dialog', { name: 'Import "library.xml"?' })).toBeTruthy();
-    expect(await fileCount()).toBe(0);
+    // The press did nothing, even later: a book ticked now is the only import.
+    fireEvent.click(within(books).getByRole('checkbox', { name: /Ember Codex/ }));
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Import 1 book' }));
+    expect(await handedBack()).toEqual({
+      message: 'Imported 1 book from "library.xml" (1 spell)',
+      landed: true,
+    });
+    expect((await homebrewRepo.listMetaSafe()).files.map((f) => f.book)).toEqual(['Ember Codex']);
   });
 
   it('says when every entry is already in the game data, without a preview', async () => {
-    renderPage();
-    chooseFile(
+    renderSheet();
+    await readFile(
       'bolts.xml',
       `<compendium><spell><name>Fire Bolt</name><level>0</level><school>EV</school>
         <time>1 action</time><range>120 feet</range><components>V, S</components>
         <duration>Instantaneous</duration><text>A mote of fire.</text></spell></compendium>`,
     );
 
-    await waitFor(() =>
-      expect(outcome()).toBe(
-        '"bolts.xml": Every entry in this Fight Club 5e file is already in your game data, so there is nothing to add. Nothing was added.',
-      ),
+    await waitFor(
+      () =>
+        expect(said()).toBe(
+          'Every entry in this Fight Club 5e file is already in your game data, so there is nothing to add. Nothing was added.',
+        ),
+      { timeout: WAIT },
     );
     // Not a failure: the line is in the muted colour, not `danger`.
     expect(importLine().querySelector('p')?.className).toContain('text-ink-muted');
-    expect(screen.queryByRole('dialog')).toBeNull();
+    onlyTheSheet();
     expect(await fileCount()).toBe(0);
   });
 
   it('converts entries the game data already has while it cannot be read, and says so', async () => {
     registry.fail = true;
-    renderPage();
-    chooseFile('embers.xml', COMPENDIUM);
+    renderSheet();
+    await readFile('embers.xml', COMPENDIUM);
 
     const dialog = await findDialog('Import "embers.xml"?');
     expect(dialog.textContent).toContain('3 spell');
@@ -768,88 +907,82 @@ describe('importing a Fight Club 5e compendium', () => {
     );
   });
 
-  it('cancels a file while it is read, and nothing is added', async () => {
-    let release: () => void = () => undefined;
-    registry.gates.push(
-      new Promise<void>((resolve) => {
-        release = resolve;
-      }),
-    );
+  it('stops a compendium while it is read, before the converter starts, and adds nothing', async () => {
+    const release = holdRegistry();
     const started = InlineImportWorker.started.length;
-    renderPage();
-    const opener = chooseFile('embers.xml', COMPENDIUM);
-    await waitFor(() => expect(registry.calls).toBe(1));
+    renderSheet();
+    const readIt = await readFile('embers.xml', COMPENDIUM);
+    await waitFor(() => expect(registry.calls).toBe(1), { timeout: WAIT });
 
-    fireEvent.click(within(importLine()).getByRole('button', { name: 'Cancel import' }));
+    const stop = within(importLine()).getByRole('button', { name: 'Stop reading' });
+    stop.focus();
+    fireEvent.click(stop);
     release();
-    await waitFor(() => expect(outcome()).toBe('Import canceled. Nothing was added.'));
-    // Cancel went with the read, so focus is back where the import started.
-    expect(document.activeElement).toBe(opener);
-    expect(opener.getAttribute('aria-disabled')).toBe('false');
+    await waitFor(() => expect(said()).toBe('Stopped. Nothing was added.'), { timeout: WAIT });
+    // Stop went with the read, so focus is on Read it, which is ready again.
+    expect(document.activeElement).toBe(readIt);
+    expect(readIt.getAttribute('aria-disabled')).toBe('false');
     expect(InlineImportWorker.started.length).toBe(started);
-    expect(screen.queryByRole('dialog')).toBeNull();
+    onlyTheSheet();
+    expect(done).toEqual([]);
     expect(await fileCount()).toBe(0);
   });
 
-  it('puts focus back on Import file when a read ends while Cancel has it', async () => {
-    let release: () => void = () => undefined;
-    registry.gates.push(
-      new Promise<void>((resolve) => {
-        release = resolve;
-      }),
-    );
-    renderPage();
-    const opener = chooseFile(
-      'aurora.xml',
-      '<elements><element name="Ember Knight" type="Class"/></elements>',
-    );
-    await waitFor(() => expect(registry.calls).toBe(1));
-    within(importLine()).getByRole('button', { name: 'Cancel import' }).focus();
+  it('puts focus on Read it when a read ends while Stop has it', async () => {
+    const release = holdRegistry();
+    renderSheet();
+    const readIt = await readFile('aurora.xml', AURORA);
+    await waitFor(() => expect(registry.calls).toBe(1), { timeout: WAIT });
+    within(importLine()).getByRole('button', { name: 'Stop reading' }).focus();
 
     release();
-    await waitFor(() => expect(outcome()).toMatch(/^Import failed/));
-    expect(within(importLine()).queryByRole('button', { name: 'Cancel import' })).toBeNull();
-    expect(document.activeElement).toBe(opener);
+    await waitFor(() => expect(said()).toMatch(/^Import failed/), { timeout: WAIT });
+    expect(within(importLine()).queryByRole('button', { name: 'Stop reading' })).toBeNull();
+    expect(document.activeElement).toBe(readIt);
   });
 
   it('names a file it recognizes but cannot import', async () => {
-    renderPage();
-    chooseFile('aurora.xml', '<elements><element name="Ember Knight" type="Class"/></elements>');
+    renderSheet();
+    await readFile('aurora.xml', AURORA);
 
-    await waitFor(() =>
-      expect(outcome()).toBe(
-        'Import failed: This looks like Aurora Builder content, which cannot be imported yet. Fight Club 5e compendiums (XML) and 5etools homebrew (JSON) can be imported.',
-      ),
+    await waitFor(
+      () =>
+        expect(said()).toBe(
+          'Import failed: This looks like Aurora Builder content, which cannot be imported yet. Fight Club 5e compendiums (XML) and 5etools homebrew (JSON) can be imported.',
+        ),
+      { timeout: WAIT },
     );
     expect(importLine().querySelector('p')?.className).toContain('text-danger');
-    expect(screen.queryByRole('dialog')).toBeNull();
+    onlyTheSheet();
   });
 
   it('refuses XML that declares entities', async () => {
-    renderPage();
-    chooseFile(
+    renderSheet();
+    await readFile(
       'entities.xml',
       '<!DOCTYPE compendium [<!ENTITY x "y">]><compendium><spell><name>&x;</name></spell></compendium>',
     );
 
-    await waitFor(() => expect(outcome()).toMatch(/^Import failed: The file declares a DOCTYPE/));
-    expect(screen.queryByRole('dialog')).toBeNull();
+    await waitFor(() => expect(said()).toMatch(/^Import failed: The file declares a DOCTYPE/), {
+      timeout: WAIT,
+    });
+    onlyTheSheet();
     expect(await fileCount()).toBe(0);
   });
 
-  it('converts a compendium fetched from a URL', async () => {
+  it('converts a compendium fetched from a link', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(COMPENDIUM));
-    renderPage();
-    fireEvent.change(screen.getByRole('textbox', { name: 'Homebrew JSON URL' }), {
-      target: { value: 'https://raw.githubusercontent.com/me/brews/main/embers.xml' },
-    });
-    fireEvent.click(screen.getByRole('button', { name: 'Import from URL' }));
+    renderSheet();
+    await readLink('https://raw.githubusercontent.com/me/brews/main/embers.xml');
 
     const dialog = await findDialog('Import "embers.xml"?');
     expect(
       within(dialog).getByRole('heading', { name: 'Converted from Fight Club 5e' }),
     ).toBeTruthy();
     fireEvent.click(within(dialog).getByRole('button', { name: 'Import' }));
-    await waitFor(() => expect(outcome()).toBe('Imported "embers.xml" (2 spell)'));
+    expect(await handedBack()).toEqual({
+      message: 'Imported "embers.xml" (2 spell)',
+      landed: true,
+    });
   });
 });

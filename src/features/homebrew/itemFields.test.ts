@@ -1,6 +1,6 @@
 // The damage-type dropdowns show a default before they are touched. These
 // rules are what stops that default from being a label the form shows and the
-// saved file disagrees with: a weapon that read "slashing" in the builder and
+// saved file disagrees with: a weapon that read "slashing" in the editor and
 // came out untyped, and a rider that read "fire" and burned nothing.
 import { describe, expect, it } from 'vitest';
 import {

@@ -29,7 +29,12 @@ import { invalidateRegistry } from '@/data5e/registry';
 import { type SearchResult, searchAll } from '@/data5e/search/client';
 import { policyForSearch, useSourcePolicy } from '@/data5e/sourceFilter';
 import { sourceName } from '@/data5e/sourceNames';
-import { type HomebrewFileMeta, homebrewRepo, type Removed } from '@/db/homebrewRepo';
+import {
+  type HomebrewFileMeta,
+  type HomebrewReadError,
+  homebrewRepo,
+  type Removed,
+} from '@/db/homebrewRepo';
 import { appRulesFor } from '@/engine/rules';
 import { usePacksHere } from '@/features/homebrew/PackReviewSheet';
 import { choiceTitle, RULE_ORDER, RULE_TITLES } from '@/features/settings/RuleSheet';
@@ -285,20 +290,12 @@ function CollectionsShelf({
   names,
 }: {
   rows: readonly HomebrewFileMeta[] | undefined;
-  unreadable: number;
+  unreadable: readonly HomebrewReadError[];
   names: ReadonlyMap<string, string>;
 }) {
   return (
     <>
       <ImportLink label="Import a file or a link" />
-      {/* Until the collection page does it (U6), files are turned off and
-          removed on the Homebrew page. */}
-      <p className={NOTE}>
-        To turn a file off or remove it:{' '}
-        <Link to="/homebrew" className={LINK}>
-          Import or manage files
-        </Link>
-      </p>
       {rows === undefined ? (
         <p className={NOTE}>Loading…</p>
       ) : (
@@ -323,16 +320,60 @@ function CollectionsShelf({
           </li>
         </ul>
       )}
-      {unreadable > 0 && (
-        <p className={NOTE}>
-          {unreadable === 1 ? 'One file' : `${unreadable} files`} here could not be read. The{' '}
-          <Link to="/homebrew" className={LINK}>
-            Homebrew page
-          </Link>{' '}
-          says which.
-        </p>
-      )}
+      {unreadable.length > 0 && <Unreadable errors={unreadable} />}
     </>
+  );
+}
+
+/**
+ * The files stored here that could not be read, so none of them is in use.
+ * Each opens its collection page, which offers to delete it; one with no id
+ * cannot be opened or deleted, so it is named alone.
+ */
+function Unreadable({ errors }: { errors: readonly HomebrewReadError[] }) {
+  const one = errors.length === 1;
+  const opens = errors.some((e) => e.id !== undefined);
+  // Rows with no id can share a name and a reason, so a repeat is numbered.
+  const seen = new Map<string, number>();
+  const keys = errors.map((e) => {
+    const base = e.id ?? `${e.fileName ?? ''}|${e.message}`;
+    const n = seen.get(base) ?? 0;
+    seen.set(base, n + 1);
+    return n === 0 ? base : `${base}#${n}`;
+  });
+  return (
+    <section aria-labelledby="unreadable-head" className="flex flex-col gap-1.5">
+      <h2 id="unreadable-head" className={H2}>
+        Could not be read
+      </h2>
+      <p className={NOTE}>
+        {one ? 'One file' : `${errors.length} files`} here could not be read, so{' '}
+        {one ? 'it is' : 'they are'} not in use.{opens && ' Open one to delete it.'}
+      </p>
+      <ul className="flex flex-col gap-1.5">
+        {errors.map((e, at) => {
+          const name =
+            e.fileName === undefined || e.fileName.trim() === ''
+              ? 'A file with no name'
+              : e.fileName;
+          return (
+            <li key={keys[at]} className="text-body break-words">
+              {e.id === undefined ? (
+                <span className="text-body-strong">{name}</span>
+              ) : (
+                <Link
+                  to={collectionPath(e.id)}
+                  className={`${LINK} inline-flex min-h-6 items-center`}
+                >
+                  {name}
+                </Link>
+              )}
+              <span className="text-ink-muted">: {e.message}</span>
+            </li>
+          );
+        })}
+      </ul>
+    </section>
   );
 }
 
@@ -788,7 +829,7 @@ export function Component() {
               {shelf === 'collections' && (
                 <CollectionsShelf
                   rows={meta?.files}
-                  unreadable={meta?.errors.length ?? 0}
+                  unreadable={meta?.errors ?? []}
                   names={names}
                 />
               )}

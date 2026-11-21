@@ -36,7 +36,7 @@ dice tray's Roll button. With the strip hidden, that revert fails `dice-tray`.
 | Character sheet | `sheet-play`, `sheet-play-hp-tip` (the HP card's one-time tip, before it is dismissed), `sheet-stats`, `sheet-spells`, `sheet-items`, `sheet-features`, `sheet-build`, `sheet-spells-caster` (a caster's own spells, two classes and a known spell), `sheet-spells-choose` (the same tab's Choose view: the class lists and their chips), `sheet-header-edit-count` (the header's Edit with a count of choices to make), `sheet-header-menu` (the header's overflow menu open: History, Export, Delete), `sheet-conditions` (the condition strip under the header with Poisoned and a level of exhaustion), `sheet-conditions-effects-off` (the strip with Poisoned switched off), `sheet-play-condition-cues` (the caster's Play under Poisoned, Prone and Restrained: the initiative, attack and spell attack cues with one Ignore once pressed, attacks against the character, and speed 0), `sheet-stats-condition-cues` (the same character's Stats: the check and save cues), `build-feature-choice` (Build with a Cleric 7's Blessed Strikes still to pick: the option cards, each with its info button) |
 | Sheet overlays | `hp-sheet` (the HP sheet on Damage, with an amount keyed and its confirm ready), `dice-tray`, `dice-tray-roll-cue` (the tray's latest rolls, under its dice, with a roll a condition changed and its cue), `dice-tray-history` (the tray opened from the roll toast on History: every roll, each with its remove button, and clear all), `history-drawer`, `breakdown-sheet` (a number's breakdown), `entity-info-sheet` (an option's full description, from Build), `feature-option-info-sheet` (a pick-one feature's branch, its rules text, from its option card on Build), `spell-info-sheet` (a spell's rules text, from a caster's Play tab), `condition-picker` (the strip's add chip's sheet: every condition's toggle and the exhaustion stepper), `condition-info-sheet` (a condition's rules, what it does to rolls and its "Apply its effects" switch, from its chip), `spell-pack-problem` (the same sheet with the spell files failed to download: its panel, the alert inside the modal) |
 | Library | `library`, `library-spells` (a virtualized list), `library-detail`, `library-search` |
-| Homebrew | `homebrew-empty`, `homebrew-import-preview` (a homebrew file's preview), `homebrew` (one imported file), `homebrew-remove-confirm`, `text-prompt` (the collection name prompt), `homebrew-builder`, `homebrew-builder-unknown` |
+| Workshop | `workshop-empty`, `workshop-make` (Make your own: every kind), `workshop` (Yours with a feat of the player's), `workshop-collections`, `workshop-collection` (an imported file's page), `workshop-rules` (the Rules shelf), `workshop-rules-page`, `workshop-search` (yours, then the books), `workshop-import` (the Import sheet), `workshop-import-preview` (a homebrew file's preview), `workshop-collection-delete-confirm`, `workshop-collection-mine` (a collection of the player's own, its entry and Add to), `text-prompt` (an entry's Rename prompt), `workshop-collection-missing` |
 | Other routes | `settings`, `settings-storage-details` (Settings opened from the checklist's Storage details link, the disclosure open), `creator` (step 1), `not-found` |
 | Sheet confirm | `long-rest-confirm` (a confirm that is not destructive, so its button is the red fill) |
 | Banners and toasts | `toast-offline-ready`, `banner-data-download`, `banner-data-error`, `settings-update-failed` (a newer release that fails to install: Settings' alert and the "Update to ... failed" banner), `toast-data-update` ("Game data ... available"), `toast-app-update` ("A new version of the app is ready.", from a new build on the variant server), `banner-save-error` (character writes refused, as a full disk would), `banner-save-conflict` (a save refused because another tab saved the character first: its alert, Reload stored version and Keep mine), `banner-db-closed` (the database deleted, as clearing site data from another tab does) |
@@ -104,7 +104,8 @@ by a pseudo-element would not count. Two checks:
   chips (name and remove) and add chip, the picker's condition toggles and
   exhaustion stepper, the point-pool steppers, the death saves, Build's level and ability steppers,
   the creator's ability steppers, the sheet's and the creator's back links,
-  and Homebrew's row actions (enable, edit, download, delete). Pips are held
+  and a collection page's actions (its switch, an entry, the entry's More,
+  Add to, Export a file, Delete this collection). Pips are held
   to 32 wide by 44 tall (the decision below). Each check also counts the
   controls it found, so a renamed one cannot drop out unseen.
 - **Everything else, 24 by 24 (WCAG 2.5.8):** every visible button, link,
@@ -120,7 +121,7 @@ the character file carries, since the suite's data release has no caster:
 spell slots, a sorcery-point stepper, Channel Divinity pips, a level of
 exhaustion, so a chip on the condition strip), the condition picker and
 the HP sheet open over it, the same at 0 HP (the death saves), Build with every section
-and picker open, Homebrew with one file of your own, the creator's
+and picker open, a collection of your own on its page, the creator's
 abilities step on point buy, and a known spell's row on Play and in the Spells
 tab's Your spells view (one long name, one short). Not measured yet: a spell
 row while its file loads, a granted spell's row on Play, the Spells tab's Choose
@@ -147,7 +148,8 @@ creator's other steps. axe's `target-size` still runs on every scanned state.
 (no touch, the app nav and the sheet's tabs in a side rail):
 
 - **Dialogs and drawers:** the roster's New character sheet, its actions sheet, Rename, the Delete
-  confirm, the character import preview, the homebrew import preview, the HP
+  confirm, the character import preview, the Workshop's Import sheet and the
+  homebrew import preview it opens, the HP
   sheet (from Damage, Heal, the Temp HP chip and the number, with focus back on
   whichever opened it), the dice tray, the history drawer (opened from the sheet header's overflow menu, so
   focus comes back to the menu button), the long rest confirm, a number's breakdown (STR),
@@ -199,7 +201,8 @@ list role while empty.
 
 - **Reflow (1.4.10):** at 320 by 640 CSS px, no main route scrolls sideways
   (`scrollWidth <= clientWidth`): the roster, library index, a type list, a
-  detail page, homebrew, settings, the creator, not-found and the six sheet
+  detail page, the Workshop and its Import sheet, settings, the creator,
+  not-found and the six sheet
   tabs, each with every fold (`<details>`) opened, so collapsed content is
   measured too.
 - **Text at 200% (1.4.4):** the root font set to 200% through
@@ -338,8 +341,10 @@ Open findings, for follow-up issues:
   ("oncentr") beside Inspiration. Nothing scrolls sideways and the control
   keeps its full accessible name, but the visible text is cut; the manual
   Dynamic Type pass should judge it.
-- The builder's "This homebrew file is no longer on this device." page has no
-  heading (axe's `page-has-heading-one`, a best-practice rule, so not gated).
+- A collection page's "This collection is no longer on this device." screen
+  (where an old Builder link to a missing file lands) has no heading (axe's
+  `page-has-heading-one`, a best-practice rule, so not gated), as the
+  Builder's own missing page had none.
 - Not scanned yet, for want of a hermetic setup: the data banner's rollback
   notice ("could not start, so the app went back"), the database banner's
   `superseded` and `stale` wordings (same layout as `deleted`, which is
@@ -357,7 +362,8 @@ device, OS and assistive-technology version, and link the issue or fix.
 
 Flows: roster (create, rename, delete, import, export); creator; sheet tabs
 (Play, Stats, Items, Spells, More); Build; library browse, detail and search;
-homebrew import and builder; settings (data, update, reset); dialogs and
+the Workshop (import, make, a collection's page, the rules); settings (data,
+update, reset); dialogs and
 drawers; the dice tray; toasts and banners.
 
 The automated column says what CI already holds in Chromium (passing on

@@ -1,5 +1,5 @@
 /**
- * Write rules for the builder's weapon-damage fields.
+ * Write rules for the item editor's weapon-damage fields.
  *
  * A dropdown always shows *something*, so an untouched damage-type select
  * displays a type the entity never actually got. That reads as a filled-in
@@ -54,7 +54,7 @@ export function nextRiders(
 
 /**
  * The leading code of a 5etools item type. Imported files write the source
- * alongside it ("S|XPHB"); the builder writes the bare code. Both mean shield.
+ * alongside it ("S|XPHB"); the editor writes the bare code. Both mean shield.
  */
 export function baseTypeCode(type: unknown): string | undefined {
   return typeof type === 'string' ? type.split('|')[0] : undefined;

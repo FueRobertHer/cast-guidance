@@ -72,7 +72,7 @@ interface RejectedRecord {
  * and never finish its official build before the app gives up on it. A build that starts and
  * never finishes is what a release that crashes the app looks like from the
  * next launch. Counted per build rather than per launch, because plenty of
- * launches (a homebrew page, a reload on a missing route) build no registry
+ * launches (the Workshop's home, a reload on a missing route) build no registry
  * at all and say nothing about the data. Two, not one: a session can also
  * end for reasons that have nothing to do with the data (the tab closed, the
  * device slept), and going back costs the user the update they asked for.

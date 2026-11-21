@@ -822,7 +822,7 @@ export const homebrewRepo = {
     const modified = await db.transaction('rw', db.homebrewFiles, db.homebrewJson, () =>
       rewrite(id, json),
     );
-    // Matching no rows is not success. The builder reports what this resolves
+    // Matching no rows is not success. The Workshop's editor reports what this resolves
     // to, so a save against a file deleted in another tab has to say so rather
     // than close the form over an edit that reached nothing.
     if (!modified) throw new Error(`homebrew file ${id} no longer exists`);

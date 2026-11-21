@@ -1,5 +1,5 @@
 /**
- * The builder's spell-grant field, to and from 5etools `additionalSpells`.
+ * The item editor's spell-grant field, to and from 5etools `additionalSpells`.
  *
  * An item that grants a spell says so in the same shape a race or a feat does,
  * which is why the engine needed no new vocabulary to read one. That shape is

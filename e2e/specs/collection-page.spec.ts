@@ -117,8 +117,6 @@ test.describe('the collection page at phone width', () => {
     await gotoRosterSettled(page);
     // A character, so the page has a switch for it to fit too.
     await createBlankCharacter(page);
-    await page.goto('/homebrew');
-    await expect(page.getByRole('heading', { level: 1, name: 'Homebrew' })).toBeVisible();
     await importHomebrewFile(page, LONG_BREW);
     await answerImportPreview(page, `Import "${LONG_NAME}"?`);
     await importHomebrewFile(page, COMPENDIUM);
@@ -127,12 +125,23 @@ test.describe('the collection page at phone width', () => {
     await books.getByRole('button', { name: 'Import 2 books', exact: true }).click();
     await expect(books).toBeHidden();
     await expect(page.locator('[data-import-status]')).toContainText('2 books');
-    // A collection of the player's own, as the Homebrew page starts one.
-    await page.getByRole('button', { name: 'Create your own homebrew' }).click();
-    await page.getByRole('textbox', { name: 'Homebrew collection name' }).fill(MADE);
-    await page.getByRole('button', { name: 'OK', exact: true }).click();
-    await page.getByRole('button', { name: 'OK', exact: true }).click();
-    await expect(page).toHaveURL(/\/homebrew\/edit\//);
+    // A collection of the player's own, as the Workshop starts one: an entry
+    // made, then moved into a new collection named there.
+    await page.goto('/workshop/new/feat');
+    await page.getByRole('textbox', { name: 'Name', exact: true }).fill('Lantern Gift');
+    await page.getByRole('button', { name: 'Save', exact: true }).click();
+    await page.waitForURL(/\/workshop\/edit\/feat\//);
+    await page.goto('/workshop');
+    await page.getByRole('button', { name: 'Select', exact: true }).click();
+    await page.getByRole('checkbox', { name: /^Lantern Gift\s*,/ }).check();
+    await page.getByRole('button', { name: 'Move', exact: true }).click();
+    const move = page.getByRole('dialog', { name: 'Move 1 entry' });
+    await move.getByRole('radio', { name: /^Start a new collection/ }).check();
+    await move.getByRole('textbox', { name: 'Name of the new collection' }).fill(MADE);
+    await move.getByRole('button', { name: 'Make and move', exact: true }).click();
+    await expect(page.locator('[data-import-status]')).toHaveText(
+      `Made ${MADE} and moved 1 entry.`,
+    );
     const fromShelf = async (link: RegExp, heading: string) => {
       await page.goto('/workshop?shelf=collections');
       await page.getByRole('link', { name: link }).click();

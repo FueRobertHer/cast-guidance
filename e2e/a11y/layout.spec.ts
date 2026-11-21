@@ -42,7 +42,7 @@ import { expect, test } from '../support/test.ts';
 
 interface Route {
   name: string;
-  /** Opens the route and waits for its main heading. */
+  /** Opens the route and waits for its main heading, or the sheet it opens. */
   open: (page: Page, id: string) => Promise<void>;
   /** The controls the page exists for, which must stay reachable. */
   primary: (page: Page) => Locator[];
@@ -52,6 +52,12 @@ interface Route {
    * only truncates can squeeze it to nothing and still scroll nowhere.
    */
   keepsRoom?: (page: Page) => Locator[];
+  /**
+   * A fixed panel the route opens (a sheet), whose content must stay inside
+   * it: a fixed panel never widens the page, so the sideways check cannot
+   * see past its edge.
+   */
+  panel?: (page: Page) => Locator;
 }
 
 async function gotoHeading(page: Page, url: string, heading: string | RegExp): Promise<void> {
@@ -146,12 +152,24 @@ const ROUTES: Route[] = [
     primary: (page) => [page.getByRole('button', { name: 'Back' })],
   },
   {
-    name: 'homebrew',
-    open: (page) => gotoHeading(page, '/homebrew', 'Homebrew'),
-    primary: (page) => [
-      page.getByRole('button', { name: 'Import file', exact: true }),
-      page.getByRole('button', { name: 'Create your own homebrew' }),
-    ],
+    name: 'workshop import',
+    // The sheet is modal, so the page's heading under it is hidden from
+    // role queries: the sheet itself says the route is open.
+    open: async (page) => {
+      await page.goto('/workshop?shelf=collections&import=');
+      await expect(page.getByRole('dialog', { name: 'Import', exact: true })).toBeVisible();
+    },
+    primary: (page) => {
+      const sheet = page.getByRole('dialog', { name: 'Import', exact: true });
+      return [
+        ...['A file', 'A link', 'Text'].map((name) =>
+          sheet.getByRole('group', { name: 'Bring in' }).getByRole('button', { name, exact: true }),
+        ),
+        sheet.getByRole('button', { name: 'Choose a file', exact: true }),
+        sheet.getByRole('button', { name: 'Read it', exact: true }),
+      ];
+    },
+    panel: (page) => page.getByRole('dialog', { name: 'Import', exact: true }),
   },
   {
     name: 'workshop',
@@ -173,7 +191,7 @@ const ROUTES: Route[] = [
       await expect(page.getByRole('link', { name: /^The books\s*,/ })).toBeVisible();
     },
     primary: (page) => [
-      page.getByRole('link', { name: 'Import or manage files', exact: true }),
+      page.getByRole('link', { name: 'Import a file or a link', exact: true }),
       page.getByRole('link', { name: /^The books\s*,/ }),
     ],
   },
@@ -311,6 +329,10 @@ async function openFolds(page: Page): Promise<void> {
 async function expectNoSidewaysScroll(page: Page, route: Route): Promise<void> {
   const { by, culprits } = await sidewaysOverflow(page);
   expect(by, `${route.name} scrolls sideways, past: ${culprits.join(', ')}`).toBe(0);
+  const panel = route.panel?.(page);
+  if (panel !== undefined) {
+    expect(await pastRightEdge(panel), `${route.name}: past its panel`).toEqual([]);
+  }
 }
 
 // In two tests each, so neither runs near the timeout under load.
@@ -447,7 +469,6 @@ async function setUpWorkshop(page: Page): Promise<void> {
   await page.getByRole('textbox', { name: 'Name', exact: true }).fill('Fire Spark');
   await page.getByRole('button', { name: 'Save', exact: true }).click();
   await page.waitForURL(/\/workshop\/edit\/spell\//);
-  await gotoHeading(page, '/homebrew', 'Homebrew');
   await importHomebrewFile(page, LONG_BREW);
   await answerImportPreview(page, `Import "${LONG_BREW.name}"?`);
 }
@@ -480,7 +501,7 @@ const WORKSHOP: readonly Route[] = [
       await expect(page.getByRole('link', { name: /^a-very-long-homebrew/ })).toBeVisible();
     },
     primary: (page) => [
-      page.getByRole('link', { name: 'Import or manage files', exact: true }),
+      page.getByRole('link', { name: 'Import a file or a link', exact: true }),
       page.getByRole('link', { name: /^The books\s*,/ }),
     ],
     // With text at 200% the long name's card is taller than the screen, so it
@@ -501,7 +522,8 @@ const WORKSHOP: readonly Route[] = [
     primary: (page) => [
       page.getByRole('button', { name: 'Back', exact: true }),
       page.getByRole('button', { name: `Use ${LONG_BREW.name}`, exact: true }),
-      page.getByRole('link', { name: 'Open the Homebrew page', exact: true }),
+      page.getByRole('button', { name: 'Export a file', exact: true }),
+      page.getByRole('button', { name: 'Delete this collection', exact: true }),
     ],
   },
   {

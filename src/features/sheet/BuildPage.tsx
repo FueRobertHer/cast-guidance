@@ -341,7 +341,7 @@ export function Component() {
   const ruleFrom = ruleSources(doc, { byType: (type) => registry.byType(type as never) });
   const fromWords = (id: TableRuleId) => {
     const f = ruleFrom[id];
-    return f.from === 'own' ? 'Your own' : f.from === 'pack' ? f.pack : 'As in Settings';
+    return f.from === 'own' ? 'Your own' : f.from === 'pack' ? f.pack : 'Table rules';
   };
   const ruleRow = (id: TableRuleId) => (
     <RuleRow
@@ -565,7 +565,7 @@ export function Component() {
         </fieldset>
         <div className="flex min-w-0 flex-col gap-1.5">
           <span className="text-caption text-ink-muted">
-            House rules: this character follows Settings, unless it has its own.
+            House rules: this character follows the table rules, unless it has its own.
           </span>
           <div className={listClass}>
             {RULE_ORDER.filter((id) => id !== 'hpEachLevel').map(ruleRow)}

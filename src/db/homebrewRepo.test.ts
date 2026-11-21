@@ -99,7 +99,7 @@ describe('partitionHomebrewRows repairs what it can supply', () => {
       counts: {},
       addedAt: 0,
       // Absent means on: a file whose flag was lost should still be usable,
-      // and the user can turn it off from the homebrew screen.
+      // and the user can turn it off on its collection page.
       enabled: true,
       editable: false,
       rev: undefined,

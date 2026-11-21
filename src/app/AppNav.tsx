@@ -3,16 +3,14 @@ import type { ReactNode } from 'react';
 import { Link, Outlet, useLocation } from 'react-router';
 
 /**
- * The sections, each with the paths it is the tab for: `end` for the roster,
- * which owns `/` alone. The Homebrew page is reached from the Workshop's
- * Collections until the Workshop takes over its jobs (ADR-002, D1), so the
- * Workshop is the tab lit there.
+ * The sections, each the tab for its path and the pages under it: `end` for
+ * the roster, which owns `/` alone.
  */
 const items = [
-  { to: '/', label: 'Characters', icon: Users, end: true, also: [] },
-  { to: '/library', label: 'Library', icon: LibraryBig, end: false, also: [] },
-  { to: '/workshop', label: 'Workshop', icon: Hammer, end: false, also: ['/homebrew'] },
-  { to: '/settings', label: 'Settings', icon: Settings, end: false, also: [] },
+  { to: '/', label: 'Characters', icon: Users, end: true },
+  { to: '/library', label: 'Library', icon: LibraryBig, end: false },
+  { to: '/workshop', label: 'Workshop', icon: Hammer, end: false },
+  { to: '/settings', label: 'Settings', icon: Settings, end: false },
 ] as const;
 
 /** Whether `pathname` is `base` or a page under it. */
@@ -42,7 +40,7 @@ function TabPill({ active, children }: { active: boolean; children: ReactNode })
 /**
  * Layout route for the top-level sections: persistent tab bar at the bottom
  * on mobile, a left rail on desktop (mirrors the sheet's nav placement).
- * Focused flows (creator, sheet, homebrew editor) stay outside this layout.
+ * Focused flows (creator, sheet, Workshop editor) stay outside this layout.
  */
 export function AppNavLayout() {
   // Routes match regardless of case, so `/Library` is the Library's page too.
@@ -62,10 +60,8 @@ export function AppNavLayout() {
         <span className="hidden px-3 pb-3 font-display text-title-card lg:block">
           Cast Guidance
         </span>
-        {items.map(({ to, label, icon: Icon, end, also }) => {
-          const active = end
-            ? pathname === to
-            : [to, ...also].some((base: string) => under(pathname, base));
+        {items.map(({ to, label, icon: Icon, end }) => {
+          const active = end ? pathname === to : under(pathname, to);
           return (
             <Link
               key={to}

@@ -6,9 +6,9 @@
  * `describeCollision`), so what this says about a clash is what the registry
  * does with it.
  *
- * The Homebrew page loads this module once an import starts, so the preview,
- * its gathering and its commit stay out of the page's first load and out of
- * the entry chunk.
+ * The Workshop's Import sheet loads this module once an import starts, so the
+ * preview, its gathering and its commit stay out of the Workshop's first load
+ * and out of the entry chunk.
  */
 import { type ReactNode, useState } from 'react';
 import { type ConversionReport, convertedTotal, type EntryNote, notesWith } from '@/convert/types';
@@ -289,7 +289,7 @@ function dependencyLine(status: Dependency['status'], coverage: OfficialCoverage
 }
 
 /** How many converted entries the preview names one by one, per list. */
-export const MAX_LISTED_NOTES = 10;
+const MAX_LISTED_NOTES = 10;
 
 const entries = (n: number) => `${n} ${n === 1 ? 'entry' : 'entries'}`;
 
@@ -467,11 +467,8 @@ export default function HomebrewImportPreview({
   onImport,
   onCancel,
   onKeepExisting,
-  listedAt = 'in your list below',
 }: {
   preview: HomebrewPreview;
-  /** Where the page lists the files here, for "It is … Turn it on there". */
-  listedAt?: string;
   /** Set for a file converted from another app: what carried over. */
   conversion?: ConversionReport;
   /**
@@ -586,11 +583,11 @@ export default function HomebrewImportPreview({
                   tone="warn"
                   status={`${dup.booksOff} of ${booksText(books.length)} turned off.`}
                 >
-                  They are {listedAt}. Turn them on there to use them.
+                  They are under Collections. Turn them on there to use them.
                 </StatusItem>
               ) : (
                 <StatusItem tone="warn" status="Turned off.">
-                  It is {listedAt}. Turn it on there to use it.
+                  It is under Collections. Turn it on there to use it.
                 </StatusItem>
               ))}
           </PreviewList>
@@ -614,7 +611,7 @@ export default function HomebrewImportPreview({
             )}
             {!update.enabled && (
               <StatusItem tone="warn" status="Turned off.">
-                It stays off. Turn it on {listedAt} to use it.
+                It stays off. Turn it on under Collections to use it.
               </StatusItem>
             )}
           </PreviewList>

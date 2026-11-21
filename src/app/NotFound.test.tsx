@@ -44,7 +44,6 @@ describe('nearestPage', () => {
   });
 
   it('points the other sections at their own page', () => {
-    expect(nearestPage('/homebrew/edit')?.to).toBe('/homebrew');
     expect(nearestPage('/create/x')?.to).toBe('/create');
     expect(nearestPage('/settings/x')?.to).toBe('/settings');
   });
@@ -60,6 +59,10 @@ describe('nearestPage', () => {
   it('has nothing better than the roster for anything else', () => {
     expect(nearestPage('/nope')).toBeNull();
     expect(nearestPage('/')).toBeNull();
+    // The Homebrew page is gone (ADR-002, U12): never offered, and its old
+    // addresses redirect before this is asked (OldAddress.test.tsx).
+    expect(nearestPage('/homebrew')).toBeNull();
+    expect(nearestPage('/homebrew/edit')).toBeNull();
   });
 });
 
@@ -79,14 +82,6 @@ describe('the catch-all route', () => {
     expect(screen.getByRole('navigation', { name: 'Main' })).toBeTruthy();
     expect(screen.queryByText(/ran into a problem/)).toBeNull();
     expect(document.title).toBe('Page not found · Cast Guidance');
-  });
-
-  it('catches a builder link with no file in it', async () => {
-    renderAt('/homebrew/edit');
-    expect(await screen.findByRole('heading', { name: 'Page not found' })).toBeTruthy();
-    expect(screen.getByRole('link', { name: 'Go to homebrew' }).getAttribute('href')).toBe(
-      '/homebrew',
-    );
   });
 
   it('offers only the roster when nothing is nearer', async () => {

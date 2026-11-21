@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-// A collection's page over the app's routes (ADR-002, D1; board 8): each job
-// the Homebrew page's file card and the Builder did. Turn it on or off, for
+// A collection's page over the app's routes (ADR-002, D1; board 8): every job
+// done on one stored file or compendium. Turn it on or off, for
 // the device and for each character; open, rename and delete an entry;
 // export; delete the collection; The books. Bugs 1, 2 and 4 of the plan's
 // list each have a case here. Updates and Needs a look are in
@@ -99,7 +99,7 @@ async function more(entry: string, choice: string) {
 }
 
 describe('a collection page', () => {
-  it('names the collection, turns it off and on, and leads to the Homebrew page', async () => {
+  it('names the collection, turns it off and on, and offers its update', async () => {
     const row = await homebrewRepo.importJson(IMPORTED, 'imported.json');
     visit(await addressOf(row.id));
     expect(await heading('imported.json')).toBeTruthy();
@@ -114,9 +114,12 @@ describe('a collection page', () => {
     await waitFor(() => expect(use.getAttribute('aria-pressed')).toBe('false'), { timeout: WAIT });
     fireEvent.click(use);
     await waitFor(async () => expect(await enabled(row.id)).toBe(true), { timeout: WAIT });
-    expect(screen.getByRole('link', { name: 'Open the Homebrew page' }).getAttribute('href')).toBe(
-      '/homebrew',
-    );
+    // Its jobs are all here: nothing leads to another page to do them.
+    expect(
+      screen
+        .getAllByRole('link')
+        .filter((l) => (l.getAttribute('href') ?? '').startsWith('/homebrew')),
+    ).toEqual([]);
     expect(screen.getByRole('button', { name: 'Update from a file' })).toBeTruthy();
     expect(namelessControls()).toEqual([]);
   });
@@ -126,6 +129,42 @@ describe('a collection page', () => {
     expect(row.key).toBeDefined();
     visit(`/workshop/collection/${row.id}`);
     expect(await heading('imported.json')).toBeTruthy();
+  });
+
+  it('goes up to Collections from an old Builder link opened in a new tab', async () => {
+    const row = await homebrewRepo.importJson(IMPORTED, 'imported.json');
+    // The redirect and the page's own address each replace the tab's first
+    // entry: Back still goes up, not out of the app.
+    const router = visit(`/homebrew/edit/${row.id}`);
+    expect(await heading('imported.json')).toBeTruthy();
+    await waitFor(() =>
+      expect(router.state.location.pathname).toBe(
+        `/workshop/collection/${encodeURIComponent(row.key ?? '')}`,
+      ),
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Back' }));
+    await waitFor(() =>
+      expect(router.state.location.pathname + router.state.location.search).toBe(
+        '/workshop?shelf=collections',
+      ),
+    );
+  });
+
+  it('steps back to the page an old Builder link was followed from', async () => {
+    const row = await homebrewRepo.importJson(IMPORTED, 'imported.json');
+    const router = createMemoryRouter(routes, {
+      initialEntries: ['/settings', `/homebrew/edit/${row.id}`],
+      initialIndex: 1,
+    });
+    render(
+      <StrictMode>
+        <RouterProvider router={router} />
+      </StrictMode>,
+    );
+    expect(await heading('imported.json')).toBeTruthy();
+    await waitFor(() => expect(router.state.location.pathname).not.toContain(row.id));
+    fireEvent.click(screen.getByRole('button', { name: 'Back' }));
+    await waitFor(() => expect(router.state.location.pathname).toBe('/settings'));
   });
 
   it("gives a compendium's books a switch each, from any book's address", async () => {
@@ -606,6 +645,43 @@ describe('a collection page', () => {
       '/workshop?shelf=collections',
     );
   });
+
+  it('deletes a collection that could not be read, the one place that can', async () => {
+    const real = homebrewRepo.listMetaSafe.bind(homebrewRepo);
+    // No stored row reads back this way today (a row the list cannot read
+    // has no id), so the read is given one: this pins the page's own branch.
+    const read = vi.spyOn(homebrewRepo, 'listMetaSafe').mockImplementation(async () => ({
+      ...(await real()),
+      errors: [{ id: 'broken-1', fileName: 'broken.json', message: 'the file content is missing' }],
+    }));
+    const remove = vi.spyOn(homebrewRepo, 'delete');
+    try {
+      visit('/workshop/collection/broken-1');
+      expect(
+        await screen.findByText(
+          'This collection is on this device but could not be read: the file content is missing.',
+          {},
+          { timeout: WAIT },
+        ),
+      ).toBeTruthy();
+      await waitFor(
+        () => expect(document.title).toBe('Collection unreadable · Workshop · Cast Guidance'),
+        { timeout: WAIT },
+      );
+      fireEvent.click(screen.getByRole('button', { name: 'Delete it' }));
+      const ask = await screen.findByRole(
+        'dialog',
+        { name: 'Delete this collection?' },
+        { timeout: WAIT },
+      );
+      expect(ask.textContent).toContain('It could not be read, so what it held is not known.');
+      fireEvent.click(within(ask).getByRole('button', { name: 'Delete' }));
+      await waitFor(() => expect(remove).toHaveBeenCalledWith('broken-1'), { timeout: WAIT });
+    } finally {
+      read.mockRestore();
+      remove.mockRestore();
+    }
+  });
 });
 
 describe('The books', () => {
@@ -805,7 +881,7 @@ describe('The books', () => {
       { timeout: WAIT },
     );
     expect(ask.textContent).toContain(
-      'One more row named all.xml could not be read, so it stays: the Homebrew page says which.',
+      'One more row named all.xml could not be read, so it stays: the Collections shelf lists it.',
     );
     fireEvent.click(within(ask).getByRole('button', { name: 'Cancel' }));
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull(), { timeout: WAIT });

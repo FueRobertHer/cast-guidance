@@ -54,12 +54,18 @@ export interface LevelManifest {
   characterId: string;
   /** The caster (fixtures/caster.ts), who knows Fireball. */
   casterId: string;
+  /**
+   * The imported homebrew file's stored row id: what an old Builder link and
+   * a collection link from before keys name, which the collection page finds
+   * the collection by.
+   */
   homebrewId: string;
 }
 
 export const CHARACTER_NAME = 'New hero';
 export const CASTER_NAME = 'Vela Quill';
-export const HOMEBREW_NAME = 'Table Brews';
+/** The imported homebrew file's name, which is its collection's. */
+export const HOMEBREW_NAME = 'table-brews.json';
 
 const MANIFEST = 'level.json';
 

@@ -1,6 +1,5 @@
 /**
- * One collection, at `/workshop/collection/:id` (ADR-002, D1; board 8): the
- * page that takes the place of the Homebrew page's file card and the Builder.
+ * One collection, at `/workshop/collection/:id` (ADR-002, D1; board 8).
  * What it holds, by kind, each entry opening where it is edited or read;
  * where it is on, for this device and for each character (D3); where it came
  * from, and an update from its link or a newer file through the Import
@@ -47,7 +46,7 @@ import { usePacksHere } from '@/features/homebrew/PackReviewSheet';
 import { TYPE_LABELS } from '@/features/library/browseTypes';
 import { downloadJson, jsonFilename } from '@/lib/download';
 import { safeExternalHref } from '@/lib/url';
-import { useBack } from '@/lib/useBack';
+import { FIRST_ENTRY, isFirstEntry, useBack } from '@/lib/useBack';
 import { usePageTitle } from '@/lib/usePageTitle';
 import { useDataStatus } from '@/stores/dataStatus';
 import { errorText, notify, notifyFailure } from '@/stores/notices';
@@ -485,13 +484,13 @@ async function deleteDetail(c: Collection, strays: number): Promise<string> {
   // Not deleted by its name: another file can share it.
   if (strays > 0) {
     parts.push(
-      `${strays === 1 ? 'One more row' : `${strays} more rows`} named ${c.rows[0]?.fileName ?? c.name} could not be read, so ${strays === 1 ? 'it stays' : 'they stay'}: the Homebrew page says which.`,
+      `${strays === 1 ? 'One more row' : `${strays} more rows`} named ${c.rows[0]?.fileName ?? c.name} could not be read, so ${strays === 1 ? 'it stays' : 'they stay'}: the Collections shelf lists ${strays === 1 ? 'it' : 'them'}.`,
     );
   }
   return parts.join(' ');
 }
 
-/** A compendium's books by name, as the Homebrew page lists them; other rows as they come. */
+/** A compendium's books by name; other rows as they come. */
 const inOrder = (c: Collection) =>
   c.rows[0]?.book === undefined
     ? c.rows
@@ -1274,14 +1273,12 @@ function Found({
       </section>
       <p className={NOTE}>
         A rule pack&rsquo;s review and the order of packs are on the{' '}
-        <Link to="/workshop/rules" className={LINK}>
+        {/* 24 tall, the size floor, though it sits in a sentence. */}
+        <Link to="/workshop/rules" className={`${LINK} inline-flex min-h-6 items-center`}>
           Rules shelf
         </Link>
         .
       </p>
-      <Link to="/homebrew" className={`self-start ${buttonClass({ variant: 'outline' })}`}>
-        Open the Homebrew page
-      </Link>
       {importing !== undefined && (
         <Suspense fallback={null}>
           <ImportSheet
@@ -1325,6 +1322,7 @@ function Missing({
 
 function CollectionAt({ address }: { address: string }) {
   const navigate = useNavigate();
+  const first = isFirstEntry(useLocation());
   const meta = useLiveQuery(() => homebrewRepo.listMetaSafe(), []);
   const owned = useLiveQuery(() => homebrewRepo.ownedSafe(), []);
   const made =
@@ -1336,11 +1334,13 @@ function CollectionAt({ address }: { address: string }) {
       ? undefined
       : collectionWith(address, meta.files, made);
   // Found by a row's id or the link it came from: its own address from here
-  // on, which an update keeps (a row's id goes with it).
+  // on, which an update keeps (a row's id goes with it). Opened as the tab's
+  // first page, it stays the first, so Back goes up rather than out.
   const own = c?.id;
   useEffect(() => {
-    if (own !== undefined && own !== address) void navigate(collectionPath(own), { replace: true });
-  }, [own, address, navigate]);
+    if (own === undefined || own === address) return;
+    void navigate(collectionPath(own), { replace: true, ...(first ? { state: FIRST_ENTRY } : {}) });
+  }, [own, address, navigate, first]);
   if (meta === undefined || made === undefined) {
     return (
       <Frame>

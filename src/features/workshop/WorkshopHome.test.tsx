@@ -189,9 +189,13 @@ describe('the Workshop home', () => {
       'Lantern Coast, Yours. Made in this app, 2 entries. On',
       'The books, Game data harness, Choose which books show',
     ]);
-    expect(screen.getByRole('link', { name: 'Import or manage files' }).getAttribute('href')).toBe(
-      '/homebrew',
-    );
+    // Every job the Homebrew page did is on a collection's page or a sheet now.
+    expect(
+      within(main)
+        .getAllByRole('link')
+        .filter((l) => (l.getAttribute('href') ?? '').startsWith('/homebrew')),
+    ).toEqual([]);
+    expect(screen.queryByText(/could not be read/)).toBeNull();
     expect(screen.getByRole('link', { name: 'Import a file or a link' }).getAttribute('href')).toBe(
       '/workshop?shelf=collections&import=',
     );
@@ -446,10 +450,123 @@ describe('the Workshop home', () => {
     expect(getAnnouncerState().emitted).toBe(0);
   });
 
-  it('lights the Workshop tab on the Homebrew page it still links to', async () => {
+  it('names the files that could not be read, each opening the page that deletes it', async () => {
+    const real = homebrewRepo.listMetaSafe.bind(homebrewRepo);
+    // No write the app makes leaves such a row, so the read is given them.
+    const read = vi.spyOn(homebrewRepo, 'listMetaSafe').mockImplementation(async () => {
+      const result = await real();
+      return {
+        ...result,
+        errors: [
+          { id: 'broken-1', fileName: 'broken.json', message: 'the file content is missing' },
+          { message: 'the row has no id, so nothing can address it' },
+        ],
+      };
+    });
+    try {
+      await visit('/workshop?shelf=collections');
+      const list = await screen.findByRole(
+        'region',
+        { name: 'Could not be read' },
+        { timeout: WAIT },
+      );
+      expect(
+        within(list).getByText(
+          '2 files here could not be read, so they are not in use. Open one to delete it.',
+        ),
+      ).toBeTruthy();
+      expect(within(list).getByRole('link', { name: 'broken.json' }).getAttribute('href')).toBe(
+        '/workshop/collection/broken-1',
+      );
+      // No id, so nothing can open or delete it: named alone.
+      expect(within(list).getAllByRole('link')).toHaveLength(1);
+      expect(within(list).getByText('A file with no name')).toBeTruthy();
+      expect(within(list).getByText(': the row has no id, so nothing can address it')).toBeTruthy();
+    } finally {
+      read.mockRestore();
+    }
+  });
+
+  it('offers no delete when no file that could not be read can be opened', async () => {
+    const real = homebrewRepo.listMetaSafe.bind(homebrewRepo);
+    const read = vi.spyOn(homebrewRepo, 'listMetaSafe').mockImplementation(async () => ({
+      ...(await real()),
+      errors: [{ message: 'the row has no id, so nothing can address it' }],
+    }));
+    try {
+      await visit('/workshop?shelf=collections');
+      const list = await screen.findByRole(
+        'region',
+        { name: 'Could not be read' },
+        { timeout: WAIT },
+      );
+      expect(
+        within(list).getByText('One file here could not be read, so it is not in use.'),
+      ).toBeTruthy();
+      expect(within(list).queryByText(/delete/)).toBeNull();
+      expect(within(list).queryAllByRole('link')).toEqual([]);
+    } finally {
+      read.mockRestore();
+    }
+  });
+
+  it('lists every file that could not be read, twins and blank names too', async () => {
+    const NO_ID = 'the row has no id, so nothing can address it';
+    const real = homebrewRepo.listMetaSafe.bind(homebrewRepo);
+    // Rows with ids that are not strings: each one reads back the same way.
+    const read = vi.spyOn(homebrewRepo, 'listMetaSafe').mockImplementation(async () => ({
+      ...(await real()),
+      errors: [
+        { fileName: 'twin.json', message: NO_ID },
+        { fileName: 'twin.json', message: NO_ID },
+        { fileName: ' ', message: NO_ID },
+        { message: NO_ID },
+      ],
+    }));
+    const warned = vi.spyOn(console, 'error');
+    try {
+      await visit('/workshop?shelf=collections');
+      const list = await screen.findByRole(
+        'region',
+        { name: 'Could not be read' },
+        { timeout: WAIT },
+      );
+      expect(
+        within(list)
+          .getAllByRole('listitem')
+          .map((li) => li.textContent),
+      ).toEqual([
+        `twin.json: ${NO_ID}`,
+        `twin.json: ${NO_ID}`,
+        `A file with no name: ${NO_ID}`,
+        `A file with no name: ${NO_ID}`,
+      ]);
+      // No two rows share a key, which would leave one out on the next render.
+      expect(warned.mock.calls.flat().join(' ')).not.toMatch(/same key/);
+    } finally {
+      read.mockRestore();
+      warned.mockRestore();
+    }
+  });
+
+  it('lands an old Homebrew link on the Collections shelf, the Workshop tab lit', async () => {
     const router = await visit('/workshop');
     await act(() => router.navigate('/homebrew'));
-    await screen.findByRole('heading', { level: 1, name: 'Homebrew' }, { timeout: WAIT });
+    await waitFor(() => expect(router.state.location.search).toBe('?shelf=collections'), {
+      timeout: WAIT,
+    });
+    expect(router.state.location.pathname).toBe('/workshop');
+    // The Collections shelf itself, not only its address: The books' card is
+    // on no other shelf.
+    await waitFor(
+      () =>
+        expect(
+          screen
+            .getAllByRole('link')
+            .some((l) => l.getAttribute('href') === '/workshop/collection/books'),
+        ).toBe(true),
+      { timeout: WAIT },
+    );
     const nav = screen.getByRole('navigation', { name: 'Main' });
     expect(
       within(nav)

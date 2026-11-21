@@ -41,11 +41,11 @@ import { HARNESS_TAG } from './sheetHarnessMocks';
 // navigation. The table loads them lazily, and a cold transform of the sheet
 // and its tabs took over ten seconds of the first test's time on a loaded
 // runner; imported here, that cost lands in the file's import phase instead.
-import '@/features/homebrew/BuilderPage';
 import '@/features/sheet/BuildPage';
 import '@/features/sheet/SheetLayout';
 import '@/features/sheet/tabs/PlayTab';
 import '@/features/sheet/tabs/SpellsTab';
+import '@/features/workshop/CollectionPage';
 import { makeTestContext } from './testWorld';
 
 // ---------------------------------------------------------------------------

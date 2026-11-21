@@ -261,30 +261,32 @@ export const ROUTES: readonly RouteCase[] = [
         link('Back to the library'),
       ),
   },
+  // The Homebrew page and the Builder are gone (ADR-002, U12): a bookmark
+  // to either lands on the Workshop page that does its job, at every level.
   {
-    name: 'homebrew',
+    name: 'old homebrew link',
     frame: appNav,
     path: () => '/homebrew',
     at: () =>
-      content(title('Homebrew'), (page) =>
-        page.getByRole('main').getByText(`${HOMEBREW_NAME.replace(' ', '_')}.json`),
+      content(title('Workshop'), (page) =>
+        page.getByRole('main').getByRole('link', { name: new RegExp(`^${HOMEBREW_NAME}\\s*,`) }),
       ),
   },
   {
-    name: 'homebrew file',
-    frame: link('Back to homebrew'),
+    name: 'old homebrew file link',
+    frame: appNav,
     path: (m) => `/homebrew/edit/${m.homebrewId}`,
-    at: () => content(title(HOMEBREW_NAME, 'Homebrew editor'), heading(HOMEBREW_NAME)),
+    at: () => content(title(HOMEBREW_NAME, 'Workshop'), heading(HOMEBREW_NAME)),
   },
   {
-    name: 'homebrew file that does not exist',
-    frame: link('Back to homebrew'),
+    name: 'old homebrew link to a file that is gone',
+    frame: appNav,
     path: () => '/homebrew/edit/missing',
     at: () =>
       notFound(
-        title('Homebrew file not found'),
-        text('This homebrew file is no longer on this device.'),
-        link('Go to the homebrew list'),
+        title('Collection not found', 'Workshop'),
+        text('This collection is no longer on this device.'),
+        link('Back to the Workshop'),
       ),
   },
   // The Workshop reads only what is on the device for its shelves, so each

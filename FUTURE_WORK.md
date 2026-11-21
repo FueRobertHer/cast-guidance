@@ -447,7 +447,7 @@ work:
   since a written pack keeps its key through export; any screen other than the
   rules that holds the registry misses a pack change until it remounts, since
   `invalidateRegistry` tells no mounted reader (the rules read it again for
-  themselves); the Homebrew page keeps its own pack review and order; the
+  themselves); the pack review and pack order are on the Rules shelf, and the Homebrew page has been removed (U12); the
   Build tab and the rule sheet still say a character follows Settings.
 - The Build page's Content row (ADR-002 U11) lists each collection with this
   character's switch over the device's choice, the rule packs and whom they
@@ -463,6 +463,22 @@ work:
   view; house rules stay under Identity. A picker's offer names the device's
   settings and the character's switches together when both hide books, with
   one count for both.
+- The Homebrew page and the Builder are gone (ADR-002 U12): `/homebrew` lands
+  on the Collections shelf and `/homebrew/edit/<id>` on that collection's
+  page, replacing the old address in history. The pack review and order are
+  the Rules page's alone, and the Build tab and the rule sheet say a
+  character follows the table rules, so the last two of U9's left-outs are
+  done. A file that could not be read is listed on the Collections shelf.
+  Left out: the redirect route stays in the table for old bookmarks, with no
+  date to drop it; a collection of your own with a name and short source id
+  of your choosing is made only by Move's "Start a new collection" (the
+  source id comes from the name); a stored row with no id is named on the
+  shelf but nothing can delete it, as before; the Workshop editor has no
+  axe state of its own (the Builder's was replaced by `workshop-collection-mine`);
+  a damaged or nameless entry in a collection of your own is no longer listed,
+  so it cannot be deleted alone (the Builder listed it with Delete); a book in
+  more than one file lost its "also in" caption; a pack clash shows only in
+  the Rules page's Order sheet and a pack's review, with no banner on a page.
 
 ### Maintainability and diagnostics
 

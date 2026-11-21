@@ -1,6 +1,6 @@
 # Import formats
 
-The Workshop's Import sheet and the Homebrew page import 5etools homebrew JSON,
+The Workshop's Import sheet imports 5etools homebrew JSON,
 and convert files from other apps into that same JSON as they come in. The app
 stores and reads only the 5etools shape, so a converted file is homebrew like
 any other: it can be turned off, deleted and downloaded. (Source of truth:

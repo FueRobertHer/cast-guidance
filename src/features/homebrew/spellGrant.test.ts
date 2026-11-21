@@ -1,4 +1,4 @@
-// The builder writes one spell with one limit; the file format can say far
+// The item editor writes one spell with one limit; the file format can say far
 // more. These are the rules for translating the part they share, and for
 // recognizing the part they don't so a hand-written file survives an edit.
 import { describe, expect, it } from 'vitest';
@@ -67,7 +67,7 @@ describe('readSpellGrant', () => {
 
 describe('readSpellGrant on damaged files', () => {
   it('reports rather than throws on a null bucket', () => {
-    // The builder renders this function's result, so a throw here is a white
+    // The item editor renders this function's result, so a throw here is a white
     // screen on the whole page, for a file the author can no longer reach.
     expect(readSpellGrant([{ known: null }])).toBe(COMPLEX);
     expect(readSpellGrant([{ innate: null }])).toBe(COMPLEX);

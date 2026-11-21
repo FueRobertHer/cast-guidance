@@ -1,5 +1,5 @@
 /**
- * Plain-text ⇄ 5etools `entries` conversion for the homebrew builder.
+ * Plain-text ⇄ 5etools `entries` conversion for the Workshop's editors.
  * Paragraphs are blank-line separated; lines starting "- " form bullet lists.
  * Inline {@dice ...}/{@spell ...} tags pass through as written.
  */
