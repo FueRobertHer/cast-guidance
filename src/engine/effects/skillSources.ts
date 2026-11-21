@@ -3,8 +3,15 @@
  * which of its options the build already grants ("Already proficient from
  * Acolyte (background)") instead of letting a pick be spent on a duplicate.
  */
-import type { ChoiceOption, ChoicePrompt, EffectInput, EffectOrigin } from '../types';
+import {
+  type ChoiceOption,
+  type ChoicePrompt,
+  type EffectInput,
+  type EffectOrigin,
+  SKILLS,
+} from '../types';
 import type { Collector } from './base';
+import { skillOptions } from './readers';
 
 /** What a player calls each origin type. Custom and curated rows go unnamed. */
 const ORIGIN_NOUN: Partial<Record<EffectOrigin['type'], string>> = {
@@ -71,14 +78,65 @@ function noted(col: Collector, prompt: ChoicePrompt): ChoicePrompt {
   return changed ? { ...prompt, options } : prompt;
 }
 
+/** Where a replacement for a skill granted twice is saved, by the skill's lowercase name. */
+export const OVERLAP_PICK = 'skill:overlap:';
+
 /**
- * Mark every skill pick, made or not, with what the rest of the build already
- * grants. Runs once everything is collected, because a source can come after
- * the pick it overlaps (a background's fixed skill against a class pick). A
- * cue, not a block: the option stays selectable, since the rules let a
- * duplicate be swapped and the overlap may not have existed when it was picked.
+ * The sources the rule is written for, those a character is made from: its
+ * species, background and class. A subclass feature or a feat that grants a
+ * skill held already says what it does instead (Survivalist doubles it), and
+ * an item or a custom effect is not part of the build.
+ */
+const BUILD_ORIGINS = new Set<EffectOrigin['type']>(['race', 'background', 'class']);
+
+/**
+ * Under the 2014 rules, a character who would gain the same skill from two
+ * sources can choose a different skill instead (PHB, Backgrounds,
+ * Proficiencies): a Sage Wizard who takes Arcana from both gets another skill.
+ * One pick per skill granted twice or more, of any skill, one for each source
+ * past the first, on the second source's step, so it sits beside the pick that
+ * made the overlap. It is saved by the skill, so it holds while the overlap
+ * does, whatever brings it. The 2024 rules have no such swap.
+ *
+ * Its own grants do not count as sources, so a replacement that lands on a
+ * skill held already makes no overlap of its own; the cue below says so.
+ */
+function offerOverlapReplacements(col: Collector): void {
+  if (col.doc.rulesVersion !== '2014') return;
+  const sources = skillSources(col.effects, {
+    skip: (e) =>
+      !BUILD_ORIGINS.has(e.origin.type) || col.pickOf.get(e)?.startsWith(OVERLAP_PICK) === true,
+  });
+  for (const { name } of SKILLS) {
+    const from = sources.get(name.toLowerCase());
+    const second = from?.[1];
+    if (from === undefined || second === undefined) continue;
+    col.choice(
+      {
+        id: `${OVERLAP_PICK}${name.toLowerCase()}`,
+        origin: second,
+        kind: 'skill',
+        label: `${name} from ${originList(from)}: choose ${from.length > 2 ? `${from.length - 1} other skills` : 'another skill'} in its place`,
+        count: from.length - 1,
+        options: skillOptions().filter((o) => o.id.toLowerCase() !== name.toLowerCase()),
+      },
+      (picked) => {
+        for (const skill of picked) col.add({ kind: 'skillProf', skill, level: 1, origin: second });
+      },
+    );
+  }
+}
+
+/**
+ * Offer a replacement for each skill granted twice, where the rules allow one,
+ * then mark every skill pick, made or not, with what the rest of the build
+ * already grants. Runs once everything is collected, because a source can come
+ * after the pick it overlaps (a background's fixed skill against a class pick).
+ * A cue, not a block: the option stays selectable, since the overlap may not
+ * have existed when it was picked, and a 2014 duplicate can be replaced.
  */
 export function noteSkillSources(col: Collector): void {
+  offerOverlapReplacements(col);
   col.pending.forEach((p, i) => {
     col.pending[i] = noted(col, p);
   });
