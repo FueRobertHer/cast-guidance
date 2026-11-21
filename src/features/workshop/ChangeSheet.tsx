@@ -19,7 +19,7 @@
 import { useLiveQuery } from 'dexie-react-hooks';
 import { Info, Pencil } from 'lucide-react';
 import { type ReactNode, useEffect, useRef, useState } from 'react';
-import { Link, useNavigate } from 'react-router';
+import { Link, useLocation, useNavigate } from 'react-router';
 import { type CopyModWarning, type Entity, withReplaceBudget } from '@/data5e/copyMod';
 import { EntriesView } from '@/data5e/entries/renderEntries';
 import { useRegistryState, useTypePacks } from '@/data5e/hooks';
@@ -31,7 +31,7 @@ import { isRecord } from '@/engine/castGuidance';
 import { isBuiltInCondition } from '@/engine/conditions';
 import { readMechanics } from '@/engine/effects/mechanics';
 import { findEntity } from '@/features/library/findEntity';
-import { useBack } from '@/lib/useBack';
+import { keepFirst, useBack } from '@/lib/useBack';
 import { usePageTitle } from '@/lib/usePageTitle';
 import { errorText, notify } from '@/stores/notices';
 import { askChoice, askConfirm } from '@/ui/dialogs';
@@ -584,6 +584,7 @@ function Frame({ children }: { children: ReactNode }) {
 /** The Change sheet's route: finds the entry, the player's change to it, and the type's editor. */
 export function ChangeSheet({ type, uid }: { type: string; uid: string }) {
   const reg = useRegistryState();
+  const location = useLocation();
   const navigate = useNavigate();
   const packs = useTypePacks(type, reg.retry);
   const owned = useLiveQuery(() => homebrewRepo.ownedSafe(), []);
@@ -651,7 +652,9 @@ export function ChangeSheet({ type, uid }: { type: string; uid: string }) {
           <button
             type="button"
             className={`${LINK} self-start`}
-            onClick={() => navigate(resolved.edit as string, { replace: true })}
+            onClick={() =>
+              navigate(resolved.edit as string, { replace: true, state: keepFirst(location) })
+            }
           >
             Open it in its editor
           </button>

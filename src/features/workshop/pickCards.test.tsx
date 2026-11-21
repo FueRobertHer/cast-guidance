@@ -16,6 +16,7 @@ import { type DataEntity, newCharacterDoc } from '@/engine/types';
 import { pickWords } from '@/features/homebrew/pickWords';
 import curated from '@/rules/cast-guidance/curated.json';
 import standing from '@/rules/cast-guidance/standing.json';
+import { boxChoices, cardBox, hasBox, setBox } from '../../../tests-fixtures/cardBoxes';
 import { makeTestContext } from '../../../tests-fixtures/testWorld';
 
 const { choice } = vi.hoisted(() => ({ choice: { current: undefined as string | undefined } }));
@@ -58,12 +59,13 @@ function withCards(effects: Json[], taken: readonly string[] = []) {
   return () => ((latest.castGuidance as Json | undefined)?.effects ?? []) as Json[];
 }
 
-/** Set the box labelled `label` in `at` (the screen, or one list of cards). */
-const pick = (label: string, value: string, at: Pick<typeof screen, 'getByLabelText'> = screen) =>
-  fireEvent.change(at.getByLabelText(label), { target: { value } });
-const box = (label: string) => screen.getByLabelText(label) as HTMLSelectElement;
-const has = (label: string) => screen.queryByLabelText(label) !== null;
-const choices = (label: string) => [...box(label).options].map((o) => o.value);
+// A card's box is found by its name alone (cardBoxes.ts), as a label query
+// costs a walk of the page for every control it asks.
+const box = (label: string) => cardBox(label);
+const has = (label: string) => hasBox(label);
+/** Set the box named `label` under `root` (the page, or one list of cards). */
+const pick = (label: string, value: string, root?: ParentNode) => setBox(label, value, root);
+const choices = (label: string) => boxChoices(label);
 const press = (name: string) => fireEvent.click(screen.getByRole('button', { name }));
 /** A chip in the group of chips whose name starts with `group`. */
 const chip = (group: string, name: string) =>
@@ -109,13 +111,14 @@ async function addPick(at: Pick<typeof screen, 'getByRole' | 'findByLabelText'> 
  * More each. Found by its heading's tag and words, since a role query over
  * the whole editor costs many times more.
  */
-function ownCards() {
+function ownSection(): HTMLElement {
   const headings = [...document.querySelectorAll('section > h2')].filter(
     (h) => h.textContent === 'What it does on the sheet',
   );
   if (headings.length !== 1) throw new Error(`${headings.length} sections of cards on screen`);
-  return within(headings[0]?.parentElement as HTMLElement);
+  return headings[0]?.parentElement as HTMLElement;
 }
+const ownCards = () => within(ownSection());
 
 /** The homebrew feat Gift with these effects, taken by a Warrior 4, its answers `answers`. */
 function collect(effects: Json[], answers: Record<string, string[]> = {}) {
@@ -837,8 +840,8 @@ describe('a shipped pick on a card', () => {
       expect(document.body.textContent, key).not.toMatch(/undefined|NaN|\[object/);
       expect(screen.getByText(pickWords(effect)), key).toBeTruthy();
       expect(misshown(), key).toEqual([]);
-      pick('Pick: Rules', '2014', ownCards());
-      pick('Pick: Rules', '', ownCards());
+      pick('Pick: Rules', '2014', ownSection());
+      pick('Pick: Rules', '', ownSection());
       expect(effects(), key).toEqual([effect]);
       cleanup();
     }

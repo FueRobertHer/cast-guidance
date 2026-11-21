@@ -22,6 +22,16 @@ export function isFirstEntry({ key, state }: { key: string; state: unknown }): b
 }
 
 /**
+ * The state for a replace of `location`: `state`, with {@link FIRST_ENTRY}'s
+ * marker added when `location` is the tab's first entry, so the replace keeps
+ * it first. A page that replaces its own address and offers Back passes it.
+ */
+export function keepFirst(location: { key: string; state: unknown }, state?: unknown): unknown {
+  if (!isFirstEntry(location)) return state;
+  return typeof state === 'object' && state !== null ? { ...state, ...FIRST_ENTRY } : FIRST_ENTRY;
+}
+
+/**
  * In-app Back: one step back through this tab's history, or up to `fallback`
  * when this page is where the session started (a deep link or a shared URL),
  * where `navigate(-1)` would leave the app or do nothing at all. The fallback

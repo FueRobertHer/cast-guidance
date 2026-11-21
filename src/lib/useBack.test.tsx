@@ -5,7 +5,7 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { createMemoryRouter, RouterProvider, useLocation } from 'react-router';
 import { afterEach, describe, expect, it } from 'vitest';
-import { useBack } from './useBack';
+import { FIRST_ENTRY, isFirstEntry, keepFirst, useBack } from './useBack';
 
 afterEach(cleanup);
 
@@ -44,5 +44,25 @@ describe('useBack', () => {
     renderAt(['/library', '/library/spell/fireball%7Cphb'], 1);
     fireEvent.click(screen.getByRole('button', { name: 'Back' }));
     expect(await screen.findByText('/library')).toBeTruthy();
+  });
+});
+
+describe('keepFirst', () => {
+  const cold = { key: 'default', state: null };
+  const warm = { key: 'k1', state: null };
+
+  it("marks a replace of the tab's first entry, keeping the state it carries", () => {
+    expect(keepFirst(cold)).toEqual(FIRST_ENTRY);
+    const seeded = keepFirst(cold, { seed: { name: 'Gift' } });
+    expect(seeded).toEqual({ seed: { name: 'Gift' }, firstEntry: true });
+    expect(isFirstEntry({ key: 'k2', state: seeded })).toBe(true);
+    // An entry a replace already marked stays marked through the next.
+    expect(isFirstEntry({ key: 'k3', state: keepFirst({ key: 'k2', state: seeded }) })).toBe(true);
+  });
+
+  it('leaves any other replace as it was', () => {
+    expect(keepFirst(warm)).toBeUndefined();
+    const state = { seed: { name: 'Gift' } };
+    expect(keepFirst(warm, state)).toBe(state);
   });
 });
