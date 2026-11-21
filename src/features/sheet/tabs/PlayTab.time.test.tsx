@@ -126,7 +126,7 @@ describe('a rest with effects in play', () => {
     expect(notice()).toMatch(/Ended Aid$/);
   });
 
-  it('keeps what the player unticks, and rests at once with nothing in play', async () => {
+  it('keeps what the player unticks, and lists no effects with nothing in play', async () => {
     const sheet = await renderSheet(warrior([bless]));
     press('Short rest');
     const ask = await dialog('Short rest');
@@ -142,7 +142,10 @@ describe('a rest with effects in play', () => {
     await resetSheetHarness();
     await renderSheet(warrior([]));
     press('Short rest');
-    expect(screen.queryByRole('dialog')).toBeNull();
+    const empty = await dialog('Short rest');
+    expect(screen.queryByRole('checkbox')).toBeNull();
+    expect(empty.text).not.toContain('Ends, by what each one lasts');
+    await empty.press('Take the short rest');
     expect(notice()).toBe('Short rest: Nothing to restore');
   });
 });

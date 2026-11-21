@@ -52,6 +52,9 @@ describe('AnalyticsMount', () => {
     const { scrubAnalyticsEvent } = await import('./analyticsUrl');
     render(<AnalyticsMount />);
     expect(analyticsEnabled()).toBe(true);
+    // The lazy chunk loads after a module reset, which is slow on a loaded
+    // machine: wait for the import itself, not a findBy's one second.
+    await vi.dynamicImportSettled();
     expect(await screen.findByTestId('vercel-analytics')).toBeTruthy();
     expect(beforeSends.at(-1)).toBe(scrubAnalyticsEvent);
     expect(chunk.loads).toBe(1);

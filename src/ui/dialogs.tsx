@@ -296,6 +296,7 @@ export function DialogHost() {
       title={req.title}
       onDismiss={dismiss}
       searches={req.kind === 'choice' && req.search !== undefined}
+      closeButton={req.kind !== 'confirm'}
     >
       {req.kind === 'confirm' ? (
         <div className="flex flex-col gap-3">
@@ -352,6 +353,7 @@ export function DialogFrame({
   onDismiss,
   searches = false,
   scrollsItself = false,
+  closeButton = false,
   children,
 }: {
   title: ReactNode;
@@ -368,6 +370,12 @@ export function DialogFrame({
    * is, rather than scrolling as a whole.
    */
   scrollsItself?: boolean;
+  /**
+   * A visible Close at the top right (review item 6: a desktop showed a sheet
+   * with no way out but Escape). The ask* sheets have it, but a confirm,
+   * whose Cancel is that.
+   */
+  closeButton?: boolean;
   children: ReactNode;
 }) {
   return (
@@ -385,7 +393,7 @@ export function DialogFrame({
           className="flex max-h-[85dvh] flex-col"
           {...(searches ? { onOpenAutoFocus: focusSheetOnTouch } : {})}
         >
-          <Sheet.Heading>{title}</Sheet.Heading>
+          <Sheet.Heading close={closeButton}>{title}</Sheet.Heading>
           {searches || scrollsItself ? (
             children
           ) : (
@@ -394,6 +402,7 @@ export function DialogFrame({
             // scrolled as far down as the last one was.
             <Sheet.Body key={typeof title === 'string' ? title : undefined}>{children}</Sheet.Body>
           )}
+          {closeButton && <Sheet.CloseButton />}
         </Sheet.Panel>
       </Sheet.Portal>
     </Sheet.Root>
