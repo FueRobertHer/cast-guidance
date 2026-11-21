@@ -311,10 +311,11 @@ work:
   WoW reskin of one) needs its `primaryAbility` at 13, and a copy's
   `preparedSpells: null` is no formula. Left out: the Workshop's multiclass
   fields read only `requirements`, so a 2024 class shows no scores there
-  while the Build tab shows its primary ability, and scores typed there take
-  its place on the sheet; nothing in the release or the Workshop writes
-  scores at the top beside `or`, read here as all of the top and one of the
-  `or` scores, as 5etools renders it.
+  while the Build tab shows its primary ability, scores typed there take its
+  place on the sheet, and a copy of a 2024 class cannot say it needs none
+  (cleared, it falls back to the primary ability). Homebrew with both
+  `requirements` and `primaryAbility` is read by its requirements, where
+  5etools shows the primary ability alone.
 - A change to any box in a Workshop editor re-renders the whole editor, the
   origin fields included: `WorkshopPage`'s `change` is a new function on every
   render, and `FeatBody` and the species editor's `OriginParts` hand each

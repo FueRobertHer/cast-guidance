@@ -19,22 +19,25 @@ function scoresOf(part: Record<string, unknown>): Scores {
 }
 
 /**
- * `multiclassing.requirements` as 5etools reads it: every score at the top is
- * needed, and one of the scores inside its `or` objects. The book writes that
- * as one object (the 2014 Fighter's `or: [{ str: 13, dex: 13 }]`); the
- * Workshop and the converter as one object a score (`or: [{ str: 13 }, { dex:
- * 13 }]`), which reads the same.
+ * `multiclassing.requirements`: every score at the top is needed, and one
+ * score of each `or` object, as 5etools renders them (the 2014 Fighter's
+ * `or: [{ str: 13, dex: 13 }]` is Strength 13 or Dexterity 13). The Workshop
+ * and the converter write one-of as one score an object (`or: [{ str: 13 },
+ * { dex: 13 }]`), so objects of one score each are one choice of them all.
  */
 function requirementClauses(req: Record<string, unknown>): Clause[] {
   const clauses: Clause[] = [];
   const top = scoresOf(req);
   if (top.length > 0) clauses.push([top]);
-  const or = Array.isArray(req.or) ? req.or : [];
-  const any = or.flatMap((o) => {
+  const parts = (Array.isArray(req.or) ? req.or : []).flatMap((o) => {
     const part = record(o);
-    return part === undefined ? [] : scoresOf(part).map((s): Scores => [s]);
+    const scores = part === undefined ? [] : scoresOf(part);
+    return scores.length > 0 ? [scores] : [];
   });
-  if (any.length > 0) clauses.push(any);
+  const alternatives = (scores: Scores): Clause => scores.map((s): Scores => [s]);
+  if (parts.every((p) => p.length === 1)) {
+    if (parts.length > 0) clauses.push(parts.flatMap(alternatives));
+  } else clauses.push(...parts.map(alternatives));
   return clauses;
 }
 
@@ -55,8 +58,9 @@ function primaryClauses(primary: unknown): Clause[] {
 
 /**
  * What a class needs to multiclass, every clause of it: its written
- * requirements, else its primary ability. No class in the release has both,
- * and a copy that writes requirements over a 2024 class means them.
+ * requirements, else its primary ability. No class in the release has both
+ * (some homebrew does, where 5etools shows the primary ability alone); a
+ * Workshop copy that writes requirements over a 2024 class means them.
  */
 function clausesOf(cls: DataEntity | undefined): Clause[] {
   const req = record(record(cls?.multiclassing)?.requirements);

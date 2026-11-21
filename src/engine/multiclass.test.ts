@@ -115,6 +115,25 @@ describe('meetsMulticlassRequirements on the shapes the release writes', () => {
     expect(meetsMulticlassRequirements(c, scores({ cha: 13 }))).toBe(false);
   });
 
+  it('needs one score from each `or` object when an object lists several', () => {
+    // A homebrew class's "Strength or Dexterity 13, and Intelligence, Wisdom or
+    // Charisma 13", which 5etools renders as two clauses.
+    const c = cls({
+      or: [
+        { str: 13, dex: 13 },
+        { int: 13, wis: 13, cha: 13 },
+      ],
+    });
+    expect(multiclassRequirementText(c)).toBe('STR 13 or DEX 13, and INT 13 or WIS 13 or CHA 13');
+    expect(meetsMulticlassRequirements(c, scores({ dex: 13, cha: 13 }))).toBe(true);
+    expect(meetsMulticlassRequirements(c, scores({ str: 13 }))).toBe(false);
+    expect(meetsMulticlassRequirements(c, scores({ wis: 13 }))).toBe(false);
+    // One score an object stays one choice of them all, as the Workshop writes it.
+    const one = cls({ cha: 13, or: [{ str: 13 }, { dex: 13 }] });
+    expect(multiclassRequirementText(one)).toBe('CHA 13, and STR 13 or DEX 13');
+    expect(meetsMulticlassRequirements(one, scores({ cha: 13, dex: 13 }))).toBe(true);
+  });
+
   it("checks a 2024 class's primary ability at 13", () => {
     const fighter = primary([{ str: true }, { dex: true }]);
     expect(meetsMulticlassRequirements(fighter, scores({ dex: 13 }))).toBe(true);
