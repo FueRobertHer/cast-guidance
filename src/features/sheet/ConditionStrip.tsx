@@ -103,7 +103,7 @@ const fold = (s: string) => s.toLowerCase().replace(/[’'`]/g, '').replace(/\s+
  * The conditions a search's words find, by name: all of it, then its start,
  * then anywhere in it, so "blind" finds Blinded and "poison" Poisoned. An empty
  * search finds none. Exhaustion, which has a stepper rather than a chip, is
- * found as "exhaustion" or "exhausted" too.
+ * found by the start of "exhaustion" or "exhausted".
  */
 export function conditionsMatching(
   names: readonly string[],
@@ -117,7 +117,8 @@ export function conditionsMatching(
     .filter((x) => x.folded.includes(q))
     .sort((a, b) => rank(a.folded) - rank(b.folded))
     .map((x) => x.name);
-  return { names: found, exhaustion: ['exhaustion', 'exhausted'].some((w) => w.includes(q)) };
+  // A word's start, as a name's: "on" is no search for Exhaustion.
+  return { names: found, exhaustion: ['exhaustion', 'exhausted'].some((w) => w.startsWith(q)) };
 }
 
 /** Where focus lands when nothing nearer is left: the sheet's title, which takes it. */
@@ -938,7 +939,11 @@ export function ConditionStrip({
                     ref={search}
                     type="search"
                     value={query}
-                    onChange={(e) => setQuery(e.target.value)}
+                    onChange={(e) => {
+                      // A refusal said for a tap before is about chips no longer shown.
+                      clearRefused();
+                      setQuery(e.target.value);
+                    }}
                     aria-label="Search effects"
                     placeholder="Search spells, potions, conditions"
                     className={`${fieldClass} pl-10.5`}
@@ -951,11 +956,16 @@ export function ConditionStrip({
                       on or takes it off, as in the list the search replaced. */}
                   {conditionsFound.names.length > 0 && (
                     <div className="mb-3">
-                      <h3 className="mb-1 text-caption text-ink-muted font-semibold">Conditions</h3>
+                      <h3
+                        id="effect-search-conditions"
+                        className="mb-1 text-caption text-ink-muted font-semibold"
+                      >
+                        Conditions
+                      </h3>
                       {/* biome-ignore lint/a11y/useSemanticElements: a group of buttons, not a fieldset of inputs */}
                       <div
                         role="group"
-                        aria-label="Conditions found"
+                        aria-labelledby="effect-search-conditions"
                         className="-mx-1.5 flex flex-wrap"
                       >
                         {conditionsFound.names.map(conditionChip)}

@@ -170,13 +170,15 @@ describe('the + Effect search finds conditions', () => {
     expect(conditionsMatching(['Blinded'], '  ')).toEqual({ names: [], exhaustion: false });
     expect(conditionsMatching([], 'exhaust').exhaustion).toBe(true);
     expect(conditionsMatching([], 'tired').exhaustion).toBe(false);
+    // A word's start, not any letters in it.
+    expect(conditionsMatching([], 'on').exhaustion).toBe(false);
   });
 
   it('finds a built-in condition by name, and a tap puts it on', async () => {
     renderStrip();
     const picker = await openPicker();
     type(picker, 'Blinded');
-    const found = within(await picker.findByRole('group', { name: 'Conditions found' }));
+    const found = within(await picker.findByRole('group', { name: 'Conditions' }));
     expect(picker.queryByText(/Nothing called/)).toBeNull();
     fireEvent.click(found.getByRole('button', { name: 'Blinded' }));
     expect(play().conditions).toEqual([{ id: 'Blinded' }]);
@@ -192,7 +194,7 @@ describe('the + Effect search finds conditions', () => {
     renderStrip();
     const picker = await openPicker();
     type(picker, 'daz');
-    const found = within(await picker.findByRole('group', { name: 'Conditions found' }));
+    const found = within(await picker.findByRole('group', { name: 'Conditions' }));
     expect(found.getAllByRole('button').map((b) => b.textContent)).toEqual(['Dazed']);
     fireEvent.click(found.getByRole('button', { name: 'Dazed' }));
     expect(play().conditions).toEqual([{ id: 'Dazed' }]);
@@ -202,7 +204,7 @@ describe('the + Effect search finds conditions', () => {
     renderStrip();
     const picker = await openPicker();
     type(picker, 'invisib');
-    const found = within(await picker.findByRole('group', { name: 'Conditions found' }));
+    const found = within(await picker.findByRole('group', { name: 'Conditions' }));
     expect(found.getByRole('button', { name: 'Invisible' })).toBeTruthy();
     const effects = within(await picker.findByRole('list', { name: 'Effects found' }));
     expect(effects.getByRole('button', { name: /^Invisibility\b/ })).toBeTruthy();
@@ -222,6 +224,6 @@ describe('the + Effect search finds conditions', () => {
     const picker = await openPicker();
     type(picker, 'zzz');
     expect(await picker.findByText('Nothing called “zzz” that can land on Hero.')).toBeTruthy();
-    expect(picker.queryByRole('group', { name: 'Conditions found' })).toBeNull();
+    expect(picker.queryByRole('group', { name: 'Conditions' })).toBeNull();
   });
 });
