@@ -1,3 +1,4 @@
+import { X } from 'lucide-react';
 import {
   type ComponentProps,
   cloneElement,
@@ -121,12 +122,42 @@ function SheetBody({ className, ...props }: ComponentProps<'div'>) {
   return <div className={className ? `${BODY} ${className}` : BODY} {...props} />;
 }
 
-function SheetHeading({ children, aside }: { children: ReactNode; aside?: ReactNode }) {
+function SheetHeading({
+  children,
+  aside,
+  close = false,
+}: {
+  children: ReactNode;
+  aside?: ReactNode;
+  /** The panel has a `CloseButton`: the heading keeps clear of it. */
+  close?: boolean;
+}) {
   return (
-    <div className="mb-3 flex items-baseline justify-between gap-2">
+    <div className={`mb-3 flex items-baseline justify-between gap-2 ${close ? 'pr-10' : ''}`}>
       <Drawer.Title className="min-w-0 font-display text-title-sheet">{children}</Drawer.Title>
       {aside !== undefined && <span className="shrink-0 text-caption text-ink-muted">{aside}</span>}
     </div>
+  );
+}
+
+/**
+ * A visible Close for a sheet with no other way out on screen (review item 6:
+ * on a desktop a bottom sheet with only Escape and the scrim to close it, and
+ * an info sheet with nothing to focus). Put it last in the panel: it is drawn
+ * at the panel's top right, but last in the tab order, so a sheet still opens
+ * on its first control. Its heading takes `close` to keep clear of it.
+ */
+function SheetCloseButton({ label = 'Close' }: { label?: string }) {
+  return (
+    <Drawer.Close asChild>
+      <button
+        type="button"
+        aria-label={label}
+        className="tap absolute top-3 right-2 rounded-full text-ink-muted hover:bg-surface-hover hover:text-ink"
+      >
+        <X size={20} aria-hidden="true" />
+      </button>
+    </Drawer.Close>
   );
 }
 
@@ -157,6 +188,7 @@ export const Sheet = {
   Panel: SheetPanel,
   Body: SheetBody,
   Heading: SheetHeading,
+  CloseButton: SheetCloseButton,
 };
 
 /**

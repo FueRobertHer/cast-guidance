@@ -95,6 +95,16 @@ describe('an item\'s own "charges" effect, read', () => {
     expect(wis.charges?.ability).toBe('wis');
   });
 
+  it('takes all of them, a number or none back on a short rest', () => {
+    const short = (regain: unknown) =>
+      readMechanics({ v: 1, effects: [{ ...WAND, regain, rest: 'short' }] }).charges;
+    expect(short('all')).toMatchObject({ regain: 'all', rest: 'short' });
+    expect(short(2)).toMatchObject({ regain: '2', rest: 'short' });
+    expect(short('none')).toMatchObject({ regain: 'none', rest: 'short' });
+    // With no rest, at dawn as before: the reading says none.
+    expect(readMechanics({ v: 1, effects: [WAND] }).charges).not.toHaveProperty('rest');
+  });
+
   it.each([
     ['a spell without its book', { spells: [{ spell: 'Fireball', cost: 1 }] }, '"name|source"'],
     ['no charges back', { regain: 0 }, '"regain" is what comes back'],
@@ -104,6 +114,10 @@ describe('an item\'s own "charges" effect, read', () => {
     ['an ability it does not know', { ability: 'luck' }, '"ability" is the ability'],
     ['a "while"', { while: 'bloodied' }, 'no "while" or "edition"'],
     ['an "edition"', { edition: '2024' }, 'no "while" or "edition"'],
+    ['a rest it does not know', { rest: 'long' }, '"rest" is "short"'],
+    ['dice back on a short rest', { rest: 'short' }, 'a short rest rolls no dice'],
+    ['words back on a short rest', { rest: 'short', regain: 'half' }, 'a short rest rolls no dice'],
+    ['more back on a short rest than it holds', { rest: 'short', regain: 8 }, 'up to its charges'],
   ])('leaves out one with %s, and says so', (_, fields, problem) => {
     const read = readMechanics({ v: 1, effects: [{ ...WAND, ...fields }] });
     expect(read.charges).toBe(undefined);
@@ -168,6 +182,10 @@ describe('an item\'s own "charges" effect, read', () => {
     expect(row({ regain: 4 }).rows[0]?.charges?.regain).toBe('4');
     expect(row({ ability: 'wis' }).problems.join('; ')).toContain(
       '"ability" is not a field a charges row has',
+    );
+    // A row's come back at dawn.
+    expect(row({ rest: 'short' }).problems.join('; ')).toContain(
+      '"rest" is not a field a charges row has',
     );
     expect(row({}).rows[0]?.charges?.spells[0]?.ref).toBe(undefined);
   });
@@ -248,6 +266,12 @@ describe('itemChargesOf: which says the charges', () => {
     expect(at('3')).toBe('3');
     expect(at('all')).toBe(undefined);
     expect(at('none')).toBe('0');
+    // Back on a short rest, all of them come back on a long one, rolling nothing.
+    const short = (regain: string) =>
+      regainRollOf({ charges: 7, regain, rest: 'short', spells: [] });
+    expect(short('all')).toBe(undefined);
+    expect(short('3')).toBe(undefined);
+    expect(short('none')).toBe('0');
   });
 });
 
