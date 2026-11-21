@@ -318,22 +318,41 @@ const listed = (xs: readonly string[]) => (xs.length === 0 ? 'none' : xs.join(',
 const skillName = (key: string) =>
   SKILLS.find((s) => s.name.toLowerCase() === key.toLowerCase())?.name ?? key;
 
-/** An attack as one line: "+7 to hit, 1d8+4 slashing plus 1d6 fire". */
-function attackLine(a: AttackRow): string {
-  const damage = [a.damage, a.damageType].filter(Boolean).join(' ');
+/** An attack's damage and what rides on it: "1d8+4 slashing plus 1d6 fire, versatile 1d10+4". */
+function damageLine(a: AttackRow, flat: (d: string) => string = (d) => d): string {
+  const damage = [flat(a.damage), a.damageType].filter(Boolean).join(' ');
   const riders = a.extraDamage.map((r) => [r.dice, r.damageType].filter(Boolean).join(' '));
-  return `${signed(a.toHit.value)} to hit, ${[damage, ...riders].join(' plus ')}`;
+  const both = a.versatileDamage === undefined ? '' : `, versatile ${flat(a.versatileDamage)}`;
+  return `${[damage, ...riders].join(' plus ')}${both}`;
 }
+
+/** An attack as one line: "+7 to hit, 1d8+4 slashing plus 1d6 fire". */
+const attackLine = (a: AttackRow) => `${signed(a.toHit.value)} to hit, ${damageLine(a)}`;
+
+/** Damage without the number added to its dice, which an ability modifier moves. */
+const withoutFlat = (d: string) => d.replace(/(^|[+−-])\d+$/, '');
+
+/** Each attack by its name and what it attacks with. */
+const attacksByKey = (attacks: readonly AttackRow[]) =>
+  new Map(attacks.map((a) => [lower(`${a.label}|${a.weaponId ?? a.origin}`), a]));
 
 /** What moved from `was` to `now`, in the order the sheet shows it. */
 export function changesOn(was: DerivedSheet, now: DerivedSheet): Change[] {
   const out: Change[] = [];
-  const moved = (ab: Ability | undefined) =>
-    ab !== undefined && was.abilities[ab].mod !== now.abilities[ab].mod;
-  const follows = (ab: Ability | undefined) => (moved(ab) ? { follows: true as const } : {});
-  const number = (label: string, a: number, b: number, show = plain, by?: Ability) => {
+  const modMoved = (ab: Ability | undefined) =>
+    ab === undefined ? 0 : now.abilities[ab].mod - was.abilities[ab].mod;
+  // Moved by just what the modifier did, and nothing else of the entry's.
+  const follows = (ab: Ability | undefined, by: number) =>
+    modMoved(ab) !== 0 && by === modMoved(ab) ? { follows: true as const } : {};
+  const number = (label: string, a: number, b: number, show = plain, of?: Ability) => {
     if (a !== b)
-      out.push({ label, now: show(b), was: show(a), way: b > a ? 'up' : 'down', ...follows(by) });
+      out.push({
+        label,
+        now: show(b),
+        was: show(a),
+        way: b > a ? 'up' : 'down',
+        ...follows(of, b - a),
+      });
   };
   const list = (label: string, a: readonly string[], b: readonly string[]) => {
     const x = [...new Set(a)].sort();
@@ -343,7 +362,7 @@ export function changesOn(was: DerivedSheet, now: DerivedSheet): Change[] {
   for (const ab of ABILITIES)
     number(ABILITY_NAMES[ab], was.abilities[ab].value, now.abilities[ab].value);
   number('Armor Class', was.ac.value, now.ac.value);
-  number('Hit point maximum', was.maxHp.value, now.maxHp.value, plain, 'con');
+  number('Hit point maximum', was.maxHp.value, now.maxHp.value);
   number('Speed', was.speedWalk.value, now.speedWalk.value, (n) => `${n} ft.`);
   number('Initiative', was.initiative.value, now.initiative.value, signed, 'dex');
   number('Proficiency bonus', was.profBonus.value, now.profBonus.value, signed);
@@ -387,23 +406,24 @@ export function changesOn(was: DerivedSheet, now: DerivedSheet): Change[] {
     );
   }
   // Attacks, new, changed or gone: to hit, damage and what rides on it.
-  const attackKey = (a: AttackRow) => lower(`${a.label}|${a.weaponId ?? a.origin}`);
-  const wasAttacks = new Map(was.attacks.map((a) => [attackKey(a), a]));
-  for (const a of now.attacks) {
-    const before = wasAttacks.get(attackKey(a));
+  const wasAttacks = attacksByKey(was.attacks);
+  const nowAttacks = attacksByKey(now.attacks);
+  for (const [key, a] of nowAttacks) {
+    const before = wasAttacks.get(key);
     if (before === undefined) out.push({ label: a.label, now: attackLine(a) });
     else if (attackLine(before) !== attackLine(a))
       out.push({
         label: a.label,
         now: attackLine(a),
         was: attackLine(before),
-        ...follows(a.ability),
+        // Only its modifier moved: the same dice and riders, to hit by as much.
+        ...(damageLine(a, withoutFlat) === damageLine(before, withoutFlat)
+          ? follows(a.ability, a.toHit.value - before.toHit.value)
+          : {}),
       });
   }
-  const nowAttacks = new Set(now.attacks.map(attackKey));
-  for (const a of was.attacks)
-    if (!nowAttacks.has(attackKey(a)))
-      out.push({ label: a.label, now: 'gone', was: attackLine(a) });
+  for (const [key, a] of wasAttacks)
+    if (!nowAttacks.has(key)) out.push({ label: a.label, now: 'gone', was: attackLine(a) });
   // Pools, by their key: how many uses each has.
   const wasPools = new Map(was.resources.map((r) => [r.key, r]));
   for (const r of now.resources) {
@@ -620,15 +640,17 @@ export function wearersFor(
     };
   }
   if (type === 'class') {
-    const level = Math.min(20, Math.max(1, ...refLevels(entry.classFeatures, 'classFeature', 3)));
+    const last = Math.max(0, ...refLevels(entry.classFeatures, 'classFeature', 3));
+    const level = Math.min(20, Math.max(1, last));
     const one = sample('class', entry, scoresFor(entry), level);
     one.doc.classes = [];
+    const why = last >= 1 ? `level ${level}, its last feature's` : 'level 1';
     return {
       wearers: [
         {
           ...one,
           level,
-          note: `${one.note} With no class before, then this one at level ${level}, its last feature's.`,
+          note: `${one.note} With no class before, then this one at ${why}.`,
         },
         ...roster.map(yours),
       ],

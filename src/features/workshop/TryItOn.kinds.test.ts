@@ -148,6 +148,32 @@ describe('Try it on, a magic weapon', () => {
   });
 });
 
+describe('Try it on, rows that follow a modifier', () => {
+  it('marks an attack that moved with Strength, not the one the entry itself changed', () => {
+    const ctx = withSaved(makeTestContext(), blade);
+    const held = wearing(warrior(5, 8), 'item', blade) as CharacterDoc;
+    held.equipment.push({
+      id: 'w0',
+      ref: { name: 'Longsword', source: 'TST' },
+      qty: 1,
+      equipped: true,
+      attuned: false,
+    });
+    const more = {
+      ...blade,
+      bonusWeapon: '+2',
+      castGuidance: {
+        v: 1,
+        effects: [...blade.castGuidance.effects, { kind: 'abilityMin', ability: 'str', min: 19 }],
+      },
+    };
+    const changes = changesOf(tryOn(ctx, held, 'item', more));
+    expect(changes.find((c) => c.label === 'Longsword')).toMatchObject({ follows: true });
+    expect(changes.find((c) => c.label === 'Searing Blade')).not.toHaveProperty('follows');
+    expect(changes.find((c) => c.label === 'Strength saves')).toMatchObject({ follows: true });
+  });
+});
+
 describe('firstShown', () => {
   const row = (label: string, follows?: true): Change => ({
     label,
