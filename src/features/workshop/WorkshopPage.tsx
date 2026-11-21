@@ -58,7 +58,7 @@ import {
 } from './copyWriter';
 import { EditorShell, type Problem } from './EditorShell';
 import { EDITORS, type EditorSpec, type Json } from './editorTypes';
-import { Field, onePerName } from './fields';
+import { EditionField, Field, onePerName } from './fields';
 import { EntryPicks } from './pickIds';
 import { SpellChoices } from './spellChoices';
 import { TRY_ON_TYPES, TryItOn } from './TryItOn';
@@ -874,6 +874,8 @@ function Editor({
           className={fieldClass}
         />
       </Field>
+      {/* A copy is written for its original's edition, which it keeps. */}
+      {!isCopy && <EditionField draft={draft} change={change} readOnly={readOnly} />}
       {/* A pick added anywhere in the entry takes an id none of its picks has, nor had. */}
       <EntryPicks draft={draft} before={[subject.draft, ...saves, original]}>
         <SpellChoices.Provider value={spellChoices}>
