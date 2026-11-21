@@ -7,9 +7,12 @@
  * Each segment is a button with `aria-pressed` in a labelled group. The
  * pressed one is an `ink` pill on the `surface-raised` track: selection is
  * ink, never a hue, and the pill's shape says it without colour. The track
- * is 44px tall; each segment 38px inside it. A `block` one wraps a segment to
- * a second row where large text will not fit them all on one, rather than run
- * out of its container.
+ * is 44px tall; each segment 38px inside it. In light the track keeps an
+ * `edge` hairline, without which the unpressed segments read as loose words
+ * on the page. A segment eases its colours but not its outline, so the focus
+ * ring lands at once rather than fading in from the label's colour. A
+ * `block` one wraps a segment to a second row where large text will not fit
+ * them all on one, rather than run out of its container.
  */
 export function SegmentedControl<T extends string>({
   label,
@@ -39,7 +42,7 @@ export function SegmentedControl<T extends string>({
       role="group"
       aria-label={label}
       aria-describedby={describedBy}
-      className={`${block ? 'flex flex-wrap' : 'inline-flex'} gap-0.5 rounded-control bg-surface-raised p-0.75`}
+      className={`${block ? 'flex flex-wrap' : 'inline-flex'} gap-0.5 rounded-control bg-surface-raised p-0.75 ring-1 ring-edge ring-inset`}
     >
       {options.map((option) => (
         <button
@@ -48,7 +51,7 @@ export function SegmentedControl<T extends string>({
           aria-label={option.name}
           aria-pressed={option.value === value}
           onClick={() => onChange(option.value)}
-          className={`min-h-9.5 rounded-lg px-3 text-label text-ink-muted transition-colors duration-120 not-aria-pressed:hover:text-ink aria-pressed:bg-ink aria-pressed:text-bg ${block ? 'flex-1' : ''}`}
+          className={`min-h-9.5 rounded-lg px-3 text-label text-ink-muted transition-[color,background-color] duration-120 not-aria-pressed:hover:text-ink aria-pressed:bg-ink aria-pressed:text-bg ${block ? 'flex-1' : ''}`}
         >
           {option.label}
         </button>
