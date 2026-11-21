@@ -53,10 +53,16 @@ describe('classSpellcastingMode', () => {
   it("reads a copy's `preparedSpells: null` as no formula, as a missing one is", () => {
     // A Workshop copy cannot delete a field it copies, so it writes null for
     // "none of this" (copyWriter.ts): a 2014 Cleric switched to knowing its spells.
-    const knowing = { casterProgression: 'full', preparedSpells: null, spellsKnownProgression: [4, 5] };
+    const knowing = {
+      casterProgression: 'full',
+      preparedSpells: null,
+      spellsKnownProgression: [4, 5],
+    };
     expect(classSpellcastingMode(knowing)).toBe('known');
     // A 2014 Wizard so switched keeps its spellbook's fixed rows, and knows.
-    expect(classSpellcastingMode({ ...knowing, spellsKnownProgressionFixed: [6, 8] })).toBe('known');
+    expect(classSpellcastingMode({ ...knowing, spellsKnownProgressionFixed: [6, 8] })).toBe(
+      'known',
+    );
     // A table of prepared counts still prepares, and null alone is no spells.
     expect(
       classSpellcastingMode({
