@@ -1,34 +1,81 @@
 /** Multiclass prerequisite reading (`multiclassing.requirements`). */
 import { ABILITIES, type Ability, type DataEntity } from './types';
 
-type Requirements = Partial<Record<Ability, number>> & {
-  or?: Array<Partial<Record<Ability, number>>>;
-};
+/** Scores that are all needed together, as `[ability, minimum]`. */
+type Scores = Array<[Ability, number]>;
+/** One of its alternatives is needed. */
+type Clause = Scores[];
 
-function reqOf(cls: DataEntity | undefined): Requirements | undefined {
-  const mc = cls?.multiclassing as DataEntity | undefined;
-  const req = mc?.requirements;
-  return req !== null && typeof req === 'object' ? (req as Requirements) : undefined;
+const record = (v: unknown): Record<string, unknown> | undefined =>
+  v !== null && typeof v === 'object' && !Array.isArray(v)
+    ? (v as Record<string, unknown>)
+    : undefined;
+
+function scoresOf(part: Record<string, unknown>): Scores {
+  return ABILITIES.flatMap((a): Scores => {
+    const min = part[a];
+    return typeof min === 'number' ? [[a, min]] : [];
+  });
 }
 
-function partText(part: Partial<Record<Ability, number>>): string {
-  return ABILITIES.filter((a) => typeof part[a] === 'number')
-    .map((a) => `${a.toUpperCase()} ${part[a]}`)
-    .join(' and ');
+/**
+ * `multiclassing.requirements`: every score at the top is needed, and one
+ * score of each `or` object, as 5etools renders them (the 2014 Fighter's
+ * `or: [{ str: 13, dex: 13 }]` is Strength 13 or Dexterity 13). The Workshop
+ * and the converter write one-of as one score an object (`or: [{ str: 13 },
+ * { dex: 13 }]`), so objects of one score each are one choice of them all.
+ */
+function requirementClauses(req: Record<string, unknown>): Clause[] {
+  const clauses: Clause[] = [];
+  const top = scoresOf(req);
+  if (top.length > 0) clauses.push([top]);
+  const parts = (Array.isArray(req.or) ? req.or : []).flatMap((o) => {
+    const part = record(o);
+    const scores = part === undefined ? [] : scoresOf(part);
+    return scores.length > 0 ? [scores] : [];
+  });
+  const alternatives = (scores: Scores): Clause => scores.map((s): Scores => [s]);
+  if (parts.every((p) => p.length === 1)) {
+    if (parts.length > 0) clauses.push(parts.flatMap(alternatives));
+  } else clauses.push(...parts.map(alternatives));
+  return clauses;
 }
+
+/**
+ * A 2024 class's `primaryAbility`, which it needs at 13 to multiclass: one of
+ * its objects, with every ability marked in it (a Monk's Dexterity and Wisdom,
+ * a Fighter's Strength or Dexterity).
+ */
+function primaryClauses(primary: unknown): Clause[] {
+  const alternatives = (Array.isArray(primary) ? primary : []).flatMap((o) => {
+    const part = record(o);
+    if (part === undefined) return [];
+    const scores = ABILITIES.filter((a) => part[a] === true).map((a): [Ability, number] => [a, 13]);
+    return scores.length > 0 ? [scores] : [];
+  });
+  return alternatives.length > 0 ? [alternatives] : [];
+}
+
+/**
+ * What a class needs to multiclass, every clause of it: its written
+ * requirements, else its primary ability. No class in the release has both
+ * (some homebrew does, where 5etools shows the primary ability alone); a
+ * Workshop copy that writes requirements over a 2024 class means them.
+ */
+function clausesOf(cls: DataEntity | undefined): Clause[] {
+  const req = record(record(cls?.multiclassing)?.requirements);
+  const written = req !== undefined ? requirementClauses(req) : [];
+  return written.length > 0 ? written : primaryClauses(cls?.primaryAbility);
+}
+
+const scoresText = (scores: Scores) =>
+  scores.map(([a, min]) => `${a.toUpperCase()} ${min}`).join(' and ');
 
 /** e.g. "STR 13 or DEX 13", undefined when the class declares none. */
 export function multiclassRequirementText(cls: DataEntity | undefined): string | undefined {
-  const req = reqOf(cls);
-  if (req === undefined) return undefined;
-  const parts: string[] = [];
-  const base = partText(req);
-  if (base !== '') parts.push(base);
-  for (const alt of req.or ?? []) {
-    const t = partText(alt);
-    if (t !== '') parts.push(t);
-  }
-  return parts.length > 0 ? parts.join(' or ') : undefined;
+  const clauses = clausesOf(cls);
+  if (clauses.length === 0) return undefined;
+  return clauses.map((c) => c.map(scoresText).join(' or ')).join(', and ');
 }
 
 /** Class level at which the subclass is chosen (from gainSubclassFeature refs). */
@@ -53,17 +100,7 @@ export function meetsMulticlassRequirements(
   cls: DataEntity | undefined,
   scores: Record<Ability, number>,
 ): boolean {
-  const req = reqOf(cls);
-  if (req === undefined) return true;
-  const partOk = (part: Partial<Record<Ability, number>>): boolean =>
-    ABILITIES.every((a) => {
-      const min = part[a];
-      return typeof min !== 'number' || scores[a] >= min;
-    });
-  const alternatives = req.or !== undefined ? req.or : [];
-  const baseHasReqs = ABILITIES.some((a) => typeof req[a] === 'number');
-  if (alternatives.length > 0) {
-    return (baseHasReqs ? partOk(req) : false) || alternatives.some(partOk);
-  }
-  return partOk(req);
+  return clausesOf(cls).every((clause) =>
+    clause.some((alt) => alt.every(([a, min]) => scores[a] >= min)),
+  );
 }

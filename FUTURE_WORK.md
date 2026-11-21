@@ -296,14 +296,20 @@ work:
   level are kept as written; starting gear in words alone (`default`) gives
   way to the item list once edited; the book's words for a kit go once its
   gear changes, and do not come back if it is changed back to how it opened.
-  Outside the Workshop: the engine reads a
-  book's `or: [{ str: 13, dex: 13 }]` as needing both (`multiclass.ts`), and a
-  copy that stops preparing writes `preparedSpells: null`, which
-  `classSpellcastingMode` (`slots.ts`) still reads as preparing. For whoever
-  next owns `src/data5e/registry.ts`: a read that fails after a file has
-  landed now settles the refresh flag, so a page that keeps an older
-  registry reads that one as final (a section whose file could not be
-  built says it has nothing).
+  For whoever next owns `src/data5e/registry.ts`: a read that fails after a
+  file has landed now settles the refresh flag, so a page that keeps an older
+  registry reads that one as final (a section whose file could not be built
+  says it has nothing).
+- The engine readings U5c found (`multiclass.ts`, `slots.ts`) are fixed: the
+  book's `or: [{ str: 13, dex: 13 }]` reads as either, a 2024 class (and a
+  WoW reskin of one) needs its `primaryAbility` at 13, and a copy's
+  `preparedSpells: null` is no formula. Left out: the Workshop's multiclass
+  fields read only `requirements`, so a 2024 class shows no scores there
+  while the Build tab shows its primary ability, scores typed there take its
+  place on the sheet, and a copy of a 2024 class cannot say it needs none
+  (cleared, it falls back to the primary ability). Homebrew with both
+  `requirements` and `primaryAbility` is read by its requirements, where
+  5etools shows the primary ability alone.
 - A change to any box in a Workshop editor re-renders the whole editor, the
   origin fields included: `WorkshopPage`'s `change` is a new function on every
   render, and `FeatBody` and the species editor's `OriginParts` hand each
