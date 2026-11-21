@@ -66,7 +66,9 @@ function asArray<T>(v: T | T[] | undefined): T[] {
 function spliceIn(a: unknown[], at: number, remove: number, items: readonly unknown[]): void {
   const tail = a.splice(at);
   tail.splice(0, remove);
-  for (const x of items) a.push(x);
+  // By a fixed count, so items that are `a` itself are put in once.
+  const count = items.length;
+  for (let i = 0; i < count; i++) a.push(items[i]);
   for (const x of tail) a.push(x);
 }
 
