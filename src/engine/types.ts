@@ -986,6 +986,11 @@ export interface ChoicePrompt {
   count: number;
   /** Whether the same option may fill more than one pick (ASI +2 is the main case). */
   allowRepeat?: boolean;
+  /**
+   * An `abilityWeighted` prompt's bonuses, by pick: the first pick gets the
+   * first (the +2 of a 2024 background's +2/+1), and so on.
+   */
+  weights?: number[];
   /** Whether an option another prompt of this kind has picked is closed (see `markHeldPicks`). */
   distinct?: boolean;
   options: ChoiceOption[];
