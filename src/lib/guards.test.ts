@@ -8,6 +8,7 @@ import {
   homebrewEntityCounts,
   IMPORT_LIMITS,
   ValidationError,
+  withReadableEntries,
 } from './guards';
 
 describe('assertHomebrewFile', () => {
@@ -35,6 +36,58 @@ describe('assertHomebrewFile', () => {
       expect(() => assertHomebrewFile(input)).toThrowError(ValidationError);
     });
   }
+});
+
+describe('withReadableEntries (finding 14)', () => {
+  const meta = { sources: [{ json: 'MB', abbreviation: 'MB', full: 'My Brew' }] };
+
+  it('hands back the very file when every entry is readable, so its hash stays', () => {
+    const file = {
+      _meta: meta,
+      spell: [{ name: 'Brew Bolt', source: 'MB', level: 1 }],
+      // What the game data itself leaves out: a base subrace's name, a
+      // variant's own book, a copy's name.
+      subrace: [{ raceName: 'Elf', raceSource: 'MB', source: 'MB' }],
+      magicvariant: [{ name: '+1 Weapon', inherits: { source: 'MB' } }],
+      feat: [{ _copy: { name: 'Alert', source: 'PHB' }, source: 'MB' }],
+      // Not a list of entries, so not looked at.
+      notes: ['kept'],
+    };
+    const { json, skipped } = withReadableEntries(file);
+    expect(json).toBe(file);
+    expect(skipped).toEqual([]);
+  });
+
+  it('leaves out what nothing can read, and says which and why', () => {
+    const file = {
+      _meta: meta,
+      spell: [
+        { source: 'MB', level: 'two', entries: 'not an array' },
+        { name: 'Brew Bolt', source: 'MB', level: 1 },
+        { name: '   ', source: 'MB' },
+        'Fireball',
+        { name: 5, source: 'MB' },
+        { name: 'Odd Book', source: ['MB'] },
+      ],
+      item: [null],
+    };
+    const { json, skipped } = withReadableEntries(file);
+    expect(json.spell).toEqual([{ name: 'Brew Bolt', source: 'MB', level: 1 }]);
+    expect(json.item).toEqual([]);
+    expect(json._meta).toBe(meta);
+    // The file it came from is left as it was.
+    expect(file.spell).toHaveLength(6);
+    // In the order the lists are read (items before spells), each in file order.
+    expect(skipped).toEqual([
+      { type: 'item', index: 0, why: 'it is not an entry' },
+      { type: 'spell', index: 0, why: 'it has no name' },
+      { type: 'spell', index: 2, why: 'it has no name' },
+      { type: 'spell', index: 3, why: 'it is not an entry' },
+      { type: 'spell', index: 4, why: 'its name is not text' },
+      { type: 'spell', index: 5, name: 'Odd Book', why: 'its book is not text' },
+    ]);
+    expect(homebrewEntityCounts(json)).toEqual({ spell: 1 });
+  });
 });
 
 describe('assertCharacterExport', () => {

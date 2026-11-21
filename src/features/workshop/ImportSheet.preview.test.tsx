@@ -561,6 +561,37 @@ describe('the Import sheet preview', () => {
     expect(within(characters).getByRole('listitem').textContent).toBe('Brin');
   });
 
+  it('names the entries it leaves out, and stores the rest (finding 14)', async () => {
+    renderSheet();
+    await readFile(
+      'brew.json',
+      brew('HB', [
+        { source: 'HB', level: 'two', entries: 'not an array' },
+        { name: 'Zap', source: 'HB', level: 1 },
+        { name: 'Odd', source: 7, level: 1 },
+      ]),
+    );
+
+    const dialog = await findDialog('Import "brew.json"?');
+    const left = within(dialog).getByRole('region', { name: 'Left out' });
+    expect(left.textContent).toContain(
+      '2 entries in this file cannot be read, so they are left out. The rest imports as usual.',
+    );
+    expect(
+      within(left)
+        .getAllByRole('listitem')
+        .map((li) => li.textContent),
+    ).toEqual(['The 1st spell: it has no name.', 'Odd (a spell): its book is not text.']);
+    expect(dialog.textContent).toContain('1 spell');
+
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Import' }));
+    expect((await handedBack()).landed).toBe(true);
+    const [stored] = await db.homebrewJson.toArray();
+    expect((stored?.json as { spell: unknown[] }).spell).toEqual([
+      { name: 'Zap', source: 'HB', level: 1 },
+    ]);
+  });
+
   it('refuses a file that is not JSON without a preview', async () => {
     renderSheet();
     await readFile('broken.json', '{ not json');
