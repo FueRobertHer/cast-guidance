@@ -1,9 +1,9 @@
 import { useLiveQuery } from 'dexie-react-hooks';
 import { ArrowLeft, ChevronDown, GitFork, Hammer, Pencil, Plus, Search } from 'lucide-react';
-import { Fragment, useEffect, useId, useMemo, useRef, useState } from 'react';
+import { Fragment, type ReactNode, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router';
 import type { Entity } from '@/data5e/copyMod';
-import { EntriesView } from '@/data5e/entries/renderEntries';
+import { EntriesView, InlineText } from '@/data5e/entries/renderEntries';
 import {
   type RegistryState,
   type TypePacksState,
@@ -18,15 +18,24 @@ import {
   identityKey,
   isEntityType,
 } from '@/data5e/normalize';
+import { editionOf } from '@/data5e/rulesVersion';
 import { type SearchResult, searchAll } from '@/data5e/search/client';
 import { DEFAULT_QUERY_LIMIT } from '@/data5e/search/protocol';
-import { applySourcePolicy, policyForSearch, useSourcePolicy } from '@/data5e/sourceFilter';
+import {
+  applySourcePolicy,
+  policyForSearch,
+  type SourcePolicy,
+  useSourcePolicy,
+} from '@/data5e/sourceFilter';
 import { sourceName } from '@/data5e/sourceNames';
+import type { SpellClassLookup } from '@/data5e/spellLookup';
 import { compareMergeOrder } from '@/db/homebrewOrder';
 import { homebrewRepo } from '@/db/homebrewRepo';
 import { isBuiltInCondition } from '@/engine/conditions';
 import { hasEditor } from '@/features/workshop/editorTypes';
+import { signed } from '@/lib/signed';
 import { useBack } from '@/lib/useBack';
+import { useClassLookup } from '@/lib/useClassLookup';
 import { useOnReconnect } from '@/lib/useOnline';
 import { usePageTitle } from '@/lib/usePageTitle';
 import { announce, cancelAnnouncement } from '@/stores/announcer';
@@ -42,8 +51,9 @@ import { fieldClass } from '@/ui/TextField';
 import { VirtualList } from '@/ui/VirtualList';
 import { bookContents, bookIndex } from './books';
 import { BROWSE_TYPES, TYPE_LABELS } from './browseTypes';
+import { type ClassTable, classProficiencies, classTable, proficiencyBonus } from './classInfo';
 import { findEntity } from './findEntity';
-import { headerFacts } from './fmt';
+import { headerFacts, type PropertyNamer } from './fmt';
 import {
   countTitles,
   groupHits,
@@ -55,6 +65,7 @@ import {
   titleKey,
   uidOf,
 } from './printings';
+import { type ListedSubclass, spellClasses, spellSubclasses } from './spellLists';
 
 /**
  * Features, known by their class (and subclass) and level as well as their name
@@ -487,6 +498,12 @@ function SectionProblem({ reg, packs }: { reg: RegistryState; packs: TypePacksSt
   );
 }
 
+/** A section that holds what a reader may be looking for in this one. */
+const SEE_ALSO: Partial<Record<EntityType, { text: string; type: EntityType }>> = {
+  item: { text: 'Weapons, armor and gear with no magic are in', type: 'baseitem' },
+  baseitem: { text: 'Magic items are in', type: 'item' },
+};
+
 /** Sentinel values for the source dropdown, which is otherwise source codes. */
 const MY_SOURCES = '';
 const EVERY_SOURCE = '*';
@@ -619,6 +636,17 @@ function TypeList({ type, reg }: { type: EntityType; reg: RegistryState }) {
           </Link>
         )}
       </header>
+      {/* The data keeps magic items and the plain ones apart, so a longsword
+          is not under Items (Gemini 46): each list says where the other is. */}
+      {SEE_ALSO[type] !== undefined && (
+        <p className="text-caption text-ink-muted">
+          {SEE_ALSO[type].text}{' '}
+          <Link to={`/library/${SEE_ALSO[type].type}`} className={LINK}>
+            {TYPE_LABELS.get(SEE_ALSO[type].type)}
+          </Link>
+          .
+        </p>
+      )}
       {/* An empty list and a failed download used to look identical here. */}
       {failed && <SectionProblem reg={reg} packs={packs} />}
       <div className="relative">
@@ -682,6 +710,136 @@ function TypeList({ type, reg }: { type: EntityType; reg: RegistryState }) {
   );
 }
 
+/** A subclass chip: its name and the books it is printed in. */
+function SubclassChips({ titles }: { titles: readonly Title[] }) {
+  return (
+    <div className="flex flex-wrap gap-2">
+      {titles.map((t) => (
+        <Link
+          key={t.key}
+          to={`/library/subclass/${encodeURIComponent(uidOf(t.preferred))}`}
+          // Wraps the books under the name where both do not fit, as a
+          // one-word name and two books do not at 200% text (A11Y-003).
+          className="inline-flex min-h-tap flex-wrap items-center gap-x-2 gap-y-1 rounded-control bg-surface px-3 py-1 text-label shadow-card ring-1 ring-line ring-inset transition-colors duration-120 hover:bg-surface-raised"
+        >
+          {t.name} <SourceBadges sources={t.printings.map(sourceOf)} />
+        </Link>
+      ))}
+    </div>
+  );
+}
+
+const TABLE_HEAD = 'px-2 py-1.5 text-left align-bottom font-semibold text-ink-muted';
+const TABLE_CELL = 'px-2 py-1.5';
+
+/** The header cells of a class table's own columns, under their group titles when there are any. */
+function GroupLabels({ groups }: { groups: ClassTable['groups'] }) {
+  return groups.flatMap((g, i) =>
+    g.labels.map((label, c) => (
+      // biome-ignore lint/suspicious/noArrayIndexKey: columns have a fixed order and no id
+      <th key={`${i}-${c}`} scope="col" className={TABLE_HEAD}>
+        <InlineText text={label} />
+      </th>
+    )),
+  );
+}
+
+/**
+ * A class's level table (Gemini 43): level, proficiency bonus, the features
+ * that level gives (each a link to its page), and the class's own columns.
+ */
+function ClassLevelTable({
+  name,
+  table,
+  byLevel,
+}: {
+  name: string;
+  table: ClassTable;
+  byLevel: ReadonlyMap<number, readonly Entity[]>;
+}) {
+  const headingId = useId();
+  const titled = table.groups.some((g) => g.title !== undefined);
+  const span = titled ? 2 : 1;
+  return (
+    <section className="flex flex-col gap-2">
+      <h3 id={headingId} className="text-heading">
+        The {name} table
+      </h3>
+      {/* Wider than a phone: the table scrolls in its own frame, which takes
+          focus so a keyboard can scroll it too. */}
+      <section
+        aria-labelledby={headingId}
+        // biome-ignore lint/a11y/noNoninteractiveTabindex: a scroll area must take focus to be scrolled by keyboard.
+        tabIndex={0}
+        className="overflow-x-auto rounded-card bg-surface shadow-card ring-1 ring-line ring-inset"
+      >
+        <table className="w-full border-collapse text-caption tabular-nums">
+          <thead className="border-b border-line">
+            <tr>
+              <th scope="col" rowSpan={span} className={TABLE_HEAD}>
+                Level
+              </th>
+              <th scope="col" rowSpan={span} className={TABLE_HEAD}>
+                Proficiency bonus
+              </th>
+              <th scope="col" rowSpan={span} className={`${TABLE_HEAD} min-w-40`}>
+                Features
+              </th>
+              {titled ? (
+                table.groups.map((g, i) => (
+                  <th
+                    // biome-ignore lint/suspicious/noArrayIndexKey: groups have a fixed order and no id
+                    key={i}
+                    scope="colgroup"
+                    colSpan={g.labels.length}
+                    className={`${TABLE_HEAD} text-center`}
+                  >
+                    {g.title !== undefined && <InlineText text={g.title} />}
+                  </th>
+                ))
+              ) : (
+                <GroupLabels groups={table.groups} />
+              )}
+            </tr>
+            {titled && (
+              <tr>
+                <GroupLabels groups={table.groups} />
+              </tr>
+            )}
+          </thead>
+          <tbody>
+            {table.rows.map((row) => (
+              <tr key={row.level} className="border-t border-line first:border-t-0">
+                <th scope="row" className={`${TABLE_CELL} text-left font-normal`}>
+                  {row.level}
+                </th>
+                <td className={TABLE_CELL}>{signed(proficiencyBonus(row.level))}</td>
+                <td className={TABLE_CELL}>
+                  {(byLevel.get(row.level) ?? []).map((f, i) => (
+                    <Fragment key={identityKey('classFeature', f)}>
+                      {i > 0 && ', '}
+                      {/* Each opens its own page, where it can be changed for the table. */}
+                      <Link to={featurePath('classFeature', f)} className={TEXT_LINK}>
+                        {nameOf(f)}
+                      </Link>
+                    </Fragment>
+                  ))}
+                </td>
+                {row.cells.map((cell, c) => (
+                  // biome-ignore lint/suspicious/noArrayIndexKey: columns have a fixed order and no id
+                  <td key={c} className={TABLE_CELL}>
+                    <InlineText text={cell} />
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </section>
+    </section>
+  );
+}
+
 function ClassExtras({ registry, entity }: { registry: EntityRegistry; entity: Entity }) {
   const name = nameOf(entity);
   const source = sourceOf(entity);
@@ -697,6 +855,17 @@ function ClassExtras({ registry, entity }: { registry: EntityRegistry; entity: E
           String(s.classSource).toLowerCase() === source.toLowerCase(),
       ),
   );
+  // By the rules each is written for (Gemini 47): a 2024 class lists its own
+  // subclasses and the 2014 ones it can still take, which read as one wall
+  // with renamed pairs side by side. The page's own edition comes first.
+  const own = editionOf(entity);
+  const editions = (['2024', '2014'] as const)
+    .map((edition) => ({
+      edition,
+      titles: subclasses.filter((t) => editionOf(t.preferred) === edition),
+    }))
+    .filter((g) => g.titles.length > 0)
+    .sort((a, b) => Number(b.edition === own) - Number(a.edition === own));
   const features = registry
     .byType('classFeature')
     .filter(
@@ -711,52 +880,38 @@ function ClassExtras({ registry, entity }: { registry: EntityRegistry; entity: E
     list.push(f);
     byLevel.set(lvl, list);
   }
+  const proficiencies = classProficiencies(entity);
   return (
     <div className="flex flex-col gap-4">
-      {subclasses.length > 0 && (
+      {proficiencies.length > 0 && (
         <section className="flex flex-col gap-2">
-          <h3 className="text-heading">Subclasses</h3>
-          <div className="flex flex-wrap gap-2">
-            {subclasses.map((t) => (
-              <Link
-                key={t.key}
-                to={`/library/subclass/${encodeURIComponent(uidOf(t.preferred))}`}
-                // Wraps the books under the name where both do not fit, as a
-                // one-word name and two books do not at 200% text (A11Y-003).
-                className="inline-flex min-h-tap flex-wrap items-center gap-x-2 gap-y-1 rounded-control bg-surface px-3 py-1 text-label shadow-card ring-1 ring-line ring-inset transition-colors duration-120 hover:bg-surface-raised"
-              >
-                {t.name} <SourceBadges sources={t.printings.map(sourceOf)} />
-              </Link>
+          <h3 className="text-heading">Proficiencies</h3>
+          <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-body">
+            {proficiencies.map(([label, text]) => (
+              <div key={label} className="contents">
+                <dt className="text-ink-muted">{label}</dt>
+                <dd className="min-w-0">
+                  <InlineText text={text} />
+                </dd>
+              </div>
             ))}
-          </div>
+          </dl>
         </section>
       )}
-      {byLevel.size > 0 && (
+      <ClassLevelTable name={name} table={classTable(entity)} byLevel={byLevel} />
+      {editions.length > 0 && (
         <section className="flex flex-col gap-2">
-          <h3 className="text-heading">Features by level</h3>
-          <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-body">
-            {[...byLevel.entries()]
-              .sort((a, b) => a[0] - b[0])
-              .map(([lvl, list]) => (
-                <div key={lvl} className="contents">
-                  <dt className="text-ink-muted">Lv {lvl}</dt>
-                  {/* Each opens its own page, where it can be changed for the table. */}
-                  <dd>
-                    {list.map((f, i) => (
-                      <Fragment key={identityKey('classFeature', f)}>
-                        {i > 0 && ', '}
-                        <Link
-                          to={featurePath('classFeature', f)}
-                          className="underline decoration-line-strong underline-offset-3 hover:decoration-ink"
-                        >
-                          {nameOf(f)}
-                        </Link>
-                      </Fragment>
-                    ))}
-                  </dd>
-                </div>
-              ))}
-          </dl>
+          <h3 className="text-heading">Subclasses</h3>
+          {editions.length === 1 ? (
+            <SubclassChips titles={editions[0]?.titles ?? []} />
+          ) : (
+            editions.map((g) => (
+              <div key={g.edition} className="flex flex-col gap-2">
+                <h4 className="text-label text-ink-muted">{g.edition} rules</h4>
+                <SubclassChips titles={g.titles} />
+              </div>
+            ))
+          )}
         </section>
       )}
     </div>
@@ -877,6 +1032,108 @@ function PrintingSwitch({
   );
 }
 
+/** A link inside a line of text, as rules text draws one. */
+const TEXT_LINK = 'underline decoration-line-strong underline-offset-3 hover:decoration-ink';
+
+/**
+ * Names a weapon property the common ones leave out from the data's own list,
+ * which names each one in `name` or its first entry, from the book the weapon
+ * gives when there is one (as the sheet's attacks do).
+ */
+function propertyNamer(registry: EntityRegistry): PropertyNamer {
+  return (code, source) => {
+    const lower = (v: unknown) => (typeof v === 'string' ? v.toLowerCase() : undefined);
+    const all = registry
+      .byType('itemProperty')
+      .filter((p) => lower(p.abbreviation) === code.toLowerCase());
+    const entry =
+      all.find((p) => source !== undefined && lower(p.source) === source.toLowerCase()) ?? all[0];
+    const entries = entry?.entries ?? entry?.entriesTemplate;
+    const first: unknown = Array.isArray(entries) ? entries[0] : undefined;
+    const name =
+      typeof entry?.name === 'string'
+        ? entry.name
+        : typeof first === 'object' && first !== null && typeof (first as Entity).name === 'string'
+          ? ((first as Entity).name as string)
+          : undefined;
+    return name;
+  };
+}
+
+/** Links, comma separated: a list of classes or subclasses in a fact row. */
+function LinkList({ links }: { links: ReadonlyArray<{ key: string; to: string; label: string }> }) {
+  return (
+    <>
+      {links.map((l, i) => (
+        <Fragment key={l.key}>
+          {i > 0 && ', '}
+          <Link to={l.to} className={TEXT_LINK}>
+            {l.label}
+          </Link>
+        </Fragment>
+      ))}
+    </>
+  );
+}
+
+/**
+ * A spell's Classes and Subclasses rows: the lists it is on, in the player's
+ * sources (a class from a book they hide is not offered), one entry per name.
+ */
+function spellListFacts(
+  lookup: SpellClassLookup,
+  spell: Entity,
+  policy: SourcePolicy,
+): Array<[string, ReactNode]> {
+  // A homebrew spell may name a class without its book: kept, not hidden.
+  const classes = applySourcePolicy(
+    spellClasses(lookup, spell),
+    policy,
+    (c) => c.source,
+    (c) => c.source === '',
+  );
+  const subclasses = applySourcePolicy(
+    applySourcePolicy(
+      spellSubclasses(lookup, spell),
+      policy,
+      (s) => s.classSource,
+      (s) => s.classSource === '',
+    ),
+    policy,
+    (s) => s.source,
+    (s) => s.source === '',
+  );
+  // One entry per name, in alphabetical order.
+  const once = <T,>(list: readonly T[], label: (t: T) => string) => {
+    const seen = new Set<string>();
+    return list
+      .filter((t) => {
+        const k = label(t).toLowerCase();
+        if (seen.has(k)) return false;
+        seen.add(k);
+        return true;
+      })
+      .sort((a, b) => label(a).localeCompare(label(b)));
+  };
+  const rows: Array<[string, ReactNode]> = [];
+  const classLinks = once(classes, (c) => c.name).map((c) => ({
+    key: `${c.name}|${c.source}`,
+    label: c.name,
+    to: `/library/class/${encodeURIComponent(`${c.name}|${c.source}`)}`,
+  }));
+  if (classLinks.length > 0) rows.push(['Classes', <LinkList key="c" links={classLinks} />]);
+  const subLabel = (s: ListedSubclass) => `${s.name} (${s.className})`;
+  const subLinks = once(subclasses, subLabel).map((s) => ({
+    key: `${s.shortName}|${s.className}|${s.classSource}|${s.source}`,
+    label: subLabel(s),
+    to: `/library/subclass/${encodeURIComponent(
+      `${s.shortName}|${s.className}|${s.classSource}|${s.source}`,
+    )}`,
+  }));
+  if (subLinks.length > 0) rows.push(['Subclasses', <LinkList key="s" links={subLinks} />]);
+  return rows;
+}
+
 function EntityDetail({ type, uid, reg }: { type: EntityType; uid: string; reg: RegistryState }) {
   const back = useBack(`/library/${type}`);
   const packs = useTypePacks(type, reg.retry);
@@ -916,6 +1173,9 @@ function EntityDetail({ type, uid, reg }: { type: EntityType; uid: string; reg: 
     setBookFor(null);
   }
   const owner = useOwner(type, entity);
+  // Which classes' lists hold a spell. Read once, beside the spell files; a
+  // failed read leaves the lists out rather than the page.
+  const { lookup } = useClassLookup(type === 'spell', packs.status);
 
   const typeLabel = TYPE_LABELS.get(type) ?? FEATURE_TYPES.get(type) ?? type;
   const failed = reg.error !== null || packs.status === 'error';
@@ -991,7 +1251,13 @@ function EntityDetail({ type, uid, reg }: { type: EntityType; uid: string; reg: 
   const record = changeIn(registry, entity);
   const book = record !== undefined && bookFor === uid;
   const shown = book ? record.base : entity;
-  const facts = headerFacts(type, shown);
+  const facts: Array<[string, ReactNode]> = headerFacts(
+    type,
+    shown,
+    registry === null ? undefined : propertyNamer(registry),
+  );
+  const lists: Array<[string, ReactNode]> =
+    type === 'spell' && lookup !== null ? spellListFacts(lookup, shown, policy) : [];
   const higher = shown.entriesHigherLevel;
   const offered = (hasEditor(type) || canChange(type)) && registry !== null;
   return (
@@ -1038,12 +1304,12 @@ function EntityDetail({ type, uid, reg }: { type: EntityType; uid: string; reg: 
           onFlip={() => setBookFor(book ? null : uid)}
         />
       )}
-      {facts.length > 0 && (
+      {(facts.length > 0 || lists.length > 0) && (
         <dl className={`${cardClass} grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-body`}>
-          {facts.map(([label, value]) => (
+          {[...facts, ...lists].map(([label, value]) => (
             <div key={label} className="contents">
               <dt className="text-ink-muted">{label}</dt>
-              <dd>{value}</dd>
+              <dd className="min-w-0">{value}</dd>
             </div>
           ))}
         </dl>
