@@ -404,7 +404,7 @@ describe('packs in the Workshop', () => {
       await waitFor(async () =>
         expect((await storedPack('Gritty Table')).file?.enabled).toBe(false),
       );
-      expect(await findRow('Gritty Table, Off')).toBeTruthy();
+      const oldRow = await findRow('Gritty Table, Off');
       expect(reads).not.toHaveBeenCalled();
 
       // Saved again (a newer copy imported over it): the stored row is a new
@@ -419,10 +419,17 @@ describe('packs in the Workshop', () => {
       const { file } = await storedPack('Gritty Table');
       await waitFor(() => expect(reads.mock.calls).toEqual([[file?.id]]), { timeout: WAIT });
       // Opening and closing its sheet afterwards draws the page again, and
-      // reads nothing more.
-      fireEvent.click(
-        await screen.findByRole('button', { name: /^Gritty Table, / }, { timeout: WAIT }),
+      // reads nothing more. Until that read lands the page still lists the
+      // old row, whose sheet closes as its row goes: open the new row's.
+      const newRow = await waitFor(
+        () => {
+          const row = screen.getByRole('button', { name: /^Gritty Table, / });
+          expect(row).not.toBe(oldRow);
+          return row;
+        },
+        { timeout: WAIT },
       );
+      fireEvent.click(newRow);
       const again = await findDialog('Gritty Table');
       fireEvent.click(within(again).getByRole('button', { name: 'Done' }));
       await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull(), { timeout: WAIT });
