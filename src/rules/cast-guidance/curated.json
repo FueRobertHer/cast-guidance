@@ -828,6 +828,45 @@
           "key": "arcane-recovery",
           "label": "Arcane Recovery",
           "max": 1,
+          "reset": "long",
+          "recoversSlots": { "f": "ceil(classLevel / 2)" },
+          "recoversBelow": 6
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["natural recovery|circle of the land"],
+      "effects": [
+        {
+          "kind": "resource",
+          "key": "natural-recovery",
+          "label": "Natural Recovery",
+          "max": 1,
+          "reset": "long",
+          "recoversSlots": { "f": "ceil(classLevel / 2)" },
+          "recoversBelow": 6
+        }
+      ]
+    },
+    {
+      "part": "curated",
+      "keys": ["natural recovery|circle of the land|xphb"],
+      "effects": [
+        {
+          "kind": "resource",
+          "key": "natural-recovery",
+          "label": "Natural Recovery",
+          "max": 1,
+          "reset": "long",
+          "recoversSlots": { "f": "ceil(classLevel / 2)" },
+          "recoversBelow": 6
+        },
+        {
+          "kind": "resource",
+          "key": "natural-recovery-cast",
+          "label": "Natural Recovery (free cast)",
+          "max": 1,
           "reset": "long"
         }
       ]
