@@ -26,7 +26,7 @@ export class UnsupportedFormatError extends Error {
   override name = 'UnsupportedFormatError';
 }
 
-const CAN_IMPORT = 'Fight Club 5e compendiums (XML) and 5etools homebrew (JSON) can be imported.';
+const CAN_IMPORT = 'Fight Club 5e compendiums (XML) and homebrew JSON files can be imported.';
 
 /** A web page rather than a file: a folder listing, or a page that links to the file. */
 const WEB_PAGE = /^(?:<!doctype\s+html|<html[\s>])/i;
