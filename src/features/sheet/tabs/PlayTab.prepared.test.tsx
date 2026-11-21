@@ -4,7 +4,7 @@
 // top 6 and 11). Play leaves the rest to Spells, where each is a tap from
 // preparing, and Unprepare sits under a prepared spell's rules.
 import 'fake-indexeddb/auto';
-import { fireEvent, screen, within } from '@testing-library/react';
+import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { DataEntity } from '@/engine/types';
 import {
@@ -77,12 +77,15 @@ const world = {
   ],
 } satisfies Record<string, DataEntity[]>;
 
-/** A level 3 wizard with Searing Bolt prepared, and Quick Bolt and Sense Magic only in the book. */
+/**
+ * A level 3 wizard with Guidance known, Searing Bolt prepared, and Quick Bolt
+ * and Sense Magic only in the book.
+ */
 function wizard() {
   const doc = testCharacter('Lyra', [classEntry('Mage', 3)], { int: 16 });
   doc.spellcasting = {
     'mage|tst': {
-      known: [ref('Searing Bolt'), ref('Quick Bolt'), ref('Sense Magic')],
+      known: [ref('Guidance'), ref('Searing Bolt'), ref('Quick Bolt'), ref('Sense Magic')],
       prepared: [ref('Searing Bolt')],
     },
   };
@@ -91,14 +94,16 @@ function wizard() {
 
 describe('a wizard’s spellbook on Play', () => {
   it('casts what is prepared and the unprepared ritual, and leaves the rest to Spells', async () => {
-    await renderSheet(wizard(), { extra: world });
+    const sheet = await renderSheet(wizard(), { extra: world });
 
+    // A cantrip is never prepared, and always cast.
+    expect(screen.getByRole('button', { name: 'Cast Guidance' })).toBeTruthy();
     expect(screen.getByRole('button', { name: /^Searing Bolt\s*prepared$/ })).toBeTruthy();
     expect(screen.getByRole('button', { name: /^Sense Magic\s*ritual$/ })).toBeTruthy();
     expect(screen.queryByRole('button', { name: /^Quick Bolt/ })).toBeNull();
     expect(screen.getByText(/1 more not prepared\./)).toBeTruthy();
-    expect(screen.getByRole('link', { name: 'Prepare on Spells' }).getAttribute('href')).toMatch(
-      /\/spells$/,
+    expect(screen.getByRole('link', { name: 'Prepare on Spells' }).getAttribute('href')).toBe(
+      `/c/${sheet.doc.id}/spells`,
     );
   });
 
@@ -119,7 +124,19 @@ describe('a wizard’s spellbook on Play', () => {
   });
 });
 
-describe('a wizard’s spellbook on Spells', () => {
+describe('a prepared ritual on Play', () => {
+  it('offers a prepared ritual its slots and the ritual on Play too', async () => {
+    const doc = wizard();
+    doc.spellcasting['mage|tst']?.prepared.push(ref('Sense Magic'));
+    await renderSheet(doc, { extra: world });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Cast Sense Magic' }));
+    expect(castTiles()[0]).toMatch(/^Level 1 slot/);
+    expect(castTiles().at(-1)).toBe('Ritual · level 1, no slot');
+  });
+});
+
+describe('preparing on Spells', () => {
   it('prepares a spell from the row, and unprepares it under its rules', async () => {
     const sheet = await renderSheet(wizard(), { path: 'spells', extra: world });
     const fold = screen.getByText('Not prepared').closest('details');
@@ -137,11 +154,16 @@ describe('a wizard’s spellbook on Spells', () => {
     ]);
     expect((await sheet.history())[0]).toBe('Prepared Quick Bolt');
     expect(within(fold).queryByRole('button', { name: 'Prepare Quick Bolt' })).toBeNull();
+    // Focus follows the row to its level, rather than falling to the page.
+    await waitFor(() =>
+      expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Quick Bolt' })),
+    );
 
     fireEvent.click(screen.getByRole('button', { name: 'Quick Bolt' }));
     fireEvent.click(await screen.findByRole('button', { name: 'Unprepare Quick Bolt' }));
     expect((await sheet.saved()).spellcasting['mage|tst']?.prepared).toEqual([ref('Searing Bolt')]);
     expect((await sheet.history())[0]).toBe('Unprepared Quick Bolt');
+    await waitFor(() => expect(document.activeElement?.textContent).toMatch(/^Not prepared/));
   });
 
   it('offers a prepared ritual its slots and the ritual', async () => {

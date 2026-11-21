@@ -1,5 +1,5 @@
 import { AlertTriangle, ChevronRight, Search } from 'lucide-react';
-import { type ReactNode, useState } from 'react';
+import { type ReactNode, useEffect, useRef, useState } from 'react';
 import type { Entity } from '@/data5e/copyMod';
 import { d20Effects } from '@/engine/conditions';
 import { type HpLimits, setConcentration } from '@/engine/effectLife';
@@ -19,6 +19,7 @@ import { Button } from '@/ui/Button';
 import { chipClass } from '@/ui/Chip';
 import type { ChipWear } from '@/ui/ChipFace';
 import { PackProblem } from '@/ui/PackProblem';
+import { Sheet } from '@/ui/sheet';
 import { cardClass, openListClass } from '@/ui/surfaces';
 import { fieldClass } from '@/ui/TextField';
 import { RemoveAddedSpell } from './AddSpellSheet';
@@ -221,6 +222,7 @@ function SlotSpellRow({
   muted = false,
   withLevel = false,
   preparing,
+  onPrepared,
   ctx,
 }: {
   spell: OwnSpell;
@@ -230,6 +232,8 @@ function SlotSpellRow({
   withLevel?: boolean;
   /** For a class that prepares: Prepare on the row, or Unprepare under its rules. */
   preparing?: 'prepare' | 'unprepare';
+  /** Said once it prepares or unprepares, so focus can follow the row. */
+  onPrepared?: (on: boolean) => void;
   ctx: RowContext;
 }) {
   const { doc, sheet, update } = ctx;
@@ -241,8 +245,13 @@ function SlotSpellRow({
   const concentrating = isConcentratingOn(play, name);
   const attackModifier = hasSpellAttack(entity) ? block.attackMod.value : undefined;
   const ritual = ritualWay(sheet, block, entity, doc.rulesVersion, !muted);
-  // An unprepared spell casts only as a ritual, from a wizard's spellbook.
-  const casts = !muted || ritual === 'only';
+  // An unprepared spell casts only as a ritual, from a wizard's spellbook;
+  // one whose level no file says is left to the player, as it was.
+  const casts = !muted || ritual === 'only' || spell.level === undefined;
+  const prepare = (on: boolean) => {
+    setPrepared(update, block, spell, on);
+    onPrepared?.(on);
+  };
   const cast: SpellCast = {
     doc,
     sheet,
@@ -268,6 +277,7 @@ function SlotSpellRow({
     spell.level > block.learnable.upTo;
   return (
     <SpellRow
+      rowKey={refUid(spell)}
       name={name}
       source={source}
       version={doc.rulesVersion}
@@ -288,9 +298,11 @@ function SlotSpellRow({
       }
       rulesFooter={
         preparing === 'unprepare' ? (
-          <Button variant="outline" block onClick={() => setPrepared(update, block, spell, false)}>
-            Unprepare {name}
-          </Button>
+          <Sheet.Close asChild>
+            <Button variant="outline" block onClick={() => prepare(false)}>
+              Unprepare {name}
+            </Button>
+          </Sheet.Close>
         ) : undefined
       }
       actions={
@@ -299,7 +311,7 @@ function SlotSpellRow({
             <button
               type="button"
               aria-label={`Prepare ${name}`}
-              onClick={() => setPrepared(update, block, spell, true)}
+              onClick={() => prepare(true)}
               className={chipClass('outline')}
             >
               Prepare
@@ -530,6 +542,28 @@ function ClassSection({
     const level = entityOf(ref)?.level;
     return typeof level === 'number' ? level : undefined;
   };
+  // A spell prepared or unprepared moves to another list, taking the focused
+  // control with it: focus follows it to its row's name, or to the fold.
+  const [moved, setMoved] = useState<{ uid: string; on: boolean } | null>(null);
+  const list = useRef<HTMLElement>(null);
+  const fold = useRef<HTMLElement>(null);
+  useEffect(() => {
+    if (moved === null) return;
+    const row = [...(list.current?.querySelectorAll<HTMLElement>('[data-spell-row]') ?? [])].find(
+      (r) => r.dataset.spellRow === moved.uid,
+    );
+    // Prepared, it lands in its level; unprepared, in the fold, which may be shut.
+    const target = moved.on
+      ? row?.closest('details') === null
+        ? row.querySelector('button')
+        : null
+      : row?.closest('details') != null
+        ? fold.current
+        : null;
+    if (target == null) return;
+    target.focus();
+    setMoved(null);
+  });
 
   // Always prepared first: a domain spell also picked by hand is one row.
   // A grant sits here because it casts with this class's ability, which does
@@ -584,7 +618,7 @@ function ClassSection({
       : { n: leveled + cantrips, max: undefined, word: 'known' };
 
   return (
-    <section className="flex flex-col gap-3">
+    <section ref={list} className="flex flex-col gap-3">
       <div className={`${cardClass} flex flex-col gap-3`}>
         <div className="flex flex-wrap items-baseline justify-between gap-x-2">
           <h2 className="font-display text-title-card">{block.className} spells</h2>
@@ -640,6 +674,7 @@ function ClassSection({
                 preparing={
                   preparesSpells(block) && !s.always && s.level !== 0 ? 'unprepare' : undefined
                 }
+                onPrepared={(on) => setMoved({ uid: refUid(s), on })}
                 ctx={ctx}
               />
             ))}
@@ -678,7 +713,10 @@ function ClassSection({
           open={f !== ''}
           className="group overflow-hidden rounded-card bg-surface shadow-card ring-1 ring-line ring-inset"
         >
-          <summary className="flex min-h-tap cursor-pointer list-none items-center gap-2 px-4 py-2 text-body-strong">
+          <summary
+            ref={fold}
+            className="flex min-h-tap cursor-pointer list-none items-center gap-2 px-4 py-2 text-body-strong"
+          >
             <ChevronRight
               size={16}
               aria-hidden="true"
@@ -700,6 +738,7 @@ function ClassSection({
                   muted
                   withLevel
                   preparing="prepare"
+                  onPrepared={(on) => setMoved({ uid: refUid(s), on })}
                   ctx={ctx}
                 />
               ))}
