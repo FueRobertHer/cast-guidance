@@ -327,6 +327,39 @@ describe('the Save bar', () => {
   });
 });
 
+describe('the rules edition', () => {
+  /** The saved feat named `name`, as the player's first file holds it. */
+  async function savedFeat(name: string): Promise<Record<string, unknown> | undefined> {
+    const [row] = (await homebrewRepo.ownedSafe()).files;
+    const { file } = row === undefined ? { file: undefined } : await homebrewRepo.getSafe(row.id);
+    const feats = Array.isArray(file?.json.feat) ? file.json.feat : [];
+    return feats.find((f): f is Record<string, unknown> => isRecord(f) && f.name === name);
+  }
+
+  it('writes none for a new entry unless its author picks one', async () => {
+    const sheet = await renderSheet(sorcerer());
+    await sheet.visit('/workshop/new/feat');
+    const edition = (await screen.findByLabelText(
+      'Rules edition',
+      {},
+      { timeout: WAIT },
+    )) as HTMLSelectElement;
+    expect(edition.value).toBe('');
+    expect(edition.selectedOptions[0]?.textContent).toBe('Either edition');
+    nameAndSave('Stand Fast');
+    await waitFor(async () => expect(await savedFeat('Stand Fast')).toBeDefined(), {
+      timeout: WAIT,
+    });
+    expect((await savedFeat('Stand Fast'))?.edition).toBeUndefined();
+
+    fireEvent.change(screen.getByLabelText('Rules edition'), { target: { value: 'one' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(async () => expect((await savedFeat('Stand Fast'))?.edition).toBe('one'), {
+      timeout: WAIT,
+    });
+  });
+});
+
 describe('the file view', () => {
   it('shows the entry as Save writes it, and an edit there comes back to the form', async () => {
     const sheet = await renderSheet(sorcerer());

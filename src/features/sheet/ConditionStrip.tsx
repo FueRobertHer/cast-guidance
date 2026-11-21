@@ -96,6 +96,31 @@ export function effectTab(segment: string): EffectTab | undefined {
   return Object.hasOwn(EFFECT_TABS, segment) ? EFFECT_TABS[segment] : undefined;
 }
 
+/** Folds case and quote marks, as the effect search does. */
+const fold = (s: string) => s.toLowerCase().replace(/[’'`]/g, '').replace(/\s+/g, ' ').trim();
+
+/**
+ * The conditions a search's words find, by name: all of it, then its start,
+ * then anywhere in it, so "blind" finds Blinded and "poison" Poisoned. An empty
+ * search finds none. Exhaustion, which has a stepper rather than a chip, is
+ * found by the start of "exhaustion" or "exhausted".
+ */
+export function conditionsMatching(
+  names: readonly string[],
+  query: string,
+): { names: string[]; exhaustion: boolean } {
+  const q = fold(query);
+  if (q === '') return { names: [], exhaustion: false };
+  const rank = (name: string) => (name === q ? 0 : name.startsWith(q) ? 1 : 2);
+  const found = names
+    .map((name) => ({ name, folded: fold(name) }))
+    .filter((x) => x.folded.includes(q))
+    .sort((a, b) => rank(a.folded) - rank(b.folded))
+    .map((x) => x.name);
+  // A word's start, as a name's: "on" is no search for Exhaustion.
+  return { names: found, exhaustion: ['exhaustion', 'exhausted'].some((w) => w.startsWith(q)) };
+}
+
 /** Where focus lands when nothing nearer is left: the sheet's title, which takes it. */
 const sheetTitle = () => document.getElementById('sheet-title');
 
@@ -197,7 +222,7 @@ const cannotBe = (id: string, by: readonly string[]) =>
  * by itself, + Effect, on every tab: Build, which edits the character rather
  * than plays it, does not mount the strip. The sheet leads with the effects of
  * the tab it was opened on (the rolls and casting canvas, Effects C), then the
- * starters and Conditions; search still finds every effect.
+ * starters and Conditions; search still finds every effect and condition.
  *
  * The sheets stay mounted here rather than in a chip, so a chip that goes away
  * (its condition removed in the picker, or Exhaustion stepped down to 0 in its
@@ -528,6 +553,51 @@ export function ConditionStrip({
     }
     return [...names.values()].sort((a, b) => a.localeCompare(b));
   }, [registry]);
+
+  // What the search's words find among the conditions, shown over the effects
+  // it finds: they are toggled here, not landed from the catalog.
+  const conditionsFound =
+    picked === null && describing === null
+      ? conditionsMatching([...CONDITIONS, ...homebrew], query)
+      : { names: [], exhaustion: false };
+  const conditionChip = (c: string) => {
+    const by = immunityTo(c, immune);
+    const has = conditions.some((x) => x.id === c);
+    return (
+      <Chip
+        key={c}
+        pressed={has}
+        aria-label={by.length > 0 && !has ? `${c}, you are immune` : undefined}
+        aria-describedby={by.length > 0 ? 'immune-why' : undefined}
+        onClick={() => toggle(c)}
+      >
+        {by.length > 0 && (
+          <ShieldCheck
+            size={16}
+            aria-hidden="true"
+            className={has ? 'shrink-0' : 'shrink-0 text-ward'}
+          />
+        )}
+        {c}
+      </Chip>
+    );
+  };
+  // Mounted from the start, so the status region exists before the first
+  // tap; empty, it takes no room.
+  const immuneWhy = (
+    <p
+      id="immune-why"
+      role="status"
+      className={`flex gap-1.5 text-caption text-ink ${refused === null ? '' : 'mt-1'}`}
+    >
+      {refused !== null && (
+        <>
+          <ShieldCheck size={16} aria-hidden="true" className="mt-px shrink-0 text-ward" />
+          <span>{refused} Nothing was added.</span>
+        </>
+      )}
+    </p>
+  );
 
   const exhaustion = (
     <ExhaustionStepper
@@ -869,31 +939,62 @@ export function ConditionStrip({
                     ref={search}
                     type="search"
                     value={query}
-                    onChange={(e) => setQuery(e.target.value)}
+                    onChange={(e) => {
+                      // A refusal said for a tap before is about chips no longer shown.
+                      clearRefused();
+                      setQuery(e.target.value);
+                    }}
                     aria-label="Search effects"
-                    placeholder="Search spells, potions, features"
+                    placeholder="Search spells, potions, conditions"
                     className={`${fieldClass} pl-10.5`}
                   />
                 </div>
               )}
               {finding ? (
-                sheet !== null && (
-                  <Suspense
-                    fallback={<p className="text-caption text-ink-muted">Loading effects…</p>}
-                  >
-                    <EffectFinder
-                      doc={doc}
-                      sheet={sheet}
-                      query={query}
-                      picked={picked}
-                      onPick={pick}
-                      onAdd={land}
-                      describing={describing}
-                      onDescribe={describe}
-                      onForget={forgetKept}
-                    />
-                  </Suspense>
-                )
+                <>
+                  {/* The conditions the words name come first: a tap puts one
+                      on or takes it off, as in the list the search replaced. */}
+                  {conditionsFound.names.length > 0 && (
+                    <div className="mb-3">
+                      <h3
+                        id="effect-search-conditions"
+                        className="mb-1 text-caption text-ink-muted font-semibold"
+                      >
+                        Conditions
+                      </h3>
+                      {/* biome-ignore lint/a11y/useSemanticElements: a group of buttons, not a fieldset of inputs */}
+                      <div
+                        role="group"
+                        aria-labelledby="effect-search-conditions"
+                        className="-mx-1.5 flex flex-wrap"
+                      >
+                        {conditionsFound.names.map(conditionChip)}
+                      </div>
+                      {immuneWhy}
+                    </div>
+                  )}
+                  {conditionsFound.exhaustion && <div className="mb-3">{exhaustion}</div>}
+                  {sheet !== null && (
+                    <Suspense
+                      fallback={<p className="text-caption text-ink-muted">Loading effects…</p>}
+                    >
+                      <EffectFinder
+                        doc={doc}
+                        sheet={sheet}
+                        query={query}
+                        picked={picked}
+                        onPick={pick}
+                        onAdd={land}
+                        describing={describing}
+                        onDescribe={describe}
+                        onForget={forgetKept}
+                        alsoFound={
+                          conditionsFound.names.length + (conditionsFound.exhaustion ? 1 : 0)
+                        }
+                      />
+                    </Suspense>
+                  )}
+                </>
               ) : (
                 <>
                   {/* The tab's own effects lead (Items: potions; Stats: help for
@@ -994,47 +1095,9 @@ export function ConditionStrip({
                   )}
                   <h3 className="mb-1 text-caption text-ink-muted font-semibold">Conditions</h3>
                   <div className="-mx-1.5 flex flex-wrap">
-                    {[...CONDITIONS, ...homebrew].map((c) => {
-                      const by = immunityTo(c, immune);
-                      const has = conditions.some((x) => x.id === c);
-                      return (
-                        <Chip
-                          key={c}
-                          pressed={has}
-                          aria-label={by.length > 0 && !has ? `${c}, you are immune` : undefined}
-                          aria-describedby={by.length > 0 ? 'immune-why' : undefined}
-                          onClick={() => toggle(c)}
-                        >
-                          {by.length > 0 && (
-                            <ShieldCheck
-                              size={16}
-                              aria-hidden="true"
-                              className={has ? 'shrink-0' : 'shrink-0 text-ward'}
-                            />
-                          )}
-                          {c}
-                        </Chip>
-                      );
-                    })}
+                    {[...CONDITIONS, ...homebrew].map(conditionChip)}
                   </div>
-                  {/* Mounted from the start, so the status region exists before the
-                  first tap; empty, it takes no room. */}
-                  <p
-                    id="immune-why"
-                    role="status"
-                    className={`flex gap-1.5 text-caption text-ink ${refused === null ? '' : 'mt-1'}`}
-                  >
-                    {refused !== null && (
-                      <>
-                        <ShieldCheck
-                          size={16}
-                          aria-hidden="true"
-                          className="mt-px shrink-0 text-ward"
-                        />
-                        <span>{refused} Nothing was added.</span>
-                      </>
-                    )}
-                  </p>
+                  {immuneWhy}
                   <div className="mt-2 border-line border-t pt-3">{exhaustion}</div>
                 </>
               )}
