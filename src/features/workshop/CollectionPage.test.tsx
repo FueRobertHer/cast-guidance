@@ -16,7 +16,7 @@ import { registryViewFor } from '@/data5e/registryView';
 import { policyAllows, readSourcePolicy, writeSourcePolicy } from '@/data5e/sourceFilter';
 import { characterRepo } from '@/db/characterRepo';
 import { db } from '@/db/db';
-import { homebrewRepo } from '@/db/homebrewRepo';
+import { CHANGES_SOURCE, homebrewRepo } from '@/db/homebrewRepo';
 import type { CharacterDoc } from '@/engine/types';
 import { downloadJson } from '@/lib/download';
 import { namelessControls } from '../../../tests-fixtures/a11y';
@@ -643,6 +643,69 @@ describe('a collection page', () => {
     fireEvent.click(use);
     await waitFor(async () => expect(await enabled(row.id)).toBe(true), { timeout: WAIT });
     expect(screen.queryByRole('dialog', { name: /^Turn off/ })).toBeNull();
+  });
+
+  it('names nobody when another copy still on serves what they have', async () => {
+    await character('Hild', { race: { name: 'Lanternfolk', source: 'IMP' } });
+    const row = await homebrewRepo.importJson(IMPORTED, 'imported.json');
+    const meta = await db.homebrewFiles.get(row.id);
+    if (meta === undefined) throw new Error('no row');
+    await db.homebrewFiles.add({ ...meta, id: 'older-copy', addedAt: 1 });
+    await db.homebrewJson.add({ id: 'older-copy', json: IMPORTED });
+    visit(await addressOf(row.id));
+    const list = await screen.findByRole('list', { name: 'Its copies' }, { timeout: WAIT });
+    const [first, second] = within(list).getAllByRole('button', { name: /^Use / });
+    if (first === undefined || second === undefined) throw new Error('two switches');
+    fireEvent.click(first);
+    await waitFor(
+      async () =>
+        expect((await db.homebrewFiles.toArray()).filter((r) => !r.enabled)).toHaveLength(1),
+      { timeout: WAIT },
+    );
+    expect(screen.queryByRole('dialog', { name: /^Turn off/ })).toBeNull();
+    await waitFor(() => expect(first.getAttribute('aria-pressed')).toBe('false'), {
+      timeout: WAIT,
+    });
+    // The last copy on does take it away.
+    fireEvent.click(second);
+    const ask = await screen.findByRole('dialog', { name: /^Turn off/ }, { timeout: WAIT });
+    expect(ask.textContent).toContain('Hild has Lanternfolk.');
+    fireEvent.click(within(ask).getByRole('button', { name: 'Cancel' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull(), { timeout: WAIT });
+  });
+
+  it('names only who the Changes file reaches, when it goes off', async () => {
+    const { fileId } = await homebrewRepo.saveEntry(
+      'feat',
+      {
+        name: 'Glimmer',
+        source: 'IMP',
+        _copy: { name: 'Glimmer', source: 'IMP' },
+        entries: ['Glow.'],
+      },
+      { role: 'changes' },
+    );
+    const pick = { 'class:fighter|phb:feat:4': 'glimmer|imp' };
+    await character('Osk', { choices: pick, sourceSwitches: { off: [CHANGES_SOURCE] } });
+    visit(collectionPath(fileId));
+    const use = await screen.findByRole('button', { name: /^Use / }, { timeout: WAIT });
+    // Osk has it off already, so nothing changes for anyone: no question.
+    fireEvent.click(use);
+    await waitFor(async () => expect(await enabled(fileId)).toBe(false), { timeout: WAIT });
+    expect(screen.queryByRole('dialog', { name: /^Turn off/ })).toBeNull();
+    await waitFor(() => expect(use.getAttribute('aria-pressed')).toBe('false'), { timeout: WAIT });
+    fireEvent.click(use);
+    await waitFor(async () => expect(await enabled(fileId)).toBe(true), { timeout: WAIT });
+    await waitFor(() => expect(use.getAttribute('aria-pressed')).toBe('true'), { timeout: WAIT });
+
+    await character('Hild', { choices: pick });
+    fireEvent.click(use);
+    const ask = await screen.findByRole('dialog', { name: /^Turn off/ }, { timeout: WAIT });
+    expect(ask.textContent).toContain('Every entry it changes is the book’s again');
+    expect(ask.textContent).toContain('Hild has Glimmer.');
+    expect(ask.textContent).not.toContain('Osk');
+    fireEvent.click(within(ask).getByRole('button', { name: 'Cancel' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull(), { timeout: WAIT });
   });
 
   it('names an entry as its file does, though a pick holds it lowercased (F26)', async () => {

@@ -497,7 +497,17 @@ function carrySubclasses(json: Row, before: Row, after: Row): void {
       return out;
     });
   }
-  if (Array.isArray(json.subclassFeature)) json.subclassFeature = json.subclassFeature.map(moved);
+  // A feature's text can hold another (`refSubclassFeature`), found by its ref too.
+  const held = (v: unknown): unknown => {
+    if (Array.isArray(v)) return v.map(held);
+    if (!isRecord(v)) return v;
+    const out: Row = {};
+    for (const [k, x] of Object.entries(v))
+      out[k] = k === 'subclassFeature' && typeof x === 'string' ? ref(x) : held(x);
+    return out;
+  };
+  if (Array.isArray(json.subclassFeature))
+    json.subclassFeature = json.subclassFeature.map((f) => held(moved(f)));
 }
 
 /**

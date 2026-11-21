@@ -145,9 +145,16 @@ describe('homebrewRepo.renameEntry', () => {
       { ...cls('Warden'), classFeatures: [ref('Vigil', 1), { classFeature: ref('Focus', 2) }] },
       { owned: [feature('Vigil', 1), held, feature('Flurry', 2)] },
     );
+    const vow = `Vow|Warden|${WORKSHOP_SOURCE}|Oath|${WORKSHOP_SOURCE}|3`;
     await homebrewRepo.saveEntry('subclass', order('Oath'), {
       fileId,
-      owned: [orderFeature('Oath')],
+      owned: [
+        {
+          ...orderFeature('Oath'),
+          entries: ['Stand.', { type: 'refSubclassFeature', subclassFeature: vow }],
+        },
+        { ...orderFeature('Oath'), name: 'Vow' },
+      ],
     });
     await homebrewRepo.saveEntry('class', cls('Other'), {
       fileId,
@@ -178,7 +185,13 @@ describe('homebrewRepo.renameEntry', () => {
     });
     const [sub] = json.subclass as Json[];
     expect(sub?.className).toBe('Keeper');
-    expect((json.subclassFeature as Json[])[0]?.className).toBe('Keeper');
+    const [oath] = json.subclassFeature as Json[];
+    expect(oath?.className).toBe('Keeper');
+    // What its text holds is found by the class's new name too.
+    expect((oath?.entries as unknown[])[1]).toEqual({
+      type: 'refSubclassFeature',
+      subclassFeature: vow.replace('|Warden|', '|Keeper|'),
+    });
   });
 
   it('renames a subclass and keeps its features, which find it by its short name', async () => {

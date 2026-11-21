@@ -127,11 +127,32 @@ async function setSwitches(
  * (`reachesRow`), unlike a character's own switch, which keeps what a sheet
  * holds (finding 17).
  */
-async function offDetail(r: HomebrewFileMeta, device: SourcePolicy): Promise<string | undefined> {
-  const { test } = await heldIn([r]);
+async function offDetail(
+  c: Collection,
+  r: HomebrewFileMeta,
+  device: SourcePolicy,
+): Promise<string | undefined> {
+  const { test: mine } = await heldIn([r]);
   const off = { ...r, enabled: false };
-  const lost = await losses(test, false, (d) => !reachesRow(d, off, device));
-  if (lost === 'No character has any of it.') return undefined;
+  // Another copy still on keeps serving what it holds, for whoever it reaches.
+  const others = await Promise.all(
+    c.rows.filter((o) => o.id !== r.id).map(async (o) => ({ o, ...(await heldIn([o])) })),
+  );
+  const { characters } = await characterRepo.listSafe();
+  const lines: string[] = [];
+  for (const d of characters) {
+    // The Changes file reaches a character only while its own switch lets it,
+    // so one with it off loses nothing; any other file leaves the sheet.
+    if (isChanges(r) && !reachesRow(d, r, device)) continue;
+    if (reachesRow(d, off, device)) continue;
+    const still = others.filter(({ o }) => reachesRow(d, o, device));
+    const held = heldBy(d, (n, s) =>
+      still.some((x) => x.test(n, s) !== undefined) ? undefined : mine(n, s),
+    );
+    if (held.length > 0) lines.push(`${d.name} has ${andList(held)}.`);
+  }
+  if (lines.length === 0) return undefined;
+  const lost = lines.join(' ');
   return isChanges(r)
     ? `Every entry it changes is the book’s again, on every sheet, until it is on again. ${lost}`
     : `Its entries leave the sheets that have them, as well as the Library and the pickers, until it is on again. ${lost}`;
@@ -141,10 +162,16 @@ async function offDetail(r: HomebrewFileMeta, device: SourcePolicy): Promise<str
  * Turn a file or a book on or off on this device; on shows its sources too.
  * Off asks first when a character would lose what it has from it.
  */
-function toggle(r: HomebrewFileMeta, on: boolean, name: string, device: SourcePolicy): void {
+function toggle(
+  c: Collection,
+  r: HomebrewFileMeta,
+  on: boolean,
+  name: string,
+  device: SourcePolicy,
+): void {
   void (async () => {
     if (!on) {
-      const detail = await offDetail(r, device);
+      const detail = await offDetail(c, r, device);
       if (
         detail !== undefined &&
         !(await askConfirm({ title: `Turn off ${name}?`, detail, confirmLabel: 'Turn off' }))
@@ -299,7 +326,7 @@ function OnSection({
                 >
                   <Download size={18} aria-hidden />
                 </button>
-                <Switch on={on} name={name} onPress={() => toggle(r, !on, name, device)} />
+                <Switch on={on} name={name} onPress={() => toggle(c, r, !on, name, device)} />
               </li>
             );
           })}
@@ -317,7 +344,7 @@ function OnSection({
                       ? 'Hidden by The books’ choice of what shows'
                       : 'Turned off on this device'}
                 </span>
-                <Switch on={on} name={c.name} onPress={() => toggle(r, !on, c.name, device)} />
+                <Switch on={on} name={c.name} onPress={() => toggle(c, r, !on, c.name, device)} />
               </div>
             </div>
           );
@@ -455,14 +482,9 @@ function heldBy(doc: CharacterDoc, test: Held): string[] {
  * "Hild has Ember Lance. Osk has Ember Ward and Frost Ward." or nobody, read
  * when asked: the list on screen may not have loaded yet.
  */
-async function losses(
-  test: Held,
-  partly = false,
-  who: (d: CharacterDoc) => boolean = () => true,
-): Promise<string> {
+async function losses(test: Held, partly = false): Promise<string> {
   const { characters } = await characterRepo.listSafe();
   const lines = characters
-    .filter(who)
     .map((d) => [d.name, heldBy(d, test)] as const)
     .filter(([, held]) => held.length > 0)
     .map(([who, held]) => `${who} has ${andList(held)}.`);
