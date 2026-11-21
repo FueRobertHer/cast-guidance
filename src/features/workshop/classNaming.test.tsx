@@ -17,7 +17,12 @@ vi.mock('@/data5e/hooks', async (load) => ({
 }));
 
 import { EntryEffects } from './EffectCards';
-import { editor as classEditor, editsOf as classEdits, openClass } from './editors/ClassEditor';
+import {
+  editor as classEditor,
+  editsOf as classEdits,
+  featureTree as classTree,
+  openClass,
+} from './editors/ClassEditor';
 import { editor as feat } from './editors/FeatEditor';
 import { editor as item } from './editors/ItemEditor';
 import { editor as optionalFeature } from './editors/OptionalFeatureEditor';
@@ -26,6 +31,7 @@ import {
   openSubclass,
   editor as subclassEditor,
   editsOf as subEdits,
+  featureTree as subTree,
 } from './editors/SubclassEditor';
 import type { EditorSpec, Json } from './editorTypes';
 
@@ -211,22 +217,6 @@ describe('where no class gives the card', () => {
     expect(((draft().castGuidance as Json).effects as Json[])[0]).toEqual(POOL);
     expect(named('Uses per rest')).toEqual([]);
   });
-
-  it("names the class in a class or subclass feature's cards, read from the feature", () => {
-    const shown = (draft: Json) => {
-      render(
-        <MemoryRouter>
-          <EntryEffects draft={draft} change={() => undefined} readOnly={false} />
-        </MemoryRouter>,
-      );
-      const n = named('Uses per rest').length;
-      cleanup();
-      return n;
-    };
-    // A class's feature changed for the table names its class; a feat does not.
-    expect(shown({ name: 'Rage', className: 'Barbarian', castGuidance: guidance() })).toBe(1);
-    expect(shown({ name: 'Ember Adept', castGuidance: guidance() })).toBe(0);
-  });
 });
 
 describe('where a class gives the card', () => {
@@ -252,6 +242,58 @@ describe('where a class gives the card', () => {
     mountSubclass(undefined, [
       { name: 'Lantern Glow', level: 3, entries: [], castGuidance: guidance() },
     ]);
+    cardsShown();
+    expect(named('Uses per rest')).toHaveLength(1);
+    expect(named('Action')).toHaveLength(1);
+  });
+
+  it("shows them on a class's feature the book has, once changed", async () => {
+    const { registry, cls } = monk();
+    const start: Json = {
+      ...openClass(structuredClone(cls), { original: cls, registry }),
+      name: 'Lantern',
+    };
+    const arts = classTree(cls, registry).find((n) => n.entity?.name === 'Martial Arts');
+    if (arts === undefined) throw new Error('no Martial Arts');
+    start._features = {
+      ...classEdits(start),
+      changed: { [arts.ref]: { ...arts.base, castGuidance: guidance() } },
+    };
+    mount(classEditor, start, registry, cls);
+    fireEvent.click(await screen.findByRole('button', { name: /^Martial Arts/ }));
+    cardsShown();
+    expect(named('Uses per rest')).toHaveLength(1);
+    expect(named('Action')).toHaveLength(1);
+  });
+
+  it("shows them on a class's own cards", () => {
+    const { registry, cls } = monk();
+    const start: Json = {
+      ...openClass(structuredClone(cls), { original: cls, registry }),
+      name: 'Lantern',
+      castGuidance: guidance([ACTION]),
+    };
+    mount(classEditor, start, registry, cls);
+    fireEvent.click(screen.getByRole('button', { name: 'Basics' }));
+    // Its pools are set in the table, so only the action is a card here.
+    expect(screen.getAllByLabelText('Action: Name')).toHaveLength(1);
+    expect(named('Action')).toHaveLength(1);
+  });
+
+  it("shows them on a subclass's feature the book has, once changed", () => {
+    const { registry, sub } = devotion();
+    const start: Json = {
+      ...openSubclass(structuredClone(sub), { original: sub, registry }),
+      name: 'Lantern',
+    };
+    const oath = subTree(sub, registry).find((n) => n.entity?.name === 'Oath of Devotion');
+    if (oath === undefined) throw new Error('no Oath of Devotion');
+    start._features = {
+      ...subEdits(start),
+      changed: { [oath.ref]: { ...oath.base, castGuidance: guidance() } },
+    };
+    mount(subclassEditor, start, registry, sub);
+    fireEvent.click(screen.getByRole('button', { name: /^Oath of Devotion/ }));
     cardsShown();
     expect(named('Uses per rest')).toHaveLength(1);
     expect(named('Action')).toHaveLength(1);
@@ -319,5 +361,21 @@ describe('where a class gives the card', () => {
     });
     expect(screen.getByText('Bonus action: Kindle (name of the class that gives it)')).toBeTruthy();
     expect(readStoredEffects(effects()).problems).toEqual([]);
+  });
+
+  it('shows them on a class or subclass feature changed for the table, read from the feature', () => {
+    const shown = (draft: Json) => {
+      render(
+        <MemoryRouter>
+          <EntryEffects draft={draft} change={() => undefined} readOnly={false} />
+        </MemoryRouter>,
+      );
+      const n = named('Uses per rest').length;
+      cleanup();
+      return n;
+    };
+    // A class's feature changed for the table names its class; a feat does not.
+    expect(shown({ name: 'Rage', className: 'Barbarian', castGuidance: guidance() })).toBe(1);
+    expect(shown({ name: 'Ember Adept', castGuidance: guidance() })).toBe(0);
   });
 });
