@@ -43,7 +43,7 @@ vi.mock('@/ui/dialogs', () => ({ askConfirm: () => Promise.resolve(true) }));
 // The books row counts the books; the page does not need the registry for it.
 vi.mock('./SourcesSection', () => ({
   useBooksShown: () => ({ shown: 3, total: 3 }),
-  booksShownWords: () => 'All 3 books show',
+  booksShownWords: () => 'All 3 sources show',
 }));
 // House rules read rule packs from the registry; with none, every rule is as written.
 vi.mock('@/data5e/hooks', () => ({ useRegistry: () => null }));
@@ -62,6 +62,8 @@ import {
   ANALYTICS_ON_TEXT,
   OFFLINE_DOWNLOADED_TEXT,
   Component as SettingsPage,
+  sizeText,
+  updateStatusText,
 } from './SettingsPage';
 
 /** The page links into the Workshop, so it renders under a router. */
@@ -238,6 +240,61 @@ describe('SettingsPage data section', () => {
 // A11Y-002: a failure here also reaches the shell's DataBanner, whose alert
 // says it. Two alerts for one failure were read back to back, so the page's own
 // lines are visual, and an outcome nothing else says goes through the announcer.
+describe('SettingsPage data wording', () => {
+  // Catches: "4.4 MB of 10244.4 MB", where the reader does the division.
+  it('writes a size in MB, and in GB from 1 GB up', () => {
+    const MB = 1024 * 1024;
+    expect(sizeText(undefined)).toBe('?');
+    expect(sizeText(4.4 * MB)).toBe('4.4 MB');
+    expect(sizeText(1023.9 * MB)).toBe('1023.9 MB');
+    expect(sizeText(1024 * MB)).toBe('1.0 GB');
+    expect(sizeText(10244.4 * MB)).toBe('10.0 GB');
+  });
+
+  it('says up to date when the newest version is the installed one', () => {
+    expect(updateStatusText(['v2.32.0', 'v2.31.0'], 'v2.32.0')).toBe(
+      'Up to date: v2.32.0 is the newest version.',
+    );
+    expect(updateStatusText(['v2.33.0', 'v2.32.0'], 'v2.32.0')).toBe(
+      'v2.33.0 is available. You have v2.32.0.',
+    );
+  });
+
+  // Catches: the check turning into a version list that never says whether
+  // anything newer exists, with the pressed button gone and nothing said.
+  it('answers the update check on screen and to a screen reader', async () => {
+    loader.listAvailableTags.mockResolvedValueOnce(['v2.32.0', 'v2.31.0']);
+    render(<SettingsPage />);
+    fireEvent.click(screen.getByRole('button', { name: 'Check for data updates' }));
+    const text = 'Up to date: v2.32.0 is the newest version.';
+    expect(await screen.findByText(text)).toBeTruthy();
+    expect(screen.getByLabelText('Switch version')).toBeTruthy();
+    await waitFor(() => expect(getAnnouncerState().messages.map((m) => m.text)).toContain(text));
+  });
+
+  it('says a newer version is there when one is', async () => {
+    render(<SettingsPage />);
+    fireEvent.click(screen.getByRole('button', { name: 'Check for data updates' }));
+    expect(await screen.findByText('v2.33.0 is available. You have v2.32.0.')).toBeTruthy();
+  });
+
+  // Catches: Storage details pointing at "Make available offline" once the
+  // compendium is whole, when that button is no longer on the page.
+  it('points at the offline button only while the button is there', async () => {
+    render(<SettingsPage />);
+    expect(await screen.findByRole('button', { name: 'Make available offline' })).toBeTruthy();
+    expect(screen.getByText(/Use “Make available offline” above/)).toBeTruthy();
+    cleanup();
+
+    loader.verifyFullOffline.mockResolvedValue({ cached: 48, total: 48 });
+    render(<SettingsPage />);
+    expect(await screen.findByText('Ready')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Make available offline' })).toBeNull();
+    expect(screen.queryByText(/Make available offline/)).toBeNull();
+    expect(screen.getByText(/already cached for offline use/)).toBeTruthy();
+  });
+});
+
 describe('SettingsPage data announcements', () => {
   /** The page as the shell shows it, with the banner beside it. */
   const renderInShell = () =>
@@ -409,7 +466,10 @@ describe('SettingsPage data announcements', () => {
     render(<SettingsPage />);
     await installVersion('v2.33.0');
     await screen.findByText(/Now on v2\.33\.0/);
+    // The check's own answer first (it is said since the button goes away),
+    // then the install, once.
     expect(getAnnouncerState().messages.map((m) => m.text)).toEqual([
+      'v2.33.0 is available. You have v2.32.0.',
       'Now on v2.33.0. Characters re-derive automatically.',
     ]);
   });
@@ -534,7 +594,7 @@ describe('SettingsPage rows into the Workshop', () => {
     expect(rules.textContent).not.toContain('Every rule as written');
     const books = screen.getByRole('link', { name: /^The books/ });
     expect(books.getAttribute('href')).toBe('/workshop/collection/books');
-    expect(books.textContent).toContain('All 3 books show');
+    expect(books.textContent).toContain('All 3 sources show');
   });
 });
 

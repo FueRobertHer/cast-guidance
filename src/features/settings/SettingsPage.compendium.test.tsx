@@ -35,7 +35,7 @@ vi.mock('@/ui/dialogs', () => ({ askConfirm: () => Promise.resolve(true) }));
 // The books row counts the books; the page does not need the registry for it.
 vi.mock('./SourcesSection', () => ({
   useBooksShown: () => ({ shown: 3, total: 3 }),
-  booksShownWords: () => 'All 3 books show',
+  booksShownWords: () => 'All 3 sources show',
 }));
 // House rules read rule packs from the registry; with none, every rule is as written.
 vi.mock('@/data5e/hooks', () => ({ useRegistry: () => null }));
