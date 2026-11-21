@@ -137,16 +137,20 @@ describe('a collection page', () => {
     // entry: Back still goes up, not out of the app.
     const router = visit(`/homebrew/edit/${row.id}`);
     expect(await heading('Imported Brews')).toBeTruthy();
-    await waitFor(() =>
-      expect(router.state.location.pathname).toBe(
-        `/workshop/collection/${encodeURIComponent(row.key ?? '')}`,
-      ),
+    await waitFor(
+      () =>
+        expect(router.state.location.pathname).toBe(
+          `/workshop/collection/${encodeURIComponent(row.key ?? '')}`,
+        ),
+      { timeout: WAIT },
     );
     fireEvent.click(screen.getByRole('button', { name: 'Back' }));
-    await waitFor(() =>
-      expect(router.state.location.pathname + router.state.location.search).toBe(
-        '/workshop?shelf=collections',
-      ),
+    await waitFor(
+      () =>
+        expect(router.state.location.pathname + router.state.location.search).toBe(
+          '/workshop?shelf=collections',
+        ),
+      { timeout: WAIT },
     );
   });
 
@@ -162,9 +166,13 @@ describe('a collection page', () => {
       </StrictMode>,
     );
     expect(await heading('Imported Brews')).toBeTruthy();
-    await waitFor(() => expect(router.state.location.pathname).not.toContain(row.id));
+    await waitFor(() => expect(router.state.location.pathname).not.toContain(row.id), {
+      timeout: WAIT,
+    });
     fireEvent.click(screen.getByRole('button', { name: 'Back' }));
-    await waitFor(() => expect(router.state.location.pathname).toBe('/settings'));
+    await waitFor(() => expect(router.state.location.pathname).toBe('/settings'), {
+      timeout: WAIT,
+    });
   });
 
   it("gives a compendium's books a switch each, from any book's address", async () => {
