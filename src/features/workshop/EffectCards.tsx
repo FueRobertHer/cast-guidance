@@ -469,6 +469,7 @@ export function EffectCards({
   moments,
   onMoments,
   momentName,
+  hostName,
 }: {
   effects: unknown;
   /** The effects, and the prices (`amend`) when renaming a pool moved them too. */
@@ -531,6 +532,11 @@ export function EffectCards({
   onMoments?: (moments: unknown[], effects?: Eff[]) => void;
   /** The name what a moment puts on goes on the sheet under: the entry's. */
   momentName?: string;
+  /**
+   * The name of what gives these effects (a trait's, a feature's, the
+   * entry's): a new pool is named for it, so two features' pools are two.
+   */
+  hostName?: string;
 }) {
   const pageSpells = useContext(SpellChoices);
   // A page with no spells in its books has none to name, so Cast a spell waits.
@@ -746,7 +752,15 @@ export function EffectCards({
     return [effects, amended];
   };
   const add = (spec: KindSpec) => {
-    const made = spec.make();
+    // A new pool is named for what gives it, with a key none of the pools here has.
+    const pools = [...list, ...(resources ?? [])].flatMap((x) =>
+      x.kind === 'resource' && typeof x.key === 'string' ? [x.key] : [],
+    );
+    const made = spec.make({
+      name: hostName,
+      pools,
+      copy: inherits !== undefined && replace !== true,
+    });
     // A new pick takes an id none of the entry's picks has, so each is asked.
     const next =
       made.kind === 'pick' ? { ...made, id: freshPickId(pickIdsIn([list, ...versions()])) } : made;
@@ -962,6 +976,7 @@ export function EntryEffects({
         momentName={
           typeof draft.name === 'string' && draft.name.trim() !== '' ? draft.name : undefined
         }
+        hostName={typeof draft.name === 'string' ? draft.name : undefined}
         onMoments={(moments, effects) =>
           set({
             moments: moments.length > 0 ? moments : undefined,
