@@ -346,14 +346,19 @@ describe('the Import sheet', () => {
     await bringIn('Text', pack);
     const preview = await findDialog('Add Our Table?');
     const changes = within(preview).getByRole('region', { name: 'Changes to entries' });
-    const rows = [...changes.querySelectorAll('dl > div')].map((r) => [
-      r.querySelector('dt')?.textContent,
-      r.querySelector('dd')?.textContent,
-    ]);
+    // What it does, then how its version differs from the one it replaces, a line under it.
+    const rows = [...changes.querySelectorAll('dl > div')].map((r) => {
+      const detail = r.querySelector('dd > span')?.textContent;
+      const value = r.querySelector('dd')?.firstChild?.textContent;
+      return detail === undefined
+        ? [r.querySelector('dt')?.textContent, value]
+        : [r.querySelector('dt')?.textContent, value, detail];
+    });
     expect(rows).toEqual([
       [
         'Fireball (spell, XPHB)',
         "The pack's own version, in place of the book's, for the characters it applies to",
+        'Differs in its text.',
       ],
       [
         'Riptide (spell, TWG)',
@@ -372,6 +377,14 @@ describe('the Import sheet', () => {
     // A replaced entry is no content: it is no official clash. Fire Bolt, not listed, is one.
     expect(preview.textContent).not.toContain('Fireball (XPHB) is also official content');
     expect(preview.textContent).toContain('Fire Bolt (XPHB) is also official content');
+    // Which version wins says both parts: what it replaces, and the usual rule for the rest.
+    const wins = within(preview).getByRole('region', { name: 'Which version wins' });
+    expect(wins.textContent).toBe(
+      'Which version wins' +
+        'The entries this pack replaces take the place of the version here, for the characters it ' +
+        'applies to. Its other entries follow the usual rule: official content wins over homebrew with ' +
+        'the same name and source, and between homebrew files the one imported first wins.',
+    );
     expect(namelessControls()).toEqual([]);
   });
 

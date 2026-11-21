@@ -44,6 +44,7 @@ import {
   describeCollision,
   type HomebrewPreview,
   type OfficialCoverage,
+  PACK_WINNER_POLICY,
   previewHomebrewImport,
   WINNER_POLICY,
   whereIn,
@@ -943,7 +944,12 @@ export default function HomebrewImportPreview({
       {/* A pack of rules alone has no entries to win or lose. */}
       {(pack === undefined || Object.keys(p.counts).length > 0) && (
         <PreviewSection heading="Which version wins">
-          <p className="text-ink-muted">{WINNER_POLICY}</p>
+          {/* A pack's replaces take the book's place; the rest of it keeps the usual rule. */}
+          <p className="text-ink-muted">
+            {pack?.replaces?.entries.some((r) => r.inPack) === true
+              ? PACK_WINNER_POLICY
+              : WINNER_POLICY}
+          </p>
         </PreviewSection>
       )}
     </ImportPreviewDialog>
