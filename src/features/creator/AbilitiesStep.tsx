@@ -149,28 +149,40 @@ export function AbilitiesStep({
         </Button>
       )}
 
-      {method === 'standard' && isStandardArray(base) && (
+      {/* One allocator in one place, waiting or assigned, so the first pick
+          (which lays down the whole array) keeps focus on the select it was
+          made in. Nothing assigned yet, the six rows are there from the start
+          (review item 2), each waiting on a value: the first one picked places
+          the rest from 15 down to 8, so every later pick is a swap. */}
+      {method === 'standard' && (isStandardArray(base) || allAt(base, 10)) && (
         <>
+          {allAt(base, 10) && (
+            <p className="flex items-start gap-1.5 px-1 text-sm text-ink-muted">
+              <Info size={16} aria-hidden className="mt-0.5 shrink-0" />
+              Pick a score for any ability. The rest fill in from 15 down to 8, ready to swap.
+            </p>
+          )}
           <StandardAllocator
             base={base}
+            unassigned={allAt(base, 10)}
             finals={finals}
             onScores={onScores}
             onAnnounce={setAnnounce}
           />
-          <p className="flex items-center gap-1.5 text-sm text-heal">
-            <Check size={16} aria-hidden className="shrink-0" /> Standard array: each value used
-            once
-          </p>
+          {isStandardArray(base) && (
+            <p className="flex items-center gap-1.5 text-sm text-heal">
+              <Check size={16} aria-hidden className="shrink-0" /> Standard array: each value used
+              once
+            </p>
+          )}
         </>
       )}
 
-      {method === 'standard' && !isStandardArray(base) && (
+      {method === 'standard' && !isStandardArray(base) && !allAt(base, 10) && (
         <div className={`${cardClass} flex flex-col gap-2`}>
           <p className="flex items-start gap-1.5 text-sm">
             <Info size={16} aria-hidden className="mt-0.5 shrink-0 text-ink-muted" />
-            {allAt(base, 10)
-              ? `Assign each of ${STANDARD_ARRAY.join(', ')} once.`
-              : `Your scores (${scoresLine(base)}) aren't the standard array.`}
+            {`Your scores (${scoresLine(base)}) aren't the standard array.`}
           </p>
           <button
             type="button"
@@ -179,7 +191,7 @@ export function AbilitiesStep({
           >
             Place 15 down to 8 in order (STR to CHA), then swap
           </button>
-          {!allAt(base, 10) && keepAsManual('Keep these as Manual scores')}
+          {keepAsManual('Keep these as Manual scores')}
         </div>
       )}
 
@@ -311,14 +323,19 @@ function isNavigationKey(e: { key: string; altKey: boolean; ctrlKey: boolean; me
  * closed select stepping, and works from the snapshot; any other change is a
  * pick from the open list, which works from the current scores and ends the
  * run, so the next pick builds on it. Blur ends the run too.
+ *
+ * `unassigned` is the untouched all-10 state: each select shows "Choose…",
+ * and a pick works from the array placed in order, so it lands the whole array.
  */
 function StandardAllocator({
   base,
+  unassigned = false,
   finals,
   onScores,
   onAnnounce,
 }: {
   base: Scores;
+  unassigned?: boolean;
   finals?: Record<Ability, DerivedAbility>;
   onScores: (base: Scores) => void;
   onAnnounce: (text: string) => void;
@@ -345,9 +362,9 @@ function StandardAllocator({
           </label>
           <select
             id={`${id}-${a}`}
-            value={base[a]}
+            value={unassigned ? '' : base[a]}
             onKeyDown={(e) => {
-              if (!isNavigationKey(e)) return;
+              if (unassigned || !isNavigationKey(e)) return;
               if (snapshot.current === null) {
                 snapshot.current = { ...base };
                 setShown(snapshot.current);
@@ -360,13 +377,14 @@ function StandardAllocator({
             onBlur={endRun}
             onChange={(e) => {
               const fromRun = stepping.current ? snapshot.current : null;
-              const from = fromRun ?? base;
+              const from = fromRun ?? (unassigned ? standardInOrder() : base);
               const next = swapStandard(from, a, Number(e.target.value));
               if (fromRun === null) endRun();
               onScores(next);
               // Said against the scores just before this change, which is
               // what the player last heard.
-              const moved = ABILITIES.filter((b) => next[b] !== base[b]);
+              // The first pick lays down all six, so all six are said.
+              const moved = unassigned ? ABILITIES : ABILITIES.filter((b) => next[b] !== base[b]);
               onAnnounce(
                 (moved.length > 0 ? moved : [a])
                   .map((b) => `${b.toUpperCase()} ${next[b]}`)
@@ -375,8 +393,13 @@ function StandardAllocator({
             }}
             className={`${fieldClass} font-bold tabular-nums`}
           >
+            {unassigned && (
+              <option value="" disabled>
+                Choose…
+              </option>
+            )}
             {STANDARD_ARRAY.map((v) => {
-              const holder = holderOf(labels, v);
+              const holder = unassigned ? undefined : holderOf(labels, v);
               return (
                 <option key={v} value={v}>
                   {v}
@@ -387,7 +410,8 @@ function StandardAllocator({
               );
             })}
           </select>
-          <FinalLine score={base[a]} final={finals?.[a]} />
+          {/* No score yet, so no total to show under it. */}
+          {!unassigned && <FinalLine score={base[a]} final={finals?.[a]} />}
         </div>
       ))}
     </div>

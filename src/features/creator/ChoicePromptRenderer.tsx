@@ -244,6 +244,19 @@ export function ChoicePromptRenderer({
   // Options with descriptions (feats) render as a readable list, not chips.
   const detailed = prompt.options.some((o) => o.description !== undefined && o.description !== '');
   const stepper = prompt.allowRepeat === true && prompt.count > 1;
+  // A weighted ability prompt whose picks get different bonuses (+2 then +1)
+  // says so up front and on each picked chip, so the order is not a guess.
+  const weights =
+    prompt.kind === 'abilityWeighted' &&
+    prompt.weights !== undefined &&
+    new Set(prompt.weights).size > 1
+      ? prompt.weights
+      : undefined;
+  const bonusOf = (id: string): number | undefined => {
+    if (weights === undefined) return undefined;
+    const i = selected.indexOf(id);
+    return i < 0 ? undefined : weights[i];
+  };
 
   return (
     // `min-w-0`: a fieldset is otherwise at least as wide as its content's
@@ -261,6 +274,11 @@ export function ChoicePromptRenderer({
           {prompt.origin.label} · pick {prompt.count}
         </span>
       </div>
+      {weights !== undefined && (
+        <p className="text-caption text-ink-muted">
+          In the order you pick them: {weights.map((w) => `+${w}`).join(', then ')}.
+        </p>
+      )}
       {searchable && (
         <input
           value={filter}
@@ -396,7 +414,8 @@ export function ChoicePromptRenderer({
                 onClick={() => toggle(o.id)}
                 className={o.disabled !== undefined ? 'opacity-40' : undefined}
               >
-                {o.label}
+                {/* One text, so the name reads "WIS +2" as two words. */}
+                {bonusOf(o.id) === undefined ? o.label : `${o.label} +${bonusOf(o.id)}`}
                 {times > 1 && <span className="tabular-nums">×{times}</span>}
               </Chip>
             );
