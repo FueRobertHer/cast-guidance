@@ -5,7 +5,7 @@
  * writes. A field holding more than that is shown as kept and never rewritten,
  * and an edit changes only the keys it is about, each left where it was.
  */
-import { useId, useState } from 'react';
+import { useState } from 'react';
 import { useTypePacks } from '@/data5e/hooks';
 import type { EntityRegistry } from '@/data5e/normalize';
 import { isRecord } from '@/engine/castGuidance';
@@ -18,15 +18,16 @@ import type { Json } from './editorTypes';
 import {
   ABILITY_WORDS,
   ChipPicks,
+  everyPrinting,
   Field,
   Kept,
   NumberField,
-  onePerName,
   PrerequisiteField,
   prerequisiteLevel,
   Select,
   withPrerequisiteLevel,
 } from './fields';
+import { printingOf, SpellPicker } from './SpellPicker';
 
 type Options = ReadonlyArray<readonly [string, string]>;
 
@@ -435,7 +436,6 @@ function SpellLine({
   n,
   row,
   spells,
-  listId,
   levels,
   hows,
   disabled,
@@ -445,7 +445,6 @@ function SpellLine({
   n: number;
   row: SpellRow;
   spells: ReadonlyArray<{ name: string; source: string }>;
-  listId: string;
   levels: boolean;
   hows: Options;
   disabled: boolean;
@@ -458,19 +457,22 @@ function SpellLine({
   return (
     <div className="flex flex-wrap items-end gap-2">
       <div className="min-w-32 flex-1">
-        <Field label={`Spell ${n}`}>
-          <input
-            list={listId}
-            value={typed}
-            placeholder="Light"
-            disabled={disabled}
-            onChange={(e) => {
-              setHeld(e.target.value);
-              onChange({ ...row, spell: spellRef(e.target.value, spells) });
-            }}
-            className={fieldClass}
-          />
-        </Field>
+        <SpellPicker
+          label={`Spell ${n}`}
+          value={typed}
+          options={spells}
+          picked={printingOf(row.spell, spells)}
+          placeholder="Light"
+          disabled={disabled}
+          onType={(text) => {
+            setHeld(text);
+            onChange({ ...row, spell: spellRef(text, spells) });
+          }}
+          onPick={(s) => {
+            setHeld(s.name);
+            onChange({ ...row, spell: `${s.name}|${s.source}` });
+          }}
+        />
       </div>
       <div className="w-36">
         <Field label={`Spell ${n}: how`}>
@@ -552,11 +554,10 @@ function SpellRows({
   onChange: (next: unknown) => void;
 }) {
   useTypePacks('spell');
-  const listId = useId();
   const [held, setHeld] = useState(rows);
   // Written from elsewhere (the file view, Undo): what the field holds is shown.
   const shown = same(write(held, ability), raw) ? held : rows;
-  const spells = onePerName(registry.byType('spell'), draft);
+  const spells = everyPrinting(registry.byType('spell'), draft);
   const set = (next: SpellRow[], ab: unknown) => {
     setHeld(next);
     onChange(write(next, ab));
@@ -572,7 +573,6 @@ function SpellRows({
           n={i + 1}
           row={row}
           spells={spells}
-          listId={listId}
           levels={levels}
           hows={hows}
           disabled={readOnly}
@@ -590,11 +590,6 @@ function SpellRows({
           }
         />
       ))}
-      <datalist id={listId}>
-        {spells.map((s) => (
-          <option key={`${s.name}|${s.source}`} value={s.name} />
-        ))}
-      </datalist>
       {shown.length > 0 &&
         (ability === undefined || typeof ability === 'string' ? (
           <Field label="Their attack and DC from">

@@ -3,11 +3,12 @@
  * class's spells or those cast with one ability), spell damage, spells added
  * to a class's list, and casting a spell.
  */
-import { useId, useState } from 'react';
+import { useState } from 'react';
 import { isRecord } from '@/engine/castGuidance';
 import { SPELL_SCHOOLS } from '@/engine/spellQuery';
 import { fieldClass } from '@/ui/TextField';
 import { Field, Select } from '../fields';
+import { printingOf, SpellPicker } from '../SpellPicker';
 import { ListBox, optionalHeld } from './attacks';
 import type { Eff, KindSpec, Options, SpellOption } from './kit/types';
 import {
@@ -49,7 +50,6 @@ function GrantFields({
   spells: readonly SpellOption[];
   onChange: (next: Eff) => void;
 }) {
-  const id = useId();
   const ref = String(effect.spell ?? '');
   const [held, setTyped] = useState(ref.split('|')[0] ?? '');
   const resolve = (name: string) => {
@@ -79,25 +79,22 @@ function GrantFields({
   };
   return (
     <>
-      <Field label="Spell">
-        <input
-          aria-label={`${title}: Spell`}
-          list={id}
-          value={typed}
-          placeholder="Misty Step"
-          onChange={(e) => {
-            const name = e.target.value;
-            setTyped(name);
-            onChange({ ...effect, spell: resolve(name) });
-          }}
-          className={fieldClass}
-        />
-        <datalist id={id}>
-          {spells.map((s) => (
-            <option key={`${s.name}|${s.source}`} value={s.name} />
-          ))}
-        </datalist>
-      </Field>
+      <SpellPicker
+        label="Spell"
+        ariaLabel={`${title}: Spell`}
+        value={typed}
+        options={spells}
+        picked={printingOf(ref, spells)}
+        placeholder="Misty Step"
+        onType={(name) => {
+          setTyped(name);
+          onChange({ ...effect, spell: resolve(name) });
+        }}
+        onPick={(s) => {
+          setTyped(s.name);
+          onChange({ ...effect, spell: `${s.name}|${s.source}` });
+        }}
+      />
       <Field label="Cast">
         <Select aria-label={`${title}: Cast`} value={how} onChange={(e) => setHow(e.target.value)}>
           <option value="">At will</option>

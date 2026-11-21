@@ -125,7 +125,7 @@ experience.)
 |---|---|---|
 | DATA-002 | [#104](https://github.com/FueRobertHer/cast-guidance/issues/104) | Validate every required index/pack, retain a rollback tag past the swap, and put `updateToTag` behind the global fetch gate. Staging, resume, and stale-tag cleanup already ship. |
 | DATA-003 | [#105](https://github.com/FueRobertHer/cast-guidance/issues/105) | Batch registry hydration and search indexing instead of rebuilding per downloaded file. |
-| PWA-001 | [#106](https://github.com/FueRobertHer/cast-guidance/issues/106) | The Chromium route matrix ships (`e2e/specs/offline-routes.spec.ts`: every route, cold and offline, at none, essential, partial and full caches, each landing on content, an offline state with Retry, or not found with a link, plus online failed-download and corrupted-section cells). A caster who knows Fireball covers the sheet's spell list and spell info sheet, which now say why the spell files are missing, with Retry, instead of a bare `void` download that left a short list or "Loading spell…" up for good. Remaining: the same matrix on WebKit. |
+| PWA-001 | [#106](https://github.com/FueRobertHer/cast-guidance/issues/106) | The Chromium route matrix ships (`e2e/specs/offline-routes.spec.ts`: every route, cold and offline, at none, essential, partial and full caches, each landing on content, an offline state with Retry, or not found with a link, plus online failed-download and corrupted-section cells). A caster who knows Fireball covers the sheet's spell list and spell info sheet, which now say why the spell files are missing, with Retry, instead of a bare `void` download that left a short list or "Loading spell…" up for good. Remaining: the same matrix on WebKit, which Playwright's WebKit cannot run (see TEST-004): it needs a real Safari or device pass. |
 | PWA-002 | [#107](https://github.com/FueRobertHer/cast-guidance/issues/107) | Validate install and update on real iOS and Android devices with the checklist in `docs/pwa-device-validation.md`. The raster 192/512, maskable and Apple touch icons, the corrected manifest and their checks already ship. |
 
 ### Security, privacy, and imports
@@ -135,7 +135,7 @@ experience.)
 | SEC-001 | [#108](https://github.com/FueRobertHer/cast-guidance/issues/108) | The CSP is enforced through `vercel.json`; confirm the live header and a clean console on the production deployment, then close. |
 | SEC-002 | [#109](https://github.com/FueRobertHer/cast-guidance/issues/109) | Bound the raw remote-response byte stream before parse; cap regex and worker work. |
 | IMP-002 | [#110](https://github.com/FueRobertHer/cast-guidance/issues/110) | Import preview explaining dependencies, duplicates, winner policy, and collisions before commit. |
-| LEGAL-001 | [#111](https://github.com/FueRobertHer/cast-guidance/issues/111) | License, generated notices and draft notice shipped; legal review open. The MIT `LICENSE`, the generated `THIRD_PARTY_NOTICES.md` (checked in CI) and the DRAFT `docs/content-notice.md` with a trademark disclaimer draft are in. Remaining, for the owner: the legal review, the choice between the Fan Content Policy, SRD only or the mirror as it is, the shipped book titles and curated mechanics, and the Settings privacy copy versus Vercel Analytics (the checklist in `docs/content-notice.md`). |
+| LEGAL-001 | [#111](https://github.com/FueRobertHer/cast-guidance/issues/111) | License, generated notices and draft notice shipped; legal review open. The MIT `LICENSE`, the generated `THIRD_PARTY_NOTICES.md` (checked in CI) and the DRAFT `docs/content-notice.md` with a trademark disclaimer draft are in. Remaining, for the owner: the legal review, the choice between the Fan Content Policy, SRD only or the mirror as it is, the shipped book titles and curated mechanics, and, before any build turns on `VITE_ANALYTICS=vercel` (opt-in since #413), teaching the notices script that build, since `notices:check` compares against the default build exactly (the checklist in `docs/content-notice.md`). |
 
 (`{@link}` sanitization + enforced deployment headers (SEC-001) and the
 local-data/privacy explanation + "Reset app data" control (PRIV-001) have
@@ -171,7 +171,7 @@ to a mis-tap. Remaining:
 | TEST-001 | [#120](https://github.com/FueRobertHer/cast-guidance/issues/120) | Make CI fail on coverage thresholds and a bundle budget, not just report them. |
 | TEST-002 | [#121](https://github.com/FueRobertHer/cast-guidance/issues/121) | IndexedDB coverage for quota exhaustion, lifecycle events, and multi-tab races. |
 | TEST-003 | [#122](https://github.com/FueRobertHer/cast-guidance/issues/122) | Component coverage for rules switching, casting, rests, imports, homebrew edits, and the spell-state cues. |
-| TEST-004 | [#123](https://github.com/FueRobertHer/cast-guidance/issues/123) | Every flow the issue lists has a Chromium spec in `e2e/`: first load, offline reload, SW updates, lifecycle, import/export, and data installs (a first install failing mid-drain or interrupted by a reload, an update from Settings and from the boot toast, a failed and an interrupted update, and the rollback of a release that keeps failing to start, with its launch counter seeded; the immediate rollback of a build that throws is covered by unit tests only, since no release the installer accepts is known to make it throw). Remaining: browsers beyond Chromium, as an opt-in WebKit smoke project. |
+| TEST-004 | [#123](https://github.com/FueRobertHer/cast-guidance/issues/123) | Every flow the issue lists has a Chromium spec in `e2e/`: first load, offline reload, SW updates, lifecycle, import/export, and data installs (a first install failing mid-drain or interrupted by a reload, an update from Settings and from the boot toast, a failed and an interrupted update, and the rollback of a release that keeps failing to start, with its launch counter seeded; the immediate rollback of a build that throws is covered by unit tests only, since no release the installer accepts is known to make it throw). A WebKit project (#427, an iPhone 14 profile) runs 34 of the flow specs on every PR without gating it. It cannot cover the service worker: Playwright's WebKit routing does not see requests from a page the service worker controls, and its emulated offline fails reloads the worker serves. So service workers are blocked there, and the offline, update and install specs are left out. Remaining: three WebKit failures left visible: the collection page scrolls 215 px sideways, an uncaught "Fetch API cannot load ... due to access control checks" during a reload or hide (a different test each run, possibly an unhandled rejection in the app), and the theme's first-frame check. Fix or file them, then make the project a gate. The service worker flows need a real Safari or device pass. |
 | TEST-005 | [#124](https://github.com/FueRobertHer/cast-guidance/issues/124) | The audit, its per-tag budgets, the branch-heuristic check and the workflow exist. Left: make the `Data audit` check required in branch protection, and close once the workflow's first run is green. |
 
 ## P2: product and engineering depth
@@ -482,8 +482,12 @@ work:
 ### Maintainability and diagnostics
 
 - Add runtime schemas at every owned `unknown` boundary, and a check that
-  features reach persistence only through the repositories (the React-free
-  engine boundary is already enforced by `src/engine/architecture.test.ts`).
+  features reach persistence only through the repositories. The React-free
+  engine boundary, through everything it imports from data5e, lib and dice, is
+  enforced by `src/engine/architecture.test.ts`. data5e's own boundary (React
+  only in `hooks.ts` and `entries/**`, nothing reaching into `features`, `ui`
+  or `app`) is enforced by `src/data5e/architecture.test.ts`, whose list of
+  older crossings may only shrink: work it down to empty.
 - Split the largest feature modules around domain commands/state machines;
   consolidate repeated form, drawer, download, entity-label, toggle, and status
   primitives without hiding game behavior.
@@ -503,6 +507,17 @@ work:
   the global coverage floors CI already enforces; add property/fuzz coverage
   (dice, choices, entry rendering, copy/mod, migrations, hostile imports) and
   golden 2014/2024 characters.
+- Make the tests that only fail on a loaded machine sturdier. They are
+  `useCharacterSheet.indexeddb`, `installRollback.indexeddb`,
+  `registryRefresh.integration`, `repair.indexeddb`, `CollectionPage`,
+  `editorBack` and `ConditionStrip.homebrew`. None has failed in CI since the
+  shards started reporting failures (#410), but a local full run fails one to
+  three of them while other work shares the machine. The waits give
+  fake-indexeddb boot and registry builds the default 1 s; the
+  `registryRefresh` frame count follows a fixed 50 ms sleep, where a settle
+  condition would be sturdier. Near the e2e timeout:
+  `target-size.spec.ts:268` (the Workshop home's links) took 30.3 s once on a
+  loaded run.
 - Add a bundle-analysis view (what is in each chunk) to explain a bundle budget
   failure (`bun run ci` mirrors the CI gates locally, `bun run e2e:ci` the E2E
   job; `bun run data:audit` is wired; `tests-fixtures` is linted;
@@ -511,12 +526,17 @@ work:
   troubleshooting, and the deployment fallback/cache policy (Bun/Node versions
   are pinned; the export format and security headers are documented).
 - Define semantic app/data/export versions, a changelog and support policy, a
-  release/rollback checklist, and cross-browser smoke tests for iOS, Android,
-  Chromium, Firefox, and Safari (issue/PR templates exist).
-- Add dependency vulnerability scanning and automated update triage (shipped
-  code already has a license allowlist, enforced by `bun run notices:check`);
-  document mirror/release provenance, checksums where available, emergency pin,
-  security reporting, supported versions, and patch expectations.
+  release/rollback checklist, and cross-browser smoke tests for Android and
+  Firefox, and real-device Safari (issue/PR templates exist; a non-gating
+  WebKit project runs in CI, see TEST-004).
+- A dependency audit (`scripts/dependency-audit.ts`, its own CI job) and
+  Dependabot updates shipped in #418, beside the license allowlist that
+  `bun run notices:check` enforces. Remaining: triage the Dependabot PRs CI
+  turns red (#454, TypeScript 7, fails `checks` and a unit shard on an
+  undefined `readFile`; #453, the dev-dependencies group, fails `checks` and
+  eight axe tests), and document mirror/release provenance, checksums where
+  available, emergency pin, security reporting, supported versions, and patch
+  expectations.
 
 ## P3: later opportunities
 

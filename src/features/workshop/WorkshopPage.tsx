@@ -58,7 +58,7 @@ import {
 } from './copyWriter';
 import { EditorShell, type Problem } from './EditorShell';
 import { EDITORS, type EditorSpec, type Json } from './editorTypes';
-import { EditionField, Field, onePerName } from './fields';
+import { EditionField, everyPrinting, Field } from './fields';
 import { EntryPicks } from './pickIds';
 import { SpellChoices } from './spellChoices';
 import { TRY_ON_TYPES, TryItOn } from './TryItOn';
@@ -762,11 +762,12 @@ function Editor({
       </span>
     );
 
-  // The spells a Cast a spell card can name, one per name in the entry's rules
-  // version, as an item's are: for each list of cards whose editor names none.
+  // The spells a Cast a spell card can name, every printing, the entry's rules
+  // version first within a name, as an item's are: for each list of cards
+  // whose editor names none.
   const { edition, bookEdition, source: from } = draft;
   const spellChoices = useMemo(
-    () => onePerName(registry.byType('spell'), { edition, bookEdition, source: from }),
+    () => everyPrinting(registry.byType('spell'), { edition, bookEdition, source: from }),
     [registry, edition, bookEdition, from],
   );
   // The entry as the sheet would hold it once saved, for Try it on. One that

@@ -772,7 +772,7 @@ export function TryItOn({
           </p>
         )}
         {changes.length > 0 && (
-          <ul className="grid grid-cols-[repeat(auto-fill,minmax(9rem,1fr))] gap-2">
+          <ul className="grid grid-cols-[repeat(auto-fill,minmax(min(9rem,100%),1fr))] gap-2">
             {firstShown(changes).map((c) => (
               <li
                 key={c.label}
