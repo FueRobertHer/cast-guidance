@@ -35,9 +35,6 @@
     "scripts/generate-icons.ts",
     "scripts/iconSource.ts",
     "scripts/pwaManifest.test.ts",
-    "scripts/dataAuditInputs.ts",
-    "scripts/dataAuditInputs.test.ts",
-    "scripts/data-audit-changes.ts",
     "pwa.manifest.ts"
   ]
 }
