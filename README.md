@@ -13,7 +13,7 @@ Vite · React 19 · TypeScript (strict) · Tailwind CSS 4 · react-router · Zus
 
 ## Development
 
-Requires Bun. No version is pinned, so install a current release.
+Requires Bun; CI uses the version in `.bun-version`, and a newer one usually works.
 
 ```bash
 bun install
@@ -184,6 +184,7 @@ recomputed on read and individually overridable.
 - [`docs/export-format.md`](docs/export-format.md): the character export envelope, homebrew DTO, and import/migration guarantees.
 - [`docs/security-headers.md`](docs/security-headers.md): deployment security headers, the enforced CSP, and how to add a host.
 - [`docs/content-notice.md`](docs/content-notice.md): DRAFT content and attribution notice for the owner's legal review: where game data comes from, what ships, and the options.
+- [`docs/adr/`](docs/adr): ADR-001 (the homebrew Workshop, table rules and rule packs) and ADR-002 (One Workshop), as summaries with links to the full records.
 - [`FUTURE_WORK.md`](FUTURE_WORK.md): the product principle, the measured
   baseline, the delivery order, and the P2/P3 themes. Release-quality (P1) work
   is tracked as [GitHub issues](https://github.com/FueRobertHer/cast-guidance/issues?q=is%3Aissue+is%3Aopen+label%3AP1);

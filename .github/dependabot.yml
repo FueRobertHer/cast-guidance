@@ -1,0 +1,30 @@
+# Version updates for the packages (bun.lock) and the workflows' actions.
+# Grouped so a week's minor and patch updates arrive as one PR per kind,
+# which CI (and the Data audit, for bun.lock) checks like any other PR.
+# Majors come one package per PR: they are the ones that need reading.
+# Bun itself is pinned in .bun-version, which Dependabot does not read;
+# bump it by hand.
+version: 2
+updates:
+  - package-ecosystem: bun
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    groups:
+      dependencies:
+        dependency-type: production
+        update-types: [minor, patch]
+      dev-dependencies:
+        dependency-type: development
+        update-types: [minor, patch]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    groups:
+      actions:
+        patterns: ['*']

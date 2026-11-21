@@ -658,6 +658,7 @@ export function readAbilityBlock(
               kind: 'abilityWeighted',
               label: `Ability bonuses (${weights.map((w) => `+${w}`).join(', ')})`,
               count: weights.length,
+              weights,
               options: from.map((a) => ({ id: String(a), label: String(a).toUpperCase() })),
             },
             (selected) => {

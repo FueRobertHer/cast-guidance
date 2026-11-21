@@ -18,7 +18,7 @@ import {
   identityKey,
   isEntityType,
 } from '@/data5e/normalize';
-import { editionOf } from '@/data5e/rulesVersion';
+import { editionOf, sourceEdition } from '@/data5e/rulesVersion';
 import { type SearchResult, searchAll } from '@/data5e/search/client';
 import { DEFAULT_QUERY_LIMIT } from '@/data5e/search/protocol';
 import {
@@ -1091,6 +1091,18 @@ function GroupLabels({ groups }: { groups: ClassTable['groups'] }) {
  * A class's level table (Gemini 43): level, proficiency bonus, the features
  * that level gives (each a link to its page), and the class's own columns.
  */
+/** Features as links, comma separated: each opens its own page, where it can be changed for the table. */
+function FeatureLinks({ features }: { features: readonly Entity[] }) {
+  return features.map((f, i) => (
+    <Fragment key={identityKey('classFeature', f)}>
+      {i > 0 && ', '}
+      <Link to={featurePath('classFeature', f)} className={TEXT_LINK}>
+        {nameOf(f)}
+      </Link>
+    </Fragment>
+  ));
+}
+
 function ClassLevelTable({
   name,
   table,
@@ -1103,6 +1115,12 @@ function ClassLevelTable({
   const headingId = useId();
   const titled = table.groups.some((g) => g.title !== undefined);
   const span = titled ? 2 : 1;
+  // A homebrew feature with no level, or one past 20, has no row: it is named
+  // under the table rather than lost.
+  const offTable = [...byLevel.entries()]
+    .filter(([level]) => level < 1 || level > 20)
+    .sort((a, b) => a[0] - b[0])
+    .flatMap(([, list]) => list);
   return (
     <section className="flex flex-col gap-2">
       <h3 id={headingId} className="text-heading">
@@ -1117,6 +1135,15 @@ function ClassLevelTable({
         className="overflow-x-auto rounded-card bg-surface shadow-card ring-1 ring-line ring-inset"
       >
         <table className="w-full border-collapse text-caption tabular-nums">
+          {/* Column groups, so a group's title (Spell Slots per Spell Level)
+              heads the columns under it for a screen reader. */}
+          <colgroup span={1} />
+          <colgroup span={1} />
+          <colgroup span={1} />
+          {table.groups.map((g, i) => (
+            // biome-ignore lint/suspicious/noArrayIndexKey: groups have a fixed order and no id
+            <colgroup key={i} span={g.labels.length} />
+          ))}
           <thead className="border-b border-line">
             <tr>
               <th scope="col" rowSpan={span} className={TABLE_HEAD}>
@@ -1158,15 +1185,7 @@ function ClassLevelTable({
                 </th>
                 <td className={TABLE_CELL}>{signed(proficiencyBonus(row.level))}</td>
                 <td className={TABLE_CELL}>
-                  {(byLevel.get(row.level) ?? []).map((f, i) => (
-                    <Fragment key={identityKey('classFeature', f)}>
-                      {i > 0 && ', '}
-                      {/* Each opens its own page, where it can be changed for the table. */}
-                      <Link to={featurePath('classFeature', f)} className={TEXT_LINK}>
-                        {nameOf(f)}
-                      </Link>
-                    </Fragment>
-                  ))}
+                  <FeatureLinks features={byLevel.get(row.level) ?? []} />
                 </td>
                 {row.cells.map((cell, c) => (
                   // biome-ignore lint/suspicious/noArrayIndexKey: columns have a fixed order and no id
@@ -1179,6 +1198,12 @@ function ClassLevelTable({
           </tbody>
         </table>
       </section>
+      {offTable.length > 0 && (
+        <p className="text-body">
+          <span className="text-ink-muted">Other features: </span>
+          <FeatureLinks features={offTable} />
+        </p>
+      )}
     </section>
   );
 }
@@ -1446,10 +1471,15 @@ function spellListFacts(
     (s) => s.source,
     (s) => s.source === '',
   );
-  // One entry per name, in alphabetical order.
-  const once = <T,>(list: readonly T[], label: (t: T) => string) => {
+  // One entry per name, in alphabetical order. Where a name is listed under
+  // both editions' classes (a 2014 spell on the 2014 and 2024 Eldritch Knight's
+  // lists), the link goes to the printing of the spell's own edition.
+  const edition = editionOf(spell);
+  const once = <T,>(list: readonly T[], label: (t: T) => string, bookOf: (t: T) => string) => {
     const seen = new Set<string>();
-    return list
+    const own = (t: T) => (sourceEdition(bookOf(t)) === edition ? 0 : 1);
+    return [...list]
+      .sort((a, b) => own(a) - own(b))
       .filter((t) => {
         const k = label(t).toLowerCase();
         if (seen.has(k)) return false;
@@ -1459,14 +1489,18 @@ function spellListFacts(
       .sort((a, b) => label(a).localeCompare(label(b)));
   };
   const rows: Array<[string, ReactNode]> = [];
-  const classLinks = once(classes, (c) => c.name).map((c) => ({
+  const classLinks = once(
+    classes,
+    (c) => c.name,
+    (c) => c.source,
+  ).map((c) => ({
     key: `${c.name}|${c.source}`,
     label: c.name,
     to: `/library/class/${encodeURIComponent(`${c.name}|${c.source}`)}`,
   }));
   if (classLinks.length > 0) rows.push(['Classes', <LinkList key="c" links={classLinks} />]);
   const subLabel = (s: ListedSubclass) => `${s.name} (${s.className})`;
-  const subLinks = once(subclasses, subLabel).map((s) => ({
+  const subLinks = once(subclasses, subLabel, (s) => s.classSource).map((s) => ({
     key: `${s.shortName}|${s.className}|${s.classSource}|${s.source}`,
     label: subLabel(s),
     to: `/library/subclass/${encodeURIComponent(

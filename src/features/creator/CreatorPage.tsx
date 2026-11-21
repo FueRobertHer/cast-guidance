@@ -42,6 +42,7 @@ import { fieldClass, TextField } from '@/ui/TextField';
 import { UndoBar } from '@/ui/UndoBar';
 import { AbilitiesStep, type ShownMethod } from './AbilitiesStep';
 import { abilityIssue, allAt, keepsOnPointBuySwitch } from './abilityMethods';
+import { type StagedPick, stagedApply, stagedBase } from './ChoicePromptRenderer';
 import { CollapsingCardList } from './CollapsingCardList';
 import {
   clearDraft,
@@ -51,11 +52,20 @@ import {
   isBlankDraft,
   isResumeState,
   readDraft,
+  readStaged,
   saveDraftStep,
   writeDraft,
+  writeStaged,
 } from './draft';
 import { replaceWizardWith } from './leaveWizard';
-import { hasOriginChoices, listsPick, OriginChoices } from './OriginChoices';
+import {
+  applyPick,
+  hasOriginChoices,
+  listsPick,
+  OriginChoices,
+  type PickStage,
+  sameChoice,
+} from './OriginChoices';
 import { pendingSteps, stepForOrigin } from './pendingSteps';
 import {
   classBlurb,
@@ -350,6 +360,76 @@ export function Component() {
   const ctx = registry !== null ? engineContextFor(registry) : null;
   const sheet = useMemo(() => (ctx !== null ? deriveSheet(doc, ctx) : null), [doc, ctx]);
 
+  // Taps on pick cards not yet confirmed, by prompt id. Held here rather than in
+  // each card, which goes with its step, so walking on never drops them (review
+  // top 3): a full pick is applied on the way forward, and one still short
+  // waits on its card for the player's return. Kept beside the draft in
+  // session storage, so a reload or the roster does not drop them either.
+  const [stagedPicks, setStagedPicks] = useState(() => readStaged(entry.draft.doc.id));
+  const stagedRef = useRef(stagedPicks);
+  const setStaged = (next: Record<string, StagedPick>) => {
+    stagedRef.current = next;
+    setStagedPicks(next);
+    writeStaged(latest.current.doc.id, next);
+  };
+  // Taps on a pick whose origin has gone (another class, species or
+  // background) go with it, so they never come back if it does; so do taps
+  // over a value that has since changed (an undo), which the card ignores.
+  if (sheet !== null) {
+    const live = new Set(
+      [...sheet.pending, ...sheet.resolvedChoices.map((r) => r.prompt)].map((p) => p.id),
+    );
+    const kept = Object.entries(stagedPicks).filter(
+      ([id, p]) => live.has(id) && p.base === stagedBase(doc.choices[id]),
+    );
+    if (kept.length !== Object.keys(stagedPicks).length) setStaged(Object.fromEntries(kept));
+  }
+  const pickStage: PickStage = {
+    picks: stagedPicks,
+    set: (id, pick) => {
+      const { [id]: _gone, ...rest } = stagedRef.current;
+      setStaged(pick === undefined ? rest : { ...rest, [id]: pick });
+    },
+  };
+  /**
+   * Save each held pick its Confirm could save now, one at a time: each is
+   * checked against the build as the ones before it left it, so a pick that
+   * closes an option, or answers a pick another one depends on, is seen by the
+   * next. Parents go first (an ASI before its feat), and a pick whose prompt
+   * is gone with one is dropped. `steps` limits it to the picks shown on those
+   * steps (the ones being walked past); a pick still short stays held.
+   */
+  const applyStaged = (steps?: ReadonlySet<Step>) => {
+    if (ctx === null) return;
+    const remaining = { ...stagedRef.current };
+    const ids = Object.keys(remaining).sort((a, b) => a.length - b.length);
+    if (ids.length === 0) return;
+    let now = deriveSheet(latest.current.doc, ctx);
+    for (const id of ids) {
+      const held = remaining[id];
+      if (held === undefined) continue;
+      const prompt = [...now.pending, ...now.resolvedChoices.map((r) => r.prompt)].find(
+        (p) => p.id === id,
+      );
+      if (prompt === undefined) {
+        delete remaining[id];
+        continue;
+      }
+      if (steps !== undefined && !steps.has(stepForOrigin(latest.current.doc, prompt.origin))) {
+        continue;
+      }
+      const value = stagedApply(prompt, latest.current.doc.choices[id], held);
+      if (value === undefined) continue;
+      delete remaining[id];
+      if (sameChoice(latest.current.doc.choices[id], value)) continue;
+      update((d) => applyPick(d, id, value));
+      now = deriveSheet(latest.current.doc, ctx);
+    }
+    if (Object.keys(remaining).length !== Object.keys(stagedRef.current).length) {
+      setStaged(remaining);
+    }
+  };
+
   const update = (recipe: (d: CharacterDoc) => void) => {
     change((d) => recipe(d.doc));
   };
@@ -414,6 +494,8 @@ export function Component() {
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
         <Link
           to="/"
+          // Picks tapped full go into the kept draft, as Next would save them.
+          onClick={() => applyStaged()}
           aria-label="Back to characters (your draft is kept)"
           className="tap -my-2 -ml-3 rounded-control text-ink-muted hover:text-ink"
         >
@@ -563,6 +645,11 @@ export function Component() {
    */
   const navStep = (s: Step) => {
     const forward = STEPS.indexOf(s) > stepIdx;
+    // Picks tapped full but not confirmed are applied going forward, as the
+    // kit is: those on the steps being walked past, so an undo offered on
+    // another step stays. Going back keeps them held (and an undo offered for
+    // the change being fixed): they wait on their cards.
+    if (forward) applyStaged(new Set(STEPS.slice(stepIdx, STEPS.indexOf(s))));
     if (forward && step === 'equipment' && doc.equipment.length === 0 && allEqGroups.length > 0) {
       change(grantKit);
     }
@@ -957,6 +1044,7 @@ export function Component() {
                     doc={doc}
                     update={update}
                     registry={registry}
+                    stage={pickStage}
                     match={onStep('class')}
                   />
                 )}
@@ -1016,6 +1104,7 @@ export function Component() {
                 doc={doc}
                 update={update}
                 registry={registry}
+                stage={pickStage}
                 match={onStep('species')}
               />
             )}
@@ -1069,6 +1158,7 @@ export function Component() {
                 doc={doc}
                 update={update}
                 registry={registry}
+                stage={pickStage}
                 match={onStep('background')}
               />
             )}
@@ -1204,6 +1294,7 @@ export function Component() {
                 doc={doc}
                 update={update}
                 registry={registry}
+                stage={pickStage}
                 match={isOther}
               />
             )}
@@ -1217,9 +1308,11 @@ export function Component() {
           // walk right out of the app.
           if (creating.current) return;
           creating.current = true;
-          const final = structuredClone(doc);
+          applyStaged();
+          const final = structuredClone(latest.current.doc);
           if (final.name.trim() === '') final.name = 'Unnamed hero';
-          final.play.currentHp = sheet?.maxHp.value ?? 0;
+          // From the build as saved, held picks included (a Tough feat).
+          final.play.currentHp = ctx !== null ? deriveSheet(final, ctx).maxHp.value : 0;
           setOpening(final.name);
           let created: CharacterDoc;
           try {

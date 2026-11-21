@@ -87,6 +87,7 @@ export function FeatureEditor({
             readOnly={readOnly}
             inherits={inherits}
             resources={resources}
+            hostName={typeof value.name === 'string' ? value.name : undefined}
             replace={g.replace === true}
             // Starting from nothing leaves no inherited action to price.
             onReplace={(replace) =>
