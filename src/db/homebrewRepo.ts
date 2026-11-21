@@ -500,6 +500,37 @@ function carrySubclasses(json: Row, before: Row, after: Row): void {
   if (Array.isArray(json.subclassFeature)) json.subclassFeature = json.subclassFeature.map(moved);
 }
 
+/**
+ * A class feature ref (`Name|Class|ClassSource|Level|Source`, or a subclass
+ * feature's `Name|Class|ClassSource|…`) that names the class `before`, now
+ * naming it `name`; any other as it was. An empty book is PHB, as on the sheet.
+ */
+function refRenamed(ref: string, before: Row, name: string): string {
+  const p = ref.split('|');
+  if (!eq(p[1], before.name) || !eq(p[2] || 'PHB', before.source)) return ref;
+  p[1] = name;
+  return p.join('|');
+}
+
+/**
+ * Every feature ref in `v` that names the class `before`, renamed, in a copy:
+ * a `classFeatures` item, and a held feature's `classFeature` (a Monk's
+ * Focus holds Flurry of Blows).
+ */
+function withRefsRenamed(v: unknown, before: Row, name: string, list = false): unknown {
+  if (typeof v === 'string') return list ? refRenamed(v, before, name) : v;
+  if (Array.isArray(v)) return v.map((x) => withRefsRenamed(x, before, name, list));
+  if (!isRecord(v)) return v;
+  const out: Row = {};
+  for (const [k, x] of Object.entries(v)) {
+    out[k] =
+      k === 'classFeature' && typeof x === 'string'
+        ? refRenamed(x, before, name)
+        : withRefsRenamed(x, before, name, k === 'classFeatures');
+  }
+  return out;
+}
+
 /** True when entries of this type own others, which save and go with them. */
 export const ownsEntries = (type: string): boolean => OWNED[type] !== undefined;
 
@@ -988,6 +1019,40 @@ export const homebrewRepo = {
             )
           : undefined;
       return { fileId: id, created: false, ...(repointed === undefined ? {} : { repointed }) };
+    });
+  },
+
+  /**
+   * Rename one entry of a file the player owns, as its editor's save does
+   * ({@link homebrewRepo.saveEntry}, which re-points every character that
+   * holds it). A class takes its own features along: each names its class, as
+   * do the refs its list and their text hold, and its subclasses follow it
+   * (`carry`). A subclass's features find it by its short name, which a
+   * rename leaves as it is.
+   */
+  async renameEntry(
+    fileId: string,
+    type: string,
+    was: EntryKey,
+    name: string,
+  ): Promise<{ repointed?: RepointReport }> {
+    const file = await ownedFile(fileId);
+    const list = Array.isArray(file.json[type]) ? (file.json[type] as unknown[]) : [];
+    const entry = list.find((e) => finder(type, false)(e, was));
+    if (!isRecord(entry)) throw new Error(`${was.name} is no longer in "${file.fileName}"`);
+    const next = { ...entry, name, source: was.source };
+    if (type !== 'class') {
+      return homebrewRepo.saveEntry(type, next, { fileId, replaces: was });
+    }
+    const own = OWNED.class;
+    const features = Array.isArray(file.json.classFeature) ? file.json.classFeature : [];
+    const owned = features
+      .filter((f): f is Row => isRecord(f) && own?.owns(entry, f) === true)
+      .map((f) => withRefsRenamed({ ...f, className: name }, entry, name) as Row);
+    return homebrewRepo.saveEntry(type, withRefsRenamed(next, entry, name) as Row & EntryKey, {
+      fileId,
+      replaces: was,
+      owned,
     });
   },
 

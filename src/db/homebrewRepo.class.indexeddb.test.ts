@@ -114,3 +114,95 @@ describe('homebrewRepo.saveEntry with a class', () => {
     expect(((await stored(fileId)).subclassFeature as Json[]).length).toBe(2);
   });
 });
+
+describe('homebrewRepo.renameEntry', () => {
+  /** Every ref a class lists, found as the sheet finds it (`findClassFeature`), by name. */
+  const found = (json: Json): (string | undefined)[] => {
+    const [c] = json.class as Json[];
+    return (c?.classFeatures as unknown[]).map((item) => {
+      const ref = typeof item === 'string' ? item : String((item as Json).classFeature);
+      const [name, className, classSource, level] = ref.split('|');
+      const f = (json.classFeature as Json[]).find(
+        (x) =>
+          String(x.name).toLowerCase() === name?.toLowerCase() &&
+          String(x.className).toLowerCase() === className?.toLowerCase() &&
+          String(x.classSource).toLowerCase() === (classSource || 'PHB').toLowerCase() &&
+          x.level === Number(level),
+      );
+      return f === undefined ? undefined : String(f.name);
+    });
+  };
+
+  it('renames a class with its own features, the refs to them and its subclasses', async () => {
+    const ref = (n: string, level: number, c = 'Warden') =>
+      `${n}|${c}|${WORKSHOP_SOURCE}|${level}|${WORKSHOP_SOURCE}`;
+    const held = {
+      ...feature('Focus', 2),
+      entries: ['Hold steady.', { type: 'refClassFeature', classFeature: ref('Flurry', 2) }],
+    };
+    const { fileId } = await homebrewRepo.saveEntry(
+      'class',
+      { ...cls('Warden'), classFeatures: [ref('Vigil', 1), { classFeature: ref('Focus', 2) }] },
+      { owned: [feature('Vigil', 1), held, feature('Flurry', 2)] },
+    );
+    await homebrewRepo.saveEntry('subclass', order('Oath'), {
+      fileId,
+      owned: [orderFeature('Oath')],
+    });
+    await homebrewRepo.saveEntry('class', cls('Other'), {
+      fileId,
+      owned: [feature('Trail', 1, 'Other')],
+    });
+
+    await homebrewRepo.renameEntry(
+      fileId,
+      'class',
+      { name: 'Warden', source: WORKSHOP_SOURCE },
+      'Keeper',
+    );
+
+    const json = await stored(fileId);
+    expect(names(json.class)).toEqual(['Keeper', 'Other']);
+    expect(found(json)).toEqual(['Vigil', 'Focus']);
+    const features = json.classFeature as Json[];
+    expect(features.map((f) => `${String(f.name)}:${String(f.className)}`).sort()).toEqual([
+      'Flurry:Keeper',
+      'Focus:Keeper',
+      'Trail:Other',
+      'Vigil:Keeper',
+    ]);
+    const focus = features.find((f) => f.name === 'Focus');
+    expect((focus?.entries as unknown[])[1]).toEqual({
+      type: 'refClassFeature',
+      classFeature: ref('Flurry', 2, 'Keeper'),
+    });
+    const [sub] = json.subclass as Json[];
+    expect(sub?.className).toBe('Keeper');
+    expect((json.subclassFeature as Json[])[0]?.className).toBe('Keeper');
+  });
+
+  it('renames a subclass and keeps its features, which find it by its short name', async () => {
+    const { fileId } = await homebrewRepo.saveEntry('class', cls('Warden'));
+    await homebrewRepo.saveEntry('subclass', order('Oath'), {
+      fileId,
+      owned: [orderFeature('Oath')],
+    });
+    await homebrewRepo.renameEntry(
+      fileId,
+      'subclass',
+      { name: 'Oath', source: WORKSHOP_SOURCE },
+      'Oath of Ash',
+    );
+    const json = await stored(fileId);
+    const [sub] = json.subclass as Json[];
+    expect(sub).toMatchObject({ name: 'Oath of Ash', shortName: 'Oath' });
+    expect(names(json.subclassFeature)).toEqual(['Oath']);
+  });
+
+  it('refuses an entry that is no longer in the file', async () => {
+    const { fileId } = await homebrewRepo.saveEntry('class', cls('Warden'));
+    await expect(
+      homebrewRepo.renameEntry(fileId, 'class', { name: 'Gone', source: WORKSHOP_SOURCE }, 'X'),
+    ).rejects.toThrow('Gone is no longer in');
+  });
+});

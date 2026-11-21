@@ -603,6 +603,110 @@ describe('a collection page', () => {
     expect(vi.mocked(downloadJson).mock.calls[0]).toEqual(['imported.json', IMPORTED]);
   });
 
+  it('asks before turning it off on this device, naming who would lose what (finding 17)', async () => {
+    await character('Hild', { race: { name: 'Lanternfolk', source: 'IMP' } });
+    // Its own switch brings the collection back for it, so it loses nothing.
+    await character('Osk', {
+      race: { name: 'Lanternfolk', source: 'IMP' },
+      sourceSwitches: { on: ['IMP'] },
+    });
+    await character('Brin');
+    const row = await homebrewRepo.importJson(IMPORTED, 'imported.json');
+    visit(await addressOf(row.id));
+    await heading('imported.json');
+    const use = screen.getByRole('button', { name: 'Use imported.json' });
+
+    fireEvent.click(use);
+    const ask = await screen.findByRole(
+      'dialog',
+      { name: 'Turn off imported.json?' },
+      { timeout: WAIT },
+    );
+    expect(ask.textContent).toContain('Its entries leave the sheets that have them');
+    expect(ask.textContent).toContain('Hild has Lanternfolk.');
+    expect(ask.textContent).not.toContain('Osk');
+    expect(ask.textContent).not.toContain('Brin');
+    fireEvent.click(within(ask).getByRole('button', { name: 'Cancel' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull(), { timeout: WAIT });
+    expect(await enabled(row.id)).toBe(true);
+
+    fireEvent.click(use);
+    const again = await screen.findByRole(
+      'dialog',
+      { name: 'Turn off imported.json?' },
+      { timeout: WAIT },
+    );
+    fireEvent.click(within(again).getByRole('button', { name: 'Turn off' }));
+    await waitFor(async () => expect(await enabled(row.id)).toBe(false), { timeout: WAIT });
+    // On again asks nothing.
+    await waitFor(() => expect(use.getAttribute('aria-pressed')).toBe('false'), { timeout: WAIT });
+    fireEvent.click(use);
+    await waitFor(async () => expect(await enabled(row.id)).toBe(true), { timeout: WAIT });
+    expect(screen.queryByRole('dialog', { name: /^Turn off/ })).toBeNull();
+  });
+
+  it('names an entry as its file does, though a pick holds it lowercased (F26)', async () => {
+    const { fileId } = await homebrewRepo.saveEntry('feat', {
+      name: 'Solar Tactician',
+      source: 'MyHomebrew',
+      entries: ['Plan.'],
+    });
+    await character('Hild', {
+      choices: { 'class:fighter|phb:feat:4': 'solar tactician|myhomebrew' },
+    });
+    visit(await addressOf(fileId));
+    await screen.findByRole('link', { name: /^Solar Tactician/ }, { timeout: WAIT });
+    await more('Solar Tactician', 'Delete');
+    const ask = await screen.findByRole(
+      'dialog',
+      { name: 'Delete Solar Tactician?' },
+      { timeout: WAIT },
+    );
+    expect(ask.textContent).toContain('Hild has Solar Tactician.');
+    fireEvent.click(within(ask).getByRole('button', { name: 'Cancel' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull(), { timeout: WAIT });
+  });
+
+  it('renames a class of your own from its menu, its features with it (F26)', async () => {
+    const { fileId } = await homebrewRepo.saveEntry(
+      'class',
+      {
+        name: 'Warden',
+        source: 'MyHomebrew',
+        hd: { number: 1, faces: 10 },
+        classFeatures: ['Vigil|Warden|MyHomebrew|1|MyHomebrew'],
+      },
+      {
+        owned: [
+          {
+            name: 'Vigil',
+            source: 'MyHomebrew',
+            className: 'Warden',
+            classSource: 'MyHomebrew',
+            level: 1,
+            entries: ['Watch.'],
+          },
+        ],
+      },
+    );
+    visit(await addressOf(fileId));
+    await screen.findByRole('link', { name: /^Warden/ }, { timeout: WAIT });
+    await more('Warden', 'Rename');
+    const name = await screen.findByRole('textbox', { name: 'Rename Warden' }, { timeout: WAIT });
+    fireEvent.change(name, { target: { value: 'Keeper' } });
+    fireEvent.click(screen.getByRole('button', { name: 'OK' }));
+    await waitFor(
+      async () =>
+        expect((await json(fileId)).class).toMatchObject([
+          { name: 'Keeper', classFeatures: ['Vigil|Keeper|MyHomebrew|1|MyHomebrew'] },
+        ]),
+      { timeout: WAIT },
+    );
+    expect((await json(fileId)).classFeature).toMatchObject([
+      { name: 'Vigil', className: 'Keeper' },
+    ]);
+  });
+
   it('deletes the collection, saying who loses what first', async () => {
     await character('Hild', { race: { name: 'Lanternfolk', source: 'IMP' } });
     await character('Osk');
