@@ -1021,6 +1021,10 @@ export const RULE_WORDS: {
     name: 'Guidance and Bardic Inspiration',
     values: { after: 'Offered after the roll', before: 'Named before the roll' },
   },
+  armorTraining: {
+    name: 'Armor training',
+    values: { applied: 'Untrained armor has a cost', off: 'Wear any armor freely' },
+  },
 };
 
 const ruleName = (id: TableRuleId) => RULE_WORDS[id].name;

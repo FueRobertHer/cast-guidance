@@ -333,6 +333,7 @@ export const RULE_NAMES: Readonly<Record<TableRuleId, string>> = {
   hpOnLongRest: 'HP on a long rest',
   flanking: 'Flanking',
   oneUseDice: 'One-use dice',
+  armorTraining: 'Armor training',
 };
 
 /** Each value of each table rule in a few words, lower case. */
@@ -354,6 +355,7 @@ export const RULE_WORDS: {
   hpOnLongRest: { all: 'all of it', half: 'half the maximum', hitDice: 'none, hit dice heal' },
   flanking: { off: 'off', advantage: 'advantage', plusTwo: '+2 to hit' },
   oneUseDice: { after: 'after the roll', before: 'before the roll' },
+  armorTraining: { applied: 'untrained armor has a cost', off: 'wear any armor freely' },
 };
 
 /** A character's own choice of a rule in words, or that the app's holds (absent). */

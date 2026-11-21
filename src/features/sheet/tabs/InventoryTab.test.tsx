@@ -499,7 +499,7 @@ describe('InventoryTab controls where they change something', () => {
       reqAttune: true,
     },
   } as unknown as Record<string, Entity>;
-  function renderWizard() {
+  function renderWizard(rules?: { armorTraining: 'applied' | 'off' }) {
     registryRef.current = {
       byType: () => [],
       get: (_type: string, name: string) => pool[name],
@@ -532,7 +532,13 @@ describe('InventoryTab controls where they change something', () => {
             context={
               {
                 doc,
-                sheet: { ...deriveSheet(doc, makeTestContext()), armorProfs: [] },
+                sheet: {
+                  ...deriveSheet(doc, makeTestContext()),
+                  armorProfs: [],
+                  // The engine's reading of the worn Leather Armor (calcAc).
+                  untrainedArmor: [{ id: 'l', name: 'Leather Armor', category: 'light' }],
+                  ...(rules === undefined ? {} : { rules }),
+                },
                 update: () => undefined,
               } as unknown as CharacterSheetState
             }
@@ -558,10 +564,26 @@ describe('InventoryTab controls where they change something', () => {
 
   it('warns of armor worn without training, by the rules the character plays', () => {
     renderWizard();
-    expect(screen.getByText(untrainedSays('light', '2024'))).toBeTruthy();
-    expect(untrainedSays('light', '2024')).toMatch(/^No light armor training: Disadvantage/);
-    expect(untrainedSays('shield', '2024')).toMatch(/gives no AC/);
-    expect(untrainedSays('heavy', '2014')).toMatch(/^Not proficient with heavy armor/);
+    expect(
+      screen.getByText(
+        'No light armor training: Disadvantage on Strength and Dexterity rolls, and no spellcasting. House rules can turn this off.',
+      ),
+    ).toBeTruthy();
+    expect(untrainedSays('shield', '2024', true)).toBe(
+      'No shield training: it gives no AC. House rules can turn this off.',
+    );
+    expect(untrainedSays('heavy', '2014', true)).toMatch(
+      /^Not proficient with heavy armor: disadvantage on Strength/,
+    );
+    // A 2014 shield costs what armor does: shields are armor there.
+    expect(untrainedSays('shield', '2014', true)).toMatch(/no spellcasting/);
+  });
+
+  it('says the house rule waives the cost when the table turned it off', () => {
+    renderWizard({ armorTraining: 'off' });
+    expect(
+      screen.getByText('No light armor training. Your house rules waive what it costs.'),
+    ).toBeTruthy();
   });
 
   it('says what everything carried weighs', () => {

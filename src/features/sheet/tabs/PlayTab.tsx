@@ -171,7 +171,7 @@ import { SpellInfoSheet } from '../SpellInfoSheet';
 import { spellNeedsConcentration } from '../SpellManager';
 import { SpellSlots } from '../SpellSlots';
 import { hitDiceLeft, hitDiePlan, hitDieRoll, slotLeft, slotPlan, slotsLeftFor } from '../slotCost';
-import { NoSpellsCue, raging, SaveDcBadge } from '../spellcastingMarks';
+import { NoSpellsCue, SaveDcBadge } from '../spellcastingMarks';
 import { findSpell, useSpellData } from '../spellData';
 import { spellSaves } from '../spellMeta';
 import type { CharacterSheetState } from '../useCharacterSheet';
@@ -2149,7 +2149,9 @@ export function Component() {
                       ? 'lower than the AC that counts'
                       : n.why === 'floor'
                         ? 'a floor under an AC already higher'
-                        : 'the override stands in for it'}
+                        : n.why === 'untrained'
+                          ? 'no shield training'
+                          : 'the override stands in for it'}
                   </li>
                 ))}
               </ul>
@@ -3104,7 +3106,7 @@ export function Component() {
               </Badge>
             </span>
           </div>
-          {raging(sheet) && <NoSpellsCue className="mb-2" />}
+          <NoSpellsCue sheet={sheet} className="mb-2" />
           <SpellSlots
             block={sc}
             play={play}

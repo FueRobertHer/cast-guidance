@@ -270,6 +270,7 @@ describe('a character’s own rule', () => {
       restLength: 'gritty',
       hpOnLongRest: 'half',
       flanking: 'advantage',
+      armorTraining: 'off',
     });
     // The character now plays by them.
     expect(rulesFor(doc, ctx([], { critDamage: 'doubleTotal' })).critDamage).toBe('maxPlusRoll');
