@@ -554,4 +554,40 @@ describe('the Import sheet', () => {
     expect(out).toEqual({ message: 'Import canceled. Nothing was added.', landed: false });
     expect(await stored()).toEqual([]);
   });
+
+  // A link is typed or pasted, not picked again in a moment: the old Homebrew
+  // page kept it in its field after Cancel, for another try.
+  it("keeps a link's sheet, with the link, when its preview is canceled", async () => {
+    renderSheet();
+    await bringIn('A link', grimoire());
+    const preview = await findDialog(`Import "${NAME}"?`);
+    fireEvent.click(within(preview).getByRole('button', { name: 'Cancel' }));
+    const s = await sheet();
+    expect(within(s).getByRole('button', { name: 'A link' }).getAttribute('aria-pressed')).toBe(
+      'true',
+    );
+    const field = within(s).getByRole('textbox', {
+      name: 'Link to a JSON homebrew file',
+    }) as HTMLInputElement;
+    expect(field.value).toBe(LINK);
+    // Focus is back on the link, not on A file, where Enter would leave it.
+    await waitFor(() => expect(document.activeElement).toBe(field));
+    expect(s.querySelector('[data-import-status] p')?.textContent).toBe(
+      'Import canceled. Nothing was added.',
+    );
+    expect(getAnnouncerState().messages.map((m) => m.text)).toContain(
+      'Import canceled. Nothing was added.',
+    );
+    expect(done).toEqual([]);
+    expect(closed).toBe(0);
+    expect(await stored()).toEqual([]);
+    // The same link read again previews it again.
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify(grimoire())));
+    fireEvent.click(within(s).getByRole('button', { name: 'Read it' }));
+    fireEvent.click(
+      within(await findDialog(`Import "${NAME}"?`)).getByRole('button', { name: 'Import' }),
+    );
+    await waitFor(() => expect(done).toHaveLength(1), { timeout: WAIT });
+    expect(done[0]?.landed).toBe(true);
+  });
 });

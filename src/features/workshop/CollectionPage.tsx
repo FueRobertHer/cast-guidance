@@ -1107,7 +1107,13 @@ function FromSection({ c, onImport }: { c: Collection; onImport: (link?: string)
               {href === undefined ? (
                 link
               ) : (
-                <a href={href} target="_blank" rel="noreferrer noopener" className={LINK}>
+                // 24 tall, the size floor: a text-sized link, as the Rules shelf's.
+                <a
+                  href={href}
+                  target="_blank"
+                  rel="noreferrer noopener"
+                  className={`${LINK} inline-flex min-h-6 items-center`}
+                >
                   {link}
                 </a>
               )}
@@ -1313,7 +1319,11 @@ function Missing({
           <Trash2 size={16} aria-hidden /> Delete it
         </Button>
       )}
-      <Link to="/workshop?shelf=collections" className={`self-start ${LINK}`}>
+      {/* 44 tall, as the page's own Back: the one way on from here. */}
+      <Link
+        to="/workshop?shelf=collections"
+        className={`self-start ${LINK} inline-flex min-h-tap items-center`}
+      >
         Back to the Workshop
       </Link>
     </Frame>

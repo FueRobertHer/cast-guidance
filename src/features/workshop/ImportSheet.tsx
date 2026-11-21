@@ -11,6 +11,9 @@
  * The home opens it with `?import` and closes it by taking that off, so its
  * Import links stay links. While a file is read the sheet shows how far, and
  * the newest read wins: a slow one never swaps its preview in over a newer.
+ * Giving something else while a read is checked (another file, a changed link
+ * or text) stops that read, so a file shown as chosen is never previewed as
+ * another. Switching the way alone does not: Stop follows the read.
  */
 import { FileUp } from 'lucide-react';
 import { useEffect, useId, useRef, useState } from 'react';
@@ -72,6 +75,8 @@ interface Read extends ParsedImport {
 
 /** A file read and previewed, waiting for Import or Cancel. */
 interface Pending {
+  /** The way it came: Cancel keeps a link's sheet, with the link, for another try. */
+  from: Way;
   prepared: PreparedImport;
   preview: HomebrewPreview;
   conversion?: ConversionReport;
@@ -115,6 +120,8 @@ export default function ImportSheet({
   // A store in progress: Cancel cannot take it back, and a second press is not a second store.
   const committing = useRef(false);
   const fileInput = useRef<HTMLInputElement>(null);
+  /** Back from a link's preview: focus goes to the link, not the sheet's first control. */
+  const backToLink = useRef(false);
   const stop = useRef<HTMLButtonElement>(null);
   const ids = useId();
 
@@ -215,6 +222,7 @@ export default function ImportSheet({
       end(() => {
         setStatusState(undefined);
         setPending({
+          from,
           prepared,
           preview,
           ...(got.conversion === undefined ? {} : { conversion: got.conversion }),
@@ -225,6 +233,19 @@ export default function ImportSheet({
       if (request !== latest.current) return;
       end(() => sayWhy(err, from));
     }
+  };
+
+  /**
+   * Something else given while a read is checked: that read is of what is no
+   * longer there, so it stops, and says nothing when it ends.
+   */
+  const giveAnother = () => {
+    if (checking === undefined) return;
+    latest.current += 1;
+    reading.current?.abort();
+    reading.current = undefined;
+    setChecking(undefined);
+    setStatus('Stopped. Nothing was added.');
   };
 
   /** Why a read ended with nothing to preview, in the sheet and said once. */
@@ -295,7 +316,12 @@ export default function ImportSheet({
           // Once it is being stored, it lands: the home says so when it has.
           if (committing.current) return;
           setPending(undefined);
-          onDone('Import canceled. Nothing was added.', false);
+          const canceled = 'Import canceled. Nothing was added.';
+          // A link was typed or pasted: it stays in its field, as the old Homebrew page kept it.
+          if (pending.from === 'link') {
+            setStatus(canceled);
+            backToLink.current = true;
+          } else onDone(canceled, false);
         }}
         onKeepExisting={keepExisting}
       />
@@ -309,7 +335,12 @@ export default function ImportSheet({
 
   return (
     <DialogFrame title="Import" onDismiss={onClose}>
+      {/*
+        No browser check: the URL field would refuse a malformed link with the
+        browser's own bubble before the sheet could say why.
+      */}
       <form
+        noValidate
         className="flex flex-col gap-4 pb-1"
         onSubmit={(e) => {
           e.preventDefault();
@@ -328,7 +359,10 @@ export default function ImportSheet({
               className="hidden"
               onChange={(e) => {
                 const f = e.target.files?.[0];
-                if (f !== undefined) setFile(f);
+                if (f !== undefined) {
+                  giveAnother();
+                  setFile(f);
+                }
                 e.target.value = '';
               }}
             />
@@ -355,11 +389,21 @@ export default function ImportSheet({
               Link to a JSON homebrew file
             </label>
             <input
+              // Focused as it mounts: the sheet's focus scope then finds focus
+              // already inside it and leaves it there, rather than on A file.
+              ref={(el) => {
+                if (el === null || !backToLink.current) return;
+                backToLink.current = false;
+                el.focus();
+              }}
               id={`${ids}-link`}
               type="url"
               inputMode="url"
               value={url}
-              onChange={(e) => setUrl(e.target.value)}
+              onChange={(e) => {
+                giveAnother();
+                setUrl(e.target.value);
+              }}
               placeholder="A GitHub, gist or jsDelivr link"
               className={fieldClass}
             />
@@ -378,7 +422,10 @@ export default function ImportSheet({
               id={`${ids}-text`}
               value={text}
               rows={8}
-              onChange={(e) => setText(e.target.value)}
+              onChange={(e) => {
+                giveAnother();
+                setText(e.target.value);
+              }}
               className={`${fieldClass} min-h-48 py-3`}
             />
             {words ? (
