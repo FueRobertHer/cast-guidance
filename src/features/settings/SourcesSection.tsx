@@ -97,13 +97,19 @@ export function useBooksShown(): BooksShown | 'failed' | undefined {
   return { shown: books.filter((s) => policyAllows(policy, s)).length, total: books.length };
 }
 
-/** Settings' words for which books show ("12 of 119 books show"). */
+/**
+ * Settings' words for which books show ("12 of 119 sources show"). It counts
+ * every downloaded source with entries in it, adventures and the like as well
+ * as rulebooks, as the books page's own "Showing all N downloaded sources"
+ * does; the Library's Books tile counts only the books it can open to read,
+ * so calling these "books" set two different numbers side by side.
+ */
 export function booksShownWords(shown: BooksShown | 'failed' | undefined): string {
   if (shown === undefined) return 'Loading…';
   if (shown === 'failed') return 'Could not read the books';
   if (shown.total === 0) return 'No game data yet';
-  if (shown.shown === shown.total) return `All ${shown.total} books show`;
-  return `${shown.shown} of ${shown.total} books show`;
+  if (shown.shown === shown.total) return `All ${shown.total} sources show`;
+  return `${shown.shown} of ${shown.total} sources show`;
 }
 
 /**

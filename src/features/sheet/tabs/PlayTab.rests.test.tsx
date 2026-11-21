@@ -4,9 +4,10 @@
 // their `data-state`, HP from the meter, hit dice from their button, the
 // notice from the toast, and the history row the rest leaves behind.
 import 'fake-indexeddb/auto';
-import { fireEvent, screen } from '@testing-library/react';
+import { fireEvent, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { DataEntity } from '@/engine/types';
+import { rollLogStore } from '@/stores/rollLog';
 import { setAppTableRule } from '@/stores/tableRules';
 import {
   classEntry,
@@ -21,6 +22,7 @@ import {
   renderSheet,
   resetSheetHarness,
   sorcerer,
+  takeShortRest,
   testCharacter,
 } from '../../../../tests-fixtures/sheetHarness';
 
@@ -62,7 +64,7 @@ describe('short rest (TEST-003)', () => {
     // window fold into one snapshot, and spent-then-restored nets to nothing.
     expect((await sheet.saved()).play.pactSlotsSpent).toBe(1);
 
-    press('Short rest');
+    await takeShortRest();
 
     expect(pips('Pact slot')).toEqual(['available', 'available']);
     expect(pips('Ki use')).toEqual(['available', 'available']);
@@ -83,7 +85,7 @@ describe('short rest (TEST-003)', () => {
     const before = { hp: hp().current, dice: hitDiceLeft('d6') };
     expect(before).toEqual({ hp: 22, dice: 4 });
 
-    press('Short rest');
+    await takeShortRest();
 
     expect(left('Level 1 slot')).toBe(3);
     expect(left('Sorcery Points use')).toBe(3);
@@ -114,11 +116,75 @@ describe('short rest (TEST-003)', () => {
     expect(left('Test Dice (d8) use')).toBe(0);
     await sheet.saved();
 
-    press('Short rest');
+    await takeShortRest();
 
     expect(left('Test Dice (d8) use')).toBe(1);
     expect(notice()).toBe('Short rest: Restored 1 Test Dice (d8)');
     expect((await sheet.saved()).play.resources).toContainEqual({ key: 'dice', used: 2 });
+  });
+});
+
+describe('the short rest sheet', () => {
+  /** The open sheet, found by its heading. */
+  const restSheet = () => screen.getByRole('dialog', { name: 'Short rest' });
+  const inSheet = (name: string) =>
+    fireEvent.click(within(restSheet()).getByRole('button', { name }));
+
+  it('spends hit dice one tap at a time before the rest, as the HP card does', async () => {
+    const sheet = await renderSheet(sorcerer());
+    for (let i = 0; i < 3; i++) press('Damage 5 hit points');
+    expect(hp().current).toBe(12);
+
+    press('Short rest');
+    await screen.findByRole('dialog', { name: 'Short rest' });
+    const box = within(restSheet());
+    expect(box.getByText('HP 12 of 27')).toBeTruthy();
+    expect(box.getByText('Nothing spent comes back on a short rest.')).toBeTruthy();
+    // No effects in play, so no list of what the rest ends.
+    expect(box.queryByRole('group', { name: 'Ends, by what each one lasts' })).toBeNull();
+
+    // The sheet's own line, live: the HP card is behind it.
+    const hpLine = () =>
+      Number(/^HP (\d+) of 27$/.exec(box.getByText(/^HP \d+ of 27$/).textContent ?? '')?.[1]);
+    inSheet('Spend a d6 hit die, 5 left');
+    const rolled = () => rollLogStore.getState().rolls.reduce((sum, r) => sum + r.total, 0);
+    expect(hpLine()).toBe(12 + rolled());
+    inSheet('Spend a d6 hit die, 4 left');
+    expect(box.getByRole('button', { name: 'Spend a d6 hit die, 3 left' })).toBeTruthy();
+    // Each die heals by its own roll: two of 1d6 + 1 from 12 stay under the 27 maximum.
+    const healed = rolled();
+    expect(hpLine()).toBe(12 + healed);
+    // Rolled and logged as the HP card's chip rolls them.
+    expect(rollLogStore.getState().rolls.map((r) => [r.label, r.kind])).toEqual([
+      ['Hit die (d6)', 'heal'],
+      ['Hit die (d6)', 'heal'],
+    ]);
+
+    await (await dialog('Short rest')).press('Take the short rest');
+    expect(hitDiceLeft('d6')).toBe(3);
+    expect(hp().current).toBe(12 + healed);
+    expect(notice()).toBe('Short rest: Nothing to restore');
+    const saved = await sheet.saved();
+    expect(saved.play.hitDiceSpent).toEqual({ d6: 2 });
+    expect(saved.play.currentHp).toBe(12 + healed);
+  });
+
+  it('says when no hit dice are left, and what the rest gives back', async () => {
+    const doc = pactMonk();
+    doc.play.hitDiceSpent = { d8: 5 };
+    doc.play.pactSlotsSpent = 1;
+    doc.play.resources = [{ key: 'ki', used: 1 }];
+    await renderSheet(doc);
+
+    press('Short rest');
+    const box = within(await screen.findByRole('dialog', { name: 'Short rest' }));
+    expect(box.getByText('No Hit Dice left to spend. A long rest gives some back.')).toBeTruthy();
+    expect(box.queryByRole('button', { name: /^Spend a/ })).toBeNull();
+    expect(box.getByText('Gives back Ki and pact slots.')).toBeTruthy();
+
+    await (await dialog('Short rest')).press('Take the short rest');
+    // The rest's own words match what the sheet said it would give back.
+    expect(notice()).toBe('Short rest: Restored Ki, pact slots');
   });
 });
 
@@ -139,7 +205,7 @@ describe('long rest (TEST-003)', () => {
     expect(await sheet.history()).not.toContain('Long rest');
     // The toast is findable: the next rest's notice does appear, so the
     // undefined above means no notice rather than a toast the helper missed.
-    press('Short rest');
+    await takeShortRest();
     expect(notice()).toBe('Short rest: Nothing to restore');
   });
 

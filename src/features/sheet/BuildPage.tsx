@@ -66,6 +66,7 @@ import {
   editionSwitchPreview,
   registryLookup,
 } from './editionCues';
+import { readableNote } from './readableNames';
 import { SpellInfoSheet } from './SpellInfoSheet';
 import { distinctGrants } from './spellData';
 import type { CharacterSheetState } from './useCharacterSheet';
@@ -1306,9 +1307,10 @@ export function Component() {
           <summary className="cursor-pointer text-body">
             {sheet.warnings.length} note{sheet.warnings.length > 1 ? 's' : ''}
           </summary>
+          {/* The engine's keys read as names: "Item not found: Sunblade Aegis". */}
           {sheet.warnings.map((w) => (
             <p key={w} className="mt-1">
-              • {w}
+              • {readableNote(w)}
             </p>
           ))}
         </details>
