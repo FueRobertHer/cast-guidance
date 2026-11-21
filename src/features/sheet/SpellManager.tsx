@@ -254,7 +254,7 @@ function ClassSpells({
       : `Unlocks at ${levelClass} ${at}`;
   };
 
-  // Homebrew spells carry classes.fromClassList inline — union them in, with
+  // Homebrew spells carry classes.fromClassList inline: union them in, with
   // the installed spells a homebrew class lists itself (`classSpells`).
   // A subclass caster's block is named for the subclass, so only a class's own
   // block reads the original's name. A subclass caster also reads the spells
