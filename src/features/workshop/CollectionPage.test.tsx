@@ -619,6 +619,44 @@ describe('a collection page', () => {
     expect(screen.getByText('Gloomhound').closest('li')?.textContent).not.toContain('Turn it on');
   });
 
+  it('makes an editable copy of an imported file, and opens it', async () => {
+    const row = await homebrewRepo.importJson(IMPORTED, 'imported.json');
+    const router = visit(await addressOf(row.id));
+    await heading('Imported Brews');
+    fireEvent.click(screen.getByRole('button', { name: 'Make an editable copy' }));
+    expect(await heading('Imported Brews (copy)')).toBeTruthy();
+    const [copy] = (await homebrewRepo.ownedSafe()).files;
+    expect(router.state.location.pathname).toBe(collectionPath(copy?.id ?? ''));
+    expect(copy?.json.feat).toEqual([{ name: 'Glimmer', source: 'IMP2', entries: ['Glow.'] }]);
+    // Yours already: nothing to copy.
+    expect(screen.queryByRole('button', { name: 'Make an editable copy' })).toBeNull();
+    // The original is still here, as it came.
+    expect(await json(row.id)).toEqual(IMPORTED);
+  });
+
+  it('offers no editable copy of a compendium of books', async () => {
+    const { books } = await homebrewRepo.prepareBooks(
+      {
+        _meta: {
+          sources: [
+            { json: 'FCA', full: 'Ember Codex' },
+            { json: 'FCB', full: 'Frost Codex' },
+          ],
+          convertedFrom: { format: 'fc5-compendium', fileName: 'all.xml' },
+        },
+        spell: [
+          { name: 'Ember Lance', source: 'FCA', level: 1 },
+          { name: 'Frost Lance', source: 'FCB', level: 1 },
+        ],
+      },
+      'all.xml',
+    );
+    await homebrewRepo.commitBooks(books);
+    visit(await addressOf(books[0]?.id ?? ''));
+    await heading('all.xml');
+    expect(screen.queryByRole('button', { name: 'Make an editable copy' })).toBeNull();
+  });
+
   it('exports the file as it leaves this device', async () => {
     const row = await homebrewRepo.importJson(IMPORTED, 'imported.json');
     visit(await addressOf(row.id));

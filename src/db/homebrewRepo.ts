@@ -338,9 +338,13 @@ export async function landHomebrewRow(
  * that is free. Two collections under one source could not be told apart:
  * every entry is known by its name and its source.
  */
-function freeSource(wanted: string, stored: readonly HomebrewFileMeta[]): string {
+function freeSource(
+  wanted: string,
+  stored: readonly HomebrewFileMeta[],
+  also: readonly string[] = [],
+): string {
   const taken = new Set(
-    [WORKSHOP_SOURCE, CHANGES_SOURCE, ...stored.flatMap((f) => f.sourceIds)].map((s) =>
+    [WORKSHOP_SOURCE, CHANGES_SOURCE, ...stored.flatMap((f) => f.sourceIds), ...also].map((s) =>
       s.toLowerCase(),
     ),
   );
@@ -891,6 +895,68 @@ export const homebrewRepo = {
     return db.transaction('rw', db.homebrewFiles, db.homebrewJson, async () => {
       const stored = partitionHomebrewMeta(await db.homebrewFiles.toArray()).files;
       const row = editableRow(fullName, freeSource(abbreviation, stored));
+      await putHomebrewRow(row);
+      return row;
+    });
+  },
+
+  /**
+   * An imported file as a collection the player owns, to change as they like
+   * (track 7). Its books get ids of their own (`withBooks`), so the copy and
+   * the file it came from never hold one entry under one name and book; the
+   * copy gets a collection stamp of its own, so importing the original again
+   * updates the original, not the copy. Characters stay on what they picked.
+   * A rule pack is not copied: what it does is its Apply to, not its entries.
+   * Loads the copy's code first (`homebrewCopy.ts`).
+   */
+  async copyEditable(fileId: string): Promise<HomebrewFileRow & { json: Record<string, unknown> }> {
+    // Loaded first: an import awaited inside the transaction would end it.
+    const { withBooks } = await import('./homebrewCopy');
+    return db.transaction('rw', db.homebrewFiles, db.homebrewJson, async () => {
+      const stored = await db.homebrewFiles.get(fileId);
+      if (stored === undefined) throw new Error('that collection is no longer on this device');
+      const read = partitionHomebrewRows(await withContent([stored]));
+      const file = read.files[0];
+      if (file === undefined)
+        throw new Error(read.errors[0]?.message ?? 'the file could not be read');
+      if (file.editable) throw new Error('that collection is yours to change already');
+      if (file.pack !== undefined || own(file.json, 'castGuidance') !== undefined) {
+        throw new Error('a rule pack is changed from Review, not copied');
+      }
+      const all = partitionHomebrewMeta(await db.homebrewFiles.toArray()).files;
+      const meta = isRecord(file.json._meta) ? file.json._meta : {};
+      const declared = Array.isArray(meta.sources) ? meta.sources.filter(isRecord) : [];
+      const books = new Map<string, string>();
+      const sources = declared.map((s) => {
+        const was = String(s.json);
+        const id = freeSource(was, all, [...books.values()]);
+        books.set(was.toLowerCase(), id);
+        const full = typeof s.full === 'string' && s.full.trim() !== '' ? s.full.trim() : was;
+        return {
+          ...s,
+          json: id,
+          ...(typeof s.abbreviation === 'string' ? { abbreviation: id } : {}),
+          full: `${full} (copy)`,
+        };
+      });
+      const { _meta: _, ...content } = file.json;
+      const { convertedFrom: _from, [COLLECTION_ID_KEY]: _stamp, ...rest } = meta;
+      const json: Record<string, unknown> = {
+        _meta: { ...rest, sources, [COLLECTION_ID_KEY]: crypto.randomUUID() },
+        ...withBooks(content, books),
+      };
+      assertJsonWithinLimits(json);
+      const title = String(sources[0]?.full ?? `${file.fileName} (copy)`);
+      const row: HomebrewFileRow & { json: Record<string, unknown> } = {
+        id: crypto.randomUUID(),
+        fileName: `${title.replaceAll(/[^\w-]+/g, '_')}.json`,
+        json,
+        enabled: true,
+        editable: true,
+        sourceIds: sources.map((s) => s.json),
+        counts: homebrewEntityCounts(json),
+        addedAt: Date.now(),
+      };
       await putHomebrewRow(row);
       return row;
     });
