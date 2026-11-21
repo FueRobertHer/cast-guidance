@@ -1288,6 +1288,55 @@ export function entryName(raw: string): { name: string; edition?: RulesVersion }
   return edition === undefined ? { name: again.name } : { name: again.name, edition };
 }
 
+/** A bracket anywhere in a name, an edition marker when it names one: `Fighter [5.5e] (Eldritch Knight)`. */
+const ANY_MARKER = / ?\[([^[\]]{1,12})\]/g;
+
+/**
+ * A name with its edition markers off wherever they sit, each edition they
+ * name told to `found`. A bracket that names no edition (`Warlock [Hexblade]`)
+ * stays.
+ */
+export function dropMarkers(name: string, found?: (edition: RulesVersion) => void): string {
+  return name.replace(ANY_MARKER, (whole, marker: string) => {
+    const edition = markerEdition(marker);
+    if (edition === undefined) return whole;
+    found?.(edition);
+    return '';
+  });
+}
+
+/** Book tags an option list's owner may carry anywhere: `Fighter (Living Crucible (TP))`. */
+const OWNER_TAG = / ?\((ua|tp|hb|legacy)\)/gi;
+
+/** A bracket that only wraps another: `((Origami Mage))`. */
+const DOUBLE_BRACKET = /\(\s*\(([^()]{1,120})\)\s*\)/g;
+
+/**
+ * A class or subclass as an option list's owner names it, as a key: edition
+ * markers and the `(UA)`, `(TP)`, `(HB)` and `(Legacy)` tags off wherever they
+ * sit, a bracket that only wraps another unwrapped, case and apostrophes
+ * folded. `Wizard ((Origami Mage) (TP))`, `Wizard (Origami Mage) (TP)` and
+ * `wizard (origami mage)` are one key. The edition a marker or `(Legacy)`
+ * names comes with it, unless they disagree: `Ranger [5.5e] (Trapper
+ * (Legacy))` is a 2014 subclass of the 2024 class, and says nothing of which
+ * host's list it is.
+ */
+export function ownerKey(name: string): { key: string; edition?: RulesVersion } {
+  const editions = new Set<RulesVersion>();
+  const key = dropMarkers(name, (edition) => editions.add(edition))
+    .replace(OWNER_TAG, (_, tag: string) => {
+      if (tag.toLowerCase() === 'legacy') editions.add('2014');
+      return '';
+    })
+    .replace(DOUBLE_BRACKET, '($1)')
+    .replace(/[‘’]/g, "'")
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+  const [edition] = editions;
+  return edition === undefined || editions.size > 1 ? { key } : { key, edition };
+}
+
 /** The edition a `Source:` line points at, when it says. */
 export function sourceLineEdition(line: string): RulesVersion | undefined {
   // Not the tail of a document's own version or a date (`v2.5.1`, `01.02.2024`).

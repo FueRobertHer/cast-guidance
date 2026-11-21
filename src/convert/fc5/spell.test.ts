@@ -197,6 +197,48 @@ describe('readClasses', () => {
       edition: '2024',
     });
   });
+
+  it('names a subclass as its pick is named, markers, tags and wrapping off', () => {
+    const subs = (raw: string, fileClasses?: Parameters<typeof readClasses>[1]) =>
+      readClasses(raw, fileClasses).subclasses.map((s) => `${s.className} / ${s.subclassName}`);
+    expect(
+      subs(
+        [
+          'Fighter [5.5e] (Eldritch Knight)',
+          'Wizard ((Origami Mage) (TP))',
+          'Wizard (Ash Mage) (TP)',
+          'Cleric (Hunt Domain (Tome of Heroes) (HB))',
+          'Bard (College of Masks (Obojima) (TP))',
+        ].join(', '),
+      ),
+    ).toEqual([
+      'Fighter / Eldritch Knight',
+      'Wizard / Origami Mage',
+      'Wizard / Ash Mage',
+      'Cleric / Hunt Domain (Tome of Heroes)',
+      'Bard / College of Masks (Obojima)',
+    ]);
+    // The longest lead the file converts a class of; the edition is still the
+    // trailing marker's alone.
+    const tamer = { name: 'Tamer (Heliana)', source: 'FCHeliana' };
+    const wizard = { name: 'Wizard (Ember)', source: 'FCEmber' };
+    const fileClasses = new Map([
+      ['tamer (heliana)', tamer],
+      ['wizard (ember)', wizard],
+    ]);
+    expect(
+      subs(
+        'Tamer (Heliana) [Legacy] (Splicer), Wizard (Ember) (Ash), Tamer (Ember) (Ash)',
+        fileClasses,
+      ),
+    ).toEqual([
+      'Tamer (Heliana) / Splicer',
+      'Wizard (Ember) / Ash',
+      // No lead is a class: split at the first bracket, as before.
+      'Tamer / Ember) (Ash',
+    ]);
+    expect(readClasses('Fighter [5.5e] (Eldritch Knight)').edition).toBeUndefined();
+  });
 });
 
 describe('convertSpell', () => {

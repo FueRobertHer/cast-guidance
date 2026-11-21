@@ -243,6 +243,80 @@ describe('convertOptions', () => {
       ]);
     });
 
+    it('offers a list whose owner carries tags or wrapping brackets, in its own edition only', () => {
+      const lists = withLists(
+        'Ember Knight ((Ash) (TP)) [5.5e]: Tricks',
+        'Ember Knight (Ash (Legacy)): Tricks',
+      );
+      const offered = (edition: RulesVersion) =>
+        convertOptions(
+          [],
+          host({
+            owner: 'Ember Knight (Ash)',
+            edition,
+            ctx: lists,
+            counters: [counter('Tricks Known', [3, '2'])],
+          }),
+        ).progression.map((p) => p.featureType);
+      expect(offered('2024')).toEqual([['Ember Knight ((Ash) (TP)) [5.5e]: Tricks']]);
+      expect(offered('2014')).toEqual([['Ember Knight (Ash (Legacy)): Tricks']]);
+      // The host's own edition over its book's: a legacy subclass in a 2024 book.
+      const legacy: OptionHost = {
+        ...host({
+          owner: 'Ember Knight (Ash)',
+          edition: '2014',
+          ctx: lists,
+          counters: [counter('Tricks Known', [3, '2'])],
+        }),
+        placement: lists.place(undefined, '2024'),
+      };
+      expect(convertOptions([], legacy).progression.map((p) => p.featureType)).toEqual([
+        ['Ember Knight (Ash (Legacy)): Tricks'],
+      ]);
+    });
+
+    it('offers a list that names its class without the author’s qualifier, when no other class goes by that name', () => {
+      const ctx = (...classes: string[]): Fc5Context => {
+        const base = withLists('Ember Knight: Tricks', 'Ember Knight (Ash): Hexes');
+        base.classes = new Map(classes.map((name) => [name.toLowerCase(), { name, source: 'X' }]));
+        return base;
+      };
+      const offered = (owner: string, c: Fc5Context) =>
+        convertOptions(
+          [],
+          host({
+            owner,
+            className: 'Ember Knight (Valda)',
+            ctx: c,
+            counters: [counter('Tricks Known', [3, '2']), counter('Hexes Known', [3, '2'])],
+          }),
+        ).progression.map((p) => p.featureType);
+      const one = ctx('Ember Knight (Valda)');
+      expect(offered('Ember Knight (Valda)', one)).toEqual([['Ember Knight: Tricks']]);
+      expect(offered('Ember Knight (Valda) (Ash)', one)).toEqual([['Ember Knight (Ash): Hexes']]);
+      // Two classes of that name, or one without the qualifier: neither.
+      expect(
+        offered('Ember Knight (Valda)', ctx('Ember Knight (Valda)', 'Ember Knight (Grim)')),
+      ).toEqual([]);
+      expect(offered('Ember Knight (Valda)', ctx('Ember Knight (Valda)', 'Ember Knight'))).toEqual(
+        [],
+      );
+      // Nor a rules class's list: `Fighter: Tricks` is the Fighter's, not `Fighter (Valda)`'s.
+      const fighter = withLists('Fighter: Tricks');
+      fighter.classes = new Map([['fighter (valda)', { name: 'Fighter (Valda)', source: 'X' }]]);
+      expect(
+        convertOptions(
+          [],
+          host({
+            owner: 'Fighter (Valda)',
+            className: 'Fighter (Valda)',
+            ctx: fighter,
+            counters: [counter('Tricks Known', [3, '2'])],
+          }),
+        ).progression,
+      ).toEqual([]);
+    });
+
     it('takes the list of the counter’s own name over one whose name ends in it', () => {
       const result = convertOptions(
         [],
@@ -573,6 +647,19 @@ describe("lists stored as spells, counted from their features' text", () => {
     expect(countOf(tricks, [3, 'You learn two trick shots, and two more at 7th level.'])).toEqual([
       [tricks, { '3': 2, '7': 4 }],
     ]);
+    // `an additional one`, and ordinals after `levels`.
+    expect(
+      countOf(tricks, [
+        6,
+        'You gain two trick shots of your choice and an additional one at 14th level.',
+      ]),
+    ).toEqual([[tricks, { '6': 2, '14': 3 }]]);
+    expect(
+      countOf(tricks, [
+        3,
+        'You learn 3 trick shots, chosen from the list, and gain an additional one at levels 7th, 10th, and 14th.',
+      ]),
+    ).toEqual([[tricks, { '3': 3, '7': 4, '10': 5, '14': 6 }]]);
   });
 
   it("gives a longer list's words to the longer list only", () => {
@@ -726,6 +813,25 @@ describe('class options in a file', () => {
     // Of a class the file does not hold.
     expect(warnings(`${knight('Ash Warden')}${tricks}`)).toEqual([
       expect.stringMatching(/^2 class options are for a class this app cannot convert yet/),
+    ]);
+    // Of a class the file holds, its name tagged and marked.
+    const tagged = tricks.replaceAll('Ember Knight: Tricks', 'Ember Knight (TP) [5.5e]: Tricks');
+    expect(warnings(`${knight('Ember Knight')}${tagged}`)).toEqual([
+      expect.stringMatching(/^2 class options are on a list no class in this file says how many/),
+    ]);
+    // Of the one class the file names so with an author's qualifier.
+    expect(warnings(`${knight('Ember Knight (Valda)')}${tricks}`)).toEqual([
+      expect.stringMatching(/^2 class options are on a list no class in this file says how many/),
+    ]);
+    // And of its subclass.
+    const ash = tricks.replaceAll('Ember Knight: Tricks', 'Ember Knight (Ash): Tricks');
+    const withAsh = (name: string) =>
+      `<class><name>${name}</name><hd>10</hd><autolevel level="3">${f('Martial Archetype', 'Choose.', '')}${f('Martial Archetype: Ash')}${f('Brand (Ash)', 'You fight.')}</autolevel></class>`;
+    expect(warnings(`${withAsh('Ember Knight')}${ash}`)).toEqual([
+      expect.stringMatching(/^2 class options are on a list no class in this file says how many/),
+    ]);
+    expect(warnings(`${withAsh('Ember Knight (Valda)')}${ash}`)).toEqual([
+      expect.stringMatching(/^2 class options are on a list no class in this file says how many/),
     ]);
     // An option a class's own list offers too is offered, whichever comes first.
     const flare =

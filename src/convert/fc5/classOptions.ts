@@ -24,15 +24,17 @@ import type { RulesVersion } from '../../data5e/rulesVersion';
 import { childTexts, type XmlElement } from '../xml';
 import { type FileCounter, isSpellsKnown } from './classCounters';
 import { textLists } from './classLists';
+import { BASE_CLASSES } from './classOption';
 import { readFeatureSpells } from './classSpells';
 import {
   citationEntry,
   type Fc5Context,
   type Fc5Part,
+  type FileClasses,
   type Placement,
   placeEntity,
 } from './context';
-import { countWord, type Entry, entryName, plainText, readText } from './text';
+import { countWord, type Entry, entryName, lastGroup, ownerKey, plainText, readText } from './text';
 
 /** One option as the class lists it. */
 export interface OptionChoice {
@@ -203,9 +205,12 @@ const EXTRA = /^(?:additional|more|another)$/;
 const LEVELS_AT = /\bat ((?:\d{1,2}(?:st|nd|rd|th),? (?:and )?){0,9}\d{1,2}(?:st|nd|rd|th)) level/i;
 /** `at Psion levels 5, 10, 13, and 17`. */
 const AT_LEVELS = /\bat (?:[a-z]{1,20} )?levels? ((?:\d{1,2},? (?:and )?){0,9}\d{1,2})\b/i;
-/** `and another at 13th and 15th level`, `and two more at 7th level`: that many more at each. */
+/**
+ * `and another at 13th and 15th level`, `and two more at 7th level`, `and an
+ * additional one at levels 7th and 10th`: that many more at each.
+ */
 const MORE_AT =
-  /\b(?:another|(one|two|three|four) more)\b[^.]{0,60}?\bat ((?:\d{1,2}(?:st|nd|rd|th),? (?:and )?){0,9}\d{1,2}(?:st|nd|rd|th)) level/i;
+  /\b(?:another|an additional one|(one|two|three|four) more)\b[^.]{0,60}?\bat (?:((?:\d{1,2}(?:st|nd|rd|th),? (?:and )?){0,9}\d{1,2}(?:st|nd|rd|th)) level|levels ((?:\d{1,2}(?:st|nd|rd|th),? (?:and )?){0,9}\d{1,2}(?:st|nd|rd|th)))/i;
 
 /**
  * One feature's picks of a list: at the feature's level (`level` absent) or
@@ -287,7 +292,7 @@ function picksOf(
     const more = MORE_AT.exec(rest);
     if (more !== null) {
       const each = more[1] === undefined ? 1 : (countWord(more[1]) ?? 1);
-      for (const level of more[2]?.match(/\d{1,2}/g) ?? [])
+      for (const level of (more[2] ?? more[3])?.match(/\d{1,2}/g) ?? [])
         out.push({ level: Number(level), n: each });
     }
   }
@@ -469,25 +474,64 @@ function isLabelFeature(name: string, label: string): boolean {
 
 const KNOWN = /^(.{1,60}?) (?:known|options known)$/i;
 
-/** A class's name as its lists name it, `(UA)` dropped wherever it sits: `Mystic (UA) (Immortal)` as `mystic (immortal)`. */
-function ownerKey(name: string): string {
-  return name
-    .replace(/ ?\(UA\)/gi, '')
-    .trim()
-    .toLowerCase();
-}
-
-/** The option lists the file stores as spells for this host (`Warmage (Valda): Tricks`), with their labels. */
+/**
+ * The option lists the file stores as spells for this host (`Warmage (Valda):
+ * Tricks`), with their labels. The list's owner names the host as
+ * {@link ownerKey} reads it, and in the host's edition when it marks one
+ * (`Ranger (Trapper (Legacy))`).
+ */
 function storedLists(host: OptionHost): { list: string; label: string }[] {
-  const owner = ownerKey(host.owner);
+  const owners = new Set(ownerKeys(host.owner, host.className, host.ctx.classes));
+  const edition = host.edition ?? host.placement.edition;
   const mine: { list: string; label: string }[] = [];
   for (const list of host.ctx.optionLists ?? []) {
     const colon = list.indexOf(': ');
-    if (colon <= 0 || ownerKey(list.slice(0, colon)) !== owner) continue;
+    if (colon <= 0) continue;
+    const named = ownerKey(list.slice(0, colon));
+    if (!owners.has(named.key) || (named.edition !== undefined && named.edition !== edition))
+      continue;
     const label = list.slice(colon + 2).trim();
     if (label !== '') mine.push({ list, label });
   }
   return mine;
+}
+
+/**
+ * The keys an option list's owner may name a host by: its own name as
+ * {@link ownerKey} reads it and, for a class the file names with an author's
+ * qualifier (`Madwalker (Tanares)`), its name without it (`Madwalker`,
+ * `Madwalker (Arachnid Trail)` for its subclass), when no other class in the
+ * file or the rules goes by that name. The owner is the class's name, or the
+ * class's name and the subclass's in brackets, as hosts name themselves.
+ */
+export function ownerKeys(
+  owner: string,
+  className: string,
+  classes: FileClasses | undefined,
+): string[] {
+  const keys = [ownerKey(owner).key];
+  const bare = lastGroup(className)?.base;
+  if (bare === undefined || classes === undefined) return keys;
+  const key = ownerKey(bare).key;
+  if (BASE_CLASSES.has(key)) return keys;
+  if (bareNames(classes).get(key) === 1) {
+    keys.push(ownerKey(`${bare}${owner.slice(className.length)}`).key);
+  }
+  return keys;
+}
+
+/** Each file class's name, qualifier off, with how many classes go by it; counted once a map. */
+const bareCounts = new WeakMap<FileClasses, { size: number; counts: Map<string, number> }>();
+function bareNames(classes: FileClasses): Map<string, number> {
+  const known = bareCounts.get(classes);
+  if (known !== undefined && known.size === classes.size) return known.counts;
+  const counts = new Map<string, number>();
+  for (const c of classes.values()) {
+    const key = ownerKey(lastGroup(c.name)?.base ?? c.name).key;
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  bareCounts.set(classes, { size: classes.size, counts });
+  return counts;
 }
 
 /** A host's `X Known` counters (not its spells known), each with the label words it names. */

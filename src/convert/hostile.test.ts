@@ -4,6 +4,7 @@
 // assertion.
 import { describe, expect, it } from 'vitest';
 import { CAST_GUIDANCE_LIMITS } from '../engine/castGuidance';
+import { ownerKey } from './fc5/text';
 import { convertXmlText } from './index';
 import { looksLikeXml } from './sniff';
 
@@ -38,6 +39,27 @@ describe('hostile input', () => {
     const s = firstSpell(spell(`<school>EV</school><classes>${names.join(',')}</classes>`));
     const classes = s?.classes as { fromClassList: unknown[] };
     expect(classes.fromClassList).toHaveLength(1000);
+  });
+
+  it('reads a class list entry of many brackets in linear time', () => {
+    const entry = `Fighter [5.5e] ${'(a) ['.repeat(100_000)}(Ash)${')'.repeat(100_000)}`;
+    const s = firstSpell(spell(`<school>EV</school><classes>${entry}</classes>`));
+    const classes = s?.classes as { fromSubclass?: { class: { name: string } }[] } | undefined;
+    expect(classes?.fromSubclass?.[0]?.class.name).toBe('Fighter');
+  });
+
+  it('keys an option list owner of many brackets and spaces in linear time', () => {
+    const owner = `Fighter ${'( ( ['.repeat(50_000)}${' '.repeat(100_000)}(Ash (TP))${'))'.repeat(50_000)}`;
+    expect(ownerKey(owner).key.startsWith('fighter')).toBe(true);
+  });
+
+  it('names many qualified classes in linear time', () => {
+    const classes = Array.from(
+      { length: 20_000 },
+      (_, i) => `<class><name>Ember${i} (Valda)</name><hd>10</hd></class>`,
+    ).join('');
+    const { json } = convert(`<compendium>${classes}</compendium>`);
+    expect(json.class as unknown[]).toHaveLength(20_000);
   });
 
   it('reads a very long list of option lists in linear time', () => {
