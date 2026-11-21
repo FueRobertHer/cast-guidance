@@ -149,38 +149,32 @@ export function AbilitiesStep({
         </Button>
       )}
 
-      {method === 'standard' && isStandardArray(base) && (
+      {/* One allocator in one place, waiting or assigned, so the first pick
+          (which lays down the whole array) keeps focus on the select it was
+          made in. Nothing assigned yet, the six rows are there from the start
+          (review item 2), each waiting on a value: the first one picked places
+          the rest from 15 down to 8, so every later pick is a swap. */}
+      {method === 'standard' && (isStandardArray(base) || allAt(base, 10)) && (
         <>
+          {allAt(base, 10) && (
+            <p className="flex items-start gap-1.5 px-1 text-sm text-ink-muted">
+              <Info size={16} aria-hidden className="mt-0.5 shrink-0" />
+              Pick a score for any ability. The rest fill in from 15 down to 8, ready to swap.
+            </p>
+          )}
           <StandardAllocator
             base={base}
+            unassigned={allAt(base, 10)}
             finals={finals}
             onScores={onScores}
             onAnnounce={setAnnounce}
           />
-          <p className="flex items-center gap-1.5 text-sm text-heal">
-            <Check size={16} aria-hidden className="shrink-0" /> Standard array: each value used
-            once
-          </p>
-        </>
-      )}
-
-      {/* Nothing assigned yet: the six rows are there from the start (review
-          item 2), each waiting on a value. The first one picked places the rest
-          from 15 down to 8, so the scores are always the whole array and every
-          later pick is a swap. */}
-      {method === 'standard' && allAt(base, 10) && (
-        <>
-          <p className="flex items-start gap-1.5 px-1 text-sm text-ink-muted">
-            <Info size={16} aria-hidden className="mt-0.5 shrink-0" />
-            Pick a score for any ability. The rest fill in from 15 down to 8, ready to swap.
-          </p>
-          <StandardAllocator
-            base={base}
-            unassigned
-            finals={finals}
-            onScores={onScores}
-            onAnnounce={setAnnounce}
-          />
+          {isStandardArray(base) && (
+            <p className="flex items-center gap-1.5 text-sm text-heal">
+              <Check size={16} aria-hidden className="shrink-0" /> Standard array: each value used
+              once
+            </p>
+          )}
         </>
       )}
 
@@ -389,7 +383,8 @@ function StandardAllocator({
               onScores(next);
               // Said against the scores just before this change, which is
               // what the player last heard.
-              const moved = ABILITIES.filter((b) => next[b] !== base[b]);
+              // The first pick lays down all six, so all six are said.
+              const moved = unassigned ? ABILITIES : ABILITIES.filter((b) => next[b] !== base[b]);
               onAnnounce(
                 (moved.length > 0 ? moved : [a])
                   .map((b) => `${b.toUpperCase()} ${next[b]}`)

@@ -1112,9 +1112,13 @@ describe('changes that take something away', () => {
           expect((screen.getByLabelText(name) as HTMLSelectElement).value).toBe('');
         }
         expect(screen.queryByRole('button', { name: /^Place 15 down to 8/ })).toBeNull();
+        (screen.getByLabelText('Wisdom (WIS)') as HTMLSelectElement).focus();
         pick('Wisdom (WIS)', 15);
         // The rest placed 15 down to 8, WIS swapped onto the 15.
         expect(scores()).toBe('10/14/13/12/15/8');
+        // The same select keeps focus, and all six are said, the 10 too.
+        expect(document.activeElement).toBe(screen.getByLabelText('Wisdom (WIS)'));
+        expect(screen.getByText('STR 10, DEX 14, CON 13, INT 12, WIS 15, CHA 8')).toBeTruthy();
         expect((screen.getByLabelText('Strength (STR)') as HTMLSelectElement).value).toBe('10');
         expect(screen.getByText(/Standard array: each value used once/)).toBeTruthy();
       });
