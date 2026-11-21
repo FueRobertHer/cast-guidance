@@ -42,7 +42,7 @@ import { expect, test } from '../support/test.ts';
 
 interface Route {
   name: string;
-  /** Opens the route and waits for its main heading. */
+  /** Opens the route and waits for its main heading, or the sheet it opens. */
   open: (page: Page, id: string) => Promise<void>;
   /** The controls the page exists for, which must stay reachable. */
   primary: (page: Page) => Locator[];

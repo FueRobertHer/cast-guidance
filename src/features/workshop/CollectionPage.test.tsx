@@ -612,7 +612,8 @@ describe('a collection page', () => {
 
   it('deletes a collection that could not be read, the one place that can', async () => {
     const real = homebrewRepo.listMetaSafe.bind(homebrewRepo);
-    // No write the app makes leaves such a row, so the read is given one.
+    // No stored row reads back this way today (a row the list cannot read
+    // has no id), so the read is given one: this pins the page's own branch.
     const read = vi.spyOn(homebrewRepo, 'listMetaSafe').mockImplementation(async () => ({
       ...(await real()),
       errors: [{ id: 'broken-1', fileName: 'broken.json', message: 'the file content is missing' }],

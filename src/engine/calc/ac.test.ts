@@ -93,7 +93,7 @@ describe('calcAc', () => {
 
   it('adds an equipped shield, its own AC plus its magic bonus', () => {
     // A +1 shield is the base 2 and a "+1", not a 3 typed into the base: the
-    // homebrew builder shows both boxes because the engine reads both.
+    // Workshop's item editor shows both boxes because the engine reads both.
     const doc = newCharacterDoc('c', 'H', 't');
     doc.equipment = [shieldEntry('Shield +1')];
     const { ac, label } = calcAc(
