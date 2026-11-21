@@ -417,6 +417,7 @@ describe('SettingsPage data announcements', () => {
 
 describe('SettingsPage data and privacy', () => {
   afterEach(() => {
+    vi.unstubAllEnvs();
     onboardingStore.setState({ dismissed: false });
     Reflect.deleteProperty(navigator, 'storage');
   });
@@ -432,7 +433,6 @@ describe('SettingsPage data and privacy', () => {
     vi.stubEnv('VITE_ANALYTICS', 'vercel');
     render(<SettingsPage />);
     expect(screen.getByText(ANALYTICS_ON_TEXT)).toBeTruthy();
-    vi.unstubAllEnvs();
   });
 
   it('brings the getting-started guide back and says where it went', () => {

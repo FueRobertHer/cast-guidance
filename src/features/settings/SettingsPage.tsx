@@ -38,14 +38,16 @@ import { ThemePicker } from './ThemePicker';
 /** Where the table rules and rule packs are set (ADR-002, D1; board 10, B). */
 const RULES_PATH = '/workshop/rules';
 
-/** Said once a requested download completes; it matches the line that turns to "ready". */
 /**
- * What a build with analytics on sends, said beside the privacy copy. Only
- * what `analyticsUrl.ts` guarantees: the route, with its ids cut out.
+ * What a build with analytics on sends, said beside the privacy copy. The
+ * address is what `analyticsUrl.ts` cuts down to its route; the referring
+ * site and the browser's own details come with the script's requests, so
+ * they are named too rather than implied away.
  */
 export const ANALYTICS_ON_TEXT =
-  'This build counts page visits with Vercel Web Analytics. Each visit sends which kind of page was opened, with character, collection and entry ids taken out of its address.';
+  'This build counts page visits with Vercel Web Analytics. Each visit sends which kind of page was opened (character, collection and entry ids are taken out of its address), the site that linked you here, and what any web request carries, such as your browser and device type. None of your characters, homebrew or dice history is sent.';
 
+/** Said once a requested download completes; it matches the line that turns to "ready". */
 export const OFFLINE_DOWNLOADED_TEXT = 'Game data downloaded. The offline compendium is ready.';
 
 /**
