@@ -536,8 +536,10 @@ test.describe('keyboard: pages', () => {
     const bar = page.getByRole('navigation', { name: 'Character sheet' });
     const labels = Object.keys(SHEET_TABS) as SheetTab[];
 
+    // The bar comes straight after the header, before the tab's own controls:
+    // it sat after them once, 66 presses away on a level 1 Play tab.
     await focusPageStart(page);
-    await tabTo(page, bar.getByRole('link', { name: labels[0], exact: true }));
+    await tabTo(page, bar.getByRole('link', { name: labels[0], exact: true }), 12);
     for (const label of labels.slice(1)) {
       // The next tab is the very next stop, and Enter opens it.
       await page.keyboard.press('Tab');
