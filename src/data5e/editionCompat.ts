@@ -7,6 +7,7 @@ import {
   type RulesVersion,
   reprintTargets,
 } from './rulesVersion';
+import { hasHomebrewTitle } from './sourceNames';
 
 export type { EditionRef } from './rulesVersion';
 
@@ -103,6 +104,24 @@ function otherClassPrinting(
 }
 
 /**
+ * Homebrew that names no edition (no `edition`, and no book's): written for
+ * either, so it suits a character on either and is no cue. The Workshop writes
+ * an edition only when its author picks one. Homebrew is a book a file on this
+ * device declares (`hasHomebrewTitle`), never a published one, whose bare rows
+ * still read as their book's edition. Pickers still read it as 2014
+ * (`editionOf`): this is about what the sheet says of a pick, not what may be
+ * picked, so it may lean on what the registry last learned, as a label does.
+ */
+export function editionNeutral(entity: Entity): boolean {
+  return (
+    entity.edition === undefined &&
+    entity.bookEdition === undefined &&
+    typeof entity.source === 'string' &&
+    hasHomebrewTitle(entity.source)
+  );
+}
+
+/**
  * Classify one selection against the version the character is on.
  *
  * A reprint only counts when it is installed *and* is itself this version's
@@ -124,6 +143,7 @@ export function editionFit(
   resolve: ReprintResolver,
   classRow?: EditionRef,
 ): EditionFit {
+  if (editionNeutral(entity)) return { kind: 'match' };
   const edition = editionOf(entity);
   if (edition === version) return { kind: 'match' };
   if (edition === '2024') return { kind: 'newer' };

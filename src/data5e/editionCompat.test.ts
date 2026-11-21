@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import type { Entity } from './copyMod';
 import {
   addToPreview,
@@ -9,7 +9,9 @@ import {
   editionFitNote,
   emptySwitchPreview,
 } from './editionCompat';
-import { normalizeDataset } from './normalize';
+import { mergeHomebrew, normalizeDataset } from './normalize';
+import { homebrewSourceNames } from './registry';
+import { setHomebrewSourceNames } from './sourceNames';
 
 /** A 2014 printing, optionally declaring what reprints it. */
 const old = (name: string, reprintedAs?: unknown): Entity =>
@@ -27,6 +29,8 @@ const world = (...entities: Entity[]) => {
 };
 const nothingInstalled = () => undefined;
 
+afterEach(() => setHomebrewSourceNames(new Map()));
+
 describe('editionFit', () => {
   it('says nothing when the pick already suits the character', () => {
     expect(editionFit(old('Fighter'), 'class', '2014', nothingInstalled)).toEqual({
@@ -35,6 +39,48 @@ describe('editionFit', () => {
     expect(editionFit(revised('Fighter'), 'class', '2024', nothingInstalled)).toEqual({
       kind: 'match',
     });
+  });
+
+  it('is no cue for homebrew that names no edition, on either version', () => {
+    setHomebrewSourceNames(new Map([['HBX', 'My Brews']]));
+    const brew = { name: 'Solari', source: 'HBX' } as Entity;
+    expect(editionFit(brew, 'race', '2014', nothingInstalled)).toEqual({ kind: 'match' });
+    expect(editionFit(brew, 'race', '2024', nothingInstalled)).toEqual({ kind: 'match' });
+  });
+
+  it("is no cue for a merged homebrew file's species, once the registry learned its book", () => {
+    const file = {
+      _meta: { sources: [{ json: 'HBX', abbreviation: 'HBX', full: 'My Brews' }] },
+      race: [{ name: 'Solari', source: 'HBX', size: ['M'], speed: 30, entries: ['Bright.'] }],
+    };
+    const reg = normalizeDataset(new Map());
+    mergeHomebrew(reg, new Map([['brews', file]]));
+    // As the registry build does before it hands the registry out.
+    setHomebrewSourceNames(homebrewSourceNames([{ json: file }]));
+    const solari = reg.get('race', 'Solari', 'HBX');
+    expect(solari).toBeDefined();
+    if (solari === undefined) return;
+    expect(editionFit(solari, 'race', '2024', nothingInstalled)).toEqual({ kind: 'match' });
+    expect(editionFit(solari, 'race', '2014', nothingInstalled)).toEqual({ kind: 'match' });
+  });
+
+  it('reads homebrew that names an edition as that edition', () => {
+    setHomebrewSourceNames(new Map([['HBX', 'My Brews']]));
+    const classic = { name: 'Solari', source: 'HBX', edition: 'classic' } as Entity;
+    const one = { name: 'Solari', source: 'HBX', edition: 'one' } as Entity;
+    expect(editionFit(classic, 'race', '2024', nothingInstalled)).toEqual({ kind: 'carryOver' });
+    expect(editionFit(one, 'race', '2014', nothingInstalled)).toEqual({ kind: 'newer' });
+    expect(editionFit(one, 'race', '2024', nothingInstalled)).toEqual({ kind: 'match' });
+  });
+
+  it("still reads a published book's bare row as its book's edition", () => {
+    // VGM is a 2014 book whose rows name no edition.
+    const bare = { name: 'Kenku', source: 'VGM' } as Entity;
+    expect(editionFit(bare, 'race', '2024', nothingInstalled)).toEqual({ kind: 'carryOver' });
+    // So does a book no file on this device declares.
+    setHomebrewSourceNames(new Map());
+    const unknown = { name: 'Solari', source: 'HBX' } as Entity;
+    expect(editionFit(unknown, 'race', '2024', nothingInstalled)).toEqual({ kind: 'carryOver' });
   });
 
   it('names the reprint when the newer books have one and it is installed', () => {
