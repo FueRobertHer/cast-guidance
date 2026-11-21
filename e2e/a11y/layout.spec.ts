@@ -34,9 +34,10 @@ import { expect, test } from '../support/test.ts';
  * - reflow (1.4.10): at 320 by 640 CSS px no main route scrolls sideways;
  * - resize text (1.4.4): with the root font at 200%, the same, and each
  *   route's primary controls still whole on screen once scrolled to;
- * - landscape on a phone (851 by 393): the sheet's sticky header and bottom
- *   tab bar leave its heading and content in sight, and a control that Tab or
- *   Shift+Tab moves to is never entirely hidden behind either (2.4.11).
+ * - landscape on a phone (851 by 393): the sheet header (not sticky at this
+ *   height: it scrolls away) and the bottom tab bar leave its heading and
+ *   content in sight, and a control that Tab or Shift+Tab moves to is never
+ *   entirely hidden behind either (2.4.11).
  * Reduced motion has its own spec (`reduced-motion.spec.ts`).
  */
 
