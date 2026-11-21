@@ -461,9 +461,11 @@ export async function dialog(title: string | RegExp) {
   const el = await screen.findByRole('dialog', { name: title }, { timeout: LOAD_MS });
   return {
     text: el.textContent ?? '',
+    /** The dialog's choices, without its Close in the corner. */
     options: () =>
       within(el)
         .getAllByRole('button')
+        .filter((b) => b.getAttribute('aria-label') !== 'Close')
         .map((b) => b.textContent ?? ''),
     /** Press a button by its name and wait for the dialog to close. */
     async press(name: string | RegExp) {
@@ -471,6 +473,15 @@ export async function dialog(title: string | RegExp) {
       await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull(), { timeout: LOAD_MS });
     },
   };
+}
+
+/**
+ * Take a short rest from the Play tab: its button opens the rest sheet, which
+ * spends hit dice and says what comes back, and the sheet's own button rests.
+ */
+export async function takeShortRest(): Promise<void> {
+  fireEvent.click(screen.getByRole('button', { name: 'Short rest' }));
+  await (await dialog('Short rest')).press('Take the short rest');
 }
 
 /**

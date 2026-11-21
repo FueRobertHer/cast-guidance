@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { normalizeStep, STEP_LABELS, STEPS, wizardDepth, wizardState } from './steps';
+import { normalizeStep, STEP_LABELS, STEPS, stepsFor, wizardDepth, wizardState } from './steps';
 
 describe('normalizeStep', () => {
   it('passes through every valid step', () => {
@@ -48,5 +48,15 @@ describe('wizardDepth', () => {
     ]) {
       expect(wizardDepth(state), JSON.stringify(state)).toBe(0);
     }
+  });
+});
+
+describe('stepsFor', () => {
+  it('takes 2024 characters to Background before Abilities, and keeps 2014 as it was', () => {
+    expect(stepsFor('2014')).toEqual(STEPS);
+    const order = stepsFor('2024');
+    expect(order.indexOf('background')).toBe(order.indexOf('abilities') - 1);
+    expect(order.indexOf('abilities')).toBe(order.indexOf('equipment') - 1);
+    expect([...order].sort()).toEqual([...STEPS].sort());
   });
 });

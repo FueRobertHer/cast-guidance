@@ -12,6 +12,7 @@ import { RollChip } from '@/ui/RollChip';
 import { type EntryToken, parseEntityRef, tokenizeEntryText } from '../tags';
 import { DISPLAY_ARG, PLAIN_REF_TAGS } from './inlineTags';
 import { libraryPath } from './libraryPath';
+import { MAX_NESTING } from './plainText';
 import { setDiceLevels, setsDice, slotLevelsLabel, tagLevels } from './upcast';
 
 // ---------------------------------------------------------------------------
@@ -42,11 +43,14 @@ function TagView({
   heals = false,
   lead = '',
   trail = '',
+  depth,
 }: {
   tag: string;
   args: string[];
   inline: boolean;
   heals?: boolean;
+  /** How many tags it sits inside; see {@link InlineText}. */
+  depth: number;
   /** The words of its sentence before it. */
   lead?: string;
   /** The words after it, to the next tag. */
@@ -112,26 +116,26 @@ function TagView({
     case 'bold':
       return (
         <strong>
-          <InlineText text={body} />
+          <InlineText text={body} depth={depth + 1} />
         </strong>
       );
     case 'i':
     case 'italic':
       return (
         <em>
-          <InlineText text={body} />
+          <InlineText text={body} depth={depth + 1} />
         </em>
       );
     case 'u':
       return (
         <u>
-          <InlineText text={body} />
+          <InlineText text={body} depth={depth + 1} />
         </u>
       );
     case 's':
       return (
         <s>
-          <InlineText text={body} />
+          <InlineText text={body} depth={depth + 1} />
         </s>
       );
     case 'h':
@@ -139,7 +143,7 @@ function TagView({
     case 'note':
       return (
         <span className="text-ink-muted">
-          <InlineText text={body} />
+          <InlineText text={body} depth={depth + 1} />
         </span>
       );
     case 'tip':
@@ -150,14 +154,14 @@ function TagView({
       const safe = /^[0-9a-fA-F]{3,8}$/.test(c) ? `#${c}` : undefined;
       return (
         <span style={safe ? { color: safe } : undefined}>
-          <InlineText text={body} />
+          <InlineText text={body} depth={depth + 1} />
         </span>
       );
     }
     case 'link': {
       // Content-driven URL — allow only plain http(s); render inert text otherwise.
       const href = safeExternalHref(args[1] ?? body);
-      if (href === undefined) return <InlineText text={body} />;
+      if (href === undefined) return <InlineText text={body} depth={depth + 1} />;
       return (
         <a href={href} target="_blank" rel="noreferrer noopener" className={LINK}>
           {body}
@@ -170,7 +174,7 @@ function TagView({
         const ref = parseEntityRef(args, DISPLAY_ARG.get(tag));
         return (
           <Link to={path} className={LINK}>
-            <InlineText text={ref.display} />
+            <InlineText text={ref.display} depth={depth + 1} />
           </Link>
         );
       }
@@ -180,12 +184,12 @@ function TagView({
         const ref = parseEntityRef(args, DISPLAY_ARG.get(tag));
         return (
           <span>
-            <InlineText text={ref.display} />
+            <InlineText text={ref.display} depth={depth + 1} />
           </span>
         );
       }
       // Unknown tag: show the body text, drop the tag (drift tolerance).
-      return <InlineText text={body} />;
+      return <InlineText text={body} depth={depth + 1} />;
     }
   }
 }
@@ -198,7 +202,9 @@ function TagView({
  * {@dice 1d6 + 1} expended charges" is not a heal.
  */
 function healsBetween(before: string, after: string): boolean {
-  const lead = before.match(/[^.]*$/)?.[0] ?? '';
+  // Not a pattern anchored at the end, which a long run of words with a full
+  // stop at its end made retry from every start: seconds on a homebrew string.
+  const lead = before.slice(before.lastIndexOf('.') + 1);
   if (/\bhealing\b/i.test(lead)) return true;
   const sentence = `${lead}${after.split('.')[0] ?? ''}`;
   return /\bregains?\b/i.test(lead) && /\bhit points?\b/i.test(sentence);
@@ -230,24 +236,46 @@ function atSlots(levels: readonly number[]): string {
   return `slot level${levels.length > 1 ? 's' : ''} ${slotLevelsLabel(levels)}`;
 }
 
-/** The words of the sentence before token `i`, back past any tags in it. */
-function sentenceBefore(tokens: readonly EntryToken[], i: number): string {
-  let words = '';
-  for (let j = i - 1; j >= 0; j--) {
-    const t = tokens[j];
-    if (t?.kind !== 'text') {
-      words = ` ${words}`;
-      continue;
+/** The tags whose chip reads the words of the sentence before it. */
+const READS_LEAD: ReadonlySet<string> = new Set(['scaledamage', 'scaledice']);
+
+/**
+ * How much of a sentence a scaling chip reads back. The longest in the books
+ * is 199 characters (v2.41.0); a homebrew sentence of tags with no full stop
+ * has no end, and every chip reading all of it was quadratic.
+ */
+const LEAD_LIMIT = 1_000;
+
+/**
+ * The words of the sentence before each token that reads them (`READS_LEAD`),
+ * back past any tags in it (each a space), to `LEAD_LIMIT` characters; an
+ * empty string for every other token. One pass, not a walk back per tag.
+ */
+function sentencesBefore(tokens: readonly EntryToken[]): string[] {
+  const leads: string[] = [];
+  let run = '';
+  for (const t of tokens) {
+    leads.push(t.kind === 'tag' && READS_LEAD.has(t.tag) ? run : '');
+    if (t.kind === 'tag') run += ' ';
+    else {
+      const stop = t.text.lastIndexOf('.');
+      run = stop === -1 ? run + t.text : t.text.slice(stop + 1);
     }
-    const stop = t.text.lastIndexOf('.');
-    if (stop !== -1) return t.text.slice(stop + 1) + words;
-    words = t.text + words;
+    if (run.length > LEAD_LIMIT) run = run.slice(-LEAD_LIMIT);
   }
-  return words;
+  return leads;
 }
 
-export function InlineText({ text }: { text: string }): ReactNode {
+/**
+ * Tagged text, each tag drawn. `depth` is how many tags it sits inside: past
+ * `MAX_NESTING` the text stays as written, as `plainEntryText` leaves it, since
+ * a homebrew string can nest thousands deep (the books nest two), which
+ * overflowed the stack, and each level read the rest of the string again.
+ */
+export function InlineText({ text, depth = 0 }: { text: string; depth?: number }): ReactNode {
+  if (depth >= MAX_NESTING) return text;
   const tokens = tokenizeEntryText(text);
+  const leads = sentencesBefore(tokens);
   const prose = tokens.some((t) => t.kind === 'text' && t.text.trim() !== '');
   return (
     <>
@@ -258,7 +286,6 @@ export function InlineText({ text }: { text: string }): ReactNode {
         const heals =
           before?.kind === 'text' &&
           healsBetween(before.text, after?.kind === 'text' ? after.text : '');
-        const lead = sentenceBefore(tokens, i);
         const trail = after?.kind === 'text' ? after.text : '';
         return (
           <TagView
@@ -267,8 +294,9 @@ export function InlineText({ text }: { text: string }): ReactNode {
             args={t.args}
             inline={prose}
             heals={heals}
-            lead={lead}
+            lead={leads[i]}
             trail={trail}
+            depth={depth}
           />
         );
       })}

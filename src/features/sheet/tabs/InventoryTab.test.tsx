@@ -19,6 +19,11 @@ const ensureTypePacks = vi.fn(async (_type: string) => undefined);
 
 vi.mock('@/data5e/hooks', () => ({ useRegistry: () => registryRef.current }));
 vi.mock('@/data5e/loader', () => ({ ensureTypePacks: (t: string) => ensureTypePacks(t) }));
+// The books as the character sees them: the shared registry unless a test says otherwise.
+const viewFor = vi.hoisted(() => ({ current: null as unknown }));
+vi.mock('@/data5e/registryView', () => ({
+  registryViewFor: (registry: unknown) => viewFor.current ?? registry,
+}));
 // The device's source settings, as the Sources page leaves them; everything by default.
 const device = vi.hoisted(() => ({ current: undefined as unknown }));
 vi.mock('@/data5e/sourceFilter', async (importOriginal) => {
@@ -204,6 +209,94 @@ describe('InventoryTab rows', () => {
     expect(screen.getByRole('button', { name: 'Equip Rope', pressed: false })).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Attune Longsword', pressed: false }));
     expect(screen.getByRole('button', { name: 'Attune Longsword', pressed: true })).toBeTruthy();
+  });
+});
+
+describe('InventoryTab with an item whose entry is gone', () => {
+  const ring = { name: 'Ring of Protection', source: 'DMG', reqAttune: true } as unknown as Entity;
+  function renderGone(data?: Partial<CharacterSheetState['data']>) {
+    registryRef.current = {
+      byType: () => [],
+      get: (_type: string, name: string) => (name === 'Ring of Protection' ? ring : undefined),
+    } as unknown as typeof registryRef.current;
+    const doc = newCharacterDoc('i2', 'Hero', 't');
+    doc.equipment = [
+      {
+        id: 'r',
+        ref: { name: 'Ring of Protection', source: 'DMG' },
+        qty: 1,
+        equipped: true,
+        attuned: true,
+      },
+      // A homebrew item deleted from its collection: the key the engine keeps, lowercased.
+      {
+        id: 's',
+        ref: { name: 'sunblade aegis', source: 'myhomebrew' },
+        qty: 1,
+        equipped: true,
+        attuned: true,
+      },
+      {
+        id: 'p',
+        ref: { name: 'pack of somewhere', source: 'x' },
+        qty: 1,
+        equipped: false,
+        attuned: false,
+      },
+    ];
+    const router = createMemoryRouter([
+      {
+        path: '/',
+        element: (
+          <Outlet
+            context={
+              {
+                doc,
+                sheet: deriveSheet(doc, makeTestContext()),
+                update: () => undefined,
+                data,
+              } as unknown as CharacterSheetState
+            }
+          />
+        ),
+        children: [{ index: true, element: <InventoryTab /> }],
+      },
+    ]);
+    render(<RouterProvider router={router} />);
+  }
+
+  it('marks equipped gear that is gone as missing, by its name, and frees its attunement', () => {
+    renderGone();
+    expect(screen.getByText('attunement 1/3')).toBeTruthy();
+    expect(screen.getAllByText('Missing')).toHaveLength(1);
+    expect(screen.getByRole('button', { name: 'Remove Sunblade Aegis' })).toBeTruthy();
+    // In the backpack it may still be downloading, so it is not called missing.
+    expect(screen.getByRole('button', { name: 'Remove Pack of Somewhere' })).toBeTruthy();
+  });
+
+  it("reads the character's own view: a file its switch brings back is not missing", () => {
+    const blade = { name: 'Sunblade Aegis', source: 'MyHomebrew' } as unknown as Entity;
+    viewFor.current = {
+      byType: () => [],
+      get: (_type: string, name: string) =>
+        name === 'Ring of Protection' ? ring : name === 'sunblade aegis' ? blade : undefined,
+    };
+    try {
+      renderGone();
+      expect(screen.queryByText('Missing')).toBeNull();
+      expect(screen.getByText('attunement 2/3')).toBeTruthy();
+      expect(screen.getByRole('button', { name: 'Remove Sunblade Aegis' })).toBeTruthy();
+    } finally {
+      viewFor.current = null;
+    }
+  });
+
+  it('calls nothing missing while equipped gear could not be downloaded', () => {
+    renderGone({
+      equipment: { status: 'error', error: 'offline', offline: true, retry: () => undefined },
+    });
+    expect(screen.queryByText('Missing')).toBeNull();
+    expect(screen.getByText('attunement 2/3')).toBeTruthy();
   });
 });
 

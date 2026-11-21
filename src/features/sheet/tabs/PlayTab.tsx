@@ -15,7 +15,7 @@ import {
   Star,
 } from 'lucide-react';
 import { useEffect, useId, useRef, useState } from 'react';
-import { useOutletContext } from 'react-router';
+import { Link, useOutletContext } from 'react-router';
 import type { RulesVersion } from '@/data5e/rulesVersion';
 import { parseDice } from '@/dice/parse';
 import { roll } from '@/dice/roll';
@@ -103,6 +103,7 @@ import {
   grantNumbersKey,
   grantRowKey,
   grantUsedUp,
+  ritualWay,
   type SpellCast,
 } from '../castPlan';
 import { castingEconomy, isConcentratingOn, type SlotSpent, spendSlot } from '../castResources';
@@ -154,7 +155,7 @@ import { answersTo, namedStart, recklessStart } from '../namedStarts';
 import { clampPlayStateToMax, detectPlayStateOverages } from '../playStateLimits';
 import { RestSheet } from '../RestSheet';
 import { RollEffectCue } from '../RollEffectCue';
-import { backCaption, giveBack, restWith } from '../rest';
+import { backCaption, giveBack, restWith, shortRestWouldRestore, spendHitDie } from '../rest';
 import { payOffer, pricedRollEffects } from '../rollPrice';
 import { SpellCastChips } from '../SpellCastChips';
 import { SpellInfoSheet } from '../SpellInfoSheet';
@@ -521,6 +522,17 @@ export function Component() {
   const effectsFor = (test: Parameters<typeof d20Effects>[2]) =>
     d20Effects(conditions, doc.rulesVersion, test, immune);
   const maxHp = conditionMaxHp(sheet.maxHp.value, conditions, doc.rulesVersion, immune);
+  /**
+   * Spend one hit die of a size to heal, from the HP card's chip or the short
+   * rest sheet: rolled, logged and healed by, up to the maximum the card shows.
+   */
+  const healWithHitDie = (die: string) =>
+    update((d) => {
+      const r = spendHitDie(d.play, sheet.hitDice, die, sheet.abilities.con.mod);
+      if (r === undefined) return;
+      rollLogStore.getState().append(r);
+      applyHp(d.play, Math.max(0, r.total), maxHp.value);
+    });
   // Haste doubles what is left once exhaustion has taken its share.
   const speed = conditionSpeed(sheet.speedWalk.value, conditions, doc.rulesVersion, {
     ...immune,
@@ -1249,6 +1261,10 @@ export function Component() {
       },
     };
   };
+  /** Spells a grant keeps prepared (a domain's), by name: their grant's row casts them. */
+  const alwaysPrepared = new Set(
+    sheet.grantedSpells.filter((g) => g.usage === 'prepared').map((g) => g.name.toLowerCase()),
+  );
   /** A class spell's cast, as its row and a hit's damage prompt (a smite) both make it. */
   const classSpellCast = (
     sc: SpellcastingBlock,
@@ -1312,6 +1328,11 @@ export function Component() {
       entity,
       level: spellLevelOf(g.name, g.source),
       block: g.usage === 'prepared' ? block : undefined,
+      // Always prepared, so a ritual casts as one where its class's would.
+      ritual:
+        g.usage === 'prepared' && block !== undefined
+          ? ritualWay(sheet, block, entity, doc.rulesVersion, true)
+          : undefined,
       className: g.className,
       abilityModifier: numbers.mod,
       grantPool:
@@ -1925,19 +1946,7 @@ export function Component() {
                   aria-label={`Spend a ${die} hit die, ${left} left`}
                   title={`Spend a hit die (${die})`}
                   disabled={left <= 0}
-                  onClick={() =>
-                    update((d) => {
-                      const spent = d.play.hitDiceSpent[die] ?? 0;
-                      if (spent >= total) return;
-                      d.play.hitDiceSpent[die] = spent + 1;
-                      const r = roll(`1${die}${fmt(sheet.abilities.con.mod)}`, {
-                        label: `Hit die (${die})`,
-                        kind: 'heal',
-                      });
-                      rollLogStore.getState().append(r);
-                      applyHp(d.play, Math.max(0, r.total), maxHp.value);
-                    })
-                  }
+                  onClick={() => healWithHitDie(die)}
                   className="min-h-6 whitespace-nowrap rounded-chip bg-surface-raised px-2 text-ink tabular-nums hover:bg-surface-hover unavailable:bg-surface-raised unavailable:text-ink-faint"
                 >
                   <b>{Math.max(0, left)}</b> of {total} {die}
@@ -3089,22 +3098,46 @@ export function Component() {
             const preparedUids = new Set(
               state.prepared.map((r) => `${r.name}|${r.source}`.toLowerCase()),
             );
+            // A class that prepares its spells casts those here, and a
+            // wizard's unprepared rituals as rituals; the rest wait on Spells,
+            // a tap from preparing. A cantrip is never prepared, always cast,
+            // and a spell whose level no file says yet stays, as it was.
+            const prepares = sc.mode === 'prepared' || sc.mode === 'spellbook';
+            let unprepared = 0;
+            const rows = state.known.flatMap((ref) => {
+              const entity = spellEntity(ref.name, ref.source);
+              const prepared =
+                !prepares ||
+                typeof entity?.level !== 'number' ||
+                entity.level === 0 ||
+                preparedUids.has(`${ref.name}|${ref.source}`.toLowerCase());
+              const ritual = ritualWay(sheet, sc, entity, doc.rulesVersion, prepared);
+              if (prepared || ritual === 'only') return [{ ref, entity, ritual }];
+              // Always prepared too: its grant's row below casts it.
+              if (!alwaysPrepared.has(ref.name.toLowerCase())) unprepared += 1;
+              return [];
+            });
             // Sorted by level (cantrips first), then name — not alphabetically.
-            const registrySpells = [...state.known].sort(
+            rows.sort(
               (a, b) =>
-                spellLevelOf(a.name, a.source) - spellLevelOf(b.name, b.source) ||
-                a.name.localeCompare(b.name),
+                spellLevelOf(a.ref.name, a.ref.source) - spellLevelOf(b.ref.name, b.ref.source) ||
+                a.ref.name.localeCompare(b.ref.name),
             );
+            // A leveled spell ready to cast, else the line below says none is
+            // prepared: an always-prepared grant's row counts.
+            const anyPrepared =
+              alwaysPrepared.size > 0 ||
+              rows.some((r) => r.ritual !== 'only' && r.entity?.level !== 0);
             return (
               <div className="@container mt-2 flex flex-col gap-1 border-line border-t pt-2">
-                {registrySpells.some((ref) => hasSpellAttack(spellEntity(ref.name, ref.source))) &&
-                  attackCue('Spell attacks')}
-                {registrySpells.map((ref) => {
+                {rows.some((r) => hasSpellAttack(r.entity)) && attackCue('Spell attacks')}
+                {rows.map(({ ref, entity, ritual }) => {
                   const uid = `${ref.name}|${ref.source}`.toLowerCase();
+                  const ritualOnly = ritual === 'only';
                   const prepared = preparedUids.has(uid);
-                  const subtitle = `${sc.className} spell${prepared ? ' · prepared' : ''}`;
+                  const tag = prepared ? 'prepared' : ritualOnly ? 'ritual' : undefined;
+                  const subtitle = `${sc.className} spell${tag === undefined ? '' : ` · ${tag}`}`;
                   const level = spellLevelOf(ref.name, ref.source);
-                  const entity = spellEntity(ref.name, ref.source);
                   if (entity === undefined && spellsSettling) {
                     return (
                       <PendingSpellRow
@@ -3121,7 +3154,7 @@ export function Component() {
                   // was cast with, and rolling them spends nothing more.
                   const running = isConcentratingOn(play, ref.name);
                   const hasAttack = hasSpellAttack(entity);
-                  const cast = classSpellCast(sc, ref);
+                  const cast = { ...classSpellCast(sc, ref), ritual };
                   return (
                     <div key={uid} className={`min-h-10 ${ROW}`}>
                       <div className={ROW_NAME}>
@@ -3145,7 +3178,7 @@ export function Component() {
                             <button
                               type="button"
                               className={`min-h-6 min-w-0 flex-1 text-left ${NAME} ${RULES} underline-offset-2 ${
-                                prepared ? '' : 'text-ink-muted'
+                                ritualOnly ? 'text-ink-muted' : ''
                               }`}
                             >
                               {ref.name}
@@ -3154,10 +3187,10 @@ export function Component() {
                                   mid-word, with no space added to the name.
                                   Hidden where the name truncates, since
                                   Chromium breaks at a `wbr` even then. */}
-                              {prepared && (
+                              {tag !== undefined && (
                                 <>
                                   <wbr className="@min-[15rem]:hidden" />
-                                  <span className="ml-1.5 text-arcane text-caption">prepared</span>
+                                  <span className="ml-1.5 text-arcane text-caption">{tag}</span>
                                 </>
                               )}
                             </button>
@@ -3212,6 +3245,17 @@ export function Component() {
                     </div>
                   );
                 })}
+                {unprepared > 0 && (
+                  <p className="text-caption text-ink-muted">
+                    {anyPrepared
+                      ? `${String(unprepared)} more not prepared. `
+                      : 'No spells prepared. '}
+                    {/* Relative to the sheet: Play is its index route. */}
+                    <Link to="spells" className={LINK}>
+                      Prepare on Spells
+                    </Link>
+                  </p>
+                )}
               </div>
             );
           })()}
@@ -3383,12 +3427,9 @@ export function Component() {
         <div className="grid grid-cols-2 gap-2">
           <button
             type="button"
-            // With effects in play, a sheet asks which ones the rest ends.
-            onClick={() =>
-              inPlay.length > 0
-                ? setRestAsked({ rest: 'short', open: true })
-                : finishRest('short', NONE)
-            }
+            // Always a sheet: hit dice to spend, what comes back, and which
+            // effects in play the rest ends.
+            onClick={() => setRestAsked({ rest: 'short', open: true })}
             className={buttonClass({ variant: 'outline' })}
           >
             <Hourglass size={18} /> Short rest
@@ -3423,7 +3464,21 @@ export function Component() {
         length={rules.restLength}
         open={restAsked.open}
         effects={inPlay}
-        {...(restAsked.rest === 'long' ? { detail: longRestDetail(rules.hpOnLongRest) } : {})}
+        {...(restAsked.rest === 'long'
+          ? { detail: longRestDetail(rules.hpOnLongRest) }
+          : {
+              short: {
+                hp: { current: play.currentHp, max: maxHp.value, temp: play.tempHp },
+                hitDice: Object.entries(sheet.hitDice).map(([die, total]) => ({
+                  die,
+                  total,
+                  left: Math.max(0, total - (play.hitDiceSpent[die] ?? 0)),
+                })),
+                onSpendHitDie: healWithHitDie,
+                // Worked out only while it is asked; the sheet keeps the first.
+                restores: restAsked.open ? shortRestWouldRestore(play, sheet) : [],
+              },
+            })}
         onOpenChange={(open) => setRestAsked((was) => ({ ...was, open }))}
         onRest={(rest, ends) => {
           setRestAsked((was) => ({ ...was, open: false }));
