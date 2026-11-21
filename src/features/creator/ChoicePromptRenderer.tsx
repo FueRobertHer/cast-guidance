@@ -12,6 +12,14 @@ export interface ChoicePromptRendererProps {
   value: string[] | string | number | undefined;
   /** Called only when the reader presses Confirm, never on an individual tap. */
   onChange: (value: string[] | string) => void;
+  /**
+   * Taps held by the caller instead of this card, so they outlive it: the
+   * creator keeps them across steps and applies a full one on Next. With
+   * `onStage` absent the card holds its own taps, which go when it does.
+   */
+  staged?: StagedPick;
+  /** Each tap's draft, or undefined once it is back to what is saved. */
+  onStage?: (pick: StagedPick | undefined) => void;
   /** When provided, renders a Cancel button (used when re-opening a made pick). */
   onCancel?: () => void;
   /**
@@ -24,6 +32,19 @@ export interface ChoicePromptRendererProps {
 
 /** Joins draft ids into a comparison key. Not a space: option ids contain them. */
 const KEY_SEP = '\u0000';
+
+/** Taps on a pick card not yet confirmed, held by whoever passed `onStage`. */
+export interface StagedPick {
+  /** The ids tapped, in order. */
+  draft: string[];
+  /** The saved value they were tapped over; taps over another one are stale. */
+  base: string;
+  /** What Confirm would save, when it could save it; undefined otherwise. */
+  apply?: string[] | string;
+}
+
+/** The key a staged pick records for the value it was tapped over. */
+export const stagedBase = (value: unknown): string => JSON.stringify(value ?? null);
 
 /**
  * The +/− cells: two across, three from `sm`, but never a cell narrower than
@@ -53,40 +74,16 @@ function canonicalize(
 }
 
 /**
- * Generic renderer for engine ChoicePrompts — the wizard AND level-up flow
- * are both just lists of these. Never hardcodes rules content.
- *
- * Taps build a local draft; nothing reaches the character until Confirm. That
- * makes a mis-tap free to undo, and it lets a pick already made be re-opened
- * with its options still selected so one can be swapped out without losing the
- * rest.
+ * Where a draft stands against the saved picks: what counts of it, whether
+ * Confirm could save it, and the value it would save.
  */
-export function ChoicePromptRenderer({
-  prompt,
-  value,
-  onChange,
-  onCancel,
-  renderOptionInfo,
-}: ChoicePromptRendererProps) {
-  const committed = canonicalize(prompt, value);
-  const committedKey = committed.join(KEY_SEP);
-  const [draft, setSelected] = useState(committed);
-  // Re-seed the draft if the stored value changes underneath this instance
-  // (React's "adjust state during render" pattern, cheaper than an effect).
-  const [seededFrom, setSeededFrom] = useState(committedKey);
-  if (seededFrom !== committedKey) {
-    setSeededFrom(committedKey);
-    setSelected(committed);
-  }
+function pickState(prompt: ChoicePrompt, committed: string[], draft: string[]) {
   // A tap not yet confirmed lapses if another pick closes that option meanwhile.
   // A saved pick stays, so it can still be seen and swapped out.
   const selected = draft.filter(
     (id) =>
       committed.includes(id) || prompt.options.find((o) => o.id === id)?.disabled === undefined,
   );
-  const [filter, setFilter] = useState('');
-  const searchable = prompt.options.length > 12;
-
   // A prompt can ask for more than it can supply: every other language already
   // known, or expertise offered before the skills it draws on are confirmed.
   // Gating Confirm on `count` would dead-end those with no way out, so gate on
@@ -98,7 +95,72 @@ export function ChoicePromptRenderer({
       : Math.min(prompt.count, selectable);
   const short = attainable - selected.length;
   const canConfirm = attainable > 0 && short <= 0;
-  const dirty = selected.join(KEY_SEP) !== committedKey;
+  const dirty = selected.join(KEY_SEP) !== committed.join(KEY_SEP);
+  // asiOrFeat is stored as a bare string; every other kind stores a list.
+  const value: string[] | string =
+    prompt.kind === 'asiOrFeat' && prompt.count === 1 ? (selected[0] ?? '') : selected;
+  return { selected, attainable, short, canConfirm, dirty, value };
+}
+
+/**
+ * Generic renderer for engine ChoicePrompts — the wizard AND level-up flow
+ * are both just lists of these. Never hardcodes rules content.
+ *
+ * Taps build a local draft; nothing reaches the character until Confirm. That
+ * makes a mis-tap free to undo, and it lets a pick already made be re-opened
+ * with its options still selected so one can be swapped out without losing the
+ * rest. A caller can hold those taps instead (`staged` and `onStage`), so
+ * they outlive the card.
+ */
+export function ChoicePromptRenderer({
+  prompt,
+  value,
+  onChange,
+  onCancel,
+  renderOptionInfo,
+  staged,
+  onStage,
+}: ChoicePromptRendererProps) {
+  const committed = canonicalize(prompt, value);
+  const committedKey = committed.join(KEY_SEP);
+  const [ownDraft, setOwnDraft] = useState(committed);
+  // Re-seed the draft if the stored value changes underneath this instance
+  // (React's "adjust state during render" pattern, cheaper than an effect).
+  const [seededFrom, setSeededFrom] = useState(committedKey);
+  if (seededFrom !== committedKey) {
+    setSeededFrom(committedKey);
+    setOwnDraft(committed);
+  }
+  const base = stagedBase(value);
+  // Taps the caller holds count only over the value they were made on.
+  const draft =
+    onStage === undefined
+      ? ownDraft
+      : staged !== undefined && staged.base === base
+        ? staged.draft
+        : committed;
+  const setSelected = (next: string[]) => {
+    if (onStage === undefined) {
+      setOwnDraft(next);
+      return;
+    }
+    const after = pickState(prompt, committed, next);
+    onStage(
+      next.join(KEY_SEP) === committedKey
+        ? undefined
+        : { draft: next, base, apply: after.canConfirm && after.dirty ? after.value : undefined },
+    );
+  };
+  const {
+    selected,
+    attainable,
+    short,
+    canConfirm,
+    dirty,
+    value: confirmed,
+  } = pickState(prompt, committed, draft);
+  const [filter, setFilter] = useState('');
+  const searchable = prompt.options.length > 12;
   const statusId = `${prompt.id}-status`;
 
   const status =
@@ -109,12 +171,17 @@ export function ChoicePromptRenderer({
         : attainable < prompt.count
           ? { text: `Only ${attainable} of ${prompt.count} still available.`, urgent: true }
           : dirty
-            ? { text: 'Not saved yet. Confirm to apply.', urgent: false }
+            ? {
+                text:
+                  onStage === undefined
+                    ? 'Not saved yet. Confirm to apply.'
+                    : 'Not saved yet. Confirm, or Next applies it.',
+                urgent: false,
+              }
             : { text: '', urgent: false };
   const confirm = () => {
     if (!canConfirm) return;
-    // asiOrFeat is stored as a bare string; every other kind stores a list.
-    onChange(prompt.kind === 'asiOrFeat' && prompt.count === 1 ? (selected[0] ?? '') : selected);
+    onChange(confirmed);
   };
 
   const toggle = (id: string) => {

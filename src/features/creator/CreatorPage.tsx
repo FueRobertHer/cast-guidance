@@ -42,6 +42,7 @@ import { fieldClass, TextField } from '@/ui/TextField';
 import { UndoBar } from '@/ui/UndoBar';
 import { AbilitiesStep, type ShownMethod } from './AbilitiesStep';
 import { abilityIssue, allAt, keepsOnPointBuySwitch } from './abilityMethods';
+import { type StagedPick, stagedBase } from './ChoicePromptRenderer';
 import { CollapsingCardList } from './CollapsingCardList';
 import {
   clearDraft,
@@ -55,7 +56,14 @@ import {
   writeDraft,
 } from './draft';
 import { replaceWizardWith } from './leaveWizard';
-import { hasOriginChoices, listsPick, OriginChoices } from './OriginChoices';
+import {
+  applyPick,
+  hasOriginChoices,
+  listsPick,
+  OriginChoices,
+  type PickStage,
+  sameChoice,
+} from './OriginChoices';
 import { pendingSteps, stepForOrigin } from './pendingSteps';
 import {
   classBlurb,
@@ -350,6 +358,56 @@ export function Component() {
   const ctx = registry !== null ? engineContextFor(registry) : null;
   const sheet = useMemo(() => (ctx !== null ? deriveSheet(doc, ctx) : null), [doc, ctx]);
 
+  // Taps on pick cards not yet confirmed, by prompt id. Held here rather than in
+  // each card, which goes with its step, so walking on never drops them (review
+  // top 3): a full pick is applied on the way forward, and one still short
+  // waits on its card for the player's return.
+  const [stagedPicks, setStagedPicks] = useState<Record<string, StagedPick>>({});
+  const stagedRef = useRef(stagedPicks);
+  const setStaged = (next: Record<string, StagedPick>) => {
+    stagedRef.current = next;
+    setStagedPicks(next);
+  };
+  const livePrompts =
+    sheet !== null
+      ? new Set([...sheet.pending, ...sheet.resolvedChoices.map((r) => r.prompt)].map((p) => p.id))
+      : null;
+  // Taps on a pick whose origin has gone (another class, species or
+  // background) go with it, so they never come back if it does.
+  if (livePrompts !== null && Object.keys(stagedPicks).some((id) => !livePrompts.has(id))) {
+    setStaged(
+      Object.fromEntries(Object.entries(stagedPicks).filter(([id]) => livePrompts.has(id))),
+    );
+  }
+  const pickStage: PickStage = {
+    picks: stagedPicks,
+    set: (id, pick) => {
+      const { [id]: _gone, ...rest } = stagedRef.current;
+      setStaged(pick === undefined ? rest : { ...rest, [id]: pick });
+    },
+  };
+  /**
+   * Save every held pick that is full, as its Confirm would, over the value it
+   * was tapped on. One still short stays held.
+   */
+  const applyStaged = () => {
+    const held = Object.entries(stagedRef.current);
+    const full = held.filter(
+      ([id, p]) =>
+        p.apply !== undefined &&
+        (livePrompts?.has(id) ?? false) &&
+        p.base === stagedBase(latest.current.doc.choices[id]),
+    );
+    if (full.length === 0) return;
+    update((d) => {
+      for (const [id, p] of full) {
+        if (p.apply !== undefined && !sameChoice(d.choices[id], p.apply)) applyPick(d, id, p.apply);
+      }
+    });
+    const applied = new Set(full.map(([id]) => id));
+    setStaged(Object.fromEntries(held.filter(([id]) => !applied.has(id))));
+  };
+
   const update = (recipe: (d: CharacterDoc) => void) => {
     change((d) => recipe(d.doc));
   };
@@ -414,6 +472,8 @@ export function Component() {
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
         <Link
           to="/"
+          // Picks tapped full go into the kept draft, as Next would save them.
+          onClick={applyStaged}
           aria-label="Back to characters (your draft is kept)"
           className="tap -my-2 -ml-3 rounded-control text-ink-muted hover:text-ink"
         >
@@ -563,6 +623,10 @@ export function Component() {
    */
   const navStep = (s: Step) => {
     const forward = STEPS.indexOf(s) > stepIdx;
+    // Picks tapped full but not confirmed are applied going forward, as the
+    // kit is. Going back keeps them held (and an undo offered for the change
+    // being fixed): they wait on their cards.
+    if (forward) applyStaged();
     if (forward && step === 'equipment' && doc.equipment.length === 0 && allEqGroups.length > 0) {
       change(grantKit);
     }
@@ -957,6 +1021,7 @@ export function Component() {
                     doc={doc}
                     update={update}
                     registry={registry}
+                    stage={pickStage}
                     match={onStep('class')}
                   />
                 )}
@@ -1016,6 +1081,7 @@ export function Component() {
                 doc={doc}
                 update={update}
                 registry={registry}
+                stage={pickStage}
                 match={onStep('species')}
               />
             )}
@@ -1069,6 +1135,7 @@ export function Component() {
                 doc={doc}
                 update={update}
                 registry={registry}
+                stage={pickStage}
                 match={onStep('background')}
               />
             )}
@@ -1204,6 +1271,7 @@ export function Component() {
                 doc={doc}
                 update={update}
                 registry={registry}
+                stage={pickStage}
                 match={isOther}
               />
             )}
@@ -1217,7 +1285,8 @@ export function Component() {
           // walk right out of the app.
           if (creating.current) return;
           creating.current = true;
-          const final = structuredClone(doc);
+          applyStaged();
+          const final = structuredClone(latest.current.doc);
           if (final.name.trim() === '') final.name = 'Unnamed hero';
           final.play.currentHp = sheet?.maxHp.value ?? 0;
           setOpening(final.name);

@@ -31,7 +31,7 @@ import { EntityInfoSheet } from '@/ui/EntityInfoSheet';
 import { FeatureInfoSheet } from '@/ui/FeatureInfoSheet';
 import { PackProblem } from '@/ui/PackProblem';
 import { cardClass } from '@/ui/surfaces';
-import { ChoicePromptRenderer } from './ChoicePromptRenderer';
+import { ChoicePromptRenderer, type StagedPick, stagedBase } from './ChoicePromptRenderer';
 import { fillSpellPrompt } from './spellPrompt';
 
 /**
@@ -174,12 +174,32 @@ export const hasOriginChoices = (
   sheet.resolvedChoices.some((r) => match(r.prompt.origin));
 
 /** Do two stored choice values name the same picks, in the same order? */
-function sameChoice(a: unknown, b: unknown): boolean {
+export function sameChoice(a: unknown, b: unknown): boolean {
   const norm = (v: unknown) =>
     Array.isArray(v) ? v.map(String) : v === undefined ? [] : [String(v)];
   const x = norm(a);
   const y = norm(b);
   return x.length === y.length && x.every((v, i) => v === y[i]);
+}
+
+/**
+ * Save a pick's answer into `d`, as its Confirm does. Follow-up prompts (an
+ * ASI's feat pick, a feat's own sub-choices) were derived from the answer that
+ * changed, so they no longer apply. The feat's are stored apart from the
+ * prompt, and the old answer finds them.
+ */
+export function applyPick(d: CharacterDoc, id: string, value: string[] | string): void {
+  pruneAsiFeatPicks(d, id);
+  d.choices[id] = value;
+  for (const key of Object.keys(d.choices)) {
+    if (key.startsWith(`${id}:`)) delete d.choices[key];
+  }
+}
+
+/** Taps held above the cards, by prompt id, so they outlive a step (see `ChoicePromptRenderer`). */
+export interface PickStage {
+  picks: Readonly<Record<string, StagedPick>>;
+  set: (id: string, pick: StagedPick | undefined) => void;
 }
 
 /**
@@ -196,6 +216,7 @@ export function OriginChoices({
   update,
   match,
   registry,
+  stage,
 }: {
   sheet: DerivedSheet;
   doc: CharacterDoc;
@@ -203,6 +224,8 @@ export function OriginChoices({
   match: (origin: EffectOrigin) => boolean;
   /** Enables ⓘ full-description drawers on feat options when provided. */
   registry?: EntityRegistry | null;
+  /** Holds the cards' taps above them; without it each card holds its own. */
+  stage?: PickStage;
 }) {
   const { policy, scope } = usePickSourcePolicy(doc.allowedSources, doc.sourceSwitches);
   const pending = sheet.pending.filter((p) => match(p.origin) && listsPick(p));
@@ -214,12 +237,18 @@ export function OriginChoices({
   if (editing !== undefined && !resolved.some((r) => r.prompt.id === editing)) {
     setEditing(undefined);
   }
+  // A made pick with taps still held over it opens on them, so a swap left
+  // part-done on another visit is in sight, never applied unseen by Next.
+  const isOpen = (id: string, value: unknown) => {
+    const held = stage?.picks[id];
+    return editing === id || (held !== undefined && held.base === stagedBase(value));
+  };
 
   // Spell files and class lists load on demand, so only for a spell pick that is
   // open: most characters never see one, and a made pick reads from its save.
   const openSpellPrompts = [
     ...pending,
-    ...resolved.flatMap((r) => (r.prompt.id === editing ? [r.prompt] : [])),
+    ...resolved.flatMap((r) => (isOpen(r.prompt.id, doc.choices[r.prompt.id]) ? [r.prompt] : [])),
   ].filter((p) => p.kind === 'spell');
   const spellPacks = useTypePacks(openSpellPrompts.length > 0 ? 'spell' : undefined);
   const needsClassLists = openSpellPrompts.some((p) => (p.spellQuery?.classes.length ?? 0) > 0);
@@ -271,20 +300,12 @@ export function OriginChoices({
   const commit = (id: string, value: string[] | string) => {
     // Confirming an untouched pick just closes the editor. Writing it would
     // schedule a save and log a history entry for a no-op.
+    stage?.set(id, undefined);
     if (sameChoice(doc.choices[id], value)) {
       setEditing(undefined);
       return;
     }
-    update((d) => {
-      // Follow-up prompts (an ASI's feat pick, a feat's own sub-choices) were
-      // derived from the answer that just changed, so they no longer apply. The
-      // feat's are stored apart from the prompt, and the old answer finds them.
-      pruneAsiFeatPicks(d, id);
-      d.choices[id] = value;
-      for (const key of Object.keys(d.choices)) {
-        if (key.startsWith(`${id}:`)) delete d.choices[key];
-      }
-    });
+    update((d) => applyPick(d, id, value));
     setEditing(undefined);
   };
 
@@ -310,6 +331,8 @@ export function OriginChoices({
           value={doc.choices[prompt.id]}
           onChange={(v) => commit(prompt.id, v)}
           onCancel={onCancel}
+          staged={stage?.picks[prompt.id]}
+          onStage={stage !== undefined ? (pick) => stage.set(prompt.id, pick) : undefined}
           renderOptionInfo={
             prompt.kind === 'feat'
               ? featInfo
@@ -343,10 +366,15 @@ export function OriginChoices({
         </div>
       ))}
       {resolved.map(({ prompt, selected }) =>
-        editing === prompt.id ? (
+        isOpen(prompt.id, doc.choices[prompt.id]) ? (
           // Re-opened with the current picks still selected, so swapping one
           // out is a deselect-and-replace rather than starting over.
-          <div key={prompt.id}>{editor(prompt, () => setEditing(undefined))}</div>
+          <div key={prompt.id}>
+            {editor(prompt, () => {
+              stage?.set(prompt.id, undefined);
+              setEditing(undefined);
+            })}
+          </div>
         ) : (
           <div
             key={prompt.id}
