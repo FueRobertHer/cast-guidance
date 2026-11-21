@@ -787,12 +787,13 @@ describe('a change that cannot stand for what it changes', () => {
   });
 
   it('is left out, not a stub, when its copy cannot be read', () => {
-    const broken = aidMod({ entries: { mode: 'removeArr', names: [{ toString: 1 }] } });
-    const reg = packed(broken);
-    expect(reg.get('spell', 'Aid', 'XPHB')?.entries).toEqual(bookAid().entries);
-    expect(reg.changedEntries()).toEqual([]);
-    // A view stacking it (E4) leaves it out the same way.
-    expect(stackChanges('spell', bookAid(), [broken]).entries).toEqual(bookAid().entries);
+    // A name `String()` refuses used to throw out of the copy, which left the
+    // change out. It reads as "?" now (copyMod.hostile.test.ts), a removal
+    // that finds nothing, so the rest of the change holds and the book's
+    // words stand.
+    const odd = aidMod({ entries: { mode: 'removeArr', names: [{ toString: 1 }] } });
+    expect(packed(odd).get('spell', 'Aid', 'XPHB')?.entries).toEqual(bookAid().entries);
+    expect(stackChanges('spell', bookAid(), [odd]).entries).toEqual(bookAid().entries);
     for (const odd of ['Aid', null, ['Aid']]) {
       const malformed = packed({ name: 'Aid', source: 'XPHB', _copy: odd, entries: ['Odd.'] });
       expect(malformed.get('spell', 'Aid', 'XPHB')?.entries).toEqual(bookAid().entries);

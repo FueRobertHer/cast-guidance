@@ -51,6 +51,7 @@ import {
   bookSource,
   codeEdition,
   editionKnown,
+  editionSure,
   type HomebrewSource,
   readSourceLine,
 } from './books';
@@ -99,7 +100,7 @@ import {
 export const FC5_FORMAT = 'fc5-compendium';
 export const FC5_FORMAT_NAME = 'Fight Club 5e';
 /** Bump when the same file would convert differently, so old imports can be told apart. */
-export const FC5_CONVERTER_VERSION = 20;
+export const FC5_CONVERTER_VERSION = 21;
 
 const CONVERTERS: Record<string, (el: XmlElement, ctx: Fc5Context) => Fc5Result> = {
   spell: convertSpell,
@@ -205,14 +206,16 @@ function placer(
   fileSource: HomebrewSource,
   fileEd: RulesVersion | undefined,
   rulesBooks: ReadonlySet<string> | undefined,
+  hasBook: ((code: string) => boolean) | undefined,
 ): Fc5Context['place'] {
   return (line, own) => {
     const books = line === undefined ? [] : readSourceLine(line);
     const first = books[0];
     if (first === undefined) {
-      const edition =
-        own ?? (line === undefined ? undefined : sourceLineEdition(line)) ?? fileEd ?? '2014';
+      const stated = own ?? (line === undefined ? undefined : sourceLineEdition(line)) ?? fileEd;
+      const edition = stated ?? '2014';
       const placement: Placement = { source: fileSource, edition, books, fields: {} };
+      if (stated !== undefined) placement.editionStated = true;
       if (line !== undefined && line.trim() !== '') placement.citation = line;
       return placement;
     }
@@ -221,7 +224,13 @@ function placer(
       first.code !== undefined
         ? codeEdition(first.code, rulesBooks)
         : sourceLineEdition(first.title);
-    // A free rules text that names no version is the file's.
+    // A free rules text that names no version is the file's. A known book's
+    // edition is stated only where it is sure, not guessed (`editionSure`).
+    const bookStated =
+      first.code === undefined || editionSure(first.code, rulesBooks, hasBook)
+        ? bookEdition
+        : undefined;
+    const stated = own ?? bookStated ?? (first.reference === true ? fileEd : undefined);
     const edition = own ?? bookEdition ?? (first.reference === true ? fileEd : undefined) ?? '2014';
     const split = first.code === undefined && edition === '2024' && bookEdition !== '2024';
     const placement: Placement = {
@@ -231,6 +240,7 @@ function placer(
       books,
       fields: first.page === undefined ? {} : { page: first.page },
     };
+    if (stated === edition) placement.editionStated = true;
     // A name that marks the other edition than its book's is not the book's entry,
     // where the book's edition is known and not guessed.
     if (
@@ -372,13 +382,14 @@ export function fc5Context(
   fileName: string,
   more: {
     rulesBooks?: ReadonlySet<string>;
+    hasBook?: (code: string) => boolean;
     featSources?: ReadonlyMap<string, readonly FeatRef[]>;
     extraClasses?: ReadonlyMap<string, readonly string[]>;
     officialFeat?: OfficialFeat;
   } = {},
 ): Fc5Context {
   const ctx: Fc5Context = {
-    place: placer(sourceFor(fileName), fileEdition(fileName), more.rulesBooks),
+    place: placer(sourceFor(fileName), fileEdition(fileName), more.rulesBooks, more.hasBook),
     featSources: more.featSources ?? new Map(),
   };
   if (more.extraClasses !== undefined) ctx.extraClasses = more.extraClasses;
@@ -427,6 +438,7 @@ export function fc5Converter(opts: ConvertOptions): Fc5Converter {
     featSources,
     extraClasses: extra,
     ...(opts.rulesBooks === undefined ? {} : { rulesBooks: opts.rulesBooks }),
+    ...(opts.hasBook === undefined ? {} : { hasBook: opts.hasBook }),
     ...(opts.officialFeat === undefined ? {} : { officialFeat: opts.officialFeat }),
   });
   // The spells the file defines in full, by lowercased name, with their level

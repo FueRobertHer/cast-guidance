@@ -26,6 +26,7 @@ import {
   useResolvedPath,
 } from 'react-router';
 import { DiceTray } from '@/features/dice/DiceTray';
+import { raceDisplayName } from '@/lib/raceDisplayName';
 import { useBack } from '@/lib/useBack';
 import { usePageTitle } from '@/lib/usePageTitle';
 import { useStickyHeight } from '@/lib/useStickyHeight';
@@ -289,8 +290,10 @@ function Sheet({ id }: { id: string | undefined }) {
 
   const doc = state.doc;
   const pending = state.sheet?.pending.length ?? 0;
-  // Species, class and level.
-  const who = [doc?.race?.name, state.sheet?.classLabel].filter(Boolean).join(' ');
+  // Species as a player says it ("High Elf"), class and level.
+  const who = [raceDisplayName(doc?.race, doc?.subrace), state.sheet?.classLabel]
+    .filter(Boolean)
+    .join(' ');
   const saveState = saveIndicator(state.saveStatus);
 
   const menu = [

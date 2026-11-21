@@ -58,6 +58,20 @@ function asArray<T>(v: T | T[] | undefined): T[] {
   return Array.isArray(v) ? v : [v];
 }
 
+/**
+ * `a.splice(at, remove, ...items)`, without passing the items as arguments:
+ * a homebrew list can hold 200,000, and a call with that many arguments
+ * overflows the stack (from about 100,000 here).
+ */
+function spliceIn(a: unknown[], at: number, remove: number, items: readonly unknown[]): void {
+  const tail = a.splice(at);
+  tail.splice(0, remove);
+  // By a fixed count, so items that are `a` itself are put in once.
+  const count = items.length;
+  for (let i = 0; i < count; i++) a.push(items[i]);
+  for (const x of tail) a.push(x);
+}
+
 function entryName(e: unknown): string | undefined {
   if (typeof e !== 'object' || e === null) return undefined;
   const n = (e as { name?: unknown }).name;
@@ -121,6 +135,18 @@ export const MAX_REPLACE_STRING_LENGTH = 4096;
 export const MAX_REPLACE_WORK = 64_000_000;
 /** Entities one base may expand into through `_versions`. Official max: 10. */
 export const MAX_VERSIONS_PER_ENTITY = 64;
+/**
+ * Characters `_copy`, `_versions` and `replaceTxt` may build across one
+ * homebrew merge (or one lone copy, expansion or operation), counted as JSON:
+ * each copy its target, each version its base and every step its variables
+ * make, each replacement the string it makes. A file is bounded, what it
+ * builds was not: 200 copies of a 1 MB entry built 201 MB, 85 KB of variables
+ * 80 MB, and 22 variables that name each other 4 MB from 639 characters, each
+ * one more doubling it. All of v2.41.0 builds about 650,000 (copies 457,661,
+ * versions 193,195) from 8.4 million; this is four of the largest homebrew
+ * file the import takes (`IMPORT_LIMITS.maxTextLength`).
+ */
+export const MAX_BUILT_CHARS = 16_000_000;
 
 const MOD_FLAGS = 'gimsuy';
 
@@ -265,7 +291,19 @@ interface ReplaceBudget {
   left: number;
   skippedLong: number;
   exhausted: boolean;
+  /** Characters `_copy` and `_versions` may still build; see {@link MAX_BUILT_CHARS}. */
+  buildLeft: number;
+  /** Each copy target's JSON length, measured once: a file can copy one target thousands of times. */
+  sizes: WeakMap<object, number>;
 }
+
+const freshBudget = (): ReplaceBudget => ({
+  left: MAX_REPLACE_WORK,
+  skippedLong: 0,
+  exhausted: false,
+  buildLeft: MAX_BUILT_CHARS,
+  sizes: new WeakMap(),
+});
 
 /**
  * The budget every `replaceTxt` in the current merge draws on. One per
@@ -275,12 +313,13 @@ interface ReplaceBudget {
 let sharedBudget: ReplaceBudget | undefined;
 
 /**
- * Run `fn` with one `replaceTxt` budget shared by everything it applies. The
- * homebrew merge wraps its whole run in this.
+ * Run `fn` with one `replaceTxt` budget, and one for what `_copy` and
+ * `_versions` build, shared by everything it applies. The homebrew merge wraps
+ * its whole run in this.
  */
 export function withReplaceBudget<T>(fn: () => T): T {
   const outer = sharedBudget;
-  sharedBudget = { left: MAX_REPLACE_WORK, skippedLong: 0, exhausted: false };
+  sharedBudget = freshBudget();
   try {
     return fn();
   } finally {
@@ -296,12 +335,56 @@ function regexSearchText(e: unknown): string | undefined {
   if (typeof e === 'string') return e;
   if (typeof e !== 'object' || e === null) return undefined;
   const name = (e as { name?: unknown }).name;
-  return name ? String(name) : undefined;
+  return name ? textOf(name) : undefined;
 }
 
 /** The budget to charge: the merge's shared one, or a fresh one for a lone operation. */
 function currentBudget(): ReplaceBudget {
-  return sharedBudget ?? { left: MAX_REPLACE_WORK, skippedLong: 0, exhausted: false };
+  return sharedBudget ?? freshBudget();
+}
+
+/**
+ * The key never copied from the data into an object: `__proto__` from
+ * `JSON.parse` is an ordinary own key, but assigning it sets the prototype of
+ * the object it lands on, so a homebrew `_mod` gave an entity inherited fields
+ * that no copy or save of it shows.
+ */
+const PROTO_KEY = '__proto__';
+
+/** Why `chars` more may not be built, or undefined when the budget allows it (and is charged). */
+function chargeBuild(chars: number, budget: ReplaceBudget): string | undefined {
+  if (chars > budget.buildLeft) {
+    return `it would build more than the ${MAX_BUILT_CHARS} characters one merge may`;
+  }
+  budget.buildLeft -= chars;
+  return undefined;
+}
+
+/**
+ * `value` as JSON, in characters: about what a deep copy of it builds.
+ * Measured once per budget, since one target can be copied thousands of times.
+ */
+function sizeOf(value: object, budget: ReplaceBudget): number {
+  const known = budget.sizes.get(value);
+  if (known !== undefined) return known;
+  const size = JSON.stringify(value)?.length ?? 0;
+  budget.sizes.set(value, size);
+  return size;
+}
+
+/**
+ * Why a `replaceTxt` replacement is refused, or undefined. "$`" and "$'" put
+ * in all the text before or after each match, so a pattern that matches
+ * everywhere made a string its length squared; a replacement longer than any
+ * string it may search does the same. The books' longest is 22 characters,
+ * and none uses either.
+ */
+function unsafeReplacement(w: string): string | undefined {
+  if (w.length > MAX_REPLACE_STRING_LENGTH) {
+    return `a replacement longer than ${MAX_REPLACE_STRING_LENGTH} characters`;
+  }
+  if (/\$[`']/.test(w)) return "a replacement that repeats the text around each match ($` or $')";
+  return undefined;
 }
 
 /**
@@ -330,12 +413,23 @@ function replaceTextDeep(
   quadratic: boolean,
 ): unknown {
   if (typeof v === 'string') {
-    return chargeText(v, budget, quadratic) ? v.replace(re, w) : v;
+    if (!chargeText(v, budget, quadratic)) return v;
+    const out = v.replace(re, w);
+    if (out === v) return out;
+    // What it builds is charged too. Past the budget the text stays as it
+    // was, and so does every later replacement in the merge.
+    if (chargeBuild(out.length, budget) !== undefined) {
+      budget.left = 0;
+      budget.exhausted = true;
+      return v;
+    }
+    return out;
   }
   if (Array.isArray(v)) return v.map((x) => replaceTextDeep(x, re, w, budget, quadratic));
   if (typeof v === 'object' && v !== null) {
     const out: Record<string, unknown> = {};
     for (const [k, val] of Object.entries(v)) {
+      if (k === PROTO_KEY) continue;
       out[k] = replaceTextDeep(val, re, w, budget, quadratic);
     }
     return out;
@@ -357,6 +451,10 @@ export function applyMod(
       warn('unsupported wildcard _mod prop "*"');
       continue;
     }
+    if (prop === PROTO_KEY) {
+      warn(`unsupported _mod prop "${PROTO_KEY}"`);
+      continue;
+    }
     // A value that isn't an op (or an array of ops) is a plain property set.
     const ops = Array.isArray(rawOps) ? rawOps : [rawOps];
     if (!ops.every(isOp)) {
@@ -374,29 +472,34 @@ export function applyMod(
       };
       switch (mode) {
         case 'appendArr':
-          arr().push(...asArray(o.items));
+          spliceIn(arr(), Number.POSITIVE_INFINITY, 0, asArray(o.items));
           break;
         case 'appendIfNotExistsArr': {
           // As in 5etools: each item is checked against what the array held
           // before, not against the other items.
           const a = arr();
           const present = new Set(a.map(deepKey));
-          a.push(...asArray(o.items).filter((x) => !present.has(deepKey(x))));
+          spliceIn(
+            a,
+            a.length,
+            0,
+            asArray(o.items).filter((x) => !present.has(deepKey(x))),
+          );
           break;
         }
         case 'prependArr':
-          arr().unshift(...asArray(o.items));
+          spliceIn(arr(), 0, 0, asArray(o.items));
           break;
         case 'insertArr': {
           const a = arr();
           const idx = typeof o.index === 'number' ? o.index : a.length;
-          a.splice(idx, 0, ...asArray(o.items));
+          spliceIn(a, idx, 0, asArray(o.items));
           break;
         }
         case 'removeArr': {
           const a = arr();
           if (o.names !== undefined) {
-            const names = new Set(asArray(o.names).map(String));
+            const names = new Set(asArray(o.names).map(textOf));
             for (let i = a.length - 1; i >= 0; i--) {
               const n = entryName(a[i]);
               if (n !== undefined && names.has(n)) a.splice(i, 1);
@@ -472,16 +575,21 @@ export function applyMod(
             idx = (replace as { index: number }).index;
           }
           if (idx >= 0 && idx < a.length) {
-            a.splice(idx, 1, ...asArray(o.items));
+            spliceIn(a, idx, 1, asArray(o.items));
           } else {
             warn(`replaceArr target not found on "${prop}": ${JSON.stringify(replace)}`);
           }
           break;
         }
         case 'replaceTxt': {
-          const re = compileModRegex(String(o.replace), o.flags);
+          const re = compileModRegex(textOf(o.replace), o.flags);
           if (!(re instanceof RegExp)) {
             warn(`replaceTxt pattern refused on "${prop}" (${re.reason}); left unchanged`);
+            break;
+          }
+          const unsafe = unsafeReplacement(textOf(o.with ?? ''));
+          if (unsafe !== undefined) {
+            warn(`replaceTxt replacement refused on "${prop}" (${unsafe}); left unchanged`);
             break;
           }
           const budget = currentBudget();
@@ -490,9 +598,9 @@ export function applyMod(
           target[prop] = replaceTextDeep(
             target[prop],
             re,
-            String(o.with ?? ''),
+            textOf(o.with ?? ''),
             budget,
-            repeats(String(o.replace)),
+            repeats(textOf(o.replace)),
           );
           const skipped = budget.skippedLong - skippedBefore;
           if (skipped > 0) {
@@ -523,6 +631,8 @@ export interface CopyRef extends Entity {
  * Copy `target` into `e` by `e._copy` (its `_mod`, `_preserve`), in place. Throws
  * when the copy machinery cannot read what `e` holds, and `e` may then be partly
  * changed (the lists it shares with the copy), so call it on a clone to drop.
+ * Throws too, changing nothing, when copying `target` would build more than
+ * the merge has left to build ({@link MAX_BUILT_CHARS}).
  */
 export function applyCopy(
   e: Entity,
@@ -532,6 +642,9 @@ export function applyCopy(
 ): void {
   const copy = e._copy as CopyRef;
   const preserve = (copy._preserve ?? {}) as Record<string, unknown>;
+  const budget = currentBudget();
+  const over = chargeBuild(sizeOf(target, budget), budget);
+  if (over !== undefined) throw new Error(over);
   const base = structuredClone(target);
   for (const key of DELETE_ON_COPY) {
     if (!preserve[key] && !preserve['*']) delete base[key];
@@ -549,7 +662,7 @@ export function applyCopy(
   }
   // Replace contents in place so references held elsewhere stay valid.
   for (const k of Object.keys(e)) delete e[k];
-  Object.assign(e, merged);
+  for (const [k, v] of Object.entries(merged)) if (k !== PROTO_KEY) e[k] = v;
 }
 
 /**
@@ -578,6 +691,8 @@ export function resolveCopies(
     delete e._copy;
   };
   const pending: Entity[] = [];
+  /** Entities whose copy threw: kept as they stood, which is not what they copy. */
+  const failed = new Set<Entity>();
   for (const e of entities) {
     if (e._copy === undefined) continue;
     // Homebrew is anyone's JSON. A `_copy` that is not a reference at all
@@ -597,13 +712,16 @@ export function resolveCopies(
       const copy = e._copy as CopyRef;
       try {
         const target = lookup(copy, e);
-        if (target === undefined || target._copy !== undefined) continue; // retry next pass
+        // A target whose own copy failed is a stub of what it meant to be, so
+        // a copy of it waits, as on a target not yet resolved, and ends unresolved.
+        if (target === undefined || target._copy !== undefined || failed.has(target)) continue;
         applyCopy(e, target, warnings, label);
       } catch (err) {
         // Same reasoning one level down: whatever this entry holds that the
         // copy machinery cannot handle costs this entry its copy, not the
         // registry its existence.
         skip(e, `could not resolve _copy: ${err instanceof Error ? err.message : String(err)}`);
+        failed.add(e);
       }
       pending.splice(i, 1);
       progress = true;
@@ -620,13 +738,37 @@ export function resolveCopies(
   return warnings;
 }
 
-function substituteVariables(template: Entity, vars: Record<string, unknown>): Entity {
+/**
+ * `template` with each `{{name}}` of `vars` put in, in order, so a value that
+ * names a later variable has that one put in too. Throws, before building it,
+ * when the result would be longer than `budget` has left: a long value in many
+ * places, or values that name each other, multiply far past the file's size.
+ */
+function substituteVariables(
+  template: Entity,
+  vars: Record<string, unknown>,
+  budget: ReplaceBudget,
+): Entity {
+  // Every step is charged, not only the last: values that double and then
+  // collapse to nothing build a great deal on the way to a short result.
+  const pay = (chars: number) => {
+    if (chargeBuild(chars, budget) !== undefined) {
+      throw new Error(
+        `its variables would build more than the ${MAX_BUILT_CHARS} characters one merge may`,
+      );
+    }
+  };
   let json = JSON.stringify(template);
+  pay(json.length);
   for (const [k, val] of Object.entries(vars)) {
     // Escaped for where it lands, inside a JSON string: spliced in raw, a
     // value with a quote or a backslash in it (`Red "Classic"`) broke the
     // document and threw out of the parse below.
-    json = json.split(`{{${k}}}`).join(JSON.stringify(textOf(val)).slice(1, -1));
+    const value = JSON.stringify(textOf(val)).slice(1, -1);
+    const placeholder = `{{${k}}}`;
+    const parts = json.split(placeholder);
+    pay(json.length + (parts.length - 1) * (value.length - placeholder.length));
+    json = parts.join(value);
   }
   return JSON.parse(json) as Entity;
 }
@@ -747,6 +889,19 @@ export function expandVersions(
   const warn = (message: string) =>
     warnings.push({ entity: uidOf(base), message: `versions: ${message}` });
   const out: Entity[] = [];
+  // Each version deep-copies the base, and a subrace's the race's traits too.
+  const budget = currentBudget();
+  /**
+   * Charge one version's copies before building it, or throw. Measured on the
+   * first, inside its `tryVersion`, so a subrace with no versions measures
+   * nothing, and once per budget, so its race's traits are measured once.
+   */
+  const charge = () => {
+    const perVersion =
+      sizeOf(base, budget) + (raceTraits === undefined ? 0 : sizeOf(raceTraits, budget));
+    const over = chargeBuild(perVersion, budget);
+    if (over !== undefined) throw new Error(over);
+  };
   // Each version is a deep copy of the base, so a short file listing many
   // implementations multiplies into far more than its own size. The structural
   // limits bound the file, not that product; this bounds the product.
@@ -775,14 +930,18 @@ export function expandVersions(
         const impl = implRaw as Entity;
         tryVersion(() => {
           const vars = (impl._variables ?? {}) as Record<string, unknown>;
-          const materialized = substituteVariables(abstract, vars);
+          charge();
+          const materialized = substituteVariables(abstract, vars, budget);
           const overlay: Entity = { ...impl };
           delete overlay._variables;
           out.push(buildVersion(base, { ...materialized, ...overlay }, warn, raceTraits));
         });
       }
     } else {
-      tryVersion(() => out.push(buildVersion(base, v, warn, raceTraits)));
+      tryVersion(() => {
+        charge();
+        out.push(buildVersion(base, v, warn, raceTraits));
+      });
     }
   }
   return out;

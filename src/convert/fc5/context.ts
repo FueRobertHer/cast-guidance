@@ -11,6 +11,12 @@ import type { SpellIndex } from './spellGrants';
 export interface Placement {
   source: HomebrewSource;
   edition: RulesVersion;
+  /**
+   * Whether the entry, its `Source:` line or its book says its edition. When
+   * none does, the edition is the 2014 default, and the entity names none, so
+   * it reads as written for either.
+   */
+  editionStated?: boolean;
   /** The entry's own book, when its `Source:` line names one. */
   book?: Book;
   /** Every book the `Source:` line names, the entry's own first. */
@@ -150,10 +156,37 @@ export function extraClassKey(name: string, edition: RulesVersion | undefined): 
   return `${name.toLowerCase()}|${edition ?? ''}`;
 }
 
-/** Put a placement's source, edition and citation on an entity being built. */
+/**
+ * Where an entry belongs whose edition its name marks, else its class list's
+ * markers. A list that marks both editions (`Paladin [5.5e], Tamer [Legacy]`)
+ * states neither, so the edition is stated only if the line or book states the
+ * same one; the edition itself is the list's, as before.
+ */
+export function placeMarked(
+  ctx: Fc5Context,
+  line: string | undefined,
+  named: RulesVersion | undefined,
+  list: { edition?: RulesVersion; mixed?: boolean },
+): Placement {
+  const placement = ctx.place(line, named ?? list.edition);
+  if (named === undefined && list.mixed === true) {
+    const bare = ctx.place(line, undefined);
+    if (bare.edition !== placement.edition || bare.editionStated !== true) {
+      delete placement.editionStated;
+    }
+  }
+  return placement;
+}
+
+/**
+ * Put a placement's source, edition and citation on an entity being built. A
+ * 2014 edition is written only when something stated it: homebrew that names
+ * no edition is no cue on a character of either.
+ */
 export function placeEntity(entity: Record<string, unknown>, placement: Placement): void {
   entity.source = placement.source.json;
   if (placement.edition === '2024') entity.edition = 'one';
+  else if (placement.editionStated === true) entity.edition = 'classic';
   Object.assign(entity, placement.fields);
 }
 

@@ -22,6 +22,7 @@ const sheetState = vi.hoisted(() => {
     pending: 0,
     casts: false,
     race: undefined as string | undefined,
+    subrace: undefined as string | undefined,
     conditions: [] as { id: string; level?: number }[],
   };
   const state = { ...initial };
@@ -58,6 +59,8 @@ vi.mock('./useCharacterSheet', async () => {
         id: 'x',
         name: 'Hero',
         race: sheetState.state.race === undefined ? undefined : { name: sheetState.state.race },
+        subrace:
+          sheetState.state.subrace === undefined ? undefined : { name: sheetState.state.subrace },
         rulesVersion: '2024',
         play: { conditions: sheetState.state.conditions },
       },
@@ -340,6 +343,13 @@ describe('SheetLayout header (design system)', () => {
     expect(caption?.textContent).toBe('Dwarf Warrior 3·Saved');
     expect(caption?.querySelector('.truncate')?.textContent).toBe('Dwarf Warrior 3');
     expect(indicator?.className.split(' ')).toContain('shrink-0');
+  });
+
+  it('names the species as a player says it, the subrace before the race', () => {
+    sheetState.set({ race: 'Dwarf', subrace: 'Hill' });
+    renderAt('/c/x');
+    const caption = document.querySelector('[data-save-indicator]')?.parentElement;
+    expect(caption?.querySelector('.truncate')?.textContent).toBe('Hill Dwarf Warrior 3');
   });
 
   it('shows a failed save in danger', () => {

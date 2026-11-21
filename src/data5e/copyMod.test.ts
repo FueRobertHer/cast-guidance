@@ -866,14 +866,18 @@ describe('expandVersions', () => {
   });
 
   it('costs one version that cannot be built, not the others', () => {
+    // A pattern `String()` refuses no longer throws (it reads as "?"), so a
+    // version too large to build stands in for one that cannot be.
+    const vars: Record<string, string> = { a40: 'x' };
+    for (let i = 0; i < 40; i++) vars[`a${i}`] = `{{a${i + 1}}}{{a${i + 1}}}`;
     const base: Entity = {
       name: 'Drake',
       source: 'HB',
       entries: ['text'],
       _versions: [
         {
-          name: 'Bad',
-          _mod: { entries: { mode: 'replaceTxt', replace: { toString: 1 }, with: 'x' } },
+          _abstract: { name: 'Bad', entries: ['{{a0}}'] },
+          _implementations: [{ _variables: vars }],
         },
         { name: 'Good' },
       ],

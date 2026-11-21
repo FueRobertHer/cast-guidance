@@ -5,7 +5,9 @@ import { restTakes } from '@/engine/rules';
 import type { ActiveEffect } from '@/engine/types';
 import { Button } from '@/ui/Button';
 import { Sheet } from '@/ui/sheet';
+import { ordinal } from './castResources';
 import { andList, restLasts } from './effectsInPlay';
+import { pickedLevels, type SlotPicks, type SlotRecovery } from './rest';
 
 type Rest = 'short' | 'long';
 type Length = TableRuleChoices['restLength'];
@@ -20,7 +22,14 @@ export interface ShortRestView {
   onSpendHitDie: (die: string) => void;
   /** What the rest would give back, in the rest's own words (`shortRestWouldRestore`). */
   restores: readonly string[];
+  /** Pools that give back spent slots as the rest ends, with a use left (`slotRecoveries`). */
+  recoveries?: readonly SlotRecovery[];
+  /** Each level with slots spent (`spentSlots`). */
+  spentSlots?: ReadonlyArray<{ level: number; spent: number }>;
 }
+
+/** Slots picked to give back, by recovery pool key. */
+export type RecoveryPicks = ReadonlyMap<string, SlotPicks>;
 
 /**
  * A rest: which of the effects in play it ends, ticked by what each one
@@ -51,7 +60,7 @@ export function RestSheet({
   /** A short rest's hit points, hit dice and what it gives back. */
   short?: ShortRestView;
   onOpenChange: (open: boolean) => void;
-  onRest: (rest: Rest, ends: ReadonlySet<string>) => void;
+  onRest: (rest: Rest, ends: ReadonlySet<string>, recover: RecoveryPicks) => void;
 }) {
   // Each opening counted, so each one ticks afresh.
   const [openings, setOpenings] = useState(open ? 1 : 0);
@@ -97,12 +106,16 @@ function RestEnds({
   effects: readonly ActiveEffect[];
   detail?: string | undefined;
   short?: ShortRestView | undefined;
-  onRest: (rest: Rest, ends: ReadonlySet<string>) => void;
+  onRest: (rest: Rest, ends: ReadonlySet<string>, recover: RecoveryPicks) => void;
 }) {
   // The list as it opened, so the rows a rest ends stay put while it slides
   // away; what comes back too, which the rest taken would otherwise empty.
   const [listed] = useState(effects);
   const [restores] = useState(short?.restores);
+  // The pools and spent slots as it opened: hit dice spent on the way change neither.
+  const [recoveries] = useState(short?.recoveries ?? []);
+  const [spent] = useState(short?.spentSlots ?? []);
+  const [picks, setPicks] = useState<RecoveryPicks>(new Map());
   const [ends, setEnds] = useState<ReadonlySet<string>>(
     () => new Set(listed.filter((e) => endsAtRest(e, rest, length)).map((e) => e.id)),
   );
@@ -117,7 +130,8 @@ function RestEnds({
     <>
       <div className="min-h-0 flex-1 overflow-y-auto text-body">
         {detail !== undefined && <p className="mb-3 text-ink-muted">{detail}</p>}
-        {restores !== undefined && (
+        {/* With nothing back by itself, a recovery pool below still gives slots back. */}
+        {restores !== undefined && (restores.length > 0 || recoveries.length === 0) && (
           <p className="mb-3 text-ink-muted">
             {restores.length > 0
               ? `Gives back ${andList(restores)}.`
@@ -125,6 +139,15 @@ function RestEnds({
           </p>
         )}
         {short !== undefined && <HitDiceSpend short={short} />}
+        {recoveries.map((pool) => (
+          <SlotRecoveryPick
+            key={pool.key}
+            pool={pool}
+            spent={spent}
+            picks={picks}
+            onPick={(next) => setPicks((was) => new Map(was).set(pool.key, next))}
+          />
+        ))}
         {listed.length > 0 && (
           <>
             <fieldset>
@@ -159,7 +182,7 @@ function RestEnds({
         size="lg"
         block
         className="mt-4 shrink-0"
-        onClick={() => onRest(rest, ends)}
+        onClick={() => onRest(rest, ends, picks)}
       >
         {rest === 'short' ? 'Take the short rest' : 'Take the long rest'}
       </Button>
@@ -211,6 +234,87 @@ function HitDiceSpend({ short }: { short: ShortRestView }) {
             </li>
           ))}
         </ul>
+      )}
+    </section>
+  );
+}
+
+/**
+ * A pool that gives back spent slots as the rest ends (Arcane Recovery): a
+ * stepper for each spent level under its cap, within its level budget. The
+ * pools share the spent slots, so what one picks another cannot. Picking any
+ * spends the pool's use when the rest is taken; picking none keeps it.
+ */
+function SlotRecoveryPick({
+  pool,
+  spent,
+  picks,
+  onPick,
+}: {
+  pool: SlotRecovery;
+  spent: ReadonlyArray<{ level: number; spent: number }>;
+  picks: RecoveryPicks;
+  onPick: (next: SlotPicks) => void;
+}) {
+  const id = useId();
+  const mine = picks.get(pool.key) ?? {};
+  const left = pool.levels - pickedLevels(mine);
+  const levels = spent.filter((s) => s.level < pool.below);
+  const takenElsewhere = (level: number) =>
+    [...picks].reduce((sum, [key, p]) => sum + (key === pool.key ? 0 : (p[level] ?? 0)), 0);
+  const cap = pool.below < 10 ? `, none ${ordinal(pool.below)} level or higher` : '';
+  return (
+    <section aria-labelledby={id} className="mb-4">
+      <h3 id={id} className="mb-1 text-heading">
+        {pool.label}
+      </h3>
+      <p className="text-ink-muted">
+        Spent slots back, up to {pool.levels} {pool.levels === 1 ? 'level' : 'levels'} in all
+        {cap}. Picking any uses it until a long rest.
+      </p>
+      {levels.length === 0 ? (
+        <p className="mt-1 text-ink-muted">No spent slots it can give back.</p>
+      ) : (
+        <>
+          <ul className="mt-1 flex flex-col">
+            {levels.map(({ level, spent: n }) => {
+              const count = mine[level] ?? 0;
+              const name = `${ordinal(level)}-level`;
+              const more = count < n - takenElsewhere(level) && level <= left;
+              return (
+                <li key={level} className="flex min-h-tap items-center justify-between gap-3">
+                  <span className="tabular-nums">
+                    {name} slots, {n} spent
+                  </span>
+                  <span className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      aria-label={`One fewer ${name} slot back, ${pool.label}`}
+                      disabled={count <= 0}
+                      onClick={() => onPick({ ...mine, [level]: count - 1 })}
+                    >
+                      &minus;
+                    </Button>
+                    <span className="w-5 text-center text-body-strong tabular-nums">{count}</span>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      aria-label={`One more ${name} slot back, ${pool.label}`}
+                      disabled={!more}
+                      onClick={() => onPick({ ...mine, [level]: count + 1 })}
+                    >
+                      +
+                    </Button>
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+          <p className="mt-1 text-caption text-ink-muted tabular-nums" aria-live="polite">
+            {left} of {pool.levels} {pool.levels === 1 ? 'level' : 'levels'} left
+          </p>
+        </>
       )}
     </section>
   );
