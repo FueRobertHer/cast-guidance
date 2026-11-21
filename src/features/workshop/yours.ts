@@ -8,6 +8,7 @@ import { canonicalSource, isKnownSource } from '@/data5e/sourceNames';
 import { type EntryPick, type HomebrewFile, internals } from '@/db/homebrewRepo';
 import { ENTRY_PARENT_KEYS } from '@/engine/castGuidance';
 import { TYPE_LABELS } from '@/features/library/browseTypes';
+import { kindName } from '@/lib/kindLabels';
 import { EDITORS, type Json } from './editorTypes';
 
 /** One of the player's entries, where it is kept. */
@@ -35,32 +36,14 @@ export function entriesOf(files: readonly HomebrewFile[]): Mine[] {
 
 const keyOf = (name: string, source: string) => encodeURIComponent(`${name}|${source}`);
 
-/** A kind as a Library section names it ("Feats"). */
-export const labelOf = (type: string) => TYPE_LABELS.get(type) ?? type;
+/**
+ * A kind as a Library section names it ("Feats"), and one the Library has no
+ * section for in words ("Subclass features"), never as its key.
+ */
+export const labelOf = (type: string) => TYPE_LABELS.get(type) ?? kindName(type, 2);
 
-/** One of a kind, as a row says what an entry is ("Feat"). */
-const ONE: Readonly<Record<string, string>> = {
-  action: 'Action',
-  background: 'Background',
-  baseitem: 'Equipment',
-  book: 'Book',
-  class: 'Class',
-  condition: 'Condition',
-  disease: 'Disease',
-  feat: 'Feat',
-  item: 'Item',
-  language: 'Language',
-  optionalfeature: 'Optional feature',
-  race: 'Species',
-  sense: 'Sense',
-  skill: 'Skill',
-  spell: 'Spell',
-  status: 'Status',
-  subclass: 'Subclass',
-  subrace: 'Subrace',
-  variantrule: 'Rule',
-};
-export const kindOf = (type: string) => ONE[type] ?? labelOf(type);
+/** One of a kind, as a row says what an entry is ("Feat", "Subclass feature"). */
+export const kindOf = (type: string) => kindName(type);
 
 /** Where one of the player's entries opens: two files can hold one by the same name and book. */
 export const editPath = (type: string, name: string, source: string) =>

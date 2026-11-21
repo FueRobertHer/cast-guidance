@@ -64,6 +64,7 @@ import {
 } from '@/features/characters/homebrewExport';
 import { pickWords } from '@/features/homebrew/pickWords';
 import { HOMEBREW_ENTITY_KEYS, IMPORT_LIMITS, type SkippedEntry } from '@/lib/guards';
+import { kindName } from '@/lib/kindLabels';
 
 /**
  * How a `name|source` tie is settled, worded for the player. It has to match
@@ -1015,19 +1016,8 @@ export interface PackReplaces {
   notAList?: true;
 }
 
-/** A kind as a replaced entry's row names it. */
-const KIND_WORDS: Readonly<Record<string, string>> = {
-  race: 'species',
-  subrace: 'subrace',
-  optionalfeature: 'optional feature',
-  baseitem: 'equipment',
-  itemGroup: 'item group',
-  magicvariant: 'magic item variant',
-  classFeature: 'class feature',
-  subclassFeature: 'subclass feature',
-  variantrule: 'rule',
-};
-const kindWords = (type: string) => (Object.hasOwn(KIND_WORDS, type) ? KIND_WORDS[type] : type);
+/** A kind as a replaced entry's row names it ("class feature"). */
+const kindWords = (type: string) => kindName(type).toLowerCase();
 
 /** "Rage (class feature, XPHB, Barbarian, level 1)": what an entry a pack replaces is. */
 function replacedWords(type: string, ref: Record<string, unknown>): string {

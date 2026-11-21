@@ -226,7 +226,7 @@ describe('the Import sheet preview', () => {
     const dialog = await findDialog('Import "brew.json"?');
     // Focus moved into the preview.
     await waitFor(() => expect(dialog.contains(document.activeElement)).toBe(true));
-    expect(dialog.textContent).toContain('2 spell');
+    expect(dialog.textContent).toContain('2 spells');
     expect(dialog.textContent).toMatch(/Size\d+ bytes \(the limit is \d+\.\d MB\)/);
     expect(dialog.textContent).toContain('HB Book (HB)');
     // An official clash names the side a character gets.
@@ -240,7 +240,7 @@ describe('the Import sheet preview', () => {
     fireEvent.click(within(dialog).getByRole('button', { name: 'Import' }));
 
     expect(await handedBack()).toEqual({
-      message: 'Imported "brew.json" (2 spell)',
+      message: 'Imported "brew.json" (2 spells)',
       landed: true,
     });
     expect(await fileCount()).toBe(1);
@@ -778,7 +778,7 @@ describe('the Import sheet, with a Fight Club 5e compendium', () => {
     expect(
       within(dialog).getByRole('heading', { name: 'Converted from Fight Club 5e' }),
     ).toBeTruthy();
-    expect(dialog.textContent).toContain('2 spell');
+    expect(dialog.textContent).toContain('2 spells');
     expect(dialog.textContent).toContain('Converted: 2 entries, each with its full text.');
     // The official Fire Bolt is the one used, so the file's copy is left out.
     expect(dialog.textContent).toContain('Left out: 1 entry: your game data already has it.');
@@ -792,7 +792,7 @@ describe('the Import sheet, with a Fight Club 5e compendium', () => {
     fireEvent.click(within(dialog).getByRole('button', { name: 'Import' }));
 
     expect(await handedBack()).toEqual({
-      message: 'Imported "embers.xml" (2 spell)',
+      message: 'Imported "embers.xml" (2 spells)',
       landed: true,
     });
     const [stored] = (await homebrewRepo.listSafe()).files;
@@ -849,7 +849,7 @@ describe('the Import sheet, with a Fight Club 5e compendium', () => {
     fireEvent.click(ember);
     fireEvent.click(within(dialog).getByRole('button', { name: 'Import 1 book' }));
     expect(await handedBack()).toEqual({
-      message: 'Imported 1 book from "library.xml" (2 spell)',
+      message: 'Imported 1 book from "library.xml" (2 spells)',
       landed: true,
     });
     expect((await homebrewRepo.listMetaSafe()).files.map((f) => f.book)).toEqual(['Ashen Tome']);
@@ -863,7 +863,7 @@ describe('the Import sheet, with a Fight Club 5e compendium', () => {
     expect(dialog.textContent).toContain('Replaces the copy from "library.xml".');
     fireEvent.click(within(dialog).getByRole('button', { name: 'Import 2 books' }));
     expect(await handedBack()).toEqual({
-      message: 'Imported 2 books from "library.xml" (4 spell), replacing 1 book imported before',
+      message: 'Imported 2 books from "library.xml" (4 spells), replacing 1 book imported before',
       landed: true,
     });
     const stored = (await homebrewRepo.listMetaSafe()).files;
@@ -1006,7 +1006,7 @@ describe('the Import sheet, with a Fight Club 5e compendium', () => {
     await readFile('embers.xml', COMPENDIUM);
 
     const dialog = await findDialog('Import "embers.xml"?');
-    expect(dialog.textContent).toContain('3 spell');
+    expect(dialog.textContent).toContain('3 spells');
     expect(dialog.textContent).toContain(
       'Game data could not be read, so entries it already has were converted as well.',
     );
@@ -1086,7 +1086,7 @@ describe('the Import sheet, with a Fight Club 5e compendium', () => {
     ).toBeTruthy();
     fireEvent.click(within(dialog).getByRole('button', { name: 'Import' }));
     expect(await handedBack()).toEqual({
-      message: 'Imported "embers.xml" (2 spell)',
+      message: 'Imported "embers.xml" (2 spells)',
       landed: true,
     });
   });

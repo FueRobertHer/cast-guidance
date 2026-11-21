@@ -143,6 +143,10 @@ export function calcResources(
         ...(e.regainRoll !== undefined ? { regainRoll: e.regainRoll } : {}),
         ...(e.die !== undefined ? { die: e.die } : {}),
         ...(e.foretell === true ? { foretell: true } : {}),
+        // No levels to give back at this level is no recovery.
+        ...(e.recoversSlots !== undefined && e.recoversSlots > 0
+          ? { recoversSlots: { levels: e.recoversSlots, below: e.recoversBelow ?? 10 } }
+          : {}),
       });
     } else if (e.stack === true) {
       // Stackable sources add to the shared pool (superiority dice, etc.).

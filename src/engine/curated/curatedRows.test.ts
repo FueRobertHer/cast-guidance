@@ -875,6 +875,43 @@ describe('pools, dice and DCs only class prose states', () => {
     expect(run('greater portent|diviner', col('Wizard', 14)).effects).toEqual([]);
   });
 
+  /** A pool's slots back on a short rest: `levels below` once worked out, or none. */
+  const recovers = (c: Collector) =>
+    c.effects.flatMap((e) =>
+      e.kind === 'resource' && e.recoversSlots !== undefined
+        ? [`${e.key} ${String(e.recoversSlots)} below ${String(e.recoversBelow)}`]
+        : [],
+    );
+
+  it('gives Arcane Recovery back half the Wizard level in slots, rounded up, none 6th or higher', () => {
+    for (const from of ['phb', 'xphb']) {
+      for (const [level, levels] of [
+        [1, 1],
+        [2, 1],
+        [3, 2],
+        [20, 10],
+      ] as const) {
+        const c = run('arcane recovery|wizard', col('Wizard', level), origin, from);
+        expect(pools(c)).toEqual(['arcane-recovery Arcane Recovery 1 long']);
+        expect(recovers(c)).toEqual([`arcane-recovery ${levels} below 6`]);
+      }
+    }
+  });
+
+  it('gives Natural Recovery the same, and the 2024 one a free cast of its own', () => {
+    const key = 'natural recovery|circle of the land';
+    const old = run(key, col('Druid', 5), origin, 'phb');
+    expect(pools(old)).toEqual(['natural-recovery Natural Recovery 1 long']);
+    expect(recovers(old)).toEqual(['natural-recovery 3 below 6']);
+    // 2024: the slots and a Circle spell cast free are two uses, each once a long rest.
+    const now = run(key, col('Druid', 6), origin, 'xphb');
+    expect(pools(now)).toEqual([
+      'natural-recovery Natural Recovery 1 long',
+      'natural-recovery-cast Natural Recovery (free cast) 1 long',
+    ]);
+    expect(recovers(now)).toEqual(['natural-recovery 3 below 6']);
+  });
+
   it('brings the 2024 Warding Flare back on a short rest from Cleric 6, with its temporary hit points', () => {
     const light = (uid: string): EffectOrigin => ({
       label: 'Warding Flare',

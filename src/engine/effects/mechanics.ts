@@ -835,6 +835,20 @@ const classNaming: Build = (o, r) => {
 };
 
 /**
+ * A pool whose use gives back expended spell slots on a short rest: up to
+ * `recoversSlots` levels between them, each below level `recoversBelow`
+ * (Arcane Recovery: half the Wizard level rounded up, none 6th or higher).
+ */
+const recovers: Build = (o, r) => {
+  const levels = opt(o, r, 'recoversSlots', amount);
+  const below = opt(o, r, 'recoversBelow', int(2, 10));
+  if (below.recoversBelow !== undefined && levels.recoversSlots === undefined) {
+    throw new Bad('"recoversBelow" goes with "recoversSlots"');
+  }
+  return { ...levels, ...below };
+};
+
+/**
  * The fields that hold only for one way of paying: a spell slot's
  * (`"resource": "spell-slot"`), or a Hit Point Die's (`"hit-die"`).
  */
@@ -1409,6 +1423,7 @@ const KINDS = new Map<Kind, Build>([
       ...opt(o, r, 'noSlotConversion', int(1, 20)),
       ...opt(o, r, 'die', byLevelWords(oneDie)),
       ...opt(o, r, 'foretell', flag),
+      ...recovers(o, r),
       ...classNaming(o, r),
     }),
   ],

@@ -50,6 +50,13 @@ export interface HomebrewFileRow {
    */
   book?: string;
   /**
+   * An imported file's title, its first source's full name
+   * (`_meta.sources[0].full`), set when it is stored: what the Workshop
+   * calls it in place of the file's name. Display only, never part of its
+   * identity. Rows stored before it read without one.
+   */
+  title?: string;
+  /**
    * Set for a book that holds only the part of it one character uses: what a
    * character export carries of a book, not all of it. Importing the whole
    * book replaces it.

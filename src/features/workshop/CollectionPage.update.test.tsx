@@ -89,7 +89,11 @@ describe('a collection from a link', () => {
     // The address the home links it by: the key, with its slashes and colons.
     visit(collectionPath(`url:${LINK}`));
     expect(
-      await screen.findByRole('heading', { level: 1, name: NAME }, { timeout: WAIT }),
+      await screen.findByRole(
+        'heading',
+        { level: 1, name: 'Tidewater Grimoire' },
+        { timeout: WAIT },
+      ),
     ).toBeTruthy();
     await screen.findByText('Riptide', {}, { timeout: WAIT });
     expect(screen.getByRole('link', { name: LINK }).getAttribute('href')).toBe(LINK);
@@ -111,7 +115,7 @@ describe('a collection from a link', () => {
 
     // The same page, on the new content, under a new row id.
     await screen.findByText('Kelp Cloak', {}, { timeout: WAIT });
-    expect(screen.getByRole('heading', { level: 1, name: NAME })).toBeTruthy();
+    expect(screen.getByRole('heading', { level: 1, name: 'Tidewater Grimoire' })).toBeTruthy();
     expect(screen.getByRole('status').textContent).toMatch(/^Updated/);
     const ids = await rowIds();
     expect(ids).toHaveLength(1);
@@ -152,7 +156,11 @@ describe('a collection from a link', () => {
     expect(first.row.key).toBe(`url:${link}`);
     visit(collectionPath(`url:${link}`));
     expect(
-      await screen.findByRole('heading', { level: 1, name: 'b.json' }, { timeout: WAIT }),
+      await screen.findByRole(
+        'heading',
+        { level: 1, name: 'Tidewater Grimoire' },
+        { timeout: WAIT },
+      ),
     ).toBeTruthy();
   });
 });
@@ -193,7 +201,7 @@ describe('Needs a look', () => {
     const list = await screen.findByRole('list', { name: 'Needs a look' }, { timeout: WAIT });
     expect(list.textContent).toContain('Glimmer');
     // What it holds is read on its own, so it can land after Needs a look.
-    const held = await screen.findByRole('list', { name: 'In Tide.json' }, { timeout: WAIT });
+    const held = await screen.findByRole('list', { name: 'In Tide Tales' }, { timeout: WAIT });
     expect(within(held).getByText('Needs a look')).toBeTruthy();
     expect(namelessControls()).toEqual([]);
     return list;
@@ -357,7 +365,7 @@ describe('Needs a look', () => {
     await homebrewRepo.saveEntry('feat', change as Json & EntryKey, { role: 'changes' });
     const first = (await db.homebrewFiles.toArray()).find((r) => r.fileName === 'Tide.json');
     visit(collectionPath(first?.key ?? ''));
-    await screen.findByRole('list', { name: 'In Tide.json' }, { timeout: WAIT });
+    await screen.findByRole('list', { name: 'In Tide Tales' }, { timeout: WAIT });
     expect(screen.queryByRole('list', { name: 'Needs a look' })).toBeNull();
     await homebrewRepo.importJson(tide(['Glow.', 'Shine on.']), 'Tide.json');
     const list = await screen.findByRole('list', { name: 'Needs a look' }, { timeout: WAIT });
@@ -405,8 +413,8 @@ describe('Needs a look', () => {
     expect(looks.some((l) => l.from.fileId === fileId && l.needsLook.length > 0)).toBe(true);
     // The look is the player's change over the book: it shows where the change is.
     visit(collectionPath(pack.key ?? ''));
-    await screen.findByRole('heading', { level: 1, name: 'Our Table.json' }, { timeout: WAIT });
-    await screen.findByRole('list', { name: 'In Our Table.json' }, { timeout: WAIT });
+    await screen.findByRole('heading', { level: 1, name: 'Our Table' }, { timeout: WAIT });
+    await screen.findByRole('list', { name: 'In Our Table' }, { timeout: WAIT });
     await new Promise((go) => setTimeout(go, 200));
     expect(screen.queryByRole('list', { name: 'Needs a look' })).toBeNull();
   });
