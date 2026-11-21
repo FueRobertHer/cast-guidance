@@ -630,6 +630,11 @@ describe('a reaction trigger', () => {
       { number: 1, unit: 'bonus', condition: `${smite} or an Unarmed Strike` },
       other,
     ]);
+    // Emptied on the way to new words, the box stays for them.
+    pick('Trigger', '');
+    expect(draft().time).toEqual([{ number: 1, unit: 'bonus' }, other]);
+    pick('Trigger', smite);
+    expect(draft().time).toEqual([{ number: 1, unit: 'bonus', condition: smite }, other]);
   });
 });
 
@@ -676,14 +681,24 @@ describe("a material's cost, and whether the spell consumes it", () => {
     const draft = mount(structuredClone(book), new EntityRegistry(), book);
     expect(box('Cost in gold pieces').value).toBe('100');
     expect(box('Consumed if the caster chooses').checked).toBe(true);
+    // A point typed on the way to part of a gold piece stays on screen.
+    pick('Cost in gold pieces', '12.');
+    expect(box('Cost in gold pieces').value).toBe('12.');
+    expect((draft().components as Json).m).toMatchObject({ cost: 1200 });
     pick('Cost in gold pieces', '12.5');
     expect(draft().components).toEqual({
       v: true,
       m: { text: 'a pearl', cost: 1250, consume: 'optional' },
     });
-    // Not a number of gold pieces is refused.
-    pick('Cost in gold pieces', '12gp');
-    expect((draft().components as Json).m).toMatchObject({ cost: 1250 });
+    // Not a number of gold pieces, or finer than a copper, is refused.
+    for (const no of ['12gp', '12.505']) {
+      pick('Cost in gold pieces', no);
+      expect([no, (draft().components as Json).m]).toEqual([
+        no,
+        expect.objectContaining({ cost: 1250 }),
+      ]);
+      expect(box('Cost in gold pieces').value).toBe('12.5');
+    }
     const saved = save(draft(), book);
     expect(readBack(saved, book).components).toEqual(draft().components);
   });

@@ -737,10 +737,10 @@ function GoldField({
 }) {
   const asGp = cp === undefined ? '' : String(cp / 100);
   const [typed, setTyped] = useState(asGp);
-  // Not a number of gold pieces is refused; none, or none at all, is no cost.
+  // Not a number of gold pieces, or finer than a copper, is refused; none is no cost.
   const read = (s: string) => {
     const t = s.trim();
-    if (!/^\d*\.?\d*$/.test(t)) return Number.NaN;
+    if (!/^\d*\.?\d{0,2}$/.test(t)) return Number.NaN;
     const c = Math.round(Number(`0${t}`) * 100);
     return c > 0 ? c : undefined;
   };
@@ -786,9 +786,12 @@ function About(props: EditorProps) {
         : '';
   const times = list(draft.time);
   const firstTime = isRecord(times[0]) ? times[0] : undefined;
-  // A reaction says what it is taken for; a trigger a file gives another time shows too.
+  // A reaction says what it is taken for; a trigger a file gives another time
+  // shows too, and stays while it is typed over, emptied on the way.
+  const [retyping, setRetyping] = useState(false);
   const trigger =
-    firstTime !== undefined && (firstTime.unit === 'reaction' || firstTime.condition !== undefined)
+    firstTime !== undefined &&
+    (firstTime.unit === 'reaction' || firstTime.condition !== undefined || retyping)
       ? String(firstTime.condition ?? '')
       : undefined;
   const comp = isRecord(draft.components) ? draft.components : {};
@@ -854,6 +857,7 @@ function About(props: EditorProps) {
             const was = list(draft.time)[0];
             // A reaction's trigger stays while it is still a reaction.
             const keep = isRecord(was) && was.unit === t?.unit && was.condition !== undefined;
+            setRetyping(false);
             if (t !== undefined) change({ time: [keep ? { ...t, condition: was.condition } : t] });
           }}
         />
@@ -933,6 +937,7 @@ function About(props: EditorProps) {
               onChange={(e) => {
                 const { condition: _, ...rest } = firstTime ?? {};
                 const said = e.target.value;
+                setRetyping(true);
                 change({
                   time: [
                     said.trim() !== '' ? { ...rest, condition: said } : rest,
