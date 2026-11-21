@@ -830,7 +830,12 @@ export function Component() {
             ? raceDisplayName(before.doc.race, before.doc.subrace)
             : 'none'
         } → ${next !== undefined ? raceDisplayName(before.doc.race, next) : 'none'}`,
-        detail: picksCleared(before.doc, removed, before.doc.subrace?.name, activeChoices),
+        detail: picksCleared(
+          before.doc,
+          removed,
+          raceDisplayName(before.doc.race, before.doc.subrace),
+          activeChoices,
+        ),
       }),
       (before, after) => !sameDraft(before, after) && before.doc.subrace !== undefined,
     );
