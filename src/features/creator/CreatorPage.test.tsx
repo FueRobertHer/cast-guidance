@@ -176,6 +176,16 @@ describe('stepping through the creator', () => {
     await waitFor(() => expect(router.state.location.search).toBe('?step=class'));
   });
 
+  // Review item 4: Review said "High", the subrace alone.
+  it('names the species on Review as a player says it', () => {
+    const doc = newCharacterDoc('hero-1', 'Aria', 't');
+    doc.race = { name: 'Elf', source: 'TST' };
+    doc.subrace = { name: 'High', source: 'TST' };
+    seedDoc(doc);
+    renderCreator(walkedToReview);
+    expect(screen.getByText(/^High Elf ·/)).toBeTruthy();
+  });
+
   it('names the step in the document title', () => {
     renderCreator(walkedToReview);
     expect(document.title).toBe('Review · Step 9 of 9 · New character · Cast Guidance');

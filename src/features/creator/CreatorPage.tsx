@@ -28,6 +28,7 @@ import {
 } from '@/lib/describeRemoval';
 import { scrollBehavior } from '@/lib/motion';
 import { pruneChoicesFor, pruneClass, pruneOrigin } from '@/lib/pruneChoices';
+import { raceDisplayName } from '@/lib/raceDisplayName';
 import { signed } from '@/lib/signed';
 import { usePageTitle } from '@/lib/usePageTitle';
 import { sameForUndo, type UndoNotice, useUndoOffer } from '@/lib/useUndoOffer';
@@ -205,9 +206,7 @@ function rulesSwitchClears(d: Draft, active: ReadonlySet<string>): string[] {
     );
   }
   if (doc.race !== undefined) {
-    parts.push(
-      `species ${doc.race.name}${doc.subrace !== undefined ? ` (${doc.subrace.name})` : ''}`,
-    );
+    parts.push(`species ${raceDisplayName(doc.race, doc.subrace) ?? doc.race.name}`);
   }
   if (doc.background !== undefined) parts.push(`background ${doc.background.name}`);
   const picks = pickCount(doc, Object.keys(doc.choices), active);
@@ -826,7 +825,11 @@ export function Component() {
         d.doc.subrace = next;
       },
       (before) => ({
-        title: `Subrace: ${before.doc.subrace?.name ?? 'none'} → ${next?.name ?? 'none'}`,
+        title: `Subrace: ${
+          before.doc.subrace !== undefined
+            ? raceDisplayName(before.doc.race, before.doc.subrace)
+            : 'none'
+        } → ${next !== undefined ? raceDisplayName(before.doc.race, next) : 'none'}`,
         detail: picksCleared(before.doc, removed, before.doc.subrace?.name, activeChoices),
       }),
       (before, after) => !sameDraft(before, after) && before.doc.subrace !== undefined,
@@ -1384,7 +1387,7 @@ export function Component() {
             {/* Who you built */}
             <div className={cardClass}>
               <p className="font-display text-title-card">
-                {doc.subrace?.name ?? doc.race?.name ?? 'No species'} ·{' '}
+                {raceDisplayName(doc.race, doc.subrace) ?? 'No species'} ·{' '}
                 {doc.classes
                   .map(
                     (c) =>
