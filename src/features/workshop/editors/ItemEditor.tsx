@@ -25,7 +25,12 @@ import {
   regainOf,
   upgradeOlderCharges,
 } from '@/engine/curated/itemCharges';
-import { type ItemCharges, officialOf, readOwnEffects } from '@/engine/effects/mechanics';
+import {
+  type ItemCharges,
+  officialOf,
+  readItemCharges,
+  readOwnEffects,
+} from '@/engine/effects/mechanics';
 import { ABILITIES, type Ability, type DataEntity, type EntityRef, refUid } from '@/engine/types';
 import {
   baseTypeCode,
@@ -179,15 +184,27 @@ export function withCharges(draft: Json, patch: Json, own?: Json): Json {
     ...own,
   };
   const spells = list(kept.spells);
-  // A short rest gives them back as the fields say once they say it (`regainOf`).
-  const rest = fresh ? rechargeRest(next.recharge) === 'short' : had.rest === 'short';
+  // A short rest gives them back as the fields say once they say it
+  // (`regainOf`). Written out from fields alone, an amount a short rest cannot
+  // give (dice, or more than it holds) gives none, as those fields read
+  // (`fieldChargesOf`), so the item keeps its pool. Typed into an effect
+  // already there, it stays, and the editor says why it does not count.
+  const said = fresh ? regainOf(next.recharge, next.rechargeAmount) : had.regain;
+  const short = fresh ? rechargeRest(next.recharge) === 'short' : had.rest === 'short';
+  const shortReads =
+    !short ||
+    had !== undefined ||
+    charges === undefined ||
+    readItemCharges({ charges, regain: said, rest: 'short', spells: [] }) !== undefined;
+  const rest = short && shortReads;
+  const regain = shortReads ? said : 'none';
   const made: StoredEffect | undefined =
     charges === undefined
       ? undefined
       : ({
           kind: 'charges',
           charges,
-          regain: fresh ? regainOf(next.recharge, next.rechargeAmount) : had.regain,
+          regain,
           ...(rest ? { rest: 'short' } : {}),
           ...(typeof kept.ability === 'string' ? { ability: kept.ability } : {}),
           ...(typeof kept.dc === 'number' ? { dc: kept.dc } : {}),

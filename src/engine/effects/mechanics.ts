@@ -2356,7 +2356,7 @@ export interface ItemCharges {
    * a whole number (and all of them on a long rest) or `none`.
    */
   regain: string;
-  /** An item's own effect, or its fields, only: they come back on a short rest (`StoredItemCharges.rest`). */
+  /** An item's own effect, a pack's patch of one, or its fields, never a rule row: they come back on a short rest (`StoredItemCharges.rest`). */
   rest?: 'short';
   /** Each spell by its name in lower case, once. */
   spells: readonly ChargeSpell[];

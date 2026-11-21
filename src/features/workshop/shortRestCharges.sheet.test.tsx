@@ -157,4 +157,52 @@ describe('item charges back on a short rest, from the Workshop to the sheet', ()
     );
     expect(doc.play.resources).toEqual([]);
   });
+  it('keeps the pool of a short rest item whose amount a short rest cannot give, once its charges are written out', async () => {
+    // Fields from elsewhere: dice a short rest never rolls. Read alone, they
+    // give none back on a short rest; counting them in the editor must say the
+    // same, not a short rest the reader refuses (which would drop the pool).
+    // "Add spells they cast" writes the item's charges effect from its fields.
+    const fields = {
+      name: 'Dice Short Rest Wand T8',
+      type: 'WD',
+      rarity: 'rare',
+      entries: [],
+      charges: 3,
+      recharge: 'restShort',
+      rechargeAmount: '{@dice 1d4}',
+    };
+    const draft = mount(fields);
+    fireEvent.click(screen.getByRole('button', { name: 'Add spells they cast' }));
+    const counted = writeEntry({ draft: draft(), source: SOURCE, mode: 'full' });
+    cleanup();
+    expect((counted.castGuidance as Json).effects).toEqual([
+      { kind: 'charges', charges: 3, regain: 'none' },
+    ]);
+    const alone = writeEntry({
+      draft: { ...fields, name: 'Dice Short Rest Wand Alone T8' },
+      source: SOURCE,
+      mode: 'full',
+    });
+
+    const reg = await withBuiltInRules(normalizeDataset(new Map()));
+    const file = {
+      _meta: { sources: [{ json: SOURCE, full: 'My Short Rest Brew' }] },
+      item: [counted, alone],
+    };
+    mergeHomebrew(reg, new Map([['mine', file]]));
+    const doc = newCharacterDoc('hero', 'Hero', 'test');
+    doc.equipment = [counted, alone].map((e, i) => ({
+      id: `w${i}`,
+      ref: { name: String(e.name), source: SOURCE },
+      qty: 1,
+      equipped: true,
+      attuned: true,
+    }));
+    const sheet = deriveSheet(doc, engineContextFor(reg));
+    const pool = (key: string) => sheet.resources.find((r) => r.key === `item-charges:${key}`);
+    expect(pool('w0')).toMatchObject({ max: 3 });
+    const { key: _k, label: _l, origin: _o, ...countedPool } = pool('w0') ?? {};
+    const { key: _k2, label: _l2, origin: _o2, ...alonePool } = pool('w1') ?? {};
+    expect(countedPool).toEqual(alonePool);
+  });
 });
