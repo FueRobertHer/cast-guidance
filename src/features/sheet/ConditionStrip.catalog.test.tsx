@@ -349,7 +349,12 @@ describe('the search under + Effect', () => {
     type(picker, 'zzz');
     await waitFor(() => expect(said()).toContain('Nothing called zzz that can land on Hero'), {
       timeout: 3000,
-    });
+    }); // The conditions found count too: Invisible, beside four effects.
+    type(picker, 'invisib');
+    await waitFor(() => expect(said()).toContain('5 found'), { timeout: 3000 });
+    // A condition alone is found, not "nothing".
+    type(picker, 'deafen');
+    await waitFor(() => expect(said()).toContain('1 found'), { timeout: 3000 });
   });
 
   it('drops a count still settling when an entry opens or the search goes', async () => {

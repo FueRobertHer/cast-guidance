@@ -4,7 +4,9 @@ import {
   assertHomebrewFile,
   assertJsonWithinLimits,
   homebrewEntityCounts,
+  type SkippedEntry,
   sha256Hex,
+  withReadableEntries,
 } from '@/lib/guards';
 import { db, type HomebrewFileRow, type HomebrewMetaRow } from './db';
 import { bookOf, mayBeOldWholeImport, oldWholeImports, splitBooks } from './homebrewBooks';
@@ -31,6 +33,15 @@ export interface PreparedBooks {
   whole: HomebrewFileRow;
   /** One row per book, each checked and hashed as a file of its own. */
   books: HomebrewFileRow[];
+  /** Entries left out because nothing could read them ({@link withReadableEntries}). */
+  skipped: SkippedEntry[];
+}
+
+/** A file to be stored whole, as {@link homebrewRepo.prepareFile} gives it. */
+export interface PreparedFile {
+  row: HomebrewFileRow;
+  /** Entries left out because nothing could read them ({@link withReadableEntries}). */
+  skipped: SkippedEntry[];
 }
 
 /** What storing a file's books did. */
@@ -57,10 +68,25 @@ export async function buildHomebrewRow(
   fileName: string,
   url?: string,
 ): Promise<HomebrewFileRow> {
+  return (await buildCheckedRow(rawFile, fileName, url)).row;
+}
+
+/**
+ * {@link buildHomebrewRow}, with the entries it left out. An entry nothing
+ * can read (a spell with no name) is never stored, however the file comes
+ * in: a file, a link, pasted text, a book of a compendium or a character's
+ * export. A file with none left out is hashed as it came.
+ */
+async function buildCheckedRow(
+  rawFile: unknown,
+  fileName: string,
+  url?: string,
+): Promise<PreparedFile> {
   // Bound adversarial/corrupted payloads before hashing, indexing, or storing.
   assertJsonWithinLimits(rawFile);
-  const { meta, json } = assertHomebrewFile(rawFile);
-  const id = await sha256Hex(JSON.stringify(rawFile));
+  const { meta, json: whole } = assertHomebrewFile(rawFile);
+  const { json, skipped } = withReadableEntries(whole);
+  const id = await sha256Hex(JSON.stringify(json));
   // One book of a converted compendium says so in its `_meta`, wherever it
   // comes from: an import, a download of it, or a character's export.
   const book = bookOf(json);
@@ -72,7 +98,7 @@ export async function buildHomebrewRow(
     book: book.book,
     made: collectionIdOf(json),
   });
-  return {
+  const row: HomebrewFileRow = {
     id,
     fileName,
     url,
@@ -85,6 +111,7 @@ export async function buildHomebrewRow(
     ...book,
     ...(key === undefined ? {} : { key }),
   };
+  return { row, skipped };
 }
 
 /**
@@ -646,6 +673,11 @@ export const homebrewRepo = {
     return buildHomebrewRow(raw, fileName, url);
   },
 
+  /** {@link homebrewRepo.prepare}, with the entries it left out, for the preview to name. */
+  prepareFile(raw: unknown, fileName: string, url?: string): Promise<PreparedFile> {
+    return buildCheckedRow(raw, fileName, url);
+  },
+
   /**
    * Store a prepared row unless the same content is already here
    * (content-hash keyed, so this is idempotent). `duplicate` says which
@@ -680,7 +712,8 @@ export const homebrewRepo = {
    * a file stored whole. Each book is held to the limits of one file.
    */
   async prepareBooks(raw: unknown, fileName: string, url?: string): Promise<PreparedBooks> {
-    const { json } = assertHomebrewFile(raw);
+    // Left out before the split, so the whole and its books count the same.
+    const { json, skipped } = withReadableEntries(assertHomebrewFile(raw).json);
     const books: HomebrewFileRow[] = [];
     for (const part of splitBooks(json)) {
       const row = await buildHomebrewRow(part.json, fileName, url);
@@ -698,7 +731,7 @@ export const homebrewRepo = {
       counts: homebrewEntityCounts(json),
       addedAt: Date.now(),
     };
-    return { whole, books };
+    return { whole, books, skipped };
   },
 
   /**

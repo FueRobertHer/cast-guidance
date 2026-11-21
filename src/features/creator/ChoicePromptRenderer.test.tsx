@@ -4,7 +4,7 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ChoicePrompt } from '@/engine/types';
-import { ChoicePromptRenderer } from './ChoicePromptRenderer';
+import { ChoicePromptRenderer, stagedApply, stagedBase } from './ChoicePromptRenderer';
 
 afterEach(cleanup);
 
@@ -289,5 +289,66 @@ describe('ChoicePromptRenderer stepper targets (A11Y-002)', () => {
       expect(b.className.split(' ')).toContain('tap');
       expect(b.parentElement?.parentElement?.className.split(' ')).toContain('@container');
     }
+  });
+});
+
+// Review top 3 follow-up: taps held above a card are saved by Next, so what
+// they save is worked out against the prompt as it stands then, not as it was
+// when they were tapped.
+describe('stagedApply', () => {
+  const languages: ChoicePrompt = {
+    id: 'background:scholar|tst:lang:0',
+    origin: { label: 'Scholar', uid: 'scholar|tst', type: 'background' },
+    kind: 'language',
+    label: 'Languages',
+    count: 2,
+    options: [
+      { id: 'Elvish', label: 'Elvish' },
+      { id: 'Dwarvish', label: 'Dwarvish' },
+      { id: 'Giant', label: 'Giant' },
+    ],
+  };
+  const held = { draft: ['Elvish', 'Dwarvish'], base: stagedBase(undefined) };
+
+  it('saves full taps over the value they were made on', () => {
+    expect(stagedApply(languages, undefined, held)).toEqual(['Elvish', 'Dwarvish']);
+  });
+
+  it('saves nothing once another pick has closed one of the taps', () => {
+    const closed: ChoicePrompt = {
+      ...languages,
+      options: languages.options.map((o) =>
+        o.id === 'Elvish' ? { ...o, disabled: { reason: 'Already known' } } : o,
+      ),
+    };
+    expect(stagedApply(closed, undefined, held)).toBeUndefined();
+  });
+
+  it('saves nothing over a value that has changed since', () => {
+    expect(stagedApply(languages, ['Giant'], held)).toBeUndefined();
+  });
+
+  it('saves nothing short of the count, or the same picks again', () => {
+    expect(stagedApply(languages, undefined, { ...held, draft: ['Elvish'] })).toBeUndefined();
+    expect(
+      stagedApply(languages, ['Elvish', 'Dwarvish'], {
+        draft: ['Elvish', 'Dwarvish'],
+        base: stagedBase(['Elvish', 'Dwarvish']),
+      }),
+    ).toBeUndefined();
+  });
+
+  it("saves an ASI's single answer as the bare string it is stored as", () => {
+    const asi: ChoicePrompt = {
+      ...languages,
+      id: 'class:warrior|tst:asi:4',
+      kind: 'asiOrFeat',
+      count: 1,
+      options: [
+        { id: 'asi', label: 'Ability Score Improvement' },
+        { id: 'feat', label: 'Feat' },
+      ],
+    };
+    expect(stagedApply(asi, 'asi', { draft: ['feat'], base: stagedBase('asi') })).toBe('feat');
   });
 });

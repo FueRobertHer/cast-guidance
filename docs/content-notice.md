@@ -141,12 +141,19 @@ Open on #111 until the owner signs off:
 - [ ] Settings says "Nothing ships with the app itself" under the game data
       section, but the book titles and curated mechanics do ship. Decide whether
       to reword it. (Not changed in this draft.)
-- [ ] Settings says "Nothing is sent to a server", but `<Analytics />` from
-      `@vercel/analytics` is always mounted in `src/app/AppShell.tsx` and sends
-      page views to Vercel, including the page path, which contains the character
-      id (`/c/<id>/...`). The data, release list and homebrew fetches also reach
-      jsDelivr and GitHub. Decide whether to reword the copy, drop or configure
-      the analytics, or both. (Not changed in this draft.)
+- [x] Settings says "None of it is sent to a server", but `<Analytics />` from
+      `@vercel/analytics` was always mounted and sent page views to Vercel with
+      the page path, which held the character id (`/c/<id>/...`). Decided
+      2026-11-21 (#413): analytics is opt-in per build. Only a build with
+      `VITE_ANALYTICS=vercel` contains the package (`src/features/settings/analytics.tsx`),
+      and its `beforeSend` (`analyticsUrl.ts`) replaces every id and name in the
+      path with a placeholder and sends nothing for an address no route claims.
+      The default build has no analytics, and production has none until the
+      owner sets the variable in the Vercel project. The data, release list and
+      homebrew fetches still reach jsDelivr and GitHub. Turning analytics on
+      also needs `THIRD_PARTY_NOTICES.md` to list `@vercel/analytics`, which
+      only the flagged build ships; `notices:check` compares the file with the
+      default build, so the notices script has to learn the flagged build first.
 - [ ] Confirm the copyright holder in `LICENSE`: "Fue Her" (commits also come
       from the GitHub account FueRobertHer).
 - [ ] Confirm the repository is public: the About links in Settings point at
