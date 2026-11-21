@@ -1,10 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import {
-  type ChoicePrompt,
-  type DerivedSheet,
-  newCharacterDoc,
-  type SpellcastingBlock,
-} from '@/engine/types';
+import { deriveSheet } from '@/engine/derive';
+import { type DerivedSheet, newCharacterDoc, type SpellcastingBlock } from '@/engine/types';
+import { makeTestContext } from '../../../tests-fixtures/testWorld';
 import { shortfallWords, spellShortfalls, subraceMissing } from './shortfalls';
 
 const elf = { name: 'Elf', source: 'PHB' };
@@ -62,38 +59,69 @@ describe('spellShortfalls', () => {
     ]);
   });
 
-  it("leaves out a known caster's own spell picks, which the engine prompt asks for", () => {
-    const doc = newCharacterDoc('a', 'A', 't');
-    doc.spellcasting = { 'bard|tst': { known: [], prepared: [] } };
-    const spellPick = (id: string, levels: number[], count: number): ChoicePrompt => ({
-      id,
-      origin: { label: 'Bard', uid: 'bard|tst', type: 'class' },
-      kind: 'spell',
-      label: id,
-      count,
-      options: [],
-      spellQuery: { levels, classes: [], schools: [], ritual: false, attacks: [] },
-    });
-    // Two leveled picks, one of them made already; a cantrip pick takes no place.
-    doc.choices = { 'class:bard|tst:known:10:0': ['bolt|tst'] };
-    const sheet = {
-      spellcasting: [
-        block({ classUid: 'bard|tst', className: 'Bard', mode: 'known', spellsKnownMax: 4 }),
-      ],
-      pending: [
-        spellPick('class:bard|tst:known:10:0', [1, 2, 3], 2),
-        spellPick('class:bard|tst:known:10:1', [0], 1),
-      ],
-    } as unknown as DerivedSheet;
-    expect(spellShortfalls(doc, sheet, levelOf)).toEqual([
-      { className: 'Bard', cantrips: 0, spells: 3 },
-    ]);
-  });
-
   it('words a shortfall', () => {
     expect(shortfallWords({ className: 'Mage', cantrips: 2, spells: 1 })).toBe(
       '2 cantrips and 1 spell',
     );
     expect(shortfallWords({ className: 'Mage', cantrips: 0, spells: 3 })).toBe('3 spells');
+  });
+});
+
+// A class that learns spells of its own (a 2014 Bard's Magical Secrets): the
+// engine asks for each pick, and once made it takes a place in spells known.
+describe("spellShortfalls beside a class's own spell picks", () => {
+  const ctx = makeTestContext();
+  const filter = { choose: 'level=1;2;3' };
+  const known = (picks: unknown[]) => {
+    const world: typeof ctx = {
+      ...ctx,
+      get: (type, name, source) => {
+        const found = ctx.get(type, name, source);
+        if (found === undefined || type !== 'class' || name !== 'Warrior') return found;
+        return {
+          ...found,
+          casterProgression: 'full',
+          spellcastingAbility: 'wis',
+          spellsKnownProgression: Array.from({ length: 20 }, (_, i) => i + 2),
+          additionalSpells: [{ name: 'Fake Secrets', known: { 3: picks } }],
+        };
+      },
+    };
+    return world;
+  };
+  const doc = () => {
+    const d = newCharacterDoc('w', 'W', 't');
+    d.classes = [{ ref: { name: 'Warrior', source: 'TST' }, levels: 5, hp: Array(5).fill('avg') }];
+    d.spellcasting = { 'warrior|tst': { known: [], prepared: [] } };
+    return d;
+  };
+  const short = (d: ReturnType<typeof doc>, world = known([filter, filter])) => {
+    const sheet = deriveSheet(d, world);
+    return {
+      max: sheet.spellcasting[0]?.spellsKnownMax,
+      ids: sheet.pending.filter((p) => p.kind === 'spell').map((p) => p.id),
+      spells: spellShortfalls(d, sheet, () => 1)[0]?.spells,
+    };
+  };
+
+  it('leaves out the picks the engine already asks for, made or not', () => {
+    const none = short(doc());
+    expect(none.ids).toHaveLength(2);
+    // Six known, two of them the prompts' own.
+    expect(none).toMatchObject({ max: 6, spells: 4 });
+    const one = doc();
+    one.choices[none.ids[0] ?? ''] = ['Fake One|TST'];
+    // A made pick takes its place, and its prompt is no longer pending.
+    expect(short(one)).toMatchObject({ max: 5, spells: 4 });
+  });
+
+  it('still counts a pick the engine does not grant, as a repeat', () => {
+    const pairs = known([{ ...filter, count: 2 }]);
+    const none = short(doc(), pairs);
+    expect(none).toMatchObject({ max: 6, spells: 4 });
+    const twice = doc();
+    twice.choices[none.ids[0] ?? ''] = ['Fake One|TST', 'Fake One|TST'];
+    // One granted, and the prompt still asks for the other.
+    expect(short(twice, pairs)).toMatchObject({ max: 5, spells: 4 });
   });
 });

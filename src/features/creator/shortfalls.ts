@@ -75,14 +75,38 @@ function classPicksLeft(
   pending: readonly ChoicePrompt[],
   classUid: string,
 ): number {
-  const prefix = `class:${classUid}:known:`;
+  // The class's own additional spells: `class:<uid>:spell:<group>:<i>`, then
+  // the slot (`known:<level>:<n>`). An optional feature's picks start with the
+  // class too, but carry the option's own uid, which the engine does not count.
+  const prefix = `class:${classUid}:spell:`;
   return pending
-    .filter((p) => p.kind === 'spell' && p.id.startsWith(prefix) && !onlyCantrips(p))
-    .reduce((sum, p) => {
-      const stored = doc.choices[p.id];
-      const held = Array.isArray(stored) ? stored.length : stored === undefined ? 0 : 1;
-      return sum + Math.max(0, p.count - held);
-    }, 0);
+    .filter(
+      (p) =>
+        p.kind === 'spell' &&
+        p.origin.type === 'class' &&
+        p.origin.uid === classUid &&
+        p.id.startsWith(prefix) &&
+        p.id.includes(':known:') &&
+        !onlyCantrips(p),
+    )
+    .reduce((sum, p) => sum + Math.max(0, p.count - validPicks(doc, p)), 0);
+}
+
+/**
+ * The saved picks the engine grants: those among the prompt's options, each
+ * once, up to its count. A prompt holding a stale or repeated pick stays
+ * pending with the rest still to choose.
+ */
+function validPicks(doc: CharacterDoc, p: ChoicePrompt): number {
+  const stored = doc.choices[p.id];
+  const raw = Array.isArray(stored)
+    ? stored.map(String)
+    : stored === undefined
+      ? []
+      : [String(stored)];
+  const options = new Set(p.options.map((o) => o.id.toLowerCase()));
+  const held = new Set(raw.map((r) => r.toLowerCase()).filter((r) => options.has(r)));
+  return Math.min(held.size, p.count);
 }
 
 /** Whether a spell prompt can only pick a cantrip, as the engine reads it. */

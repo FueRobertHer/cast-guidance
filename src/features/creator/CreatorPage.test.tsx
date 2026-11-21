@@ -39,6 +39,8 @@ const { registry, create, dialogs } = vi.hoisted(() => ({
 
 vi.mock('@/data5e/hooks', () => ({
   useRegistryRefreshing: () => false,
+  // The Spells step's list reads the registry through this one.
+  useRegistry: () => (registry.loading || registry.error !== null ? null : registry.current),
   useTypePacks: (type: string) => ({
     ...(type === 'class' ? registry.classPacks : { status: 'ready', error: null, offline: false }),
     retry: registry.classRetry,
@@ -771,6 +773,14 @@ describe('changes that take something away', () => {
       expect(screen.getByText(/^Mage: .*still to choose$/)).toBeTruthy();
       // Counted in the header's "to choose" too.
       expect(screen.getByRole('button', { name: /^\d+ to choose: go to the / })).toBeTruthy();
+    });
+
+    it('says on Spells what is short, where the to choose count leads', () => {
+      renderDraft('spells', (d) => {
+        d.classes = [{ ref: { name: 'Mage', source: 'TST' }, levels: 1, hp: ['avg'] }];
+      });
+      const hint = screen.getByText(/^Mage: .*still to choose$/);
+      expect(hint.closest('[data-pending-choice]')).not.toBeNull();
     });
 
     it('counts a subrace the race needs, and Review names it', () => {
