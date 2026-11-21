@@ -690,24 +690,145 @@ describe('the type list', () => {
   });
 });
 
+describe('filtering a section (Gemini 44)', () => {
+  const spells = [
+    { name: 'Fireball', source: 'PHB', level: 3, school: 'V', entries: [] },
+    {
+      name: 'Detect Magic',
+      source: 'PHB',
+      level: 1,
+      school: 'D',
+      meta: { ritual: true },
+      duration: [{ type: 'timed', concentration: true }],
+      entries: [],
+    },
+    { name: 'Fire Bolt', source: 'PHB', level: 0, school: 'V', entries: [] },
+  ];
+  const rowNames = () =>
+    within(screen.getByRole('list', { name: 'Spells' }))
+      .getAllByRole('link')
+      .map((l) => l.firstElementChild?.textContent);
+
+  beforeEach(() => {
+    reg.current = {
+      ...reg.current,
+      registry: registryOfTypes({
+        spell: spells,
+        class: [
+          { name: 'Wizard', source: 'PHB' },
+          { name: 'Wizard', source: 'XPHB' },
+          { name: 'Mage', source: 'WoW' },
+        ],
+      }),
+    };
+  });
+  afterEach(() => {
+    classLookup.current = {};
+  });
+
+  it("puts each row's facts under its name", () => {
+    renderAt('/library/spell');
+    const row = screen.getByRole('link', { name: /^Detect Magic/ });
+    expect(row.textContent).toContain('1st level · Divination · Concentration · Ritual');
+  });
+
+  it('narrows by level and by a chip, keeps both in the URL, and clears them', () => {
+    renderAt('/library/spell');
+    fireEvent.change(screen.getByRole('combobox', { name: 'Level' }), { target: { value: '1' } });
+    expect(rowNames()).toEqual(['Detect Magic']);
+    expect(locationNow()).toBe('/library/spell?level=1');
+
+    fireEvent.change(screen.getByRole('combobox', { name: 'Level' }), { target: { value: '' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Ritual' }));
+    expect(screen.getByRole('button', { name: 'Ritual' }).getAttribute('aria-pressed')).toBe(
+      'true',
+    );
+    expect(rowNames()).toEqual(['Detect Magic']);
+    expect(locationNow()).toBe('/library/spell?ritual=1');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Clear filters' }));
+    expect(rowNames()).toHaveLength(3);
+    expect(locationNow()).toBe('/library/spell');
+    expect(screen.queryByRole('button', { name: 'Clear filters' })).toBeNull();
+  });
+
+  it('opens with the filters a link or Back left in the URL', () => {
+    renderAt('/library/spell?school=V&q=fire');
+    expect((screen.getByRole('combobox', { name: 'School' }) as HTMLSelectElement).value).toBe('V');
+    expect((screen.getByLabelText('Filter spells') as HTMLInputElement).value).toBe('fire');
+    expect(rowNames()).toEqual(['Fire Bolt', 'Fireball']);
+  });
+
+  it("offers the classes under the settings, each once, and keeps a class's spells", () => {
+    policy.current = { mode: 'all', except: ['WoW'] };
+    classLookup.current = { phb: { fireball: { class: { PHB: { Wizard: true } } } } };
+    renderAt('/library/spell');
+    const select = screen.getByRole('combobox', { name: 'Class' });
+    expect(
+      within(select)
+        .getAllByRole('option')
+        .map((o) => o.textContent),
+    ).toEqual(['Any class', 'Wizard']);
+    fireEvent.change(select, { target: { value: 'Wizard' } });
+    expect(rowNames()).toEqual(['Fireball']);
+    expect(locationNow()).toBe('/library/spell?class=Wizard');
+  });
+
+  it('says when the filters leave nothing', () => {
+    renderAt('/library/spell?level=9');
+    // The pick stays in the dropdown, though no spell here has it.
+    expect((screen.getByRole('combobox', { name: 'Level' }) as HTMLSelectElement).value).toBe('9');
+    expect(screen.getByText('Nothing here matches these filters.')).toBeTruthy();
+  });
+
+  it('keeps the name filter in the URL, and its clear button empties it and refocuses it', () => {
+    renderAt('/library/spell');
+    const input = screen.getByLabelText('Filter spells') as HTMLInputElement;
+    expect(screen.queryByRole('button', { name: 'Clear' })).toBeNull();
+    fireEvent.change(input, { target: { value: 'bolt' } });
+    expect(locationNow()).toBe('/library/spell?q=bolt');
+    expect(rowNames()).toEqual(['Fire Bolt']);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Clear' }));
+    expect(input.value).toBe('');
+    expect(document.activeElement).toBe(input);
+    expect(locationNow()).toBe('/library/spell');
+  });
+
+  it('has no filter bar on a section with no filters of its own', () => {
+    renderAt('/library/feat');
+    expect(screen.queryByRole('group', { name: 'Filters' })).toBeNull();
+  });
+});
+
+describe('the library search, kept in the URL', () => {
+  it('opens with the search Back returns to, and asks it again', async () => {
+    renderAt('/library?q=fire');
+    expect((screen.getByLabelText('Search everything') as HTMLInputElement).value).toBe('fire');
+    await waitFor(() => expect(searchAll).toHaveBeenCalled());
+    expect(searchAll.mock.calls.at(-1)?.[0]).toBe('fire');
+  });
+});
+
 describe("a row's estimated height", () => {
   afterEach(() => {
     document.documentElement.style.fontSize = '';
   });
 
-  // The rendered height of a row (py-3, a 1.375rem line, a 1 px border), which
-  // the list's scroll restore depends on: library-scale.spec.ts checks it
-  // against a real row at 16 px and 200%.
+  // The rendered height of a row (py-3, the name's 1.375rem line, a gap-0.5,
+  // the facts line of 1.375rem, a 1 px border), which the list's scroll restore
+  // depends on: library-scale.spec.ts checks it against a real row at 16 px
+  // and 200%.
   it('follows the root font size, rounded as a measured height is', () => {
     document.documentElement.style.fontSize = '32px';
-    expect(entityRowHeight()).toBe(93);
+    expect(entityRowHeight()).toBe(141);
     document.documentElement.style.fontSize = '17.6px';
-    expect(entityRowHeight()).toBe(52);
+    expect(entityRowHeight()).toBe(78);
   });
 
   it('assumes 16 px when the root font size is not in px', () => {
     // As jsdom reports it, "medium".
-    expect(entityRowHeight()).toBe(47);
+    expect(entityRowHeight()).toBe(71);
   });
 });
 

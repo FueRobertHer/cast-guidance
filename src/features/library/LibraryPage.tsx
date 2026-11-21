@@ -1,5 +1,5 @@
 import { useLiveQuery } from 'dexie-react-hooks';
-import { ArrowLeft, ChevronDown, GitFork, Hammer, Pencil, Plus, Search } from 'lucide-react';
+import { ArrowLeft, ChevronDown, GitFork, Hammer, Pencil, Plus, Search, X } from 'lucide-react';
 import { Fragment, type ReactNode, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router';
 import type { Entity } from '@/data5e/copyMod';
@@ -28,7 +28,7 @@ import {
   useSourcePolicy,
 } from '@/data5e/sourceFilter';
 import { sourceName } from '@/data5e/sourceNames';
-import type { SpellClassLookup } from '@/data5e/spellLookup';
+import { classListCheck, type SpellClassLookup } from '@/data5e/spellLookup';
 import { compareMergeOrder } from '@/db/homebrewOrder';
 import { homebrewRepo } from '@/db/homebrewRepo';
 import { isBuiltInCondition } from '@/engine/conditions';
@@ -45,7 +45,7 @@ import { Button, buttonClass } from '@/ui/Button';
 import { Chip } from '@/ui/Chip';
 import { ChangedBadge, ChangedVersions, changeIn, sameWords } from '@/ui/EntityInfoSheet';
 import { useFailureAlert } from '@/ui/failureAlert';
-import { SourceBadge, sourceBadgeLabel } from '@/ui/SourceBadge';
+import { sourceBadgeLabel } from '@/ui/SourceBadge';
 import { cardClass, listClass } from '@/ui/surfaces';
 import { fieldClass } from '@/ui/TextField';
 import { VirtualList } from '@/ui/VirtualList';
@@ -54,6 +54,15 @@ import { BROWSE_TYPES, TYPE_LABELS } from './browseTypes';
 import { type ClassTable, classProficiencies, classTable, proficiencyBonus } from './classInfo';
 import { findEntity } from './findEntity';
 import { headerFacts, type PropertyNamer } from './fmt';
+import {
+  filterKeys,
+  filtersFor,
+  type ListFilter,
+  optionsOf,
+  passes,
+  rowFacts,
+  type SelectFilter,
+} from './listFilters';
 import {
   countTitles,
   groupHits,
@@ -116,7 +125,84 @@ const TILE =
   'flex flex-col gap-1 rounded-card bg-surface p-3 shadow-card ring-1 ring-line ring-inset transition-colors duration-120 hover:bg-surface-raised';
 /** A search or filter box: the design's search field, a leading Search icon. */
 const SEARCH_ICON = 'pointer-events-none absolute top-3.5 left-3.5 text-ink-muted';
-const SEARCH_FIELD = `${fieldClass} pl-10.5`;
+// Room on the right for the clear button.
+const SEARCH_FIELD = `${fieldClass} pl-10.5 pr-12`;
+
+/**
+ * A search box with a clear button (Gemini 44): the button shows once there
+ * is text to clear, and puts focus back in the box, so the next search starts
+ * where the cursor is.
+ */
+function SearchField({
+  value,
+  onChange,
+  label,
+  placeholder,
+  disabled,
+}: {
+  value: string;
+  onChange: (next: string) => void;
+  label: string;
+  placeholder: string;
+  disabled?: boolean;
+}) {
+  const input = useRef<HTMLInputElement>(null);
+  return (
+    <div className="relative">
+      <Search size={20} aria-hidden="true" className={SEARCH_ICON} />
+      <input
+        ref={input}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        aria-label={label}
+        placeholder={placeholder}
+        disabled={disabled}
+        className={SEARCH_FIELD}
+      />
+      {value !== '' && !disabled && (
+        <button
+          type="button"
+          aria-label="Clear"
+          onClick={() => {
+            onChange('');
+            input.current?.focus();
+          }}
+          className="absolute top-1/2 right-0.5 inline-flex min-h-tap min-w-tap -translate-y-1/2 items-center justify-center rounded-control text-ink-muted transition-colors duration-120 hover:text-ink"
+        >
+          <X size={18} aria-hidden />
+        </button>
+      )}
+    </div>
+  );
+}
+
+/**
+ * One search parameter as state. Written with replace: refining a list is
+ * one screen, not a trail of screens to walk back through, and being in the
+ * URL is what has Back from an entry return to the list as it was left.
+ */
+function useParam(key: string): [string, (next: string) => void] {
+  const [params, setParams] = useSearchParams();
+  // The box reads its own state, seeded from the URL: read from the URL, keys
+  // typed faster than the URL updates are lost (each change writes over the
+  // one before it lands). Back mounts the page again, which reads the URL, and
+  // each section is its own mount (keyed by type).
+  const [value, setValue] = useState(() => params.get(key) ?? '');
+  const set = (next: string) => {
+    setValue(next);
+    setParams(
+      (prev) => {
+        const out = new URLSearchParams(prev);
+        if (next === '') out.delete(key);
+        else out.set(key, next);
+        return out;
+      },
+      { replace: true },
+    );
+  };
+  return [value, set];
+}
+
 /** A failure panel: the design's `danger` hint, with its one action. */
 const PROBLEM = 'flex flex-wrap items-center gap-2 rounded-control bg-danger-soft px-3 py-2';
 
@@ -132,9 +218,33 @@ const ROWS = `${listClass} [&_li:first-child>a]:border-t-transparent`;
 const ROW_BADGES = 3;
 
 /**
+ * A book's code as a badge, as `SourceBadge` draws one, cut short with an
+ * ellipsis past 6rem: a converted file's source id can run to forty letters
+ * (`FCLASERLLAMASALTERNATEBLOODHUNTER...`), which crushed the title beside it
+ * even at 1440px. The full title is still its hover text and what a screen
+ * reader hears, unless `quiet` because the page shows it in words nearby.
+ */
+function BookBadge({ source, quiet = false }: { source: string; quiet?: boolean }) {
+  const label = sourceBadgeLabel(source);
+  const className = `${badgeClass()} max-w-24 uppercase`;
+  const code = (
+    <span aria-hidden="true" className="min-w-0 truncate">
+      {source}
+    </span>
+  );
+  if (quiet) return <span className={className}>{code}</span>;
+  return (
+    <span title={label} className={className}>
+      {code}
+      <span className="sr-only">{label}</span>
+    </span>
+  );
+}
+
+/**
  * Every book a title is printed in, as badges on one line. A row has room for
- * three beside a long name at 320px, so a title in more than that names two
- * and counts the others, which its page lists in full.
+ * three beside its facts at 320px, so a title in more than that names two and
+ * counts the others, which its page lists in full.
  */
 function SourceBadges({ sources }: { sources: readonly string[] }) {
   const shown = sources.length > ROW_BADGES ? sources.slice(0, ROW_BADGES - 1) : sources;
@@ -142,7 +252,7 @@ function SourceBadges({ sources }: { sources: readonly string[] }) {
   return (
     <span className="flex shrink-0 items-center gap-1">
       {shown.map((s) => (
-        <SourceBadge key={s} source={s} />
+        <BookBadge key={s} source={s} />
       ))}
       {more > 0 && (
         <span className={badgeClass()}>
@@ -157,31 +267,47 @@ function SourceBadges({ sources }: { sources: readonly string[] }) {
 /** Stable, so the virtual list does not re-key its rows on every render. */
 const keyOfTitle = (t: Title) => t.key;
 
-function TitleRow({ type, title }: { type: string; title: Title }) {
+/**
+ * A title in a section's list: its name on a line of its own, so no book code
+ * crowds it, and under it a line of facts (a spell's level and school, an
+ * item's rarity), the book in words, and the books' badges (Gemini 44, 48).
+ * The book in words is for sight: the badges already say it to a screen reader.
+ */
+function TitleRow({ type, title }: { type: EntityType; title: Title }) {
+  const facts = rowFacts(type, title.preferred).join(' · ');
   return (
     <Link
       to={`/library/${type}/${encodeURIComponent(uidOf(title.preferred))}`}
-      className="flex items-center justify-between gap-2 border-t border-line px-4 py-3 transition-colors duration-120 hover:bg-surface-raised"
+      className="flex flex-col gap-0.5 border-t border-line px-4 py-3 transition-colors duration-120 hover:bg-surface-raised"
     >
       <span className="truncate">{title.name}</span>
-      <SourceBadges sources={title.printings.map(sourceOf)} />
+      <span className="flex items-center gap-2 text-caption text-ink-muted">
+        <span className="min-w-0 flex-1 truncate">
+          {facts}
+          <span aria-hidden="true">
+            {facts === '' ? '' : ' · '}
+            {sourceName(sourceOf(title.preferred))}
+          </span>
+        </span>
+        <SourceBadges sources={title.printings.map(sourceOf)} />
+      </span>
     </Link>
   );
 }
 
 /**
  * A {@link TitleRow}'s height in px at the current root font size: its
- * `py-3` (1.5rem), one line of body text (1.375rem, DS-001) and the 1 px
- * line above it, rounded as a measured height is. The source badges are as
- * tall as the line (1.375rem), so they never set the height. The list's restored
- * scroll offset depends on this being exact (see `VirtualList`), so a class
- * change to the row has to change this too; `library-scale.spec.ts` compares
- * it to the rendered row.
+ * `py-3` (1.5rem), the name's line of body text (1.375rem, DS-001), the
+ * `gap-0.5` (0.125rem), the facts line, as tall as its badges (1.375rem), and
+ * the 1 px line above it, rounded as a measured height is. Neither line wraps.
+ * The list's restored scroll offset depends on this being exact (see
+ * `VirtualList`), so a class change to the row has to change this too;
+ * `library-scale.spec.ts` compares it to the rendered row.
  * jsdom reports the root font as "medium", hence the fallback.
  */
 export function entityRowHeight(): number {
   const px = Number.parseFloat(getComputedStyle(document.documentElement).fontSize);
-  return Math.round(2.875 * (Number.isNaN(px) ? 16 : px) + 1);
+  return Math.round(4.375 * (Number.isNaN(px) ? 16 : px) + 1);
 }
 
 // ---------------------------------------------------------------------------
@@ -227,7 +353,8 @@ function GlobalSearch() {
   const { registry, status: regStatus, error: regError, retry: retryRegistry } = useRegistryState();
   const { status: searchStatus, retry: retrySearch, indexVersion } = useSearchState(registry);
   const ready = searchStatus === 'ready';
-  const [q, setQ] = useState('');
+  // In the URL, so Back from a result returns to the search as it was left.
+  const [q, setQ] = useParam('q');
   const [result, setResult] = useState<SearchResult>({ hits: [], hiddenCount: 0 });
   const [showHidden, setShowHidden] = useState(false);
   const policy = useSourcePolicy();
@@ -310,17 +437,13 @@ function GlobalSearch() {
 
   return (
     <div className="flex flex-col gap-2">
-      <div className="relative">
-        <Search size={20} aria-hidden="true" className={SEARCH_ICON} />
-        <input
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          aria-label="Search everything"
-          placeholder={placeholder}
-          disabled={failed}
-          className={SEARCH_FIELD}
-        />
-      </div>
+      <SearchField
+        value={q}
+        onChange={setQ}
+        label="Search everything"
+        placeholder={placeholder}
+        disabled={failed}
+      />
       {failed && !dbOpen && <p className={DB_CLOSED_NOTE}>Reload this tab to search.</p>}
       {failed && dbOpen && (
         <div className={PROBLEM} role="alert">
@@ -365,7 +488,6 @@ function GlobalSearch() {
               // that (three books, 200% text) they wrap under the name rather
               // than run off the screen.
               className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1 px-4 py-2.5 transition-colors duration-120 hover:bg-surface-raised"
-              onClick={() => setQ('')}
             >
               <span className="min-w-0 flex-1 basis-24 truncate">{h.name}</span>
               <span className="ml-auto flex flex-wrap items-center justify-end gap-1.5 text-caption text-ink-muted">
@@ -509,7 +631,7 @@ const MY_SOURCES = '';
 const EVERY_SOURCE = '*';
 
 function TypeList({ type, reg }: { type: EntityType; reg: RegistryState }) {
-  const [filter, setFilter] = useState('');
+  const [filter, setFilter] = useParam('q');
   // In the URL rather than in state, so a book's index can link straight to
   // "the spells in this book" and so that scope survives a reload or a share.
   const [params, setParams] = useSearchParams();
@@ -606,11 +728,69 @@ function TypeList({ type, reg }: { type: EntityType; reg: RegistryState }) {
     };
   }, [registry, type, policy, pickedSource]);
 
+  const filters = filtersFor(type);
+  // Every filter's value as the URL has it, as one string for the memos.
+  const picks = filterKeys(type)
+    .map((k) => `${k}=${params.get(k) ?? ''}`)
+    .join('&');
+  const anyPicked = filterKeys(type).some((k) => (params.get(k) ?? '') !== '');
+  const classPick = type === 'spell' ? (params.get('class') ?? '') : '';
+  // Read only once a class is picked: the dropdown's classes come from the registry.
+  const { lookup } = useClassLookup(classPick !== '', packs.status);
+  const onList = useMemo(
+    () => (lookup === null ? null : classListCheck(lookup, registry?.byType('spell') ?? [])),
+    [lookup, registry],
+  );
+  const classOptions = useMemo(() => {
+    if (type !== 'spell') return [];
+    const names = new Set(
+      applySourcePolicy(registry?.byType('class') ?? [], policy, sourceOf).map(nameOf),
+    );
+    return [...names].sort((a, b) => a.localeCompare(b));
+  }, [registry, type, policy]);
+  const clearFilters = () =>
+    setParams(
+      (prev) => {
+        const out = new URLSearchParams(prev);
+        for (const k of filterKeys(type)) out.delete(k);
+        return out;
+      },
+      { replace: true },
+    );
+  const setPick = (key: string, value: string) =>
+    setParams(
+      (prev) => {
+        const out = new URLSearchParams(prev);
+        if (value === '') out.delete(key);
+        else out.set(key, value);
+        return out;
+      },
+      { replace: true },
+    );
+
   // Its own step, so typing in the filter does not group the section again.
+  // A title is kept when one of its printings passes every filter, so a
+  // spell that is a ritual in one book only is listed under Ritual.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `picks` stands in for the filters' values in `params`
   const items = useMemo(() => {
     const f = filter.trim().toLowerCase();
-    return f === '' ? titles : titles.filter((t) => t.name.toLowerCase().includes(f));
-  }, [titles, filter]);
+    const active = filters
+      .map((fl) => [fl, params.get(fl.key) ?? ''] as const)
+      .filter(([, v]) => v !== '');
+    if (f === '' && active.length === 0 && classPick === '') return titles;
+    // Until the class lists are read, a class filter keeps nothing.
+    if (classPick !== '' && onList === null) return [];
+    return titles.filter(
+      (t) =>
+        (f === '' || t.name.toLowerCase().includes(f)) &&
+        t.printings.some(
+          (p) =>
+            active.every(([fl, v]) => passes(fl, p, v)) &&
+            (classPick === '' || onList?.(classPick, uidOf(p)) === true),
+        ),
+    );
+  }, [titles, filter, picks, classPick, onList]);
+  const readingClasses = classPick !== '' && onList === null;
 
   return (
     <main className="flex min-h-0 flex-1 flex-col gap-3 px-4 pt-3 pb-4">
@@ -649,16 +829,12 @@ function TypeList({ type, reg }: { type: EntityType; reg: RegistryState }) {
       )}
       {/* An empty list and a failed download used to look identical here. */}
       {failed && <SectionProblem reg={reg} packs={packs} />}
-      <div className="relative">
-        <Search size={20} aria-hidden="true" className={SEARCH_ICON} />
-        <input
-          value={filter}
-          onChange={(e) => setFilter(e.target.value)}
-          aria-label={`Filter ${TYPE_LABELS.get(type)?.toLowerCase() ?? type}`}
-          placeholder={`Filter ${TYPE_LABELS.get(type)?.toLowerCase() ?? type}…`}
-          className={SEARCH_FIELD}
-        />
-      </div>
+      <SearchField
+        value={filter}
+        onChange={setFilter}
+        label={`Filter ${TYPE_LABELS.get(type)?.toLowerCase() ?? type}`}
+        placeholder={`Filter ${TYPE_LABELS.get(type)?.toLowerCase() ?? type}…`}
+      />
       <div className="relative">
         <select
           aria-label="Source"
@@ -685,15 +861,29 @@ function TypeList({ type, reg }: { type: EntityType; reg: RegistryState }) {
           className="pointer-events-none absolute top-1/2 right-3 size-4 -translate-y-1/2 text-ink-muted"
         />
       </div>
+      {(filters.length > 0 || classOptions.length > 0) && (
+        <ListFilterBar
+          filters={filters}
+          entries={titles.flatMap((t) => t.printings)}
+          classOptions={classOptions}
+          value={(key) => params.get(key) ?? ''}
+          onPick={setPick}
+          onClear={anyPicked ? clearFilters : undefined}
+        />
+      )}
       {items.length === 0 && !failed && (
         <p className={NOTE}>
           {/* The registry is what the list reads, so "nothing here" is only
               true once it has finished catching up with the files on disk. */}
           {packs.status === 'loading' || registry === null || refreshing
             ? 'Downloading this section…'
-            : filter.trim() !== ''
-              ? `Nothing here matches “${filter.trim()}”.`
-              : 'Nothing here yet.'}
+            : readingClasses
+              ? 'Reading the class lists…'
+              : filter.trim() !== ''
+                ? `Nothing here matches “${filter.trim()}”${anyPicked ? ' with these filters' : ''}.`
+                : anyPicked
+                  ? 'Nothing here matches these filters.'
+                  : 'Nothing here yet.'}
         </p>
       )}
       {/* The card only around rows: an empty one would draw an empty frame. */}
@@ -707,6 +897,125 @@ function TypeList({ type, reg }: { type: EntityType; reg: RegistryState }) {
         />
       </div>
     </main>
+  );
+}
+
+const FILTER_SELECT = `${fieldClass} appearance-none pr-9`;
+
+/** A dropdown filter, its options those the list has, and the one picked even when none has it. */
+function FilterSelect({
+  label,
+  any,
+  options,
+  value,
+  onChange,
+}: {
+  label: string;
+  any: string;
+  options: ReadonlyArray<readonly [string, string]>;
+  value: string;
+  onChange: (next: string) => void;
+}) {
+  // A link or a change of source can leave a pick no entry has: it stays
+  // offered, so the dropdown never reads blank over a list it is narrowing.
+  const shown =
+    value === '' || options.some(([v]) => v === value)
+      ? options
+      : [...options, [value, value] as const];
+  return (
+    <div className="relative min-w-0 flex-1 basis-36">
+      <select
+        aria-label={label}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className={FILTER_SELECT}
+      >
+        <option value="" className="bg-surface-raised text-ink">
+          {any}
+        </option>
+        {shown.map(([v, text]) => (
+          <option key={v} value={v} className="bg-surface-raised text-ink">
+            {text}
+          </option>
+        ))}
+      </select>
+      <ChevronDown
+        aria-hidden
+        className="pointer-events-none absolute top-1/2 right-3 size-4 -translate-y-1/2 text-ink-muted"
+      />
+    </div>
+  );
+}
+
+/**
+ * A section's own filters (Gemini 44): a dropdown each for level, school,
+ * class, rarity or type, a chip each for ritual, concentration or attunement,
+ * and a way to clear them all at once. They wrap rather than scroll, so with
+ * large text every one stays in sight.
+ */
+function ListFilterBar({
+  filters,
+  entries,
+  classOptions,
+  value,
+  onPick,
+  onClear,
+}: {
+  filters: readonly ListFilter[];
+  entries: readonly Entity[];
+  classOptions: readonly string[];
+  value: (key: string) => string;
+  onPick: (key: string, value: string) => void;
+  onClear: (() => void) | undefined;
+}) {
+  const options = useMemo(
+    () =>
+      filters
+        .filter((f): f is SelectFilter => f.kind === 'select')
+        .map((f) => [f, optionsOf(f, entries)] as const),
+    [filters, entries],
+  );
+  const toggles = filters.filter((f) => f.kind === 'toggle');
+  return (
+    // biome-ignore lint/a11y/useSemanticElements: a group of filters, not a form to submit
+    <div role="group" aria-label="Filters" className="flex flex-wrap items-center gap-2">
+      {options.map(([f, list]) => (
+        <FilterSelect
+          key={f.key}
+          label={f.label}
+          any={f.any}
+          options={list}
+          value={value(f.key)}
+          onChange={(next) => onPick(f.key, next)}
+        />
+      ))}
+      {classOptions.length > 0 && (
+        <FilterSelect
+          label="Class"
+          any="Any class"
+          options={classOptions.map((c) => [c, c] as const)}
+          value={value('class')}
+          onChange={(next) => onPick('class', next)}
+        />
+      )}
+      <div className="-mx-1.5 flex flex-wrap items-center">
+        {toggles.map((f) => (
+          <Chip
+            key={f.key}
+            tone="outline"
+            pressed={value(f.key) !== ''}
+            onClick={() => onPick(f.key, value(f.key) !== '' ? '' : '1')}
+          >
+            {f.label}
+          </Chip>
+        ))}
+        {onClear !== undefined && (
+          <button type="button" onClick={onClear} className={`min-h-tap px-1.5 ${LINK}`}>
+            Clear filters
+          </button>
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -1272,7 +1581,7 @@ function EntityDetail({ type, uid, reg }: { type: EntityType; uid: string; reg: 
             {record !== undefined && <ChangedBadge />}
           </div>
           <span className="flex shrink-0 items-center gap-1.5 pt-1.5 text-caption text-ink-muted">
-            <SourceBadge source={sourceOf(entity)} titleShownNearby />
+            <BookBadge source={sourceOf(entity)} quiet />
             {typeof entity.page === 'number' && <span>p. {entity.page}</span>}
           </span>
         </div>
@@ -1470,6 +1779,6 @@ export function Component() {
   if (type !== undefined && uid !== undefined) {
     return <EntityDetail type={type} uid={uid} reg={reg} />;
   }
-  if (type !== undefined) return <TypeList type={type} reg={reg} />;
+  if (type !== undefined) return <TypeList key={type} type={type} reg={reg} />;
   return <LibraryHome registry={reg.registry} />;
 }
