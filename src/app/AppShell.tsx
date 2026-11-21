@@ -1,9 +1,9 @@
-import { Analytics } from '@vercel/analytics/react';
 import { CircleAlert } from 'lucide-react';
 import { useEffect, useRef } from 'react';
 import { Outlet, ScrollRestoration } from 'react-router';
 import { initDataLayer } from '@/data5e/loader';
 import { OfflineReadyNotice } from '@/features/onboarding/OfflineReadyNotice';
+import { AnalyticsMount } from '@/features/settings/analytics';
 import { installThemeSync } from '@/lib/theme';
 import { announce } from '@/stores/announcer';
 import {
@@ -156,7 +156,7 @@ export function AppShell() {
       <NoticeToast />
       <RollToast />
       <OfflineReadyNotice />
-      <Analytics />
+      <AnalyticsMount />
     </div>
   );
 }
