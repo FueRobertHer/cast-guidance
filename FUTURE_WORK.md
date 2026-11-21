@@ -1,6 +1,6 @@
 # Cast Guidance: future work
 
-Last reviewed: 2026-10-25 (`f1ba8fe`)
+Last reviewed: 2026-11-21 (`e7f3ab9`); the baseline table is from that commit's CI run.
 
 The planning document for open product and engineering work. It tracks what
 **remains**; completed work lives in git history, not here.
@@ -59,7 +59,7 @@ CI, gated on coverage floors and a bundle budget.
 | TypeScript | Pass (`bun run typecheck`, `tsc -b`: the app, `vite.config.ts` and the scripts in `tsconfig.node.json`, and the E2E harness) |
 | Unit + integration tests | Pass: 475 files, 9,064 tests (1 skipped), in three CI shards |
 | Coverage gate | The shards' merged coverage (`unit coverage` job): 95.43% statements, 89.02% branches, 94.89% functions, 96.95% lines. CI fails below the `vite.config.ts` floors of 86 / 78 / 81 / 88. |
-| Production/PWA build | Pass: 172 precache entries (2,489.6 KiB) |
+| Production/PWA build | Pass: 172 precache entries (2,489.6 KiB, as Workbox counts them; the bundle budget measures its 171 entries as 2,609,015 B) |
 | Bundle budget | `bun run bundle:budget` against `scripts/bundle-budget.json`, in the `checks` job. On main at e7f3ab9: entry chunk 466,660 B raw, 147,597 B gzip (budgets 493,000 / 157,000; 94.7%, 94.0%); initial JS 692,430 B raw, 226,035 B gzip (695,000 / 271,000; 99.6%, 83.4%); total JS 2,256,949 B (2,700,000; 83.6%); largest chunk 466,660 B (493,000; 94.7%); CSS 83,656 B (94,000; 89.0%); built-in rule sets 144,110 B raw, 26,389 B gzip (151,400 / 28,200; 95.2%, 93.6%); precache 2,609,015 B (2,995,000; 87.1%). The rule for a raise (owner, 2026-11-21): a PR may raise a line to its measured size plus 10%, and says so in its body. Initial JS raw is the line closest to its budget. Each earlier raise, its measurement and its reason is in the history of `scripts/bundle-budget.json` and the PR that made it (`git log -p -- scripts/bundle-budget.json`). |
 | Real pinned-dataset audit | `bun run data:audit`, run 2026-11-09 against v2.41.0: 58 files; 8,798 entities, 1,038 spells; 40 versioned `replaceArr` warnings; 0 unresolved `_copy`; 478 spells with dice, every generated roll parses; all 53 `{@tag}`s rendered; 27 multi-name `additionalSpells` blocks, 9 of them without choice wording and allowed by verdict; all 3,306 scanned traits and features judged, with 40 scanner misses, at the ceiling of 40. Every check is within the `scripts/data-audit-budget.json` entry. Since then, data function pass item 12d builds subrace versions against their race's traits: the 40 warnings are gone on every pinned tag, and the colour versions' own Breath Weapon and Damage Resistance add 11 scanned traits, judged in agreement with the scanner. The v2.39.1, v2.39.0 and v2.32.0 entries stay, so `--tag v2.39.1`, `--tag v2.39.0` and `--tag v2.32.0` still pass for devices that keep those releases. The `Data audit` workflow re-runs it weekly and on PRs that change its inputs. |
 | Browser E2E | Chromium, one CI job per Playwright project: `flows` 49 tests, `a11y` 48, `axe` 22, `offline-routes` 131 (the PWA-001 route matrix, after its `cache-levels` setup), all passing on e7f3ab9. The reload data loss the suite found is fixed by the save journal (#123), and data installs, updates, rollback and their failures have specs of their own (`data-install`). |
@@ -472,8 +472,8 @@ work:
   date to drop it; a collection of your own with a name and short source id
   of your choosing is made only by Move's "Start a new collection" (the
   source id comes from the name); a stored row with no id is named on the
-  shelf but nothing can delete it, as before; the Workshop editor has no
-  axe state of its own (the Builder's was replaced by `workshop-collection-mine`);
+  shelf but nothing can delete it, as before; the Builder's axe state was
+  replaced by `workshop-collection-mine` (#407 added a `workshop-editor` state);
   a damaged or nameless entry in a collection of your own is no longer listed,
   so it cannot be deleted alone (the Builder listed it with Delete); a book in
   more than one file lost its "also in" caption; a pack clash shows only in

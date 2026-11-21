@@ -1,7 +1,7 @@
 # ADR-001: A workshop for homebrew content, table rules and rule packs
 
-- **Status:** Accepted, 2026-11-09, by the owner. Built in full (phases 1 to 10, merged 2026-11-10).
-- **Full record:** <https://claude.ai/artifact/9f7dAks3Re8bbNmexTrzqp> (the owner's design artifact, private to them). Its mocks are on the Homebrew Workshop canvas, <https://claude.ai/artifact/QJzgKc9zqA8LGtXRgrjSNP>.
+- **Status:** Accepted, 2026-11-09, by the owner. Built in full (phases 1 to 10, merged 2026-11-09 to 2026-11-10).
+- **Full record:** <https://claude.ai/artifact/9f7dAks3Re8bbNmexTrzqp> (the owner's design artifact, private to them). Its mocks are on the Homebrew Workshop canvas, <https://claude.ai/artifact/QJzgKc9zqA8LGtXRgrjSNP>: boards Main (a subclass), Spell, Class, Rules and Packs, each drawn three ways (A, B, C). The owner picked A on every board, with three parts mixed in: the Spell board's B (reading the text as a head start), the Class board's C (starting from an existing class), and the Rules board's C (a chip on the roll toast and the rest card).
 - **Superseded in part by** [ADR-002](ADR-002-one-workshop.md): the Homebrew page as the way in, the Builder, and table rules in Settings.
 
 This file is a stub so that the code's citations ("ADR-001 D3", "hook H9", "option C") resolve inside the repository. The artifact holds the context, the options weighed, the review that argued against them, and the owner's answers. The summary below is enough to read the code by.
@@ -20,7 +20,7 @@ This file is a stub so that the code's citations ("ADR-001 D3", "hook H9", "opti
 | Hook | What it is | Where |
 |---|---|---|
 | H1 | Mechanics of an entry | `engine/effects/mechanics.ts` |
-| H2 | Table rules into derive | `EngineContext.rules`; readers in `calc/hp.ts`, `calc/speed.ts`, `conditions.ts`, `effectLife.ts`, `engine/rest.ts` |
+| H2 | Table rules into derive | `EngineContext.rules`, resolved by `rulesFor` (`engine/rules.ts`, whose header lists each rule's reader): `calc/hp.ts`, `engine/rest.ts`, `effectLife.endsAtRest`, `playRules.rollEffects`, `dice/roll.ts`, `features/sheet/rollOfferSpending.ts` |
 | H3 | Table-wide riders and cues | `derive.ts`, `playRules.rollEffects` |
 | H4 | Rolling (critical damage) | `dice/roll.ts` |
 | H5 | Homebrew conditions | `conditions.ts` through `countingEffects` in `activeEffects.ts` |
