@@ -1152,6 +1152,8 @@ describe('deriveSheet — XPHB arrangement (either/or weighted abilities)', () =
     const weighted = sheet.pending.find((p) => p.kind === 'abilityWeighted');
     expect(weighted?.id).toBe('background:flexible scholar|ts2:ability:w1');
     expect(weighted?.count).toBe(3);
+    // Each pick's bonus, so the picker can say which pick gets which.
+    expect(weighted?.weights).toEqual([1, 1, 1]);
 
     doc.choices[weighted?.id ?? ''] = ['int', 'wis', 'cha'];
     sheet = deriveSheet(doc, ctx);

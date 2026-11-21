@@ -753,6 +753,7 @@ function SubclassBody({ draft, change, original, registry, readOnly }: EditorPro
           momentName={
             typeof draft.name === 'string' && draft.name.trim() !== '' ? draft.name : undefined
           }
+          hostName={typeof draft.name === 'string' ? draft.name : undefined}
           onMoments={(moments, effects) =>
             setGuidance({
               moments: moments.length > 0 ? moments : undefined,
