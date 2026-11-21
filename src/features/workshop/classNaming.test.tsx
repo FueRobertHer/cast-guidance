@@ -17,13 +17,17 @@ vi.mock('@/data5e/hooks', async (load) => ({
 }));
 
 import { EntryEffects } from './EffectCards';
-import type { EditorSpec, Json } from './editorTypes';
 import { editor as classEditor, editsOf as classEdits, openClass } from './editors/ClassEditor';
 import { editor as feat } from './editors/FeatEditor';
 import { editor as item } from './editors/ItemEditor';
 import { editor as optionalFeature } from './editors/OptionalFeatureEditor';
 import { editor as species } from './editors/SpeciesEditor';
-import { editor as subclassEditor, editsOf as subEdits, openSubclass } from './editors/SubclassEditor';
+import {
+  openSubclass,
+  editor as subclassEditor,
+  editsOf as subEdits,
+} from './editors/SubclassEditor';
+import type { EditorSpec, Json } from './editorTypes';
 
 afterEach(cleanup);
 
@@ -199,9 +203,9 @@ describe('where no class gives the card', () => {
     // Two actions, one naming its class.
     expect(screen.getAllByLabelText('Action: Name')).toHaveLength(2);
     expect(named('Action')).toHaveLength(1);
-    expect(
-      (screen.getByLabelText('Action: Beside which classes') as HTMLInputElement).value,
-    ).toBe('Paladin');
+    expect((screen.getByLabelText('Action: Beside which classes') as HTMLInputElement).value).toBe(
+      'Paladin',
+    );
     // Still a box that writes: Never takes the field away, and the boxes with it.
     type('Uses per rest: Class in the name', '');
     expect(((draft().castGuidance as Json).effects as Json[])[0]).toEqual(POOL);
