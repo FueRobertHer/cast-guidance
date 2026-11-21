@@ -261,10 +261,11 @@ function DockButton() {
         data-dice-dock=""
         onFocus={(event) => setFocused(event.currentTarget.matches(':focus-visible'))}
         onBlur={() => setFocused(false)}
-        // Out of sight while a modal sheet holds the page (`data-aria-hidden`),
+        // Out of sight while a modal sheet holds the page (`data-aria-hidden`, on
+        // the button or a box around it),
         // where it sat bright beside the sheet; still focusable, so the tray
         // closing can hand focus back to it.
-        className={`fixed right-4 bottom-[calc(76px+env(safe-area-inset-bottom))] z-20 flex size-dock items-center justify-center rounded-full bg-brand text-on-brand shadow-float transition-all duration-200 hover:bg-brand-hover active:scale-92 lg:bottom-6 [[data-aria-hidden]_&]:opacity-0 ${
+        className={`fixed right-4 bottom-[calc(76px+env(safe-area-inset-bottom))] z-20 flex size-dock items-center justify-center rounded-full bg-brand text-on-brand shadow-float transition-all duration-200 hover:bg-brand-hover active:scale-92 lg:bottom-6 data-aria-hidden:opacity-0 [[data-aria-hidden]_&]:opacity-0 ${
           hidden ? 'pointer-events-none translate-x-20 opacity-0' : ''
         }`}
       >

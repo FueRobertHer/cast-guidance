@@ -1226,12 +1226,13 @@ function CastTiles({ held }: { held: HeldRoll }) {
 
 /**
  * A prompt waiting while a modal sheet holds the page (the sheet hides the
- * page from assistive tech with `data-aria-hidden`): it steps out of sight,
+ * page from assistive tech with `data-aria-hidden`, on the prompt itself or a
+ * box around it): it steps out of sight,
  * since it sat dimmed beside the sheet, and comes back as the sheet closes.
  * Not one asked from inside a sheet (a rules text's d20 chip), which is the
  * sheet's own.
  */
-const UNDER_A_SHEET = '[[data-aria-hidden]_&]:opacity-0';
+const UNDER_A_SHEET = 'data-aria-hidden:opacity-0 [[data-aria-hidden]_&]:opacity-0';
 
 function promptFrame(held: HeldRoll): string {
   return held.from?.closest('[role="dialog"]') != null ? FRAME : `${FRAME} ${UNDER_A_SHEET}`;

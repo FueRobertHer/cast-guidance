@@ -304,6 +304,8 @@ describe('the roll prompt', () => {
   it('steps out of sight under a modal sheet, unless a sheet asked it', () => {
     render(<RollToast />);
     act(() => rollFrom(control('Athletics'), check));
+    // The sheet marks the prompt itself or a box around it, so both count.
+    expect(prompt('Athletics check').className).toContain('data-aria-hidden:opacity-0');
     expect(prompt('Athletics check').className).toContain('[[data-aria-hidden]_&]:opacity-0');
 
     const sheet = document.createElement('div');
