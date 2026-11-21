@@ -64,6 +64,26 @@ describe('DiceTray', () => {
     expect(button.hasAttribute('data-dice-dock')).toBe(true);
   });
 
+  it('stays put as the page scrolls down, over the page rather than tucked away', async () => {
+    render(<DiceTray dock />);
+    const button = screen.getByRole('button', { name: 'Dice tray' });
+    const before = button.className;
+    // A page long enough that these are mid-page, not its end.
+    Object.defineProperty(document.documentElement, 'scrollHeight', {
+      value: 5000,
+      configurable: true,
+    });
+    for (const y of [200, 400, 600]) {
+      Object.defineProperty(window, 'scrollY', { value: y, configurable: true });
+      window.dispatchEvent(new Event('scroll'));
+      await act(() => new Promise((done) => requestAnimationFrame(() => done(undefined))));
+    }
+    expect(button.className).toBe(before);
+    expect(button.className).not.toMatch(/opacity-0|pointer-events-none/);
+    Object.defineProperty(window, 'scrollY', { value: 0, configurable: true });
+    Reflect.deleteProperty(document.documentElement, 'scrollHeight');
+  });
+
   it('says which mode the d20 is in', () => {
     render(<DiceTray dock />);
     fireEvent.click(screen.getByTitle('Dice tray'));

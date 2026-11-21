@@ -4,7 +4,6 @@ import { parseDice } from '@/dice/parse';
 import { roll } from '@/dice/roll';
 import type { RollKind, RollResult } from '@/dice/types';
 import { relativeTime } from '@/lib/relativeTime';
-import { useScrollHidden } from '@/lib/useScrollHidden';
 import { type DiceTrayView, diceTrayStore, useDiceTray } from '@/stores/diceTray';
 import { rollLogStore, useRollLog } from '@/stores/rollLog';
 import { Button } from '@/ui/Button';
@@ -243,15 +242,12 @@ const TILE_CAPTION = 'font-semibold text-[0.6875rem] text-ink-muted leading-3.5'
 
 /**
  * The dice button (DS-001 DiceDock), alone where rolls start: 52px, round,
- * `brand` with the d20, floating above the tab bar. It tucks away while the
- * page scrolls down, and is still in the tab order: keyboard focus brings it
- * back, so the keyboard never lands on an invisible button. `data-dice-dock`
- * lets the roll toast and notices rise above it.
+ * `brand` with the d20, floating above the tab bar. It stays put over the
+ * page as it scrolls; the page ends far enough down that its last row scrolls
+ * clear of it (`SheetLayout`). `data-dice-dock` lets the roll toast and
+ * notices rise above it.
  */
 function DockButton() {
-  const scrolledAway = useScrollHidden();
-  const [focused, setFocused] = useState(false);
-  const hidden = scrolledAway && !focused;
   return (
     <Sheet.Trigger asChild>
       <button
@@ -259,11 +255,7 @@ function DockButton() {
         aria-label="Dice tray"
         title="Dice tray"
         data-dice-dock=""
-        onFocus={(event) => setFocused(event.currentTarget.matches(':focus-visible'))}
-        onBlur={() => setFocused(false)}
-        className={`fixed right-4 bottom-[calc(76px+env(safe-area-inset-bottom))] z-20 flex size-dock items-center justify-center rounded-full bg-brand text-on-brand shadow-float transition-all duration-200 hover:bg-brand-hover active:scale-92 lg:bottom-6 ${
-          hidden ? 'pointer-events-none translate-x-20 opacity-0' : ''
-        }`}
+        className="fixed right-4 bottom-[calc(76px+env(safe-area-inset-bottom))] z-20 flex size-dock items-center justify-center rounded-full bg-brand text-on-brand shadow-float transition-all duration-200 hover:bg-brand-hover active:scale-92 lg:bottom-6"
       >
         <D20Icon size={24} />
       </button>

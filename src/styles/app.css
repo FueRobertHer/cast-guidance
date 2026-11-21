@@ -338,8 +338,8 @@ html {
 }
 /*
  * The sheet's dice button floats above the tab bar (from `lg`, alone at the
- * bottom right) and moves away only while the page scrolls down, so where it
- * is drawn the padding clears it too. Without this, Tab could land on a
+ * bottom right) and stays there as the page scrolls, so where it is drawn the
+ * padding clears it too. Without this, Tab could land on a
  * control under it without scrolling: in landscape, the score of the last
  * ability tile.
  */
