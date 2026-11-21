@@ -1168,3 +1168,116 @@ describe('subclasses', () => {
     });
   });
 });
+
+describe('installed spells on a homebrew class list', () => {
+  const INSTALLED: Record<string, string> = {
+    'fire bolt': 'fire bolt|phb',
+    shield: 'shield|phb',
+    alarm: 'alarm|phb',
+  };
+  const opts: ConvertOptions = {
+    fileName: FILE,
+    isInstalled: (kind, name) => kind === 'spell' && INSTALLED[name.toLowerCase()] !== undefined,
+    installedSpellId: (name) => INSTALLED[name.toLowerCase()],
+  };
+  const f = (name: string, text = 'x', attrs = ' optional="YES"') =>
+    `<feature${attrs}><name>${name}</name><text>${text}</text></feature>`;
+  const knight = `
+    <class><name>Ember Knight</name><hd>10</hd>
+      <trait><name>Ember Knight</name><text>Knights.</text></trait>
+      <autolevel level="3">${f('Martial Archetype', 'Choose.', '')}${f('Martial Archetype: Ash Guard')}${f('Ash Strike (Ash Guard)')}</autolevel>
+    </class>`;
+  const spells = [
+    spell('Fire Bolt', '<classes>Wizard, Ember Knight</classes>'),
+    // A stub's lists join the full spell's, which is left out as installed.
+    '<spell><name>Fire Bolt</name><classes>Ember Knight (Ash Guard)</classes></spell>',
+    spell('Shield*', '<classes>Ember Knight (Ash Guard)</classes>'),
+    spell('Alarm (Ritual Only)', '<classes>Ember Knight</classes>'),
+    spell('Ember Lance', '<classes>Ember Knight</classes>'),
+  ];
+  const lists = (json: Record<string, unknown>) => ({
+    classSpells: list(json, 'class')[0]?.classSpells,
+    subclassSpells: list(json, 'subclass')[0]?.subclassSpells,
+  });
+
+  it('lists the installed spells the file puts on it, whatever comes first in the file', () => {
+    const orders = [
+      [knight, ...spells],
+      [...spells.slice(0, 2), knight, ...spells.slice(2)],
+      [...spells, knight],
+    ];
+    for (const order of orders) {
+      const { json } = convert(order.join(''), opts);
+      expect(lists(json)).toEqual({
+        classSpells: ['fire bolt|phb', 'alarm|phb'],
+        subclassSpells: ['fire bolt|phb', 'shield|phb'],
+      });
+      // A homebrew spell carries its own list, as before.
+      expect(list(json, 'spell').map((s) => [s.name, s.classes])).toEqual([
+        ['Ember Lance', { fromClassList: [{ name: 'Ember Knight', source: SOURCE }] }],
+      ]);
+    }
+  });
+
+  it('lists nothing without the ids of the installed spells', () => {
+    const { isInstalled } = opts;
+    const { json } = convert([knight, ...spells].join(''), {
+      fileName: FILE,
+      ...(isInstalled === undefined ? {} : { isInstalled }),
+    });
+    expect(lists(json)).toEqual({ classSpells: undefined, subclassSpells: undefined });
+  });
+
+  it('puts an installed class’s subclass list on its homebrew subclass, and nothing on the class', () => {
+    const fighter = `
+      <class><name>Fighter</name><hd>10</hd>
+        <trait><name>Fighter</name><text>Fighters.</text></trait>
+        <autolevel level="3">${f('Martial Archetype', 'Choose.', '')}${f('Martial Archetype: Ash Guard')}${f('Ash Strike (Ash Guard)')}</autolevel>
+      </class>`;
+    const { json } = convert(
+      `${spell('Shield', '<classes>Wizard, Fighter (Ash Guard)</classes>')}${fighter}`,
+      {
+        fileName: FILE,
+        isInstalled: (kind, name) =>
+          (kind === 'class' && name === 'Fighter') || (kind === 'spell' && name === 'Shield'),
+        installedSpellId: (name) => (name === 'Shield' ? 'shield|phb' : undefined),
+      },
+    );
+    expect(json.class).toBeUndefined();
+    expect(list(json, 'subclass').map((s) => [s.name, s.className, s.subclassSpells])).toEqual([
+      ['Ash Guard', 'Fighter', ['shield|phb']],
+    ]);
+  });
+
+  it('lists nothing on a printing of an official subclass', () => {
+    const fighter = `
+      <class><name>Fighter</name><hd>10</hd>
+        <trait><name>Fighter</name><text>Fighters.\nSource: Player's Handbook (2014) p. 70</text></trait>
+        <autolevel level="3">${f('Martial Archetype', 'Choose.', '')}${f('Martial Archetype: Ash Guard')}${f('Ash Strike (Ash Guard)')}</autolevel>
+      </class>`;
+    const { json } = convert(
+      `${spell('Shield', '<classes>Fighter (Ash Guard)</classes>')}${fighter}`,
+      {
+        fileName: FILE,
+        hasBook: () => true,
+        isInstalled: (kind, name) =>
+          (kind === 'class' && name === 'Fighter') || (kind === 'spell' && name === 'Shield'),
+        installedSpellId: () => 'shield|phb',
+      },
+    );
+    expect(list(json, 'subclass').map((s) => [s.name, s.printingOf, s.subclassSpells])).toEqual([
+      ['Ash Guard', ['Ash Guard|PHB'], undefined],
+    ]);
+  });
+
+  it('lists nothing on a class the file names that is left out as installed', () => {
+    const { json } = convert(`${spell('Shield', '<classes>Ember Knight</classes>')}${knight}`, {
+      fileName: FILE,
+      isInstalled: (kind, name) =>
+        (kind === 'class' && name === 'Ember Knight') || (kind === 'spell' && name === 'Shield'),
+      installedSpellId: () => 'shield|phb',
+    });
+    expect(json.class).toBeUndefined();
+    expect(JSON.stringify(json)).not.toContain('classSpells');
+  });
+});

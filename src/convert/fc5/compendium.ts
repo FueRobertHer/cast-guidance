@@ -99,7 +99,7 @@ import {
 export const FC5_FORMAT = 'fc5-compendium';
 export const FC5_FORMAT_NAME = 'Fight Club 5e';
 /** Bump when the same file would convert differently, so old imports can be told apart. */
-export const FC5_CONVERTER_VERSION = 18;
+export const FC5_CONVERTER_VERSION = 19;
 
 const CONVERTERS: Record<string, (el: XmlElement, ctx: Fc5Context) => Fc5Result> = {
   spell: convertSpell,
@@ -452,6 +452,38 @@ export function fc5Converter(opts: ConvertOptions): Fc5Converter {
   // edition anywhere, for a book cited wrongly, or in any book it cites, under
   // its name or one Fight Club words differently. An entry from a book the
   // data does not hold is a printing of its own.
+  // What `ask` says of the first way the data could have the entry that it
+  // answers: undefined when none.
+  const findInstalled = <T>(
+    ask: (name: string, edition: RulesVersion, book?: string) => T | undefined,
+    kind: ConvertedKind,
+    name: string,
+    placement: Placement,
+    className?: string,
+  ): T | undefined => {
+    // A subclass is the installed one only on the same class.
+    const asked = (n: string) => (className === undefined ? n : subclassKey(n, className));
+    const book = placement.book;
+    if (book === undefined) return ask(asked(name), placement.edition);
+    const held = (code: string | undefined): code is string =>
+      code !== undefined && opts.hasBook?.(code) !== false;
+    // A free rules text has its entries in the books the data has them under.
+    if (!held(book.code)) {
+      return book.reference === true ? ask(asked(name), placement.edition) : undefined;
+    }
+    const own = ask(asked(name), placement.edition);
+    if (own !== undefined) return own;
+    // In the books it cites, under any name Fight Club gives it (`renames.ts`).
+    const codes = [...new Set(placement.books.flatMap((b) => (held(b.code) ? [b.code] : [])))];
+    const titles = placement.books.map((b) => b.title);
+    for (const n of nameVariants(kind, name, titles)) {
+      for (const code of codes) {
+        const found = ask(asked(n), placement.edition, code);
+        if (found !== undefined) return found;
+      }
+    }
+    return undefined;
+  };
   const installed = (
     kind: ConvertedKind,
     name: string,
@@ -460,23 +492,45 @@ export function fc5Converter(opts: ConvertOptions): Fc5Converter {
   ): boolean => {
     const check = opts.isInstalled;
     if (check === undefined) return false;
-    // A subclass is the installed one only on the same class.
-    const asked = (n: string) => (className === undefined ? n : subclassKey(n, className));
-    const book = placement.book;
-    if (book === undefined) return check(kind, asked(name), placement.edition);
-    const held = (code: string | undefined): code is string =>
-      code !== undefined && opts.hasBook?.(code) !== false;
-    // A free rules text has its entries in the books the data has them under.
-    if (!held(book.code)) {
-      return book.reference === true && check(kind, asked(name), placement.edition);
+    // Asked with the arguments as given: no book is none, not an undefined one.
+    const ask = (...args: [string, RulesVersion, string?]) =>
+      check(kind, ...args) ? true : undefined;
+    return findInstalled(ask, kind, name, placement, className) === true;
+  };
+
+  // The installed spells the file's spells left out as installed put on a
+  // class's or subclass's list, by `name|source` of the class and by
+  // `class|subclass` of the subclass, lowercased. The kept homebrew ones list
+  // them as their own (`classSpells`, `subclassSpells`) at the end, since a
+  // spell the converted file lacks cannot carry them.
+  const installedOnClass = new Map<string, Set<string>>();
+  const installedOnSubclass = new Map<string, Set<string>>();
+  const listInstalled = (name: string, placement: Placement, spell: Record<string, unknown>) => {
+    const ask = opts.installedSpellId;
+    if (ask === undefined) return;
+    const lists = spell.classes as
+      | {
+          fromClassList?: { name?: unknown; source?: unknown }[];
+          fromSubclass?: { class?: { name?: unknown }; subclass?: { name?: unknown } }[];
+        }
+      | undefined;
+    if (lists === undefined) return;
+    const id = findInstalled(ask, 'spell', name, placement);
+    if (id === undefined) return;
+    const add = (on: Map<string, Set<string>>, key: string) => {
+      const ids = on.get(key);
+      if (ids === undefined) on.set(key, new Set([id]));
+      else ids.add(id);
+    };
+    for (const c of lists.fromClassList ?? []) {
+      add(installedOnClass, `${String(c.name)}|${String(c.source)}`.toLowerCase());
     }
-    if (check(kind, asked(name), placement.edition)) return true;
-    // In the books it cites, under any name Fight Club gives it (`renames.ts`).
-    const codes = [...new Set(placement.books.flatMap((b) => (held(b.code) ? [b.code] : [])))];
-    const titles = placement.books.map((b) => b.title);
-    return nameVariants(kind, name, titles).some((n) =>
-      codes.some((code) => check(kind, asked(n), placement.edition, code)),
-    );
+    for (const s of lists.fromSubclass ?? []) {
+      add(
+        installedOnSubclass,
+        `${String(s.class?.name)}|${String(s.subclass?.name)}`.toLowerCase(),
+      );
+    }
   };
 
   const notes: EntryNote[] = [];
@@ -871,6 +925,7 @@ export function fc5Converter(opts: ConvertOptions): Fc5Converter {
     seen.add(key);
     const className = kind === 'subclass' ? String(e.className) : undefined;
     if (installed(kind, name, placement, className)) {
+      if (kind === 'spell') listInstalled(name, placement, e);
       // Its options go on the installed class's list of their label.
       const unoffered = keepOptions(c.result.options ?? [], false);
       notes.push({
@@ -999,6 +1054,7 @@ export function fc5Converter(opts: ConvertOptions): Fc5Converter {
         return;
       }
       if (installed('spell', name, placement)) {
+        listInstalled(name, placement, result.entity);
         leave(c, 'installed', WHY.starredOfficial);
         return;
       }
@@ -1010,6 +1066,7 @@ export function fc5Converter(opts: ConvertOptions): Fc5Converter {
         return;
       }
       if (installed('spell', ritual, placement)) {
+        listInstalled(ritual, placement, result.entity);
         leave(c, 'installed', WHY.ritualOfficial);
         return;
       }
@@ -1092,6 +1149,19 @@ export function fc5Converter(opts: ConvertOptions): Fc5Converter {
       warnings.push(
         `${count} <${name}> ${count === 1 ? 'element' : 'elements'} left out: not part of this format.`,
       );
+    }
+
+    // A kept class or homebrew subclass lists the installed spells the file
+    // puts on it. A printing of an official subclass is left as the official
+    // one: its spells come with that one (a domain's, say).
+    for (const e of out.class) {
+      const ids = installedOnClass.get(`${String(e.name)}|${String(e.source)}`.toLowerCase());
+      if (ids !== undefined) e.classSpells = [...ids];
+    }
+    for (const e of out.subclass) {
+      if (e.printingOf !== undefined) continue;
+      const ids = installedOnSubclass.get(`${String(e.className)}|${String(e.name)}`.toLowerCase());
+      if (ids !== undefined) e.subclassSpells = [...ids];
     }
 
     const converted: Partial<Record<ConvertedKind, number>> = {};
