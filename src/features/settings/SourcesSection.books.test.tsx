@@ -39,13 +39,13 @@ function visit() {
   render(<RouterProvider router={router} />);
 }
 const row = () => screen.getByRole('link', { name: /^The books/ });
-/** The row's caption once the books are read: "All 3 books show". */
+/** The row's caption once the books are read: "All 3 sources show". */
 async function caption(): Promise<string> {
   let words = '';
   await waitFor(
     () => {
       words = row().textContent ?? '';
-      expect(words).toMatch(/books? show/);
+      expect(words).toMatch(/sources? show/);
     },
     { timeout: WAIT },
   );
@@ -75,7 +75,7 @@ describe('the books row', () => {
     await seedWorld();
     visit();
     const all = await caption();
-    const total = Number(/All (\d+) books show/.exec(all)?.[1]);
+    const total = Number(/All (\d+) sources show/.exec(all)?.[1]);
     expect(total).toBeGreaterThan(1);
     expect(all).toBe(booksShownWords({ shown: total, total }));
     const [first] = (await import('@/data5e/registry').then((m) => m.getRegistry()))
@@ -83,7 +83,7 @@ describe('the books row', () => {
       .keys();
     await updateSourcePolicy((p) => withSource(p, first ?? '', false));
     await waitFor(
-      () => expect(row().textContent).toContain(`${total - 1} of ${total} books show`),
+      () => expect(row().textContent).toContain(`${total - 1} of ${total} sources show`),
       {
         timeout: WAIT,
       },
@@ -109,7 +109,7 @@ describe('the books row', () => {
     await new Promise((r) => setTimeout(r, 100));
     expect(await caption()).toBe(before);
     watch.disconnect();
-    expect(said.filter((t) => t.includes('books show') && !t.endsWith(before))).toEqual([]);
+    expect(said.filter((t) => t.includes('sources show') && !t.endsWith(before))).toEqual([]);
   });
 
   it('says it could not read the books when the registry cannot be read', async () => {
@@ -127,7 +127,7 @@ describe('booksShownWords', () => {
     expect(booksShownWords(undefined)).toBe('Loading…');
     expect(booksShownWords('failed')).toBe('Could not read the books');
     expect(booksShownWords({ shown: 0, total: 0 })).toBe('No game data yet');
-    expect(booksShownWords({ shown: 3, total: 3 })).toBe('All 3 books show');
-    expect(booksShownWords({ shown: 1, total: 3 })).toBe('1 of 3 books show');
+    expect(booksShownWords({ shown: 3, total: 3 })).toBe('All 3 sources show');
+    expect(booksShownWords({ shown: 1, total: 3 })).toBe('1 of 3 sources show');
   });
 });

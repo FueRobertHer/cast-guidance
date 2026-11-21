@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { idleChargePools } from '@/engine/curated/itemCharges';
 import type { DerivedSheet, EquipmentEntry, PlayState } from '@/engine/types';
 import { ruleSetLookup } from '../../../tests-fixtures/testWorld';
-import { backCaption, longRest, shortRest } from './rest';
+import { backCaption, longRest, shortRest, spendHitDie } from './rest';
 
 /** Minimal DerivedSheet with just the fields the rest rules read. */
 function sheet(over: Partial<DerivedSheet> = {}): DerivedSheet {
@@ -378,5 +378,32 @@ describe("a foretelling pool's numbers on a long rest (Portent)", () => {
 
   it('says they are foretold anew on a long rest', () => {
     expect(backCaption(portent)).toBe('Foretold anew on a long rest');
+  });
+});
+
+describe('spendHitDie', () => {
+  const sixes = () => 6;
+
+  it('marks one die of the size spent and rolls it plus the Constitution modifier', () => {
+    const p = play({ hitDiceSpent: { d8: 1 } });
+    const r = spendHitDie(p, { d8: 4, d10: 1 }, 'd8', 2, sixes);
+    expect(p.hitDiceSpent).toEqual({ d8: 2 });
+    expect(r?.expr).toBe('1d8+2');
+    expect(r?.total).toBe(8);
+    expect(r?.label).toBe('Hit die (d8)');
+    expect(r?.kind).toBe('heal');
+  });
+
+  it('keeps a negative modifier in the roll', () => {
+    const r = spendHitDie(play(), { d6: 2 }, 'd6', -1, sixes);
+    expect(r?.expr).toBe('1d6-1');
+    expect(r?.total).toBe(5);
+  });
+
+  it('spends nothing when none of the size is left, or the size is not had', () => {
+    const p = play({ hitDiceSpent: { d8: 4 } });
+    expect(spendHitDie(p, { d8: 4 }, 'd8', 0, sixes)).toBeUndefined();
+    expect(spendHitDie(p, { d8: 4 }, 'd12', 0, sixes)).toBeUndefined();
+    expect(p.hitDiceSpent).toEqual({ d8: 4 });
   });
 });

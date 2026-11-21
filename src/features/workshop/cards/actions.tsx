@@ -544,9 +544,22 @@ export function AmendCards({
   );
 }
 
-const naming = (p: { effect: Eff; title: string; onChange: (next: Eff) => void }) => (
-  <NamingFields effect={p.effect} title={p.title} onChange={p.onChange} />
-);
+/**
+ * The naming boxes, where a class gives the card: elsewhere (a feat, a species
+ * trait, an item) no class is there to name. A card a file already names for
+ * its class keeps them wherever it is, so what it holds is never hidden.
+ */
+const naming = (p: {
+  effect: Eff;
+  title: string;
+  classGiven?: boolean;
+  onChange: (next: Eff) => void;
+}) =>
+  p.classGiven === true ||
+  p.effect.ownClass !== undefined ||
+  p.effect.ownClassBeside !== undefined ? (
+    <NamingFields effect={p.effect} title={p.title} onChange={p.onChange} />
+  ) : null;
 
 /**
  * Which pool a use comes back to on a short rest (`resourceRegain`): one on
