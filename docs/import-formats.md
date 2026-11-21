@@ -456,7 +456,10 @@ import in the app gets (`officialChecks`): entries the game data already has
 are left out, and a background's feat or a subclass's class points at the
 official one. The output is then what an import would add, with one
 difference: the app checks against the books the player installed, and the
-script against every book in the release.
+script against every book in the release. With `--compare` as well, only the
+entries left after that are compared, so the answer key shrinks to what has
+no official copy in its edition, and a match it does report may be the same
+name in the other edition.
 
 ```bash
 bun scripts/convert-fc5.ts path/to/srd/*.xml --compare
