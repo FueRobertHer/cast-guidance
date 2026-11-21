@@ -152,10 +152,13 @@ export function togglePack(p: Pick<PackHere, 'id' | 'enabled'>): void {
     .catch((err: unknown) => notifyFailure(p.enabled ? 'Turn off' : 'Turn on', err));
 }
 
-/** The characters here, by name, for Apply to. */
-export function useRoster(): Array<{ id: string; name: string }> {
+/**
+ * The characters here, by name, for Apply to. Undefined until read: before
+ * that, a pack applied to some reads as applied to none.
+ */
+export function useRoster(): Array<{ id: string; name: string }> | undefined {
   const roster = useLiveQuery(() => characterRepo.listSafe().catch(() => ({ characters: [] })), []);
-  return (roster?.characters ?? []).map((c) => ({ id: c.id, name: c.name || 'Unnamed' }));
+  return roster?.characters.map((c) => ({ id: c.id, name: c.name || 'Unnamed' }));
 }
 
 /**
@@ -255,6 +258,7 @@ export function ApplyTo({
   // The characters chosen, kept while Every character is picked, for Choose to bring back.
   const [kept, setKept] = useState<readonly string[]>(value.characters);
   const toggle = (id: string) => {
+    if (roster === undefined) return;
     const next = new Set(chosen);
     if (next.has(id)) next.delete(id);
     else next.add(id);
@@ -287,7 +291,9 @@ export function ApplyTo({
           : 'Its rules win over the app’s for these characters.'}
       </p>
       {reach === 'choose' &&
-        (roster.length === 0 ? (
+        (roster === undefined ? (
+          <p className="text-ink-muted">Loading…</p>
+        ) : roster.length === 0 ? (
           <p className="text-ink-muted">No characters yet. Choose Every character to use it.</p>
         ) : (
           <div className="flex flex-wrap gap-1">

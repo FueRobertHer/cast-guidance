@@ -253,17 +253,22 @@ describe('a written rule pack', () => {
     });
   });
 
-  it('names a change written as changes by the identity it keeps in its copy', () => {
-    const rage = {
-      _copy: {
-        name: 'Rage',
-        source: 'XPHB',
-        className: 'Barbarian',
-        classSource: 'XPHB',
-        level: 1,
-      },
-    };
-    expect(replacedRef('classFeature', rage as Record<string, unknown>)).toEqual({
+  it('names a change as Change for your table writes it, by the entry it changes', () => {
+    // As `writeChange` stores it: the name, book and parent keys on the change
+    // and in its `_copy`, with only the changed parts besides.
+    const book = BOOK.get('classFeature', 'Rage', 'XPHB') as Entity;
+    const rage = writeChange('classFeature', structuredClone(book), {
+      ...structuredClone(book),
+      castGuidance: { v: 1, effects: [{ kind: 'speedBonus', amount: 10 }] },
+    });
+    expect(rage).toMatchObject({
+      name: 'Rage',
+      source: 'XPHB',
+      className: 'Barbarian',
+      level: 1,
+      _copy: { name: 'Rage', source: 'XPHB', className: 'Barbarian', level: 1 },
+    });
+    expect(replacedRef('classFeature', rage)).toEqual({
       type: 'classFeature',
       name: 'Rage',
       source: 'XPHB',

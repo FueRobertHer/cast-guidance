@@ -337,10 +337,13 @@ describe('a pack past a limit is refused, with the reason', () => {
         },
       },
     };
-    const [entry] = rulePackEntries([
+    const entries = rulePackEntries([
       { id: 'big', json, pack: { appliesTo: { characters: [], appDefault: true } } },
     ]);
-    expect(entry?.appliesTo).toBeUndefined();
+    // Listed, so the review can say why, but applied to nobody.
+    expect(entries).toHaveLength(1);
+    expect(entries[0]?.name).toBe('Big');
+    expect(entries[0]?.appliesTo).toBeUndefined();
   });
 
   it('takes a reference as long as the effect reader does', () => {

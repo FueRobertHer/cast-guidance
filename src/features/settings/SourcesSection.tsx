@@ -1,7 +1,6 @@
-import { useLiveQuery } from 'dexie-react-hooks';
 import { ChevronRight } from 'lucide-react';
 import { useMemo } from 'react';
-import { useRegistry } from '@/data5e/hooks';
+import type { EntityRegistry } from '@/data5e/normalize';
 import {
   ALLOW_ALL,
   isPolicyNarrowed,
@@ -20,9 +19,9 @@ import {
   sourceGroup,
   sourceName,
 } from '@/data5e/sourceNames';
-import { homebrewRepo } from '@/db/homebrewRepo';
 import { notifyFailure } from '@/stores/notices';
 import { Chip } from '@/ui/Chip';
+import { useRegistryRead } from './registryRead';
 
 /** Every book the source table knows. */
 const KNOWN = new Set(knownSources());
@@ -56,32 +55,52 @@ function SourceToggle({ row, onToggle }: { row: Row; onToggle: (enabled: boolean
   );
 }
 
-/** The sources the stored files declare: a collection's, never a book's. Undefined until read. */
-function useBrewSources(): Set<string> | undefined {
-  return useLiveQuery(
-    async () => new Set((await homebrewRepo.listMetaSafe()).files.flatMap((r) => r.sourceIds)),
-    [],
+/**
+ * The registry and the sources the stored files declare (a collection's,
+ * never a book's), read together: the sources are those of the rows the
+ * registry was read for, so a collection deleted or added since, here or in
+ * another tab, is never told from a book by one and counted by the other.
+ * Undefined until both are read, and the registry's own read is in.
+ */
+function useBooksRead():
+  | { registry: EntityRegistry | null; brewSources: Set<string>; failed: boolean }
+  | undefined {
+  const { registry, rows, ready, failed } = useRegistryRead();
+  const brewSources = useMemo(
+    () => (rows === undefined ? undefined : new Set(rows.flatMap((r) => r.sourceIds))),
+    [rows],
   );
+  if (!ready || brewSources === undefined) return undefined;
+  return { registry, brewSources, failed };
+}
+
+/** How many books show, of how many on the device. */
+export interface BooksShown {
+  shown: number;
+  total: number;
 }
 
 /**
  * How many of the books show on this device, as The books lists them
  * (collections left out): Settings' row says it. Undefined until the
  * registry and the collections' sources are read, since before that a book
- * cannot be told from a collection, or the books counted.
+ * cannot be told from a collection, or the books counted; `failed` when the
+ * registry could not be read and there is none in hand.
  */
-export function useBooksShown(): { shown: number; total: number } | undefined {
-  const registry = useRegistry();
+export function useBooksShown(): BooksShown | 'failed' | undefined {
+  const read = useBooksRead();
   const policy = useSourcePolicy();
-  const brewSources = useBrewSources();
-  if (brewSources === undefined || registry === null) return undefined;
+  if (read === undefined) return undefined;
+  const { registry, brewSources, failed } = read;
+  if (registry === null) return failed ? 'failed' : undefined;
   const books = [...registry.sourceCounts().keys()].filter((s) => !brewSources.has(s));
   return { shown: books.filter((s) => policyAllows(policy, s)).length, total: books.length };
 }
 
 /** Settings' words for which books show ("12 of 119 books show"). */
-export function booksShownWords(shown: { shown: number; total: number } | undefined): string {
+export function booksShownWords(shown: BooksShown | 'failed' | undefined): string {
   if (shown === undefined) return 'Loading…';
+  if (shown === 'failed') return 'Could not read the books';
   if (shown.total === 0) return 'No game data yet';
   if (shown.shown === shown.total) return `All ${shown.total} books show`;
   return `${shown.shown} of ${shown.total} books show`;
@@ -93,9 +112,10 @@ export function booksShownWords(shown: { shown: number; total: number } | undefi
  * since each has its own switch on its page.
  */
 export function SourcesSection() {
-  const registry = useRegistry();
+  const read = useBooksRead();
+  const registry = read?.registry ?? null;
+  const brewSources = read?.brewSources;
   const policy = useSourcePolicy();
-  const brewSources = useBrewSources();
 
   const rows: Row[] = useMemo(() => {
     const counts = registry?.sourceCounts() ?? new Map<string, number>();
@@ -153,7 +173,8 @@ export function SourcesSection() {
     editPolicy((current) => codes.reduce((p, code) => withSource(p, code, enabled), current));
   };
 
-  // Until the collections' sources are read, a book cannot be told from a collection.
+  // Until the collections' sources and the registry read with them are in, a
+  // book cannot be told from a collection.
   if (brewSources === undefined) {
     return (
       <section className="flex flex-col gap-2" aria-label="Which books show">
@@ -226,7 +247,11 @@ export function SourcesSection() {
       )}
 
       {rows.length === 0 ? (
-        <p className="px-1 text-body text-ink-muted">Waiting for game data to download.</p>
+        <p className="px-1 text-body text-ink-muted">
+          {registry === null && read?.failed === true
+            ? 'Could not read the books. Reload the app to try again.'
+            : 'Waiting for game data to download.'}
+        </p>
       ) : (
         SOURCE_GROUPS.filter((s) => rows.some((r) => r.section === s)).map((section) => {
           const group = rows.filter((r) => r.section === section);
