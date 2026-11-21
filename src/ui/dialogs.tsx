@@ -342,21 +342,32 @@ export function DialogHost() {
  * the ask* ones, not a lookalike. Focus return stays with the caller:
  * DialogHost keeps the first opener across a chain of dialogs, which a
  * one-off dialog does not need.
+ *
+ * The sheet keeps to the screen however much it holds: under the title, what
+ * is in it scrolls (`Sheet.Body`), so a long list, or text at 200% on a small
+ * phone, never pushes the top of it off the screen.
  */
 export function DialogFrame({
   title,
   onDismiss,
   searches = false,
+  scrollsItself = false,
   children,
 }: {
   title: ReactNode;
   onDismiss: () => void;
   /**
-   * Its first control is a search box over a long list: the sheet keeps to the
-   * screen with the list scrolling inside it, and on a touch screen it takes
-   * focus itself rather than pop the keyboard (A11Y-003).
+   * Its first control is a search box over a long list, which scrolls under
+   * it (so the content scrolls itself, as below), and on a touch screen the
+   * sheet takes focus itself rather than pop the keyboard (A11Y-003).
    */
   searches?: boolean;
+  /**
+   * What is in it brings its own scrolling part, between parts that stay in
+   * view (the import previews' actions): it is laid out in the sheet as it
+   * is, rather than scrolling as a whole.
+   */
+  scrollsItself?: boolean;
   children: ReactNode;
 }) {
   return (
@@ -371,12 +382,11 @@ export function DialogFrame({
       <Sheet.Portal>
         <Sheet.Scrim />
         <Sheet.Panel
-          {...(searches
-            ? { className: 'flex max-h-[85dvh] flex-col', onOpenAutoFocus: focusSheetOnTouch }
-            : {})}
+          className="flex max-h-[85dvh] flex-col"
+          {...(searches ? { onOpenAutoFocus: focusSheetOnTouch } : {})}
         >
           <Sheet.Heading>{title}</Sheet.Heading>
-          {children}
+          {searches || scrollsItself ? children : <Sheet.Body>{children}</Sheet.Body>}
         </Sheet.Panel>
       </Sheet.Portal>
     </Sheet.Root>

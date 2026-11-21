@@ -75,7 +75,10 @@ function BreakdownSheetContent({
       <Sheet.Trigger asChild>{trigger}</Sheet.Trigger>
       <Sheet.Portal>
         <Sheet.Scrim />
-        <Sheet.Panel>
+        {/* Capped, with the parts scrolling under the title, so a long
+            breakdown, or text at 200% on a small phone, keeps the sheet's
+            top on screen (see `Sheet.Panel`). */}
+        <Sheet.Panel className="flex max-h-[85dvh] flex-col">
           {/* The total stays inside the title, so the sheet's name carries its
               result, as it always has: not `Sheet.Heading`, whose aside sits
               outside the name. */}
@@ -83,47 +86,49 @@ function BreakdownSheetContent({
             <span className="min-w-0 font-display text-title-sheet">{title}</span>
             <span className="shrink-0 text-stat tabular-nums">{value.value}</span>
           </Sheet.Title>
-          <BreakdownParts parts={value.parts}>
-            {value.overridden && (
-              <div className="mt-1 flex justify-between gap-3 border-line border-t pt-2 text-guide">
-                <dt>Manual override (computed: {computed})</dt>
-                <dd className="font-semibold tabular-nums">= {value.value}</dd>
-              </div>
-            )}
-          </BreakdownParts>
-          {children !== undefined && (
-            <div className="mt-3 border-line border-t pt-3">{children}</div>
-          )}
-          {onOverride !== undefined && (
-            <form
-              className="mt-3 flex gap-2 border-line border-t pt-3"
-              onSubmit={(e) => {
-                e.preventDefault();
-                const n = Number.parseInt(draft, 10);
-                if (!Number.isNaN(n)) {
-                  onOverride(n);
-                  setDraft('');
-                }
-              }}
-            >
-              <input
-                inputMode="numeric"
-                value={draft}
-                onChange={(e) => setDraft(e.target.value)}
-                aria-label={`Override ${title}`}
-                placeholder={`Override (${computed})`}
-                className={`${fieldClass} min-w-0 flex-1`}
-              />
-              <Button type="submit" variant="brand">
-                Set
-              </Button>
+          <Sheet.Body>
+            <BreakdownParts parts={value.parts}>
               {value.overridden && (
-                <Button variant="secondary" onClick={() => onOverride(null)}>
-                  Clear
-                </Button>
+                <div className="mt-1 flex justify-between gap-3 border-line border-t pt-2 text-guide">
+                  <dt>Manual override (computed: {computed})</dt>
+                  <dd className="font-semibold tabular-nums">= {value.value}</dd>
+                </div>
               )}
-            </form>
-          )}
+            </BreakdownParts>
+            {children !== undefined && (
+              <div className="mt-3 border-line border-t pt-3">{children}</div>
+            )}
+            {onOverride !== undefined && (
+              <form
+                className="mt-3 flex gap-2 border-line border-t pt-3"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  const n = Number.parseInt(draft, 10);
+                  if (!Number.isNaN(n)) {
+                    onOverride(n);
+                    setDraft('');
+                  }
+                }}
+              >
+                <input
+                  inputMode="numeric"
+                  value={draft}
+                  onChange={(e) => setDraft(e.target.value)}
+                  aria-label={`Override ${title}`}
+                  placeholder={`Override (${computed})`}
+                  className={`${fieldClass} min-w-0 flex-1`}
+                />
+                <Button type="submit" variant="brand">
+                  Set
+                </Button>
+                {value.overridden && (
+                  <Button variant="secondary" onClick={() => onOverride(null)}>
+                    Clear
+                  </Button>
+                )}
+              </form>
+            )}
+          </Sheet.Body>
         </Sheet.Panel>
       </Sheet.Portal>
     </Sheet.Root>

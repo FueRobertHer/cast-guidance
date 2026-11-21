@@ -63,14 +63,15 @@ export function ImportPreviewDialog({
 }) {
   useReturnFocus();
   return (
-    <DialogFrame title={title} onDismiss={onDismiss}>
+    <DialogFrame title={title} onDismiss={onDismiss} scrollsItself>
       <Sheet.Description className="-mt-2 mb-3 text-caption text-ink-muted">
         {description}
       </Sheet.Description>
-      {/* Below the sheet's handle and title, so the actions stay on screen
-          however long the preview runs. Focusable and named, so a keyboard
-          can scroll it (Safari does not focus a scroll area on its own). */}
-      <div className="flex max-h-[70dvh] flex-col">
+      {/* The rest of the sheet's height, under its handle, title and
+          description, so the actions stay on screen however long the preview
+          runs. Focusable and named, so a keyboard can scroll it (Safari does
+          not focus a scroll area on its own). */}
+      <div className="flex min-h-0 flex-1 flex-col">
         <section
           aria-label="Import details"
           // biome-ignore lint/a11y/noNoninteractiveTabindex: a scroll area must take focus to be scrolled by keyboard.
