@@ -91,6 +91,8 @@ async function buildCheckedRow(
   // comes from: an import, a download of it, or a character's export.
   const book = bookOf(json);
   const sourceIds = meta.sources.map((s) => s.json);
+  const full = meta.sources[0]?.full;
+  const title = typeof full === 'string' && full.trim() !== '' ? full.trim() : undefined;
   const key = collectionKey({
     url,
     sourceIds,
@@ -109,6 +111,7 @@ async function buildCheckedRow(
     counts: homebrewEntityCounts(json),
     addedAt: Date.now(),
     ...book,
+    ...(title === undefined ? {} : { title }),
     ...(key === undefined ? {} : { key }),
   };
   return { row, skipped };
@@ -201,6 +204,9 @@ function readHomebrewMeta(row: unknown): HomebrewFileMeta | HomebrewReadError {
     addedAt: numberOr(row.addedAt, 0),
     rev: typeof row.rev === 'number' && Number.isFinite(row.rev) ? row.rev : undefined,
     ...(typeof row.book === 'string' && row.book !== '' ? { book: row.book } : {}),
+    ...(typeof row.title === 'string' && row.title.trim() !== ''
+      ? { title: row.title.trim() }
+      : {}),
     ...(row.subset === true ? { subset: true as const } : {}),
   };
   const pack = readPackLocal(row.pack);

@@ -281,7 +281,7 @@ describe('the Import sheet', () => {
       );
       fireEvent.click(within(preview).getByRole('button', { name: 'Update' }));
       await waitFor(
-        () => expect(done).toEqual([{ message: `Updated "${NAME}" (2 spell)`, landed: true }]),
+        () => expect(done).toEqual([{ message: `Updated "${NAME}" (2 spells)`, landed: true }]),
         { timeout: WAIT },
       );
 

@@ -34,9 +34,10 @@ import { expect, test } from '../support/test.ts';
  * - reflow (1.4.10): at 320 by 640 CSS px no main route scrolls sideways;
  * - resize text (1.4.4): with the root font at 200%, the same, and each
  *   route's primary controls still whole on screen once scrolled to;
- * - landscape on a phone (851 by 393): the sheet's sticky header and bottom
- *   tab bar leave its heading and content in sight, and a control that Tab or
- *   Shift+Tab moves to is never entirely hidden behind either (2.4.11).
+ * - landscape on a phone (851 by 393): the sheet header (not sticky at this
+ *   height: it scrolls away) and the bottom tab bar leave its heading and
+ *   content in sight, and a control that Tab or Shift+Tab moves to is never
+ *   entirely hidden behind either (2.4.11).
  * Reduced motion has its own spec (`reduced-motion.spec.ts`).
  */
 
@@ -477,12 +478,15 @@ test.describe('sheets at 320 by 640 with text at 200%', () => {
   }
 });
 
-/** A collection with a long file name, as one shared from a friend might have. */
 /** A feat whose name runs long, to measure the room a Yours row leaves it. */
 const LONG_FEAT = 'Gift of the Unending Lantern-Lit Harbour Night';
 
+/** A collection goes by its book's title, so the title is the long name to fit. */
+const LONG_BREW_TITLE = 'A Very Long Homebrew Book Shared by a Friend of the Table';
+
+/** A collection with a long file name and title, as one shared from a friend might have. */
 const LONG_BREW = jsonFile('a-very-long-homebrew-file-name-shared-by-a-friend.json', {
-  _meta: { sources: [{ json: 'LONGBREW', full: 'Long Brew' }] },
+  _meta: { sources: [{ json: 'LONGBREW', full: LONG_BREW_TITLE }] },
   feat: [{ name: 'Lanternbearer of the Western Coast', source: 'LONGBREW', entries: ['Glow.'] }],
 });
 
@@ -533,7 +537,7 @@ const WORKSHOP: readonly Route[] = [
     name: 'workshop collections',
     open: async (page) => {
       await gotoHeading(page, '/workshop?shelf=collections', 'Workshop');
-      await expect(page.getByRole('link', { name: /^a-very-long-homebrew/ })).toBeVisible();
+      await expect(page.getByRole('link', { name: /^A Very Long Homebrew/ })).toBeVisible();
     },
     primary: (page) => [
       page.getByRole('link', { name: 'Import a file or a link', exact: true }),
@@ -543,20 +547,20 @@ const WORKSHOP: readonly Route[] = [
     // cannot be whole in view; what matters is that the name itself keeps room.
     keepsRoom: (page) => [
       page
-        .getByRole('link', { name: /^a-very-long-homebrew/ })
-        .getByText(LONG_BREW.name, { exact: true }),
+        .getByRole('link', { name: /^A Very Long Homebrew/ })
+        .getByText(LONG_BREW_TITLE, { exact: true }),
     ],
   },
   {
     name: 'workshop collection',
     open: async (page) => {
       await gotoHeading(page, '/workshop?shelf=collections', 'Workshop');
-      await page.getByRole('link', { name: /^a-very-long-homebrew/ }).click();
-      await expect(page.getByRole('heading', { level: 1, name: LONG_BREW.name })).toBeVisible();
+      await page.getByRole('link', { name: /^A Very Long Homebrew/ }).click();
+      await expect(page.getByRole('heading', { level: 1, name: LONG_BREW_TITLE })).toBeVisible();
     },
     primary: (page) => [
       page.getByRole('button', { name: 'Back', exact: true }),
-      page.getByRole('button', { name: `Use ${LONG_BREW.name}`, exact: true }),
+      page.getByRole('button', { name: `Use ${LONG_BREW_TITLE}`, exact: true }),
       page.getByRole('button', { name: 'Export a file', exact: true }),
       page.getByRole('button', { name: 'Delete this collection', exact: true }),
     ],
@@ -1058,6 +1062,29 @@ test.describe('landscape on a phone', () => {
       expect(await hiddenWhileFocused(page, main)).toEqual([]);
     });
   }
+
+  test('sheet Play, scrolled: the header goes with the page, only the tab bar stays', async ({
+    page,
+  }) => {
+    const id = await setUp(page);
+    await addConditions(page, id, ['Poisoned']);
+    await gotoSheetTab(page, id, 'Play');
+    await animationsSettled(page);
+    // Sticky, the header and the tab bar held 41% of a 400px screen (a laptop
+    // at 200% zoom) for as long as the page was scrolled.
+    await page.mouse.wheel(0, 600);
+    const header = page.getByRole('banner');
+    await expect(header).not.toBeInViewport();
+    const nav = await box(tabBar(page));
+    expect(nav.height / 393, 'the tab bar alone').toBeLessThan(0.25);
+    // What sticks under the header (Build's and Items' bars) and the scroll
+    // padding read its height as nothing while it does not stick.
+    expect(
+      await page.evaluate(() =>
+        getComputedStyle(document.documentElement).getPropertyValue('--sheet-header-h').trim(),
+      ),
+    ).toBe('0px');
+  });
 
   test('the roster and Settings: focus clears the app nav', async ({ page }) => {
     await setUp(page);

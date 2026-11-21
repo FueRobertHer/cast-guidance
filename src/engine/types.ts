@@ -436,6 +436,7 @@ export type FormulaField =
   | 'speed'
   | 'base'
   | 'regainOnShort'
+  | 'recoversSlots'
   | 'bonus';
 
 /**
@@ -807,6 +808,13 @@ export type EffectInput = {
        * the roll, the character's own or another creature's (Portent).
        */
       foretell?: boolean;
+      /**
+       * A use gives back expended spell slots on a short rest, up to this many
+       * levels between them (Arcane Recovery's half the Wizard level, rounded up).
+       */
+      recoversSlots?: number;
+      /** The slot level those slots stay below (6: none of 6th level or higher). */
+      recoversBelow?: number;
     }
   | {
       /** A feature that gives another feature's pool `regainOnShort` (Advanced Artifice). */
@@ -1252,6 +1260,12 @@ export interface DerivedResource {
   die?: string;
   /** Its uses are d20s a long rest rolls and keeps (`PlayState.foretold`): Portent. */
   foretell?: boolean;
+  /**
+   * A use gives back expended spell slots when a short rest ends: slots whose
+   * levels add up to at most `levels`, each below level `below` (Arcane
+   * Recovery, Natural Recovery). `below` is 10 where nothing caps it.
+   */
+  recoversSlots?: { levels: number; below: number };
 }
 
 export interface DerivedSheet {

@@ -21,7 +21,10 @@
  * - grounds: `bg` the page, `surface` cards and panels, `surface-raised`
  *   controls inside a card, `surface-hover` their hover and pressed step,
  *   `line` decorative hairlines, `line-strong` the 3:1 edge of an outlined
- *   control (WCAG 1.4.11), `track` the empty part of a meter.
+ *   control (WCAG 1.4.11), `track` the empty part of a meter, `edge` the
+ *   resting edge of a filled control with no border (a field, a segmented
+ *   control's track): none in dark, `line` in light, where `surface-raised`
+ *   sits 1.03:1 off the page and the control all but vanished.
  * - text: `ink` anything that must be read, `ink-muted` labels and metadata,
  *   `ink-faint` disabled labels and placeholders only (under 4.5:1 by design).
  * - roles, each a text colour with a `-soft` tint to sit on: `brand` action
@@ -45,6 +48,7 @@
   --cg-line: #2e2b26;
   --cg-line-strong: #7a7468;
   --cg-track: #33302a;
+  --cg-edge: transparent;
   --cg-ink: #f3efe6;
   --cg-ink-muted: #aca598;
   --cg-ink-faint: #7d776c;
@@ -85,6 +89,9 @@
   --cg-line: #ddd2bc;
   --cg-line-strong: #8a8170;
   --cg-track: #e2d8c4;
+  /* Paper on paper again, as the cards' shadow below: a field or a segment
+     track on the page would otherwise show only as its words. */
+  --cg-edge: var(--cg-line);
   --cg-ink: #1c1a16;
   --cg-ink-muted: #5d564b;
   --cg-ink-faint: #8a8172;
@@ -122,6 +129,7 @@
   --color-line: var(--cg-line);
   --color-line-strong: var(--cg-line-strong);
   --color-track: var(--cg-track);
+  --color-edge: var(--cg-edge);
   --color-ink: var(--cg-ink);
   --color-ink-muted: var(--cg-ink-muted);
   --color-ink-faint: var(--cg-ink-faint);
@@ -346,6 +354,25 @@ html:has([data-dice-dock]) {
 @media (width >= 64rem) {
   html:has([data-dice-dock]) {
     scroll-padding-bottom: calc(1.5rem + --theme(--spacing-dock) + 0.5rem);
+  }
+}
+
+/*
+ * A short screen: a phone on its side, or a laptop at 200% zoom (1280 by 800
+ * is then 640 by 400). There the sheet header, with its conditions row, and
+ * the tab bar held 165 of 400px, 41% of the screen, for as long as the page
+ * was scrolled. The header scrolls away with the page instead, and says so
+ * through its published height, which the sticky bars under it (Build's,
+ * Items') and the scroll padding above read. Only `!important` outranks the
+ * inline value useStickyHeight sets on <html>.
+ */
+@media (max-height: 500px) {
+  [data-sheet-header] {
+    position: static;
+  }
+  html {
+    /* biome-ignore lint/complexity/noImportantStyles: the measured height is an inline style on <html>, which only !important outranks */
+    --sheet-header-h: 0px !important;
   }
 }
 

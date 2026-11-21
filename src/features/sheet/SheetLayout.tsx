@@ -323,11 +323,18 @@ function Sheet({ id }: { id: string | undefined }) {
     <div className="flex flex-1 flex-col">
       <header
         ref={header}
+        // On a short screen it scrolls away instead of sticking (app.css).
+        data-sheet-header=""
         // Opaque `bg` (DS-001): content scrolling under a translucent wash
         // showed through behind the name. It wraps at a large text size: the
         // name keeps 6rem, and Edit and the menu go under it as a pair before
-        // they squeeze it out of sight.
-        className="sticky top-0 z-20 flex min-h-header flex-wrap items-center gap-1 bg-bg py-1 pr-1 pl-1 lg:pl-40"
+        // they squeeze it out of sight. A `line` hairline under it, as over
+        // the tab bar, so a card scrolling under it is cut at an edge rather
+        // than in the middle of its own paper (light most of all). From `lg`
+        // the hairline is a border image outset to the screen's edges, as a
+        // banner's fill is (see Banner): the page is centred, and the line
+        // stopped short of the right edge on a wide screen.
+        className="sticky top-0 z-20 flex min-h-header flex-wrap items-center gap-1 border-line border-b bg-bg py-1 pr-1 pl-1 lg:pl-40 lg:[border-image:conic-gradient(var(--cg-line)_0_0)_0_0_1_0/0_0_1px_0/0_100vmax]"
       >
         <Link
           to={from?.to ?? '/'}
@@ -410,6 +417,43 @@ function Sheet({ id }: { id: string | undefined }) {
           {OPEN_ELSEWHERE_TEXT}
         </Banner>
       )}
+      {/* Boxed as the app nav is (see AppNav). Before `main` in the page,
+          though drawn at the bottom (or as the rail from `lg`): Tab and a
+          screen reader reach the tabs straight after the header, rather than
+          after every control on the tab (66 presses on a level 1 Play tab).
+          As the rail it is drawn over the header, whose `bg` spans the
+          centred page and otherwise cut a notch out of the rail's right edge
+          (1280px wide: 16px of it, down to the header's foot). */}
+      <nav
+        aria-label="Character sheet"
+        className="fixed inset-x-0 bottom-0 z-10 lg:z-30 box-content flex h-tabbar border-line border-t bg-surface px-1 pb-[env(safe-area-inset-bottom)] lg:inset-y-0 lg:box-border lg:right-auto lg:h-auto lg:w-36 lg:flex-col lg:gap-1 lg:border-t-0 lg:border-r lg:px-2 lg:pt-4 lg:pb-0"
+      >
+        {tabs.map(({ to, label, icon: Icon, end }) => (
+          <NavLink
+            key={label}
+            to={to}
+            end={end}
+            className={({ isActive }) =>
+              `flex min-w-0 flex-1 flex-col items-center gap-[3px] pt-[6px] text-tab lg:min-h-tap lg:flex-none lg:flex-row lg:gap-2.5 lg:rounded-control lg:px-3 lg:text-label ${
+                isActive
+                  ? 'font-bold text-ink lg:bg-surface-raised'
+                  : 'text-ink-muted hover:text-ink'
+              }`
+            }
+          >
+            {({ isActive }) => (
+              <>
+                {/* The current tab is marked by weight and a pill, not by
+                    colour alone (A11Y-002); NavLink sets aria-current. */}
+                <TabPill active={isActive}>
+                  <Icon size={20} aria-hidden className="lg:size-4.5" />
+                </TabPill>
+                {label}
+              </>
+            )}
+          </NavLink>
+        ))}
+      </nav>
       {/* Where the dice button floats, the page ends far enough down that
           the last row scrolls clear of it (DS-001 DiceDock): the spec's page
           padding of tab bar, button and space-12, and from `lg`, where the
@@ -445,37 +489,6 @@ function Sheet({ id }: { id: string | undefined }) {
           </>
         )}
       </main>
-      {/* Boxed as the app nav is (see AppNav). */}
-      <nav
-        aria-label="Character sheet"
-        className="fixed inset-x-0 bottom-0 z-10 box-content flex h-tabbar border-line border-t bg-surface px-1 pb-[env(safe-area-inset-bottom)] lg:inset-y-0 lg:box-border lg:right-auto lg:h-auto lg:w-36 lg:flex-col lg:gap-1 lg:border-t-0 lg:border-r lg:px-2 lg:pt-4 lg:pb-0"
-      >
-        {tabs.map(({ to, label, icon: Icon, end }) => (
-          <NavLink
-            key={label}
-            to={to}
-            end={end}
-            className={({ isActive }) =>
-              `flex min-w-0 flex-1 flex-col items-center gap-[3px] pt-[6px] text-tab lg:min-h-tap lg:flex-none lg:flex-row lg:gap-2.5 lg:rounded-control lg:px-3 lg:text-label ${
-                isActive
-                  ? 'font-bold text-ink lg:bg-surface-raised'
-                  : 'text-ink-muted hover:text-ink'
-              }`
-            }
-          >
-            {({ isActive }) => (
-              <>
-                {/* The current tab is marked by weight and a pill, not by
-                    colour alone (A11Y-002); NavLink sets aria-current. */}
-                <TabPill active={isActive}>
-                  <Icon size={20} aria-hidden className="lg:size-4.5" />
-                </TabPill>
-                {label}
-              </>
-            )}
-          </NavLink>
-        ))}
-      </nav>
       {/* On every page of the sheet, so a tap on the roll toast can open its
           history wherever the roll was made; its button only where rolls start. */}
       <DiceTray dock={rollsHere} />

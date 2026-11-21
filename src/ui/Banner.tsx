@@ -18,10 +18,21 @@ import type { ButtonHTMLAttributes, HTMLAttributes, ReactNode } from 'react';
  */
 export type BannerTone = 'guide' | 'neutral' | 'danger';
 
+/**
+ * From `lg` each fill also runs out to the screen's edges, painted by a
+ * border image outset to either side: the page is centred and at most
+ * `max-w-5xl`, so on a wider screen the strip stopped short of the right edge
+ * (128px short at 1280). What a border image paints outside the box is ink
+ * overflow, which neither scrolls nor clips, where a margin in `vw` would add
+ * a scroll bar's width of sideways scroll. On the left it runs under the rail.
+ */
 const TONE: Record<BannerTone, string> = {
-  guide: 'bg-guide-soft text-ink',
-  neutral: 'bg-surface-raised text-ink',
-  danger: 'bg-danger-fill text-on-danger',
+  guide:
+    'bg-guide-soft text-ink lg:[border-image:conic-gradient(var(--cg-guide-soft)_0_0)_fill_0//0_100vmax]',
+  neutral:
+    'bg-surface-raised text-ink lg:[border-image:conic-gradient(var(--cg-surface-raised)_0_0)_fill_0//0_100vmax]',
+  danger:
+    'bg-danger-fill text-on-danger lg:[border-image:conic-gradient(var(--cg-danger-fill)_0_0)_fill_0//0_100vmax]',
 };
 
 const ICON: Record<BannerTone, string> = {

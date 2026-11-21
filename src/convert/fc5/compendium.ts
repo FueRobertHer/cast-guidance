@@ -99,7 +99,7 @@ import {
 export const FC5_FORMAT = 'fc5-compendium';
 export const FC5_FORMAT_NAME = 'Fight Club 5e';
 /** Bump when the same file would convert differently, so old imports can be told apart. */
-export const FC5_CONVERTER_VERSION = 19;
+export const FC5_CONVERTER_VERSION = 20;
 
 const CONVERTERS: Record<string, (el: XmlElement, ctx: Fc5Context) => Fc5Result> = {
   spell: convertSpell,
@@ -1140,20 +1140,52 @@ export function fc5Converter(opts: ConvertOptions): Fc5Converter {
         for (const t of Array.isArray(p.featureType) ? p.featureType : []) offered.add(String(t));
       }
     }
-    const unofferedLists = new Set<string>();
-    let unoffered = 0;
+    // A list's owner as its name gives it, `(UA)` dropped: `mystic (immortal)`.
+    const ownerOf = (name: string) =>
+      name
+        .replace(/ ?\(UA\)/gi, '')
+        .trim()
+        .toLowerCase();
+    const hosts = new Set<string>();
+    const classHosts = new Set(out.class.map((c) => ownerOf(String(c.name))));
+    for (const c of classHosts) hosts.add(c);
+    for (const s of out.subclass) hosts.add(ownerOf(`${String(s.className)} (${String(s.name)})`));
+    // Of a class or subclass the file converts, or stored with no class's
+    // name: nothing says how many to pick. Else its class is not converted.
+    const uncounted = { total: 0, lists: new Set<string>() };
+    const hostless = { total: 0, lists: new Set<string>() };
     for (const option of storedOptions) {
       const types = (option.featureType ?? []) as string[];
       if (isOnOfficialList(option) || types.some((t) => offered.has(t))) continue;
-      unoffered += 1;
-      for (const t of types) unofferedLists.add(t);
+      // A list stored as a subclass's (`Fighter (Gunslinger)`) is that
+      // subclass's; one with an author's tag (`Combo Actions (Ryoko)`) is bare.
+      const counted = types.some((t) => {
+        const colon = t.indexOf(': ');
+        if (colon > 0) return hosts.has(ownerOf(t.slice(0, colon)));
+        const head = ownerOf(t.slice(0, Math.max(0, t.indexOf(' ('))));
+        const ofClass = BASE_CLASSES.has(head) || classHosts.has(head);
+        return !ofClass || hosts.has(ownerOf(t));
+      });
+      const into = counted ? uncounted : hostless;
+      into.total += 1;
+      for (const t of types) into.lists.add(t);
     }
-    if (unoffered > 0) {
-      const total = unoffered;
-      const lists = [...unofferedLists];
-      const named = lists.slice(0, 3).join('; ');
+    const listed3 = (lists: string[]) =>
+      `${lists.slice(0, 3).join('; ')}${lists.length > 3 ? `, and ${lists.length - 3} more lists` : ''}`;
+    const library = (total: number) =>
+      `${total === 1 ? 'It is' : 'They are'} in the Library under Optional features, but no character can pick ${total === 1 ? 'it' : 'them'} yet.`;
+    if (uncounted.total > 0) {
+      const { total } = uncounted;
+      const lists = [...uncounted.lists];
       warnings.push(
-        `${total} class ${total === 1 ? 'option is' : 'options are'} for ${lists.length === 1 ? 'a class' : 'classes'} this app cannot convert yet (${named}${lists.length > 3 ? `, and ${lists.length - 3} more lists` : ''}). ${total === 1 ? 'It is' : 'They are'} in the Library under Optional features, but no character can pick ${total === 1 ? 'it' : 'them'} yet.`,
+        `${total} class ${total === 1 ? 'option is' : 'options are'} on ${lists.length === 1 ? 'a list' : 'lists'} no class in this file says how many to pick from (${listed3(lists)}). ${library(total)}`,
+      );
+    }
+    if (hostless.total > 0) {
+      const { total } = hostless;
+      const lists = [...hostless.lists];
+      warnings.push(
+        `${total} class ${total === 1 ? 'option is' : 'options are'} for ${lists.length === 1 ? 'a class' : 'classes'} this app cannot convert yet (${listed3(lists)}). ${library(total)}`,
       );
     }
     for (const [name, count] of leftOut) {

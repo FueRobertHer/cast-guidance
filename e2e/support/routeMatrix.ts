@@ -6,7 +6,7 @@ import {
   type CacheLevel,
   CHARACTER_NAME,
   filesAt,
-  HOMEBREW_NAME,
+  HOMEBREW_TITLE,
   type LevelManifest,
 } from './cacheLevels.ts';
 
@@ -269,14 +269,14 @@ export const ROUTES: readonly RouteCase[] = [
     path: () => '/homebrew',
     at: () =>
       content(title('Workshop'), (page) =>
-        page.getByRole('main').getByRole('link', { name: new RegExp(`^${HOMEBREW_NAME}\\s*,`) }),
+        page.getByRole('main').getByRole('link', { name: new RegExp(`^${HOMEBREW_TITLE}\\s*,`) }),
       ),
   },
   {
     name: 'old homebrew file link',
     frame: appNav,
     path: (m) => `/homebrew/edit/${m.homebrewId}`,
-    at: () => content(title(HOMEBREW_NAME, 'Workshop'), heading(HOMEBREW_NAME)),
+    at: () => content(title(HOMEBREW_TITLE, 'Workshop'), heading(HOMEBREW_TITLE)),
   },
   {
     name: 'old homebrew link to a file that is gone',
@@ -303,14 +303,14 @@ export const ROUTES: readonly RouteCase[] = [
     path: () => '/workshop?shelf=collections',
     at: () =>
       content(title('Workshop'), (page) =>
-        page.getByRole('main').getByRole('link', { name: new RegExp(`^${HOMEBREW_NAME}\\s*,`) }),
+        page.getByRole('main').getByRole('link', { name: new RegExp(`^${HOMEBREW_TITLE}\\s*,`) }),
       ),
   },
   {
     name: 'workshop collection',
     frame: appNav,
     path: (m) => `/workshop/collection/${m.homebrewId}`,
-    at: () => content(title(HOMEBREW_NAME, 'Workshop'), heading(HOMEBREW_NAME)),
+    at: () => content(title(HOMEBREW_TITLE, 'Workshop'), heading(HOMEBREW_TITLE)),
   },
   {
     name: 'workshop collection that does not exist',

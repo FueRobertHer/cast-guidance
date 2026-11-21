@@ -20,6 +20,7 @@ import {
 import { expect, test } from '../support/test.ts';
 
 const LONG_NAME = 'a-very-long-homebrew-file-name-shared-by-a-friend.json';
+const LONG_TITLE = 'Long Brew of the Lantern Coast';
 const LONG_ENTRY = 'Lanternbearer of the Western Coast and Every Harbour Beyond';
 
 const LONG_BREW = jsonFile(LONG_NAME, {
@@ -153,15 +154,15 @@ test.describe('the collection page at phone width', () => {
         name: 'collection',
         open: async () => {
           await page.goto('/workshop?shelf=collections');
-          await page.getByRole('link', { name: /^a-very-long-homebrew/ }).click();
-          await expect(page.getByRole('heading', { level: 1, name: LONG_NAME })).toBeVisible();
-          await expect(page.getByRole('list', { name: `In ${LONG_NAME}` })).toContainText(
+          await page.getByRole('link', { name: /^Long Brew of the Lantern Coast/ }).click();
+          await expect(page.getByRole('heading', { level: 1, name: LONG_TITLE })).toBeVisible();
+          await expect(page.getByRole('list', { name: `In ${LONG_TITLE}` })).toContainText(
             LONG_ENTRY,
           );
           await expect(page.getByRole('group', { name: 'For each character' })).toBeVisible();
           // Its address (the file's key) holds through a reload of the built app.
           await page.reload();
-          await expect(page.getByRole('heading', { level: 1, name: LONG_NAME })).toBeVisible();
+          await expect(page.getByRole('heading', { level: 1, name: LONG_TITLE })).toBeVisible();
         },
       },
       {

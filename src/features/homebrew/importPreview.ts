@@ -64,6 +64,7 @@ import {
 } from '@/features/characters/homebrewExport';
 import { pickWords } from '@/features/homebrew/pickWords';
 import { HOMEBREW_ENTITY_KEYS, IMPORT_LIMITS, type SkippedEntry } from '@/lib/guards';
+import { kindName } from '@/lib/kindLabels';
 
 /**
  * How a `name|source` tie is settled, worded for the player. It has to match
@@ -190,6 +191,16 @@ export function officialIndexFrom(
 export interface FileRef {
   id: string;
   fileName: string;
+  /**
+   * For one book of a file stored a book at a time, the file it came from:
+   * `fileName` is then the book's name, which alone reads like a file.
+   */
+  file?: string;
+}
+
+/** Where a clash's other copy is: `"brew.json"`, or `Ember Codex, from "all.xml"`. */
+export function whereIn(ref: FileRef): string {
+  return ref.file === undefined ? `"${ref.fileName}"` : `${ref.fileName}, from "${ref.file}"`;
 }
 
 export interface EntityCollision {
@@ -511,7 +522,13 @@ function firstFileBy(
         const key = keyOf(type, e);
         if (key === undefined) continue;
         const k = `${type}:${key}`;
-        if (!out.has(k)) out.set(k, { id: f.id, fileName: fileLabel(f) });
+        if (!out.has(k)) {
+          out.set(k, {
+            id: f.id,
+            fileName: fileLabel(f),
+            ...(f.book === undefined ? {} : { file: f.fileName }),
+          });
+        }
       }
     }
   }
@@ -903,7 +920,7 @@ export function describeCollision(c: EntityCollision): string {
   const what = `${c.name} (${c.source})`;
   return c.against === 'official'
     ? `${what} is also official content. Official wins, so a character that picks it gets the official version.`
-    : `${what} is also in "${c.against.fileName}", which was imported first, so a character that picks it gets that version.`;
+    : `${what} is also in ${whereIn(c.against)}, which was imported first, so a character that picks it gets that version.`;
 }
 
 // ---------------------------------------------------------------------------
@@ -1015,19 +1032,8 @@ export interface PackReplaces {
   notAList?: true;
 }
 
-/** A kind as a replaced entry's row names it. */
-const KIND_WORDS: Readonly<Record<string, string>> = {
-  race: 'species',
-  subrace: 'subrace',
-  optionalfeature: 'optional feature',
-  baseitem: 'equipment',
-  itemGroup: 'item group',
-  magicvariant: 'magic item variant',
-  classFeature: 'class feature',
-  subclassFeature: 'subclass feature',
-  variantrule: 'rule',
-};
-const kindWords = (type: string) => (Object.hasOwn(KIND_WORDS, type) ? KIND_WORDS[type] : type);
+/** A kind as a replaced entry's row names it ("class feature"). */
+const kindWords = (type: string) => kindName(type).toLowerCase();
 
 /** "Rage (class feature, XPHB, Barbarian, level 1)": what an entry a pack replaces is. */
 function replacedWords(type: string, ref: Record<string, unknown>): string {

@@ -264,6 +264,29 @@ describe('buildHomebrewRow', () => {
     const r2 = await buildHomebrewRow(file('BREW', ['Zap']), 'two.json');
     expect(r1.id).toBe(r2.id);
   });
+
+  it('takes its title from its first book, trimmed, and keeps it on the stored row', async () => {
+    const titled = {
+      _meta: {
+        sources: [
+          { json: 'TWG', full: '  Tidewater Grimoire ' },
+          { json: 'TWH', full: 'Tidewater Hymns' },
+        ],
+      },
+      spell: [{ name: 'Zap', source: 'TWG' }],
+    };
+    const row = await homebrewRepo.importJson(titled, 'tide.json');
+    expect(row.title).toBe('Tidewater Grimoire');
+    expect((await homebrewRepo.listMetaSafe()).files.map((f) => f.title)).toEqual([
+      'Tidewater Grimoire',
+    ]);
+    // A book with no full name gives no title, and the file goes by its name.
+    const plain = await buildHomebrewRow(
+      { _meta: { sources: [{ json: 'P', full: ' ' }] }, spell: [] },
+      'p.json',
+    );
+    expect(plain.title).toBeUndefined();
+  });
 });
 
 describe('homebrew content apart from its metadata', () => {
