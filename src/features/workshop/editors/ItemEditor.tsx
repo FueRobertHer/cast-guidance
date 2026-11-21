@@ -20,6 +20,7 @@ import {
   ITEM_CHARGES,
   itemChargesIn,
   itemDcIn,
+  rechargeRest,
   rechargeWords,
   regainOf,
   upgradeOlderCharges,
@@ -113,6 +114,7 @@ const RECHARGE: Options = [
   ['dawn', 'At dawn'],
   ['dusk', 'At dusk'],
   ['midnight', 'At midnight'],
+  ['restShort', 'On a short rest'],
 ];
 const DAMAGE_CODES: Options = Object.entries(DMG_TYPES).map(([k, v]) => [
   k,
@@ -177,6 +179,8 @@ export function withCharges(draft: Json, patch: Json, own?: Json): Json {
     ...own,
   };
   const spells = list(kept.spells);
+  // A short rest gives them back as the fields say once they say it (`regainOf`).
+  const rest = fresh ? rechargeRest(next.recharge) === 'short' : had.rest === 'short';
   const made: StoredEffect | undefined =
     charges === undefined
       ? undefined
@@ -184,6 +188,7 @@ export function withCharges(draft: Json, patch: Json, own?: Json): Json {
           kind: 'charges',
           charges,
           regain: fresh ? regainOf(next.recharge, next.rechargeAmount) : had.regain,
+          ...(rest ? { rest: 'short' } : {}),
           ...(typeof kept.ability === 'string' ? { ability: kept.ability } : {}),
           ...(typeof kept.dc === 'number' ? { dc: kept.dc } : {}),
           ...(typeof kept.attack === 'number' ? { attack: kept.attack } : {}),
@@ -297,22 +302,24 @@ const POOL_FIELDS = ['charges', 'recharge', 'rechargeAmount'] as const;
  * fields still say what those of `of`, the item the row was read from, do:
  * the row is read from that item's text where its fields misstate it. Only
  * what they misstate: a count, or what comes back, they already say as the row
- * does is left as written. A time the fields give that a long rest covers is
- * kept, else dawn; none comes back with no recharge. A copy whose fields an
- * author changed (its own, or a copy's it was copied from) keeps them all, as
- * does one a charges effect counts already.
+ * does (at dawn: a row's never come back on a short rest) is left as written.
+ * A time the fields give that a long rest covers is kept, else dawn; none
+ * comes back with no recharge. A copy whose fields an author changed (its
+ * own, or a copy's it was copied from) keeps them all, as does one a charges
+ * effect counts already.
  */
 export function rowPoolFields(row: ItemCharges, draft: Json, of: Json | undefined): Json {
   if (of === undefined || effectsOf(draft).some(isCharges)) return {};
   if (POOL_FIELDS.some((k) => draft[k] !== of[k])) return {};
   const regain = String(row.regain);
   const count: Json = draft.charges === row.charges ? {} : { charges: row.charges };
-  if (String(regainOf(draft.recharge, draft.rechargeAmount)) === regain) return count;
+  const short = rechargeRest(draft.recharge) === 'short';
+  if (!short && String(regainOf(draft.recharge, draft.rechargeAmount)) === regain) return count;
   if (regain === 'none') return { ...count, recharge: undefined, rechargeAmount: undefined };
   const time = rechargeIn(draft.recharge);
   return {
     ...count,
-    recharge: time !== undefined && regainOf(time, undefined) !== 'none' ? time : 'dawn',
+    recharge: rechargeRest(time) === 'long' ? time : 'dawn',
     rechargeAmount: regain === 'all' ? undefined : rechargeValue(regain),
   };
 }
@@ -786,8 +793,10 @@ function Charges(props: EditorProps) {
   const n = draft.charges ?? counted?.charges;
   const charges = typeof n === 'number' ? n : undefined;
   // The recharge the fields say; an empty one is none, as `regainOf` reads it
-  // (and a time no long rest covers, such as `special`, gives none back).
+  // (and a time no rest covers, such as `special`, gives none back).
   const recharge = rechargeIn(draft.recharge);
+  // A short rest gives back all of them or a number, never dice (`regainOf`).
+  const short = rechargeRest(recharge) === 'short';
   // What comes back as the effect says it, shown while no recharge field says it.
   // (A number or words: none, in any case, is no regain, as the reader takes it.)
   const said = counted?.regain;
@@ -874,7 +883,7 @@ function Charges(props: EditorProps) {
             options={RECHARGE}
             shown={
               recharge ??
-              `${/^all$/i.test(String(handRegain)) ? 'All' : String(handRegain)} at dawn, as written`
+              `${/^all$/i.test(String(handRegain)) ? 'All' : String(handRegain)} ${counted?.rest === 'short' ? 'on a short rest' : 'at dawn'}, as written`
             }
             disabled={readOnly}
             onChange={(v) => {
@@ -882,11 +891,21 @@ function Charges(props: EditorProps) {
               // only guards: what the effect says is never written as a recharge.
               if (v === AS_WRITTEN) return;
               // A time picked in its place keeps how many the effect says.
-              const carried =
+              const amount =
                 v !== '' && recharge === undefined && handRegain !== undefined
-                  ? { rechargeAmount: rechargeValue(String(handRegain)) }
-                  : {};
-              set({ recharge: v === '' ? undefined : v, ...carried });
+                  ? rechargeValue(String(handRegain))
+                  : draft.rechargeAmount;
+              // A short rest rolls no dice: picked, an amount it cannot give
+              // back (dice, or words) becomes all of them.
+              const back = regainOf(v, amount);
+              const kept =
+                rechargeRest(v) === 'short' && back !== 'all' && typeof back !== 'number'
+                  ? undefined
+                  : amount;
+              set({
+                recharge: v === '' ? undefined : v,
+                ...(kept === draft.rechargeAmount ? {} : { rechargeAmount: kept }),
+              });
             }}
           />
         )}
@@ -894,7 +913,7 @@ function Charges(props: EditorProps) {
           <TextField
             label="How many"
             value={rechargeWords(draft.rechargeAmount)}
-            placeholder="1d6 + 1, or all"
+            placeholder={short ? '1, or all' : '1d6 + 1, or all'}
             disabled={readOnly}
             onChange={(v) => set({ rechargeAmount: rechargeValue(v) })}
           />

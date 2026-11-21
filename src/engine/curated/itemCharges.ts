@@ -81,6 +81,19 @@ export function itemDcIn(
  */
 const LONG_REST_RECHARGE: ReadonlySet<string> = new Set(['dawn', 'dusk', 'midnight', 'restlong']);
 
+/**
+ * The rest an item's `recharge` field gives its charges back on: `long` for a
+ * time a long rest covers (`LONG_REST_RECHARGE`), `short` for `restShort`, in
+ * any case; none for no recharge, an empty one or one the text tells
+ * (`special`).
+ */
+export function rechargeRest(recharge: unknown): 'long' | 'short' | undefined {
+  if (typeof recharge !== 'string') return undefined;
+  const time = recharge.toLowerCase();
+  if (LONG_REST_RECHARGE.has(time)) return 'long';
+  return time === 'restshort' ? 'short' : undefined;
+}
+
 /** A `rechargeAmount` as words: a number's digits, or the text with each dice tag's dice in its place. */
 export function rechargeWords(amount: unknown): string | undefined {
   if (typeof amount === 'number') return String(amount);
@@ -89,18 +102,18 @@ export function rechargeWords(amount: unknown): string | undefined {
 }
 
 /**
- * What comes back at dawn, as an item's `charges` effect says it, from its
- * standard fields: nothing unless `recharge` is a time a long rest covers
- * (`LONG_REST_RECHARGE`: none, an empty one, `special` or a short rest give
- * nothing back, even beside an amount); then all of them with no amount, else
- * its number or its dice, spaces taken out (words the effect cannot take are
- * kept, and say so). The sheet reads an item's fields by it (`fieldChargesOf`)
- * and the Workshop writes them out by it, so the two say the same.
+ * What comes back, as an item's `charges` effect says it, from its standard
+ * fields: nothing unless `recharge` names a rest (`rechargeRest`: none, an
+ * empty one or `special` give nothing back, even beside an amount); then all
+ * of them with no amount, else its number or its dice, spaces taken out
+ * (words the effect cannot take are kept, and say so, as dice on a short rest
+ * do). With `restShort` it is what a short rest gives back, which the effect
+ * says with `rest: "short"`. The sheet reads an item's fields by it
+ * (`fieldChargesOf`) and the Workshop writes them out by it, so the two say
+ * the same.
  */
 export function regainOf(recharge: unknown, amount: unknown): string | number {
-  if (typeof recharge !== 'string' || !LONG_REST_RECHARGE.has(recharge.toLowerCase())) {
-    return 'none';
-  }
+  if (rechargeRest(recharge) === undefined) return 'none';
   const words = (rechargeWords(amount) ?? '').replace(/\s+/g, '');
   if (words === '') return 'all';
   return /^\d+$/.test(words) ? Number(words) : words;
@@ -132,9 +145,23 @@ function ownChargesStand(raw: unknown): boolean {
 }
 
 /**
+ * What an item's fields give back, as `fieldChargesOf` reads them: what
+ * `regainOf` says, on a short rest with `restShort`. An amount a short rest
+ * cannot give back (dice, or words) gives none, as every short rest did
+ * before one counted, so the item keeps its pool.
+ */
+function fieldRegainOf(entry: DataEntity): { regain: string | number; rest?: 'short' } {
+  const regain = regainOf(entry.recharge, entry.rechargeAmount);
+  if (rechargeRest(entry.recharge) !== 'short') return { regain };
+  return regain === 'all' || typeof regain === 'number'
+    ? { regain, rest: 'short' }
+    : { regain: 'none' };
+}
+
+/**
  * The charges an item's own data fields say (`charges`, `recharge`,
  * `rechargeAmount`), read as its own `charges` effect would be, with what
- * comes back as `regainOf` says it, and the spells they cast
+ * comes back as `regainOf` says it (`fieldRegainOf`), and the spells they cast
  * (`fieldChargeSpells`). Absent when the count and regain do not read as a
  * whole (a dice count of charges, an amount the roller cannot roll), and when
  * the item's own guidance leaves them out (`ownChargesStand`).
@@ -145,11 +172,7 @@ export function fieldChargesOf(entry: DataEntity): ItemCharges | undefined {
   const counted =
     entry.charges === undefined || ownChargesStand(entry.castGuidance)
       ? undefined
-      : readItemCharges({
-          charges: entry.charges,
-          regain: regainOf(entry.recharge, entry.rechargeAmount),
-          spells: [],
-        });
+      : readItemCharges({ charges: entry.charges, ...fieldRegainOf(entry), spells: [] });
   const read =
     counted === undefined
       ? undefined
@@ -389,10 +412,29 @@ export function itemChargesFrom(
 /**
  * The roll a long rest makes for an item's charges (`DerivedResource.regainRoll`):
  * none when all of them come back, as any pool's do, and `0` when none ever do.
+ * Charges back on a short rest (`rest`) all come back on a long one too.
  */
 export function regainRollOf(c: ItemCharges): string | undefined {
-  if (c.regain === 'all') return undefined;
-  return c.regain === 'none' ? '0' : c.regain;
+  if (c.regain === 'none') return '0';
+  return c.regain === 'all' || c.rest === 'short' ? undefined : c.regain;
+}
+
+/**
+ * When a carried item's charge pool comes back, as the rests read a pool
+ * (`engine/rest.ts`): at dawn, a long rest, by its roll (`regainRollOf`); on a
+ * short rest all of them (`resetOn: 'short'`, a long rest too), or a number
+ * (`regainOnShort`, and all of them on a long rest). The live pool and an idle
+ * one (`idleChargePools`) are each made by it, so the two say the same.
+ */
+export function chargePoolRest(
+  c: ItemCharges,
+): Pick<DerivedResource, 'resetOn' | 'regainOnShort' | 'regainRoll'> {
+  const roll = regainRollOf(c);
+  if (c.rest === 'short' && c.regain === 'all') return { resetOn: 'short' };
+  if (c.rest === 'short' && /^\d+$/.test(c.regain)) {
+    return { resetOn: 'long', regainOnShort: Number(c.regain) };
+  }
+  return { resetOn: 'long', ...(roll === undefined ? {} : { regainRoll: roll }) };
 }
 
 /**
@@ -414,7 +456,9 @@ export function isItemChargeKey(key: string): boolean {
 /**
  * The charge pools of carried items whose magic is not working now (put away,
  * or not attuned), which the sheet leaves out: their charges still come back
- * at dawn, so a long rest gives back their roll too.
+ * at dawn, so a long rest gives back their roll too, and all of those a short
+ * rest gives back (`chargePoolRest`). A short rest reads the sheet's pools
+ * alone, so an idle one's come back at the next long rest.
  */
 export function idleChargePools(
   doc: Pick<CharacterDoc, 'id' | 'equipment'>,
@@ -426,15 +470,13 @@ export function idleChargePools(
     if (entry.ref === undefined || resources.some((r) => r.key === key)) return [];
     const held = itemChargesOf(lookup, doc.id, entry.ref);
     if (held === undefined) return [];
-    const roll = regainRollOf(held);
     return [
       {
         key,
         label: `${entry.ref.name} charges`,
         max: held.charges,
-        resetOn: 'long' as const,
         origin: entry.ref.name,
-        ...(roll === undefined ? {} : { regainRoll: roll }),
+        ...chargePoolRest(held),
       },
     ];
   });

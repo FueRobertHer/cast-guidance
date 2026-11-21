@@ -2,12 +2,12 @@ import { isRecord, RULE_SET_TYPE, WORN_TAG_KINDS } from '../castGuidance';
 import {
   ACTION_CHARGE_PLACES,
   type ChargesFrom,
+  chargePoolRest,
   ITEM_CHARGES,
   itemChargeKey,
   itemChargesFrom,
   itemDcIn,
   itemRowKeys,
-  regainRollOf,
   upgradeOlderCharges,
 } from '../curated/itemCharges';
 import type {
@@ -345,7 +345,8 @@ export function collectItems(col: Collector): void {
       else
         mechanicsOf(col, { entry: e, label: origin.label, origin, target: origin.uid, inherited });
       // Its charges are a pool of its own, which the cast prompt and the
-      // item's actions spend and a long rest (dawn) refills by its roll.
+      // item's actions spend and a long rest (dawn) refills by its roll, or
+      // a short rest refills as it says (`chargePoolRest`).
       if (charged !== undefined) {
         const key = itemChargeKey(entry.id);
         // Its actions that spend its charges or give them back (a buy-back, a
@@ -361,14 +362,12 @@ export function collectItems(col: Collector): void {
             if (at?.[field] === ITEM_CHARGES) parts[part] = { ...at, [field]: key };
           }
         }
-        const roll = regainRollOf(charged);
         col.add({
           kind: 'resource',
           key,
           label: `${origin.label} charges`,
           max: charged.charges,
-          resetOn: 'long',
-          ...(roll === undefined ? {} : { regainRoll: roll }),
+          ...chargePoolRest(charged),
           origin,
         });
         // The spells its charges cast are granted, each paid from this copy's

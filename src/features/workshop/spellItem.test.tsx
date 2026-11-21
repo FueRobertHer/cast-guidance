@@ -488,11 +488,13 @@ describe('item fields', () => {
     expect(regainOf('dusk', '{@dice 1d6 + 1}')).toBe('1d6+1');
     expect(regainOf('dawn', 3)).toBe(3);
     expect(regainOf('dawn', 'all')).toBe('all');
-    // Only a time a long rest covers gives anything back, as the sheet reads the fields.
+    // Only a time a rest covers gives anything back, as the sheet reads the fields.
     expect(regainOf('Midnight', 2)).toBe(2);
     expect(regainOf('restLong', '{@dice 1d4}')).toBe('1d4');
     expect(regainOf('special', '{@dice 1d6 + 1}')).toBe('none');
-    expect(regainOf('restShort', 2)).toBe('none');
+    // A short rest's, which the effect says with `rest: "short"`.
+    expect(regainOf('restShort', 2)).toBe(2);
+    expect(regainOf('restShort', undefined)).toBe('all');
   });
 
   it("writes a built-in row's count and what comes back in fields still the original's", () => {
@@ -534,6 +536,11 @@ describe('item fields', () => {
         rechargeAmount: 1,
       },
     );
+    // A row's come back at dawn, never on a short rest: dawn in its place.
+    expect(pool(row(3, 'all'), { charges: 3, recharge: 'restShort' })).toStrictEqual({
+      recharge: 'dawn',
+      rechargeAmount: undefined,
+    });
     // Ring of Three Wishes and Staff of Charming: no count in the fields.
     expect(pool(row(3, 'none'), {})).toStrictEqual({ charges: 3 });
     expect(pool(row(10, '1d8+2'), {})).toStrictEqual({
@@ -767,6 +774,48 @@ describe('ItemEditor', () => {
     expect(screen.queryByText(/counts these the older way/)).toBeNull();
     press('Add a spell its charges cast');
     expect(screen.getByLabelText('Charge spell 1')).toBeTruthy();
+  });
+
+  it('gives its charges back on a short rest, all of them or a number, never dice', () => {
+    const draft = mount(item, { name: 'Short Rest Wand', ...item.blank() });
+    const effects = () => (draft().castGuidance as Json | undefined)?.effects;
+    type('Charges', '3');
+    type('Regains them', 'dawn');
+    type('How many', '1d4');
+    // Picked, a short rest takes the dice out: all of them come back.
+    type('Regains them', 'restShort');
+    expect(draft()).toMatchObject({ recharge: 'restShort' });
+    expect(draft()).not.toHaveProperty('rechargeAmount');
+    expect(effects()).toEqual([{ kind: 'charges', charges: 3, regain: 'all', rest: 'short' }]);
+    expect(screen.getByLabelText('How many')).toHaveProperty('placeholder', '1, or all');
+    type('How many', '1');
+    expect(effects()).toEqual([{ kind: 'charges', charges: 3, regain: 1, rest: 'short' }]);
+    expect(readOwnEffects(effects(), 'effects').charges).toEqual({
+      charges: 3,
+      regain: '1',
+      rest: 'short',
+      spells: [],
+    });
+    // Dice typed in anyway do not count, and say why.
+    type('How many', '1d4');
+    expect(readOwnEffects(effects(), 'effects').charges).toBe(undefined);
+    expect(screen.getByText(/a short rest rolls no dice/)).toBeTruthy();
+    // Back to dawn, the dice count again and the rest goes.
+    type('Regains them', 'dawn');
+    expect(effects()).toEqual([{ kind: 'charges', charges: 3, regain: '1d4' }]);
+    // An effect written by hand says its rest.
+    cleanup();
+    mount(item, {
+      name: 'Hand Short Rod',
+      charges: 3,
+      castGuidance: {
+        v: 1,
+        effects: [{ kind: 'charges', charges: 3, regain: 'all', rest: 'short' }],
+      },
+    });
+    expect(
+      (screen.getByLabelText('Regains them') as HTMLSelectElement).selectedOptions[0]?.text,
+    ).toBe('All on a short rest, as written');
   });
 
   it('shows the count and regain an effect written by hand says, with no fields', () => {

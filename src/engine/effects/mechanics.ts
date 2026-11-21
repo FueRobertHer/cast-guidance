@@ -2352,9 +2352,12 @@ export interface ItemCharges {
   charges: number;
   /**
    * What comes back at dawn (a long rest): dice or a whole number, rolled;
-   * `all`; or `none`, never.
+   * `all`; or `none`, never. With `rest`, what a short rest gives back: `all`,
+   * a whole number (and all of them on a long rest) or `none`.
    */
   regain: string;
+  /** An item's own effect, or its fields, only: they come back on a short rest (`StoredItemCharges.rest`). */
+  rest?: 'short';
   /** Each spell by its name in lower case, once. */
   spells: readonly ChargeSpell[];
   /** An item's own effect only: the ability the spells it grants cast with. */
@@ -2742,6 +2745,19 @@ function readCharges(
       '"regain" is what comes back at dawn: dice like 1d6+4, a whole number, "all" or "none"',
     );
   }
+  // A row with a `rest` is left out before this reads it (`ROW_FIELDS`): a
+  // built-in row's charges come back at dawn.
+  const rested = own(row, 'rest');
+  const rest = rested === 'short' ? rested : undefined;
+  if (rested !== undefined && rest === undefined) {
+    problems.push('"rest" is "short", for charges that come back on a short rest');
+  }
+  // A short rest rolls no dice (`shortRestRecovery`): all of them, a number, or none.
+  if (rest !== undefined && regain !== undefined && regainDice(regain)) {
+    problems.push(
+      '"regain" on a short rest is a whole number, "all" or "none": a short rest rolls no dice',
+    );
+  }
   // A row with an `ability` is left out before this reads it (`ROW_FIELDS`).
   const named = own(row, 'ability');
   const ability = isOneOf(ABILITY_LIST, named) ? named : undefined;
@@ -2826,6 +2842,7 @@ function readCharges(
     charges: {
       charges,
       regain,
+      ...(rest === undefined ? {} : { rest }),
       spells,
       ...(ability === undefined ? {} : { ability }),
       ...fixedOf(fixed),

@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { BUILT_IN_RULE_SETS } from '../../../tests-fixtures/testWorld';
 import { RULE_PACK_TYPE, RULE_SET_TYPE } from '../castGuidance';
 import { deriveSheet } from '../derive';
-import { longRestRecovery } from '../rest';
+import { longRestRecovery, shortRestRecovery } from '../rest';
 import { type CharacterDoc, type DataEntity, type EngineContext, newCharacterDoc } from '../types';
 import { fieldChargesOf, idleChargePools, itemChargesOf } from './itemCharges';
 
@@ -78,15 +78,32 @@ describe('fieldChargesOf: what the charge fields count', () => {
   });
 
   it('gives nothing back with no recharge, an empty one, or one the text tells', () => {
-    // A Ring of Three Wishes; an empty one; Helm of Devil Command; a short rest.
+    // A Ring of Three Wishes; an empty one; Helm of Devil Command.
     expect(counted({ charges: 3 })).toEqual([3, 'none', 0]);
     expect(counted({ charges: 3, recharge: '', rechargeAmount: 2 })).toEqual([3, 'none', 0]);
     expect(counted({ charges: 3, recharge: 'special' })).toEqual([3, 'none', 0]);
-    expect(counted({ charges: 3, recharge: 'restShort', rechargeAmount: 1 })).toEqual([
-      3,
-      'none',
-      0,
-    ]);
+  });
+
+  it('gives all of them or a number back on a short rest, in any case', () => {
+    const rest = (more: Record<string, unknown>) =>
+      fieldChargesOf(item('Short Rod', 'TST', { charges: 3, ...more }));
+    expect(rest({ recharge: 'restShort' })).toMatchObject({ regain: 'all', rest: 'short' });
+    expect(rest({ recharge: 'RestShort', rechargeAmount: 1 })).toMatchObject({
+      regain: '1',
+      rest: 'short',
+    });
+    // A long rest's say none.
+    expect(rest({ recharge: 'dawn' })?.rest).toBe(undefined);
+  });
+
+  it('keeps the pool of a short rest it cannot give back, giving none back as before', () => {
+    // A short rest rolls no dice: the pool stands, as it did before a short rest counted.
+    for (const rechargeAmount of ['{@dice 1d4}', 'lots']) {
+      const held = fieldChargesOf(
+        item('Odd Short Rod', 'TST', { charges: 3, recharge: 'restShort', rechargeAmount }),
+      );
+      expect(held, rechargeAmount).toEqual({ charges: 3, regain: 'none', spells: [] });
+    }
   });
 
   it("gives an amount with no recharge nothing back, as the Workshop's Never leaves it", () => {
@@ -253,6 +270,48 @@ describe('the pool its fields make', () => {
     expect(its.resources.find((r) => r.key === 'item-charges:r')?.regainRoll).toBe('0');
     longRestRecovery(ring.play, its, HP, { rollTotal: (d) => Number(d) });
     expect(ring.play.resources.find((r) => r.key === 'item-charges:r')?.used).toBe(1);
+  });
+
+  it('comes back on a short rest, all of them or a number, and all on a long rest', () => {
+    const lamp = item('Short Rest Lamp', 'TST', { charges: 4, recharge: 'restShort' });
+    const flask = item('Short Rest Flask', 'TST', {
+      charges: 5,
+      recharge: 'restShort',
+      rechargeAmount: 2,
+    });
+    const doc = carrying(
+      { id: 'l', name: 'Short Rest Lamp', source: 'TST' },
+      { id: 'f', name: 'Short Rest Flask', source: 'TST' },
+    );
+    const ctx = world([lamp, flask]);
+    const sheet = deriveSheet(doc, ctx);
+    const pool = (key: string) => sheet.resources.find((r) => r.key === key);
+    expect(pool('item-charges:l')).toMatchObject({ max: 4, resetOn: 'short' });
+    expect(pool('item-charges:l')?.regainRoll).toBe(undefined);
+    expect(pool('item-charges:f')).toMatchObject({ max: 5, resetOn: 'long', regainOnShort: 2 });
+    expect(pool('item-charges:f')?.regainRoll).toBe(undefined);
+    const spent = () => [
+      { key: 'item-charges:l', used: 3 },
+      { key: 'item-charges:f', used: 4 },
+    ];
+    doc.play.resources = spent();
+    shortRestRecovery(doc.play, sheet);
+    expect(doc.play.resources).toEqual([{ key: 'item-charges:f', used: 2 }]);
+    // A long rest rolls nothing for them: all of each come back.
+    doc.play.resources = spent();
+    longRestRecovery(doc.play, sheet, HP, {
+      rollTotal: () => {
+        throw new Error('rolled');
+      },
+    });
+    expect(doc.play.resources).toEqual([]);
+    // Put away, each is idle as the live pool is.
+    doc.equipment = doc.equipment.map((e) => ({ ...e, equipped: false }));
+    const away = deriveSheet(doc, ctx);
+    expect(idleChargePools(doc, away.resources, ctx)).toEqual([
+      expect.objectContaining({ key: 'item-charges:l', resetOn: 'short' }),
+      expect.objectContaining({ key: 'item-charges:f', resetOn: 'long', regainOnShort: 2 }),
+    ]);
   });
 
   it('is made for a mundane item too, as the release writes a Robot Controller', () => {
