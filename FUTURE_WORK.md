@@ -447,7 +447,7 @@ work:
   since a written pack keeps its key through export; any screen other than the
   rules that holds the registry misses a pack change until it remounts, since
   `invalidateRegistry` tells no mounted reader (the rules read it again for
-  themselves); the Homebrew page keeps its own pack review and order; the
+  themselves); the pack review and pack order are on the Rules shelf, and the Homebrew page has been removed (U12); the
   Build tab and the rule sheet still say a character follows Settings.
 - The Build page's Content row (ADR-002 U11) lists each collection with this
   character's switch over the device's choice, the rule packs and whom they
