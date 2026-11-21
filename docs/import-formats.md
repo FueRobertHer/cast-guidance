@@ -440,6 +440,24 @@ bun scripts/convert-fc5.ts path/to/file.xml --notes
 It prints the counts, the grouped reasons and the warnings; `--out dir` writes
 the converted JSON. Real files stay outside the repo.
 
+The script reads each file as it streams, through the same path as the
+import worker (`convertXmlChunks`), so the app's limits apply
+(`XML_FILE_LIMITS`, up to 64 MiB) and a community compendium of 50 MB
+converts here as it does in the app.
+
+```bash
+bun scripts/convert-fc5.ts path/to/compendium.xml --installed
+```
+
+By default nothing is left out as already installed, so every entry
+converts and the counts are the whole file's. `--installed` fetches a 5etools
+release (the pinned one, or `--tag`) and gives the converter the checks an
+import in the app gets (`officialChecks`): entries the game data already has
+are left out, and a background's feat or a subclass's class points at the
+official one. The output is then what an import would add, with one
+difference: the app checks against the books the player installed, and the
+script against every book in the release.
+
 ```bash
 bun scripts/convert-fc5.ts path/to/srd/*.xml --compare
 ```
