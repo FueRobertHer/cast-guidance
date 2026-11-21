@@ -9,7 +9,8 @@ installed PWA is most likely to break.
 bun run build          # the suite tests dist/, so build first
 bun run e2e            # run every spec
 bun run e2e:ci         # build, then run every spec
-bun run e2e -- e2e/specs/sw-update.spec.ts   # one file
+bun run e2e -- e2e/specs/sw-update.spec.ts   # one file, in flows and webkit
+bun run e2e -- --project=flows e2e/specs/sw-update.spec.ts   # one file, Chromium only
 bun run e2e -- -g "offline"                  # by title
 bun run e2e -- --project=flows               # one project: flows, axe, a11y, offline-routes or webkit
 bun run e2e -- --headed --workers=1          # watch it
@@ -24,9 +25,12 @@ A failing test keeps a trace in `test-results/e2e/`; open it with
 CI runs the suite as five jobs at once, one per Playwright project: `flows`
 (`specs/`), `axe` (`a11y/axe.spec.ts`), `a11y` (the other accessibility specs),
 `offline-routes` (the route matrix, after its `cache-levels` setup) and
-`webkit` (the flows in WebKit, less the specs that need Chromium; see
+`webkit` (the flows in WebKit, less what needs Chromium; see
 `playwright.config.ts`). `webkit` is not a gate yet: its failures show in the
-job's summary and log, but do not fail the run. Each
+job's summary and log, but do not fail the run. It does not yet cover what
+iOS most needs checking: game data installs and updates (WebKit's routing
+cannot see what the service worker fetches, so the mirror cannot answer it)
+and the route matrix offline. Each
 job uploads its `playwright-report/` and `test-results/` as the
 `e2e-report-<project>` artifact. A new project needs an entry in the `e2e`
 matrix in `.github/workflows/ci.yml`; the `checks` job fails until it has one.
@@ -87,9 +91,10 @@ the binary outright, as an escape hatch when the two drift.
   `--host-resolver-rules` that leaves only `localhost` and `127.0.0.1`
   resolvable, so a socket opened by host name cannot reach a real host or a
   proxy. Routed requests are answered before any lookup, so the mirror is
-  unaffected. WebKit has no such flags, so the `webkit` project is held by the
-  routing layer alone. `harness.spec.ts` checks it with a WebSocket from both launch
-  paths. Not covered: a connection to a literal IP address other than
+  unaffected. WebKit has no such flags, so the `webkit` project launches with
+  a proxy that is not there (`127.0.0.1:9`) for everything but `localhost`
+  and `127.0.0.1`. `harness.spec.ts` checks Chromium's flags with a WebSocket
+  from both launch paths. Not covered: a connection to a literal IP address other than
   127.0.0.1, which needs no lookup, such as WebRTC over UDP. The app uses no
   WebRTC and names every host it talks to. Launch with
   `hermeticLaunchOptions` if you add another launch path.

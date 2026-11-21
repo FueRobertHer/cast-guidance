@@ -149,7 +149,11 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
   },
 
   network: [
-    async ({ context, server, mirror, consoleGuard }, use) => {
+    async ({ context, server, mirror, consoleGuard, browserName }, use) => {
+      // WebKit's emulated offline fails a reload the service worker would
+      // answer ("WebKit encountered an internal error"), so there the
+      // harness's own two (the mirror refuses, the server is down) stand alone.
+      const browserOffline = browserName !== 'webkit';
       // Where each offline stretch starts and ends in the three logs; `to` is
       // unset while it lasts.
       interface Window {
@@ -193,7 +197,7 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
           windows.push({ from: marks() });
           // The browser first, so a page request is never the one the down
           // server refuses; then the harness's own hosts.
-          for (const ctx of contexts) await ctx.setOffline(true);
+          if (browserOffline) for (const ctx of contexts) await ctx.setOffline(true);
           mirror.setOffline(true);
           server.setDown(true);
         },
@@ -207,7 +211,7 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
           if (current !== undefined && current.to === undefined) current.to = marks();
           mirror.setOffline(false);
           server.setDown(false);
-          for (const ctx of contexts) await ctx.setOffline(false);
+          if (browserOffline) for (const ctx of contexts) await ctx.setOffline(false);
         },
         assertNothingServedOffline() {
           for (const w of windows) {

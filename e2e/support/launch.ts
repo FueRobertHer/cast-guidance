@@ -21,15 +21,30 @@ import type { LaunchOptions } from '@playwright/test';
  *
  * `harness.spec.ts` checks both launch paths with a WebSocket.
  *
- * The flags are Chromium's. WebKit has no resolver or proxy flags, so a
- * WebKit launch (the `webkit` project) gets none: it is held only by the
- * routing layer's guards (`support/test.ts`), and a socket opened without a
- * request (a preconnect) can reach a real host there.
+ * The flags are Chromium's. WebKit has none, so a WebKit launch (the
+ * `webkit` project) gets {@link WEBKIT_HERMETIC_PROXY} instead: every
+ * connection but loopback goes to a proxy that is not there, and fails. That
+ * matters more in WebKit than in Chromium, since WebKit's routing does not
+ * see requests a page controlled by the service worker makes through it
+ * (`first-load.spec.ts`, "mirror routes still see requests ..."), so without
+ * it those reached the real hosts.
  */
 export const HERMETIC_ARGS: readonly string[] = [
   '--proxy-server=direct://',
   '--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE localhost, EXCLUDE 127.0.0.1',
 ];
+
+/** Nothing listens on the discard port, so a connection there is refused. */
+const NOWHERE = 'http://127.0.0.1:9';
+
+/** WebKit's form of {@link HERMETIC_ARGS}: a dead proxy for all but our own servers. */
+export const WEBKIT_HERMETIC_PROXY = {
+  server: NOWHERE,
+  bypass: '127.0.0.1,localhost',
+} as const;
+
+/** WebKit's form of {@link AIRPLANE_ARGS}: the dead proxy for everything. */
+export const WEBKIT_AIRPLANE_PROXY = { server: NOWHERE } as const;
 
 const isHermeticArg = (arg: string) =>
   arg === '--no-proxy-server' ||
@@ -46,6 +61,7 @@ export function hermeticLaunchOptions(
   base: LaunchOptions = {},
   browserName: string = 'chromium',
 ): LaunchOptions {
+  if (browserName === 'webkit') return { ...base, proxy: WEBKIT_HERMETIC_PROXY };
   if (browserName !== 'chromium') return base;
   return {
     ...base,
@@ -73,6 +89,7 @@ export function airplaneLaunchOptions(
   base: LaunchOptions = {},
   browserName: string = 'chromium',
 ): LaunchOptions {
+  if (browserName === 'webkit') return { ...base, proxy: WEBKIT_AIRPLANE_PROXY };
   if (browserName !== 'chromium') return base;
   return {
     ...base,
