@@ -422,7 +422,7 @@ describe('the Import sheet', () => {
     await waitFor(
       () =>
         expect(status()).toBe(
-          'Import failed: this is not a homebrew file, since it has no "_meta" block naming its books',
+          'Import failed: not a homebrew file (it has no "_meta" block naming its books)',
         ),
       { timeout: WAIT },
     );
@@ -435,7 +435,7 @@ describe('the Import sheet', () => {
     await waitFor(
       () =>
         expect(status()).toBe(
-          'That text is not a homebrew file: it is neither JSON nor a Fight Club 5e XML file.',
+          'That text could not be read as JSON. It may be cut short, or have a typo such as a missing comma or bracket.',
         ),
       { timeout: WAIT },
     );

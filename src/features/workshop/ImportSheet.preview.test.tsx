@@ -609,7 +609,7 @@ describe('the Import sheet preview', () => {
     await waitFor(
       () =>
         expect(said()).toBe(
-          'That file is not a homebrew file: it is neither JSON nor a Fight Club 5e XML file.',
+          'That file could not be read as JSON. It may be cut short, or have a typo such as a missing comma or bracket.',
         ),
       { timeout: WAIT },
     );
@@ -667,7 +667,7 @@ describe('the Import sheet, from a link', () => {
     await waitFor(
       () =>
         expect(said()).toBe(
-          'That link did not give a homebrew file: what came back is not JSON. Link to the file itself, not a page about it: on GitHub, the one its Raw button opens.',
+          'What that link gave could not be read as JSON. The file may be cut short or have a typo, or the link may go to something other than a homebrew file.',
         ),
       { timeout: WAIT },
     );

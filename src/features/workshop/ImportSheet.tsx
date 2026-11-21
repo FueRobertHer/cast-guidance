@@ -53,11 +53,14 @@ import { kindOf } from './yours';
 
 type Way = 'file' | 'link' | 'text';
 
-/** What each way says when what it read is neither JSON nor a Fight Club 5e file. */
+/**
+ * What each way says when what it read could not be read as JSON. Mostly it is
+ * a homebrew file cut short or with a typo: XML and web pages go another way.
+ */
 const NOT_JSON: Record<Way, string> = {
-  file: 'That file is not a homebrew file: it is neither JSON nor a Fight Club 5e XML file.',
-  text: 'That text is not a homebrew file: it is neither JSON nor a Fight Club 5e XML file.',
-  link: 'That link did not give a homebrew file: what came back is not JSON. Link to the file itself, not a page about it: on GitHub, the one its Raw button opens.',
+  file: 'That file could not be read as JSON. It may be cut short, or have a typo such as a missing comma or bracket.',
+  text: 'That text could not be read as JSON. It may be cut short, or have a typo such as a missing comma or bracket.',
+  link: 'What that link gave could not be read as JSON. The file may be cut short or have a typo, or the link may go to something other than a homebrew file.',
 };
 const WAYS: ReadonlyArray<{ value: Way; label: string }> = [
   { value: 'file', label: 'A file' },

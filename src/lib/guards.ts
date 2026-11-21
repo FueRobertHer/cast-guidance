@@ -22,24 +22,24 @@ export function assertHomebrewFile(raw: unknown): {
 } {
   if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) {
     throw new ValidationError(
-      'this is not a homebrew file, which is one JSON object with a "_meta" block that names its books',
+      'not a homebrew file (a homebrew file is one JSON object, with a "_meta" block naming its books)',
     );
   }
   const json = raw as Record<string, unknown>;
   const meta = json._meta;
   if (meta === null || typeof meta !== 'object') {
-    throw new ValidationError(
-      'this is not a homebrew file, since it has no "_meta" block naming its books',
-    );
+    throw new ValidationError('not a homebrew file (it has no "_meta" block naming its books)');
   }
   const sources = (meta as { sources?: unknown }).sources;
   if (!Array.isArray(sources) || sources.length === 0) {
-    throw new ValidationError('its "_meta" block names no books: its "sources" list is empty');
+    throw new ValidationError(
+      'the "_meta" block names no books (it has no "sources" list, or an empty one)',
+    );
   }
   const parsed: HomebrewMetaSource[] = [];
   for (const s of sources) {
     if (typeof s !== 'object' || s === null || typeof (s as { json?: unknown }).json !== 'string') {
-      throw new ValidationError('a book in its "_meta" block has no "json" id to know it by');
+      throw new ValidationError('a book in the "_meta" block has no "json" id to know it by');
     }
     parsed.push(s as unknown as HomebrewMetaSource);
   }
@@ -255,6 +255,14 @@ export const CHARACTER_EXPORT_FORMAT = 'cast-guidance/character@1';
 /** The format's name without its version, so a later version is known as ours. */
 const CHARACTER_FORMAT_NAME = 'cast-guidance/character@';
 
+/** This app's format at a version above the one it writes, such as `cast-guidance/character@2`. */
+function isLaterFormat(format: unknown): boolean {
+  if (typeof format !== 'string' || !format.startsWith(CHARACTER_FORMAT_NAME)) return false;
+  const version = format.slice(CHARACTER_FORMAT_NAME.length);
+  const current = Number(CHARACTER_EXPORT_FORMAT.slice(CHARACTER_FORMAT_NAME.length));
+  return /^[1-9]\d*$/.test(version) && Number(version) > current;
+}
+
 export interface CharacterExport {
   $format: typeof CHARACTER_EXPORT_FORMAT;
   character: unknown;
@@ -331,7 +339,7 @@ export function assertCharacterExport(raw: unknown): CharacterExport {
   if (obj.$format !== CHARACTER_EXPORT_FORMAT) {
     // What the file says it is goes unsaid: it is the file's text, not words for a player.
     throw new ValidationError(
-      typeof obj.$format === 'string' && obj.$format.startsWith(CHARACTER_FORMAT_NAME)
+      isLaterFormat(obj.$format)
         ? 'this character file is from a newer version of the app: update the app, then import it again'
         : 'this is not a character file from this app',
     );
