@@ -94,6 +94,17 @@ describe('homebrew entries with no name', () => {
     ]);
   });
 
+  it('leaves out the versions of a nameless race with it', () => {
+    // Each would point at a race the registry does not hold.
+    const reg = merged({
+      file: { race: [{ source: 'HB', _versions: [{ name: 'Kin (Red)', source: 'HB' }] }] },
+    });
+    expect(reg.byType('race')).toEqual([]);
+    expect(reg.warnings).toEqual([
+      { entity: 'file', message: 'homebrew race: 1 entry with no name left out' },
+    ]);
+  });
+
   it("keeps a nameless subrace, as the books write a race's base lineage", () => {
     const reg = merged({
       file: {
