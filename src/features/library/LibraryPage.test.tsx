@@ -510,6 +510,30 @@ describe('what an entry page lists (Gemini 43)', () => {
     );
   });
 
+  it("links a subclass on both rules' lists to the printing for the spell's own rules", () => {
+    // A 2014 spell, on the Eldritch Knight's list in both books: the 2024
+    // printing comes first in the lookup, the 2014 one is the link.
+    classLookup.current = {
+      phb: {
+        fireball: {
+          subclass: {
+            XPHB: { Fighter: { XPHB: { 'Eldritch Knight': { name: 'Eldritch Knight' } } } },
+            PHB: { Fighter: { PHB: { 'Eldritch Knight': { name: 'Eldritch Knight' } } } },
+          },
+        },
+      },
+    };
+    renderAt('/library/spell/fireball%7Cphb');
+
+    const links = within(
+      screen.getByText('Subclasses').nextElementSibling as HTMLElement,
+    ).getAllByRole('link');
+    expect(links).toHaveLength(1);
+    expect(links[0]?.getAttribute('href')).toBe(
+      '/library/subclass/Eldritch%20Knight%7CFighter%7CPHB%7CPHB',
+    );
+  });
+
   it('leaves out a class from a book the settings hide', () => {
     classLookup.current = {
       phb: { fireball: { class: { PHB: { Wizard: true }, WoW: { Mage: true } } } },
@@ -590,6 +614,30 @@ describe('what an entry page lists (Gemini 43)', () => {
       expect(within(first).getByRole('cell', { name: '3' })).toBeTruthy();
       // Twenty levels and the header.
       expect(within(table).getAllByRole('row')).toHaveLength(21);
+    });
+
+    it('names a feature with no level under the table rather than losing it', () => {
+      reg.current = {
+        ...reg.current,
+        registry: registryOfTypes({
+          class: [wizard],
+          classFeature: [
+            {
+              name: 'Spellbook Lore',
+              source: 'XPHB',
+              className: 'Wizard',
+              classSource: 'XPHB',
+              entries: [],
+            },
+          ],
+        }),
+      };
+      renderAt('/library/class/wizard%7Cxphb');
+      const region = screen.getByRole('region', { name: 'The Wizard table' });
+      expect(within(region).queryByRole('link', { name: 'Spellbook Lore' })).toBeNull();
+      expect(screen.getByText('Other features:').parentElement?.textContent).toBe(
+        'Other features: Spellbook Lore',
+      );
     });
 
     it("groups its subclasses by the rules they are for, the class's own first (Gemini 47)", () => {
