@@ -3,7 +3,7 @@
 // stores, that every mix of boxes is one the reader takes, that a shipped row
 // opens and keeps what no box shows, and that a feat the cards write reaches
 // the roll prompt priced.
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { useState } from 'react';
 import { MemoryRouter } from 'react-router';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -14,6 +14,7 @@ import { rollEffects } from '@/engine/playRules';
 import { type DataEntity, type EngineContext, newCharacterDoc } from '@/engine/types';
 import { pricedRollEffects } from '@/features/sheet/rollPrice';
 import rollExtras from '@/rules/cast-guidance/roll-extras.json';
+import { boxChoices, cardBox, hasBox, setBox } from '../../../tests-fixtures/cardBoxes';
 import { makeTestContext } from '../../../tests-fixtures/testWorld';
 import { moreKinds } from './EffectCards';
 import { editor as feat } from './editors/FeatEditor';
@@ -47,23 +48,23 @@ function withCards(effects: Json[]) {
 }
 
 /**
- * The feat's own cards, where every box these tests set is. A box is looked
- * up there rather than in the whole editor: jsdom finds each control's labels
- * by walking the whole page, so a lookup costs about the controls searched
- * times the page's size, and the feat's other sections hold most controls.
+ * The feat's own cards, where every box these tests set is: the editor's
+ * other sections hold most of its controls.
  */
-function cards() {
+function cards(): HTMLElement {
   const headings = [...document.querySelectorAll('section > h2')].filter(
     (h) => h.textContent === 'What it does on the sheet',
   );
   if (headings.length !== 1) throw new Error(`${headings.length} sections of cards on screen`);
-  return within(headings[0]?.parentElement as HTMLElement);
+  return headings[0]?.parentElement as HTMLElement;
 }
-const box = (label: string) => cards().getByLabelText(label) as HTMLSelectElement;
-const has = (label: string) => cards().queryByLabelText(label) !== null;
-const pick = (label: string, value: string) =>
-  fireEvent.change(cards().getByLabelText(label), { target: { value } });
-const choices = (label: string) => [...box(label).options].map((o) => o.value);
+
+// Each box is found by its name alone (cardBoxes.ts), as a label query costs a
+// walk of the page for every control it asks.
+const box = (label: string) => cardBox(label, cards());
+const has = (label: string) => hasBox(label, cards());
+const pick = (label: string, value: string) => setBox(label, value, cards());
+const choices = (label: string) => boxChoices(label, cards());
 
 /**
  * Boxes on screen showing a choice other than the value they hold: a value
@@ -180,9 +181,7 @@ describe('the Paid extra card', () => {
       bonus: 1,
       after: true,
     });
-    fireEvent.change(cards().getByLabelText('Paid extra: Bonus'), {
-      target: { value: 'max(1, mod.int)' },
-    });
+    pick('Paid extra: Bonus', 'max(1, mod.int)');
     pick('Paid extra: Paid with', 'useReaction');
     expect(effects()[1]).toMatchObject({ bonus: { f: 'max(1, mod.int)' }, reaction: true });
     shown(
@@ -317,9 +316,7 @@ describe('the Reroll card', () => {
     shown('Reroll the d20 on saving throws, after a failed roll, paid with its use');
     pick('Reroll: Ability', 'con');
     pick('Reroll: Paid with', 'useReaction');
-    fireEvent.change(cards().getByLabelText('Reroll: Adds to the new roll'), {
-      target: { value: 'classLevel' },
-    });
+    pick('Reroll: Adds to the new roll', 'classLevel');
     expect(effects()[1]).toEqual({
       kind: 'rollReroll',
       on: { rolls: ['save'], abilities: ['con'] },
@@ -331,9 +328,7 @@ describe('the Reroll card', () => {
       'Reroll the d20 on Constitution saving throws, adding +(classLevel), after a failed roll, paid with its use and your reaction',
     );
     // Emptied, the bonus is gone.
-    fireEvent.change(cards().getByLabelText('Reroll: Adds to the new roll'), {
-      target: { value: ' ' },
-    });
+    pick('Reroll: Adds to the new roll', ' ');
     expect(effects()[1]).not.toHaveProperty('bonus');
     expect(problems(effects())).toEqual([]);
   });
@@ -430,9 +425,7 @@ describe('the Reroll card', () => {
               const bonuses = has('Reroll: Adds to the new roll') ? ['2', ''] : [undefined];
               for (const bonus of bonuses) {
                 if (bonus !== undefined) {
-                  fireEvent.change(cards().getByLabelText('Reroll: Adds to the new roll'), {
-                    target: { value: bonus },
-                  });
+                  pick('Reroll: Adds to the new roll', bonus);
                 }
                 const now = effects();
                 expect(problems(now), JSON.stringify(now[1])).toEqual([]);

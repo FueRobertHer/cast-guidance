@@ -468,12 +468,24 @@ test.describe('axe: pages and overlays', () => {
     await confirm.getByRole('button', { name: 'Cancel' }).click();
     await expect(confirm).toBeHidden();
 
-    // Something made here lands in a collection of the player's own, whose
-    // page lists it to open, rename or delete.
+    // The editor, just saved, with a card for the sheet: its fields, the
+    // card's boxes and the Saved line with its Undo.
     await page.goto('/workshop/new/feat');
     await page.getByRole('textbox', { name: 'Name', exact: true }).fill('Fire Gift');
+    await page.getByRole('button', { name: 'Speed', exact: true }).click();
+    await expect(page.getByRole('button', { name: /^Remove .* to your Speed$/ })).toBeVisible();
     await page.getByRole('button', { name: 'Save', exact: true }).click();
     await page.waitForURL(/\/workshop\/edit\/feat\//);
+    await expect(page.getByRole('button', { name: 'Undo', exact: true })).toBeVisible();
+    // Scanned once the save's toast has gone (scanState), the Saved line staying.
+    const toast = page.getByTestId('notice-toast').getByText('Saved Fire Gift', { exact: true });
+    await expect(toast).toBeVisible();
+    await expect(toast).toBeHidden({ timeout: 15_000 });
+    await animationsSettled(page);
+    await scanState(page, 'workshop-editor');
+
+    // Something made there lands in a collection of the player's own, whose
+    // page lists it to open, rename or delete.
     await gotoHeading(page, '/workshop?shelf=collections', 'Workshop');
     await page.getByRole('link', { name: /^My homebrew\s*,/ }).click();
     await expect(page.getByRole('heading', { level: 1, name: 'My homebrew' })).toBeVisible();

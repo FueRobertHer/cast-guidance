@@ -13,6 +13,7 @@ import { readMechanics, readStoredEffects } from '@/engine/effects/mechanics';
 import { rollEffects } from '@/engine/playRules';
 import { type DataEntity, type EngineContext, newCharacterDoc } from '@/engine/types';
 import { pricedRollEffects } from '@/features/sheet/rollPrice';
+import { boxChoices, cardBox, hasBox, setBox } from '../../../tests-fixtures/cardBoxes';
 import { makeTestContext } from '../../../tests-fixtures/testWorld';
 import { changeCount, resolveStored, writeEntry } from './copyWriter';
 import { amendWords } from './EffectCards';
@@ -67,11 +68,12 @@ function onScreen(original: Json | undefined, guidance: Json = {}) {
   };
 }
 
-const box = (label: string) => screen.getByLabelText(label) as HTMLSelectElement;
-const has = (label: string) => screen.queryByLabelText(label) !== null;
-const pick = (label: string, value: string) =>
-  fireEvent.change(screen.getByLabelText(label), { target: { value } });
-const choices = (label: string) => [...box(label).options].map((o) => o.value);
+// A card's box is found by its name alone (cardBoxes.ts), as a label query
+// costs a walk of the page for every control it asks.
+const box = (label: string) => cardBox(label);
+const has = (label: string) => hasBox(label);
+const pick = (label: string, value: string) => setBox(label, value);
+const choices = (label: string) => boxChoices(label);
 const addPrice = () => fireEvent.click(screen.getByRole('button', { name: /Change its price/ }));
 
 /** Boxes showing a choice other than the value they hold (see paidRollCards.test.tsx). */
