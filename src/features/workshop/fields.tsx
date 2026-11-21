@@ -41,6 +41,34 @@ export function onePerName(
     .sort((a, b) => a.name.localeCompare(b.name));
 }
 
+/**
+ * Every printing of each name, for a picker that tells them apart by their
+ * books: sorted by name, and within a name the one `onePerName` would give
+ * first, so a name typed and found by its first match is the printing it was.
+ */
+export function everyPrinting(
+  entities: readonly Entity[],
+  entry: Entity,
+): Array<{ name: string; source: string }> {
+  const want = editionOf(entry);
+  return (
+    entities
+      .flatMap((e, at) =>
+        typeof e.name === 'string' && typeof e.source === 'string'
+          ? [{ name: e.name, source: e.source, fits: editionOf(e) === want, at }]
+          : [],
+      )
+      // One name in two cases is one name, as `onePerName` reads it.
+      .sort(
+        (a, b) =>
+          a.name.toLowerCase().localeCompare(b.name.toLowerCase()) ||
+          Number(b.fits) - Number(a.fits) ||
+          a.at - b.at,
+      )
+      .map(({ name, source }) => ({ name, source }))
+  );
+}
+
 /** The six abilities, by the key the data uses. */
 export const ABILITY_WORDS: ReadonlyArray<readonly [string, string]> = [
   ['str', 'Strength'],

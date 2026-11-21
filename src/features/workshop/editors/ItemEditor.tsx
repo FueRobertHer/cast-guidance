@@ -11,7 +11,7 @@
  * the spells they cast, each priced by level, which an action can spend too.
  */
 import { CircleAlert } from 'lucide-react';
-import { useId, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import { useTypePacks } from '@/data5e/hooks';
 import type { EntityRegistry } from '@/data5e/normalize';
 import { isRecord, RULE_SET_LIMITS, RULE_SET_TYPE, type StoredEffect } from '@/engine/castGuidance';
@@ -48,15 +48,16 @@ import { EffectCards, guidanceWith, type SpellOption } from '../EffectCards';
 import type { EditorProps, EditorSpec, Json } from '../editorTypes';
 import {
   ChipPicks,
+  everyPrinting,
   Field,
   Kept,
   NumberField,
-  onePerName,
   Section,
   Select,
   TextBlocks,
 } from '../fields';
 import { OnSheet, SpellsAttached } from '../originFields';
+import { printingOf, SpellPicker } from '../SpellPicker';
 
 type Options = ReadonlyArray<readonly [string, string]>;
 
@@ -661,7 +662,6 @@ function ChargeSpell({
   n,
   spell,
   options,
-  listId,
   disabled,
   onChange,
   onRemove,
@@ -669,7 +669,6 @@ function ChargeSpell({
   n: number;
   spell: Json;
   options: readonly SpellOption[];
-  listId: string;
   disabled: boolean;
   onChange: (next: Json) => void;
   onRemove: () => void;
@@ -700,20 +699,23 @@ function ChargeSpell({
           boxes wrap, keeping the spell readable and Remove at the right. */}
       <div className="flex flex-wrap items-end gap-2">
         <div className="min-w-24 flex-1">
-          <Field label="Spell">
-            <input
-              aria-label={`Charge spell ${n}`}
-              list={listId}
-              value={typed}
-              placeholder="Fireball"
-              disabled={disabled}
-              onChange={(e) => {
-                setHeld(e.target.value);
-                onChange({ ...spell, spell: resolve(e.target.value) });
-              }}
-              className={fieldClass}
-            />
-          </Field>
+          <SpellPicker
+            label="Spell"
+            ariaLabel={`Charge spell ${n}`}
+            value={typed}
+            options={options}
+            picked={printingOf(ref, options)}
+            placeholder="Fireball"
+            disabled={disabled}
+            onType={(text) => {
+              setHeld(text);
+              onChange({ ...spell, spell: resolve(text) });
+            }}
+            onPick={(s) => {
+              setHeld(s.name);
+              onChange({ ...spell, spell: `${s.name}|${s.source}` });
+            }}
+          />
         </div>
         <div className="w-18">
           <Field label="Costs">
@@ -778,7 +780,6 @@ function ChargeSpell({
 
 function Charges(props: EditorProps) {
   const { draft, change, original, registry, readOnly } = props;
-  const listId = useId();
   const spellData = useTypePacks('spell');
   const effects = effectsOf(draft);
   const counted = effects.find(isCharges) as Json | undefined;
@@ -1002,17 +1003,11 @@ function Charges(props: EditorProps) {
               n={i + 1}
               spell={s}
               options={options}
-              listId={listId}
               disabled={readOnly}
               onChange={(next) => setSpells(spells.map((x, j) => (j === i ? next : x)))}
               onRemove={() => setSpells(spells.filter((_, j) => j !== i))}
             />
           ))}
-          <datalist id={listId}>
-            {options.map((o) => (
-              <option key={`${o.name}|${o.source}`} value={o.name} />
-            ))}
-          </datalist>
           {!readOnly && (
             <Button
               variant="outline"
@@ -1100,9 +1095,12 @@ function GrantedSpell({ draft, change, readOnly }: EditorProps) {
   );
 }
 
-/** The spells "Cast a spell" can name, one per name, the player's edition first. */
+/**
+ * The spells "Cast a spell" and the charges can name: every printing, the
+ * player's edition first within a name, so a name typed finds that one.
+ */
 function spellOptions(props: EditorProps): SpellOption[] {
-  return onePerName(props.registry.byType('spell'), props.draft);
+  return everyPrinting(props.registry.byType('spell'), props.draft);
 }
 
 /** The spells it casts with no charges: at will, or a number of times a rest. */
