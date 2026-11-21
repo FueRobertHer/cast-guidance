@@ -46,7 +46,7 @@ import { usePacksHere } from '@/features/homebrew/PackReviewSheet';
 import { TYPE_LABELS } from '@/features/library/browseTypes';
 import { downloadJson, jsonFilename } from '@/lib/download';
 import { safeExternalHref } from '@/lib/url';
-import { useBack } from '@/lib/useBack';
+import { FIRST_ENTRY, isFirstEntry, useBack } from '@/lib/useBack';
 import { usePageTitle } from '@/lib/usePageTitle';
 import { useDataStatus } from '@/stores/dataStatus';
 import { errorText, notify, notifyFailure } from '@/stores/notices';
@@ -1322,6 +1322,7 @@ function Missing({
 
 function CollectionAt({ address }: { address: string }) {
   const navigate = useNavigate();
+  const first = isFirstEntry(useLocation());
   const meta = useLiveQuery(() => homebrewRepo.listMetaSafe(), []);
   const owned = useLiveQuery(() => homebrewRepo.ownedSafe(), []);
   const made =
@@ -1333,11 +1334,13 @@ function CollectionAt({ address }: { address: string }) {
       ? undefined
       : collectionWith(address, meta.files, made);
   // Found by a row's id or the link it came from: its own address from here
-  // on, which an update keeps (a row's id goes with it).
+  // on, which an update keeps (a row's id goes with it). Opened as the tab's
+  // first page, it stays the first, so Back goes up rather than out.
   const own = c?.id;
   useEffect(() => {
-    if (own !== undefined && own !== address) void navigate(collectionPath(own), { replace: true });
-  }, [own, address, navigate]);
+    if (own === undefined || own === address) return;
+    void navigate(collectionPath(own), { replace: true, ...(first ? { state: FIRST_ENTRY } : {}) });
+  }, [own, address, navigate, first]);
   if (meta === undefined || made === undefined) {
     return (
       <Frame>

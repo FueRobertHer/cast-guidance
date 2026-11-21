@@ -252,6 +252,7 @@ test.describe('touch target sizes', () => {
     await expect(page.getByRole('heading', { level: 1, name: 'My homebrew' })).toBeVisible();
     await expect(page.getByRole('link', { name: /^Target Gift\s*,/ })).toBeVisible();
     await animationsSettled(page);
+    await expectTargets(button(page, 'Back'), 1);
     await expectTargets(button(page, 'Use My homebrew'), 1);
     await expectTargets(page.getByRole('link', { name: /^Target Gift\s*,/ }), 1);
     await expectTargets(button(page, 'More for Target Gift'), 1);

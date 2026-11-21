@@ -259,11 +259,13 @@ export function importPreview(page: Page, title: string): Locator {
 
 /**
  * Answers an open import preview with Import (or Cancel) and waits for the
- * outcome. The roster and the Workshop close the preview before they write and
- * put the outcome on their import line after the write commits, so a closed
- * dialog is not enough: a navigation then (a `page.goto`) could abort the
- * write, and the character would not be there. The line is empty while the
- * preview is open.
+ * outcome. The roster closes the preview before it writes and puts the
+ * outcome on its import line after the write commits, so a closed dialog is
+ * not enough there: a navigation then (a `page.goto`) could abort the write,
+ * and the character would not be there. The Workshop keeps the preview up
+ * until the write settles, then puts the outcome on its page, or, when the
+ * write failed, brings its Import sheet back with the reason, which this
+ * throws with.
  */
 export async function answerImportPreview(
   page: Page,
@@ -273,7 +275,18 @@ export async function answerImportPreview(
   const dialog = importPreview(page, title);
   await dialog.getByRole('button', { name: answer, exact: true }).click();
   await expect(dialog).toBeHidden();
-  await expect(page.locator('[data-import-status]')).not.toBeEmpty();
+  // An outcome from an earlier import can still be on the page, beside the
+  // sheet's own line, so any line with words in it will do.
+  await expect(page.locator('[data-import-status]').filter({ hasText: /\S/ })).not.toHaveCount(0);
+  // A failure fills the sheet's own line as it hides the preview. A Cancel can
+  // show the sheet for a moment before it closes, with that line still empty.
+  const why = page
+    .getByRole('dialog', { name: 'Import', exact: true })
+    .locator('[data-import-status]')
+    .filter({ hasText: /\S/ });
+  if ((await why.count()) > 0) {
+    throw new Error(`The import did not land: ${await why.first().textContent()}`);
+  }
 }
 
 /**

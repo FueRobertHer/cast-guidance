@@ -131,6 +131,42 @@ describe('a collection page', () => {
     expect(await heading('imported.json')).toBeTruthy();
   });
 
+  it('goes up to Collections from an old Builder link opened in a new tab', async () => {
+    const row = await homebrewRepo.importJson(IMPORTED, 'imported.json');
+    // The redirect and the page's own address each replace the tab's first
+    // entry: Back still goes up, not out of the app.
+    const router = visit(`/homebrew/edit/${row.id}`);
+    expect(await heading('imported.json')).toBeTruthy();
+    await waitFor(() =>
+      expect(router.state.location.pathname).toBe(
+        `/workshop/collection/${encodeURIComponent(row.key ?? '')}`,
+      ),
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Back' }));
+    await waitFor(() =>
+      expect(router.state.location.pathname + router.state.location.search).toBe(
+        '/workshop?shelf=collections',
+      ),
+    );
+  });
+
+  it('steps back to the page an old Builder link was followed from', async () => {
+    const row = await homebrewRepo.importJson(IMPORTED, 'imported.json');
+    const router = createMemoryRouter(routes, {
+      initialEntries: ['/settings', `/homebrew/edit/${row.id}`],
+      initialIndex: 1,
+    });
+    render(
+      <StrictMode>
+        <RouterProvider router={router} />
+      </StrictMode>,
+    );
+    expect(await heading('imported.json')).toBeTruthy();
+    await waitFor(() => expect(router.state.location.pathname).not.toContain(row.id));
+    fireEvent.click(screen.getByRole('button', { name: 'Back' }));
+    await waitFor(() => expect(router.state.location.pathname).toBe('/settings'));
+  });
+
   it("gives a compendium's books a switch each, from any book's address", async () => {
     const { books } = await homebrewRepo.prepareBooks(
       {

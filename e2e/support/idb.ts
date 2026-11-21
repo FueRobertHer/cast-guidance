@@ -53,6 +53,18 @@ async function query<T>(page: Page, q: Query): Promise<T> {
   return result as T;
 }
 
+/** A stored homebrew file's row, as far as the specs read it. */
+export interface StoredHomebrewFile {
+  id: string;
+  fileName: string;
+  [field: string]: unknown;
+}
+
+/** Every stored homebrew file's row. */
+export function getHomebrewFiles(page: Page): Promise<StoredHomebrewFile[]> {
+  return query<StoredHomebrewFile[]>(page, { store: 'homebrewFiles', kind: 'getAll' });
+}
+
 /** Cached data files for one release tag. */
 export function countDataFiles(page: Page, tag: string): Promise<number> {
   return query<number>(page, { store: 'dataFiles', kind: 'count', index: 'tag', key: tag });

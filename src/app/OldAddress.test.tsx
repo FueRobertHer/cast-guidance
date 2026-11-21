@@ -5,6 +5,7 @@
 import { cleanup, render, screen } from '@testing-library/react';
 import { createMemoryRouter, RouterProvider, useLocation, useParams } from 'react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { isFirstEntry } from '@/lib/useBack';
 import { workshopAddress } from './OldAddress';
 
 // The real shell starts the data layer and analytics, and the Workshop's
@@ -47,6 +48,9 @@ describe('workshopAddress', () => {
       '/homebrew/edit//',
       '/homebrew/edit/abc/more',
       '/homebrew//edit/abc',
+      // The collection page's name for The books, which no file's id was.
+      '/homebrew/edit/books',
+      '/homebrew/edit/%62ooks/',
       '/homebrew/other',
     ]) {
       expect(workshopAddress(path), path).toBe('/workshop?shelf=collections');
@@ -75,6 +79,17 @@ describe('an old Homebrew address', () => {
     expect(await screen.findByRole('heading', { name: 'Collection file-1' })).toBeTruthy();
     expect(router.state.location.pathname).toBe('/workshop/collection/file-1');
     expect(router.state.historyAction).toBe('REPLACE');
+    // Followed from a page of the app, so Back steps back to it.
+    expect(isFirstEntry(router.state.location)).toBe(false);
+  });
+
+  it('keeps an old link opened in a new tab the first page, so Back goes up', async () => {
+    const router = createMemoryRouter(routes, { initialEntries: ['/homebrew/edit/file-1'] });
+    render(<RouterProvider router={router} />);
+    expect(await screen.findByRole('heading', { name: 'Collection file-1' })).toBeTruthy();
+    // The replace gave the entry a new key, so only its state can say.
+    expect(router.state.location.key).not.toBe('default');
+    expect(isFirstEntry(router.state.location)).toBe(true);
   });
 
   it('lands a Builder link with no file in it on the Collections shelf', async () => {

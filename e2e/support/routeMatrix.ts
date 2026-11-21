@@ -278,6 +278,17 @@ export const ROUTES: readonly RouteCase[] = [
     path: (m) => `/homebrew/edit/${m.homebrewId}`,
     at: () => content(title(HOMEBREW_NAME, 'Workshop'), heading(HOMEBREW_NAME)),
   },
+  {
+    name: 'old homebrew link to a file that is gone',
+    frame: appNav,
+    path: () => '/homebrew/edit/missing',
+    at: () =>
+      notFound(
+        title('Collection not found', 'Workshop'),
+        text('This collection is no longer on this device.'),
+        link('Back to the Workshop'),
+      ),
+  },
   // The Workshop reads only what is on the device for its shelves, so each
   // page is itself at every level, game data or none.
   {

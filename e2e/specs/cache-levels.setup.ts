@@ -21,7 +21,7 @@ import {
   publishLevel,
 } from '../support/cacheLevels.ts';
 import { expect, test } from '../support/coldLaunch.ts';
-import { countDataFiles, getCharacter } from '../support/idb.ts';
+import { countDataFiles, getCharacter, getHomebrewFiles } from '../support/idb.ts';
 import { levelsDir } from '../support/stableOrigin.ts';
 import { waitForSwControl } from '../support/sw.ts';
 
@@ -79,20 +79,22 @@ const HOMEBREW = jsonFile(HOMEBREW_NAME, {
 
 /**
  * Imports the table's homebrew file through the Workshop's Import sheet and
- * returns its collection's address. Imported, not made: the editor needs the
- * game data, which the `none` level never has, and an import's preview does
- * not.
+ * returns its stored row's id, the id an old Builder link and a collection
+ * link from before keys name. Imported, not made: the editor needs the game
+ * data, which the `none` level never has, and an import's preview does not.
  */
 async function importHomebrew(page: Page): Promise<string> {
   await importHomebrewFile(page, HOMEBREW);
   await answerImportPreview(page, `Import "${HOMEBREW_NAME}"?`);
-  const card = page
-    .getByRole('main')
-    .getByRole('link', { name: new RegExp(`^${HOMEBREW_NAME}\\s*,`) });
-  const href = (await card.getAttribute('href')) ?? '';
-  const id = /^\/workshop\/collection\/([^/]+)$/.exec(href)?.[1];
-  if (id === undefined) throw new Error(`No collection address in "${href}"`);
-  return id;
+  await expect(
+    page.getByRole('main').getByRole('link', { name: new RegExp(`^${HOMEBREW_NAME}\\s*,`) }),
+  ).toBeVisible();
+  const rows = (await getHomebrewFiles(page)).filter((r) => r.fileName === HOMEBREW_NAME);
+  const [row] = rows;
+  if (rows.length !== 1 || row === undefined) {
+    throw new Error(`Expected one stored "${HOMEBREW_NAME}", found ${rows.length}`);
+  }
+  return row.id;
 }
 
 /** Waits for the download queue to stop where the level stops it. */

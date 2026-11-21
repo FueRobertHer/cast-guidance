@@ -124,8 +124,8 @@ the binary outright, as an escape hatch when the two drift.
   items, no spells or books), `full` the whole release. The mirror fails what
   a level leaves out while it is built; the drain stops at the first failure,
   so each is a real place for an install to stop. Each also holds a character
-  and an imported homebrew file (`level.json` has their ids, the file's as
-  its collection's address). `copyLevel`
+  and an imported homebrew file (`level.json` has their ids, the file's
+  stored row id, which an old Builder link names). `copyLevel`
   copies one for a cell without the browser's caches, so the precache alone
   must serve the app. A passing cell's profile is deleted at teardown; a
   failing one keeps its IndexedDB but not the worker's CacheStorage, and only
@@ -254,9 +254,10 @@ raw error.
 | `/library/race/nope%7Cx` | offline | not found | not found | not found |
 | `/library/bogus` | not found | not found | not found | not found |
 | `/homebrew`, an old link (lands on the Collections shelf) | content | content | content | content |
-| `/homebrew/edit/<id>`, an old link (lands on the homebrew file's collection page) | content | content | content | content |
+| `/homebrew/edit/<id>`, an old link by the file's row id (lands on its collection page) | content | content | content | content |
+| `/homebrew/edit/missing`, an old link to a file that is gone | not found | not found | not found | not found |
 | `/workshop`, and `?shelf=collections` (the homebrew file's card) | content | content | content | content |
-| `/workshop/collection/<id>` (the homebrew file) | content | content | content | content |
+| `/workshop/collection/<id>` (the homebrew file, by its row id) | content | content | content | content |
 | `/workshop/collection/missing` | not found | not found | not found | not found |
 | `/workshop/rules`, `/workshop/new` | content | content | content | content |
 | `/settings` | content ("not downloaded yet", Make available offline) | content ("13/19 files", Make available offline) | content ("16/19 files", Make available offline) | content ("Ready") |

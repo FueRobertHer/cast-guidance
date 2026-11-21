@@ -55,8 +55,9 @@ export interface LevelManifest {
   /** The caster (fixtures/caster.ts), who knows Fireball. */
   casterId: string;
   /**
-   * The imported homebrew file's collection, by the address its card on the
-   * Collections shelf links to: still encoded, for a path.
+   * The imported homebrew file's stored row id: what an old Builder link and
+   * a collection link from before keys name, which the collection page finds
+   * the collection by.
    */
   homebrewId: string;
 }

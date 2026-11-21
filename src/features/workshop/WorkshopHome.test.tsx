@@ -510,6 +510,45 @@ describe('the Workshop home', () => {
     }
   });
 
+  it('lists every file that could not be read, twins and blank names too', async () => {
+    const NO_ID = 'the row has no id, so nothing can address it';
+    const real = homebrewRepo.listMetaSafe.bind(homebrewRepo);
+    // Rows with ids that are not strings: each one reads back the same way.
+    const read = vi.spyOn(homebrewRepo, 'listMetaSafe').mockImplementation(async () => ({
+      ...(await real()),
+      errors: [
+        { fileName: 'twin.json', message: NO_ID },
+        { fileName: 'twin.json', message: NO_ID },
+        { fileName: ' ', message: NO_ID },
+        { message: NO_ID },
+      ],
+    }));
+    const warned = vi.spyOn(console, 'error');
+    try {
+      await visit('/workshop?shelf=collections');
+      const list = await screen.findByRole(
+        'region',
+        { name: 'Could not be read' },
+        { timeout: WAIT },
+      );
+      expect(
+        within(list)
+          .getAllByRole('listitem')
+          .map((li) => li.textContent),
+      ).toEqual([
+        `twin.json: ${NO_ID}`,
+        `twin.json: ${NO_ID}`,
+        `A file with no name: ${NO_ID}`,
+        `A file with no name: ${NO_ID}`,
+      ]);
+      // No two rows share a key, which would leave one out on the next render.
+      expect(warned.mock.calls.flat().join(' ')).not.toMatch(/same key/);
+    } finally {
+      read.mockRestore();
+      warned.mockRestore();
+    }
+  });
+
   it('lands an old Homebrew link on the Collections shelf, the Workshop tab lit', async () => {
     const router = await visit('/workshop');
     await act(() => router.navigate('/homebrew'));
@@ -517,9 +556,17 @@ describe('the Workshop home', () => {
       timeout: WAIT,
     });
     expect(router.state.location.pathname).toBe('/workshop');
-    expect(
-      await screen.findByRole('link', { name: 'Import a file or a link' }, { timeout: WAIT }),
-    ).toBeTruthy();
+    // The Collections shelf itself, not only its address: The books' card is
+    // on no other shelf.
+    await waitFor(
+      () =>
+        expect(
+          screen
+            .getAllByRole('link')
+            .some((l) => l.getAttribute('href') === '/workshop/collection/books'),
+        ).toBe(true),
+      { timeout: WAIT },
+    );
     const nav = screen.getByRole('navigation', { name: 'Main' });
     expect(
       within(nav)

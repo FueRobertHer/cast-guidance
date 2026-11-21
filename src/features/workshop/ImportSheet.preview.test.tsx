@@ -856,14 +856,21 @@ describe('the Import sheet, with a Fight Club 5e compendium', () => {
     renderSheet();
     await readFile('library.xml', LIBRARY(['Ash Bolt']));
     const dialog = await findDialog('Import "library.xml"?');
+    const books = within(dialog).getByRole('region', { name: 'Books' });
     fireEvent.click(within(dialog).getByRole('button', { name: 'Select none' }));
     const importButton = within(dialog).getByRole('button', { name: 'Import' });
     expect(importButton.getAttribute('aria-disabled')).toBe('true');
     expect(dialog.textContent).toContain('Tick a book that is not already on this device');
     fireEvent.click(importButton);
     expect(screen.queryByRole('dialog', { name: 'Import "library.xml"?' })).toBeTruthy();
-    expect(done).toEqual([]);
-    expect(await fileCount()).toBe(0);
+    // The press did nothing, even later: a book ticked now is the only import.
+    fireEvent.click(within(books).getByRole('checkbox', { name: /Ember Codex/ }));
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Import 1 book' }));
+    expect(await handedBack()).toEqual({
+      message: 'Imported 1 book from "library.xml" (1 spell)',
+      landed: true,
+    });
+    expect((await homebrewRepo.listMetaSafe()).files.map((f) => f.book)).toEqual(['Ember Codex']);
   });
 
   it('says when every entry is already in the game data, without a preview', async () => {

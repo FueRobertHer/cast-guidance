@@ -406,6 +406,27 @@ describe('packs in the Workshop', () => {
       );
       expect(await findRow('Gritty Table, Off')).toBeTruthy();
       expect(reads).not.toHaveBeenCalled();
+
+      // Saved again (a newer copy imported over it): the stored row is a new
+      // one, its content moved, so the page reads that row, once.
+      const changed = structuredClone(grittyTable) as { _meta: { castGuidance: Json } };
+      changed._meta.castGuidance.tableRules = { restLength: 'heroic' };
+      await bringIn('gritty-table.json', changed);
+      fireEvent.click(
+        within(await findDialog('Update Gritty Table?')).getByRole('button', { name: 'Update' }),
+      );
+      await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull(), { timeout: WAIT });
+      const { file } = await storedPack('Gritty Table');
+      await waitFor(() => expect(reads.mock.calls).toEqual([[file?.id]]), { timeout: WAIT });
+      // Opening and closing its sheet afterwards draws the page again, and
+      // reads nothing more.
+      fireEvent.click(
+        await screen.findByRole('button', { name: /^Gritty Table, / }, { timeout: WAIT }),
+      );
+      const again = await findDialog('Gritty Table');
+      fireEvent.click(within(again).getByRole('button', { name: 'Done' }));
+      await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull(), { timeout: WAIT });
+      expect(reads.mock.calls).toEqual([[file?.id]]);
     } finally {
       reads.mockRestore();
     }

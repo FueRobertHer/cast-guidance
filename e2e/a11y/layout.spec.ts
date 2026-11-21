@@ -52,6 +52,12 @@ interface Route {
    * only truncates can squeeze it to nothing and still scroll nowhere.
    */
   keepsRoom?: (page: Page) => Locator[];
+  /**
+   * A fixed panel the route opens (a sheet), whose content must stay inside
+   * it: a fixed panel never widens the page, so the sideways check cannot
+   * see past its edge.
+   */
+  panel?: (page: Page) => Locator;
 }
 
 async function gotoHeading(page: Page, url: string, heading: string | RegExp): Promise<void> {
@@ -160,8 +166,10 @@ const ROUTES: Route[] = [
           sheet.getByRole('group', { name: 'Bring in' }).getByRole('button', { name, exact: true }),
         ),
         sheet.getByRole('button', { name: 'Choose a file', exact: true }),
+        sheet.getByRole('button', { name: 'Read it', exact: true }),
       ];
     },
+    panel: (page) => page.getByRole('dialog', { name: 'Import', exact: true }),
   },
   {
     name: 'workshop',
@@ -321,6 +329,10 @@ async function openFolds(page: Page): Promise<void> {
 async function expectNoSidewaysScroll(page: Page, route: Route): Promise<void> {
   const { by, culprits } = await sidewaysOverflow(page);
   expect(by, `${route.name} scrolls sideways, past: ${culprits.join(', ')}`).toBe(0);
+  const panel = route.panel?.(page);
+  if (panel !== undefined) {
+    expect(await pastRightEdge(panel), `${route.name}: past its panel`).toEqual([]);
+  }
 }
 
 // In two tests each, so neither runs near the timeout under load.

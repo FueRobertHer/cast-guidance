@@ -333,6 +333,14 @@ function CollectionsShelf({
 function Unreadable({ errors }: { errors: readonly HomebrewReadError[] }) {
   const one = errors.length === 1;
   const opens = errors.some((e) => e.id !== undefined);
+  // Rows with no id can share a name and a reason, so a repeat is numbered.
+  const seen = new Map<string, number>();
+  const keys = errors.map((e) => {
+    const base = e.id ?? `${e.fileName ?? ''}|${e.message}`;
+    const n = seen.get(base) ?? 0;
+    seen.set(base, n + 1);
+    return n === 0 ? base : `${base}#${n}`;
+  });
   return (
     <section aria-labelledby="unreadable-head" className="flex flex-col gap-1.5">
       <h2 id="unreadable-head" className={H2}>
@@ -343,10 +351,13 @@ function Unreadable({ errors }: { errors: readonly HomebrewReadError[] }) {
         {one ? 'it is' : 'they are'} not in use.{opens && ' Open one to delete it.'}
       </p>
       <ul className="flex flex-col gap-1.5">
-        {errors.map((e) => {
-          const name = e.fileName ?? 'A file with no name';
+        {errors.map((e, at) => {
+          const name =
+            e.fileName === undefined || e.fileName.trim() === ''
+              ? 'A file with no name'
+              : e.fileName;
           return (
-            <li key={e.id ?? `${name}|${e.message}`} className="text-body break-words">
+            <li key={keys[at]} className="text-body break-words">
               {e.id === undefined ? (
                 <span className="text-body-strong">{name}</span>
               ) : (
