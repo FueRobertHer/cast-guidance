@@ -34,6 +34,7 @@ import { useDbLifecycle } from '@/stores/dbLifecycle';
 import { badgeClass } from '@/ui/Badge';
 import { Button, buttonClass } from '@/ui/Button';
 import { Chip } from '@/ui/Chip';
+import { ChangedBadge, ChangedVersions, changeIn, sameWords } from '@/ui/EntityInfoSheet';
 import { useFailureAlert } from '@/ui/failureAlert';
 import { SourceBadge, sourceBadgeLabel } from '@/ui/SourceBadge';
 import { cardClass, listClass } from '@/ui/surfaces';
@@ -904,6 +905,18 @@ function EntityDetail({ type, uid, reg }: { type: EntityType; uid: string; reg: 
     return groupTitles(type, mine)[0]?.printings ?? [];
   }, [registry, type, entity, policy, feature]);
 
+  // The printing whose book's version is on screen, so another printing (or
+  // entry) opens on the table's version again.
+  const [bookFor, setBookFor] = useState<string | null>(null);
+  // The page stays mounted as the printing switch replaces the URL, so coming
+  // back to the printing that was flipped must not find it still flipped.
+  const [lastUid, setLastUid] = useState(uid);
+  if (lastUid !== uid) {
+    setLastUid(uid);
+    setBookFor(null);
+  }
+  const owner = useOwner(type, entity);
+
   const typeLabel = TYPE_LABELS.get(type) ?? FEATURE_TYPES.get(type) ?? type;
   const failed = reg.error !== null || packs.status === 'error';
   const settled = registry !== null && packs.status !== 'loading' && !refreshing;
@@ -970,13 +983,28 @@ function EntityDetail({ type, uid, reg }: { type: EntityType; uid: string; reg: 
     );
   }
 
-  const facts = headerFacts(type, entity);
+  // A change to the books over this entry (ADR-002, D2): the player's own, or a
+  // rule pack that reaches every character. The page shows the table's version,
+  // which is the one the registry holds, with the book's one tap away, as the
+  // sheet's info sheets do. A pack that reaches only some characters is not in
+  // the shared registry's version, so the page shows the book's text and no badge.
+  const record = changeIn(registry, entity);
+  const book = record !== undefined && bookFor === uid;
+  const shown = book ? record.base : entity;
+  const facts = headerFacts(type, shown);
+  const higher = shown.entriesHigherLevel;
+  const offered = (hasEditor(type) || canChange(type)) && registry !== null;
   return (
     <main className="flex flex-1 flex-col gap-4 px-4 pt-3 pb-4">
       <BackLink onClick={back} />
       <header className="flex flex-col gap-1">
         <div className="flex items-start justify-between gap-2">
-          <h1 className="font-display text-title-page">{nameOf(entity)}</h1>
+          {/* The badge beside the heading, not in it: the heading's name stays
+              the entry's, which is what a search for it looks for. */}
+          <div>
+            <h1 className="inline font-display text-title-page">{nameOf(shown)}</h1>
+            {record !== undefined && <ChangedBadge />}
+          </div>
           <span className="flex shrink-0 items-center gap-1.5 pt-1.5 text-caption text-ink-muted">
             <SourceBadge source={sourceOf(entity)} titleShownNearby />
             {typeof entity.page === 'number' && <span>p. {entity.page}</span>}
@@ -992,8 +1020,23 @@ function EntityDetail({ type, uid, reg }: { type: EntityType; uid: string; reg: 
         )}
       </header>
       <PrintingSwitch type={type} printings={printings} current={entity} />
-      {(hasEditor(type) || canChange(type)) && registry !== null && (
-        <MakeItYours type={type} entity={entity} registry={registry} />
+      {/* One of the player's own keeps its Edit by the title: changing it is
+          what they came for. */}
+      {offered && owner.state === 'theirs' && hasEditor(type) && (
+        <EditOwn type={type} entity={entity} fileId={owner.fileId} />
+      )}
+      {registry !== null && record !== undefined && (
+        <ChangedVersions
+          registry={registry}
+          record={record}
+          book={book}
+          same={
+            sameWords(record.base.entries, entity.entries) &&
+            sameWords(record.base.entriesHigherLevel, entity.entriesHigherLevel) &&
+            sameWords(headerFacts(type, record.base), headerFacts(type, entity))
+          }
+          onFlip={() => setBookFor(book ? null : uid)}
+        />
       )}
       {facts.length > 0 && (
         <dl className={`${cardClass} grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-body`}>
@@ -1005,10 +1048,18 @@ function EntityDetail({ type, uid, reg }: { type: EntityType; uid: string; reg: 
           ))}
         </dl>
       )}
-      <EntriesView entries={entity.entries} />
+      <EntriesView entries={shown.entries} />
+      {/* A spell's "At Higher Levels", which the data keeps apart from its
+          text, as the sheet's spell sheet shows it. */}
+      {Array.isArray(higher) && higher.length > 0 && <EntriesView entries={higher} />}
       {/* Non-null wherever an entity came out of it. */}
       {type === 'class' && registry !== null && <ClassExtras registry={registry} entity={entity} />}
       {type === 'book' && registry !== null && <BookExtras registry={registry} entity={entity} />}
+      {/* After the rules: a lookup mid-session wants the text first, and the
+          Workshop's ways in are for later (review finding 45). */}
+      {offered && owner.state === 'none' && (
+        <MakeItYours type={type} entity={entity} registry={registry} />
+      )}
     </main>
   );
 }
@@ -1031,15 +1082,50 @@ function holds(list: unknown, name: string, source: string): boolean {
 
 const CHOICE = `${cardClass} flex items-start gap-3 hover:bg-surface-raised`;
 
+/** Whose an entry is, once the player's files are read. */
+type Owner = { state: 'reading' } | { state: 'theirs'; fileId: string } | { state: 'none' };
+
 /**
- * Into the Workshop from an entry (board 6, pick C). One of the player's own,
- * in a collection they made, has Edit, in that collection. A book's entry, or
- * an imported collection's, has two ways in: Change for your table (every
- * character holding it gets the player's version, ADR-002 D2) and Make one
- * like it (today's copy, a new entry under a name of its own). Only a file that
+ * Whether one of the player's own files holds the entry. Only a file that
  * holds the entry counts as theirs: one that merely names its book (a
  * collection called PHB) holds none of the book's entries, and their Changes
- * to the books holds changes, not entries of their own.
+ * to the books holds changes, not entries of their own. Two files can hold one
+ * by this name and book: the one named is the one the registry keeps, an
+ * enabled file's, the oldest first.
+ */
+function useOwner(type: EntityType, entity: Entity | undefined): Owner {
+  const owned = useLiveQuery(() => homebrewRepo.ownedSafe(), []);
+  // Until the files are read the links could be the wrong ones, and a tap on
+  // Make one like it for an entry of their own would make a second one.
+  if (owned === undefined || entity === undefined) return { state: 'reading' };
+  const name = nameOf(entity);
+  const source = sourceOf(entity);
+  const file = owned.files
+    .filter((f) => f.role !== 'changes' && holds(f.json[type], name, source))
+    .sort((a, b) => Number(b.enabled) - Number(a.enabled) || compareMergeOrder(a, b))[0];
+  return file === undefined ? { state: 'none' } : { state: 'theirs', fileId: file.id };
+}
+
+/** Edit for one of the player's own, in the collection that holds it. */
+function EditOwn({ type, entity, fileId }: { type: EntityType; entity: Entity; fileId: string }) {
+  const key = encodeURIComponent(`${nameOf(entity)}|${sourceOf(entity)}`);
+  return (
+    <Link
+      to={`/workshop/edit/${type}/${key}?file=${encodeURIComponent(fileId)}`}
+      className={`self-start ${buttonClass({ variant: 'outline', size: 'sm' })}`}
+    >
+      <Pencil size={16} aria-hidden />
+      Edit
+    </Link>
+  );
+}
+
+/**
+ * Into the Workshop from an entry (board 6, pick C) that is not the player's
+ * own (those have {@link EditOwn}): a book's entry, or an imported
+ * collection's, has two ways in: Change for your table (every character
+ * holding it gets the player's version, ADR-002 D2) and Make one like it
+ * (today's copy, a new entry under a name of its own).
  */
 function MakeItYours({
   type,
@@ -1050,30 +1136,8 @@ function MakeItYours({
   entity: Entity;
   registry: EntityRegistry;
 }) {
-  const name = nameOf(entity);
-  const source = sourceOf(entity);
-  const key = encodeURIComponent(`${name}|${source}`);
+  const key = encodeURIComponent(`${nameOf(entity)}|${sourceOf(entity)}`);
   const headingId = useId();
-  const owned = useLiveQuery(() => homebrewRepo.ownedSafe(), []);
-  // Until the files are read the links could be the wrong ones, and a tap on
-  // Make one like it for an entry of their own would make a second one.
-  if (owned === undefined) return null;
-  // Two files can hold one by this name and book: the one shown is the one
-  // the registry keeps, an enabled file's, the oldest first.
-  const file = owned.files
-    .filter((f) => f.role !== 'changes' && holds(f.json[type], name, source))
-    .sort((a, b) => Number(b.enabled) - Number(a.enabled) || compareMergeOrder(a, b))[0];
-  if (file !== undefined) {
-    return hasEditor(type) ? (
-      <Link
-        to={`/workshop/edit/${type}/${key}?file=${encodeURIComponent(file.id)}`}
-        className={`self-start ${buttonClass({ variant: 'outline', size: 'sm' })}`}
-      >
-        <Pencil size={16} aria-hidden />
-        Edit
-      </Link>
-    ) : null;
-  }
   const changed = registry.changeOf(entity)?.layers.some((l) => l.from.kind === 'changes') === true;
   const noun = NOUNS[type] ?? type;
   return (

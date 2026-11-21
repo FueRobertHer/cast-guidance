@@ -14,6 +14,7 @@ import { SpellInfoSheet } from './SpellInfoSheet';
  * phone), rather than squeeze the name or push the page sideways (A11Y-003).
  */
 export function SpellRow({
+  rowKey,
   name,
   source,
   version,
@@ -27,6 +28,8 @@ export function SpellRow({
   actions,
   rulesFooter,
 }: {
+  /** Marks the row (`data-spell-row`), for focus to find it once it moves. */
+  rowKey?: string;
   name: string;
   source: string;
   version: RulesVersion;
@@ -47,6 +50,7 @@ export function SpellRow({
 }) {
   return (
     <div
+      data-spell-row={rowKey}
       className={`flex min-h-15 flex-wrap items-center gap-x-2 gap-y-1 py-2 pr-3 pl-4 ${
         concentrating ? 'bg-arcane-soft' : ''
       }`}

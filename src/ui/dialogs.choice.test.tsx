@@ -42,8 +42,12 @@ function ask(opts: Parameters<typeof askChoice>[0]) {
 const search = () => screen.getByRole('searchbox', { name: 'Search' });
 const type = (text: string) => fireEvent.change(search(), { target: { value: text } });
 /** The options shown, by name: an option with a second line is named by its label alone. */
+// The options, not the sheet's Close (review item 6), which every choice has.
 const listed = () =>
-  screen.queryAllByRole('button').map((b) => b.querySelector('[id$="-label"]')?.textContent);
+  screen
+    .queryAllByRole('button')
+    .filter((b) => b.getAttribute('aria-label') !== 'Close')
+    .map((b) => b.querySelector('[id$="-label"]')?.textContent);
 /** The text of what an element names by id (`aria-describedby`, `aria-labelledby`). */
 const said = (el: HTMLElement, attr: string) =>
   (el.getAttribute(attr) ?? '')
@@ -98,7 +102,7 @@ describe('askChoice', () => {
     type('WINGS');
     expect(listed()).toEqual(['Fly']);
     type('flying armor');
-    expect(screen.queryAllByRole('button')).toHaveLength(0);
+    expect(listed()).toHaveLength(0);
     type('   ');
     expect(listed()).toHaveLength(4);
   });
@@ -134,7 +138,7 @@ describe('askChoice', () => {
     ask({ title: 'Add', options: OPTIONS, search: 'Search' });
     type('teleport');
     expect(screen.getByRole('status').textContent).toBe('Nothing matches "teleport".');
-    expect(screen.queryAllByRole('button')).toHaveLength(0);
+    expect(listed()).toHaveLength(0);
   });
 
   it('matches a word anywhere in what an option says, without case', () => {
