@@ -605,7 +605,14 @@ describe('the Import sheet preview', () => {
     renderSheet();
     await readFile('broken.json', '{ not json');
 
-    await waitFor(() => expect(said()).toMatch(/^Import failed: /), { timeout: WAIT });
+    // Said for a player, not as the browser's parser puts it.
+    await waitFor(
+      () =>
+        expect(said()).toBe(
+          'That file could not be read as JSON. It may be cut short, or have a typo such as a missing comma or bracket.',
+        ),
+      { timeout: WAIT },
+    );
     onlyTheSheet();
     expect(done).toEqual([]);
     expect(await fileCount()).toBe(0);
@@ -648,6 +655,22 @@ describe('the Import sheet, from a link', () => {
       { timeout: WAIT },
     );
     expect(importLine().querySelector('p')?.className).toContain('text-danger');
+    onlyTheSheet();
+    expect(await fileCount()).toBe(0);
+  });
+
+  it('says a link that gives no JSON is a link to something other than the file', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('Moved: see the new address'));
+    renderSheet();
+    await readLink(URL_RAW);
+
+    await waitFor(
+      () =>
+        expect(said()).toBe(
+          'What that link gave could not be read as JSON. The file may be cut short or have a typo, or the link may go to something other than a homebrew file.',
+        ),
+      { timeout: WAIT },
+    );
     onlyTheSheet();
     expect(await fileCount()).toBe(0);
   });

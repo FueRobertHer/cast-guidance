@@ -12,27 +12,34 @@ export interface HomebrewMetaSource {
   full?: string;
 }
 
-/** Minimal structural check for a 5etools homebrew file: `_meta.sources[].json`. */
+/**
+ * Minimal structural check for a homebrew file: `_meta.sources[].json`. Its
+ * messages follow "Import failed: ", so they say what a player can check.
+ */
 export function assertHomebrewFile(raw: unknown): {
   meta: { sources: HomebrewMetaSource[] };
   json: Record<string, unknown>;
 } {
   if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) {
-    throw new ValidationError('homebrew file must be a JSON object');
+    throw new ValidationError(
+      'not a homebrew file (a homebrew file is one JSON object, with a "_meta" block naming its books)',
+    );
   }
   const json = raw as Record<string, unknown>;
   const meta = json._meta;
   if (meta === null || typeof meta !== 'object') {
-    throw new ValidationError('missing _meta block. Is this a 5etools homebrew file?');
+    throw new ValidationError('not a homebrew file (it has no "_meta" block naming its books)');
   }
   const sources = (meta as { sources?: unknown }).sources;
   if (!Array.isArray(sources) || sources.length === 0) {
-    throw new ValidationError('_meta.sources must be a non-empty array');
+    throw new ValidationError(
+      'the "_meta" block names no books (it has no "sources" list, or an empty one)',
+    );
   }
   const parsed: HomebrewMetaSource[] = [];
   for (const s of sources) {
     if (typeof s !== 'object' || s === null || typeof (s as { json?: unknown }).json !== 'string') {
-      throw new ValidationError('every _meta.sources entry needs a string "json" id');
+      throw new ValidationError('a book in the "_meta" block has no "json" id to know it by');
     }
     parsed.push(s as unknown as HomebrewMetaSource);
   }
@@ -245,6 +252,17 @@ export function assertJsonWithinLimits(
 
 export const CHARACTER_EXPORT_FORMAT = 'cast-guidance/character@1';
 
+/** The format's name without its version, so a later version is known as ours. */
+const CHARACTER_FORMAT_NAME = 'cast-guidance/character@';
+
+/** This app's format at a version above the one it writes, such as `cast-guidance/character@2`. */
+function isLaterFormat(format: unknown): boolean {
+  if (typeof format !== 'string' || !format.startsWith(CHARACTER_FORMAT_NAME)) return false;
+  const version = format.slice(CHARACTER_FORMAT_NAME.length);
+  const current = Number(CHARACTER_EXPORT_FORMAT.slice(CHARACTER_FORMAT_NAME.length));
+  return /^[1-9]\d*$/.test(version) && Number(version) > current;
+}
+
 export interface CharacterExport {
   $format: typeof CHARACTER_EXPORT_FORMAT;
   character: unknown;
@@ -315,16 +333,19 @@ export function assertCharacterDoc(raw: unknown): void {
 export function assertCharacterExport(raw: unknown): CharacterExport {
   assertJsonWithinLimits(raw);
   if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) {
-    throw new ValidationError('not a character export file');
+    throw new ValidationError('this is not a character file from this app');
   }
   const obj = raw as Record<string, unknown>;
   if (obj.$format !== CHARACTER_EXPORT_FORMAT) {
+    // What the file says it is goes unsaid: it is the file's text, not words for a player.
     throw new ValidationError(
-      `unsupported format "${String(obj.$format)}" (expected ${CHARACTER_EXPORT_FORMAT})`,
+      isLaterFormat(obj.$format)
+        ? 'this character file is from a newer version of the app: update the app, then import it again'
+        : 'this is not a character file from this app',
     );
   }
   if (obj.character === null || typeof obj.character !== 'object' || Array.isArray(obj.character)) {
-    throw new ValidationError('export is missing the character document');
+    throw new ValidationError('this character file has no character in it');
   }
   assertCharacterDoc(obj.character);
   let homebrew: HomebrewFileRow[] = [];

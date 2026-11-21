@@ -37,7 +37,7 @@ export function invalidImports(
     {
       label: 'a different export format',
       file: jsonFile('wrong-format.json', { ...exported, $format: 'someone-else/character@1' }),
-      message: /^Import failed: unsupported format "someone-else\/character@1"/,
+      message: /^Import failed: this is not a character file from this app$/,
     },
     {
       label: 'a file that is not JSON',

@@ -52,6 +52,16 @@ import { fieldClass } from '@/ui/TextField';
 import { kindOf } from './yours';
 
 type Way = 'file' | 'link' | 'text';
+
+/**
+ * What each way says when what it read could not be read as JSON. Mostly it is
+ * a homebrew file cut short or with a typo: XML and web pages go another way.
+ */
+const NOT_JSON: Record<Way, string> = {
+  file: 'That file could not be read as JSON. It may be cut short, or have a typo such as a missing comma or bracket.',
+  text: 'That text could not be read as JSON. It may be cut short, or have a typo such as a missing comma or bracket.',
+  link: 'What that link gave could not be read as JSON. The file may be cut short or have a typo, or the link may go to something other than a homebrew file.',
+};
 const WAYS: ReadonlyArray<{ value: Way; label: string }> = [
   { value: 'file', label: 'A file' },
   { value: 'link', label: 'A link' },
@@ -260,6 +270,9 @@ export default function ImportSheet({
       cancelAnnouncement('import-check');
       setRefused({ url: err.url, reason: err.message });
       announce(refusedText(err.message), { key: 'import', repeat: true });
+    } else if (err instanceof SyntaxError) {
+      // JSON.parse's own words differ by browser and mean little to a player.
+      setStatus(NOT_JSON[from], true);
     } else if (from === 'link') {
       // `fetch` rejects with a bare TypeError for a host that is down and
       // one that does not let the app read the file alike.
@@ -268,8 +281,6 @@ export default function ImportSheet({
           ? ' The site may be down or may not let the app read the file: download it and bring it in as a file.'
           : '';
       setStatus(`That link could not be read (${errorText(err)}).${advice}`, true);
-    } else if (from === 'text' && err instanceof SyntaxError) {
-      setStatus(`That text is not a homebrew file: ${err.message}`, true);
     } else {
       setStatus(`Import failed: ${errorText(err)}`, true);
     }
