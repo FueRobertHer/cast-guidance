@@ -11,7 +11,7 @@
  */
 import { useLiveQuery } from 'dexie-react-hooks';
 import { ArrowLeft, ChevronRight, FileUp, ListOrdered, PenLine } from 'lucide-react';
-import { lazy, Suspense, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { homebrewRepo } from '@/db/homebrewRepo';
 import {
   type PackHere,
@@ -59,7 +59,7 @@ export function Component() {
   const rows = read?.files;
   const packs = usePacksHere(rows);
   const roster = useRoster();
-  const names = new Map(roster.map((c) => [c.id, c.name]));
+  const names = new Map((roster ?? []).map((c) => [c.id, c.name]));
   const [open, setOpen] = useState<Open>();
   const [message, setMessage] = useState<string>();
   // What opened a sheet, for focus to go back to as it closes: a sheet that
@@ -90,6 +90,14 @@ export function Component() {
   };
   const reviewed = open?.kind === 'pack' ? packs?.find((p) => p.id === open.id) : undefined;
   const reviewedFile = reviewed === undefined ? undefined : fileOf(reviewed);
+  // A pack deleted while its review is open (from another tab) closes it for
+  // good: left open, the same file put back (an undo, a re-import) would open
+  // it again unasked.
+  const gone = open?.kind === 'pack' && packs !== undefined && reviewed === undefined;
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `close` is fresh each render; only the pack going matters
+  useEffect(() => {
+    if (gone) close();
+  }, [gone]);
 
   return (
     <main className="flex flex-1 flex-col gap-4 px-4 pt-3 pb-4">
@@ -116,7 +124,8 @@ export function Component() {
           A pack changes rules and entries for the characters it applies to, over the table rules.
           Where two disagree, the one later in the order wins.
         </p>
-        {packs === undefined ? (
+        {/* Who a pack reaches is said by name, so the list waits for the characters too. */}
+        {packs === undefined || roster === undefined ? (
           <p className={NOTE}>Loading…</p>
         ) : packs.length === 0 ? (
           <p className={NOTE}>None yet. Write one from your rules, or import one.</p>
