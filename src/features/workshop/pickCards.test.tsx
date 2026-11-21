@@ -16,6 +16,7 @@ import { type DataEntity, newCharacterDoc } from '@/engine/types';
 import { pickWords } from '@/features/homebrew/pickWords';
 import curated from '@/rules/cast-guidance/curated.json';
 import standing from '@/rules/cast-guidance/standing.json';
+import { boxChoices, cardBox, hasBox, setBox } from '../../../tests-fixtures/cardBoxes';
 import { makeTestContext } from '../../../tests-fixtures/testWorld';
 
 const { choice } = vi.hoisted(() => ({ choice: { current: undefined as string | undefined } }));
@@ -58,12 +59,12 @@ function withCards(effects: Json[], taken: readonly string[] = []) {
   return () => ((latest.castGuidance as Json | undefined)?.effects ?? []) as Json[];
 }
 
-/** Set the box labelled `label` in `at` (the screen, or one list of cards). */
-const pick = (label: string, value: string, at: Pick<typeof screen, 'getByLabelText'> = screen) =>
-  fireEvent.change(at.getByLabelText(label), { target: { value } });
-const box = (label: string) => screen.getByLabelText(label) as HTMLSelectElement;
-const has = (label: string) => screen.queryByLabelText(label) !== null;
-const choices = (label: string) => [...box(label).options].map((o) => o.value);
+// A card's box is found by its name alone (cardBoxes.ts), as a label query
+// costs a walk of the page for every control it asks.
+const box = (label: string) => cardBox(label);
+const has = (label: string) => hasBox(label);
+const pick = (label: string, value: string) => setBox(label, value);
+const choices = (label: string) => boxChoices(label);
 const press = (name: string) => fireEvent.click(screen.getByRole('button', { name }));
 /** A chip in the group of chips whose name starts with `group`. */
 const chip = (group: string, name: string) =>
