@@ -275,12 +275,14 @@ function rekeyChoice(key: string, c: readonly Change[]): string {
           `${lead}${prefix}:${x.now}${typeof kind === 'string' ? `:${kind}:${x.to.name.trim().toLowerCase()}` : ''}`,
       );
     }
-    // A class's ASI feat instance (`asi4@<class uid>`), and a feat a background
-    // gave, whose instance is the background (`feat:<feat uid>:<background uid>`).
+    // A class's ASI feat instance (`asi4@<class uid>`), a class's or subclass's
+    // feat progression instance (`feats:fighting style@<uid>`), and a feat a
+    // background gave, whose instance is the background (`feat:<feat uid>:<background uid>`).
     // Sequential, which holds as no batch moves an entry onto another's old place.
-    if (x.type === 'class') {
+    if (x.type === 'class' || x.type === 'subclass') {
+      const instance = x.type === 'class' ? '(?:asi\\d+|feats:[^:@]*)@' : 'feats:[^:@]*@';
       out = out.replace(
-        new RegExp(`(^|:)(asi\\d+@)${esc(x.was)}(?=:|$)`, 'g'),
+        new RegExp(`(^|:)(${instance})${esc(x.was)}(?=:|$)`, 'g'),
         (_m, lead: string, asi: string) => `${lead}${asi}${x.now}`,
       );
     } else if (x.type === 'background') {
@@ -294,7 +296,10 @@ function rekeyChoice(key: string, c: readonly Change[]): string {
 }
 
 /** The picks whose answer is a feat, and those whose answer is an optional feature. */
-const FEAT_KEY = /:asi:\d+:feat$|(?:^|:)background:.+:feat:\d+$/;
+// An ASI's, an origin's (`background:`, `race:` or `subrace:` …`:feat:<n>`), and
+// a class's or subclass's feat progression (`…:feats:<name>:feat`).
+const FEAT_KEY =
+  /:asi:\d+:feat$|(?:^|:)(?:background|race|subrace):.+:feat:\d+$|(?:^|:)(?:class|subclass):.+:feats:[^:]+:feat$/;
 const OPTION_KEY = /:optfeature:/;
 const MASTERY_KEY = /weapon-?mastery$/i;
 

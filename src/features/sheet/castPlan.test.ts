@@ -2,7 +2,12 @@
 // items whose charges each row offers, and the dice a spell rolls at a level.
 import { describe, expect, it } from 'vitest';
 import type { Entity } from '@/data5e/copyMod';
-import { type DataEntity, type DerivedSheet, newCharacterDoc } from '@/engine/types';
+import {
+  type DataEntity,
+  type DerivedSheet,
+  newCharacterDoc,
+  type SpellcastingBlock,
+} from '@/engine/types';
 import { ruleSetLookup } from '../../../tests-fixtures/testWorld';
 import {
   castDamageBonuses,
@@ -19,6 +24,7 @@ import {
   grantUsedUp,
   grantUseWays,
   itemChargeWays,
+  ritualWay,
   type SpellCast,
   usedUpTitle,
 } from './castPlan';
@@ -415,5 +421,66 @@ describe('what the character adds to a cast’s damage', () => {
       { amount: 2, oneRoll: true },
     ]);
     expect(from(cast('Chill Touch', 0, { block: 'Wizard' }, 'N'))).toEqual([]);
+  });
+});
+
+describe('ritualWay: whether a class spell casts as a ritual', () => {
+  const caster = (mode: 'known' | 'prepared' | 'spellbook') =>
+    ({ classUid: 'mage|tst', className: 'Mage', mode }) as SpellcastingBlock;
+  const sheetWith = (features: DerivedSheet['features']) => ({ features }) as DerivedSheet;
+  const own = { label: 'Mage', uid: 'mage|tst', type: 'class' } as const;
+  // 2014's Ritual Casting, written inside Spellcasting as the data has it.
+  const spellcasting = {
+    name: 'Spellcasting',
+    origin: own,
+    entries: [{ type: 'entries', name: 'Ritual Casting', entries: ['You can cast...'] }],
+  };
+  const detectMagic = { name: 'Detect Magic', level: 1, meta: { ritual: true } } as Entity;
+  const shield = { name: 'Shield', level: 1 } as Entity;
+
+  it('lets any caster cast a prepared ritual spell as a ritual under 2024', () => {
+    const none = sheetWith([]);
+    expect(ritualWay(none, caster('known'), detectMagic, '2024', true)).toBe('also');
+    expect(ritualWay(none, caster('known'), shield, '2024', true)).toBeUndefined();
+  });
+
+  it('needs the class’s Ritual Casting under 2014, read from its features', () => {
+    expect(ritualWay(sheetWith([]), caster('known'), detectMagic, '2014', true)).toBeUndefined();
+    const withIt = sheetWith([spellcasting]);
+    expect(ritualWay(withIt, caster('prepared'), detectMagic, '2014', true)).toBe('also');
+    // Another class's Ritual Casting is not this one's.
+    const other = sheetWith([{ ...spellcasting, origin: { ...own, uid: 'cleric|tst' } }]);
+    expect(ritualWay(other, caster('known'), detectMagic, '2014', true)).toBeUndefined();
+  });
+
+  it('casts an unprepared ritual only from a spellbook its class says needs no preparing', () => {
+    const adept = sheetWith([{ name: 'Ritual Adept', origin: own, entries: [] }]);
+    expect(ritualWay(adept, caster('spellbook'), detectMagic, '2024', false)).toBe('only');
+    expect(ritualWay(adept, caster('prepared'), detectMagic, '2024', false)).toBeUndefined();
+    expect(
+      ritualWay(sheetWith([]), caster('spellbook'), detectMagic, '2024', false),
+    ).toBeUndefined();
+    expect(ritualWay(adept, caster('spellbook'), shield, '2024', false)).toBeUndefined();
+  });
+
+  it('offers only the ritual for a spell it is the only way to cast', () => {
+    const { doc, sheet: staves } = twoStaves();
+    const sheet = { ...staves, grantedSpells: [] } as unknown as DerivedSheet;
+    const c = {
+      doc,
+      sheet,
+      info: { name: 'Detect Magic', source: 'XPHB' },
+      entity: detectMagic,
+      level: 1,
+      block: { ...caster('spellbook'), slots: [2] },
+      attack: false,
+      entities: ruleSetLookup(),
+      ritual: 'only',
+    } as unknown as SpellCast;
+    expect(castWaysOf(c).map((w) => w.title)).toEqual(['Ritual']);
+    expect(castWaysOf({ ...c, ritual: 'also' }).map((w) => w.title)).toEqual([
+      'Spell slots',
+      'Ritual',
+    ]);
   });
 });

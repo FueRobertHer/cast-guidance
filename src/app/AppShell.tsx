@@ -23,6 +23,7 @@ import { NoticeToast } from '@/ui/NoticeToast';
 import { PwaUpdateToast } from '@/ui/PwaUpdateToast';
 import { RollToast } from '@/ui/RollToast';
 import { SaveConflictBanner } from '@/ui/SaveConflictBanner';
+import { SkipLink } from '@/ui/SkipLink';
 
 /** What a screen reader hears when saving works again after a failure. */
 export const SAVE_RECOVERED_TEXT = 'Changes saved';
@@ -147,6 +148,8 @@ export function AppShell() {
       <ScrollRestoration />
       {/* First, so its regions are in the page before anything announces. */}
       <LiveAnnouncer />
+      {/* The first Tab stop on every page: past the tab bars and the header. */}
+      <SkipLink />
       {/* Banners sit in the page above the screen, never over it (DS-001):
           the app update offer is one, after the storage banners. */}
       <StorageBanners />

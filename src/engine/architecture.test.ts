@@ -1,4 +1,13 @@
 import { describe, expect, it } from 'vitest';
+import {
+  importsOf,
+  matchesPackage,
+  resolveIn,
+  layerOf as sourceLayer,
+  srcKeyed,
+  targetOf,
+  UI_PACKAGES,
+} from '../../tests-fixtures/sourceImports';
 
 /**
  * Architecture guard for the derivation engine.
@@ -11,10 +20,10 @@ import { describe, expect, it } from 'vitest';
  *
  * These tests scan the engine's own source (production files only — test files
  * legitimately import vitest and shared fixtures) and fail if that boundary is
- * crossed. They are intentionally coarse: a denylist of UI/persistence packages
- * plus a ban on importing sibling app layers. Source is loaded through Vite's
- * `import.meta.glob` (raw), so the test stays inside the browser tsconfig with
- * no Node type dependency.
+ * crossed: a denylist of UI/persistence packages plus a ban on importing
+ * sibling app layers, with imports read from each file's syntax tree.
+ * Source is loaded through Vite's `import.meta.glob` (raw), so the test stays
+ * inside the browser tsconfig with no Node type dependency.
  */
 
 // Raw text of every engine source file, keyed by path relative to this file
@@ -44,24 +53,9 @@ const FORBIDDEN_PACKAGES = [
 /** sibling `src/` layers the engine must not depend on (leaf → up is banned). */
 const FORBIDDEN_LAYERS = ['features', 'db', 'ui', 'app', 'stores', 'workers'];
 
-// Captures `import ... from '<x>'`, `export ... from '<x>'`, `import('<x>')`,
-// and side-effect `import '<x>'`. The negated char classes span newlines, so
-// multi-line import lists are matched as a single specifier.
-const IMPORT_RE =
-  /(?:import|export)[^'"`]*?from\s*['"]([^'"]+)['"]|import\s*\(\s*['"]([^'"]+)['"]\s*\)|import\s+['"]([^'"]+)['"]/g;
-
-function importSpecifiers(source: string): string[] {
-  const specs: string[] = [];
-  for (const match of source.matchAll(IMPORT_RE)) {
-    const spec = match[1] ?? match[2] ?? match[3];
-    if (spec) specs.push(spec);
-  }
-  return specs;
-}
-
-function matchesPackage(spec: string, pkg: string): boolean {
-  return spec === pkg || spec.startsWith(`${pkg}/`);
-}
+/** Every specifier a file names, type-only ones included. */
+const importSpecifiers = (source: string, key: string) =>
+  importsOf(source, key).map(({ spec }) => spec);
 
 /** Collapse `.`/`..` segments of a POSIX-style path into a segment list. */
 function normalizeSegments(path: string): string[] {
@@ -96,6 +90,63 @@ function layerOf(spec: string, fileKey: string): string | null {
 
 const productionFiles = Object.entries(rawSources).filter(([key]) => !/\.test\.tsx?$/.test(key));
 
+// The layers the engine may reach, loaded so its imports can be followed
+// through them: a pure engine file that imports a data5e module which imports
+// React is as impure as one that imports React itself.
+const REACHABLE_LAYERS = ['engine', 'data5e', 'lib', 'dice'];
+const reachable = new Map([
+  ...srcKeyed(rawSources, 'engine'),
+  ...srcKeyed(
+    import.meta.glob('../{data5e,lib,dice}/**/*.{ts,tsx}', {
+      query: '?raw',
+      import: 'default',
+      eager: true,
+    }) as Record<string, string>,
+    'engine',
+  ),
+]);
+
+/**
+ * Every file the engine's code runs, from its production files through the
+ * layers it may reach, with each step that leaves them: `file -> specifier`.
+ * Type-only imports are erased before the code runs, so they are not
+ * followed.
+ */
+function runtimeReach(): { files: Set<string>; leaks: string[] } {
+  const files = new Set<string>();
+  const leaks: string[] = [];
+  const known = new Set(reachable.keys());
+  const queue = productionFiles.map(([key]) => `engine/${key.replace(/^\.\//, '')}`);
+  while (queue.length > 0) {
+    const file = queue.pop() as string;
+    if (files.has(file)) continue;
+    files.add(file);
+    for (const { spec, typeOnly, computed } of importsOf(reachable.get(file) ?? '', file)) {
+      if (typeOnly) continue;
+      if (computed) {
+        leaks.push(`${file} -> import(${spec}) (computed: the walk cannot follow it)`);
+        continue;
+      }
+      const target = targetOf(spec, file);
+      if (target === undefined) {
+        if ([...FORBIDDEN_PACKAGES, ...UI_PACKAGES].some((pkg) => matchesPackage(spec, pkg))) {
+          leaks.push(`${file} -> ${spec}`);
+        }
+        continue;
+      }
+      if (target.endsWith('.json')) continue;
+      if (!REACHABLE_LAYERS.includes(sourceLayer(target))) {
+        leaks.push(`${file} -> ${spec} (layer: ${sourceLayer(target)})`);
+        continue;
+      }
+      const resolved = resolveIn(target, known);
+      if (resolved === undefined) leaks.push(`${file} -> ${spec} (not found)`);
+      else queue.push(resolved);
+    }
+  }
+  return { files, leaks };
+}
+
 describe('engine architecture boundary', () => {
   it('scans a non-trivial set of engine source files', () => {
     // Guards against a glob/path bug making the other assertions vacuously pass.
@@ -105,7 +156,7 @@ describe('engine architecture boundary', () => {
   it('imports no UI framework, storage, or widget packages', () => {
     const violations: string[] = [];
     for (const [key, source] of productionFiles) {
-      for (const spec of importSpecifiers(source)) {
+      for (const spec of importSpecifiers(source, key)) {
         const hit = FORBIDDEN_PACKAGES.find((pkg) => matchesPackage(spec, pkg));
         if (hit) violations.push(`${key} imports "${spec}"`);
       }
@@ -116,7 +167,7 @@ describe('engine architecture boundary', () => {
   it('does not depend on UI or persistence layers', () => {
     const violations: string[] = [];
     for (const [key, source] of productionFiles) {
-      for (const spec of importSpecifiers(source)) {
+      for (const spec of importSpecifiers(source, key)) {
         const layer = layerOf(spec, key);
         if (layer && FORBIDDEN_LAYERS.includes(layer)) {
           violations.push(`${key} imports "${spec}" (layer: ${layer})`);
@@ -124,5 +175,13 @@ describe('engine architecture boundary', () => {
       }
     }
     expect(violations).toEqual([]);
+  });
+
+  it('stays pure through what it imports from data5e, lib and dice', () => {
+    const { files, leaks } = runtimeReach();
+    // The walk leaves the engine (data5e's plain text and normalize today), so
+    // a broken glob or resolver cannot pass by finding nothing.
+    expect([...files].some((f) => f.startsWith('data5e/'))).toBe(true);
+    expect(leaks).toEqual([]);
   });
 });
