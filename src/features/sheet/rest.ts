@@ -11,8 +11,9 @@ import type { EffectChange } from '@/engine/effectLife';
 import { longRestRecovery, type RestDone, shortRestRecovery, takeRest } from '@/engine/rest';
 import { sheetRules } from '@/engine/rules';
 import type { DerivedResource, DerivedSheet, PlayState } from '@/engine/types';
-import { hpLimits } from './effectsInPlay';
-import { hitDieRoll } from './slotCost';
+import { ordinal } from './castResources';
+import { andList, hpLimits } from './effectsInPlay';
+import { hitDieRoll, slotTables } from './slotCost';
 
 export { giveBack, shortRestWouldRestore } from '@/engine/rest';
 
@@ -37,6 +38,83 @@ export function spendHitDie(
     kind: 'heal',
     ...(rng === undefined ? {} : { rng }),
   });
+}
+
+/** A pool that gives back expended spell slots as a short rest ends, with a use left. */
+export interface SlotRecovery {
+  key: string;
+  label: string;
+  /** Slot levels it gives back between them. */
+  levels: number;
+  /** Each slot it gives back is below this level. */
+  below: number;
+}
+
+/**
+ * The pools a short rest can spend to give back slots (Arcane Recovery,
+ * Natural Recovery): those with `recoversSlots` and a use left.
+ */
+export function slotRecoveries(play: PlayState, sheet: DerivedSheet): SlotRecovery[] {
+  return sheet.resources.flatMap((r) => {
+    if (r.recoversSlots === undefined || r.recoversSlots.levels <= 0) return [];
+    const used = play.resources.find((x) => x.key === r.key)?.used ?? 0;
+    if (used >= r.max) return [];
+    return [{ key: r.key, label: r.label, ...r.recoversSlots }];
+  });
+}
+
+/** Each level with slots spent, lowest first: what a recovery can give back. */
+export function spentSlots(
+  play: PlayState,
+  sheet: DerivedSheet,
+): Array<{ level: number; spent: number }> {
+  const { slots } = slotTables(sheet);
+  return slots.flatMap((total, i) => {
+    const spent = Math.min(total, play.slotsSpent[i] ?? 0);
+    return spent > 0 ? [{ level: i + 1, spent }] : [];
+  });
+}
+
+/** Slots picked to give back, as count by slot level. */
+export type SlotPicks = Readonly<Record<number, number>>;
+
+/** The slot levels picks add up to. */
+export function pickedLevels(picks: SlotPicks): number {
+  return Object.entries(picks).reduce((sum, [level, n]) => sum + Number(level) * n, 0);
+}
+
+/**
+ * Give back the slots picked through a recovery pool and spend one of its
+ * uses. Says what came back ("Arcane Recovery: 2 1st-level slots"), or
+ * undefined, changing nothing, when nothing was picked or the picks break its
+ * limits (a use left, the level budget, the cap, slots actually spent).
+ */
+export function recoverSlots(
+  play: PlayState,
+  sheet: DerivedSheet,
+  key: string,
+  picks: SlotPicks,
+): string | undefined {
+  const pool = slotRecoveries(play, sheet).find((r) => r.key === key);
+  const chosen = Object.entries(picks)
+    .map(([level, n]) => ({ level: Number(level), n }))
+    .filter(({ n }) => n > 0)
+    .sort((a, b) => a.level - b.level);
+  if (pool === undefined || chosen.length === 0) return undefined;
+  if (pickedLevels(picks) > pool.levels) return undefined;
+  const spent = new Map(spentSlots(play, sheet).map((s) => [s.level, s.spent]));
+  if (chosen.some(({ level, n }) => level >= pool.below || n > (spent.get(level) ?? 0))) {
+    return undefined;
+  }
+  for (const { level, n } of chosen) play.slotsSpent[level - 1] = (spent.get(level) ?? 0) - n;
+  const entry = play.resources.find((x) => x.key === key);
+  if (entry === undefined) play.resources.push({ key, used: 1 });
+  else entry.used += 1;
+  const words = chosen.map(
+    ({ level, n }) =>
+      `${n === 1 ? 'a' : String(n)} ${ordinal(level)}-level slot${n === 1 ? '' : 's'}`,
+  );
+  return `${pool.label}: ${andList(words)}`;
 }
 
 /** When a pool comes back, for its row. */

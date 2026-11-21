@@ -2,7 +2,16 @@ import { describe, expect, it } from 'vitest';
 import { idleChargePools } from '@/engine/curated/itemCharges';
 import type { DerivedSheet, EquipmentEntry, PlayState } from '@/engine/types';
 import { ruleSetLookup } from '../../../tests-fixtures/testWorld';
-import { backCaption, longRest, shortRest, spendHitDie } from './rest';
+import {
+  backCaption,
+  longRest,
+  recoverSlots,
+  type SlotPicks,
+  shortRest,
+  slotRecoveries,
+  spendHitDie,
+  spentSlots,
+} from './rest';
 
 /** Minimal DerivedSheet with just the fields the rest rules read. */
 function sheet(over: Partial<DerivedSheet> = {}): DerivedSheet {
@@ -121,6 +130,107 @@ describe('shortRest', () => {
       longRest(p, withDice(), '2024');
       expect(p.resources).toEqual([]);
     });
+  });
+});
+
+describe('slots back through a recovery pool', () => {
+  const wizard = (used = 0) => {
+    const s = sheet({
+      spellcasting: [{ slots: [4, 3, 2, 0, 0, 0, 0, 0, 0] }],
+      resources: [
+        {
+          key: 'arcane-recovery',
+          label: 'Arcane Recovery',
+          max: 1,
+          resetOn: 'long',
+          origin: 'Wizard',
+          recoversSlots: { levels: 3, below: 6 },
+        },
+        { key: 'ki', label: 'Ki', max: 3, resetOn: 'short', origin: 'Monk' },
+      ],
+    } as unknown as Partial<DerivedSheet>);
+    const p = play({
+      slotsSpent: [2, 2, 1, 0, 0, 0, 0, 0, 0],
+      resources: used > 0 ? [{ key: 'arcane-recovery', used }] : [],
+    });
+    return { s, p };
+  };
+
+  it('lists the pools with a use left, and the spent slots by level', () => {
+    const { s, p } = wizard();
+    expect(slotRecoveries(p, s)).toEqual([
+      { key: 'arcane-recovery', label: 'Arcane Recovery', levels: 3, below: 6 },
+    ]);
+    expect(spentSlots(p, s)).toEqual([
+      { level: 1, spent: 2 },
+      { level: 2, spent: 2 },
+      { level: 3, spent: 1 },
+    ]);
+    const spentOut = wizard(1);
+    expect(slotRecoveries(spentOut.p, spentOut.s)).toEqual([]);
+  });
+
+  it('gives back the picks and spends the use, saying what came back', () => {
+    const { s, p } = wizard();
+    expect(recoverSlots(p, s, 'arcane-recovery', { 1: 1, 2: 1 })).toBe(
+      'Arcane Recovery: a 1st-level slot and a 2nd-level slot',
+    );
+    expect(p.slotsSpent.slice(0, 3)).toEqual([1, 1, 1]);
+    expect(p.resources).toEqual([{ key: 'arcane-recovery', used: 1 }]);
+    // Its one use is gone: a second recovery changes nothing.
+    expect(recoverSlots(p, s, 'arcane-recovery', { 1: 1 })).toBeUndefined();
+    expect(p.slotsSpent[0]).toBe(1);
+  });
+
+  it('changes nothing for picks over the budget, past what is spent, or none', () => {
+    const cases: SlotPicks[] = [{ 3: 1, 1: 1 }, { 1: 3 }, {}, { 1: 0 }];
+    for (const picks of cases) {
+      const { s, p } = wizard();
+      expect(recoverSlots(p, s, 'arcane-recovery', picks)).toBeUndefined();
+      expect(p.slotsSpent.slice(0, 3)).toEqual([2, 2, 1]);
+      expect(p.resources).toEqual([]);
+    }
+    const { s, p } = wizard();
+    expect(recoverSlots(p, s, 'ki', { 1: 1 })).toBeUndefined();
+  });
+
+  it('lets a second pool give back only what the first left spent', () => {
+    const { s, p } = wizard();
+    const both = {
+      ...s,
+      resources: [
+        ...s.resources,
+        {
+          key: 'natural-recovery',
+          label: 'Natural Recovery',
+          max: 1,
+          resetOn: 'long',
+          origin: 'Druid',
+          recoversSlots: { levels: 2, below: 6 },
+        },
+      ],
+    } as DerivedSheet;
+    expect(recoverSlots(p, both, 'arcane-recovery', { 1: 2 })).toBe(
+      'Arcane Recovery: 2 1st-level slots',
+    );
+    // Both 1st-level slots are back, so the second pool cannot take one.
+    expect(recoverSlots(p, both, 'natural-recovery', { 1: 1 })).toBeUndefined();
+    expect(recoverSlots(p, both, 'natural-recovery', { 2: 1 })).toBe(
+      'Natural Recovery: a 2nd-level slot',
+    );
+    expect(p.slotsSpent.slice(0, 3)).toEqual([0, 1, 1]);
+  });
+
+  it('keeps to the cap', () => {
+    const { s, p } = wizard();
+    const capped = {
+      ...s,
+      resources: [{ ...s.resources[0], recoversSlots: { levels: 3, below: 3 } }],
+    } as DerivedSheet;
+    expect(recoverSlots(p, capped, 'arcane-recovery', { 3: 1 })).toBeUndefined();
+    expect(recoverSlots(p, capped, 'arcane-recovery', { 2: 1, 1: 1 })).toBe(
+      'Arcane Recovery: a 1st-level slot and a 2nd-level slot',
+    );
   });
 });
 
