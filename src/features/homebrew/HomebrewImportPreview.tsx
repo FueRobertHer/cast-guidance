@@ -21,6 +21,8 @@ import { sameCollection } from '@/db/homebrewOrder';
 import { homebrewRepo } from '@/db/homebrewRepo';
 import type { PackAppliesTo } from '@/engine/castGuidance';
 import { jsonByteSize } from '@/lib/byteSize';
+import type { SkippedEntry } from '@/lib/guards';
+import { kindName } from '@/lib/kindLabels';
 import { QUOTA_GUIDANCE, storageErrorText } from '@/lib/storageErrors';
 import { freeStorage } from '@/lib/storageRoom';
 import { notifyFailure } from '@/stores/notices';
@@ -78,6 +80,7 @@ export async function buildHomebrewPreview(
     existing: here.files,
     official,
     characters: roster.characters,
+    skipped: prepared.skipped,
   });
 }
 
@@ -88,6 +91,8 @@ export async function buildHomebrewPreview(
 export interface PreparedImport {
   row: HomebrewFileRow;
   books?: HomebrewFileRow[];
+  /** Entries nothing could read, left out of what is stored. */
+  skipped?: SkippedEntry[];
 }
 
 /**
@@ -102,9 +107,9 @@ export async function prepareHomebrewImport(
   conversion: ConversionReport | undefined,
   url?: string,
 ): Promise<PreparedImport> {
-  if (conversion === undefined) return { row: await homebrewRepo.prepare(raw, fileName, url) };
-  const { whole, books } = await homebrewRepo.prepareBooks(raw, fileName, url);
-  return { row: whole, books };
+  if (conversion === undefined) return homebrewRepo.prepareFile(raw, fileName, url);
+  const { whole, books, skipped } = await homebrewRepo.prepareBooks(raw, fileName, url);
+  return { row: whole, books, skipped };
 }
 
 /** A count of books, in words. */
@@ -368,6 +373,65 @@ function ConversionSection({ report }: { report: ConversionReport }) {
         intro="Parts of these entries are kept as text only, so the sheet will not apply them for you:"
       />
       <NoteList notes={notesWith(report, 'skipped')} intro="These entries were left out:" />
+    </PreviewSection>
+  );
+}
+
+/** "the 3rd", for an entry known only by its place in its list. */
+function ordinal(n: number): string {
+  const tens = n % 100;
+  const suffix = tens >= 11 && tens <= 13 ? 'th' : (['th', 'st', 'nd', 'rd'][n % 10] ?? 'th');
+  return `${n}${suffix}`;
+}
+
+/** One entry left out, said so a person can find it in the file. */
+function skippedText(s: SkippedEntry): string {
+  const kind = kindName(s.type).toLowerCase();
+  const which =
+    s.name === undefined ? `The ${ordinal(s.index + 1)} ${kind}` : `${s.name} (${kind})`;
+  return `${which}: ${s.why}.`;
+}
+
+/**
+ * Entries the file holds that nothing could read, named so the author can
+ * fix the file. The rest of it imports, so this never blocks Import.
+ */
+function SkippedSection({
+  skipped,
+  rest,
+}: {
+  skipped: readonly SkippedEntry[];
+  /** Whether anything readable is left to import. */
+  rest: boolean;
+}) {
+  const [all, setAll] = useState(false);
+  if (skipped.length === 0) return null;
+  const shown = all ? skipped : skipped.slice(0, MAX_LISTED_NOTES);
+  const lead =
+    skipped.length === 1
+      ? 'One entry in this file cannot be read, so it is left out.'
+      : `${skipped.length} entries in this file cannot be read, so they are left out.`;
+  return (
+    <PreviewSection heading="Left out">
+      <p className="text-ink-muted">
+        {`${lead} ${rest ? 'The rest imports as usual.' : 'Nothing else in it can be read, so importing it adds an empty collection.'}`}
+      </p>
+      <PreviewList>
+        {shown.map((s) => (
+          <StatusItem key={`${s.type}:${s.index}`} tone="warn">
+            {skippedText(s)}
+          </StatusItem>
+        ))}
+      </PreviewList>
+      {skipped.length > shown.length && (
+        <button
+          type="button"
+          onClick={() => setAll(true)}
+          className="inline-flex min-h-tap items-center self-start text-ink-muted underline underline-offset-3 hover:text-ink"
+        >
+          Show {skipped.length - shown.length} more
+        </button>
+      )}
     </PreviewSection>
   );
 }
@@ -692,6 +756,12 @@ export default function HomebrewImportPreview({
       )}
 
       {/* Needs a look: what will not count in full once it is in. */}
+      {dup === undefined && (
+        <SkippedSection
+          skipped={p.skipped}
+          rest={Object.keys(p.counts).length > 0 || pack !== undefined}
+        />
+      )}
       {conversion !== undefined && dup === undefined && <ConversionSection report={conversion} />}
 
       {p.copyIssues.length > 0 && (
