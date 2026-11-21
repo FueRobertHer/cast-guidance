@@ -17,6 +17,7 @@ import {
   type CacheLevel,
   filesAt,
   HOMEBREW_NAME,
+  HOMEBREW_TITLE,
   leftOut,
   publishLevel,
 } from '../support/cacheLevels.ts';
@@ -60,7 +61,7 @@ async function importCaster(page: Page, blankId: string): Promise<string> {
 /** The table's homebrew file: one spell under a source of its own. */
 const HOMEBREW = jsonFile(HOMEBREW_NAME, {
   _meta: {
-    sources: [{ json: 'TBR', abbreviation: 'TBR', full: 'Table Brews', version: '1.0.0' }],
+    sources: [{ json: 'TBR', abbreviation: 'TBR', full: HOMEBREW_TITLE, version: '1.0.0' }],
   },
   spell: [
     {
@@ -87,7 +88,7 @@ async function importHomebrew(page: Page): Promise<string> {
   await importHomebrewFile(page, HOMEBREW);
   await answerImportPreview(page, `Import "${HOMEBREW_NAME}"?`);
   await expect(
-    page.getByRole('main').getByRole('link', { name: new RegExp(`^${HOMEBREW_NAME}\\s*,`) }),
+    page.getByRole('main').getByRole('link', { name: new RegExp(`^${HOMEBREW_TITLE}\\s*,`) }),
   ).toBeVisible();
   const rows = (await getHomebrewFiles(page)).filter((r) => r.fileName === HOMEBREW_NAME);
   const [row] = rows;

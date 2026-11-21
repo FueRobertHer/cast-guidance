@@ -4,7 +4,7 @@
 import { describe, expect, it } from 'vitest';
 import { COLLECTION_ID_KEY } from '@/db/homebrewOrder';
 import type { HomebrewFile } from '@/db/homebrewRepo';
-import { entriesOf, mineKey, newSource, selectionFile } from './yours';
+import { entriesOf, kindOf, labelOf, mineKey, newSource, selectionFile } from './yours';
 
 const file = (id: string, json: Record<string, unknown>): HomebrewFile => ({
   id,
@@ -94,6 +94,16 @@ describe('selectionFile', () => {
     expect(selectionFile([LANTERN], spell)._meta).toEqual({
       sources: [{ json: 'ODD', abbreviation: 'ODD', full: 'ODD' }],
     });
+  });
+});
+
+describe('kind names', () => {
+  it('names every kind in words, one and many, never as its key', () => {
+    expect(kindOf('subclassFeature')).toBe('Subclass feature');
+    expect(labelOf('subclassFeature')).toBe('Subclass features');
+    expect(kindOf('race')).toBe('Species');
+    // A kind the Library has a section for keeps that section's name.
+    expect(labelOf('spell')).toBe('Spells');
   });
 });
 

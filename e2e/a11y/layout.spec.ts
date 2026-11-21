@@ -477,12 +477,15 @@ test.describe('sheets at 320 by 640 with text at 200%', () => {
   }
 });
 
-/** A collection with a long file name, as one shared from a friend might have. */
 /** A feat whose name runs long, to measure the room a Yours row leaves it. */
 const LONG_FEAT = 'Gift of the Unending Lantern-Lit Harbour Night';
 
+/** A collection goes by its book's title, so the title is the long name to fit. */
+const LONG_BREW_TITLE = 'A Very Long Homebrew Book Shared by a Friend of the Table';
+
+/** A collection with a long file name and title, as one shared from a friend might have. */
 const LONG_BREW = jsonFile('a-very-long-homebrew-file-name-shared-by-a-friend.json', {
-  _meta: { sources: [{ json: 'LONGBREW', full: 'Long Brew' }] },
+  _meta: { sources: [{ json: 'LONGBREW', full: LONG_BREW_TITLE }] },
   feat: [{ name: 'Lanternbearer of the Western Coast', source: 'LONGBREW', entries: ['Glow.'] }],
 });
 
@@ -533,7 +536,7 @@ const WORKSHOP: readonly Route[] = [
     name: 'workshop collections',
     open: async (page) => {
       await gotoHeading(page, '/workshop?shelf=collections', 'Workshop');
-      await expect(page.getByRole('link', { name: /^a-very-long-homebrew/ })).toBeVisible();
+      await expect(page.getByRole('link', { name: /^A Very Long Homebrew/ })).toBeVisible();
     },
     primary: (page) => [
       page.getByRole('link', { name: 'Import a file or a link', exact: true }),
@@ -543,20 +546,20 @@ const WORKSHOP: readonly Route[] = [
     // cannot be whole in view; what matters is that the name itself keeps room.
     keepsRoom: (page) => [
       page
-        .getByRole('link', { name: /^a-very-long-homebrew/ })
-        .getByText(LONG_BREW.name, { exact: true }),
+        .getByRole('link', { name: /^A Very Long Homebrew/ })
+        .getByText(LONG_BREW_TITLE, { exact: true }),
     ],
   },
   {
     name: 'workshop collection',
     open: async (page) => {
       await gotoHeading(page, '/workshop?shelf=collections', 'Workshop');
-      await page.getByRole('link', { name: /^a-very-long-homebrew/ }).click();
-      await expect(page.getByRole('heading', { level: 1, name: LONG_BREW.name })).toBeVisible();
+      await page.getByRole('link', { name: /^A Very Long Homebrew/ }).click();
+      await expect(page.getByRole('heading', { level: 1, name: LONG_BREW_TITLE })).toBeVisible();
     },
     primary: (page) => [
       page.getByRole('button', { name: 'Back', exact: true }),
-      page.getByRole('button', { name: `Use ${LONG_BREW.name}`, exact: true }),
+      page.getByRole('button', { name: `Use ${LONG_BREW_TITLE}`, exact: true }),
       page.getByRole('button', { name: 'Export a file', exact: true }),
       page.getByRole('button', { name: 'Delete this collection', exact: true }),
     ],

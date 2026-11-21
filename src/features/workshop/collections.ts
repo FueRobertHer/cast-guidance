@@ -73,11 +73,17 @@ function fromOf(rows: readonly HomebrewFileMeta[]): string {
   return r.url === undefined ? 'A homebrew file you imported' : 'A homebrew file, from a link';
 }
 
+/**
+ * A collection's name: the one the player gave a file they made, a book's
+ * own, else an imported file's title (its first source's full name, F19),
+ * and its file's name only for a file stored without one. A compendium goes
+ * by the file its books came from.
+ */
 function nameOf(rows: readonly HomebrewFileMeta[], names: ReadonlyMap<string, string>): string {
   const [r] = rows;
   if (r === undefined) return '';
-  if (rows.length > 1) return r.fileName;
-  return names.get(r.id) ?? r.book ?? r.fileName;
+  if (rows.length > 1) return r.book === undefined ? (r.title ?? r.fileName) : r.fileName;
+  return names.get(r.id) ?? r.book ?? r.title ?? r.fileName;
 }
 
 /**

@@ -459,10 +459,10 @@ test.describe('axe: pages and overlays', () => {
     await answerImportPreview(page, 'Import "axe-brew.json"?');
     await expect(page.getByText(/^Imported "axe-brew\.json"/).and(onScreen(page))).toBeVisible();
 
-    await page.getByRole('link', { name: /^axe-brew\.json\s*,/ }).click();
-    await expect(page.getByRole('heading', { level: 1, name: 'axe-brew.json' })).toBeVisible();
+    await page.getByRole('link', { name: /^Axe Test Brew\s*,/ }).click();
+    await expect(page.getByRole('heading', { level: 1, name: 'Axe Test Brew' })).toBeVisible();
     await page.getByRole('button', { name: 'Delete this collection' }).click();
-    const confirm = page.getByRole('dialog', { name: 'Delete axe-brew.json?' });
+    const confirm = page.getByRole('dialog', { name: 'Delete Axe Test Brew?' });
     await opened(page, confirm);
     await scanState(page, 'workshop-collection-delete-confirm');
     await confirm.getByRole('button', { name: 'Cancel' }).click();
@@ -561,13 +561,13 @@ test.describe('axe: pages and overlays', () => {
     const shelf = (name: string) =>
       page.getByRole('group', { name: 'Shelf' }).getByRole('button', { name, exact: true });
     await shelf('Collections').click();
-    const brew = page.getByRole('link', { name: /^axe-brew\.json\s*,/ });
+    const brew = page.getByRole('link', { name: /^Axe Test Brew\s*,/ });
     await expect(brew).toBeVisible();
     await animationsSettled(page);
     await scanState(page, 'workshop-collections');
 
     await brew.click();
-    await expect(page.getByRole('heading', { level: 1, name: 'axe-brew.json' })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 1, name: 'Axe Test Brew' })).toBeVisible();
     await animationsSettled(page);
     await scanState(page, 'workshop-collection');
 
