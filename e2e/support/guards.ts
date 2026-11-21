@@ -2,6 +2,12 @@ import type { BrowserContext } from '@playwright/test';
 
 /** Our own static servers. Everything else must go through a mirror route. */
 const LOCAL_ORIGIN = /^http:\/\/127\.0\.0\.1:\d+\//;
+/**
+ * A page's own in-memory objects, never the network. WebKit's routing sees a
+ * fetch of one (an imported file read through its object URL); Chromium's
+ * does not.
+ */
+const IN_MEMORY = /^(blob|data):/;
 
 /**
  * The fallback route: lets requests to the local servers through and aborts
@@ -16,7 +22,7 @@ export class NetworkGuard {
   async attach(context: BrowserContext): Promise<void> {
     await context.route('**/*', (route) => {
       const url = route.request().url();
-      if (LOCAL_ORIGIN.test(url)) return route.fallback();
+      if (LOCAL_ORIGIN.test(url) || IN_MEMORY.test(url)) return route.fallback();
       this.blocked.push(url);
       return route.abort('blockedbyclient');
     });

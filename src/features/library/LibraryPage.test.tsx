@@ -74,6 +74,33 @@ vi.mock('@/data5e/sourceFilter', () => ({
   policyForSearch: () => undefined,
 }));
 vi.mock('@/data5e/search/client', () => ({ searchAll }));
+/** Which classes' lists hold each spell, as the generated lookup has it; settable per test. */
+const classLookup = vi.hoisted(() => ({ current: {} as Record<string, Record<string, unknown>> }));
+vi.mock('@/lib/useClassLookup', () => ({
+  useClassLookup: () => ({
+    lookup: classLookup.current,
+    problem: { status: 'ready', error: null, offline: false, retry: () => undefined },
+  }),
+}));
+// No IndexedDB here: the player has no files of their own, so every entry
+// offers Make it yours.
+vi.mock('@/db/homebrewRepo', () => ({
+  homebrewRepo: { ownedSafe: async () => ({ files: [], errors: [] }) },
+}));
+// Dexie's live query waits on a database jsdom does not have; the query above
+// needs none, so its answer is simply awaited.
+vi.mock('dexie-react-hooks', async () => {
+  const { useEffect, useState } = await import('react');
+  return {
+    useLiveQuery: <T,>(query: () => Promise<T>) => {
+      const [value, setValue] = useState<T | undefined>(undefined);
+      useEffect(() => {
+        void query().then(setValue);
+      }, []);
+      return value;
+    },
+  };
+});
 
 import { getAnnouncerState, resetAnnouncer } from '@/stores/announcer';
 import { dataStatusStore } from '@/stores/dataStatus';
@@ -92,6 +119,7 @@ const registryWith = (entities: Array<Record<string, unknown>>) => ({
     entities.find((e) => String(e.name).toLowerCase() === name.toLowerCase()),
   counts: () => ({}),
   sourceCounts: () => new Map(),
+  changeOf: () => undefined,
 });
 
 /** A registry whose sections differ, which is what a book's index reads. */
@@ -101,6 +129,7 @@ const registryOfTypes = (byType: Record<string, Array<Record<string, unknown>>>)
     (byType[type] ?? []).find((e) => String(e.name).toLowerCase() === name.toLowerCase()),
   counts: () => ({}),
   sourceCounts: () => new Map(),
+  changeOf: () => undefined,
 });
 
 /** The page writes its scope into the URL, so the URL has to be observable. */
@@ -320,6 +349,327 @@ describe('the detail view when it works', () => {
     renderAt('/library/spell/fireball%7Cphb');
 
     expect(screen.getByRole('heading', { name: 'Fireball' })).toBeTruthy();
+  });
+});
+
+describe("a spell's page", () => {
+  it('shows its At Higher Levels text, which the data keeps apart from the rest', () => {
+    // Review finding 15: only the sheet's spell sheet showed it.
+    reg.current = {
+      ...reg.current,
+      registry: registryWith([
+        {
+          name: 'Fireball',
+          source: 'XPHB',
+          level: 3,
+          entries: ['A bright streak flashes.'],
+          entriesHigherLevel: [
+            {
+              type: 'entries',
+              name: 'Using a Higher-Level Spell Slot',
+              entries: ['The damage increases by 1d6 for each spell slot level above 3.'],
+            },
+          ],
+        },
+      ]),
+    };
+    renderAt('/library/spell/fireball%7Cxphb');
+
+    expect(screen.getByText('A bright streak flashes.')).toBeTruthy();
+    expect(screen.getByText('Using a Higher-Level Spell Slot', { exact: false })).toBeTruthy();
+    expect(screen.getByText(/increases by/)).toBeTruthy();
+  });
+
+  it('puts Make it yours after the rules text, which a lookup is for', async () => {
+    reg.current = {
+      ...reg.current,
+      registry: registryWith([
+        { name: 'Fireball', source: 'PHB', level: 3, entries: ['A bright streak flashes.'] },
+      ]),
+    };
+    renderAt('/library/spell/fireball%7Cphb');
+
+    const offer = await screen.findByRole('heading', { name: 'Make it yours' });
+    const text = screen.getByText('A bright streak flashes.');
+    expect(text.compareDocumentPosition(offer) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+});
+
+describe('an entry the table has changed', () => {
+  /** A registry whose one spell stands over the book's, as a change to the books places it. */
+  const changedWorld = (from: { kind: string; source: string }) => {
+    const base = { name: 'Guiding Bolt', source: 'XPHB', level: 1, entries: ['4d6 radiant.'] };
+    const placed = { ...base, entries: ['5d6 radiant.'] };
+    const pack = { name: 'Dawnstar Campaign Rules', source: 'DAWN' };
+    const record = {
+      type: 'spell',
+      base,
+      placed,
+      layers: [{ from, entry: placed, below: base, shared: true, needsLook: [] }],
+    };
+    return {
+      byType: (type: string) => (type === 'spell' ? [placed] : type === 'rulePack' ? [pack] : []),
+      get: () => placed,
+      counts: () => ({}),
+      sourceCounts: () => new Map(),
+      changeOf: (e: unknown) => (e === placed || e === base ? record : undefined),
+    };
+  };
+
+  it('is marked Changed, says whose version it is, and shows the book’s on a tap', () => {
+    reg.current = { ...reg.current, registry: changedWorld({ kind: 'changes', source: 'MINE' }) };
+    renderAt('/library/spell/guiding%20bolt%7Cxphb');
+
+    expect(screen.getByRole('heading', { name: 'Guiding Bolt' })).toBeTruthy();
+    expect(screen.getByText('Changed')).toBeTruthy();
+    expect(screen.getByText(/from Changes to the books/)).toBeTruthy();
+    expect(screen.getByText('5d6 radiant.')).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Show the book’s version' }));
+    expect(screen.getByText('4d6 radiant.')).toBeTruthy();
+    expect(screen.queryByText('5d6 radiant.')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Show your table’s version' }));
+    expect(screen.getByText('5d6 radiant.')).toBeTruthy();
+  });
+
+  it('names the rule pack that changed it for everyone', () => {
+    // Gemini track B, F22: a pack's change showed with no sign of it.
+    reg.current = { ...reg.current, registry: changedWorld({ kind: 'pack', source: 'DAWN' }) };
+    renderAt('/library/spell/guiding%20bolt%7Cxphb');
+
+    expect(screen.getByText('Changed')).toBeTruthy();
+    expect(screen.getByText(/from the rule pack Dawnstar Campaign Rules/)).toBeTruthy();
+  });
+
+  it("opens on the table's version again after a trip to another printing", () => {
+    const world = changedWorld({ kind: 'changes', source: 'MINE' });
+    const old = {
+      name: 'Guiding Bolt',
+      source: 'PHB',
+      reprintedAs: ['Guiding Bolt|XPHB'],
+      entries: ['The 2014 text.'],
+    };
+    const [placed] = world.byType('spell');
+    reg.current = {
+      ...reg.current,
+      registry: {
+        ...world,
+        byType: (type: string) => (type === 'spell' ? [old, placed] : world.byType(type)),
+        get: (_t: string, _n: string, source?: string) =>
+          source?.toLowerCase() === 'phb' ? old : placed,
+      },
+    };
+    renderAt('/library/spell/guiding%20bolt%7Cxphb');
+    const chip = (name: RegExp) =>
+      within(screen.getByRole('group', { name: 'Printed in' })).getByRole('button', { name });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Show the book’s version' }));
+    expect(screen.getByText('4d6 radiant.')).toBeTruthy();
+    fireEvent.click(chip(/^PHB/));
+    expect(screen.getByText('The 2014 text.')).toBeTruthy();
+    fireEvent.click(chip(/^XPHB/));
+    expect(screen.getByText('5d6 radiant.')).toBeTruthy();
+  });
+
+  it('is not marked for a book entry nothing changed', () => {
+    renderAt('/library/spell/fireball%7Cphb');
+    expect(screen.getByRole('heading', { name: 'Fireball' })).toBeTruthy();
+    expect(screen.queryByText('Changed')).toBeNull();
+  });
+});
+
+describe('what an entry page lists (Gemini 43)', () => {
+  afterEach(() => {
+    classLookup.current = {};
+  });
+
+  it('names the classes and subclasses whose lists hold a spell, each a link', () => {
+    classLookup.current = {
+      phb: {
+        fireball: {
+          class: { PHB: { Wizard: true, Sorcerer: true } },
+          subclass: {
+            PHB: { Fighter: { PHB: { 'Eldritch Knight': { name: 'Eldritch Knight' } } } },
+          },
+        },
+      },
+    };
+    renderAt('/library/spell/fireball%7Cphb');
+
+    const classes = screen.getByText('Classes').nextElementSibling as HTMLElement;
+    const links = within(classes).getAllByRole('link');
+    // Alphabetical, whatever order the lookup has them in.
+    expect(links.map((l) => l.textContent)).toEqual(['Sorcerer', 'Wizard']);
+    expect(links[1]?.getAttribute('href')).toBe('/library/class/Wizard%7CPHB');
+    const subclass = within(
+      screen.getByText('Subclasses').nextElementSibling as HTMLElement,
+    ).getByRole('link');
+    expect(subclass.textContent).toBe('Eldritch Knight (Fighter)');
+    expect(subclass.getAttribute('href')).toBe(
+      '/library/subclass/Eldritch%20Knight%7CFighter%7CPHB%7CPHB',
+    );
+  });
+
+  it("links a subclass on both rules' lists to the printing for the spell's own rules", () => {
+    // A 2014 spell, on the Eldritch Knight's list in both books: the 2024
+    // printing comes first in the lookup, the 2014 one is the link.
+    classLookup.current = {
+      phb: {
+        fireball: {
+          subclass: {
+            XPHB: { Fighter: { XPHB: { 'Eldritch Knight': { name: 'Eldritch Knight' } } } },
+            PHB: { Fighter: { PHB: { 'Eldritch Knight': { name: 'Eldritch Knight' } } } },
+          },
+        },
+      },
+    };
+    renderAt('/library/spell/fireball%7Cphb');
+
+    const links = within(
+      screen.getByText('Subclasses').nextElementSibling as HTMLElement,
+    ).getAllByRole('link');
+    expect(links).toHaveLength(1);
+    expect(links[0]?.getAttribute('href')).toBe(
+      '/library/subclass/Eldritch%20Knight%7CFighter%7CPHB%7CPHB',
+    );
+  });
+
+  it('leaves out a class from a book the settings hide', () => {
+    classLookup.current = {
+      phb: { fireball: { class: { PHB: { Wizard: true }, WoW: { Mage: true } } } },
+    };
+    policy.current = { mode: 'all', except: ['WoW'] };
+    renderAt('/library/spell/fireball%7Cphb');
+
+    const classes = screen.getByText('Classes').nextElementSibling as HTMLElement;
+    expect(
+      within(classes)
+        .getAllByRole('link')
+        .map((l) => l.textContent),
+    ).toEqual(['Wizard']);
+  });
+
+  it('has no list rows for a spell on no list', () => {
+    renderAt('/library/spell/fireball%7Cphb');
+    expect(screen.queryByText('Classes')).toBeNull();
+  });
+
+  describe('a class', () => {
+    const wizard = {
+      name: 'Wizard',
+      source: 'XPHB',
+      edition: 'one',
+      entries: [],
+      startingProficiencies: { weapons: ['simple'] },
+      classTableGroups: [{ colLabels: ['Cantrips'], rows: [[3]] }],
+    };
+    const subclass = (shortName: string, source: string, edition?: string) => ({
+      name: shortName,
+      shortName,
+      source,
+      className: 'Wizard',
+      classSource: 'XPHB',
+      ...(edition === undefined ? {} : { edition }),
+      entries: [],
+    });
+
+    beforeEach(() => {
+      reg.current = {
+        ...reg.current,
+        registry: registryOfTypes({
+          class: [wizard],
+          classFeature: [
+            {
+              name: 'Arcane Recovery',
+              source: 'XPHB',
+              className: 'Wizard',
+              classSource: 'XPHB',
+              level: 1,
+              entries: [],
+            },
+          ],
+          subclass: [
+            subclass('Abjurer', 'XPHB', 'one'),
+            subclass('Abjuration', 'PHB', 'classic'),
+            subclass('Scribes', 'TCE'),
+          ],
+        }),
+      };
+    });
+
+    it('lists its proficiencies', () => {
+      renderAt('/library/class/wizard%7Cxphb');
+      expect(screen.getByRole('heading', { name: 'Proficiencies' })).toBeTruthy();
+      expect(screen.getByText('Simple weapons')).toBeTruthy();
+    });
+
+    it('has a level table with the proficiency bonus, features and its own columns', () => {
+      renderAt('/library/class/wizard%7Cxphb');
+      const table = within(screen.getByRole('region', { name: 'The Wizard table' })).getByRole(
+        'table',
+      );
+      expect(within(table).getByRole('columnheader', { name: 'Cantrips' })).toBeTruthy();
+      const first = within(table).getByRole('row', { name: /^1 \+2/ });
+      expect(within(first).getByRole('link', { name: 'Arcane Recovery' })).toBeTruthy();
+      expect(within(first).getByRole('cell', { name: '3' })).toBeTruthy();
+      // Twenty levels and the header.
+      expect(within(table).getAllByRole('row')).toHaveLength(21);
+    });
+
+    it('names a feature with no level under the table rather than losing it', () => {
+      reg.current = {
+        ...reg.current,
+        registry: registryOfTypes({
+          class: [wizard],
+          classFeature: [
+            {
+              name: 'Spellbook Lore',
+              source: 'XPHB',
+              className: 'Wizard',
+              classSource: 'XPHB',
+              entries: [],
+            },
+          ],
+        }),
+      };
+      renderAt('/library/class/wizard%7Cxphb');
+      const region = screen.getByRole('region', { name: 'The Wizard table' });
+      expect(within(region).queryByRole('link', { name: 'Spellbook Lore' })).toBeNull();
+      expect(screen.getByText('Other features:').parentElement?.textContent).toBe(
+        'Other features: Spellbook Lore',
+      );
+    });
+
+    it("groups its subclasses by the rules they are for, the class's own first (Gemini 47)", () => {
+      renderAt('/library/class/wizard%7Cxphb');
+      const groups = screen.getAllByRole('heading', { level: 4 }).map((h) => h.textContent);
+      expect(groups).toEqual(['2024 rules', '2014 rules']);
+      const newer = screen.getByRole('heading', { name: '2024 rules' }).nextElementSibling;
+      expect(within(newer as HTMLElement).getByRole('link').textContent).toMatch(/^Abjurer/);
+      const older = screen.getByRole('heading', { name: '2014 rules' }).nextElementSibling;
+      expect(
+        within(older as HTMLElement)
+          .getAllByRole('link')
+          .map((l) => /^\w+/.exec(l.textContent ?? '')?.[0]),
+      ).toEqual(['Abjuration', 'Scribes']);
+    });
+  });
+});
+
+describe('the item sections', () => {
+  it('each say where the other kind of item is (Gemini 46)', () => {
+    renderAt('/library/item');
+    expect(screen.getByRole('link', { name: 'Basic equipment' }).getAttribute('href')).toBe(
+      '/library/baseitem',
+    );
+    cleanup();
+    renderAt('/library/baseitem');
+    expect(screen.getByRole('link', { name: 'Items' }).getAttribute('href')).toBe('/library/item');
+  });
+
+  it('is not said on other sections', () => {
+    renderAt('/library/spell');
+    expect(screen.queryByRole('link', { name: 'Basic equipment' })).toBeNull();
   });
 });
 
@@ -857,6 +1207,7 @@ describe('a title printed in more than one book', () => {
       ),
     counts: () => Object.fromEntries(Object.entries(byType).map(([t, list]) => [t, list.length])),
     sourceCounts: () => new Map(),
+    changeOf: () => undefined,
   });
   const shownCount = () =>
     screen.getByRole('heading', { name: 'Spells' }).nextElementSibling?.textContent;

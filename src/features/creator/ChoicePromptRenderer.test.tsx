@@ -352,3 +352,53 @@ describe('stagedApply', () => {
     expect(stagedApply(asi, 'asi', { draft: ['feat'], base: stagedBase('asi') })).toBe('feat');
   });
 });
+
+describe('a weighted ability prompt', () => {
+  const weighted = (weights: number[]): ChoicePrompt => ({
+    id: 'background:sage|xphb:w0',
+    origin: { label: 'Sage', uid: 'background|sage', type: 'background' },
+    kind: 'abilityWeighted',
+    label: `Ability bonuses (${weights.map((w) => `+${w}`).join(', ')})`,
+    count: weights.length,
+    weights,
+    options: ['con', 'int', 'wis'].map((a) => ({ id: a, label: a.toUpperCase() })),
+  });
+
+  it('says which pick gets which bonus, up front and on each picked chip', () => {
+    render(<ChoicePromptRenderer prompt={weighted([2, 1])} value={undefined} onChange={vi.fn()} />);
+    expect(screen.getByText('In the order you pick them: +2, then +1.')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'WIS' }));
+    fireEvent.click(screen.getByRole('button', { name: 'INT' }));
+    expect(screen.getByRole('button', { name: 'WIS +2' }).getAttribute('aria-pressed')).toBe(
+      'true',
+    );
+    expect(screen.getByRole('button', { name: 'INT +1' }).getAttribute('aria-pressed')).toBe(
+      'true',
+    );
+    // Unpicking the first moves the +2 to what is now first.
+    fireEvent.click(screen.getByRole('button', { name: 'WIS +2' }));
+    expect(screen.getByRole('button', { name: 'INT +2' })).toBeTruthy();
+  });
+
+  it('takes the same two in the other order as a change, saved in tap order', () => {
+    const onChange = vi.fn();
+    render(
+      <ChoicePromptRenderer prompt={weighted([2, 1])} value={['wis', 'int']} onChange={onChange} />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'WIS +2' }));
+    fireEvent.click(screen.getByRole('button', { name: 'INT +2' }));
+    fireEvent.click(screen.getByRole('button', { name: 'INT' }));
+    fireEvent.click(screen.getByRole('button', { name: 'WIS' }));
+    fireEvent.click(screen.getByRole('button', { name: /^Confirm/ }));
+    expect(onChange).toHaveBeenCalledWith(['int', 'wis']);
+  });
+
+  it('says nothing extra when every pick gets the same bonus', () => {
+    render(
+      <ChoicePromptRenderer prompt={weighted([1, 1, 1])} value={undefined} onChange={vi.fn()} />,
+    );
+    expect(screen.queryByText(/In the order you pick/)).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'CON' }));
+    expect(screen.getByRole('button', { name: 'CON' }).getAttribute('aria-pressed')).toBe('true');
+  });
+});

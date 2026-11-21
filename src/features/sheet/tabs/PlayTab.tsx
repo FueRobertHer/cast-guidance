@@ -155,7 +155,7 @@ import { answersTo, namedStart, recklessStart } from '../namedStarts';
 import { clampPlayStateToMax, detectPlayStateOverages } from '../playStateLimits';
 import { RestSheet } from '../RestSheet';
 import { RollEffectCue } from '../RollEffectCue';
-import { backCaption, giveBack, restWith } from '../rest';
+import { backCaption, giveBack, restWith, shortRestWouldRestore, spendHitDie } from '../rest';
 import { payOffer, pricedRollEffects } from '../rollPrice';
 import { SpellCastChips } from '../SpellCastChips';
 import { SpellInfoSheet } from '../SpellInfoSheet';
@@ -522,6 +522,17 @@ export function Component() {
   const effectsFor = (test: Parameters<typeof d20Effects>[2]) =>
     d20Effects(conditions, doc.rulesVersion, test, immune);
   const maxHp = conditionMaxHp(sheet.maxHp.value, conditions, doc.rulesVersion, immune);
+  /**
+   * Spend one hit die of a size to heal, from the HP card's chip or the short
+   * rest sheet: rolled, logged and healed by, up to the maximum the card shows.
+   */
+  const healWithHitDie = (die: string) =>
+    update((d) => {
+      const r = spendHitDie(d.play, sheet.hitDice, die, sheet.abilities.con.mod);
+      if (r === undefined) return;
+      rollLogStore.getState().append(r);
+      applyHp(d.play, Math.max(0, r.total), maxHp.value);
+    });
   // Haste doubles what is left once exhaustion has taken its share.
   const speed = conditionSpeed(sheet.speedWalk.value, conditions, doc.rulesVersion, {
     ...immune,
@@ -1935,19 +1946,7 @@ export function Component() {
                   aria-label={`Spend a ${die} hit die, ${left} left`}
                   title={`Spend a hit die (${die})`}
                   disabled={left <= 0}
-                  onClick={() =>
-                    update((d) => {
-                      const spent = d.play.hitDiceSpent[die] ?? 0;
-                      if (spent >= total) return;
-                      d.play.hitDiceSpent[die] = spent + 1;
-                      const r = roll(`1${die}${fmt(sheet.abilities.con.mod)}`, {
-                        label: `Hit die (${die})`,
-                        kind: 'heal',
-                      });
-                      rollLogStore.getState().append(r);
-                      applyHp(d.play, Math.max(0, r.total), maxHp.value);
-                    })
-                  }
+                  onClick={() => healWithHitDie(die)}
                   className="min-h-6 whitespace-nowrap rounded-chip bg-surface-raised px-2 text-ink tabular-nums hover:bg-surface-hover unavailable:bg-surface-raised unavailable:text-ink-faint"
                 >
                   <b>{Math.max(0, left)}</b> of {total} {die}
@@ -3428,12 +3427,9 @@ export function Component() {
         <div className="grid grid-cols-2 gap-2">
           <button
             type="button"
-            // With effects in play, a sheet asks which ones the rest ends.
-            onClick={() =>
-              inPlay.length > 0
-                ? setRestAsked({ rest: 'short', open: true })
-                : finishRest('short', NONE)
-            }
+            // Always a sheet: hit dice to spend, what comes back, and which
+            // effects in play the rest ends.
+            onClick={() => setRestAsked({ rest: 'short', open: true })}
             className={buttonClass({ variant: 'outline' })}
           >
             <Hourglass size={18} /> Short rest
@@ -3468,7 +3464,21 @@ export function Component() {
         length={rules.restLength}
         open={restAsked.open}
         effects={inPlay}
-        {...(restAsked.rest === 'long' ? { detail: longRestDetail(rules.hpOnLongRest) } : {})}
+        {...(restAsked.rest === 'long'
+          ? { detail: longRestDetail(rules.hpOnLongRest) }
+          : {
+              short: {
+                hp: { current: play.currentHp, max: maxHp.value, temp: play.tempHp },
+                hitDice: Object.entries(sheet.hitDice).map(([die, total]) => ({
+                  die,
+                  total,
+                  left: Math.max(0, total - (play.hitDiceSpent[die] ?? 0)),
+                })),
+                onSpendHitDie: healWithHitDie,
+                // Worked out only while it is asked; the sheet keeps the first.
+                restores: restAsked.open ? shortRestWouldRestore(play, sheet) : [],
+              },
+            })}
         onOpenChange={(open) => setRestAsked((was) => ({ ...was, open }))}
         onRest={(rest, ends) => {
           setRestAsked((was) => ({ ...was, open: false }));

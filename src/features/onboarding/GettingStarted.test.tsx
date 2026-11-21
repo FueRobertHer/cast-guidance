@@ -118,15 +118,16 @@ describe('GettingStarted', () => {
     stub('storage', { persisted: () => Promise.resolve(true), persist: vi.fn() });
     renderCard();
     // The data is still downloading, and storage has yet to answer: no count.
-    const heading = () => screen.getByRole('heading', { level: 2 });
-    expect(heading().textContent).toBe('Ready for the table');
+    // Its name, written out: one comma, no space before it.
+    const heading = (name: string) => screen.getByRole('heading', { level: 2, name });
+    expect(heading('Ready for the table').textContent).toBe('Ready for the table');
 
     await waitFor(() => expect(state(item('Keep your data safe'))).toBe('done'));
-    expect(heading().textContent).toBe('Ready for the table, 1 of 3');
+    expect(heading('Ready for the table, 1 of 3').textContent).toBe('Ready for the table1 of 3');
     expect(screen.getByRole('region', { name: 'Ready for the table, 1 of 3' })).toBeTruthy();
 
     act(() => dataStatusStore.setState({ phase: 'done' }));
-    expect(heading().textContent).toBe('Ready for the table, 3 of 3');
+    expect(heading('Ready for the table, 3 of 3')).toBeTruthy();
   });
 
   it('marks each item done with a check and to do with a dashed circle', async () => {
