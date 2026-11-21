@@ -1254,16 +1254,18 @@ function ClassExtras({ registry, entity }: { registry: EntityRegistry; entity: E
       {proficiencies.length > 0 && (
         <section className="flex flex-col gap-2">
           <h3 className="text-heading">Proficiencies</h3>
-          <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-body">
-            {proficiencies.map(([label, text]) => (
-              <div key={label} className="contents">
-                <dt className="text-ink-muted">{label}</dt>
-                <dd className="min-w-0">
-                  <InlineText text={text} />
-                </dd>
-              </div>
-            ))}
-          </dl>
+          <div className="@container">
+            <dl className={FACTS}>
+              {proficiencies.map(([label, text]) => (
+                <div key={label} className="contents">
+                  <dt className="text-ink-muted">{label}</dt>
+                  <dd className={FACT_VALUE}>
+                    <InlineText text={text} />
+                  </dd>
+                </div>
+              ))}
+            </dl>
+          </div>
         </section>
       )}
       <ClassLevelTable name={name} table={classTable(entity)} byLevel={byLevel} />
@@ -1401,6 +1403,14 @@ function PrintingSwitch({
 }
 
 /** A link inside a line of text, as rules text draws one. */
+/**
+ * A list of labelled facts: label beside value where the card has room, label
+ * over value where it has not (a phone with text at 200%, or 320 px), so a
+ * one-word value such as a class's name is never wider than its column.
+ */
+const FACTS = 'grid gap-x-4 gap-y-1 text-body @min-[18rem]:grid-cols-[auto_1fr]';
+const FACT_VALUE = 'min-w-0 @max-[18rem]:pb-1.5';
+
 const TEXT_LINK = 'underline decoration-line-strong underline-offset-3 hover:decoration-ink';
 
 /**
@@ -1641,10 +1651,11 @@ function EntityDetail({ type, uid, reg }: { type: EntityType; uid: string; reg: 
     <main className="flex flex-1 flex-col gap-4 px-4 pt-3 pb-4">
       <BackLink onClick={back} />
       <header className="flex flex-col gap-1">
-        <div className="flex items-start justify-between gap-2">
+        {/* Wraps the book and page under a long title where both do not fit (200% text). */}
+        <div className="flex flex-wrap items-start justify-between gap-x-2">
           {/* The badge beside the heading, not in it: the heading's name stays
               the entry's, which is what a search for it looks for. */}
-          <div>
+          <div className="min-w-0">
             <h1 className="inline font-display text-title-page">{nameOf(shown)}</h1>
             {record !== undefined && <ChangedBadge />}
           </div>
@@ -1682,14 +1693,16 @@ function EntityDetail({ type, uid, reg }: { type: EntityType; uid: string; reg: 
         />
       )}
       {(facts.length > 0 || lists.length > 0) && (
-        <dl className={`${cardClass} grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-body`}>
-          {[...facts, ...lists].map(([label, value]) => (
-            <div key={label} className="contents">
-              <dt className="text-ink-muted">{label}</dt>
-              <dd className="min-w-0">{value}</dd>
-            </div>
-          ))}
-        </dl>
+        <div className={`${cardClass} @container`}>
+          <dl className={FACTS}>
+            {[...facts, ...lists].map(([label, value]) => (
+              <div key={label} className="contents">
+                <dt className="text-ink-muted">{label}</dt>
+                <dd className={FACT_VALUE}>{value}</dd>
+              </div>
+            ))}
+          </dl>
+        </div>
       )}
       <EntriesView entries={shown.entries} />
       {/* A spell's "At Higher Levels", which the data keeps apart from its
