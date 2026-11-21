@@ -7,6 +7,7 @@
 import { onlyRoll, textUpcastTag } from '../../data5e/entries/upcast';
 import type { RulesVersion } from '../../data5e/rulesVersion';
 import { childElements, childText, childTexts, textContent, type XmlElement } from '../xml';
+import { BASE_CLASSES } from './classOption';
 import {
   citationEntry,
   extraClassKey,
@@ -193,6 +194,73 @@ interface ClassLists {
   mixed?: boolean;
 }
 
+/** Edition markers anywhere in a class list's entry: `Fighter [5.5e] (Eldritch Knight)`. */
+const MARKERS = /\s*\[[^[\]]{1,12}\]/g;
+
+/** How many brackets deep {@link subclassOf} unwraps a subclass's name. */
+const MAX_WRAPS = 4;
+
+/**
+ * A subclass's name from what follows its class in a class list, as the
+ * converted subclass is named (`entryName` of the pick): `(Origami Mage)`,
+ * `((Origami Mage) (TP))` and `(Origami Mage) (TP)` are all `Origami Mage`;
+ * `(Hunt Domain (Tome of Heroes) (HB))` is `Hunt Domain (Tome of Heroes)`.
+ */
+function subclassName(rest: string): string {
+  let name = entryName(rest).name;
+  for (let n = 0; n < MAX_WRAPS && name.startsWith('('); n += 1) {
+    const close = closingBracket(name);
+    if (close < 0) break;
+    name = entryName(`${name.slice(1, close)} ${name.slice(close + 1)}`).name;
+  }
+  return name;
+}
+
+/** Where the bracket that opens a text closes, or -1. */
+function closingBracket(text: string): number {
+  let depth = 0;
+  for (let i = 0; i < text.length; i += 1) {
+    if (text[i] === '(') depth += 1;
+    else if (text[i] === ')') {
+      depth -= 1;
+      if (depth === 0) return i;
+    }
+  }
+  return -1;
+}
+
+/**
+ * A class list's entry as a class and a subclass, when it leads with a class
+ * the rules or the file have: the longest such lead, so `Tamer (Heliana)
+ * (Splicer)` is the Tamer (Heliana)'s Splicer. Edition markers and book tags
+ * anywhere are not part of either name. Undefined when no lead is a class,
+ * or nothing follows it.
+ */
+function subclassOf(
+  entry: string,
+  fileClasses: FileClasses | undefined,
+): { base: string; inner: string } | undefined {
+  const name = entry.replace(MARKERS, '').replace(/\s+/g, ' ').trim();
+  // Where each of the first few top-level brackets opens: no class's name holds
+  // more (`Blood Hunter (Alt. LaserLlama)`), and each lead tried costs its length.
+  const cuts: number[] = [];
+  let depth = 0;
+  for (let i = 0; i < name.length && cuts.length < MAX_WRAPS; i += 1) {
+    if (name[i] === '(') {
+      if (depth === 0 && i > 0) cuts.push(i);
+      depth += 1;
+    } else if (name[i] === ')') depth = Math.max(0, depth - 1);
+  }
+  for (let k = cuts.length - 1; k >= 0; k -= 1) {
+    const lead = name.slice(0, cuts[k]).trim();
+    const file = fileClasses?.get(entryName(lead).name.toLowerCase());
+    if (file === undefined && !BASE_CLASSES.has(lead.toLowerCase())) continue;
+    const inner = subclassName(name.slice(cuts[k]));
+    return inner === '' ? undefined : { base: file?.name ?? lead, inner };
+  }
+  return undefined;
+}
+
 /**
  * "Wizard, Sorcerer", "School: Evocation, Wizard", "Wizard [5.5e]",
  * "Fighter (Eldritch Knight)", "Artificer (UA)". A class the file converts is
@@ -219,7 +287,7 @@ export function readClasses(raw: string, fileClasses?: FileClasses): ClassLists 
       }
       continue;
     }
-    const sub = parenthetical(name);
+    const sub = subclassOf(trimmed, fileClasses) ?? parenthetical(name);
     if (sub !== undefined && !/^UA$/i.test(sub.inner)) {
       out.subclasses.push({ className: sub.base, subclassName: sub.inner });
       continue;

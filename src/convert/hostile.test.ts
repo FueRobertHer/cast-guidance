@@ -40,6 +40,13 @@ describe('hostile input', () => {
     expect(classes.fromClassList).toHaveLength(1000);
   });
 
+  it('reads a class list entry of many brackets in linear time', () => {
+    const entry = `Fighter [5.5e] ${'(a) ['.repeat(100_000)}(Ash)${')'.repeat(100_000)}`;
+    const s = firstSpell(spell(`<school>EV</school><classes>${entry}</classes>`));
+    const classes = s?.classes as { fromSubclass?: { class: { name: string } }[] } | undefined;
+    expect(classes?.fromSubclass?.[0]?.class.name).toBe('Fighter');
+  });
+
   it('reads a very long list of option lists in linear time', () => {
     const lists = Array.from({ length: 200_000 }, (_, i) => `Order ${i % 1000}: Tricks [5.5e]`);
     const { json } = convert(spell(`<classes>${lists.join(',')}</classes>`));
