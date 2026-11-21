@@ -769,11 +769,32 @@ function Editor({
     () => onePerName(registry.byType('spell'), { edition, bookEdition, source: from }),
     [registry, edition, bookEdition, from],
   );
-  // The entry as the sheet would hold it once saved, for Try it on.
-  const trying = useMemo(
-    () => ({ ...draft, name: name || `New ${spec.noun}`, source }),
-    [draft, name, source, spec.noun],
-  );
+  // The entry as the sheet would hold it once saved, for Try it on. One that
+  // owns others (a subclass's features) is what its writer writes, as Save
+  // writes it (`written`), with what it is written against.
+  const trying = useMemo(() => {
+    const entry = { ...draft, name: name || `New ${spec.noun}`, source };
+    if (spec.write === undefined) return { entry };
+    try {
+      const own = spec.write({
+        original: base,
+        copied: original,
+        draft,
+        source,
+        mode,
+        registry,
+        stored: at.stored,
+        storedAs,
+      });
+      return {
+        entry: { ...own.entry, name: entry.name },
+        owned: own.owned,
+        ...(base !== undefined ? { original: base } : {}),
+      };
+    } catch (err) {
+      return { entry, failed: errorText(err) };
+    }
+  }, [draft, name, source, spec, base, original, mode, registry, at.stored, storedAs]);
   const fileView = (() => {
     if (!asFile) return null;
     let text: string;
@@ -889,7 +910,7 @@ function Editor({
         </SpellChoices.Provider>
       </EntryPicks>
       {!readOnly && TRY_ON_TYPES.has(type) && (
-        <TryItOn type={type} entry={trying} registry={registry} />
+        <TryItOn type={type} trying={trying} registry={registry} />
       )}
     </EditorShell>
   );
