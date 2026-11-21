@@ -24,15 +24,17 @@ import type { RulesVersion } from '../../data5e/rulesVersion';
 import { childTexts, type XmlElement } from '../xml';
 import { type FileCounter, isSpellsKnown } from './classCounters';
 import { textLists } from './classLists';
+import { BASE_CLASSES } from './classOption';
 import { readFeatureSpells } from './classSpells';
 import {
   citationEntry,
   type Fc5Context,
   type Fc5Part,
+  type FileClasses,
   type Placement,
   placeEntity,
 } from './context';
-import { countWord, type Entry, entryName, ownerKey, plainText, readText } from './text';
+import { countWord, type Entry, entryName, lastGroup, ownerKey, plainText, readText } from './text';
 
 /** One option as the class lists it. */
 export interface OptionChoice {
@@ -479,18 +481,45 @@ const KNOWN = /^(.{1,60}?) (?:known|options known)$/i;
  * (`Ranger (Trapper (Legacy))`).
  */
 function storedLists(host: OptionHost): { list: string; label: string }[] {
-  const owner = ownerKey(host.owner).key;
+  const owners = new Set(ownerKeys(host.owner, host.className, host.ctx.classes));
   const edition = host.edition ?? host.placement.edition;
   const mine: { list: string; label: string }[] = [];
   for (const list of host.ctx.optionLists ?? []) {
     const colon = list.indexOf(': ');
     if (colon <= 0) continue;
     const named = ownerKey(list.slice(0, colon));
-    if (named.key !== owner || (named.edition !== undefined && named.edition !== edition)) continue;
+    if (!owners.has(named.key) || (named.edition !== undefined && named.edition !== edition))
+      continue;
     const label = list.slice(colon + 2).trim();
     if (label !== '') mine.push({ list, label });
   }
   return mine;
+}
+
+/**
+ * The keys an option list's owner may name a host by: its own name as
+ * {@link ownerKey} reads it and, for a class the file names with an author's
+ * qualifier (`Madwalker (Tanares)`), its name without it (`Madwalker`,
+ * `Madwalker (Arachnid Trail)` for its subclass), when no other class in the
+ * file or the rules goes by that name. The owner is the class's name, or the
+ * class's name and the subclass's in brackets, as hosts name themselves.
+ */
+export function ownerKeys(
+  owner: string,
+  className: string,
+  classes: FileClasses | undefined,
+): string[] {
+  const keys = [ownerKey(owner).key];
+  const bare = lastGroup(className)?.base;
+  if (bare === undefined || classes === undefined) return keys;
+  const key = ownerKey(bare).key;
+  if (BASE_CLASSES.has(key)) return keys;
+  let named = 0;
+  for (const c of classes.values()) {
+    if (ownerKey(lastGroup(c.name)?.base ?? c.name).key === key) named += 1;
+  }
+  if (named === 1) keys.push(ownerKey(`${bare}${owner.slice(className.length)}`).key);
+  return keys;
 }
 
 /** A host's `X Known` counters (not its spells known), each with the label words it names. */

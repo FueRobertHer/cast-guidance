@@ -69,6 +69,7 @@ import {
   isClassOption,
   isOnOfficialList,
 } from './classOption';
+import { ownerKeys } from './classOptions';
 import {
   type ClassBinding,
   extraClassKey,
@@ -1156,9 +1157,15 @@ export function fc5Converter(opts: ConvertOptions): Fc5Converter {
     // A list's owner as its name gives it, tags off: `mystic (immortal)`.
     const ownerOf = (name: string) => ownerKey(name).key;
     const hosts = new Set<string>();
-    const classHosts = new Set(out.class.map((c) => ownerOf(String(c.name))));
+    const classHosts = new Set(
+      out.class.flatMap((c) => ownerKeys(String(c.name), String(c.name), fileClasses)),
+    );
     for (const c of classHosts) hosts.add(c);
-    for (const s of out.subclass) hosts.add(ownerOf(`${String(s.className)} (${String(s.name)})`));
+    for (const s of out.subclass) {
+      const className = String(s.className);
+      for (const key of ownerKeys(`${className} (${String(s.name)})`, className, fileClasses))
+        hosts.add(key);
+    }
     // Of a class or subclass the file converts, or stored with no class's
     // name: nothing says how many to pick. Else its class is not converted.
     const uncounted = { total: 0, lists: new Set<string>() };
