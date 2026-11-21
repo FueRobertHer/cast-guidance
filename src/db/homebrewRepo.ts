@@ -204,7 +204,9 @@ function readHomebrewMeta(row: unknown): HomebrewFileMeta | HomebrewReadError {
     addedAt: numberOr(row.addedAt, 0),
     rev: typeof row.rev === 'number' && Number.isFinite(row.rev) ? row.rev : undefined,
     ...(typeof row.book === 'string' && row.book !== '' ? { book: row.book } : {}),
-    ...(typeof row.title === 'string' && row.title.trim() !== '' ? { title: row.title.trim() } : {}),
+    ...(typeof row.title === 'string' && row.title.trim() !== ''
+      ? { title: row.title.trim() }
+      : {}),
     ...(row.subset === true ? { subset: true as const } : {}),
   };
   const pack = readPackLocal(row.pack);
