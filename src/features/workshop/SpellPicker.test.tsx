@@ -110,6 +110,23 @@ describe('SpellPicker', () => {
     ]);
   });
 
+  it('names each row by its spell and its book, apart, as a screen reader says it', () => {
+    mount();
+    type('fireball');
+    const found = within(screen.getByRole('listbox', { name: 'Spells found' }));
+    expect(found.getByRole('option', { name: "Fireball, Player's Handbook (2024)" })).toBeTruthy();
+    expect(found.getByRole('option', { name: "Fireball, Player's Handbook (2014)" })).toBeTruthy();
+  });
+
+  it('keeps its list inside a narrow screen at large text', () => {
+    mount();
+    type('fire');
+    const cls = screen.getByRole('listbox', { name: 'Spells found' }).parentElement?.className ?? '';
+    // A fixed least width would outgrow a 320px screen at 200% text (15rem is 480px).
+    expect(cls).not.toMatch(/(^|\s)min-w-60(\s|$)/);
+    expect(cls).toContain('min-w-[min(15rem,calc(100vw-2rem))]');
+  });
+
   it('says how many more match than it shows', () => {
     const many = Array.from({ length: 31 }, (_, i) => ({ name: `Spell ${i}`, source: 'TST' }));
     mount(many);

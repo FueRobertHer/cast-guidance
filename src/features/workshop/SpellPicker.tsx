@@ -7,6 +7,7 @@
  * read, as it was before the list (a name found, or the words kept as typed).
  */
 import { type KeyboardEvent, useEffect, useId, useRef, useState } from 'react';
+import { sourceName } from '@/data5e/sourceNames';
 import { SourceBadge } from '@/ui/SourceBadge';
 import { fieldClass } from '@/ui/TextField';
 import type { SpellOption } from './cards/kit/types';
@@ -175,7 +176,7 @@ export function SpellPicker({
         {/* The list is beside the label, never in it, so it is no part of the box's name. */}
         <div
           hidden={!expanded}
-          className="absolute top-full left-0 z-30 mt-1 w-full min-w-60 max-w-[calc(100vw-2rem)] overflow-hidden rounded-control bg-surface shadow-overlay ring-1 ring-line ring-inset"
+          className="absolute top-full left-0 z-30 mt-1 w-full min-w-[min(15rem,calc(100vw-2rem))] max-w-[calc(100vw-2rem)] overflow-hidden rounded-control bg-surface shadow-overlay ring-1 ring-line ring-inset"
         >
           <div
             id={listId}
@@ -194,6 +195,8 @@ export function SpellPicker({
                 key={`${o.name}|${o.source}`}
                 id={optionId(i)}
                 role="option"
+                // Its name and book as one says them, not run together ("FireballPHB").
+                aria-label={`${o.name}, ${sourceName(o.source)}`}
                 aria-selected={i === active}
                 onClick={() => pick(o)}
                 onMouseMove={() => setActive(i)}
