@@ -13,7 +13,7 @@ import { collectAdditionalSpells } from './additionalSpells';
 import { asiFeatInstance } from './asiFeatInstance';
 import { asEntityArray, type Collector, str } from './base';
 import { VariantGate } from './classVariants';
-import { collectFeatEntity } from './feat';
+import { collectFeatEntity, featsTakenElsewhere, readFeatProgression } from './feat';
 import { isRepeatableFeat } from './featPicks';
 import { basedOn, emitBuiltInRows, mechanicsOf, officialOf, printingKeys } from './mechanics';
 import { readOptionalFeatures } from './optionalFeatures';
@@ -571,16 +571,10 @@ function featPick(
   label: string,
 ): void {
   const baseId = `class:${classUid}:asi:${level}`;
-  // Feats picked at other ASI levels: a non-repeatable feat shouldn't be
-  // offered again (it would be deduped on collection anyway). The current
-  // prompt's own pick is excluded so it still reads as selected.
-  const takenElsewhere = new Set<string>();
-  for (const [key, val] of Object.entries(col.doc.choices)) {
-    if (key === `${baseId}:feat` || !key.endsWith(':feat')) continue;
-    for (const v of Array.isArray(val) ? val : [val]) {
-      if (typeof v === 'string') takenElsewhere.add(v.toLowerCase());
-    }
-  }
+  // A non-repeatable feat taken anywhere else shouldn't be offered again (it
+  // would be deduped on collection anyway). The current prompt's own pick is
+  // excluded so it still reads as selected.
+  const takenElsewhere = featsTakenElsewhere(col, `${baseId}:feat`);
   const prereqCtx = buildPrereqContext(col);
   col.choice(
     {
@@ -779,6 +773,16 @@ export function collectClasses(col: Collector): void {
         featPick(col, origin, classUid, level, `Level ${level}: Epic Boon, choose a feat`);
       }
     }
+    // The feats its levels give by category: a 2024 Fighting Style. Its Epic
+    // Boon is in the list too, but the feature above asks for that one, from
+    // every feat as the rules allow.
+    readFeatProgression(col, cls, {
+      idBase: `class:${classUid}`,
+      uid: classUid,
+      origin,
+      level: classLevel,
+      skip: new Set(boonAt.length > 0 ? ['epic boon'] : []),
+    });
 
     // A spell a class or subclass gives casts with the class's ability by default.
     const classAbility = str(cls.spellcastingAbility);
@@ -878,6 +882,13 @@ export function collectClasses(col: Collector): void {
             subGate.choicePrefixFor(sibling, `subclass:${subOrigin.uid}`),
           );
         }
+        // A 2024 Champion's second Fighting Style feat, which cannot repeat the first.
+        readFeatProgression(col, sub, {
+          idBase: `subclass:${subOrigin.uid}`,
+          uid: subOrigin.uid,
+          origin: subOrigin,
+          level: classLevel,
+        });
         // A Battle Master's maneuvers, a Four Elements monk's disciplines, a
         // Champion's second style, which cannot repeat the class's first.
         readOptionalFeatures(col, sub, {

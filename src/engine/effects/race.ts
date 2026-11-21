@@ -14,6 +14,7 @@ import {
 } from '../types';
 import { collectAdditionalSpells } from './additionalSpells';
 import { asEntityArray, type Collector, num, str } from './base';
+import { readFeatGrants } from './feat';
 import { basedOn, emitBuiltInRows, mechanicsOf } from './mechanics';
 import { DAMAGE_TYPES, proseScanFeature } from './proseScan';
 import {
@@ -311,6 +312,10 @@ function collectFrom(col: Collector, e: DataEntity, origin: EffectOrigin, idBase
       },
     });
   }
+  // The feat it grants (a 2024 Human's Origin feat, a Variant Human's or a
+  // Custom Lineage's feat): a feat of its own, after its traits. Its picks are
+  // kept under this origin's choice prefix, apart from a background's.
+  readFeatGrants(col, e.feats, origin, idBase, idBase);
 }
 
 /** A Dragonborn's dragon, whether it was asked for, and the dragons it could be. */
