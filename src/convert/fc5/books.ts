@@ -216,6 +216,20 @@ export function editionKnown(code: string, rulesBooks: ReadonlySet<string> | und
   return rulesBooks !== undefined || SOURCES_2024.has(code) || CORE_2014.has(code);
 }
 
+/**
+ * Whether a book's edition is sure enough to write on its entries: a core or
+ * 2024 book's, or one the data holds once it has said which books are 2024. A
+ * book the data lacks (a later one than its release, or none yet downloaded)
+ * is 2014 only by guess.
+ */
+export function editionSure(
+  code: string,
+  rulesBooks: ReadonlySet<string> | undefined,
+  hasBook: ((code: string) => boolean) | undefined,
+): boolean {
+  return editionKnown(code, undefined) || (rulesBooks !== undefined && hasBook?.(code) !== false);
+}
+
 const MAX_ID = 40;
 
 /** FNV-1a, for an id that had to be cut short and must still be unique. */
