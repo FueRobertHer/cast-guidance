@@ -63,7 +63,7 @@ import { dataStatusStore } from '@/stores/dataStatus';
 import { noticeStore } from '@/stores/notices';
 import { Component as CreatorPage } from './CreatorPage';
 import { LEGACY_DRAFT_KEY, RESUME_STATE, readDraft, writeDraft } from './draft';
-import { wizardState } from './steps';
+import { STEP_LABELS, wizardState } from './steps';
 
 registry.current = makeTestContext();
 
@@ -184,6 +184,23 @@ describe('stepping through the creator', () => {
     seedDoc(doc);
     renderCreator(walkedToReview);
     expect(screen.getByText(/^High Elf ·/)).toBeTruthy();
+  });
+
+  // Review item 5: focus starts at the new step's top, not on the Next button.
+  it('moves focus to the new step heading on Next and on Back, but not on opening', async () => {
+    const router = renderCreator(['/', '/create']);
+    expect(document.activeElement).not.toBe(screen.getByRole('heading', { level: 1 }));
+    fireEvent.click(screen.getByRole('button', { name: 'Next: Class' }));
+    await waitFor(() => expect(router.state.location.search).toBe('?step=class'));
+    await waitFor(() =>
+      expect(document.activeElement).toBe(screen.getByRole('heading', { level: 1, name: 'Class' })),
+    );
+    fireEvent.click(screen.getByRole('button', { name: /Back$/ }));
+    await waitFor(() =>
+      expect(document.activeElement).toBe(
+        screen.getByRole('heading', { level: 1, name: STEP_LABELS.basics }),
+      ),
+    );
   });
 
   it('names the step in the document title', () => {

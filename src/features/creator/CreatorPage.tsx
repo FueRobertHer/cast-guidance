@@ -320,6 +320,18 @@ export function Component() {
     saveDraftStep(step);
   }, [step]);
 
+  // A step change moves focus to the new step's heading, so a keyboard or
+  // screen reader user starts at its top rather than on a Next button that
+  // now names the step after. Not on the step the page opened on, which the
+  // page's own load handles.
+  const stepHeading = useRef<HTMLHeadingElement>(null);
+  const focusedStep = useRef(step);
+  useEffect(() => {
+    if (focusedStep.current === step) return;
+    focusedStep.current = step;
+    stepHeading.current?.focus();
+  }, [step]);
+
   // Set once Create is pressed: the name of the character being opened. From
   // then on the wizard is spent, and its history entries are being unwound.
   const [opening, setOpening] = useState<string | null>(null);
@@ -502,7 +514,12 @@ export function Component() {
         >
           <ArrowLeft size={20} aria-hidden />
         </Link>
-        <h1 className="font-display font-semibold text-[1.5rem] leading-7.5">
+        {/* Focused on a step change; not a control, so it draws no ring. */}
+        <h1
+          ref={stepHeading}
+          tabIndex={-1}
+          className="font-display font-semibold text-[1.5rem] leading-7.5 outline-none"
+        >
           {STEP_LABELS[step]}
         </h1>
         <span className="ml-auto text-caption whitespace-nowrap text-ink-muted tabular-nums">
