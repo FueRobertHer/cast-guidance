@@ -6,11 +6,17 @@ import 'fake-indexeddb/auto';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { createMemoryRouter, RouterProvider } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { invalidateRegistry } from '@/data5e/registry';
+import { DATA_TAG } from '@/data5e/config';
+import { getRegistry, invalidateRegistry } from '@/data5e/registry';
+import { characterRepo } from '@/db/characterRepo';
+import { db } from '@/db/db';
 import { homebrewRepo } from '@/db/homebrewRepo';
+import { newCharacterDoc } from '@/engine/types';
 import { savePackLocal } from '@/features/homebrew/PackReviewSheet';
+import { RULE_TITLES } from '@/features/settings/RuleSheet';
 import { TableRulesRow } from '@/features/settings/SettingsPage';
 import { resetAnnouncer } from '@/stores/announcer';
+import { noticeStore } from '@/stores/notices';
 import { setAppTableRule } from '@/stores/tableRules';
 import { namelessControls } from '../../../tests-fixtures/a11y';
 import {
@@ -19,6 +25,7 @@ import {
   seedWorld,
 } from '../../../tests-fixtures/sheetHarness';
 import { collectionPath, collectionsOf } from './collections';
+import { writeChange } from './copyWriter';
 import { Component as RulesPage } from './RulesPage';
 
 vi.mock('@/data5e/loader', () =>
@@ -42,6 +49,7 @@ beforeEach(() => {
   resetAnnouncer();
 });
 afterEach(async () => {
+  vi.restoreAllMocks();
   for (const id of ['critDamage', 'restLength', 'flanking'] as const)
     setAppTableRule(id, undefined);
   await resetSheetHarness();
@@ -116,6 +124,61 @@ async function importPack(
   }
   invalidateRegistry();
   return row;
+}
+
+type Json = Record<string, unknown> & { name: string; source: string };
+
+/**
+ * Two of the harness's spells changed for the table, as Change for your
+ * table saves them, in the file's order. Called after `visit`, which seeds
+ * the books.
+ */
+async function saveTwoChanges(): Promise<[Json, Json]> {
+  // Not one a table rule's pick shares a name with (Guidance).
+  const [a, b] = (await getRegistry())
+    .byType('spell')
+    .filter((s) => !Object.values(RULE_TITLES).some((t) => t.startsWith(String(s.name))))
+    .slice(0, 2) as unknown as Json[];
+  if (a === undefined || b === undefined) throw new Error('the harness has two spells');
+  for (const spell of [a, b]) {
+    await homebrewRepo.saveEntry(
+      'spell',
+      writeChange('spell', spell, {
+        ...spell,
+        entries: [`${spell.name}, for this table.`],
+      }) as Json,
+      { role: 'changes' },
+    );
+  }
+  invalidateRegistry();
+  return [a, b];
+}
+
+/** The Changes to the books file's row. */
+async function changesRow() {
+  return (await homebrewRepo.ownedSafe()).files.find((f) => f.role === 'changes');
+}
+
+/** The rule pack the Write sheet saved. */
+async function writtenRow() {
+  return (await homebrewRepo.listSafe()).files.find((f) => f.role !== 'changes');
+}
+
+/** Open Write a rule pack and wait for its picks. */
+async function openWrite() {
+  fireEvent.click(screen.getByRole('button', { name: 'Write a rule pack' }));
+  const sheet = await screen.findByRole('dialog', { name: 'Write a rule pack' }, { timeout: WAIT });
+  await within(sheet).findByRole('checkbox', { name: /^Critical hits/ }, { timeout: WAIT });
+  return sheet;
+}
+
+/** A promise held until the test lets it go. */
+function gate() {
+  let release = (): void => undefined;
+  const held = new Promise<void>((r) => {
+    release = r;
+  });
+  return { held, release };
 }
 
 describe('the Rules page', () => {
@@ -315,5 +378,201 @@ describe('the Rules page', () => {
         { timeout: WAIT },
       ),
     ).toBeTruthy();
+  });
+
+  it('waits for the characters before saying who a pack reaches', async () => {
+    // A pack applied to Hild, with the characters read only after the packs.
+    await characterRepo.put(newCharacterDoc('hild', 'Hild', DATA_TAG));
+    const row = await importPack('Gritty', { restLength: 'gritty' });
+    await savePackLocal(row.id, (local) => ({ ...local, appliesTo: { characters: ['hild'] } }));
+    const roster = gate();
+    const real = characterRepo.listSafe.bind(characterRepo);
+    vi.spyOn(characterRepo, 'listSafe').mockImplementation(async () => {
+      await roster.held;
+      return real();
+    });
+    const said: string[] = [];
+    const watch = new MutationObserver(() => {
+      for (const b of document.querySelectorAll('button')) {
+        const t = b.textContent ?? '';
+        if (t.startsWith('Gritty')) said.push(t);
+      }
+    });
+    watch.observe(document.body, { childList: true, subtree: true, characterData: true });
+    await visit();
+    // Long enough for the packs to be read while the characters are not.
+    await new Promise((r) => setTimeout(r, 500));
+    roster.release();
+    expect(
+      await screen.findByRole('button', { name: /^Gritty, On for Hild/ }, { timeout: WAIT }),
+    ).toBeTruthy();
+    watch.disconnect();
+    expect(said.filter((t) => t.includes('Applies to no character yet'))).toEqual([]);
+  });
+
+  it('closes a pack’s review for good when the pack is deleted in another tab', async () => {
+    const gritty = await importPack('Gritty', { restLength: 'gritty' });
+    await visit();
+    fireEvent.click(
+      await screen.findByRole('button', { name: /^Gritty, Applies/ }, { timeout: WAIT }),
+    );
+    await screen.findByRole('dialog', { name: 'Gritty' });
+    const stored = await db.homebrewFiles.get(gritty.id);
+    const json = await db.homebrewJson.get(gritty.id);
+    if (stored === undefined || json === undefined) throw new Error('Gritty is stored');
+    // Deleted as another tab deletes it, then put back as it was (an undo).
+    await db.homebrewFiles.delete(gritty.id);
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Gritty' })).toBeNull(), {
+      timeout: WAIT,
+    });
+    await db.homebrewFiles.put(stored);
+    await db.homebrewJson.put(json);
+    expect(
+      await screen.findByRole('button', { name: /^Gritty, Applies/ }, { timeout: WAIT }),
+    ).toBeTruthy();
+    await new Promise((r) => setTimeout(r, 300));
+    expect(screen.queryByRole('dialog', { name: 'Gritty' })).toBeNull();
+  });
+
+  it('keeps a change’s pick on its entry when another tab removes the one before it', async () => {
+    await visit();
+    const [first, second] = await saveTwoChanges();
+    const sheet = await openWrite();
+    const box = (name: string) =>
+      within(sheet).getByRole('checkbox', { name: new RegExp(`^${name}`) }) as HTMLInputElement;
+    await waitFor(() => expect(box(second.name).checked).toBe(true), { timeout: WAIT });
+    // The player leaves the first change out, then it is removed elsewhere.
+    fireEvent.click(box(first.name));
+    expect(box(first.name).checked).toBe(false);
+    await homebrewRepo.removeEntry((await changesRow())?.id ?? '', 'spell', first);
+    await waitFor(
+      () =>
+        expect(
+          within(sheet).queryByRole('checkbox', { name: new RegExp(`^${first.name}`) }),
+        ).toBeNull(),
+      { timeout: WAIT },
+    );
+    // The second is still picked, as the player left it, and it is what is saved.
+    expect(box(second.name).checked).toBe(true);
+    fireEvent.click(within(sheet).getByRole('button', { name: /^Next: name it \(1 thing\)/ }));
+    fireEvent.click(within(sheet).getByRole('button', { name: 'Save rule pack' }));
+    await screen.findByRole('dialog', { name: 'My table rules' }, { timeout: WAIT });
+    expect(((await writtenRow())?.json.spell as Json[]).map((e) => e.name)).toEqual([second.name]);
+  });
+
+  it('will not save a change removed in another tab since it was shown', async () => {
+    await visit();
+    const [first] = await saveTwoChanges();
+    const sheet = await openWrite();
+    await waitFor(
+      () => expect(within(sheet).getByRole('button', { name: /^Next: name it \(2 things\)/ })),
+      { timeout: WAIT },
+    );
+    fireEvent.click(within(sheet).getByRole('button', { name: /^Next: name it/ }));
+    // Removed after the sheet last read the changes and before Save: what the
+    // file holds from here on is read without it, while the sheet still shows it.
+    const real = homebrewRepo.ownedSafe.bind(homebrewRepo);
+    vi.spyOn(homebrewRepo, 'ownedSafe').mockImplementation(async () => {
+      const read = await real();
+      return {
+        ...read,
+        files: read.files.map((f) =>
+          f.role === 'changes'
+            ? {
+                ...f,
+                json: {
+                  ...f.json,
+                  spell: (f.json.spell as Json[]).filter((e) => e.name !== first.name),
+                },
+              }
+            : f,
+        ),
+      };
+    });
+    fireEvent.click(within(sheet).getByRole('button', { name: 'Save rule pack' }));
+    expect(
+      await within(sheet).findByText(/^Your changes to the books changed while this was open/),
+    ).toBeTruthy();
+    expect(await writtenRow()).toBeUndefined();
+  });
+
+  it('saves only the changes picked, and holds what it saves while it saves', async () => {
+    await visit();
+    const [first, second] = await saveTwoChanges();
+    const sheet = await openWrite();
+    const box = (name: string) =>
+      within(sheet).getByRole('checkbox', { name: new RegExp(`^${name}`) }) as HTMLInputElement;
+    await waitFor(() => expect(box(first.name).checked).toBe(true), { timeout: WAIT });
+    fireEvent.click(box(second.name));
+    fireEvent.click(within(sheet).getByRole('button', { name: /^Next: name it \(1 thing\)/ }));
+    const name = () => within(sheet).getByRole('textbox', { name: 'Name' }) as HTMLInputElement;
+    fireEvent.change(name(), { target: { value: 'Lantern Coast rules' } });
+    const saving = gate();
+    const commit = homebrewRepo.commit.bind(homebrewRepo);
+    vi.spyOn(homebrewRepo, 'commit').mockImplementation(async (...args) => {
+      await saving.held;
+      return commit(...args);
+    });
+    fireEvent.click(within(sheet).getByRole('button', { name: 'Save rule pack' }));
+    await within(sheet).findByRole('button', { name: 'Saving…' });
+    // While it saves, the name and Back stay as they were.
+    fireEvent.change(name(), { target: { value: 'Something else' } });
+    fireEvent.click(within(sheet).getByRole('button', { name: 'Back' }));
+    expect(name().value).toBe('Lantern Coast rules');
+    saving.release();
+    const done = await screen.findByRole(
+      'dialog',
+      { name: 'Lantern Coast rules' },
+      { timeout: WAIT },
+    );
+    const pack = await writtenRow();
+    expect(pack?.fileName).toBe('lantern-coast-rules.json');
+    expect((pack?.json.spell as Json[]).map((e) => e.name)).toEqual([first.name]);
+    // The done step says what was saved, though the change is removed since.
+    await homebrewRepo.removeEntry((await changesRow())?.id ?? '', 'spell', first);
+    await new Promise((r) => setTimeout(r, 300));
+    expect(
+      within(done).getByText(/^Saved to Rules\. Lantern Coast rules changes 1 thing/),
+    ).toBeTruthy();
+    expect(within(done).getByText(first.name)).toBeTruthy();
+  });
+
+  it('clears a failed save on Back, and reports one that fails after the sheet closes', async () => {
+    setAppTableRule('critDamage', 'doubleTotal');
+    await visit();
+    let sheet = await openWrite();
+    vi.spyOn(homebrewRepo, 'commit').mockRejectedValueOnce(new Error('the disk is full'));
+    fireEvent.click(within(sheet).getByRole('button', { name: /^Next: name it/ }));
+    fireEvent.click(within(sheet).getByRole('button', { name: 'Save rule pack' }));
+    expect(
+      await within(sheet).findByText('Could not save the rule pack: the disk is full'),
+    ).toBeTruthy();
+    fireEvent.click(within(sheet).getByRole('button', { name: 'Back' }));
+    expect(within(sheet).queryByText(/^Could not save the rule pack/)).toBeNull();
+    fireEvent.click(within(sheet).getByRole('button', { name: 'Cancel' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+
+    // Saved, then closed before it fails: a notice says so.
+    noticeStore.setState({ notice: null, seq: 0 });
+    let fail = (_: Error): void => undefined;
+    vi.spyOn(homebrewRepo, 'commit').mockImplementationOnce(
+      () =>
+        new Promise((_, reject) => {
+          fail = reject;
+        }),
+    );
+    sheet = await openWrite();
+    fireEvent.click(within(sheet).getByRole('button', { name: /^Next: name it/ }));
+    fireEvent.click(within(sheet).getByRole('button', { name: 'Save rule pack' }));
+    await within(sheet).findByRole('button', { name: 'Saving…' });
+    fireEvent.keyDown(sheet, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    fail(new Error('the disk is full'));
+    await waitFor(() =>
+      expect(noticeStore.getState().notice).toMatchObject({
+        title: 'Save rule pack failed',
+        detail: 'the disk is full',
+      }),
+    );
   });
 });

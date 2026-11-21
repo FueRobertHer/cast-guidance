@@ -357,4 +357,34 @@ describe('a download landing many files (DATA-003)', () => {
     await waitFor(() => expect(result.current.registry?.get('background', 'Sage')).toBeDefined());
     await waitFor(() => expect(isRegistryRefreshing()).toBe(false));
   });
+
+  it('comes down when the read after a landing fails, over a page that keeps its registry', async () => {
+    // The page holds a registry, so it shows that one, not the failure; with
+    // nothing reading, a flag left up said "Loading" over it until a later
+    // read happened to succeed (U5c's left-out).
+    await putFile('feats.json', { feat: [{ name: 'Alert', source: 'PHB' }] });
+    const { result } = renderHook(() => useRegistryState());
+    await waitFor(() => expect(result.current.status).toBe('ready'));
+    const held = result.current.registry;
+
+    const read = vi
+      .spyOn(dataCacheRepo, 'filesByTag')
+      .mockRejectedValueOnce(new Error('the read failed'));
+    await putFile('backgrounds.json', { background: [{ name: 'Sage', source: 'PHB' }] });
+    act(() => {
+      noteFileLanded();
+      flushLanded();
+    });
+    await waitFor(() => expect(read).toHaveBeenCalled());
+    await waitFor(() => expect(result.current.error).toBe('the read failed'));
+    expect(result.current.registry).toBe(held);
+    await waitFor(() => expect(isRegistryRefreshing()).toBe(false));
+
+    // The next landing raises it again, and a read that succeeds brings the file.
+    act(() => noteFileLanded());
+    expect(isRegistryRefreshing()).toBe(true);
+    act(() => flushLanded());
+    await waitFor(() => expect(result.current.registry?.get('background', 'Sage')).toBeDefined());
+    await waitFor(() => expect(isRegistryRefreshing()).toBe(false));
+  });
 });

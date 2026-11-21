@@ -15,7 +15,7 @@
  * importing that file lands it unchanged.
  */
 import { useLiveQuery } from 'dexie-react-hooks';
-import { useId, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { invalidateRegistry } from '@/data5e/registry';
 import { packRefusals, sharedFile } from '@/data5e/rulePack';
 import type { HomebrewFileRow } from '@/db/db';
@@ -34,7 +34,7 @@ import { choiceTitle, RULE_ORDER, RULE_TITLES } from '@/features/settings/RuleSh
 import { downloadJson, jsonFilename } from '@/lib/download';
 import { HOMEBREW_ENTITY_KEYS } from '@/lib/guards';
 import { announce } from '@/stores/announcer';
-import { errorText } from '@/stores/notices';
+import { errorText, notifyFailure } from '@/stores/notices';
 import { Button } from '@/ui/Button';
 import { Sheet } from '@/ui/sheet';
 import { TextField } from '@/ui/TextField';
@@ -187,8 +187,24 @@ function changeKind({ type, entry }: PackChange): string {
 type Step = 'pick' | 'name' | 'done';
 const NOTE = 'text-caption text-ink-muted';
 const rulePick = (id: string) => `rule:${id}`;
-const changePick = (i: number) => `change:${i}`;
+/**
+ * A change's pick, by the entry it changes rather than its place in the
+ * file: a change added or removed in another tab while the sheet is open
+ * moves the others, and a pick by place would then pick another entry.
+ */
+const changePick = ({ type, entry }: PackChange) =>
+  `change:${JSON.stringify(replacedRef(type, entry))}`;
 const things = (n: number) => (n === 1 ? '1 thing' : `${n} things`);
+const CHANGED_MEANWHILE =
+  'Your changes to the books changed while this was open. Check what it changes, then save again.';
+
+/** A saved pack as the done step says it: as it was when Save was pressed. */
+interface Saved {
+  row: HomebrewFileRow;
+  name: string;
+  count: number;
+  inIt: Array<{ key: string; name: string; now: string; note: string | undefined }>;
+}
 
 function PickRow({
   title,
@@ -246,12 +262,21 @@ export default function WritePackSheet({
   const [name, setName] = useState('My table rules');
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState<string>();
-  const [saved, setSaved] = useState<HomebrewFileRow>();
+  const [saved, setSaved] = useState<Saved>();
   const [exported, setExported] = useState(false);
+  // A save still out when the sheet closes reports its failure as a notice,
+  // since the sheet is no longer there to say it.
+  const open = useRef(true);
+  useEffect(
+    () => () => {
+      open.current = false;
+    },
+    [],
+  );
 
   const defaults = new Set([
     ...RULE_ORDER.filter((id) => !isAsWritten(id, rules)).map(rulePick),
-    ...(changes ?? []).map((_, i) => changePick(i)),
+    ...(changes ?? []).map(changePick),
   ]);
   const picks = picked ?? defaults;
   const toggle = (key: string) => {
@@ -260,6 +285,7 @@ export default function WritePackSheet({
     if (next.has(key)) next.delete(key);
     else next.add(key);
     setPicked(next);
+    setFailed(undefined);
   };
   // Where a rule's value comes from, as its pick says it.
   const whence = (id: TableRuleId) => {
@@ -268,15 +294,15 @@ export default function WritePackSheet({
     return pack === undefined ? 'a house rule' : `from ${pack}`;
   };
   const pickedRules = RULE_ORDER.filter((id) => picks.has(rulePick(id)));
-  const pickedChanges = (changes ?? []).filter((_, i) => picks.has(changePick(i)));
+  const pickedChanges = (changes ?? []).filter((c) => picks.has(changePick(c)));
   const count = pickedRules.length + pickedChanges.length;
-  const draft = (source: string, stamp: string) =>
+  const draft = (source: string, stamp: string, changes = pickedChanges) =>
     writtenPack({
       name: name.trim(),
       source,
       stamp,
       rules: Object.fromEntries(pickedRules.map((id) => [id, rules[id]])),
-      changes: pickedChanges,
+      changes,
     });
   // What it would hold, checked against a pack's limits before it is saved.
   const check = draft('Check', 'check');
@@ -290,23 +316,43 @@ export default function WritePackSheet({
     if (busy || nameMissing || refusals.length > 0) return;
     setBusy(true);
     setFailed(undefined);
+    // What the player checked, as shown: the name is held while it saves, and
+    // the done step says what was saved, whatever changes after.
+    const title = name.trim();
+    const shown = inIt;
     try {
+      // The changes as stored now, not as last shown: one changed or removed
+      // in another tab since is not saved unseen.
+      const now = changesIn(
+        (await homebrewRepo.ownedSafe()).files.find((f) => f.role === 'changes')?.json,
+      );
+      const current = new Map(now.map((c) => [changePick(c), c]));
+      const same = pickedChanges.every((c) => {
+        const there = current.get(changePick(c));
+        return there !== undefined && JSON.stringify(there.entry) === JSON.stringify(c.entry);
+      });
+      if (!same) {
+        if (open.current) setFailed(CHANGED_MEANWHILE);
+        else notifyFailure('Save rule pack', new Error(CHANGED_MEANWHILE));
+        return;
+      }
       const stored = (await homebrewRepo.listMetaSafe()).files.flatMap((r) => r.sourceIds);
-      const json = draft(packSource(name, stored), crypto.randomUUID());
-      const { row } = await savePack(json, packFileName(name));
-      setSaved(row);
+      const json = draft(packSource(title, stored), crypto.randomUUID());
+      const { row } = await savePack(json, packFileName(title));
+      setSaved({ row, name: title, count, inIt: shown });
       setStep('done');
-      const text = `Saved ${name.trim()} to Rules. It changes ${things(count)}, for no character until you choose who.`;
+      const text = `Saved ${title} to Rules. It changes ${things(count)}, for no character until you choose who.`;
       announce(text, { key: 'write-pack', repeat: true });
       onSaved(text);
     } catch (err) {
-      setFailed(`Could not save the rule pack: ${errorText(err)}`);
+      if (open.current) setFailed(`Could not save the rule pack: ${errorText(err)}`);
+      else notifyFailure('Save rule pack', err);
     } finally {
       setBusy(false);
     }
   };
 
-  const inIt = [
+  const inIt: Saved['inIt'] = [
     ...pickedRules.map((id) => ({
       key: rulePick(id),
       name: RULE_TITLES[id],
@@ -315,8 +361,8 @@ export default function WritePackSheet({
         ? 'As written, kept so a table that changed it gets it back'
         : undefined,
     })),
-    ...pickedChanges.map((c, i) => ({
-      key: changePick(i),
+    ...pickedChanges.map((c) => ({
+      key: changePick(c),
       name: String(c.entry.name),
       now: `${changeKind(c)}: your version, in place of the one below it`,
       note: undefined,
@@ -329,11 +375,7 @@ export default function WritePackSheet({
         <Sheet.Scrim />
         <Sheet.Panel aria-describedby={`${ids}-step`} className="flex max-h-[90dvh] flex-col">
           <Sheet.Heading>
-            {step === 'done'
-              ? saved === undefined
-                ? 'Rule pack'
-                : name.trim()
-              : 'Write a rule pack'}
+            {step === 'done' ? (saved?.name ?? 'Rule pack') : 'Write a rule pack'}
           </Sheet.Heading>
           <p id={`${ids}-step`} className={`-mt-2 mb-3 ${NOTE}`}>
             {step === 'pick'
@@ -377,14 +419,13 @@ export default function WritePackSheet({
                     </p>
                   ) : (
                     <div className={LIST}>
-                      {changes.map((c, i) => (
+                      {changes.map((c) => (
                         <PickRow
-                          // biome-ignore lint/suspicious/noArrayIndexKey: the file's order, fixed while shown
-                          key={i}
+                          key={changePick(c)}
                           title={String(c.entry.name)}
                           caption={changeKind(c)}
-                          checked={picks.has(changePick(i))}
-                          onChange={() => toggle(changePick(i))}
+                          checked={picks.has(changePick(c))}
+                          onChange={() => toggle(changePick(c))}
                         />
                       ))}
                     </div>
@@ -398,7 +439,13 @@ export default function WritePackSheet({
                 <TextField
                   label="Name"
                   value={name}
-                  onChange={(e) => setName(e.target.value)}
+                  // Held while it saves: the file is named as it was when Save was pressed.
+                  readOnly={busy}
+                  onChange={(e) => {
+                    if (busy) return;
+                    setName(e.target.value);
+                    setFailed(undefined);
+                  }}
                   error={nameMissing ? 'A rule pack needs a name.' : undefined}
                   maxLength={100}
                 />
@@ -433,14 +480,14 @@ export default function WritePackSheet({
               </>
             )}
 
-            {step === 'done' && (
+            {step === 'done' && saved !== undefined && (
               <>
                 <p>
-                  Saved to Rules. {name.trim()} changes {things(count)}. It applies to no character
-                  until you choose who on its review.
+                  Saved to Rules. {saved.name} changes {things(saved.count)}. It applies to no
+                  character until you choose who on its review.
                 </p>
                 <dl className={LIST}>
-                  {inIt.map((d) => (
+                  {saved.inIt.map((d) => (
                     <div key={d.key} className="flex flex-col px-3 py-2">
                       <dt className="text-body-strong break-words">{d.name}</dt>
                       <dd className="text-ink-muted break-words">{d.now}</dd>
@@ -448,8 +495,8 @@ export default function WritePackSheet({
                   ))}
                 </dl>
                 <p aria-live="polite" className={NOTE}>
-                  {exported && saved !== undefined
-                    ? `Saved ${saved.fileName}. Anyone can import it in their Workshop.`
+                  {exported
+                    ? `Saved ${saved.row.fileName}. Anyone can import it in their Workshop.`
                     : ''}
                 </p>
               </>
@@ -483,7 +530,15 @@ export default function WritePackSheet({
             )}
             {step === 'name' && (
               <>
-                <Button variant="ghost" onClick={() => setStep('pick')}>
+                <Button
+                  variant="ghost"
+                  aria-disabled={busy ? true : undefined}
+                  onClick={() => {
+                    if (busy) return;
+                    setStep('pick');
+                    setFailed(undefined);
+                  }}
+                >
                   Back
                 </Button>
                 <Button
@@ -502,7 +557,7 @@ export default function WritePackSheet({
                 <Button
                   variant="outline"
                   onClick={() => {
-                    exportPack(saved);
+                    exportPack(saved.row);
                     setExported(true);
                   }}
                 >
