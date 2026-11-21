@@ -297,7 +297,7 @@ test.describe('touch target sizes', () => {
     await sheet.getByRole('button', { name: 'Read it', exact: true }).click();
     await answerImportPreview(page, 'Import "tt.json"?');
     await page.getByRole('link', { name: /^tt\.json\s*,/ }).click();
-    await expect(page.getByRole('heading', { level: 1, name: 'tt.json' })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 1, name: 'Target Tides' })).toBeVisible();
     await animationsSettled(page);
     await expectTargets(page.getByRole('link', { name: url, exact: true }), 1, FLOOR);
     await expectFloor(page);

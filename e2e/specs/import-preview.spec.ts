@@ -99,7 +99,7 @@ test.describe('import preview', () => {
     await expect(homebrewStatus(page)).toHaveText('Imported "brew.json" (2 spells)');
     await expectSaid(page, 'Imported "brew.json" (2 spells)');
     await expect.poll(() => countHomebrewFiles(page)).toBe(1);
-    await expect(page.getByRole('link', { name: /^brew\.json\s*,/ })).toBeVisible();
+    await expect(page.getByRole('link', { name: /^E2E Brews\s*,/ })).toBeVisible();
 
     // The same file again is already here: the preview offers to keep it.
     await importHomebrew(jsonFile('brew-again.json', BREW));
