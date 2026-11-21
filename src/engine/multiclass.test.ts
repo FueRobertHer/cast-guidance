@@ -133,6 +133,15 @@ describe('meetsMulticlassRequirements on the shapes the release writes', () => {
     expect(multiclassRequirementText(c)).toBe('INT 13');
     expect(meetsMulticlassRequirements(c, scores({ int: 13, str: 8 }))).toBe(true);
     expect(meetsMulticlassRequirements(c, scores({ int: 12, str: 13 }))).toBe(false);
+    // Requirements with no score in them say nothing, and leave the primary ability.
+    for (const requirements of [{}, { or: [] }]) {
+      const empty: DataEntity = {
+        primaryAbility: [{ str: true }],
+        multiclassing: { requirements },
+      };
+      expect(multiclassRequirementText(empty)).toBe('STR 13');
+      expect(meetsMulticlassRequirements(empty, scores({ str: 12 }))).toBe(false);
+    }
   });
 
   it("passes a copy's null and an empty list as no requirement", () => {
