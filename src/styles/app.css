@@ -357,6 +357,25 @@ html:has([data-dice-dock]) {
   }
 }
 
+/*
+ * A short screen: a phone on its side, or a laptop at 200% zoom (1280 by 800
+ * is then 640 by 400). There the sheet header, with its conditions row, and
+ * the tab bar held 165 of 400px, 41% of the screen, for as long as the page
+ * was scrolled. The header scrolls away with the page instead, and says so
+ * through its published height, which the sticky bars under it (Build's,
+ * Items') and the scroll padding above read. Only `!important` outranks the
+ * inline value useStickyHeight sets on <html>.
+ */
+@media (max-height: 500px) {
+  [data-sheet-header] {
+    position: static;
+  }
+  html {
+    /* biome-ignore lint/complexity/noImportantStyles: the measured height is an inline style on <html>, which only !important outranks */
+    --sheet-header-h: 0px !important;
+  }
+}
+
 body {
   background-color: var(--cg-bg);
   color: var(--cg-ink);

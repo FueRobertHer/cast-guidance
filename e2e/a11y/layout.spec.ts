@@ -967,6 +967,29 @@ test.describe('landscape on a phone', () => {
     });
   }
 
+  test('sheet Play, scrolled: the header goes with the page, only the tab bar stays', async ({
+    page,
+  }) => {
+    const id = await setUp(page);
+    await addConditions(page, id, ['Poisoned']);
+    await gotoSheetTab(page, id, 'Play');
+    await animationsSettled(page);
+    // Sticky, the header and the tab bar held 41% of a 400px screen (a laptop
+    // at 200% zoom) for as long as the page was scrolled.
+    await page.mouse.wheel(0, 600);
+    const header = page.getByRole('banner');
+    await expect(header).not.toBeInViewport();
+    const nav = await box(tabBar(page));
+    expect(nav.height / 393, 'the tab bar alone').toBeLessThan(0.25);
+    // What sticks under the header (Build's and Items' bars) and the scroll
+    // padding read its height as nothing while it does not stick.
+    expect(
+      await page.evaluate(() =>
+        getComputedStyle(document.documentElement).getPropertyValue('--sheet-header-h').trim(),
+      ),
+    ).toBe('0px');
+  });
+
   test('the roster and Settings: focus clears the app nav', async ({ page }) => {
     await setUp(page);
     for (const url of ['/', '/settings']) {
