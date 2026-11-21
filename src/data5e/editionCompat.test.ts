@@ -10,7 +10,7 @@ import {
   emptySwitchPreview,
 } from './editionCompat';
 import { mergeHomebrew, normalizeDataset } from './normalize';
-import { homebrewSourceNames } from './registry';
+import { homebrewSourceCodes, homebrewSourceNames } from './registry';
 import { setHomebrewSourceNames } from './sourceNames';
 
 /** A 2014 printing, optionally declaring what reprints it. */
@@ -56,12 +56,37 @@ describe('editionFit', () => {
     const reg = normalizeDataset(new Map());
     mergeHomebrew(reg, new Map([['brews', file]]));
     // As the registry build does before it hands the registry out.
-    setHomebrewSourceNames(homebrewSourceNames([{ json: file }]));
+    setHomebrewSourceNames(
+      homebrewSourceNames([{ json: file }]),
+      homebrewSourceCodes([{ json: file }]),
+    );
     const solari = reg.get('race', 'Solari', 'HBX');
     expect(solari).toBeDefined();
     if (solari === undefined) return;
     expect(editionFit(solari, 'race', '2024', nothingInstalled)).toEqual({ kind: 'match' });
     expect(editionFit(solari, 'race', '2014', nothingInstalled)).toEqual({ kind: 'match' });
+  });
+
+  it('counts a book a file declares with no title of its own as homebrew too', () => {
+    // A collection named "Darkwood" is keyed "Darkwood": its title is its code.
+    const file = { _meta: { sources: [{ json: 'Darkwood', full: 'Darkwood' }] } };
+    setHomebrewSourceNames(
+      homebrewSourceNames([{ json: file }]),
+      homebrewSourceCodes([{ json: file }]),
+    );
+    const brew = { name: 'Solari', source: 'Darkwood' } as Entity;
+    expect(editionFit(brew, 'race', '2024', nothingInstalled)).toEqual({ kind: 'match' });
+  });
+
+  it("reads a copy as its original's edition, as before", () => {
+    setHomebrewSourceNames(new Map([['HBX', 'My Brews']]));
+    // A copy of a 2014 book's bare row, saved in the player's book.
+    const copy = {
+      name: 'Kenku',
+      source: 'HBX',
+      castGuidance: { v: 1, basedOn: 'Kenku|VGM' },
+    } as Entity;
+    expect(editionFit(copy, 'race', '2024', nothingInstalled)).toEqual({ kind: 'carryOver' });
   });
 
   it('reads homebrew that names an edition as that edition', () => {

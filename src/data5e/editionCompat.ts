@@ -7,7 +7,7 @@ import {
   type RulesVersion,
   reprintTargets,
 } from './rulesVersion';
-import { hasHomebrewTitle } from './sourceNames';
+import { isHomebrewSource } from './sourceNames';
 
 export type { EditionRef } from './rulesVersion';
 
@@ -104,20 +104,24 @@ function otherClassPrinting(
 }
 
 /**
- * Homebrew that names no edition (no `edition`, and no book's): written for
+ * Homebrew of its own that names no edition (no `edition`, and no book's), not a copy: written for
  * either, so it suits a character on either and is no cue. The Workshop writes
  * an edition only when its author picks one. Homebrew is a book a file on this
- * device declares (`hasHomebrewTitle`), never a published one, whose bare rows
+ * device declares (`isHomebrewSource`), never a published one, whose bare rows
  * still read as their book's edition. Pickers still read it as 2014
  * (`editionOf`): this is about what the sheet says of a pick, not what may be
  * picked, so it may lean on what the registry last learned, as a label does.
  */
 export function editionNeutral(entity: Entity): boolean {
+  // A copy (`castGuidance.basedOn`) is its original's edition, as it always read.
+  const g = entity.castGuidance;
+  const copy = typeof g === 'object' && g !== null && 'basedOn' in g;
   return (
+    !copy &&
     entity.edition === undefined &&
     entity.bookEdition === undefined &&
     typeof entity.source === 'string' &&
-    hasHomebrewTitle(entity.source)
+    isHomebrewSource(entity.source)
   );
 }
 
