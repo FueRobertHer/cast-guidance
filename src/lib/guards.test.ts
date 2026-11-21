@@ -36,6 +36,24 @@ describe('assertHomebrewFile', () => {
       expect(() => assertHomebrewFile(input)).toThrowError(ValidationError);
     });
   }
+
+  it('says why in words a player can check, naming no other app', () => {
+    const why = (input: unknown) => {
+      try {
+        assertHomebrewFile(input);
+      } catch (err) {
+        return (err as Error).message;
+      }
+      return undefined;
+    };
+    expect(bad.map(([, input]) => why(input))).toEqual([
+      'this is not a homebrew file, which is one JSON object with a "_meta" block that names its books',
+      'this is not a homebrew file, which is one JSON object with a "_meta" block that names its books',
+      'this is not a homebrew file, since it has no "_meta" block naming its books',
+      'its "_meta" block names no books: its "sources" list is empty',
+      'a book in its "_meta" block has no "json" id to know it by',
+    ]);
+  });
 });
 
 describe('withReadableEntries (finding 14)', () => {
@@ -110,6 +128,21 @@ describe('assertCharacterExport', () => {
     );
     expect(() => assertCharacterExport({ $format: CHARACTER_EXPORT_FORMAT })).toThrowError(
       ValidationError,
+    );
+  });
+
+  it('says what is wrong without repeating what the file calls itself', () => {
+    const why = (input: unknown) => () => assertCharacterExport(input);
+    expect(why({ $format: 'someone-else/character@1', character: {} })).toThrowError(
+      /^this is not a character file from this app$/,
+    );
+    expect(why([])).toThrowError(/^this is not a character file from this app$/);
+    // A later version of this app's own format asks for an update instead.
+    expect(why({ $format: 'cast-guidance/character@2', character: {} })).toThrowError(
+      /^this character file is from a newer version of the app: update the app, then import it again$/,
+    );
+    expect(why({ $format: CHARACTER_EXPORT_FORMAT })).toThrowError(
+      /^this character file has no character in it$/,
     );
   });
 

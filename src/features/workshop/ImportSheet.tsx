@@ -52,6 +52,13 @@ import { fieldClass } from '@/ui/TextField';
 import { kindOf } from './yours';
 
 type Way = 'file' | 'link' | 'text';
+
+/** What each way says when what it read is neither JSON nor a Fight Club 5e file. */
+const NOT_JSON: Record<Way, string> = {
+  file: 'That file is not a homebrew file: it is neither JSON nor a Fight Club 5e XML file.',
+  text: 'That text is not a homebrew file: it is neither JSON nor a Fight Club 5e XML file.',
+  link: 'That link did not give a homebrew file: what came back is not JSON. Link to the file itself, not a page about it: on GitHub, the one its Raw button opens.',
+};
 const WAYS: ReadonlyArray<{ value: Way; label: string }> = [
   { value: 'file', label: 'A file' },
   { value: 'link', label: 'A link' },
@@ -260,6 +267,9 @@ export default function ImportSheet({
       cancelAnnouncement('import-check');
       setRefused({ url: err.url, reason: err.message });
       announce(refusedText(err.message), { key: 'import', repeat: true });
+    } else if (err instanceof SyntaxError) {
+      // JSON.parse's own words differ by browser and mean little to a player.
+      setStatus(NOT_JSON[from], true);
     } else if (from === 'link') {
       // `fetch` rejects with a bare TypeError for a host that is down and
       // one that does not let the app read the file alike.
@@ -268,8 +278,6 @@ export default function ImportSheet({
           ? ' The site may be down or may not let the app read the file: download it and bring it in as a file.'
           : '';
       setStatus(`That link could not be read (${errorText(err)}).${advice}`, true);
-    } else if (from === 'text' && err instanceof SyntaxError) {
-      setStatus(`That text is not a homebrew file: ${err.message}`, true);
     } else {
       setStatus(`Import failed: ${errorText(err)}`, true);
     }
