@@ -1,6 +1,7 @@
 import {
   Check,
   ChevronsUp,
+  Dices,
   HeartCrack,
   HeartPlus,
   Plus,
@@ -13,6 +14,7 @@ import {
   lazy,
   type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent,
+  type RefObject,
   Suspense,
   useCallback,
   useEffect,
@@ -78,6 +80,7 @@ import { fieldClass, TextField } from './TextField';
  */
 const TONE: Record<RollTone, { edge: string; tile: string }> = {
   d20: { edge: 'ring-1 ring-line', tile: 'bg-roll-soft text-roll' },
+  dice: { edge: 'ring-1 ring-line', tile: 'bg-roll-soft text-roll' },
   damage: { edge: 'ring-1 ring-line', tile: 'bg-danger-soft text-danger' },
   heal: { edge: 'ring-1 ring-line', tile: 'bg-heal-soft text-heal' },
   crit: { edge: 'ring-2 ring-heal', tile: 'bg-heal-soft text-heal' },
@@ -550,7 +553,14 @@ function RollResultToast({
   const autoFail = current.meta?.autoFail === true;
   const nat = naturalOf(current);
   const tone = rollTone(current);
-  const Icon = tone === 'damage' ? HeartCrack : tone === 'heal' ? HeartPlus : D20Icon;
+  const Icon =
+    tone === 'damage'
+      ? HeartCrack
+      : tone === 'heal'
+        ? HeartPlus
+        : tone === 'dice'
+          ? Dices
+          : D20Icon;
   const flag = (word: string, ink: string) => (
     <span className={`shrink-0 font-bold text-dice-small ${ink}`}>{word}</span>
   );
@@ -577,7 +587,8 @@ function RollResultToast({
           {current.meta?.critical === true && flag('Critical', 'text-danger')}
           {autoFail && flag('Fails', 'text-danger')}
         </span>
-        <span className="block truncate text-dice-small text-ink-muted tabular-nums">
+        {/* Whole, wrapping: a cut line hid the last die (Bless's d4). */}
+        <span className="block break-words text-dice-small text-ink-muted tabular-nums">
           <RollDetail roll={current} />
         </span>
         {/* What the character's conditions did to the roll, whole, since a
@@ -895,7 +906,7 @@ function RollResultToast({
           key={i}
           className="flex items-baseline justify-between gap-3"
         >
-          <span className="min-w-0 truncate text-dice-small text-ink-muted tabular-nums">
+          <span className="min-w-0 break-words text-dice-small text-ink-muted tabular-nums">
             {d.label ?? d.expr}
             {d.meta?.critical === true ? ', critical' : ''}: <RollDetail roll={d} />
             {/* What changed it once it landed (a Savage Attacker reroll). */}
@@ -1214,6 +1225,44 @@ function CastTiles({ held }: { held: HeldRoll }) {
 }
 
 /**
+ * A prompt waiting while a modal sheet holds the page (the sheet hides the
+ * page from assistive tech with `data-aria-hidden`): it steps out of sight,
+ * since it sat dimmed beside the sheet, and comes back as the sheet closes.
+ * Not one asked from inside a sheet (a rules text's d20 chip), which is the
+ * sheet's own.
+ */
+const UNDER_A_SHEET = '[[data-aria-hidden]_&]:opacity-0';
+
+function promptFrame(held: HeldRoll): string {
+  return held.from?.closest('[role="dialog"]') != null ? FRAME : `${FRAME} ${UNDER_A_SHEET}`;
+}
+
+/**
+ * Escape lets a waiting prompt go from anywhere on the page, as it does from
+ * inside it, and focus goes back to the control that asked: focus that tabbed
+ * out can still close it (the 2026-11-21 keyboard review). Not from a field,
+ * whose Escape is its own, nor while a modal sheet holds the page, whose
+ * Escape closes the sheet.
+ */
+function useEscapeFromPage(box: RefObject<HTMLElement | null>, held: HeldRoll): void {
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || event.defaultPrevented) return;
+      const target = event.target instanceof Element ? event.target : null;
+      if (target !== null && box.current?.contains(target) === true) return;
+      if (target?.closest('input, textarea, select, [contenteditable="true"], [role="dialog"]')) {
+        return;
+      }
+      if (box.current?.closest('[data-aria-hidden]') != null) return;
+      cancelHeld();
+      if (held.from?.isConnected === true) held.from.focus();
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [box, held]);
+}
+
+/**
  * The control that rolled stays in sight above the prompt, as it opens and as
  * it grows (`grows`: damage joining, an extra added). Near the foot of the page
  * there is no room to scroll it clear, so a spacer past the page's end lends
@@ -1369,6 +1418,7 @@ function RollPrompt({
     if (inside && back?.isConnected === true) back.focus();
   };
   useKeepInSight(held, box, held.damage.length);
+  useEscapeFromPage(box, held);
   return (
     // biome-ignore lint/a11y/useSemanticElements: a group of controls, not a fieldset of inputs
     <div
@@ -1376,7 +1426,7 @@ function RollPrompt({
       ref={box}
       role="group"
       aria-label={`${label}, choose and ${go.word.toLowerCase()}`}
-      className={`${FRAME} ${TONE.d20.edge} flex flex-col gap-2`}
+      className={`${promptFrame(held)} ${TONE.d20.edge} flex flex-col gap-2`}
       onKeyDown={(event) => {
         if (event.key !== 'Escape') return;
         event.stopPropagation();
@@ -1746,6 +1796,7 @@ function DamagePrompt({
   const [adding, setAdding] = useState(false);
   const { cast, picked } = held;
   useKeepInSight(held, box, `${hit.extras.length}:${adding ? 1 : 0}`);
+  useEscapeFromPage(box, held);
   const on = (i: number) => held.hitOn[i] === true;
   const twice = (x: DamageExtra) => hit.crit && x.noCrit !== true;
   /** An extra's dice as this roll makes them. */
@@ -1822,7 +1873,7 @@ function DamagePrompt({
       ref={box}
       role="group"
       aria-label={`${hit.label}, choose and roll`}
-      className={`${FRAME} ${hit.crit ? TONE.crit.edge : TONE.damage.edge} flex max-h-[calc(100dvh-7rem)] flex-col gap-2 overflow-y-auto`}
+      className={`${promptFrame(held)} ${hit.crit ? TONE.crit.edge : TONE.damage.edge} flex max-h-[calc(100dvh-7rem)] flex-col gap-2 overflow-y-auto`}
       onKeyDown={(event) => {
         if (event.key !== 'Escape') return;
         event.stopPropagation();

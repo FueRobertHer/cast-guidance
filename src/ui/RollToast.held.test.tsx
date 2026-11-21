@@ -272,6 +272,50 @@ describe('the roll prompt', () => {
     expect(document.activeElement).toBe(from);
   });
 
+  it('lets Esc go from the page once focus has left it, sending focus back', () => {
+    render(<RollToast />);
+    const from = control('Athletics');
+    const elsewhere = control('Edit');
+    act(() => rollFrom(from, check));
+    elsewhere.focus();
+    fireEvent.keyDown(elsewhere, { key: 'Escape' });
+    expect(screen.queryByRole('group')).toBeNull();
+    expect(rollLogStore.getState().rolls).toHaveLength(0);
+    expect(document.activeElement).toBe(from);
+  });
+
+  it('leaves Esc to a field, and to a sheet that holds the page', () => {
+    render(<RollToast />);
+    const from = control('Athletics');
+    act(() => rollFrom(from, check));
+    const field = document.createElement('input');
+    document.body.appendChild(field);
+    fireEvent.keyDown(field, { key: 'Escape' });
+    expect(prompt('Athletics check')).toBeTruthy();
+
+    // A modal sheet marks the page under it, the prompt with it.
+    const page = prompt('Athletics check').parentElement as HTMLElement;
+    page.setAttribute('data-aria-hidden', 'true');
+    fireEvent.keyDown(document.body, { key: 'Escape' });
+    expect(prompt('Athletics check')).toBeTruthy();
+    page.removeAttribute('data-aria-hidden');
+  });
+
+  it('steps out of sight under a modal sheet, unless a sheet asked it', () => {
+    render(<RollToast />);
+    act(() => rollFrom(control('Athletics'), check));
+    expect(prompt('Athletics check').className).toContain('[[data-aria-hidden]_&]:opacity-0');
+
+    const sheet = document.createElement('div');
+    sheet.setAttribute('role', 'dialog');
+    document.body.appendChild(sheet);
+    const chip = document.createElement('button');
+    chip.textContent = 'Strength save';
+    sheet.appendChild(chip);
+    act(() => rollFrom(chip, check));
+    expect(prompt('Athletics check').className).not.toContain('data-aria-hidden');
+  });
+
   it('rolls when its control is tapped again', () => {
     const { container } = render(<RollToast />);
     const from = control('Athletics');
