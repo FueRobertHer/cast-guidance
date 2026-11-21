@@ -92,6 +92,7 @@ import {
   type Entry,
   entryName,
   lastGroup,
+  ownerKey,
   plainText,
   sourceLineEdition,
   splitName,
@@ -1152,12 +1153,8 @@ export function fc5Converter(opts: ConvertOptions): Fc5Converter {
         for (const t of Array.isArray(p.featureType) ? p.featureType : []) offered.add(String(t));
       }
     }
-    // A list's owner as its name gives it, `(UA)` dropped: `mystic (immortal)`.
-    const ownerOf = (name: string) =>
-      name
-        .replace(/ ?\(UA\)/gi, '')
-        .trim()
-        .toLowerCase();
+    // A list's owner as its name gives it, tags off: `mystic (immortal)`.
+    const ownerOf = (name: string) => ownerKey(name).key;
     const hosts = new Set<string>();
     const classHosts = new Set(out.class.map((c) => ownerOf(String(c.name))));
     for (const c of classHosts) hosts.add(c);

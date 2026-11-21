@@ -243,6 +243,25 @@ describe('convertOptions', () => {
       ]);
     });
 
+    it('offers a list whose owner carries tags or wrapping brackets, in its own edition only', () => {
+      const lists = withLists(
+        'Ember Knight ((Ash) (TP)) [5.5e]: Tricks',
+        'Ember Knight (Ash (Legacy)): Tricks',
+      );
+      const offered = (edition: RulesVersion) =>
+        convertOptions(
+          [],
+          host({
+            owner: 'Ember Knight (Ash)',
+            edition,
+            ctx: lists,
+            counters: [counter('Tricks Known', [3, '2'])],
+          }),
+        ).progression.map((p) => p.featureType);
+      expect(offered('2024')).toEqual([['Ember Knight ((Ash) (TP)) [5.5e]: Tricks']]);
+      expect(offered('2014')).toEqual([['Ember Knight (Ash (Legacy)): Tricks']]);
+    });
+
     it('takes the list of the counter’s own name over one whose name ends in it', () => {
       const result = convertOptions(
         [],
@@ -573,6 +592,19 @@ describe("lists stored as spells, counted from their features' text", () => {
     expect(countOf(tricks, [3, 'You learn two trick shots, and two more at 7th level.'])).toEqual([
       [tricks, { '3': 2, '7': 4 }],
     ]);
+    // `an additional one`, and ordinals after `levels`.
+    expect(
+      countOf(tricks, [
+        6,
+        'You gain two trick shots of your choice and an additional one at 14th level.',
+      ]),
+    ).toEqual([[tricks, { '6': 2, '14': 3 }]]);
+    expect(
+      countOf(tricks, [
+        3,
+        'You learn 3 trick shots, chosen from the list, and gain an additional one at levels 7th, 10th, and 14th.',
+      ]),
+    ).toEqual([[tricks, { '3': 3, '7': 4, '10': 5, '14': 6 }]]);
   });
 
   it("gives a longer list's words to the longer list only", () => {
@@ -726,6 +758,11 @@ describe('class options in a file', () => {
     // Of a class the file does not hold.
     expect(warnings(`${knight('Ash Warden')}${tricks}`)).toEqual([
       expect.stringMatching(/^2 class options are for a class this app cannot convert yet/),
+    ]);
+    // Of a class the file holds, its name tagged and marked.
+    const tagged = tricks.replaceAll('Ember Knight: Tricks', 'Ember Knight (TP) [5.5e]: Tricks');
+    expect(warnings(`${knight('Ember Knight')}${tagged}`)).toEqual([
+      expect.stringMatching(/^2 class options are on a list no class in this file says how many/),
     ]);
     // An option a class's own list offers too is offered, whichever comes first.
     const flare =

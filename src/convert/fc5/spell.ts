@@ -195,7 +195,7 @@ interface ClassLists {
 }
 
 /** Edition markers anywhere in a class list's entry: `Fighter [5.5e] (Eldritch Knight)`. */
-const MARKERS = /\s*\[[^[\]]{1,12}\]/g;
+const MARKERS = / ?\[[^[\]]{1,12}\]/g;
 
 /** How many brackets deep {@link subclassOf} unwraps a subclass's name. */
 const MAX_WRAPS = 4;

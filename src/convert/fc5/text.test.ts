@@ -9,6 +9,7 @@ import {
   leadIn,
   markerEdition,
   own,
+  ownerKey,
   type ProficiencyGrant,
   plainText,
   readArmor,
@@ -666,6 +667,38 @@ describe('entry names', () => {
 
   it('reads (Legacy) as the 2014 entry', () => {
     expect(entryName('Emberkin (Legacy)')).toEqual({ name: 'Emberkin', edition: '2014' });
+  });
+
+  it('keys an option list owner without its markers, tags, wrapping brackets or curly apostrophes', () => {
+    const key = { key: 'wizard (ember mage)' };
+    expect(ownerKey('Wizard ((Ember Mage) (TP))')).toEqual(key);
+    expect(ownerKey('Wizard (Ember Mage) (TP)')).toEqual(key);
+    expect(ownerKey('wizard  (ember mage)')).toEqual(key);
+    expect(ownerKey('Wizard (Ember Mage (HB))')).toEqual(key);
+    expect(ownerKey('Rogue (Ember’s Edge)')).toEqual({ key: "rogue (ember's edge)" });
+    expect(ownerKey("Rogue (Ember's Edge)")).toEqual({ key: "rogue (ember's edge)" });
+    // A bracket that holds more than one wrapped name stays.
+    expect(ownerKey('Wizard ((Ember) Mage)')).toEqual({ key: 'wizard ((ember) mage)' });
+  });
+
+  it('keeps the edition an owner names, by marker or (Legacy)', () => {
+    expect(ownerKey('Fighter [5.5e] (Ember Knight)')).toEqual({
+      key: 'fighter (ember knight)',
+      edition: '2024',
+    });
+    expect(ownerKey('Ranger (Ember Trapper (Legacy))')).toEqual({
+      key: 'ranger (ember trapper)',
+      edition: '2014',
+    });
+    expect(ownerKey('Fighter (Ember Knight) [Variant]')).toEqual({ key: 'fighter (ember knight)' });
+    // Marks that disagree name no edition.
+    expect(ownerKey('Ranger [5.5e] (Ember Trapper (Legacy))')).toEqual({
+      key: 'ranger (ember trapper)',
+    });
+    expect(ownerKey('Ranger [5.5e] (Ember Trapper [2024])')).toEqual({
+      key: 'ranger (ember trapper)',
+      edition: '2024',
+    });
   });
 });
 

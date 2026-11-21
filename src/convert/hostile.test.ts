@@ -4,6 +4,7 @@
 // assertion.
 import { describe, expect, it } from 'vitest';
 import { CAST_GUIDANCE_LIMITS } from '../engine/castGuidance';
+import { ownerKey } from './fc5/text';
 import { convertXmlText } from './index';
 import { looksLikeXml } from './sniff';
 
@@ -45,6 +46,11 @@ describe('hostile input', () => {
     const s = firstSpell(spell(`<school>EV</school><classes>${entry}</classes>`));
     const classes = s?.classes as { fromSubclass?: { class: { name: string } }[] } | undefined;
     expect(classes?.fromSubclass?.[0]?.class.name).toBe('Fighter');
+  });
+
+  it('keys an option list owner of many brackets and spaces in linear time', () => {
+    const owner = `Fighter ${'( ( ['.repeat(50_000)}${' '.repeat(100_000)}(Ash (TP))${'))'.repeat(50_000)}`;
+    expect(ownerKey(owner).key.startsWith('fighter')).toBe(true);
   });
 
   it('reads a very long list of option lists in linear time', () => {
