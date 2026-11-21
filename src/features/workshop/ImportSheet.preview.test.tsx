@@ -1256,7 +1256,7 @@ describe('the Import sheet, with a Fight Club 5e compendium', () => {
     await waitFor(
       () =>
         expect(said()).toBe(
-          'Import failed: This looks like Aurora Builder content, which cannot be imported yet. Fight Club 5e compendiums (XML) and 5etools homebrew (JSON) can be imported.',
+          'Import failed: This looks like Aurora Builder content, which cannot be imported yet. Fight Club 5e compendiums (XML) and homebrew JSON files can be imported.',
         ),
       { timeout: WAIT },
     );
