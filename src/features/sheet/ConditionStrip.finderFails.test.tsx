@@ -15,7 +15,12 @@ import type { DocUpdater } from '@/stores/characterSession';
 import { ConditionStrip } from './ConditionStrip';
 
 vi.mock('@/data5e/hooks', () => ({ useRegistry: () => ({ byType: () => [] }) }));
-beforeAll(() => {
+beforeAll(async () => {
+  // The finder is a lazy chunk with no fallback. Loaded cold, its transform
+  // can outlast the wait below (it did on Windows, every run), so the test
+  // would time out before the boundary drew. Loaded here, the lazy import
+  // resolves at once and the test is about the failure, not load time.
+  await import('./EffectFinder');
   // vaul asks for matchMedia, which jsdom does not have.
   window.matchMedia = (query: string) =>
     ({
