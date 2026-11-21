@@ -478,6 +478,141 @@ describe('a pick folds its list away', () => {
   });
 });
 
+// Review top 3: a pick card held its taps until its own Confirm, and Next was
+// never held up, so walking on from a step dropped picks the player had made.
+describe('picks tapped but not confirmed', () => {
+  const SKILLS = 'class:warrior|tst:skill:0';
+  /** A Warrior's draft opened on Class, under StrictMode as the app runs. */
+  function renderClass(build: (doc: CharacterDoc) => void = () => undefined) {
+    const doc = newCharacterDoc('hero-1', 'Aria', 't');
+    doc.classes = [{ ref: { name: 'Warrior', source: 'TST' }, levels: 1, hp: ['avg'] }];
+    build(doc);
+    seedDoc(doc);
+    const router = createMemoryRouter(
+      [
+        { path: '/', element: <p>Roster</p> },
+        { path: '/create', element: <CreatorPage /> },
+      ],
+      {
+        initialEntries: [
+          '/',
+          { pathname: '/create', search: '?step=class', state: wizardState(1) },
+        ],
+        initialIndex: 1,
+      },
+    );
+    render(
+      <StrictMode>
+        <RouterProvider router={router} />
+      </StrictMode>,
+    );
+    return router;
+  }
+  const tap = (name: string | RegExp) => fireEvent.click(screen.getByRole('button', { name }));
+  const next = () => tap(/^Next: Species/);
+  const back = () => tap(/^Back$/);
+  const onStep = (name: string) =>
+    waitFor(() => expect(screen.getByRole('heading', { level: 1, name })).toBeTruthy());
+
+  it('applies a full pick when Next is pressed without Confirm', async () => {
+    renderClass();
+    tap(/^Athletics/);
+    tap(/^Survival/);
+    expect(saved().choices[SKILLS]).toBeUndefined();
+    next();
+    await onStep('Species / Race');
+    expect(saved().choices[SKILLS]).toEqual(['Athletics', 'Survival']);
+  });
+
+  it('keeps a pick not yet full for when the player comes back', async () => {
+    renderClass();
+    tap(/^Athletics/);
+    next();
+    await onStep('Species / Race');
+    expect(saved().choices[SKILLS]).toBeUndefined();
+    back();
+    await onStep('Class');
+    const skills = within(screen.getByRole('group', { name: 'Class skill proficiency' }));
+    expect(skills.getByRole('button', { name: /^Athletics/ }).getAttribute('aria-pressed')).toBe(
+      'true',
+    );
+    expect(skills.getByText('1 more to pick')).toBeTruthy();
+  });
+
+  it('applies a made pick changed but not confirmed', async () => {
+    renderClass((d) => {
+      d.choices[SKILLS] = ['Athletics', 'Survival'];
+    });
+    tap('Change Class skill proficiency');
+    tap(/^Survival/);
+    tap(/^Intimidation/);
+    next();
+    await onStep('Species / Race');
+    expect(saved().choices[SKILLS]).toEqual(['Athletics', 'Intimidation']);
+  });
+
+  it('drops taps on a pick whose class has gone', async () => {
+    renderClass();
+    tap(/^Athletics/);
+    tap(/^Survival/);
+    tap('Change class');
+    tap('Mage');
+    next();
+    await onStep('Species / Race');
+    expect(Object.keys(saved().choices).filter((k) => k.startsWith('class:warrior'))).toEqual([]);
+  });
+
+  it('applies a full pick on the way back to the roster', async () => {
+    const router = renderClass();
+    tap(/^Athletics/);
+    tap(/^Survival/);
+    fireEvent.click(screen.getByRole('link', { name: /^Back to characters/ }));
+    await waitFor(() => expect(router.state.location.pathname).toBe('/'));
+    expect(saved().choices[SKILLS]).toEqual(['Athletics', 'Survival']);
+  });
+
+  it('keeps taps over a reload', () => {
+    renderClass();
+    tap(/^Athletics/);
+    cleanup();
+    renderClass();
+    // The seeded draft has the same id, so its held taps come back with it.
+    expect(screen.getByRole('button', { name: /^Athletics/ }).getAttribute('aria-pressed')).toBe(
+      'true',
+    );
+  });
+
+  it('applies only the picks on the steps walked past', async () => {
+    renderClass();
+    tap(/^Athletics/);
+    tap(/^Survival/);
+    back();
+    await onStep('Basics');
+    tap('Next: Class');
+    await onStep('Class');
+    // Basics was walked past, not Class: the taps still wait on their card.
+    expect(saved().choices[SKILLS]).toBeUndefined();
+    next();
+    await onStep('Species / Race');
+    expect(saved().choices[SKILLS]).toEqual(['Athletics', 'Survival']);
+  });
+
+  it('keeps a made pick open on held taps, even once tapped back to what is saved', async () => {
+    renderClass((d) => {
+      d.choices[SKILLS] = ['Athletics', 'Survival'];
+    });
+    tap('Change Class skill proficiency');
+    tap(/^Survival/);
+    back();
+    await onStep('Basics');
+    tap('Next: Class');
+    await onStep('Class');
+    // Opened by the held taps, not by Change.
+    tap(/^Survival/);
+    expect(screen.getByRole('button', { name: 'Confirm Class skill proficiency' })).toBeTruthy();
+  });
+});
+
 // UX-004: the wizard's destructive changes. Picking another class used to clear
 // every choice in the build (species and background picks too) and leave the
 // old class's kit equipped; switching rules version wiped the build on one
