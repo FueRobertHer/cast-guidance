@@ -276,6 +276,30 @@ export async function renderSheet(
 }
 
 /**
+ * Open the app at `entries`' last address, over the test world, with no
+ * character stored. One address is the tab's first page, as a link from
+ * outside opens it (react-router's key 'default'); more are pages visited
+ * before it in this tab, so Back steps back to the one before.
+ */
+export async function renderApp(
+  entries: readonly string[],
+  { extra = {}, lists = {} }: { extra?: WorldLayer; lists?: SpellLists } = {},
+): Promise<ReturnType<typeof createMemoryRouter>> {
+  installMatchMedia();
+  await seedWorld(extra, lists);
+  const router = createMemoryRouter(routes, {
+    initialEntries: [...entries],
+    initialIndex: entries.length - 1,
+  });
+  render(
+    <StrictMode>
+      <RouterProvider router={router} />
+    </StrictMode>,
+  );
+  return router;
+}
+
+/**
  * A test timeout for files built on this harness. Each case mounts the app's
  * routes over IndexedDB and walks several screens, which on a loaded 4-vCPU
  * runner with coverage on can pass the suite-wide 15 seconds without anything

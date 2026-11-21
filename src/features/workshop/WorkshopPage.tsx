@@ -38,7 +38,7 @@ import {
 import { isRecord } from '@/engine/castGuidance';
 import { readMechanics } from '@/engine/effects/mechanics';
 import { findEntity } from '@/features/library/findEntity';
-import { useBack } from '@/lib/useBack';
+import { keepFirst, useBack } from '@/lib/useBack';
 import { usePageTitle } from '@/lib/usePageTitle';
 import { errorText, notify } from '@/stores/notices';
 import { Button } from '@/ui/Button';
@@ -923,6 +923,10 @@ function EditorRoute({ action, type, uid }: { action: string; type: string; uid:
   const url = `${location.pathname}${location.search}`;
   const here = useRef(url);
   here.current = url;
+  // The entry now, for a replace that lands after this render: a replace keeps
+  // a cold-opened tab's first entry first, so Back still goes up, not out.
+  const entry = useRef(location);
+  entry.current = location;
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: specTry asks for the chunk again after Try again.
   useEffect(() => {
@@ -975,7 +979,8 @@ function EditorRoute({ action, type, uid }: { action: string; type: string; uid:
   // <Navigate>, which would pull the router's redirect into the entry chunk.
   const movedTo = resolved.state === 'moved' ? resolved.to : undefined;
   useEffect(() => {
-    if (movedTo !== undefined) navigate(movedTo, { replace: true });
+    if (movedTo !== undefined)
+      navigate(movedTo, { replace: true, state: keepFirst(entry.current) });
   }, [movedTo, navigate]);
 
   const failed =
@@ -1032,12 +1037,13 @@ function EditorRoute({ action, type, uid }: { action: string; type: string; uid:
       onSaved={(path, fileId) => {
         const next = `${path}${inFile(fileId)}`;
         setSession({ key, urls: [...(current?.urls ?? [url]), next], subject: resolved.subject });
-        if (next !== url) navigate(next, { replace: true });
+        if (next !== url) navigate(next, { replace: true, state: keepFirst(entry.current) });
       }}
       onUndone={(was, state) => {
         // The address now, not this render's: Undo can be pressed before the
         // save's own move to the entry's address has landed.
-        if (was !== here.current) navigate(was, { replace: true, state });
+        if (was !== here.current)
+          navigate(was, { replace: true, state: keepFirst(entry.current, state) });
       }}
     />
   );
