@@ -159,8 +159,12 @@ test.describe('the library with 1,000 spells', () => {
       );
     await list(page).locator(':scope > li[aria-posinset="4"] a').focus();
     // Far past it, as a mouse wheel or a swipe would scroll, which moves no
-    // focus: row 4 would be unmounted, dropping focus onto the page.
-    await page.evaluate(() => window.scrollTo(0, 30_000));
+    // focus: row 4 would be unmounted, dropping focus onto the page. By rows,
+    // not pixels, so a taller row still lands past row 500.
+    const rowHeight = await rendered(page)
+      .first()
+      .evaluate((el) => (el as HTMLElement).offsetHeight);
+    await page.evaluate((to) => window.scrollTo(0, to), 640 * rowHeight);
     await frames(page);
     const order = await rendered(page).evaluateAll((rows) =>
       rows.map((r) => Number(r.getAttribute('aria-posinset'))),
