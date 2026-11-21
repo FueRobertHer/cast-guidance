@@ -159,4 +159,17 @@ describe('a new pool is named for what gives it (finding 13)', () => {
     });
     expect(pool?.make()).toMatchObject({ key: 'uses', label: 'Uses' });
   });
+
+  it('keys a pool named in any script apart, never as the shared Uses', () => {
+    const pool = cards.find((k) => k.add === 'Uses per rest');
+    expect(pool?.make({ name: '火の輪' })).toMatchObject({ key: '火の輪', label: '火の輪' });
+  });
+
+  it("names a copy's new pool apart from what its original's may be keyed", () => {
+    const pool = cards.find((k) => k.add === 'Uses per rest');
+    expect(pool?.make({ name: 'Breath Weapon', copy: true })).toMatchObject({
+      key: 'breath-weapon-uses',
+      label: 'Breath Weapon uses',
+    });
+  });
 });

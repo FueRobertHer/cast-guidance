@@ -333,7 +333,8 @@ function keyOf(label: string): string {
   const key =
     label
       .toLowerCase()
-      .replaceAll(/[^a-z0-9]+/g, '-')
+      // Letters of any script, so a name in Japanese keys a pool of its own.
+      .replaceAll(/[^\p{L}\p{N}]+/gu, '-')
       .replaceAll(/^-|-$/g, '') || 'uses';
   return key === SLOT_COST || key === HIT_DIE_COST ? `${key}-uses` : key;
 }
@@ -349,7 +350,10 @@ const LABEL_MOST = 100;
  */
 function newPool(at: MakeAt | undefined): Eff {
   const named = at?.name?.trim() ?? '';
-  const base = named !== '' && named.length <= LABEL_MOST - 3 ? named : 'Uses';
+  // On a copy, the original's pool may go by its name already (a scanned
+  // Breath Weapon's): one of that key would take its place, so this one is apart.
+  const own = at?.copy === true ? `${named} uses` : named;
+  const base = named !== '' && own.length <= LABEL_MOST - 3 ? own : 'Uses';
   const taken = new Set(at?.pools ?? []);
   let label = base;
   for (let n = 2; taken.has(keyOf(label)); n++) label = `${base} ${n}`;

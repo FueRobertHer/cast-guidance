@@ -756,7 +756,11 @@ export function EffectCards({
     const pools = [...list, ...(resources ?? [])].flatMap((x) =>
       x.kind === 'resource' && typeof x.key === 'string' ? [x.key] : [],
     );
-    const made = spec.make({ name: hostName, pools });
+    const made = spec.make({
+      name: hostName,
+      pools,
+      copy: inherits !== undefined && replace !== true,
+    });
     // A new pick takes an id none of the entry's picks has, so each is asked.
     const next =
       made.kind === 'pick' ? { ...made, id: freshPickId(pickIdsIn([list, ...versions()])) } : made;

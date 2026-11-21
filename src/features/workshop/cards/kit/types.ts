@@ -77,12 +77,15 @@ export interface FieldSet {
 
 /**
  * Where a new card is added: the name of what gives it (a trait's, a
- * feature's, the entry's) and the keys of the pools already there (its list's
- * own and those kept elsewhere it may spend, a class's).
+ * feature's, the entry's), the keys of the pools already there (its list's
+ * own and those kept elsewhere it may spend, a class's), and whether it is a
+ * copy that keeps its original's mechanics, whose pools are not listed.
  */
 export interface MakeAt {
   name?: string;
   pools?: readonly string[];
+  /** What gives them is a copy that also does what its original does. */
+  copy?: boolean;
 }
 
 export interface KindSpec {
