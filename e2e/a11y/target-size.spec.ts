@@ -9,6 +9,8 @@ import {
   gotoRosterSettled,
   gotoSheetTab,
   importCharacterFile,
+  onScreen,
+  openImportSheet,
   sheetMenuButton,
   skipOfflineReadyNotice,
 } from '../support/app.ts';
@@ -23,8 +25,9 @@ import { expect, test } from '../support/test.ts';
  *
  * - the inventoried controls (HP, exhaustion and pool steppers, death saves,
  *   Build's and the creator's steppers, the back links, a collection
- *   page's actions) are at least 44 by 44, and pips at least 32 wide by 44 tall (an
- *   owner decision, recorded in docs/a11y-audit.md);
+ *   page's actions and a missing collection's "Back to the Workshop") are at
+ *   least 44 by 44, and pips at least 32 wide by 44 tall (an owner decision,
+ *   recorded in docs/a11y-audit.md);
  * - every other visible control is at least 24 by 24 (WCAG 2.5.8), except
  *   a roll chip in a sentence, which 2.5.8 exempts.
  *
@@ -260,6 +263,51 @@ test.describe('touch target sizes', () => {
     await expectTargets(button(page, 'Export a file'), 1);
     await expectTargets(button(page, 'Delete this collection'), 1);
     await expectFloor(page);
+  });
+
+  test("the Workshop home's Library link, a collection's link and a missing collection", async ({
+    page,
+  }) => {
+    await gotoRosterSettled(page);
+    // Nothing of the player's yet: the empty Yours shelf, with the Library in its sentence.
+    await page.goto('/workshop');
+    const empty = page.getByRole('region', { name: 'Make it yours' });
+    await expect(empty).toBeVisible();
+    await animationsSettled(page);
+    await expectTargets(empty.getByRole('link', { name: 'Library', exact: true }), 1, FLOOR);
+    await expectFloor(page);
+
+    // A collection that came by a link, so its page links the file. A link
+    // short enough for one line: a wrapped one is two lines tall anyway.
+    const url = 'https://cdn.jsdelivr.net/tt.json';
+    await page.route(url, (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        headers: { 'access-control-allow-origin': '*' },
+        body: JSON.stringify({
+          _meta: { sources: [{ json: 'TTD', full: 'Target Tides' }] },
+          spell: [{ name: 'Target Riptide', source: 'TTD', level: 1, entries: ['Pull.'] }],
+        }),
+      }),
+    );
+    const sheet = await openImportSheet(page);
+    await sheet.getByRole('button', { name: 'A link', exact: true }).click();
+    await sheet.getByRole('textbox', { name: 'Link to a JSON homebrew file' }).fill(url);
+    await sheet.getByRole('button', { name: 'Read it', exact: true }).click();
+    await answerImportPreview(page, 'Import "tt.json"?');
+    await page.getByRole('link', { name: /^tt\.json\s*,/ }).click();
+    await expect(page.getByRole('heading', { level: 1, name: 'tt.json' })).toBeVisible();
+    await animationsSettled(page);
+    await expectTargets(page.getByRole('link', { name: url, exact: true }), 1, FLOOR);
+    await expectFloor(page);
+
+    await page.goto('/workshop/collection/no-such-file');
+    await expect(
+      page.getByText('This collection is no longer on this device.').and(onScreen(page)),
+    ).toBeVisible();
+    await animationsSettled(page);
+    await expectTargets(page.getByRole('link', { name: 'Back to the Workshop', exact: true }), 1);
   });
 
   test("the creator's abilities step, on point buy", async ({ page }) => {
