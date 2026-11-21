@@ -195,6 +195,28 @@ describe('stepping through the creator', () => {
     expect(screen.getByText('Step 9 of 9')).toBeTruthy();
     expect(screen.queryByRole('button', { name: /^Next/ })).toBeNull();
   });
+
+  // Review item 2: 2024 ability bonuses come from the background, which used
+  // to come after the scores were set.
+  it('walks a 2024 character through Background before Abilities', async () => {
+    const at = (step: string, rulesVersion: '2014' | '2024') => {
+      const doc = newCharacterDoc('hero-1', 'Aria', 't');
+      doc.rulesVersion = rulesVersion;
+      seedDoc(doc);
+      return renderCreator(['/', { pathname: '/create', search: `?step=${step}` }]);
+    };
+    at('species', '2024');
+    expect(screen.getByRole('button', { name: 'Next: Background' })).toBeTruthy();
+    cleanup();
+    const router = at('background', '2024');
+    expect(screen.getByText('Step 4 of 9')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Next: Abilities' }));
+    await waitFor(() => expect(router.state.location.search).toBe('?step=abilities'));
+    expect(screen.getByRole('button', { name: 'Next: Equipment' })).toBeTruthy();
+    cleanup();
+    at('species', '2014');
+    expect(screen.getByRole('button', { name: 'Next: Abilities' })).toBeTruthy();
+  });
 });
 
 describe('creating a character', () => {
@@ -1081,13 +1103,20 @@ describe('changes that take something away', () => {
         expect(scores()).toBe('13/15/14/12/10/8');
       });
 
-      it('seeds an unassigned draft in order, ready to swap', () => {
+      // Review item 2: an unassigned draft showed no ability rows at all, only
+      // two buttons. The rows are there from the start now, each waiting on a value.
+      it('shows every row of an unassigned draft, and a first pick lands the whole array', () => {
         renderDraft('abilities', monk);
-        expect(screen.getByText(/Assign each of 15, 14, 13, 12, 10, 8 once/)).toBeTruthy();
-        expect(screen.queryByLabelText('Strength (STR)')).toBeNull();
-        tap(/^Place 15 down to 8 in order/);
-        expect(scores()).toBe('15/14/13/12/10/8');
-        expect(screen.getByLabelText('Strength (STR)')).toBeTruthy();
+        expect(namelessControls()).toEqual([]);
+        for (const name of ['Strength (STR)', 'Wisdom (WIS)', 'Charisma (CHA)']) {
+          expect((screen.getByLabelText(name) as HTMLSelectElement).value).toBe('');
+        }
+        expect(screen.queryByRole('button', { name: /^Place 15 down to 8/ })).toBeNull();
+        pick('Wisdom (WIS)', 15);
+        // The rest placed 15 down to 8, WIS swapped onto the 15.
+        expect(scores()).toBe('10/14/13/12/15/8');
+        expect((screen.getByLabelText('Strength (STR)') as HTMLSelectElement).value).toBe('10');
+        expect(screen.getByText(/Standard array: each value used once/)).toBeTruthy();
       });
 
       it('shows scores off the array as they are, and keeps them as Manual on request', () => {

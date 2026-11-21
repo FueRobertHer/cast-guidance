@@ -82,7 +82,7 @@ import {
   itemsForEquipmentType,
   parseStartingEquipment,
 } from './startingEquipment';
-import { normalizeStep, STEP_LABELS, STEPS, type Step, wizardDepth, wizardState } from './steps';
+import { normalizeStep, STEP_LABELS, type Step, stepsFor, wizardDepth, wizardState } from './steps';
 
 const nameOf = (e: Entity) => String(e.name ?? '?');
 const sourceOf = (e: Entity) => String(e.source ?? '?');
@@ -457,13 +457,15 @@ export function Component() {
     pushed.current = { key: location.key, at: now };
     setParams({ step: s }, { replace: false, state: wizardState(wizardDepth(location.state) + 1) });
   };
-  const stepIdx = STEPS.indexOf(step);
-  const nextStep: Step | undefined = STEPS[stepIdx + 1];
+  // 2024 takes Background before Abilities (see `stepsFor`).
+  const order = stepsFor(doc.rulesVersion);
+  const stepIdx = order.indexOf(step);
+  const nextStep: Step | undefined = order[stepIdx + 1];
 
   usePageTitle(
     ...(opening !== null
       ? ['Opening character']
-      : [STEP_LABELS[step], `Step ${stepIdx + 1} of ${STEPS.length}`, 'New character']),
+      : [STEP_LABELS[step], `Step ${stepIdx + 1} of ${order.length}`, 'New character']),
   );
 
   if (opening !== null) {
@@ -505,11 +507,11 @@ export function Component() {
           {STEP_LABELS[step]}
         </h1>
         <span className="ml-auto text-caption whitespace-nowrap text-ink-muted tabular-nums">
-          Step {stepIdx + 1} of {STEPS.length}
+          Step {stepIdx + 1} of {order.length}
         </span>
       </div>
       <div aria-hidden="true" className="flex gap-0.75">
-        {STEPS.map((s, i) => (
+        {order.map((s, i) => (
           <span
             key={s}
             className={`h-1 flex-1 rounded-full ${
@@ -644,7 +646,7 @@ export function Component() {
    * the undo offered for that change. Walking forward again grants it.
    */
   const navStep = (s: Step) => {
-    const forward = STEPS.indexOf(s) > stepIdx;
+    const forward = order.indexOf(s) > stepIdx;
     // Picks tapped full but not confirmed are applied going forward, as the
     // kit is: those on the steps being walked past, so an undo offered on
     // another step stays. Going back keeps them held (and an undo offered for
@@ -1561,7 +1563,7 @@ export function Component() {
             size="lg"
             disabled={stepIdx === 0}
             onClick={() => {
-              const prev = STEPS[stepIdx - 1];
+              const prev = order[stepIdx - 1];
               if (prev !== undefined) navStep(prev);
             }}
           >
