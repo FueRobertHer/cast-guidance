@@ -54,6 +54,11 @@ export interface OptionHost {
   edition: RulesVersion | undefined;
   /** Its fixed features, names as converted, with their text. */
   fixed: readonly { name: string; level: number; entries: Entry[] }[];
+  /**
+   * A subclass's class's fixed features: a list stored with no class's name
+   * that the class names is the class's, not the subclass's.
+   */
+  classFixed?: readonly { name: string; level: number; entries: Entry[] }[];
   /** Its counters, by lowercased name. */
   counters: ReadonlyMap<string, FileCounter>;
 }
@@ -74,6 +79,8 @@ export interface HostOptions {
   countersRead: Set<string>;
   /** The options whose table of spells is kept as text. */
   spellsKept: string[];
+  /** The stored lists offered at the counts their features' words give, by label. */
+  countedFromText: string[];
 }
 
 const PICK = /^([^:]{1,60}): (.{1,120})$/;
@@ -126,6 +133,213 @@ const GIVES = /\b(?:gain|choose|learn|pick|select|adopt|master)s? (one|two|three
 function picksIn(entries: readonly Entry[]): number {
   const n = GIVES.exec(plainText(entries as Entry[]));
   return n === null ? 1 : (countWord(n[1] ?? '') ?? 1);
+}
+
+/** A word's start, shared by its singular and plural: `propert` for `properties`, `hex` for `hexes`. */
+function wordRoot(word: string): string {
+  const w = word.toLowerCase();
+  if (w.length > 4 && w.endsWith('ies')) return w.slice(0, -3);
+  if (w.length > 4 && /(?:x|ch|sh|ss)es$/.test(w)) return w.slice(0, -2);
+  if (w.length > 3 && w.endsWith('s') && !w.endsWith('ss')) return w.slice(0, -1);
+  return w;
+}
+
+/** A text's words, lowercased. */
+function wordsOf(text: string): string[] {
+  return text
+    .toLowerCase()
+    .split(/[^\p{L}\p{N}']+/u)
+    .filter((w) => w !== '');
+}
+
+/**
+ * Whether a text names a list: the list's words in a row, each as a word of
+ * the text that starts with its root (`Grand Hex` names `Grand Hexes`), a
+ * generic last `Options` aside. One pass over the text's words for each of
+ * the list's.
+ */
+function namesList(text: string, list: string): boolean {
+  const all = wordsOf(list);
+  // `Psionic Discipline` names `Psionic Discipline Options`.
+  const want = (all.length > 1 && /^options?$/.test(all.at(-1) ?? '') ? all.slice(0, -1) : all).map(
+    wordRoot,
+  );
+  if (want.length === 0) return false;
+  const have = wordsOf(text);
+  for (let i = 0; i + want.length <= have.length; i += 1) {
+    if (want.every((r, k) => have[i + k]?.startsWith(r) === true)) return true;
+  }
+  return false;
+}
+
+/** `learn two`, `you know one`, `unlock an`: a number of picks, before what is picked. */
+const PICKS_OF =
+  /\b(gain|choose|learn|pick|select|adopt|master|know|unlock)s? (one|two|three|four|five|six|\d{1,2}|an?)\b/gi;
+/** Verbs that pick at the opening, but later name a pick made already (`choose one mutagen affecting you`). */
+const CHOOSE = /^(?:choose|pick|select)$/i;
+/** How far after the number the picked thing's name may start, in words. */
+const PICKS_REACH = 4;
+/** `Whenever you learn a new trick shot`, `you can replace one formula`: a swap, not a pick. */
+const SWAP = /\b(?:whenever|each time)\b/i;
+const REPLACE = /\breplace/i;
+/** `additional`, `more`, `another`: picks on top of some, at the levels the sentence lists. */
+const EXTRA = /^(?:additional|more|another)$/;
+/** `at 13th, 15th, and 17th level`. */
+const LEVELS_AT = /\bat ((?:\d{1,2}(?:st|nd|rd|th),? (?:and )?){0,9}\d{1,2}(?:st|nd|rd|th)) level/i;
+/** `at Psion levels 5, 10, 13, and 17`. */
+const AT_LEVELS = /\bat (?:[a-z]{1,20} )?levels? ((?:\d{1,2},? (?:and )?){0,9}\d{1,2})\b/i;
+/** `another at 13th, 15th, and 17th level`: one more at each. */
+const ANOTHER_AT = /\b(?:another|additional|more)\b[^.]{0,60}?\bat \d/i;
+
+/** One feature's picks of a list: at the feature's level (`level` absent) or at the levels it names. */
+interface Picks {
+  level?: number;
+  n: number;
+}
+
+/**
+ * The picks of a list a feature's text gives, from each `learn two` whose
+ * next few words hold a form of the list's last word (`learn two trick
+ * shots`, `choose three 1st-level powers`):
+ * - the first gives its number at the feature's level, less the options of
+ *   the list the host has outright that its sentence names (`learn two such
+ *   Focus Arts: Weapon Parry and Dodge Step`: none to pick), and one more at
+ *   each level the sentence lists after `another` (`learn one grand hex, and
+ *   you learn another at 13th and 15th level`);
+ * - `learn one additional curse at 6th and 10th level` gives its number at
+ *   each level listed, none at the feature's own.
+ * A swap (`whenever you learn a new trick shot`) and `choose one of` are not
+ * picks; after the list's first feature (`opening` false), neither is a
+ * `choose`.
+ */
+function picksOf(
+  text: string,
+  list: string,
+  granted: readonly string[],
+  opening: boolean,
+): Picks[] {
+  // What is picked: the list's last word, and the one before a generic `Options`.
+  const words = wordsOf(list);
+  const roots = words.slice(/^options?$/.test(words.at(-1) ?? '') ? -2 : -1).map(wordRoot);
+  if (roots.length === 0) return [];
+  const out: Picks[] = [];
+  let first = true;
+  for (const m of text.matchAll(PICKS_OF)) {
+    const at = m.index ?? 0;
+    const end = at + m[0].length;
+    const next = wordsOf(text.slice(end, end + 80));
+    const near = next.slice(0, PICKS_REACH);
+    if (next[0] === 'of' || !near.some((w) => roots.some((r) => w.startsWith(r)))) continue;
+    if (!opening && CHOOSE.test(m[1] ?? '')) continue;
+    const start = text.lastIndexOf('.', at) + 1;
+    const stop = text.indexOf('.', end);
+    const rest = text.slice(end, stop < 0 ? undefined : stop);
+    if (SWAP.test(text.slice(start, at)) || REPLACE.test(rest)) continue;
+    const word = (m[2] ?? '').toLowerCase();
+    const n = word === 'a' || word === 'an' ? 1 : countWord(word);
+    if (n === undefined) continue;
+    const listed = LEVELS_AT.exec(rest)?.[1] ?? AT_LEVELS.exec(rest)?.[1];
+    const levels = (listed?.match(/\d{1,2}/g) ?? []).map(Number);
+    if (EXTRA.test(next[0] ?? '') && levels.length > 0) {
+      for (const level of levels) out.push({ level, n });
+      continue;
+    }
+    if (!first) continue;
+    first = false;
+    const given = granted.filter((g) => namesList(rest, g)).length;
+    out.push({ n: Math.max(0, n - given) });
+    if (ANOTHER_AT.test(rest)) for (const level of levels) out.push({ level, n: 1 });
+  }
+  return out;
+}
+
+/**
+ * The picks a list's features give by level, totalled, from {@link picksOf};
+ * undefined when none gives a number. `granted` are the list's options the
+ * host has outright, by name.
+ */
+function countsFromText(
+  features: readonly { name: string; level: number; entries: Entry[] }[],
+  list: string,
+  granted: readonly string[],
+): Record<string, number> | undefined {
+  // By level, the most any one feature adds there: a level one feature lists
+  // (`at 7th and 10th level`) and another is the feature of (`Arcane Shot
+  // Improvement` at 7th) is one pick, not two.
+  const added = new Map<number, number>();
+  let opening = true;
+  for (const f of [...features].sort((a, b) => a.level - b.level)) {
+    const picks = picksOf(plainText(f.entries), list, granted, opening);
+    if (picks.length === 0) continue;
+    opening = false;
+    const own = new Map<number, number>();
+    for (const p of picks) {
+      const level = p.level ?? f.level;
+      if (level >= f.level) own.set(level, (own.get(level) ?? 0) + p.n);
+    }
+    for (const [level, n] of own) added.set(level, Math.max(added.get(level) ?? 0, n));
+  }
+  if (added.size === 0) return undefined;
+  const counts: Record<string, number> = {};
+  let total = 0;
+  for (const [level, n] of [...added].sort((a, b) => a[0] - b[0])) {
+    total += n;
+    if (total > 0 && n > 0) counts[String(level)] = total;
+  }
+  return Object.keys(counts).length > 0 ? counts : undefined;
+}
+
+/**
+ * Offer the lists the file stores as spells that no option or counter of the
+ * host offers, at the picks its features' words give (`you learn two trick
+ * shots`): its own (`Gunslinger: Trick Shots`), and those stored with no
+ * class's name (`Blood Curses`) that its features name, a class's before its
+ * subclass's. A list no feature gives a number of stays unoffered, as does one
+ * whose label the host already offers.
+ */
+function linkTextLists(
+  host: OptionHost,
+  mine: readonly { list: string; label: string }[],
+  progression: Record<string, unknown>[],
+): string[] {
+  const offered = new Set<string>();
+  const stems = new Set<string>();
+  for (const p of progression) {
+    if (typeof p.name === 'string') stems.add(stem(p.name));
+    for (const t of Array.isArray(p.featureType) ? p.featureType : []) {
+      if (typeof t === 'string') offered.add(t.toLowerCase());
+    }
+  }
+  const named = (f: { name: string; entries: Entry[] }, label: string) =>
+    namesList(f.name, label) || namesList(plainText(f.entries), label);
+  const candidates: { list: string; label: string }[] = [...mine];
+  for (const list of host.ctx.optionLists ?? []) {
+    if (list.includes(': ')) continue;
+    if (!host.fixed.some((f) => named(f, list))) continue;
+    if (host.classFixed?.some((f) => named(f, list)) === true) continue;
+    candidates.push({ list, label: list });
+  }
+  const counted: string[] = [];
+  for (const { list, label } of candidates) {
+    if (offered.has(list.toLowerCase()) || stems.has(stem(label))) continue;
+    // The list's options the host has outright: `Focus Art: Weapon Parry`.
+    const granted: string[] = [];
+    for (const f of host.fixed) {
+      const m = PICK.exec(f.name);
+      if (m !== null && stem(m[1] ?? '') === stem(label)) granted.push((m[2] ?? '').trim());
+    }
+    const counts = countsFromText(
+      host.fixed.filter((f) => named(f, label)),
+      label,
+      granted,
+    );
+    if (counts === undefined) continue;
+    progression.push({ name: label, featureType: [list], progression: counts });
+    offered.add(list.toLowerCase());
+    stems.add(stem(label));
+    counted.push(label);
+  }
+  return counted;
 }
 
 /** A feature named for a label, or a numbered repeat of one (`Metamagic (2nd)`, `Metamagic Option (3rd)`). */
@@ -354,11 +568,13 @@ export function convertOptions(choices: readonly OptionChoice[], host: OptionHos
   linkStoredLists(host, mine, labels, known, knownFor, progression, countersRead);
   // An official list its features count but no option or counter offers: the 2024 Sorcerer's Metamagic.
   progression.push(...textLists(host.className, host.fixed, progression));
+  const countedFromText = linkTextLists(host, mine, progression);
   return {
     progression,
     parts,
     rest: choices.filter((c) => !taken.has(c)),
     countersRead,
     spellsKept,
+    countedFromText,
   };
 }

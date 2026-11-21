@@ -347,6 +347,194 @@ describe('convertOptions', () => {
   });
 });
 
+describe("lists stored as spells, counted from their features' text", () => {
+  /** A host whose file stores these lists as spells, with these fixed features. */
+  const storing = (
+    lists: string[],
+    fixed: { name: string; level: number; entries: Entry[] }[],
+    more: { owner?: string; classFixed?: { name: string; level: number; entries: Entry[] }[] } = {},
+  ): OptionHost => {
+    const ctx = fc5Context(FILE);
+    ctx.optionLists = new Set(lists);
+    return {
+      ...host({ ctx, fixed, ...(more.owner !== undefined && { owner: more.owner }) }),
+      ...(more.classFixed !== undefined && { classFixed: more.classFixed }),
+    };
+  };
+  const offer = (h: OptionHost) => {
+    const result = convertOptions([], h);
+    return {
+      progression: result.progression.map((p) => [p.featureType, p.progression]),
+      counted: result.countedFromText,
+    };
+  };
+
+  it("offers the host's own list at the picks its feature gives, and those it adds at listed levels", () => {
+    const h = storing(
+      ['Ember Knight: Trick Shots', 'Ash Warden: Trick Shots'],
+      [
+        {
+          name: 'Adept Marksman',
+          level: 3,
+          entries: [
+            'You learn two trick shots of your choice. You learn an additional trick shot of your choice at 7th, 10th, and 15th level. Whenever you learn a new trick shot, you can also replace one trick shot you know.',
+          ],
+        },
+      ],
+    );
+    expect(offer(h)).toEqual({
+      progression: [[['Ember Knight: Trick Shots'], { '3': 2, '7': 3, '10': 4, '15': 5 }]],
+      counted: ['Trick Shots'],
+    });
+  });
+
+  it('adds one at each level listed after another, and each later feature that gives more', () => {
+    const h = storing(
+      ['Ember Knight: Grand Hexes', 'Ember Knight: Resonants'],
+      [
+        {
+          name: 'Grand Hex',
+          level: 11,
+          entries: ['You learn one grand hex, and you learn another at 13th and 15th level.'],
+        },
+        { name: 'Resonant Utterance', level: 6, entries: ['You learn two Resonants.'] },
+        {
+          name: 'Pronouncement',
+          level: 10,
+          entries: ['You learn two new Resonants of your choice.'],
+        },
+      ],
+    );
+    expect(offer(h).progression).toEqual([
+      [['Ember Knight: Grand Hexes'], { '11': 1, '13': 2, '15': 3 }],
+      [['Ember Knight: Resonants'], { '6': 2, '10': 4 }],
+    ]);
+  });
+
+  it('counts none for the options the host has outright, and an additional one only where listed', () => {
+    const h = storing(
+      ['Ember Knight: Focus Art', 'Ember Knight: Finisher'],
+      [
+        {
+          name: 'Focus',
+          level: 1,
+          entries: [
+            'You learn two such Focus Arts: Weapon Parry and Dodge Step. You learn one additional Focus Art of your choice at 2nd and 7th level.',
+          ],
+        },
+        { name: 'Focus Art: Weapon Parry', level: 1, entries: ['Parry.'] },
+        { name: 'Focus Art: Dodge Step', level: 1, entries: ['Step.'] },
+        {
+          name: 'Momentum',
+          level: 2,
+          entries: ['You learn one additional Finisher of your choice at 4th and 6th level.'],
+        },
+        { name: 'Finisher: Brutal Finisher', level: 2, entries: ['Brutal.'] },
+      ],
+    );
+    expect(offer(h).progression).toEqual([
+      [['Ember Knight: Focus Art'], { '2': 1, '7': 2 }],
+      [['Ember Knight: Finisher'], { '4': 1, '6': 2 }],
+    ]);
+  });
+
+  it('counts a level listed by one feature and given by another once', () => {
+    const h = storing(
+      ['Ember Knight: Arcane Shot Options'],
+      [
+        {
+          name: 'Arcane Shot',
+          level: 3,
+          entries: [
+            'You learn two Arcane Shot options. You gain one additional option at Fighter levels 7 and 10.',
+          ],
+        },
+        {
+          name: 'Arcane Shot Improvement (1)',
+          level: 7,
+          entries: ['You learn an additional Arcane Shot option of your choice.'],
+        },
+      ],
+    );
+    expect(offer(h).progression).toEqual([
+      [['Ember Knight: Arcane Shot Options'], { '3': 2, '7': 3, '10': 4 }],
+    ]);
+  });
+
+  it('reads the word before a generic Options as what is picked', () => {
+    const h = storing(
+      ['Ember Knight: Psionic Discipline Options'],
+      [
+        {
+          name: 'Psionic Discipline',
+          level: 2,
+          entries: [
+            'You gain two disciplines of your choice. When you gain a level, you can replace one of your options. You gain one additional option at Psion levels 5, 10, and 13.',
+          ],
+        },
+      ],
+    );
+    expect(offer(h).progression).toEqual([
+      [['Ember Knight: Psionic Discipline Options'], { '2': 2, '5': 3, '10': 4, '13': 5 }],
+    ]);
+  });
+
+  it('takes no swap, no choice among ones known, and no later choose as a pick', () => {
+    const h = storing(
+      ['Ember Knight: Mutagens'],
+      [
+        {
+          name: 'Formulas',
+          level: 3,
+          entries: [
+            'When you gain a level and learn a new mutagen formula, you can replace one formula you know. You choose four mutagen formulas to learn. You can choose one of the mutagens you know to drink.',
+          ],
+        },
+        { name: 'Exalted Mutation', level: 18, entries: ['Choose one mutagen affecting you.'] },
+      ],
+    );
+    expect(offer(h).progression).toEqual([[['Ember Knight: Mutagens'], { '3': 4 }]]);
+  });
+
+  it('leaves a list unoffered when no feature gives a number of it, or another list offers its label', () => {
+    expect(
+      offer(
+        storing(
+          ['Ember Knight: Traps'],
+          [{ name: 'Traps', level: 1, entries: ['You know traps.'] }],
+        ),
+      ),
+    ).toEqual({ progression: [], counted: [] });
+    const own = convertOptions(
+      [choice('Tricks: Flare', 1), choice('Tricks: Smoke', 1)],
+      storing(['Tricks'], [{ name: 'Tricks', level: 1, entries: ['You learn two tricks.'] }]),
+    );
+    expect(own.progression.map((p) => p.featureType)).toEqual([['Ember Knight: Tricks']]);
+    expect(own.countedFromText).toEqual([]);
+  });
+
+  it('offers a list stored with no class name to the class that names it, not its subclass', () => {
+    const curse = { name: 'Blood Maledict', level: 1, entries: ['You know one blood curse.'] };
+    expect(offer(storing(['Blood Curses'], [curse])).progression).toEqual([
+      [['Blood Curses'], { '1': 1 }],
+    ]);
+    const sub = { name: 'Brand', level: 7, entries: ['You learn one blood curse.'] };
+    expect(
+      offer(
+        storing(['Blood Curses'], [sub], { owner: 'Ember Knight (Order)', classFixed: [curse] }),
+      ).progression,
+    ).toEqual([]);
+    expect(
+      offer(storing(['Blood Curses'], [sub], { owner: 'Ember Knight (Order)', classFixed: [] }))
+        .progression,
+    ).toEqual([[['Blood Curses'], { '7': 1 }]]);
+    // A list that only shares a word is not named.
+    expect(
+      offer(storing(['Blood Curses'], [{ ...curse, entries: ['You know one curse.'] }])),
+    ).toEqual({ progression: [], counted: [] });
+  });
+});
+
 describe('class options in a file', () => {
   const opt = ' optional="YES"';
   const f = (name: string, text = 'x', attrs = opt) =>
@@ -409,6 +597,14 @@ describe('class options in a file', () => {
     expect(warnings(`${tricks}${offered}`)).toEqual([]);
     expect(warnings(`${offered}${tricks}`)).toEqual([]);
     expect(warnings(`${knight('Ember Knight')}${tricks}`)).toEqual([
+      '2 class options are on a list no class in this file says how many to pick from (Ember Knight: Tricks). They are in the Library under Optional features, but no character can pick them yet.',
+    ]);
+    // Its class's features give a number: offered, in either order.
+    const learning = knight('Ember Knight', f('Trickery', 'You learn two tricks.', ''));
+    expect(warnings(`${learning}${tricks}`)).toEqual([]);
+    expect(warnings(`${tricks}${learning}`)).toEqual([]);
+    // Of a class the file does not hold.
+    expect(warnings(`${knight('Ash Warden')}${tricks}`)).toEqual([
       expect.stringMatching(/^2 class options are for a class this app cannot convert yet/),
     ]);
     // An option a class's own list offers too is offered, whichever comes first.
