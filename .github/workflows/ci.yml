@@ -34,10 +34,9 @@ jobs:
       - name: Set up Bun
         uses: oven-sh/setup-bun@v2
         with:
-          # Unpinned, so CI runs whatever Bun is current. The trade is that a
-          # Bun regression can turn CI red with no code change; pin a version
-          # here if that happens.
-          bun-version: latest
+          # Pinned in .bun-version, the one place every workflow reads it
+          # from, so a new Bun reaches CI only in a PR that bumps that file.
+          bun-version-file: .bun-version
 
       - name: Install dependencies (frozen lockfile)
         run: bun install --frozen-lockfile
@@ -90,6 +89,30 @@ jobs:
           retention-days: 7
           if-no-files-found: warn
 
+  dependency-audit:
+    # A high or critical advisory against a package the build ships fails;
+    # the rest are listed in the summary (scripts/dependencyAudit.ts). It
+    # asks the npm registry, so a new advisory can turn a PR red with no code
+    # change: update the package, or record in
+    # scripts/dependency-audit-ignore.json why it does not apply.
+    name: dependency audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: .bun-version
+
+      - name: Install dependencies (frozen lockfile)
+        run: bun install --frozen-lockfile
+
+      - name: Advisories against shipped packages
+        run: bun scripts/dependency-audit.ts
+
   unit:
     # The suite was the longest job in the run by a wide margin, so it is split
     # across shards that each run a slice and write a blob report;
@@ -114,7 +137,7 @@ jobs:
       - name: Set up Bun
         uses: oven-sh/setup-bun@v2
         with:
-          bun-version: latest
+          bun-version-file: .bun-version
 
       - name: Install dependencies (frozen lockfile)
         run: bun install --frozen-lockfile
@@ -164,7 +187,7 @@ jobs:
       - name: Set up Bun
         uses: oven-sh/setup-bun@v2
         with:
-          bun-version: latest
+          bun-version-file: .bun-version
 
       - name: Install dependencies (frozen lockfile)
         run: bun install --frozen-lockfile
@@ -227,7 +250,7 @@ jobs:
       - name: Set up Bun
         uses: oven-sh/setup-bun@v2
         with:
-          bun-version: latest
+          bun-version-file: .bun-version
 
       - name: Install dependencies (frozen lockfile)
         run: bun install --frozen-lockfile
