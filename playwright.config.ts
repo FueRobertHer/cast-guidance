@@ -1,5 +1,5 @@
 import { defineConfig } from '@playwright/test';
-import { DEVICE } from './e2e/support/device.ts';
+import { DEVICE, WEBKIT_DEVICE } from './e2e/support/device.ts';
 import { hermeticLaunchOptions } from './e2e/support/launch.ts';
 
 const CI = process.env.CI !== undefined && process.env.CI !== '';
@@ -15,6 +15,14 @@ const BROWSER = {
       : {},
   ),
 };
+
+/**
+ * WebKit, as on an iPhone: the flows only, and not yet a gate (its CI job
+ * reports failures without failing). Held off the real network by a dead
+ * proxy instead of Chromium's flags (see launch.ts); the specs and tests left
+ * out below need what only Chromium has.
+ */
+const WEBKIT = { ...WEBKIT_DEVICE, launchOptions: hermeticLaunchOptions({}, 'webkit') };
 
 /** The route matrix, which runs in its own project after the cache levels are built. */
 const OFFLINE_ROUTES = 'specs/offline-routes.spec.ts';
@@ -64,7 +72,8 @@ export default defineConfig({
   // The flows in specs/, and the accessibility gate in a11y/ (A11Y-003), split
   // so CI can run each project in a job of its own (the `e2e` matrix in
   // .github/workflows/ci.yml): a project added here needs a matrix entry too.
-  // Each file belongs to one project, so a file argument runs it as before.
+  // A spec in specs/ belongs to both flows and webkit, so a file argument
+  // runs it in both; add `--project=flows` to run it in Chromium alone.
   projects: [
     {
       name: 'flows',
@@ -97,6 +106,31 @@ export default defineConfig({
       testMatch: OFFLINE_ROUTES,
       dependencies: ['cache-levels'],
       use: BROWSER,
+    },
+    {
+      name: 'webkit',
+      testMatch: 'specs/**/*.spec.ts',
+      testIgnore: [
+        OFFLINE_ROUTES,
+        // Chromium's hermetic launch flags, which this spec checks.
+        'specs/harness.spec.ts',
+        // Install checks through the DevTools protocol.
+        'specs/manifest.spec.ts',
+        // The service worker's own flows; WebKit runs with it blocked
+        // (support/device.ts).
+        'specs/offline-reload.spec.ts',
+        'specs/sw-update.spec.ts',
+      ],
+      grepInvert: [
+        // Crashes a tab through the DevTools protocol, which WebKit lacks.
+        /a tab that dies without a goodbye/,
+        // Tests of the service worker, which WebKit runs blocked.
+        /activates the service worker/,
+        /announces offline readiness/,
+        /mirror routes still see requests from a page the service worker controls/,
+        /export works offline/,
+      ],
+      use: WEBKIT,
     },
   ],
 });

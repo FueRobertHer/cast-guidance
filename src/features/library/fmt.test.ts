@@ -13,7 +13,60 @@ import {
   spellDuration,
   spellLevel,
   spellRange,
+  weaponMastery,
+  weaponProperties,
 } from './fmt';
+
+describe('weapon facts', () => {
+  const longsword: Entity = {
+    name: 'Longsword',
+    source: 'XPHB',
+    type: 'M|XPHB',
+    weaponCategory: 'martial',
+    property: ['V|XPHB'],
+    mastery: ['Sap|XPHB'],
+    dmg1: '1d8',
+    dmgType: 'S',
+    dmg2: '1d10',
+  };
+
+  it('names the category, properties with what they need, and the mastery (Gemini 43)', () => {
+    const facts = Object.fromEntries(headerFacts('baseitem', longsword));
+    expect(facts.Category).toBe('Martial weapon');
+    expect(facts.Properties).toBe('Versatile (1d10)');
+    expect(facts.Mastery).toBe('Sap');
+  });
+
+  it('gives Ammunition and Thrown their range', () => {
+    expect(
+      weaponProperties({ name: 'Longbow', property: ['A', 'H', '2H'], range: '150/600' }),
+    ).toBe('Ammunition (range 150/600 ft.), Heavy, Two-handed');
+    expect(weaponProperties({ name: 'Dagger', property: ['F', 'L', 'T'], range: '20/60' })).toBe(
+      'Finesse, Light, Thrown (range 20/60 ft.)',
+    );
+  });
+
+  it('asks the data for a property it does not know, else shows the code', () => {
+    const e: Entity = { name: 'Pistol', property: ['Vst|EGW', 'ZZ'] };
+    const named = weaponProperties(e, (code) =>
+      code === 'Vst' ? 'Vestige of Divergence' : undefined,
+    );
+    expect(named).toBe('Vestige of Divergence, ZZ');
+  });
+
+  it('reads a property or mastery written as an object with a uid', () => {
+    expect(weaponProperties({ name: 'X', property: [{ uid: 'F|XPHB' }] })).toBe('Finesse');
+    expect(weaponMastery({ name: 'X', mastery: [{ uid: 'Nick|XPHB' }] })).toBe('Nick');
+  });
+
+  it('leaves the rows out where there is nothing to say', () => {
+    const facts = Object.fromEntries(headerFacts('item', { name: 'Bag of Holding', type: 'G' }));
+    expect(facts.Category).toBeUndefined();
+    expect(facts.Properties).toBeUndefined();
+    expect(facts.Mastery).toBeUndefined();
+    expect(weaponProperties({ name: 'X', property: [] })).toBeUndefined();
+  });
+});
 
 describe('spellLevel', () => {
   it('formats cantrips and ordinal levels', () => {

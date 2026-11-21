@@ -2,7 +2,7 @@ import { mkdirSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import type { BrowserContext, Page, TestInfo } from '@playwright/test';
 import { handleOverlays } from './app.ts';
-import { DEVICE } from './device.ts';
+import { deviceFor } from './device.ts';
 import { airplaneLaunchOptions, hermeticLaunchOptions } from './launch.ts';
 import { levelsDir, stableOrigin } from './stableOrigin.ts';
 import { test as base, expect } from './test.ts';
@@ -93,9 +93,11 @@ export const test = base.extend<Fixtures & { offlineLog: OfflineLog; profileDirs
       const context = await playwright[browserName].launchPersistentContext(dir, {
         // The project's browser build, off the real network; offline, cut
         // off from the stable origin too (see `launch.ts`).
-        ...(offline ? airplaneLaunchOptions(launchOptions) : hermeticLaunchOptions(launchOptions)),
+        ...(offline
+          ? airplaneLaunchOptions(launchOptions, browserName)
+          : hermeticLaunchOptions(launchOptions, browserName)),
         channel,
-        ...DEVICE,
+        ...deviceFor(browserName),
         baseURL: origin,
         offline,
       });

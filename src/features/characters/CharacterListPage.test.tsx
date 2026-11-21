@@ -127,6 +127,14 @@ describe('a character card', () => {
     );
   });
 
+  it('names the species with its subrace, as a player says it', () => {
+    live.characters = [{ ...ARIA, subrace: { name: 'High', source: 'TST' } }];
+    renderRoster();
+    expect(screen.getByRole('link', { name: /^Aria\b/ }).textContent).toContain(
+      'High Elf Fighter 3',
+    );
+  });
+
   it('is one link to the character, with its actions as a button beside it', () => {
     live.characters = [ARIA];
     renderRoster();

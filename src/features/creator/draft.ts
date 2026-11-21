@@ -12,6 +12,7 @@ import { DATA_TAG } from '@/data5e/config';
 import { migrateCharacter } from '@/engine/migrate';
 import { ABILITIES, type CharacterDoc, newCharacterDoc } from '@/engine/types';
 import { assertCharacterDoc } from '@/lib/guards';
+import { raceDisplayName } from '@/lib/raceDisplayName';
 import type { StagedPick } from './ChoicePromptRenderer';
 import { STEPS, type Step } from './steps';
 
@@ -262,11 +263,11 @@ export const isResumeState = (state: unknown): boolean =>
 /** The draft's name, or "Unnamed" while it has none. */
 export const draftName = (doc: CharacterDoc) => doc.name.trim() || 'Unnamed';
 
-/** "Aria (Fighter 3, Elf)": the name, then the class and species picked so far. */
+/** "Aria (Fighter 3, High Elf)": the name, then the class and species picked so far. */
 export function draftSummary(doc: CharacterDoc): string {
   const parts = [
     ...doc.classes.map((c) => `${c.ref.name} ${c.levels}`),
-    ...(doc.race !== undefined ? [doc.subrace?.name ?? doc.race.name] : []),
+    ...(doc.race !== undefined ? [raceDisplayName(doc.race, doc.subrace) ?? doc.race.name] : []),
   ];
   return parts.length > 0 ? `${draftName(doc)} (${parts.join(', ')})` : draftName(doc);
 }

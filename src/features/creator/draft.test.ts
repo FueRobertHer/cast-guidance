@@ -176,5 +176,8 @@ describe('draftSummary', () => {
     expect(draftSummary(doc)).toBe('Aria (Fighter 3, Elf)');
     doc.name = ' ';
     expect(draftSummary(doc)).toBe('Unnamed (Fighter 3, Elf)');
+    // Review item 4: the species as a player says it, not the bare subrace.
+    doc.subrace = { name: 'High', source: 'TST' };
+    expect(draftSummary(doc)).toBe('Unnamed (Fighter 3, High Elf)');
   });
 });

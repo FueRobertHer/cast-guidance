@@ -10,7 +10,7 @@ import { DISPLAY_ARG, LINKED_TYPES, PLAIN_REF_TAGS } from './inlineTags';
  * string can nest thousands deep, which recursion would overflow on and a pass
  * per level would freeze on; anything past this stays as written.
  */
-const MAX_NESTING = 4;
+export const MAX_NESTING = 4;
 
 /**
  * A reference by the display text the renderer shows, any other tag by its body.
