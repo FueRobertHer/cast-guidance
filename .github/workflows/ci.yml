@@ -72,7 +72,7 @@ jobs:
         run: |
           total() { bun run e2e -- --list --reporter=list "$@" | grep '^Total:'; }
           all=$(total)
-          covered=$(total --project=axe --project=a11y --project=flows --project=offline-routes)
+          covered=$(total --project=axe --project=a11y --project=flows --project=offline-routes --project=webkit)
           echo "Whole suite: $all"
           echo "e2e matrix:  $covered"
           if [ "$all" != "$covered" ]; then
@@ -226,7 +226,8 @@ jobs:
 
   e2e:
     # Browser E2E against the production build, in Chromium (see
-    # e2e/README.md), one Playwright project per job. Each job builds dist/
+    # e2e/README.md), one Playwright project per job, and the flows again in
+    # WebKit (`webkit`, not a gate yet). Each job builds dist/
     # itself rather than waiting for `checks` to: the build is quicker than
     # the wait.
     name: e2e (${{ matrix.project }})
@@ -242,7 +243,13 @@ jobs:
         # when a test falls outside these. Projects rather than `--shard`: a
         # sharded run turns off the axe reporter's stale-baseline check (see
         # e2e/a11y/reporter.ts), and every shard would build the cache levels.
-        project: [axe, a11y, flows, offline-routes]
+        project: [axe, a11y, flows, offline-routes, webkit]
+    env:
+      # `webkit` runs the flows in Safari's engine, as on an iPhone. It is not
+      # a gate yet: its E2E step may fail without failing the job, and the
+      # summary says what failed. Make it one by deleting the
+      # `continue-on-error` on that step once it has been green for a while.
+      BROWSER: ${{ matrix.project == 'webkit' && 'webkit' || 'chromium' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -259,17 +266,18 @@ jobs:
         id: playwright
         run: echo "version=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
 
-      # Keyed on the exact Playwright version, which pins the browser build.
-      # System libraries are not cached; the install step adds them either way
-      # and skips the download on a hit.
+      # Keyed on the exact Playwright version, which pins the browser build,
+      # and the browser, so each is cached on its own. System libraries are
+      # not cached; the install step adds them either way and skips the
+      # download on a hit.
       - name: Cache Playwright browsers
         uses: actions/cache@v4
         with:
           path: ~/.cache/ms-playwright
-          key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}
+          key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}-${{ env.BROWSER }}
 
-      - name: Install Chromium
-        run: bunx playwright install --with-deps chromium
+      - name: Install ${{ env.BROWSER }}
+        run: bunx playwright install --with-deps "$BROWSER"
 
       - name: Production / PWA build
         # `vite build` alone: `bun run build` also runs `tsc -b`, which emits
@@ -277,7 +285,9 @@ jobs:
         run: bunx vite build
 
       - name: E2E
+        id: e2e
         run: bun run e2e -- --project=${{ matrix.project }}
+        continue-on-error: ${{ matrix.project == 'webkit' }}
         env:
           CI: 'true'
 
@@ -285,11 +295,16 @@ jobs:
         if: always()
         env:
           PROJECT: ${{ matrix.project }}
+          E2E_OUTCOME: ${{ steps.e2e.outcome }}
         run: |
           report=test-results/e2e.json
           {
             echo "### E2E: $PROJECT"
             echo ""
+            if [ "$PROJECT" = webkit ]; then
+              echo "_Not a gate yet: a failure here does not fail the run (step outcome: ${E2E_OUTCOME})._"
+              echo ""
+            fi
             if [ -f "$report" ] && jq -e . "$report" > /dev/null 2>&1; then
               echo "| Passed | Failed | Flaky | Skipped | Duration |"
               echo "| ---: | ---: | ---: | ---: | ---: |"

@@ -26,6 +26,7 @@ import {
   type SpellcastingBlock,
   type SpellcastingMode,
 } from '@/engine/types';
+import { castingTime, SCHOOLS, spellRange } from '@/features/library/fmt';
 import { signed } from '@/lib/signed';
 import { useClassLookup } from '@/lib/useClassLookup';
 import { usePickSourcePolicy } from '@/lib/usePickSourcePolicy';
@@ -121,6 +122,45 @@ export function classifyKnown(
   return { cantrips, leveled, arcanum };
 }
 
+/**
+ * A spell's row facts, so a list of names can be told apart without opening
+ * each one: "Evocation · 1 action · 120 feet · concentration". Only what the
+ * data has.
+ */
+export function spellRowFacts(e: Entity): string {
+  const school = typeof e.school === 'string' ? (SCHOOLS[e.school] ?? e.school) : undefined;
+  // "1 bonus action", "10 minutes": the Library's words, read as a phrase.
+  const time = Array.isArray(e.time)
+    ? castingTime(e.time)
+        .replace(/ bonus$/, ' bonus action')
+        .replace(/^(\d+) (minute|hour|round|day)$/, (all, n: string, unit: string) =>
+          n === '1' ? all : `${n} ${unit}s`,
+        )
+    : undefined;
+  // "1 mile", not "1 miles"; "Special", as "Self" and "Touch" are.
+  const rawRange =
+    typeof e.range === 'object' && e.range !== null
+      ? spellRange(e.range).replace(/^1 miles$/, '1 mile')
+      : undefined;
+  const range =
+    rawRange !== undefined ? rawRange.charAt(0).toUpperCase() + rawRange.slice(1) : undefined;
+  return [school, time, range, spellNeedsConcentration(e) ? 'concentration' : undefined]
+    .filter((f) => f !== undefined && f !== '' && f !== '?')
+    .join(' · ');
+}
+
+/**
+ * How many spells a spellbook holds at a class level: the data gives the
+ * spells added at each level (the Wizard's 6, then 2 a level), so the book
+ * holds their sum. Undefined without that row.
+ */
+export function spellbookSize(row: unknown, classLevel: number | undefined): number | undefined {
+  if (!Array.isArray(row) || classLevel === undefined || classLevel < 1) return undefined;
+  return row
+    .slice(0, Math.min(classLevel, 20))
+    .reduce((sum: number, n) => sum + (typeof n === 'number' ? n : 0), 0);
+}
+
 /** Does the spell require concentration (from its `duration` block)? */
 export function spellNeedsConcentration(e: Entity | undefined): boolean {
   const d = e?.duration;
@@ -138,6 +178,7 @@ function ClassSpells({
   doc,
   update,
   alwaysPrepared,
+  granted = [],
 }: {
   block: SpellcastingBlock;
   /** Which spells are on which class's list; null until it has been read. */
@@ -150,6 +191,11 @@ function ClassSpells({
   update: DocUpdater;
   /** Always-prepared grants a trim may unprepare first (empty with several casting classes). */
   alwaysPrepared: readonly EntityRef[];
+  /**
+   * Spells the character has already from elsewhere (a species' cantrip, a
+   * feat's, a domain's), so a row on this list can say so (review item 3).
+   */
+  granted?: ReadonlyArray<{ name: string; origin: string; className?: string }>;
 }) {
   const registry = useRegistry();
   const [filter, setFilter] = useState('');
@@ -162,10 +208,9 @@ function ClassSpells({
   // A Workshop copy of a class reads its original's lists too: a Warden made
   // from the Fighter casts from the Eldritch Knight's list, as the Fighter does.
   const entryRef = doc.classes.find((c) => refUid(c.ref) === block.classUid)?.ref;
-  const copied =
-    entryRef !== undefined
-      ? basedOn(registry?.get('class', entryRef.name, entryRef.source))?.name
-      : undefined;
+  const classEntity =
+    entryRef !== undefined ? registry?.get('class', entryRef.name, entryRef.source) : undefined;
+  const copied = classEntity !== undefined ? basedOn(classEntity)?.name : undefined;
   const classUids = useMemo(() => {
     if (lookup === null) return null;
     const also = (name: string) => (copied !== undefined ? [name, copied] : name);
@@ -179,6 +224,24 @@ function ClassSpells({
   const upTo = block.learnable?.upTo;
   const levelClass = subclassOf ?? block.className;
   const classLevel = doc.classes.find((c) => refUid(c.ref) === block.classUid)?.levels;
+  // A spellbook's size, for a spellbook caster (review item 3): a count to
+  // fill, flagged past it as the other limits are, never enforced.
+  const bookMax =
+    block.mode === 'spellbook' && subclassOf === undefined
+      ? spellbookSize(classEntity?.spellsKnownProgressionFixed, classLevel)
+      : undefined;
+  // What already has each granted spell, by name: a grant's ref often names
+  // no book ("thaumaturgy#c"), and the list may show another printing of it.
+  // The first grant names it. A grant of this same class is its own business
+  // (a 2024 Ranger's Hunter's Mark, always prepared), not something from
+  // elsewhere, so it says nothing here.
+  const ownClass = (subclassOf ?? block.className).toLowerCase();
+  const grantedBy = new Map<string, string>();
+  for (const g of granted) {
+    if (g.className?.toLowerCase() === ownClass) continue;
+    const key = g.name.toLowerCase();
+    if (!grantedBy.has(key)) grantedBy.set(key, g.origin);
+  }
   const who = classLevel !== undefined ? `${levelClass} ${classLevel}` : levelClass;
   const isLockedLevel = (lvl: number) => upTo !== undefined && lvl > upTo;
   const firstUnlock = block.learnable?.unlocksAt.find((at) => at !== null) ?? undefined;
@@ -416,6 +479,13 @@ function ClassSpells({
               </span>
             </>
           )}
+          {bookMax !== undefined && (
+            <>
+              {/* Not flagged past its size: a wizard copies found spells in,
+                  so a fuller book is ordinary play. */}
+              {` · spellbook ${knownLeveled}/${bookMax}`}
+            </>
+          )}
           {knownMax !== undefined && (
             <>
               {' · known '}
@@ -574,6 +644,8 @@ function ClassSpells({
                       ? undefined
                       : expandedFrom(s);
                   const addedBy = from === block.className ? 'Expanded list' : from;
+                  const facts = spellRowFacts(s);
+                  const already = grantedBy.get(nameOf(s).toLowerCase());
                   return (
                     <div
                       key={uid}
@@ -617,7 +689,7 @@ function ClassSpells({
                           controls' transparent tap borders space them
                           already. */}
                       <span className="ml-auto flex max-w-full shrink-0 flex-wrap items-center justify-end">
-                        <span className="mr-1 flex items-center gap-1">
+                        <span className="mr-1 flex flex-wrap items-center justify-end gap-1">
                           {/* Allowed, and flagged in the guide's colour with
                               words, as an over-limit count is. */}
                           {locked && (known || prepared) && (
@@ -626,6 +698,14 @@ function ClassSpells({
                               title={`${unlockNote(lvl)}. Allowed, just flagging it.`}
                             >
                               Above your level
+                            </span>
+                          )}
+                          {already !== undefined && (
+                            <span
+                              className={badgeClass()}
+                              title={`Already yours from ${already}. Learning it here as well takes a pick.`}
+                            >
+                              From {already}
                             </span>
                           )}
                           {addedBy !== undefined && (
@@ -663,6 +743,12 @@ function ClassSpells({
                           </button>
                         )}
                       </span>
+                      {/* Its own line under the name and controls. */}
+                      {facts !== '' && (
+                        <span className="order-last basis-full pb-1 text-caption text-ink-muted">
+                          {facts}
+                        </span>
+                      )}
                     </div>
                   );
                 })}
@@ -735,6 +821,7 @@ export function SpellManager({
           doc={doc}
           update={update}
           alwaysPrepared={alwaysPrepared}
+          granted={sheet.grantedSpells.filter((g) => g.added !== true)}
         />
       ))}
     </div>

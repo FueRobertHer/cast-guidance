@@ -34,13 +34,7 @@ import {
 } from '@/data5e/sourceFilter';
 import { knownSources } from '@/data5e/sourceNames';
 import { characterRepo } from '@/db/characterRepo';
-import {
-  EntryClash,
-  type EntryKey,
-  type HomebrewFileMeta,
-  homebrewRepo,
-  ownsEntries,
-} from '@/db/homebrewRepo';
+import { EntryClash, type EntryKey, type HomebrewFileMeta, homebrewRepo } from '@/db/homebrewRepo';
 import type { CharacterDoc } from '@/engine/types';
 import { usePacksHere } from '@/features/homebrew/PackReviewSheet';
 import { TYPE_LABELS } from '@/features/library/browseTypes';
@@ -126,9 +120,64 @@ async function setSwitches(
   throw new Error('that character kept changing in another tab');
 }
 
-/** Turn a file or a book on or off on this device; on shows its sources too. */
-function toggle(r: HomebrewFileMeta, on: boolean): void {
+/**
+ * What turning a row off on this device takes from the characters here, for
+ * its confirm, or undefined when it takes nothing. Off for the device, its
+ * entries leave every sheet but those whose own switch brings it back
+ * (`reachesRow`), unlike a character's own switch, which keeps what a sheet
+ * holds (finding 17).
+ */
+async function offDetail(
+  c: Collection,
+  r: HomebrewFileMeta,
+  device: SourcePolicy,
+): Promise<string | undefined> {
+  const { test: mine } = await heldIn([r]);
+  const off = { ...r, enabled: false };
+  // Another copy still on keeps serving what it holds, for whoever it reaches.
+  const others = await Promise.all(
+    c.rows.filter((o) => o.id !== r.id).map(async (o) => ({ o, ...(await heldIn([o])) })),
+  );
+  const { characters } = await characterRepo.listSafe();
+  const lines: string[] = [];
+  for (const d of characters) {
+    // The Changes file reaches a character only while its own switch lets it,
+    // so one with it off loses nothing; any other file leaves the sheet.
+    if (isChanges(r) && !reachesRow(d, r, device)) continue;
+    if (reachesRow(d, off, device)) continue;
+    const still = others.filter(({ o }) => reachesRow(d, o, device));
+    const held = heldBy(d, (n, s) =>
+      still.some((x) => x.test(n, s) !== undefined) ? undefined : mine(n, s),
+    );
+    if (held.length > 0) lines.push(`${d.name} has ${andList(held)}.`);
+  }
+  if (lines.length === 0) return undefined;
+  const lost = lines.join(' ');
+  return isChanges(r)
+    ? `Every entry it changes is the book’s again, on every sheet, until it is on again. ${lost}`
+    : `Its entries leave the sheets that have them, as well as the Library and the pickers, until it is on again. ${lost}`;
+}
+
+/**
+ * Turn a file or a book on or off on this device; on shows its sources too.
+ * Off asks first when a character would lose what it has from it.
+ */
+function toggle(
+  c: Collection,
+  r: HomebrewFileMeta,
+  on: boolean,
+  name: string,
+  device: SourcePolicy,
+): void {
   void (async () => {
+    if (!on) {
+      const detail = await offDetail(c, r, device);
+      if (
+        detail !== undefined &&
+        !(await askConfirm({ title: `Turn off ${name}?`, detail, confirmLabel: 'Turn off' }))
+      )
+        return;
+    }
     await homebrewRepo.setEnabled(r.id, on);
     if (on) await ensureSourcesVisible(r.sourceIds);
     invalidateRegistry();
@@ -277,7 +326,7 @@ function OnSection({
                 >
                   <Download size={18} aria-hidden />
                 </button>
-                <Switch on={on} name={name} onPress={() => toggle(r, !on)} />
+                <Switch on={on} name={name} onPress={() => toggle(c, r, !on, name, device)} />
               </li>
             );
           })}
@@ -295,7 +344,7 @@ function OnSection({
                       ? 'Hidden by The books’ choice of what shows'
                       : 'Turned off on this device'}
                 </span>
-                <Switch on={on} name={c.name} onPress={() => toggle(r, !on)} />
+                <Switch on={on} name={c.name} onPress={() => toggle(c, r, !on, c.name, device)} />
               </div>
             </div>
           );
@@ -303,7 +352,7 @@ function OnSection({
       )}
       <p className={`px-1 ${CAPTION}`}>
         On this device: the Library, search, new characters and every character without a switch of
-        its own.
+        its own. Off here, it leaves their sheets too.
       </p>
       {pack ? (
         <p className={`px-1 ${CAPTION}`}>
@@ -380,8 +429,11 @@ function entriesIn(json: Json, own: boolean): Entry[] {
   for (const [type, list] of Object.entries(json)) {
     if (type === '_meta' || !Array.isArray(list)) continue;
     if (own && (OWNED_KINDS.has(type) || !EDITORS.has(type))) continue;
+    // A blank name is no name: the merge leaves such an entry out
+    // (`mergeHomebrewFiles`), so its row would link to nothing.
     for (const e of list)
-      if (isRecord(e) && typeof e.name === 'string') out.push({ type, entry: e, name: e.name });
+      if (isRecord(e) && typeof e.name === 'string' && e.name.trim() !== '')
+        out.push({ type, entry: e, name: e.name });
   }
   return out;
 }
@@ -393,28 +445,35 @@ function libraryPath(type: string, e: Json): string | undefined {
   return `/library/${type}/${encodeURIComponent(uid)}`;
 }
 
-/** Every pick of a character's that names an entry `test` takes, by name. */
-function heldBy(doc: CharacterDoc, test: (name: string, source: string) => boolean): string[] {
+/**
+ * Which entry a pick names, by its name and source: the entry's own name, as
+ * its file spells it, or undefined for one that is not asked about. A pick
+ * can hold a name lowercased (`solar tactician|myhomebrew` in a choice), so
+ * what is said is the entry's name, never the pick's.
+ */
+type Held = (name: string, source: string) => string | undefined;
+
+/** Every pick of a character's that names an entry `test` knows, by the entry's own name. */
+function heldBy(doc: CharacterDoc, test: Held): string[] {
   const found = new Map<string, string>();
-  const text = (s: string, fromObject: boolean) => {
+  const text = (s: string) => {
     const [name, source, ...rest] = s.split('|');
     if (name === undefined || source === undefined || rest.length > 0) return;
-    if (!test(name, source)) return;
-    if (fromObject || !found.has(lower(name))) found.set(lower(name), name);
+    const own = test(name, source);
+    if (own !== undefined) found.set(lower(own), own);
   };
   const walk = (v: unknown, depth: number) => {
     if (depth > 16) return;
-    if (typeof v === 'string') return text(v, false);
+    if (typeof v === 'string') return text(v);
     if (Array.isArray(v)) {
       for (const x of v) walk(x, depth + 1);
       return;
     }
     if (!isRecord(v)) return;
-    if (typeof v.name === 'string' && typeof v.source === 'string')
-      text(`${v.name}|${v.source}`, true);
+    if (typeof v.name === 'string' && typeof v.source === 'string') text(`${v.name}|${v.source}`);
     for (const [k, x] of Object.entries(v)) {
       // A pick's key names what it is in: `feat:<name|source>:…`.
-      for (const part of k.split(':')) if (part.includes('|')) text(part, false);
+      for (const part of k.split(':')) if (part.includes('|')) text(part);
       walk(x, depth + 1);
     }
   };
@@ -426,10 +485,7 @@ function heldBy(doc: CharacterDoc, test: (name: string, source: string) => boole
  * "Hild has Ember Lance. Osk has Ember Ward and Frost Ward." or nobody, read
  * when asked: the list on screen may not have loaded yet.
  */
-async function losses(
-  test: (name: string, source: string) => boolean,
-  partly = false,
-): Promise<string> {
+async function losses(test: Held, partly = false): Promise<string> {
   const { characters } = await characterRepo.listSafe();
   const lines = characters
     .map((d) => [d.name, heldBy(d, test)] as const)
@@ -440,26 +496,27 @@ async function losses(
 }
 
 /**
- * Whether an entry is one of a collection's, by its own name and source: an
+ * Whether an entry is one of these rows', by its own name and source: an
  * entry can name a source its file does not declare. `unread` names each row
  * whose content could not be read, so what it held is not known.
  */
-async function heldIn(c: Collection): Promise<{
-  test: (name: string, source: string) => boolean;
+async function heldIn(rows: readonly HomebrewFileMeta[]): Promise<{
+  test: Held;
   unread: string[];
 }> {
-  const ids = new Set<string>();
+  const ids = new Map<string, string>();
   const unread: string[] = [];
-  for (const r of c.rows) {
+  for (const r of rows) {
     const { file, error } = await homebrewRepo.getSafe(r.id);
     // Gone meanwhile (another tab) is not unreadable; copies share a name.
     const name = r.book ?? r.fileName;
     if (error !== undefined && !unread.includes(name)) unread.push(name);
     for (const e of file === undefined ? [] : entriesIn(file.json, false)) {
-      if (typeof e.entry.source === 'string') ids.add(`${lower(e.name)}|${lower(e.entry.source)}`);
+      const key = `${lower(e.name)}|${lower(String(e.entry.source))}`;
+      if (typeof e.entry.source === 'string' && !ids.has(key)) ids.set(key, e.name);
     }
   }
-  return { test: (name, source) => ids.has(`${lower(name)}|${lower(source)}`), unread };
+  return { test: (name, source) => ids.get(`${lower(name)}|${lower(source)}`), unread };
 }
 
 /** What deleting a collection takes, for its confirm. */
@@ -468,7 +525,7 @@ async function deleteDetail(c: Collection, strays: number): Promise<string> {
   if (c.rows.some(isChanges)) {
     parts.push('Every entry it changes is the book’s again.');
   } else {
-    const { test, unread } = await heldIn(c);
+    const { test, unread } = await heldIn(c.rows);
     parts.push(`Its entries leave every picker. ${await losses(test, unread.length > 0)}`);
     if (unread.length > 0) {
       parts.push(
@@ -537,7 +594,7 @@ function EntriesSection({ c, looks }: { c: Collection; looks: ReadonlySet<string
         ...(own && view !== undefined && row.enabled
           ? [{ id: 'view', label: 'View in the Library' }]
           : []),
-        ...(own && !ownsEntries(e.type) ? [{ id: 'rename', label: 'Rename' }] : []),
+        ...(own ? [{ id: 'rename', label: 'Rename' }] : []),
         ...(row.editable ? [{ id: 'delete', label: 'Delete', danger: true }] : []),
       ],
     });
@@ -551,11 +608,8 @@ function EntriesSection({ c, looks }: { c: Collection; looks: ReadonlySet<string
     if (next === undefined || next === '' || next === e.name) return;
     const source = String(e.entry.source);
     try {
-      await homebrewRepo.saveEntry(
-        e.type,
-        { ...e.entry, name: next, source },
-        { fileId: row.id, replaces: { name: e.name, source } },
-      );
+      // A class takes its features and subclasses along (`renameEntry`).
+      await homebrewRepo.renameEntry(row.id, e.type, { name: e.name, source }, next);
       invalidateRegistry();
       notify({ title: `Renamed ${e.name} to ${next}`, tone: 'good' });
     } catch (err) {
@@ -572,8 +626,8 @@ function EntriesSection({ c, looks }: { c: Collection; looks: ReadonlySet<string
       title: `Delete ${e.name}?`,
       detail: changes
         ? `Your change is taken out: ${e.name} is what is below it again, the book’s or its collection’s.`
-        : `It is taken out of ${c.name}. ${await losses(
-            (n, s) => lower(n) === lower(e.name) && lower(s) === lower(source),
+        : `It is taken out of ${c.name}. ${await losses((n, s) =>
+            lower(n) === lower(e.name) && lower(s) === lower(source) ? e.name : undefined,
           )}`,
       confirmLabel: 'Delete',
       danger: true,
