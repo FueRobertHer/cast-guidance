@@ -51,7 +51,7 @@ import { SpellCastChips } from './SpellCastChips';
 import { classifyKnown, OVER, spellNeedsConcentration } from './SpellManager';
 import { SpellRow } from './SpellRow';
 import { SpellSlots } from './SpellSlots';
-import { NoSpellsCue, raging, SaveDcBadge } from './spellcastingMarks';
+import { NoSpellsCue, SaveDcBadge } from './spellcastingMarks';
 import { findSpell, useSpellData } from './spellData';
 import { spellMeta, spellSaves } from './spellMeta';
 import { countPrepared, spellLimits } from './spellTrim';
@@ -640,7 +640,7 @@ function ClassSection({
           </Badge>
           <Badge>{block.ability.toUpperCase()}</Badge>
         </div>
-        {raging(ctx.sheet) && <NoSpellsCue />}
+        <NoSpellsCue sheet={ctx.sheet} />
         <SpellSlots
           block={block}
           play={play}
