@@ -476,6 +476,15 @@ export async function dialog(title: string | RegExp) {
 }
 
 /**
+ * Take a short rest from the Play tab: its button opens the rest sheet, which
+ * spends hit dice and says what comes back, and the sheet's own button rests.
+ */
+export async function takeShortRest(): Promise<void> {
+  fireEvent.click(screen.getByRole('button', { name: 'Short rest' }));
+  await (await dialog('Short rest')).press('Take the short rest');
+}
+
+/**
  * One class's block on the Spells tab: its mode badge ("Known", "Prepared",
  * "Spellbook", "Pact Magic", or undefined), the counters line ("DC 10 · Atk
  * +2 · prepared 0/1"), and the over-limit cue, which must be a status region

@@ -12,8 +12,9 @@
  * what `regainOnShort` says of the others, and pact slots, not arcana. The
  * table's HP on a long rest rule may give back half the maximum or none.
  *
- * Not modeled (left to the player, by design): spending hit dice to heal, and
- * choosing which hit dice come back on a long rest.
+ * Spending hit dice to heal is the sheet's (the HP card and the short rest
+ * sheet roll them one at a time). Not modeled (left to the player, by
+ * design): choosing which hit dice come back on a long rest.
  */
 import type { TableRuleChoices } from './castGuidance';
 import { conditionMaxHp } from './conditions';
@@ -62,6 +63,14 @@ export function shortRestRecovery(play: PlayState, sheet: RestSheet): string[] {
     play.pactSlotsSpent = 0;
   }
   return restored;
+}
+
+/**
+ * What a short rest would give back now, in the words `shortRestRecovery`
+ * says them, without touching `play`: the rest is worked out on a copy.
+ */
+export function shortRestWouldRestore(play: PlayState, sheet: RestSheet): string[] {
+  return shortRestRecovery(structuredClone(play), sheet);
 }
 
 export interface LongRestOptions {

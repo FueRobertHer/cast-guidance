@@ -22,6 +22,7 @@ import {
 } from '@/features/creator/draft';
 import { readFileTextBounded } from '@/lib/boundedRead';
 import { IMPORT_LIMITS } from '@/lib/guards';
+import { raceDisplayName } from '@/lib/raceDisplayName';
 import { relativeTime } from '@/lib/relativeTime';
 import { useLongPress } from '@/lib/useLongPress';
 import { usePageTitle } from '@/lib/usePageTitle';
@@ -60,9 +61,9 @@ function classesOf(doc: CharacterDoc): CharacterDoc['classes'] {
   return Array.isArray(doc.classes) ? doc.classes : [];
 }
 
-/** "Dwarf Cleric 3", or "Elf, no class yet" before a class is picked. */
+/** "Hill Dwarf Cleric 3", or "High Elf, no class yet" before a class is picked. */
 function whoSummary(doc: CharacterDoc): string {
-  const race = doc.race?.name;
+  const race = raceDisplayName(doc.race, doc.subrace);
   if (race === undefined) return classSummary(doc);
   return classesOf(doc).length === 0 ? `${race}, no class yet` : `${race} ${classSummary(doc)}`;
 }

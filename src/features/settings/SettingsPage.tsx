@@ -97,7 +97,41 @@ export const ABOUT_LINKS = [
   { label: 'Content notice', path: 'docs/content-notice.md' },
 ] as const;
 
-const mb = (n?: number) => (n === undefined ? '?' : `${(n / 1024 / 1024).toFixed(1)} MB`);
+/** What "Check for data updates" says when nothing on the mirror can be installed. */
+const NO_COMPATIBLE_TEXT =
+  'No compatible data versions available. Newer releases with a different schema are not shown because this app build cannot read them safely.';
+
+/**
+ * The answer to "Check for data updates", said above the version list. The
+ * list comes newest first, as the boot-time check reads it, and like that
+ * check it passes over the release this device went back from: offering it
+ * again only invites the same rollback.
+ */
+export function updateStatusText(
+  tags: readonly string[],
+  active: string,
+  wentBackFrom?: string,
+): string {
+  const newest = tags.find((t) => t !== wentBackFrom);
+  const skipped =
+    wentBackFrom !== undefined && tags[0] === wentBackFrom
+      ? ` ${wentBackFrom} could not start on this device.`
+      : '';
+  return newest === undefined || newest === active
+    ? `Up to date: ${active} is the newest version this app can use.${skipped}`
+    : `${newest} is available. You have ${active}.${skipped}`;
+}
+
+/**
+ * A size in MB, or in GB from 1 GB up: a browser's quota is often gigabytes,
+ * and "10244.4 MB" asks the reader to do the division.
+ */
+export function sizeText(n?: number): string {
+  if (n === undefined) return '?';
+  const mb = n / 1024 / 1024;
+  // Compared as shown, so 1023.96 MB reads "1.0 GB", not "1024.0 MB".
+  return Number(mb.toFixed(1)) >= 1024 ? `${(mb / 1024).toFixed(1)} GB` : `${mb.toFixed(1)} MB`;
+}
 
 /**
  * Whether the address links to Storage details. Read from the address rather
@@ -263,6 +297,8 @@ export function Component() {
   useEffect(measureOffline, [measureOffline, phase, revision]);
 
   const offlineReady = offline !== undefined && offline.cached === offline.total;
+  /** Whether "Make available offline" is on screen: only while something is missing. */
+  const offerDownload = offlineError !== undefined || (offline !== undefined && !offlineReady);
   /** Non-undefined only when the last install attempt failed, and it names it. */
   const failedInstallTag = updateMsg?.failedTag;
   /**
@@ -398,13 +434,18 @@ export function Component() {
                   : `${offline.cached}/${offline.total} files`}
           </dd>
           <dt className="text-ink-muted">Unpacked game data</dt>
-          <dd>{mb(cachedBytes)}</dd>
+          <dd>{sizeText(cachedBytes)}</dd>
           <dt className="text-ink-muted">Browser storage</dt>
           <dd>
-            {mb(estimate?.usage)} of {mb(estimate?.quota)}
+            {sizeText(estimate?.usage)} of {sizeText(estimate?.quota)}
           </dd>
         </dl>
 
+        {tags !== null && tags.length > 0 && (
+          <p className="text-body text-ink-muted">
+            {updateStatusText(tags, getActiveTag(), rolledBackFrom)}
+          </p>
+        )}
         {tags === null ? (
           <Button
             disabled={updating}
@@ -413,7 +454,22 @@ export function Component() {
               // `maxAgeMs: 0` skips the remembered list: someone who pressed
               // "check for updates" is owed a live answer, not this morning's.
               void listAvailableTags({ maxAgeMs: 0 })
-                .then(setTags)
+                .then((list) => {
+                  setTags(list);
+                  // The button that was pressed is gone, so the answer is
+                  // said as well as shown (A11Y-002: a line that mounts with
+                  // its text is announced unreliably).
+                  announce(
+                    list.length === 0
+                      ? NO_COMPATIBLE_TEXT
+                      : updateStatusText(
+                          list,
+                          getActiveTag(),
+                          dataStatusStore.getState().rolledBackFrom,
+                        ),
+                    { key: 'update-check' },
+                  );
+                })
                 .catch((err: unknown) =>
                   setUpdateMsg({
                     text: `Could not list versions: ${errorText(err)}`,
@@ -425,10 +481,7 @@ export function Component() {
             Check for data updates
           </Button>
         ) : tags.length === 0 ? (
-          <p className="text-body text-ink-muted">
-            No compatible data versions available. Newer releases with a different schema are not
-            shown because this app build cannot read them safely.
-          </p>
+          <p className="text-body text-ink-muted">{NO_COMPATIBLE_TEXT}</p>
         ) : (
           <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
             <label htmlFor="data-tag" className="text-body text-ink-muted">
@@ -494,7 +547,7 @@ export function Component() {
 
         {/* Offline readiness is a claim the app makes about itself, so it comes
             with the control that makes it true and the reason it is not. */}
-        {(offlineError !== undefined || (offline !== undefined && !offlineReady)) && (
+        {offerDownload && (
           <div className="flex flex-wrap items-center gap-2">
             <Button
               disabled={downloading || updating}
@@ -578,8 +631,14 @@ export function Component() {
           <div className="flex flex-col gap-2 border-line border-t p-4 text-caption text-ink-muted">
             <p>
               Because it&rsquo;s browser storage, the browser can clear it when storage runs low or
-              when you clear browsing data. Export characters you care about, and use “Make
-              available offline” above so the compendium is cached.
+              when you clear browsing data. Export characters you care about.{' '}
+              {/* The button this names shows only while something is missing,
+                  so once the compendium is whole the line says so instead. */}
+              {offerDownload
+                ? 'Use “Make available offline” above so the compendium is cached.'
+                : offlineReady
+                  ? 'The compendium is already cached for offline use.'
+                  : ''}
             </p>
             <p>
               Your browser may ask to allow persistent storage. Choosing Allow keeps your data

@@ -184,17 +184,21 @@ export function GettingStarted({ onDismiss }: { onDismiss?: () => void }) {
       aria-labelledby="getting-started-heading"
       className={`${cardClass} flex flex-col gap-3`}
     >
-      {/* The heading says the state in words. */}
+      {/* The heading says the state in words. Its name is written out: the
+          count sits apart on screen, and a hidden comma between the two was
+          read as "Ready for the table , 1 of 3" (Chromium spaces out an
+          absolutely positioned `sr-only` span). */}
       <h2
         id="getting-started-heading"
+        aria-label={
+          count === undefined ? undefined : `Ready for the table, ${count} of ${states.length}`
+        }
         className="flex flex-wrap items-baseline justify-between gap-x-2 text-heading"
       >
         Ready for the table
         {count !== undefined && (
           <span className="text-caption font-normal text-ink-muted tabular-nums">
-            {/* The space sits outside the span: some name computations trim a
-                child's trailing space, which ran the words together. */}
-            <span className="sr-only">,</span> {count} of {states.length}
+            {count} of {states.length}
           </span>
         )}
       </h2>
