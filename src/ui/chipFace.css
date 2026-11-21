@@ -166,9 +166,23 @@
 }
 /* A roll chip's resting edge, as a filled control's: its tint on a cream card,
    which hover lifts to near white, stays a button in light (nothing in dark).
-   Chips alone: the other surfaces are not roll pills. */
-.cx:not([class*="cx-at-"]) > .cx-face {
+   Chips alone: the other surfaces are not roll pills. Hover's brightness
+   filter lifts the edge too, so a hovered chip takes the strong line, as a
+   hovered field does (`RollChip` uses `--cx-edge-hover` on its own ring).
+   Ignore once draws a dashed ring of its own, so it drops the edge. */
+[data-theme="dark"] {
+  --cx-edge-hover: transparent;
+}
+[data-theme="light"] {
+  --cx-edge-hover: var(--cg-line-strong);
+}
+.cx:not([class*="cx-at-"], .cx-ig) > .cx-face {
   box-shadow: inset 0 0 0 1px var(--cg-edge);
+}
+@media (hover: hover) {
+  button:hover > .cx:not([class*="cx-at-"], .cx-ig) > .cx-face {
+    box-shadow: inset 0 0 0 1px var(--cx-edge-hover, transparent);
+  }
 }
 .cx-num {
   position: relative;

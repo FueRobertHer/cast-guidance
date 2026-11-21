@@ -301,8 +301,11 @@ export function RollChip({
           ? 'inline-block px-1.25 py-px align-baseline text-[0.92em] leading-snug'
           : `inline-flex h-8.5 min-w-13 items-center justify-center text-dice ${
               // A tint on a cream card, which hover lifts to near white: the
-              // resting edge keeps it a button in light (nothing in dark).
-              wear === undefined ? 'px-2 ring-1 ring-edge ring-inset' : 'relative'
+              // resting edge keeps it a button in light (nothing in dark), the
+              // strong line on hover, which the brightness filter lifts too.
+              wear === undefined
+                ? 'px-2 ring-1 ring-edge ring-inset hover:ring-(--cx-edge-hover,transparent)'
+                : 'relative'
             }`
       } rounded-chip font-semibold tabular-nums transition-[filter,transform] duration-120 ease-out hover:brightness-112 active:scale-95 ${
         wear === undefined ? TONE[variant] : ''
