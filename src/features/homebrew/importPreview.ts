@@ -206,7 +206,8 @@ export function officialIndexFrom(
         byId = new Map();
         for (const e of reg.byType(type).slice(0, reg.officialCount(type))) {
           const id = identityKey(type, e);
-          if (!byId.has(id)) byId.set(id, e);
+          // The book's own: a change here (the player's, or a pack's) stands in its place.
+          if (!byId.has(id)) byId.set(id, reg.changeOf(e)?.base ?? e);
         }
         entries.set(type, byId);
       }
@@ -726,7 +727,9 @@ export function previewHomebrewImport(input: HomebrewPreviewInput): HomebrewPrev
         });
         const was = content.find((e) => identityKey(r.type, e) === r.identity);
         if (was !== undefined) {
-          return { below: { kind: 'collection', fileName: fileLabel(f) }, was };
+          // A copy's fields are known only once merged, so it is compared with nothing.
+          const read = Object.hasOwn(was, '_copy') ? {} : { was };
+          return { below: { kind: 'collection', fileName: fileLabel(f) }, ...read };
         }
       }
       return { below: { kind: 'missing', complete: officialKnown } };
@@ -735,7 +738,10 @@ export function previewHomebrewImport(input: HomebrewPreviewInput): HomebrewPrev
     const rowOf = (r: PackReplacement): PackReviewRow => {
       const { below, was } = belowOf(r);
       const reviewRow = replacedRow(r, below);
-      const now = entitiesOf(row.json, r.type).find((e) => identityKey(r.type, e) === r.identity);
+      // Found as the merge finds it, a copy by the identity it leaves to what it copies.
+      const now = entitiesOf(row.json, r.type).find(
+        (e) => changeIdentity(r.type, e) === r.identity,
+      );
       const detail = was === undefined || now === undefined ? undefined : entryChanges(was, now);
       return detail === undefined ? reviewRow : { ...reviewRow, detail };
     };
@@ -1200,22 +1206,40 @@ export function replacedRow(r: PackReplacement, below?: ReplacedBelow): PackRevi
   return { key: r.words, value };
 }
 
-/** Fields that say where an entry comes from, not what it does: never a difference. */
+/**
+ * Fields that say where an entry comes from, or that the app or the data adds
+ * to index it, not what it does: never a difference. `bookEdition` is set on
+ * the book's rows here and never written by a pack (`fingerprint.ts`).
+ */
 const UNCOMPARED = new Set([
   'name',
   'source',
   'page',
+  'edition',
+  'bookEdition',
   'otherSources',
   'additionalSources',
+  'referenceSources',
   'reprintedAs',
+  'printingOf',
+  'alias',
   'srd',
   'srd52',
   'basicRules',
   'basicRules2024',
+  'freeRules2024',
   'hasFluff',
   'hasFluffImages',
   'hasToken',
+  'soundClip',
+  'savingThrow',
+  'abilityCheck',
+  'spellAttack',
+  'affectsCreatureType',
 ]);
+
+/** Index lists the data derives from an entry's text (`miscTags`, `damageInflict`): never a difference. */
+const INDEX_FIELD = /(Tags|Inflict)$/;
 
 /** Fields of prose, said together as "its text". */
 const PROSE = new Set(['entries', 'entriesHigherLevel', 'additionalEntries', 'fluff']);
@@ -1243,13 +1267,13 @@ function sameValue(a: unknown, b: unknown): boolean {
   return false;
 }
 
-/** A value short enough to say in a line: a number, yes or no, or a few words. */
+/**
+ * A value said as it is: a number, or yes or no. Text is not, since much of
+ * it is a code (a school's `EV`, a size's `M`) that reads as nothing.
+ */
 function shortWords(v: unknown): string | undefined {
   if (typeof v === 'number' && Number.isFinite(v)) return String(v);
   if (typeof v === 'boolean') return v ? 'yes' : 'no';
-  if (typeof v === 'string' && v.length <= 30 && !v.includes('{@') && v.trim() !== '') {
-    return v.trim();
-  }
   return undefined;
 }
 
@@ -1271,9 +1295,11 @@ function fieldWords(key: string): string {
 export function entryChanges(was: Entity, now: Entity): string | undefined {
   if (Object.hasOwn(now, '_copy')) return undefined;
   const keys = [...new Set([...Object.keys(was), ...Object.keys(now)])].filter(
-    (k) => !UNCOMPARED.has(k) && !k.startsWith('_'),
+    (k) => !UNCOMPARED.has(k) && !INDEX_FIELD.test(k) && !k.startsWith('_'),
   );
-  const parts: string[] = [];
+  // Those with what they were and are come first, so no bare name reads as sharing a value.
+  const valued: string[] = [];
+  const named: string[] = [];
   let prose = false;
   for (const k of keys) {
     const a = own(was, k);
@@ -1285,21 +1311,17 @@ export function entryChanges(was: Entity, now: Entity): string | undefined {
     }
     const before = shortWords(a);
     const after = shortWords(b);
-    parts.push(
-      before !== undefined && after !== undefined
-        ? `${fieldWords(k)} (${before} to ${after})`
-        : fieldWords(k),
-    );
+    if (before !== undefined && after !== undefined) {
+      valued.push(`${fieldWords(k)} (${before} to ${after})`);
+    } else named.push(fieldWords(k));
   }
-  if (prose) parts.push('its text');
+  const parts = [...valued, ...named, ...(prose ? ['its text'] : [])];
   if (parts.length === 0) return 'The same as the one here.';
-  const named = parts.slice(0, MAX_DIFFERENCES);
-  const more = parts.length - named.length;
-  if (more > 0) named.push(`${more} more`);
+  const said = parts.slice(0, MAX_DIFFERENCES);
+  const more = parts.length - said.length;
+  if (more > 0) said.push(`${more} more`);
   const list =
-    named.length === 1
-      ? named[0]
-      : `${named.slice(0, -1).join(', ')} and ${named[named.length - 1]}`;
+    said.length === 1 ? said[0] : `${said.slice(0, -1).join(', ')} and ${said[said.length - 1]}`;
   return `Differs in ${list}.`;
 }
 

@@ -9,6 +9,7 @@ import {
 import type { HomebrewFileRow } from '@/db/db';
 import type { HomebrewFile } from '@/db/homebrewRepo';
 import { newCharacterDoc } from '@/engine/types';
+import { writeChange } from '@/features/workshop/copyWriter';
 import { IMPORT_LIMITS } from '@/lib/guards';
 import {
   clashKey,
@@ -445,14 +446,16 @@ describe('entryChanges', () => {
         { name: 'Aid', source: 'XPHB', level: 2, range: { type: 'point' }, ritual: false },
         { name: 'Aid', source: 'TBL', level: 3, range: { type: 'self' }, ritual: true },
       ),
-    ).toBe('Differs in level (2 to 3), range and ritual (no to yes).');
+    ).toBe('Differs in level (2 to 3), ritual (no to yes) and range.');
+    // Text is named, never quoted: a school's code reads as nothing.
+    expect(entryChanges({ school: 'V' }, { school: 'EN' })).toBe('Differs in school.');
     // Prose is said once, last; a field only one side has is named alone.
     expect(
       entryChanges(
         { name: 'X', entries: ['a'], entriesHigherLevel: ['b'] },
-        { name: 'X', entries: ['c'], damageInflict: ['fire'] },
+        { name: 'X', entries: ['c'], duration: [{ type: 'instant' }] },
       ),
-    ).toBe('Differs in damage inflict and its text.');
+    ).toBe('Differs in duration and its text.');
   });
 
   it('reads objects as the same whatever their key order, and caps the list', () => {
@@ -469,6 +472,13 @@ describe('entryChanges', () => {
   it('says nothing of a version written as a copy, or of where an entry is printed', () => {
     expect(entryChanges({ name: 'X' }, { _copy: { name: 'X' }, level: 3 })).toBeUndefined();
     expect(entryChanges({ page: 3, srd: true }, { page: 9 })).toBe('The same as the one here.');
+    // Nor of what the app or the data adds to index it, which a pack never writes.
+    expect(
+      entryChanges(
+        { bookEdition: 'one', miscTags: ['SGT'], damageInflict: ['fire'], savingThrow: ['dex'] },
+        { entries: [] },
+      ),
+    ).toBe('Differs in its text.');
   });
 });
 
@@ -495,6 +505,20 @@ describe('officialIndexFrom', () => {
     expect(index.entry?.('spell', 'aid|xphb')?.level).toBe(2);
     // Homebrew is never the book's.
     expect(index.entry?.('spell', 'zap|hb')).toBeUndefined();
+  });
+
+  it("finds the book's own entry where a change here stands in its place", () => {
+    const reg = new EntityRegistry();
+    const aid = spell('Aid', 'XPHB', { level: 2, entries: ['Hope.'] });
+    reg.addAll('spell', [aid]);
+    const changes = {
+      _meta: { sources: [{ json: 'MyChanges', full: 'Changes to the books' }] },
+      spell: [writeChange('spell', aid, { ...aid, level: 3 })],
+    };
+    mergeHomebrew(reg, new Map([['changes', changes]]), new Map(), new Set(['changes']));
+    // The list holds the changed one; the index gives the book's below it.
+    expect(reg.get('spell', 'Aid', 'XPHB')?.level).toBe(3);
+    expect(officialIndexFrom(reg).entry?.('spell', 'aid|xphb')?.level).toBe(2);
   });
 
   it('builds once per registry instance', () => {
@@ -1033,6 +1057,15 @@ describe('a rule pack’s replaces in the preview (ADR-002, D2)', () => {
       // A copy's fields are known only once merged.
       undefined,
     ]);
+    // Nor of a collection's entry that is a copy: its fields are known only once merged.
+    const copied = local('cp', {
+      _meta: meta(['TWG']),
+      spell: [{ name: 'Riptide', source: 'TWG', _copy: { name: 'Tide', source: 'TWG' } }],
+    });
+    const below = preview(json, { official: officialIndexFrom(reg), existing: [copied] }).pack
+      ?.changes[1];
+    expect(below?.value).toContain('in place of the one in "cp.json"');
+    expect(below?.detail).toBeUndefined();
     // An index built without the book's entries says nothing under the row.
     expect(
       preview(json, { official: book(), existing: [grimoire()] }).pack?.changes[0]?.detail,
