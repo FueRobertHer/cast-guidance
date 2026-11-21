@@ -121,7 +121,8 @@ describe('SpellPicker', () => {
   it('keeps its list inside a narrow screen at large text', () => {
     mount();
     type('fire');
-    const cls = screen.getByRole('listbox', { name: 'Spells found' }).parentElement?.className ?? '';
+    const cls =
+      screen.getByRole('listbox', { name: 'Spells found' }).parentElement?.className ?? '';
     // A fixed least width would outgrow a 320px screen at 200% text (15rem is 480px).
     expect(cls).not.toMatch(/(^|\s)min-w-60(\s|$)/);
     expect(cls).toContain('min-w-[min(15rem,calc(100vw-2rem))]');
