@@ -1,4 +1,13 @@
 import { describe, expect, it } from 'vitest';
+import {
+  importsOf,
+  matchesPackage,
+  resolveIn,
+  layerOf as sourceLayer,
+  srcKeyed,
+  targetOf,
+  UI_PACKAGES,
+} from '../../tests-fixtures/sourceImports';
 
 /**
  * Architecture guard for the derivation engine.
@@ -59,10 +68,6 @@ function importSpecifiers(source: string): string[] {
   return specs;
 }
 
-function matchesPackage(spec: string, pkg: string): boolean {
-  return spec === pkg || spec.startsWith(`${pkg}/`);
-}
-
 /** Collapse `.`/`..` segments of a POSIX-style path into a segment list. */
 function normalizeSegments(path: string): string[] {
   const out: string[] = [];
@@ -96,6 +101,59 @@ function layerOf(spec: string, fileKey: string): string | null {
 
 const productionFiles = Object.entries(rawSources).filter(([key]) => !/\.test\.tsx?$/.test(key));
 
+// The layers the engine may reach, loaded so its imports can be followed
+// through them: a pure engine file that imports a data5e module which imports
+// React is as impure as one that imports React itself.
+const REACHABLE_LAYERS = ['engine', 'data5e', 'lib', 'dice'];
+const reachable = new Map([
+  ...srcKeyed(rawSources, 'engine'),
+  ...srcKeyed(
+    import.meta.glob('../{data5e,lib,dice}/**/*.{ts,tsx}', {
+      query: '?raw',
+      import: 'default',
+      eager: true,
+    }) as Record<string, string>,
+    'engine',
+  ),
+]);
+
+/**
+ * Every file the engine's code runs, from its production files through the
+ * layers it may reach, with each step that leaves them: `file -> specifier`.
+ * Type-only imports are erased before the code runs, so they are not
+ * followed.
+ */
+function runtimeReach(): { files: Set<string>; leaks: string[] } {
+  const files = new Set<string>();
+  const leaks: string[] = [];
+  const known = new Set(reachable.keys());
+  const queue = productionFiles.map(([key]) => `engine/${key.replace(/^\.\//, '')}`);
+  while (queue.length > 0) {
+    const file = queue.pop() as string;
+    if (files.has(file)) continue;
+    files.add(file);
+    for (const { spec, typeOnly } of importsOf(reachable.get(file) ?? '')) {
+      if (typeOnly) continue;
+      const target = targetOf(spec, file);
+      if (target === undefined) {
+        if ([...FORBIDDEN_PACKAGES, ...UI_PACKAGES].some((pkg) => matchesPackage(spec, pkg))) {
+          leaks.push(`${file} -> ${spec}`);
+        }
+        continue;
+      }
+      if (target.endsWith('.json')) continue;
+      if (!REACHABLE_LAYERS.includes(sourceLayer(target))) {
+        leaks.push(`${file} -> ${spec} (layer: ${sourceLayer(target)})`);
+        continue;
+      }
+      const resolved = resolveIn(target, known);
+      if (resolved === undefined) leaks.push(`${file} -> ${spec} (not found)`);
+      else queue.push(resolved);
+    }
+  }
+  return { files, leaks };
+}
+
 describe('engine architecture boundary', () => {
   it('scans a non-trivial set of engine source files', () => {
     // Guards against a glob/path bug making the other assertions vacuously pass.
@@ -124,5 +182,13 @@ describe('engine architecture boundary', () => {
       }
     }
     expect(violations).toEqual([]);
+  });
+
+  it('stays pure through what it imports from data5e, lib and dice', () => {
+    const { files, leaks } = runtimeReach();
+    // The walk leaves the engine (data5e's plain text and normalize today), so
+    // a broken glob or resolver cannot pass by finding nothing.
+    expect([...files].some((f) => f.startsWith('data5e/'))).toBe(true);
+    expect(leaks).toEqual([]);
   });
 });
