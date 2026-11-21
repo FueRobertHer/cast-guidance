@@ -549,6 +549,110 @@ describe("lists stored as spells, counted from their features' text", () => {
       offer(storing(['Blood Curses'], [{ ...curse, entries: ['You know one curse.'] }])),
     ).toEqual({ progression: [], counted: [] });
   });
+
+  /** The progression one list gets from these features, read at their levels. */
+  const countOf = (lists: string[], ...features: [number, string][]) =>
+    offer(
+      storing(
+        lists,
+        features.map(([level, text], i) => ({ name: `Feature ${i}`, level, entries: [text] })),
+      ),
+    ).progression;
+
+  it('counts an extra the sentence gives once, at the levels it gives it', () => {
+    const tricks = ['Ember Knight: Trick Shots'];
+    expect(
+      countOf(tricks, [
+        3,
+        'You learn two trick shots, and you learn an additional trick shot at 7th level.',
+      ]),
+    ).toEqual([[tricks, { '3': 2, '7': 3 }]]);
+    expect(
+      countOf(tricks, [1, 'You learn two trick shots at 3rd level and another at 7th level.']),
+    ).toEqual([[tricks, { '1': 2, '7': 3 }]]);
+    expect(countOf(tricks, [3, 'You learn two trick shots, and two more at 7th level.'])).toEqual([
+      [tricks, { '3': 2, '7': 4 }],
+    ]);
+  });
+
+  it("gives a longer list's words to the longer list only", () => {
+    expect(
+      countOf(
+        ['Ember Knight: Hexes', 'Ember Knight: Grand Hexes'],
+        [1, 'You learn two hexes.'],
+        [11, 'You learn one grand hex, and you learn another at 13th and 15th level.'],
+      ),
+    ).toEqual([
+      [['Ember Knight: Hexes'], { '1': 2 }],
+      [['Ember Knight: Grand Hexes'], { '11': 1, '13': 2, '15': 3 }],
+    ]);
+    expect(countOf(['Blood Curses', 'Curses'], [1, 'You know one blood curse.'])).toEqual([
+      [['Blood Curses'], { '1': 1 }],
+    ]);
+    // One feature naming both: each list takes its own words.
+    expect(
+      countOf(
+        ['Ember Knight: Hexes', 'Ember Knight: Grand Hexes'],
+        [1, 'You learn two hexes. You learn one additional grand hex at 11th level.'],
+      ),
+    ).toEqual([
+      [['Ember Knight: Hexes'], { '1': 2 }],
+      [['Ember Knight: Grand Hexes'], { '11': 1 }],
+    ]);
+    // A class that names the longer list leaves the shorter one to its subclass.
+    expect(
+      offer(
+        storing(
+          ['Blood Curses', 'Curses'],
+          [{ name: 'Hex Brand', level: 7, entries: ['You learn one curse.'] }],
+          {
+            owner: 'Ember Knight (Order)',
+            classFixed: [{ name: 'Maledict', level: 1, entries: ['You know one blood curse.'] }],
+          },
+        ),
+      ).progression,
+    ).toEqual([[['Curses'], { '7': 1 }]]);
+  });
+
+  it('reads a number known in all as a total, and a condition or a number of as no pick', () => {
+    const tricks = ['Ember Knight: Tricks'];
+    expect(
+      countOf(tricks, [1, 'You learn two tricks.'], [7, 'You now know three tricks.']),
+    ).toEqual([[tricks, { '1': 2, '7': 3 }]]);
+    expect(
+      countOf(tricks, [1, 'You know a number of tricks equal to your Intelligence modifier.']),
+    ).toEqual([]);
+    expect(
+      countOf(
+        tricks,
+        [3, 'You learn two tricks.'],
+        [10, 'Whenever you learn a new trick, you can pick one with a prerequisite.'],
+      ),
+    ).toEqual([[tricks, { '3': 2 }]]);
+    // A condition in the sentence before is that sentence's.
+    expect(
+      countOf(tricks, [1, 'Whenever you rest, you regain your focus. You learn two tricks.']),
+    ).toEqual([[tricks, { '1': 2 }]]);
+  });
+
+  it('reads a long run of text with no full stop, or many lists, in time that grows with its size', () => {
+    const run = 'you learn one trick '.repeat(50_000);
+    let started = performance.now();
+    expect(countOf(['Ember Knight: Tricks'], [1, run])).toEqual([
+      [['Ember Knight: Tricks'], { '1': 1 }],
+    ]);
+    expect(performance.now() - started).toBeLessThan(5000);
+    const lists = Array.from({ length: 5000 }, (_, i) => `Zq${i} Wv${i}`);
+    const prose = Array.from({ length: 400 }, (_, i) => `word${i}`).join(' ');
+    const fixed = Array.from({ length: 40 }, (_, i) => ({
+      name: `Feature ${i}`,
+      level: 1,
+      entries: [prose],
+    }));
+    started = performance.now();
+    expect(offer(storing(lists, fixed, { classFixed: fixed })).progression).toEqual([]);
+    expect(performance.now() - started).toBeLessThan(5000);
+  });
 });
 
 describe('class options in a file', () => {
@@ -674,6 +778,32 @@ describe('class options in a file', () => {
     );
     expect(report.warnings).toEqual([
       '1 class option is on a list no class in this file says how many to pick from (Dark Bargains). It is in the Library under Optional features, but no character can pick it yet.',
+    ]);
+    // A list stored as a subclass's, of a subclass the file does not convert;
+    // one with an author's tag is a list of no class's.
+    const stored = (list: string) =>
+      convertFc5Compendium(
+        parseXml(
+          `<compendium>${knight('Ember Knight')}${['Flare', 'Smoke']
+            .map(
+              (n) =>
+                `<spell><name>Trick Shot: ${n}</name><level>0</level><classes>${list}</classes><text>A shot.</text></spell>`,
+            )
+            .join('')}</compendium>`,
+        ),
+        { fileName: FILE },
+      ).report.warnings;
+    expect(stored('Ember Knight (Order)')).toEqual([
+      expect.stringMatching(/^2 class options are for a class this app cannot convert yet/),
+    ]);
+    expect(stored('Combo Actions (Ryoko)')).toEqual([
+      expect.stringMatching(/^2 class options are on a list no class in this file says how many/),
+    ]);
+    const shots = { report: { warnings: stored('Fighter (Gunslinger)') } };
+    expect(shots.report.warnings).toEqual([
+      expect.stringMatching(
+        /^2 class options are for a class this app cannot convert yet \(Fighter \(Gunslinger\)\)/,
+      ),
     ]);
   });
 

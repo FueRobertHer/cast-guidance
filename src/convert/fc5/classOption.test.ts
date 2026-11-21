@@ -42,6 +42,15 @@ describe('isClassOption', () => {
         option(`<name>${name}</name><level>3</level>${school}<classes>${classes}</classes>`),
       );
     expect(at('Draconic Power: Ring of Fire', 'Dragonblade (Tanares): Draconic Powers')).toBe(true);
+    expect(at('Esoteric Theory: Flux', 'Sage: Esoteric Theories')).toBe(true);
+    expect(at('Grand Hex: Doom', 'Sage: Grand Hexes')).toBe(true);
+    expect(
+      isClassOption(
+        option(
+          '<name>Draconic Power: Ring of Fire</name><level>high</level><classes>Dragonblade (Tanares): Draconic Powers</classes>',
+        ),
+      ),
+    ).toBe(false);
     expect(
       at(
         'Draconic Power: Ring of Fire',

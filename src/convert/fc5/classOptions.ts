@@ -152,22 +152,34 @@ function wordsOf(text: string): string[] {
     .filter((w) => w !== '');
 }
 
-/**
- * Whether a text names a list: the list's words in a row, each as a word of
- * the text that starts with its root (`Grand Hex` names `Grand Hexes`), a
- * generic last `Options` aside. One pass over the text's words for each of
- * the list's.
- */
-function namesList(text: string, list: string): boolean {
+/** The roots a list's name is found by: its words', a generic last `Options` aside (`Psionic Discipline` for `Psionic Discipline Options`). */
+function listRoots(list: string): string[] {
   const all = wordsOf(list);
-  // `Psionic Discipline` names `Psionic Discipline Options`.
-  const want = (all.length > 1 && /^options?$/.test(all.at(-1) ?? '') ? all.slice(0, -1) : all).map(
+  return (all.length > 1 && /^options?$/.test(all.at(-1) ?? '') ? all.slice(0, -1) : all).map(
     wordRoot,
   );
+}
+
+/** Whether `have` holds the roots `want` from its word `i` on, each word starting with its root. */
+function rootsAt(have: readonly string[], want: readonly string[], i: number): boolean {
+  return want.every((r, k) => have[i + k]?.startsWith(r) === true);
+}
+
+/**
+ * Whether words name a list by its roots: the roots in a row, other than as
+ * the tail of a longer list's (`grand hex` names `Grand Hexes`, not `Hexes`,
+ * when the file has both).
+ */
+function namesList(
+  have: readonly string[],
+  want: readonly string[],
+  longer: readonly (readonly string[])[],
+): boolean {
   if (want.length === 0) return false;
-  const have = wordsOf(text);
   for (let i = 0; i + want.length <= have.length; i += 1) {
-    if (want.every((r, k) => have[i + k]?.startsWith(r) === true)) return true;
+    if (!rootsAt(have, want, i)) continue;
+    const end = i + want.length;
+    if (!longer.some((l) => rootsAt(have, l, end - l.length))) return true;
   }
   return false;
 }
@@ -179,6 +191,10 @@ const PICKS_OF =
 const CHOOSE = /^(?:choose|pick|select)$/i;
 /** How far after the number the picked thing's name may start, in words. */
 const PICKS_REACH = 4;
+/** How much of a sentence on either side of a `learn two` is read: a long run with no full stop costs no more. */
+const SENTENCE = 300;
+/** `Whenever you learn a new trick shot`: a condition, not a pick. */
+const SWAP = /\b(?:whenever|each time)\b/i;
 /** `you can replace one formula you know with a new one`: a swap, not a pick. */
 const REPLACE = /\breplace/i;
 /** `additional`, `more`, `another`: picks on top of some, at the levels the sentence lists. */
@@ -187,34 +203,45 @@ const EXTRA = /^(?:additional|more|another)$/;
 const LEVELS_AT = /\bat ((?:\d{1,2}(?:st|nd|rd|th),? (?:and )?){0,9}\d{1,2}(?:st|nd|rd|th)) level/i;
 /** `at Psion levels 5, 10, 13, and 17`. */
 const AT_LEVELS = /\bat (?:[a-z]{1,20} )?levels? ((?:\d{1,2},? (?:and )?){0,9}\d{1,2})\b/i;
-/** `another at 13th, 15th, and 17th level`: one more at each. */
-const ANOTHER_AT = /\b(?:another|additional|more)\b[^.]{0,60}?\bat \d/i;
+/** `and another at 13th and 15th level`, `and two more at 7th level`: that many more at each. */
+const MORE_AT =
+  /\b(?:another|(one|two|three|four) more)\b[^.]{0,60}?\bat ((?:\d{1,2}(?:st|nd|rd|th),? (?:and )?){0,9}\d{1,2}(?:st|nd|rd|th)) level/i;
 
-/** One feature's picks of a list: at the feature's level (`level` absent) or at the levels it names. */
+/**
+ * One feature's picks of a list: at the feature's level (`level` absent) or
+ * at the levels it names; `total` when it says how many are known in all
+ * (`you now know three tricks`) rather than how many more.
+ */
 interface Picks {
   level?: number;
   n: number;
+  total?: boolean;
 }
 
 /**
  * The picks of a list a feature's text gives, from each `learn two` whose
  * next few words hold a form of the list's last word (`learn two trick
- * shots`, `choose three 1st-level powers`):
+ * shots`, `choose three 1st-level powers`), not as the tail of a longer
+ * list's name (`longer`):
  * - the first gives its number at the feature's level, less the options of
  *   the list the host has outright that its sentence names (`learn two such
- *   Focus Arts: Weapon Parry and Dodge Step`: none to pick), and one more at
- *   each level the sentence lists after `another` (`learn one grand hex, and
- *   you learn another at 13th and 15th level`);
+ *   Focus Arts: Weapon Parry and Dodge Step`: none to pick), and as many more
+ *   as its sentence's `another` or `two more` says at the levels after it
+ *   (`learn one grand hex, and you learn another at 13th and 15th level`);
  * - `learn one additional curse at 6th and 10th level` gives its number at
  *   each level listed, none at the feature's own.
- * A swap (`you can replace one formula you know`) is not a pick; after the
- * list's first feature (`opening` false), neither is a `choose`.
+ * A condition or a swap (`whenever you learn a new trick shot`, `you can
+ * replace one`) and `a number of` are not picks; after the list's first
+ * feature (`opening` false), neither is a `choose`, and `you know three` is
+ * the total known.
  */
 function picksOf(
   text: string,
   list: string,
-  granted: readonly string[],
+  granted: readonly (readonly string[])[],
+  longer: readonly (readonly string[])[],
   opening: boolean,
+  full?: readonly string[],
 ): Picks[] {
   // What is picked: the list's last word, and the one before a generic `Options`.
   const words = wordsOf(list);
@@ -225,65 +252,140 @@ function picksOf(
   for (const m of text.matchAll(PICKS_OF)) {
     const at = m.index ?? 0;
     const end = at + m[0].length;
-    const next = wordsOf(text.slice(end, end + 80));
-    const near = next.slice(0, PICKS_REACH);
-    if (!near.some((w) => roots.some((r) => w.startsWith(r)))) continue;
-    if (!opening && CHOOSE.test(m[1] ?? '')) continue;
-    const stop = text.indexOf('.', end);
-    const rest = text.slice(end, stop < 0 ? undefined : stop);
-    if (REPLACE.test(rest)) continue;
+    const ahead = text.slice(end, end + SENTENCE);
+    const stop = ahead.indexOf('.');
+    const rest = stop < 0 ? ahead : ahead.slice(0, stop);
+    const next = wordsOf(rest.slice(0, 80));
+    const picked = (k: number) =>
+      k < PICKS_REACH &&
+      roots.some((r) => next[k]?.startsWith(r) === true) &&
+      !longer.some((l) => rootsAt(next, l, k + 1 - l.length)) &&
+      (full === undefined || rootsAt(next, full, k + 1 - full.length));
+    if (!next.some((_, k) => picked(k)) || next[0] === 'number') continue;
+    const verb = (m[1] ?? '').toLowerCase();
+    if (!opening && CHOOSE.test(verb)) continue;
+    const behind = text.slice(Math.max(0, at - SENTENCE), at);
+    if (SWAP.test(behind.slice(behind.lastIndexOf('.') + 1)) || REPLACE.test(rest)) continue;
     const word = (m[2] ?? '').toLowerCase();
     const n = word === 'a' || word === 'an' ? 1 : countWord(word);
     if (n === undefined) continue;
     const listed = LEVELS_AT.exec(rest)?.[1] ?? AT_LEVELS.exec(rest)?.[1];
     const levels = (listed?.match(/\d{1,2}/g) ?? []).map(Number);
-    if (EXTRA.test(next[0] ?? '') && levels.length > 0) {
+    const extra = EXTRA.test(next[0] ?? '');
+    if (extra && levels.length > 0) {
       for (const level of levels) out.push({ level, n });
       continue;
     }
     if (!first) continue;
     first = false;
-    const given = granted.filter((g) => namesList(rest, g)).length;
-    out.push({ n: Math.max(0, n - given) });
-    if (ANOTHER_AT.test(rest)) for (const level of levels) out.push({ level, n: 1 });
+    const restWords = wordsOf(rest);
+    const given = granted.filter((g) => namesList(restWords, g, [])).length;
+    out.push({
+      n: Math.max(0, n - given),
+      ...(!opening && verb === 'know' && !extra && { total: true }),
+    });
+    const more = MORE_AT.exec(rest);
+    if (more !== null) {
+      const each = more[1] === undefined ? 1 : (countWord(more[1]) ?? 1);
+      for (const level of more[2]?.match(/\d{1,2}/g) ?? [])
+        out.push({ level: Number(level), n: each });
+    }
   }
   return out;
 }
 
+/** A host's fixed feature, its words read once. */
+interface ReadFeature {
+  level: number;
+  text: string;
+  name: readonly string[];
+  words: readonly string[];
+}
+
 /**
  * The picks a list's features give by level, totalled, from {@link picksOf};
- * undefined when none gives a number. `granted` are the list's options the
- * host has outright, by name.
+ * undefined when none gives a number. `granted` are the roots of the list's
+ * options the host has outright; `full`, its own roots, when a shorter list
+ * shares its last word (`Grand Hexes` and `Hexes`), so that only its whole
+ * name picks from it.
  */
 function countsFromText(
-  features: readonly { name: string; level: number; entries: Entry[] }[],
+  features: readonly ReadFeature[],
   list: string,
-  granted: readonly string[],
+  granted: readonly (readonly string[])[],
+  longer: readonly (readonly string[])[],
+  full?: readonly string[],
 ): Record<string, number> | undefined {
   // By level, the most any one feature adds there: a level one feature lists
   // (`at 7th and 10th level`) and another is the feature of (`Arcane Shot
   // Improvement` at 7th) is one pick, not two.
   const added = new Map<number, number>();
+  const totals = new Map<number, number>();
   let opening = true;
   for (const f of [...features].sort((a, b) => a.level - b.level)) {
-    const picks = picksOf(plainText(f.entries), list, granted, opening);
+    const picks = picksOf(f.text, list, granted, longer, opening, full);
     if (picks.length === 0) continue;
     opening = false;
     const own = new Map<number, number>();
     for (const p of picks) {
       const level = p.level ?? f.level;
-      own.set(level, (own.get(level) ?? 0) + p.n);
+      if (p.total === true) totals.set(level, Math.max(totals.get(level) ?? 0, p.n));
+      else own.set(level, (own.get(level) ?? 0) + p.n);
     }
     for (const [level, n] of own) added.set(level, Math.max(added.get(level) ?? 0, n));
   }
-  if (added.size === 0) return undefined;
   const counts: Record<string, number> = {};
-  let total = 0;
-  for (const [level, n] of [...added].sort((a, b) => a[0] - b[0])) {
-    total += n;
-    if (total > 0 && n > 0) counts[String(level)] = total;
+  let known = 0;
+  for (const level of [...new Set([...added.keys(), ...totals.keys()])].sort((a, b) => a - b)) {
+    const now = Math.max(known + (added.get(level) ?? 0), totals.get(level) ?? 0);
+    if (now > known) counts[String(level)] = now;
+    known = now;
   }
   return Object.keys(counts).length > 0 ? counts : undefined;
+}
+
+/** Features with their words, and every start of every word they hold, to rule a list out at a glance. */
+interface ReadFeatures {
+  features: readonly ReadFeature[];
+  starts: ReadonlySet<string>;
+}
+
+const readCache = new WeakMap<object, ReadFeatures>();
+
+/** A host's features read once, for every list asked about them. */
+function readFeatures(fixed: OptionHost['fixed']): ReadFeatures {
+  const known = readCache.get(fixed);
+  if (known !== undefined) return known;
+  const starts = new Set<string>();
+  const features = fixed.map((f) => {
+    const text = plainText(f.entries);
+    const name = wordsOf(f.name);
+    const words = wordsOf(text);
+    for (const w of [...name, ...words]) {
+      for (let i = 1; i <= Math.min(w.length, 24); i += 1) starts.add(w.slice(0, i));
+    }
+    return { level: f.level, text, name, words };
+  });
+  const out = { features, starts };
+  readCache.set(fixed, out);
+  return out;
+}
+
+/** Whether features may name a list, by its roots: each root starts a word of theirs. */
+function mayName(read: ReadFeatures, want: readonly string[]): boolean {
+  return want.length > 0 && want.every((r) => read.starts.has(r.slice(0, 24)));
+}
+
+/** The features that name a list, by its roots. */
+function naming(
+  read: ReadFeatures,
+  want: readonly string[],
+  longer: readonly (readonly string[])[],
+): ReadFeature[] {
+  if (!mayName(read, want)) return [];
+  return read.features.filter(
+    (f) => namesList(f.name, want, longer) || namesList(f.words, want, longer),
+  );
 }
 
 /**
@@ -301,28 +403,55 @@ function linkTextLists(
 ): string[] {
   const stems = new Set<string>();
   for (const p of progression) if (typeof p.name === 'string') stems.add(stem(p.name));
-  const named = (f: { name: string; entries: Entry[] }, label: string) =>
-    namesList(f.name, label) || namesList(plainText(f.entries), label);
+  const own = readFeatures(host.fixed);
+  const ofClass = host.classFixed === undefined ? undefined : readFeatures(host.classFixed);
+  // Each label's roots, and the longer labels it is the tail of.
+  const labels = [...mine.map((m) => m.label)];
+  for (const list of host.ctx.optionLists ?? []) if (!list.includes(': ')) labels.push(list);
+  const rootsOf = new Map(labels.map((l) => [l, listRoots(l)]));
+  const tailOf = (tail: readonly string[], roots: readonly string[]) =>
+    tail.every((r, k) => roots[roots.length - tail.length + k] === r);
+  const longerThan = (label: string): (readonly string[])[] => {
+    const want = rootsOf.get(label) ?? [];
+    const out: (readonly string[])[] = [];
+    for (const [other, roots] of rootsOf) {
+      if (other === label || roots.length <= want.length) continue;
+      if (tailOf(want, roots)) out.push(roots);
+    }
+    return out;
+  };
+  const hasShorter = (label: string): boolean => {
+    const want = rootsOf.get(label) ?? [];
+    for (const [other, roots] of rootsOf) {
+      if (other !== label && roots.length < want.length && tailOf(roots, want)) return true;
+    }
+    return false;
+  };
   const candidates: { list: string; label: string }[] = [...mine];
   for (const list of host.ctx.optionLists ?? []) {
     if (list.includes(': ')) continue;
-    if (host.classFixed?.some((f) => named(f, list)) === true) continue;
+    const want = rootsOf.get(list) ?? [];
+    if (!mayName(own, want)) continue;
+    if (ofClass !== undefined && mayName(ofClass, want)) {
+      if (naming(ofClass, want, longerThan(list)).length > 0) continue;
+    }
     candidates.push({ list, label: list });
   }
   const counted: string[] = [];
   for (const { list, label } of candidates) {
-    if (stems.has(stem(label))) continue;
+    const want = rootsOf.get(label) ?? [];
+    if (stems.has(stem(label)) || !mayName(own, want)) continue;
+    const longer = longerThan(label);
+    const features = naming(own, want, longer);
+    if (features.length === 0) continue;
     // The list's options the host has outright: `Focus Art: Weapon Parry`.
-    const granted: string[] = [];
+    const granted: string[][] = [];
     for (const f of host.fixed) {
       const m = PICK.exec(f.name);
-      if (m !== null && stem(m[1] ?? '') === stem(label)) granted.push((m[2] ?? '').trim());
+      if (m !== null && stem(m[1] ?? '') === stem(label)) granted.push(listRoots(m[2] ?? ''));
     }
-    const counts = countsFromText(
-      host.fixed.filter((f) => named(f, label)),
-      label,
-      granted,
-    );
+    const full = hasShorter(label) ? want : undefined;
+    const counts = countsFromText(features, label, granted, longer, full);
     if (counts === undefined) continue;
     progression.push({ name: label, featureType: [list], progression: counts });
     stems.add(stem(label));

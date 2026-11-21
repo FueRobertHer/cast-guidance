@@ -1147,7 +1147,8 @@ export function fc5Converter(opts: ConvertOptions): Fc5Converter {
         .trim()
         .toLowerCase();
     const hosts = new Set<string>();
-    for (const c of out.class) hosts.add(ownerOf(String(c.name)));
+    const classHosts = new Set(out.class.map((c) => ownerOf(String(c.name))));
+    for (const c of classHosts) hosts.add(c);
     for (const s of out.subclass) hosts.add(ownerOf(`${String(s.className)} (${String(s.name)})`));
     // Of a class or subclass the file converts, or stored with no class's
     // name: nothing says how many to pick. Else its class is not converted.
@@ -1156,9 +1157,14 @@ export function fc5Converter(opts: ConvertOptions): Fc5Converter {
     for (const option of storedOptions) {
       const types = (option.featureType ?? []) as string[];
       if (isOnOfficialList(option) || types.some((t) => offered.has(t))) continue;
+      // A list stored as a subclass's (`Fighter (Gunslinger)`) is that
+      // subclass's; one with an author's tag (`Combo Actions (Ryoko)`) is bare.
       const counted = types.some((t) => {
         const colon = t.indexOf(': ');
-        return colon <= 0 || hosts.has(ownerOf(t.slice(0, colon)));
+        if (colon > 0) return hosts.has(ownerOf(t.slice(0, colon)));
+        const head = ownerOf(t.slice(0, Math.max(0, t.indexOf(' ('))));
+        const ofClass = BASE_CLASSES.has(head) || classHosts.has(head);
+        return !ofClass || hosts.has(ownerOf(t));
       });
       const into = counted ? uncounted : hostless;
       into.total += 1;

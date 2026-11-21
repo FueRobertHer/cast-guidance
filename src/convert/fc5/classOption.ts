@@ -136,14 +136,21 @@ export function isClassOption(el: XmlElement): boolean {
   const keys = topLevelParts(classes).map(listKey);
   if (keys.length === 0 || !keys.every((key) => isOptionList(key, listNamed))) return false;
   const school = (childText(el, 'school') ?? '') !== '';
-  if (!(level === 0 || level === 1)) return !school && isRankedOption(name, keys);
+  if (!(level === 0 || level === 1)) {
+    return Number.isInteger(level) && level >= 2 && !school && isRankedOption(name, keys);
+  }
   if (!school) return true;
   return listNamed || keys.every((key) => own(OFFICIAL_LISTS, key) !== undefined);
 }
 
 /** A label's singular, lowercased: `draconic powers` and `Draconic Power` alike. */
 function labelKey(label: string): string {
-  return label.trim().toLowerCase().replace(/s$/, '');
+  return label
+    .trim()
+    .toLowerCase()
+    .replace(/(?<=x|ch|sh|ss)es$/, '')
+    .replace(/ies$/, 'y')
+    .replace(/(?<=[^s])s$/, '');
 }
 
 /**
