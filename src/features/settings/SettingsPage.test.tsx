@@ -57,7 +57,12 @@ import { onboardingStore } from '@/stores/onboarding';
 import { DataBanner } from '@/ui/DataBanner';
 import { listenForAnnouncements } from '../../../tests-fixtures/announcements';
 import { quotaExceeded } from '../../../tests-fixtures/idbFaults';
-import { ABOUT_LINKS, OFFLINE_DOWNLOADED_TEXT, Component as SettingsPage } from './SettingsPage';
+import {
+  ABOUT_LINKS,
+  ANALYTICS_ON_TEXT,
+  OFFLINE_DOWNLOADED_TEXT,
+  Component as SettingsPage,
+} from './SettingsPage';
 
 /** The page links into the Workshop, so it renders under a router. */
 const render = (ui: ReactElement) => renderInto(ui, { wrapper: MemoryRouter });
@@ -414,6 +419,20 @@ describe('SettingsPage data and privacy', () => {
   afterEach(() => {
     onboardingStore.setState({ dismissed: false });
     Reflect.deleteProperty(navigator, 'storage');
+  });
+
+  // Catches: privacy copy that claims more than the build does (top 4). The
+  // claim is about the user's data, and analytics is named only when on.
+  it('says nothing is sent, and names analytics only in a build that has it', () => {
+    vi.stubEnv('VITE_ANALYTICS', '');
+    render(<SettingsPage />);
+    expect(screen.getByText(/None of it is sent to a server/)).toBeTruthy();
+    expect(screen.queryByText(ANALYTICS_ON_TEXT)).toBeNull();
+    cleanup();
+    vi.stubEnv('VITE_ANALYTICS', 'vercel');
+    render(<SettingsPage />);
+    expect(screen.getByText(ANALYTICS_ON_TEXT)).toBeTruthy();
+    vi.unstubAllEnvs();
   });
 
   it('brings the getting-started guide back and says where it went', () => {

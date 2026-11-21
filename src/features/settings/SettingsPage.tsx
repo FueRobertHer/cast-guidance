@@ -29,6 +29,7 @@ import { cardClass, listClass, listRowClass } from '@/ui/surfaces';
 import { fieldClass } from '@/ui/TextField';
 import { PERSIST_DENIED_TEXT, PersistStatus, STORAGE_DETAILS_ID } from '../onboarding/Status';
 import { BOOKS_PATH } from '../workshop/collections';
+import { analyticsEnabled } from './analytics';
 import { ConditionMotionSwitch } from './ConditionMotionSwitch';
 import { houseRulesWords, useAppRules } from './HouseRulesSection';
 import { booksShownWords, useBooksShown } from './SourcesSection';
@@ -38,6 +39,13 @@ import { ThemePicker } from './ThemePicker';
 const RULES_PATH = '/workshop/rules';
 
 /** Said once a requested download completes; it matches the line that turns to "ready". */
+/**
+ * What a build with analytics on sends, said beside the privacy copy. Only
+ * what `analyticsUrl.ts` guarantees: the route, with its ids cut out.
+ */
+export const ANALYTICS_ON_TEXT =
+  'This build counts page visits with Vercel Web Analytics. Each visit sends which kind of page was opened, with character, collection and entry ids taken out of its address.';
+
 export const OFFLINE_DOWNLOADED_TEXT = 'Game data downloaded. The offline compendium is ready.';
 
 /**
@@ -525,10 +533,13 @@ export function Component() {
         <h2 className={H2}>Your data &amp; privacy</h2>
         <p className="px-1 text-caption text-ink-muted">
           Everything (your characters, homebrew, dice history, and the downloaded compendium) lives
-          only in this browser on this device. Nothing is sent to a server and there are no
+          only in this browser on this device. None of it is sent to a server and there are no
           accounts. Back a character up any time from its ⋯ menu on Characters, then Export; that
           file is the only copy that leaves the device.
         </p>
+        {analyticsEnabled() && (
+          <p className="px-1 text-caption text-ink-muted">{ANALYTICS_ON_TEXT}</p>
+        )}
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
           <span className="text-body text-ink-muted">Persistent storage</span>
           <PersistStatus state={persist.state} ref={persist.statusRef} />
