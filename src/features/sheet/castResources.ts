@@ -26,6 +26,8 @@ export interface CastSpellInfo {
  * Arcanum at the spell's own level: no slot, once per long rest. `uses` is one
  * use of an innate or feat grant's own pool (Infernal Legacy's Hellish
  * Rebuke), and `charges` an item's charges (its built-in `charges` row), `cost` of them.
+ * `ritual` casts a ritual spell as a ritual: no slot, at the spell's own level,
+ * 10 minutes longer, so it takes no slice of a turn.
  */
 export type CastResource =
   | { kind: 'cantrip'; level: 0 }
@@ -35,6 +37,7 @@ export type CastResource =
   | { kind: 'pool'; level: number; key: string; label: string; cost: number }
   | { kind: 'uses'; level: number; key: string; label: string }
   | { kind: 'charges'; level: number; key: string; label: string; cost: number }
+  | { kind: 'ritual'; level: number }
   | { kind: 'none'; level: number };
 
 /**
@@ -294,6 +297,8 @@ export function castResourceLabel(resource: CastResource): string {
       return `${resource.label} · level ${String(resource.level)}`;
     case 'charges':
       return `Level ${String(resource.level)} from ${resource.label}`;
+    case 'ritual':
+      return `Ritual · level ${String(resource.level)}`;
     case 'none':
       return 'No slot left';
   }
@@ -336,6 +341,12 @@ export interface ChargeWay {
   fixed?: true;
 }
 
+/**
+ * Whether a row's spell casts as a ritual (`ritualWay`): `also`, beside its
+ * slots; `only`, as a wizard's unprepared spellbook spell does, with no slot.
+ */
+export type RitualWay = 'also' | 'only';
+
 /** One way to cast, as a tile: what it spends, whether it can pay now, and what is under its level. */
 export interface CastTile {
   resource: CastResource;
@@ -365,14 +376,21 @@ function leftOf(play: PlayState, key: string, max: number): number {
  * Mystic Arcanum, slots by level from the spell's own up, the pact slot, a
  * point pool's conversions, an innate grant's uses, and items' charges. A
  * source with nothing left keeps its tiles, spent (`ok` false), so the prompt
- * says what is gone rather than hiding it. Empty for a cantrip.
+ * says what is gone rather than hiding it. A ritual comes last, as the slower
+ * way, or alone for a spell it is the only way to cast. Empty for a cantrip.
  */
 export function castWays(
   ctx: CastContext,
-  extra: { uses?: readonly UseWay[]; charges?: readonly ChargeWay[] } = {},
+  extra: { uses?: readonly UseWay[]; charges?: readonly ChargeWay[]; ritual?: RitualWay } = {},
 ): CastWay[] {
   const { block, play, spellLevel } = ctx;
   if (spellLevel === 0) return [];
+  const ritual: CastWay = {
+    title: 'Ritual',
+    sub: '10 minutes longer',
+    tiles: [{ resource: { kind: 'ritual', level: spellLevel }, ok: true, sub: 'no slot' }],
+  };
+  if (extra.ritual === 'only') return [ritual];
   const out: CastWay[] = [];
   if (block?.mysticArcanum?.includes(spellLevel) === true) {
     const ok = arcanumReady(block, play, spellLevel);
@@ -457,6 +475,7 @@ export function castWays(
       })),
     });
   }
+  if (extra.ritual === 'also') out.push(ritual);
   return out;
 }
 
@@ -506,6 +525,8 @@ export function castNote(resource: CastResource | undefined, ctx: CastContext): 
       return `Spends a use of ${resource.label}.`;
     case 'charges':
       return `Spends ${plural(resource.cost, `${resource.label} charge`)}.`;
+    case 'ritual':
+      return 'As a ritual: no slot, and it takes 10 minutes longer to cast.';
     case 'pool': {
       const economy = conversionEconomy(resource.key) ?? 'action';
       const turn = conversionTurnNote(economy, ctx.spell, ctx.play);
@@ -596,11 +617,12 @@ export function castSpell(
         kind === 'slot' || kind === 'pact' || kind === 'pool';
       const marksSlot = (kind: CastResource['kind']) =>
         d.rulesVersion === '2024' && spell?.economy !== 'reaction' && slotSpent(kind);
-      if (spell?.economy !== undefined) {
+      const spend = resource ?? nextCastResource(block, d.play, level);
+      // A ritual takes 10 minutes more than its casting time: no slice of a turn.
+      if (spell?.economy !== undefined && spend.kind !== 'ritual') {
         turn[spell.economy] = true;
         turnUsed = true;
       }
-      const spend = resource ?? nextCastResource(block, d.play, level);
       spent = spend;
       if (spell?.concentration === true) {
         const leveled = spend.kind !== 'cantrip' && spend.kind !== 'none';
@@ -693,6 +715,7 @@ export function castCost(spent: CastResource | undefined, level: number): string
     return ` (L${String(spent.level)} from ${String(spent.cost)} ${spent.label})`;
   }
   if (spent.kind === 'uses') return ` (${spent.label})`;
+  if (spent.kind === 'ritual') return ' (ritual)';
   if (spent.kind === 'charges') {
     return ` (L${String(spent.level)} from ${plural(spent.cost, `${spent.label} charge`)})`;
   }
