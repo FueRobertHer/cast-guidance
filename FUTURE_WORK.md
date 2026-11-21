@@ -296,16 +296,10 @@ work:
   level are kept as written; starting gear in words alone (`default`) gives
   way to the item list once edited; the book's words for a kit go once its
   gear changes, and do not come back if it is changed back to how it opened.
-  For whoever next owns `src/data5e/registry.ts`: a registry read that fails after a
-  file has landed leaves `isRegistryRefreshing()` true with nothing in
-  flight (`getRegistry` raises `builtThrough` only on success), until a
-  later read succeeds, while `useRegistryState` keeps the old registry and
-  reads again only on a new landing, a phase change or a retry. The comment
-  at `getRegistry` that a page with a failed read never shows the raised
-  flag does not hold for a page that keeps an old registry. A class's gear
-  boxes stay open for this reason, but their "Loading the items" note stays
-  up over a registry that is not loading; any page that waits on the flag
-  waits the same.
+  For whoever next owns `src/data5e/registry.ts`: a read that fails after a
+  file has landed now settles the refresh flag, so a page that keeps an older
+  registry reads that one as final (a section whose file could not be built
+  says it has nothing).
 - The engine readings U5c found (`multiclass.ts`, `slots.ts`) are fixed: the
   book's `or: [{ str: 13, dex: 13 }]` reads as either, a 2024 class (and a
   WoW reskin of one) needs its `primaryAbility` at 13, and a copy's
@@ -454,7 +448,7 @@ work:
   rules that holds the registry misses a pack change until it remounts, since
   `invalidateRegistry` tells no mounted reader (the rules read it again for
   themselves); the pack review and pack order are on the Rules shelf, and the Homebrew page has been removed (U12); the
-  Build tab and the rule sheet still say a character follows Settings.
+  Build tab and the rule sheet say a character follows the table rules.
 - The Build page's Content row (ADR-002 U11) lists each collection with this
   character's switch over the device's choice, the rule packs and whom they
   reach, and links to the Rules shelf and The books; spell, feature and item

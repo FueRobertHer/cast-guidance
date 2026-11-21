@@ -2,6 +2,7 @@
 // House rules in Settings (the Rules board, A), through the real rule store:
 // a row per rule opens its sheet, and a choice there, as written too, is
 // stored as made, so it outranks a rule pack made the app's default.
+import 'fake-indexeddb/auto';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { useState } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -15,6 +16,11 @@ import { appTableRules } from '@/stores/tableRules';
 const packs: DataEntity[] = [];
 const registry = { byType: (type: string) => (type === RULE_PACK_TYPE ? packs : []) };
 vi.mock('@/data5e/hooks', () => ({ useRegistry: () => registry }));
+// The rows read the registry for themselves, as they do on the Rules page.
+vi.mock('@/data5e/registry', () => ({
+  invalidateRegistry: vi.fn(),
+  getRegistry: () => Promise.resolve(registry),
+}));
 
 import { HouseRulesSection } from './HouseRulesSection';
 import { RuleSheet } from './RuleSheet';
@@ -23,6 +29,11 @@ import { RuleSheet } from './RuleSheet';
 const row = (title: string) =>
   screen.getByRole('button', { name: new RegExp(`^${title}`), hidden: true });
 const sheet = () => screen.getByRole('dialog');
+/** The rules list, once its own read of the packs is in and the rows stop saying Loading. */
+async function renderRules() {
+  render(<HouseRulesSection heading="" />);
+  await waitFor(() => expect(row('Critical hits').textContent).not.toContain('Loading…'));
+}
 const pick = (name: RegExp) => fireEvent.click(within(sheet()).getByRole('radio', { name }));
 const checked = () =>
   within(sheet())
@@ -37,8 +48,8 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe('house rules in Settings', () => {
-  it('lists every rule with the value the app plays by, as written to start', () => {
-    render(<HouseRulesSection heading="" />);
+  it('lists every rule with the value the app plays by, as written to start', async () => {
+    await renderRules();
     expect(row('Critical hits').textContent).toContain('Double the dice');
     expect(row('Rest length').textContent).toContain('Short 1 hour, long 8 hours');
     expect(row('HP each level').textContent).toContain('The fixed amount');
@@ -49,8 +60,8 @@ describe('house rules in Settings', () => {
     );
   });
 
-  it('opens the one-use dice sheet on the row, with what each choice means and Bless', () => {
-    render(<HouseRulesSection heading="" />);
+  it('opens the one-use dice sheet on the row, with what each choice means and Bless', async () => {
+    await renderRules();
     fireEvent.click(row('Guidance and Bardic Inspiration'));
     expect(checked()).toEqual(['after']);
     expect(within(sheet()).getByText(/^As written: the roll prompt offers them/)).toBeTruthy();
@@ -58,8 +69,8 @@ describe('house rules in Settings', () => {
     expect(within(sheet()).getByText(/Under 2024 rules Guidance is not one use/)).toBeTruthy();
   });
 
-  it('stores each choice as made, as written too', () => {
-    render(<HouseRulesSection heading="" />);
+  it('stores each choice as made, as written too', async () => {
+    await renderRules();
     fireEvent.click(row('Guidance and Bardic Inspiration'));
     pick(/^Named before the roll/);
     expect(localStorage.getItem(ONE_USE_DICE_KEY)).toBe('before');
@@ -71,9 +82,9 @@ describe('house rules in Settings', () => {
     expect(appTableRules().oneUseDice).toBe('after');
   });
 
-  it('starts where this device chose, and follows a choice made in another tab', () => {
+  it('starts where this device chose, and follows a choice made in another tab', async () => {
     localStorage.setItem(ONE_USE_DICE_KEY, 'before');
-    render(<HouseRulesSection heading="" />);
+    await renderRules();
     expect(row('Guidance and Bardic Inspiration').textContent).toContain('Named before the roll');
     localStorage.setItem(ONE_USE_DICE_KEY, 'after');
     act(() => {
@@ -84,7 +95,7 @@ describe('house rules in Settings', () => {
     );
   });
 
-  it('shows an app-default pack’s rule until Settings chooses, then the choice outranks it', () => {
+  it('shows an app-default pack’s rule until Settings chooses, then the choice outranks it', async () => {
     packs.push({
       name: 'Strict Table',
       source: 'MyTable',
@@ -93,7 +104,7 @@ describe('house rules in Settings', () => {
     });
     const hild = newCharacterDoc('hild', 'Hild', 'tag');
     const ctx = () => ({ byType: registry.byType, rules: appTableRules() });
-    render(<HouseRulesSection heading="" />);
+    await renderRules();
     expect(row('Guidance and Bardic Inspiration').textContent).toContain(
       'Named before the roll · Strict Table',
     );
@@ -117,8 +128,8 @@ describe('house rules in Settings', () => {
     expect(rulesFor(hild, ctx()).critDamage).toBe('maxPlusRoll');
   });
 
-  it('sets every other rule for the app the same way', () => {
-    render(<HouseRulesSection heading="" />);
+  it('sets every other rule for the app the same way', async () => {
+    await renderRules();
     fireEvent.click(row('Rest length'));
     pick(/^Short 8 hours, long 7 days/);
     expect(appTableRules().restLength).toBe('gritty');
@@ -130,8 +141,8 @@ describe('house rules in Settings', () => {
 });
 
 describe('the option sheet', () => {
-  it('stores the checked value when it is picked, as written too', () => {
-    render(<HouseRulesSection heading="" />);
+  it('stores the checked value when it is picked, as written too', async () => {
+    await renderRules();
     fireEvent.click(row('Critical hits'));
     expect(checked()).toEqual(['doubleDice']);
     // Checked already (as written), so a click fires no change: it still counts.

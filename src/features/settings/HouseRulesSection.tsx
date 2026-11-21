@@ -1,15 +1,11 @@
-import { useLiveQuery } from 'dexie-react-hooks';
 import { ChevronRight } from 'lucide-react';
-import { useEffect, useId, useRef, useState } from 'react';
-import { useRegistry } from '@/data5e/hooks';
-import type { EntityRegistry } from '@/data5e/normalize';
-import { getRegistry } from '@/data5e/registry';
-import { homebrewRepo } from '@/db/homebrewRepo';
+import { useId, useState } from 'react';
 import type { TableRuleChoices, TableRuleId } from '@/engine/castGuidance';
 import { appRulesFor, asWritten } from '@/engine/rules';
 import { type AppTableRules, useAppTableRules } from '@/stores/tableRules';
 import { listClass, listRowClass } from '@/ui/surfaces';
 import { choiceTitle, RULE_ORDER, RULE_TITLES, RuleSheet } from './RuleSheet';
+import { useRegistryRead } from './registryRead';
 
 /**
  * One rule as a row (the Rules board, A): its name over the value it plays
@@ -58,58 +54,23 @@ export interface AppRules {
   chosen: AppTableRules;
   /** The every-character pack that sets a rule, by name, where it does. */
   packs: Partial<Record<TableRuleId, string>>;
-  /** Whether the packs have been read: before that, `rules` holds the choices alone. */
+  /**
+   * Whether this screen's own read of the packs is in (or failed). Before it,
+   * `rules` and `packs` come from the shared registry, which may have been
+   * read before a pack change, or from the choices alone while there is no
+   * registry: a screen says Loading rather than state them.
+   */
   ready: boolean;
-}
-
-/**
- * The registry as the rules read it, and whether it is read yet. A pack
- * turned on or off, moved, or applied to every character changes the rules
- * with no download, and a screen already holding the registry hears of that
- * only from the stored rows. So it reads the registry once the rows are known,
- * again on each change there and on each new shared read (a download landing),
- * the last read started winning: a read begun before a pack change never has
- * the last word. Until its first read is settled, it shows the shared
- * registry but is not ready, since that one may have been read before a pack
- * change. A read that fails leaves the last one standing and counts as
- * settled: the choices made still show, rather than Loading for good.
- */
-function useRulesRegistry(): { registry: EntityRegistry | null; ready: boolean } {
-  const shared = useRegistry();
-  const packs = useLiveQuery(
-    async () =>
-      JSON.stringify(
-        (await homebrewRepo.listMetaSafe()).files.map((r) => [r.id, r.enabled, r.pack ?? null]),
-      ),
-    [],
-  );
-  const latest = useRef(0);
-  const [own, setOwn] = useState<EntityRegistry>();
-  const [failed, setFailed] = useState(false);
-  // biome-ignore lint/correctness/useExhaustiveDependencies: a new shared registry is a trigger, read again so an older read never wins
-  useEffect(() => {
-    if (packs === undefined) return;
-    latest.current += 1;
-    const read = latest.current;
-    getRegistry().then(
-      (registry) => {
-        if (read === latest.current) setOwn(registry);
-      },
-      () => {
-        if (read === latest.current) setFailed(true);
-      },
-    );
-  }, [packs, shared]);
-  return { registry: own ?? shared, ready: own !== undefined || failed };
 }
 
 /**
  * The table rules as every character plays them, read one way for every
  * screen that shows them (the Rules page, Settings' row, Write a rule pack),
- * so they never disagree.
+ * so they never disagree. The registry is read again for the rules whenever
+ * a pack is turned on or off, moved or applied (`useRegistryRead`).
  */
 export function useAppRules(): AppRules {
-  const { registry, ready } = useRulesRegistry();
+  const { registry, ready } = useRegistryRead();
   const chosen = useAppTableRules();
   const app = appRulesFor(
     {
@@ -153,7 +114,7 @@ export function HouseRulesSection({
   /** Said at the heading's end ("Every character"). */
   aside?: string;
 }) {
-  const { rules, chosen, packs } = useAppRules();
+  const { rules, chosen, packs, ready } = useAppRules();
   const [open, setOpen] = useState<TableRuleId | null>(null);
   const label = useId();
   return (
@@ -167,17 +128,23 @@ export function HouseRulesSection({
       <p className="px-1 text-caption text-ink-muted">
         For every character, unless one sets its own on its Build tab.
       </p>
-      <div className={listClass}>
-        {RULE_ORDER.map((id) => (
-          <RuleRow
-            key={id}
-            id={id}
-            value={choiceTitle(id, rules[id])}
-            from={chosen[id] === undefined ? packs[id] : undefined}
-            onOpen={setOpen}
-          />
-        ))}
-      </div>
+      {/* Not before the packs are read: a rule a pack applied to every
+          character sets would read as written, here and in its sheet. */}
+      {ready ? (
+        <div className={listClass}>
+          {RULE_ORDER.map((id) => (
+            <RuleRow
+              key={id}
+              id={id}
+              value={choiceTitle(id, rules[id])}
+              from={chosen[id] === undefined ? packs[id] : undefined}
+              onOpen={setOpen}
+            />
+          ))}
+        </div>
+      ) : (
+        <p className="px-1 text-body text-ink-muted">Loading…</p>
+      )}
       <RuleSheet rule={open} onClose={() => setOpen(null)} />
     </section>
   );

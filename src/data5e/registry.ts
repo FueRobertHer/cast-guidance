@@ -139,14 +139,17 @@ export async function getRegistry(): Promise<EntityRegistry> {
   const covers = Math.min(getLandedCount(), getRevision());
   beginRead();
   try {
-    const reg = await readRegistry();
-    // Only a read that succeeded vouches for the files, so a failed one leaves
-    // the flag up until a later read succeeds. Callers show their failure
-    // before they consult the flag, so the raised flag is never what a page
-    // with a failed read renders.
-    if (covers > builtThrough) builtThrough = covers;
-    return reg;
+    return await readRegistry();
   } finally {
+    // A read that fails settles the landings it covered too: nothing is
+    // catching up with them any more, and a page that keeps the registry it
+    // had (`useRegistryState` does) reads again only on the next landing, a
+    // phase change or a retry. Left up, the flag said "Loading" over that page
+    // with nothing in flight. The cost: such a page now reads its older
+    // registry as final, so a section whose file landed but could not be built
+    // says it has nothing, as it would with no landing at all. Raised before
+    // `endRead`, so the one announcement carries it.
+    if (covers > builtThrough) builtThrough = covers;
     endRead();
   }
 }
