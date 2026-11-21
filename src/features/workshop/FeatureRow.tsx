@@ -42,6 +42,7 @@ export function FeatureEditor({
   withEffects,
   inherits,
   resources,
+  classGiven = false,
   children,
 }: {
   value: Json;
@@ -54,6 +55,8 @@ export function FeatureEditor({
   inherits?: string;
   /** Uses kept on the feature's class that its actions can spend (a class's pools). */
   resources?: readonly StoredEffect[];
+  /** A class gives the feature (a class's, a subclass's): its pools and actions can name it. */
+  classGiven?: boolean;
   /** Fields of its own kind, after the name (a new feature's level). */
   children?: ReactNode;
 }) {
@@ -87,6 +90,7 @@ export function FeatureEditor({
             readOnly={readOnly}
             inherits={inherits}
             resources={resources}
+            classGiven={classGiven}
             hostName={typeof value.name === 'string' ? value.name : undefined}
             replace={g.replace === true}
             // Starting from nothing leaves no inherited action to price.
@@ -131,6 +135,8 @@ export interface FeatureRowProps {
   inherits?: string;
   /** Uses kept on the feature's class that its actions can spend (a class's pools). */
   resources?: readonly StoredEffect[];
+  /** A class gives the feature (a class's, a subclass's): its pools and actions can name it. */
+  classGiven?: boolean;
   /**
    * The row folds to its name and badge, opening on a tap (a subclass's many
    * features); otherwise its controls always show (an entry's few parts).
@@ -155,6 +161,7 @@ export function FeatureRow({
   withEffects = false,
   inherits,
   resources,
+  classGiven = false,
   foldable = false,
   children,
 }: FeatureRowProps) {
@@ -226,6 +233,7 @@ export function FeatureRow({
           withEffects={withEffects}
           inherits={inherits}
           resources={resources}
+          classGiven={classGiven}
           onChange={onChange}
           onRename={onRename}
         >

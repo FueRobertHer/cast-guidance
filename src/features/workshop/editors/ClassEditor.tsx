@@ -1457,6 +1457,7 @@ function ClassEffects({
         hide={isPool}
         resources={poolsOf(draft)}
         hostName={typeof draft.name === 'string' ? draft.name : undefined}
+        classGiven
         readOnly={readOnly}
         inherits={original !== undefined ? String(original.name) : undefined}
         replace={g.replace === true}
@@ -2069,6 +2070,7 @@ function ClassBody(props: EditorProps) {
                 foldable
                 onMode={(m) => void setMode(n, m)}
                 withEffects
+                classGiven
                 inherits={String(n.entity?.name)}
                 resources={pools}
                 onChange={(next) => set({ changed: { ...edits.changed, [n.ref]: next } })}
@@ -2092,6 +2094,7 @@ function ClassBody(props: EditorProps) {
               readOnly={readOnly}
               foldable
               withEffects
+              classGiven
               resources={pools}
               onDelete={() => set({ added: edits.added.filter((_, j) => j !== i) })}
               onChange={(next) => setAdded(i, next)}
