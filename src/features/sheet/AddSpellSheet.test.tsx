@@ -5,6 +5,7 @@
 import 'fake-indexeddb/auto';
 import { fireEvent, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { writeSourcePolicy } from '@/data5e/sourceFilter';
 import {
   classEntry,
   HARNESS_TIMEOUT,
@@ -54,6 +55,27 @@ describe("Add a spell under a character's collection switches", () => {
     maren.sourceSwitches = { off: ['XGE'] };
     await renderSheet(maren, { path: 'spells' });
     expect(await searchableCount()).toBe(all);
+  });
+
+  it('names both when the device hides a book and a switch this one (ADR-002 U11)', async () => {
+    await writeSourcePolicy({ mode: 'all', except: ['XGE'] });
+    const osk = warrior();
+    osk.sourceSwitches = { off: ['TST'] };
+    await renderSheet(osk, { path: 'spells' });
+    fireEvent.click(screen.getByRole('button', { name: 'Add a spell' }));
+    const sheet = await screen.findByRole('dialog', { name: 'Add a spell' });
+    fireEvent.change(within(sheet).getByRole('textbox', { name: 'Search every spell' }), {
+      target: { value: 'Aid' },
+    });
+    fireEvent.click(
+      await within(sheet).findByText(
+        /hidden by your source settings and this character's switches\. Show them anyway$/,
+      ),
+    );
+    // Shown from a book her switch hides, it says so, as under her own list.
+    expect(
+      (await within(sheet).findAllByText("Not in this character's sources")).length,
+    ).toBeGreaterThan(0);
   });
 
   it('lets a source switched on back in over its own list', async () => {

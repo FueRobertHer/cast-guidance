@@ -43,12 +43,16 @@ vi.mock('@/data5e/spellLookup', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/data5e/spellLookup')>()),
   getSpellClassLookup: () => Promise.resolve({}),
 }));
+const device = vi.hoisted(() => ({ current: undefined as unknown }));
 vi.mock('@/data5e/sourceFilter', async (importOriginal) => {
   const real = await importOriginal<typeof import('@/data5e/sourceFilter')>();
-  return { ...real, useSourcePolicy: () => real.ALLOW_ALL };
+  return { ...real, useSourcePolicy: () => device.current ?? real.ALLOW_ALL };
 });
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  device.current = undefined;
+});
 
 const wizard = {
   classUid: 'wizard|phb',
@@ -99,6 +103,19 @@ describe("SpellManager under a character's collection switches (ADR-002 E2)", ()
     expect(screen.queryByText('Toll the Dead')).toBeNull();
     expect(screen.queryByText(/1 spell outside this character's sources/)).not.toBeNull();
     expect(screen.queryByText('Absorb Elements')).not.toBeNull();
+  });
+
+  it('names both when the device hides a book and a switch another (ADR-002 U11)', async () => {
+    device.current = { mode: 'all', except: ['PHB'] };
+    renderSpells([], { off: ['XGE'] });
+    await waitFor(() => expect(screen.queryByText('Absorb Elements')).not.toBeNull());
+    expect(
+      screen.queryByText(
+        /^\d+ spells? hidden by your source settings and this character's switches\. Show them anyway$/,
+      ),
+    ).not.toBeNull();
+    // Known from a book her switch hides, it says so as under her own list.
+    expect(screen.getAllByText("Not in this character's sources")).toHaveLength(1);
   });
 
   it('lets a source switched on in over its own list', async () => {

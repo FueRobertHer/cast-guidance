@@ -184,3 +184,94 @@ describe('CharacterSourcesSection (GAME-005)', () => {
     expect(doc).toEqual(before);
   });
 });
+
+// ADR-002 U11: E2's switches go over the list, and the section said otherwise
+// for a character with switches and no list (E2's hand-over): "No restriction",
+// a ticked box for a book switched off, and "the list only narrows".
+describe("CharacterSourcesSection with the character's collection switches", () => {
+  it('words the summary from the list and the switches together', () => {
+    renderSection((d) => {
+      d.sourceSwitches = { off: ['XGE'] };
+    });
+    expect(screen.getByText('No list, 1 switched under Content')).toBeTruthy();
+    cleanup();
+    renderSection((d) => {
+      d.allowedSources = ['PHB', 'TCE'];
+      d.sourceSwitches = { on: ['XGE'], off: ['TCE'] };
+    });
+    expect(screen.getByText('2 books, 2 switched under Content')).toBeTruthy();
+    cleanup();
+    renderSection();
+    expect(screen.getByText('No restriction', { selector: 'summary span' })).toBeTruthy();
+  });
+
+  it('ticks a switched book as its switch says, and leaves it to the switch', () => {
+    const { update } = renderSection((d) => {
+      d.allowedSources = ['PHB'];
+      d.sourceSwitches = { on: ['TCE'], off: ['XGE'] };
+    });
+    open();
+    expect(namelessControls()).toEqual([]);
+    const off = screen.getByRole('checkbox', { name: /Xanathar's Guide/ }) as HTMLInputElement;
+    expect(off.checked).toBe(false);
+    expect(off.disabled).toBe(true);
+    expect(off.closest('label')?.textContent).toContain('Switched off under Content');
+    expect(off.getAttribute('aria-describedby')).not.toBeNull();
+    const on = screen.getByRole('checkbox', { name: /Tasha's Cauldron/ }) as HTMLInputElement;
+    expect(on.checked).toBe(true);
+    expect(on.disabled).toBe(true);
+    expect(on.closest('label')?.textContent).toContain('Switched on under Content');
+    // A book no switch names follows the list, as before.
+    const phb = screen.getByRole('checkbox', { name: /^Player's Handbook \(2014\)/ });
+    expect((phb as HTMLInputElement).checked).toBe(true);
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it('lets an off switch override a book in the character list', () => {
+    const { update } = renderSection((d) => {
+      d.allowedSources = ['PHB', 'XGE'];
+      d.sourceSwitches = { off: ['XGE'] };
+    });
+    open();
+    const off = screen.getByRole('checkbox', { name: /Xanathar's Guide/ }) as HTMLInputElement;
+    expect(off.checked).toBe(false);
+    expect(off.disabled).toBe(true);
+    expect(off.closest('label')?.textContent).toContain('Switched off under Content');
+    expect(off.getAttribute('aria-describedby')).not.toBeNull();
+    const phb = screen.getByRole('checkbox', { name: /^Player's Handbook \(2014\)/ });
+    expect((phb as HTMLInputElement).checked).toBe(true);
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it('ticks a book switched off with no list, where it used to read as allowed', () => {
+    renderSection((d) => {
+      d.sourceSwitches = { off: ['XGE'] };
+    });
+    open();
+    const off = screen.getByRole('checkbox', { name: /Xanathar's Guide/ }) as HTMLInputElement;
+    expect(off.checked).toBe(false);
+    const tce = screen.getByRole('checkbox', { name: /Tasha's Cauldron/ }) as HTMLInputElement;
+    expect(tce.checked).toBe(true);
+  });
+
+  it('says the switches narrow what is picked next too, beside picks they leave out', () => {
+    renderSection((d) => {
+      d.sourceSwitches = { off: ['TCE'] };
+      d.classes = [
+        {
+          ref: { name: 'Cleric', source: 'PHB' },
+          subclass: { name: 'Twilight Domain', source: 'TCE' },
+          levels: 1,
+          hp: ['avg'],
+        },
+      ];
+    });
+    expect(screen.getByText(/Twilight Domain/)).toBeTruthy();
+    expect(
+      screen.getByText(
+        'These stay. The list only narrows what you pick next; Content says what each switch there changes.',
+      ),
+    ).toBeTruthy();
+    expect(screen.queryByText('These stay. The list only narrows what you pick next.')).toBeNull();
+  });
+});

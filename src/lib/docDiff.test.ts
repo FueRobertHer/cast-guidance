@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { setHomebrewSourceNames } from '@/data5e/sourceNames';
 import { type CharacterDoc, newCharacterDoc } from '@/engine/types';
 import {
   burstKey,
@@ -348,6 +349,40 @@ describe('diffDocs', () => {
       d.allowedSources = [7 as unknown as string, ''];
     });
     expect(lines(junk, fixed)).toEqual(['Sources: limited to 2 books']);
+  });
+
+  it("names each collection a character's switches move, by its name (ADR-002, U11)", () => {
+    setHomebrewSourceNames(
+      new Map([
+        ['MyChanges', 'Changes to the books'],
+        ['KIB', "Kibbles' Compendium"],
+      ]),
+    );
+    try {
+      const off = edited((d) => {
+        d.sourceSwitches = { off: ['MyChanges'] };
+      });
+      expect(diffDocs(base(), off)).toEqual([
+        { kind: 'sources', line: 'Collections: Changes to the books off', structural: false },
+      ]);
+      expect(lines(off, base())).toEqual(['Collections: Changes to the books as this device']);
+      // Off wins, as in the pickers: a source on both lists was already off.
+      const both = edited((d) => {
+        d.sourceSwitches = { on: ['KIB', 'MyChanges'], off: ['MyChanges'] };
+      });
+      expect(lines(off, both)).toEqual(["Collections: Kibbles' Compendium on"]);
+      // A list that only respells what the reader reads alike is no change.
+      const spelled = edited((d) => {
+        d.sourceSwitches = { off: ['MyChanges', 7 as unknown as string] };
+      });
+      expect(lines(off, spelled).filter((l) => l.startsWith('Collections'))).toEqual([]);
+      const many = edited((d) => {
+        d.sourceSwitches = { off: ['A1', 'A2', 'A3', 'A4', 'A5'] };
+      });
+      expect(lines(base(), many)).toEqual(['Collections: A1 off, A2 off, A3 off +2 more']);
+    } finally {
+      setHomebrewSourceNames(new Map());
+    }
   });
 
   it('names a field it does not describe rather than reporting no difference', () => {

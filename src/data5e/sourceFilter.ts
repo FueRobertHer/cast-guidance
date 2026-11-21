@@ -29,6 +29,7 @@
  */
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '@/db/db';
+import { CHANGES_SOURCE } from '@/db/homebrewOrder';
 import type { SearchSourceFilter } from './search/protocol';
 import {
   characterSourceList,
@@ -194,8 +195,14 @@ export async function ensureSourcesVisible(sources: readonly string[]): Promise<
 // ---------------------------------------------------------------------------
 // A character's own sources
 
-/** Whose list a picker is narrowing by, which decides how it explains itself. */
-export type PolicyScope = 'device' | 'character';
+/**
+ * Whose list a picker is narrowing by, which decides how it explains itself:
+ * the device's settings, the character's (its own list, or switches over
+ * settings that hide nothing), or both (switches that hide books over settings
+ * that hide others, ADR-002 U11). Every scope but the device's is the
+ * character's own, which a pick from outside it says.
+ */
+export type PolicyScope = 'device' | 'character' | 'both';
 
 // Lives with the source table (React- and Dexie-free) so the history diff can
 // read a list the same way the pickers do without importing this module.
@@ -236,10 +243,13 @@ export function withSwitches(
  * picker empty, and the table's list is the one that says what this character
  * may take. The character's switches then go over whichever applies.
  *
- * The scope is the character's when its list is set or one of its switches
- * hides a source that would otherwise show. A switch that only turns sources
- * on leaves the device in charge of what stays hidden, so the reveal offer
- * keeps naming the device's settings.
+ * The scope is the character's when its list is set, or when a switch hides a
+ * source that would otherwise show (or `'both'` when the device still hides
+ * books after the character's `on` switches). Switching off `CHANGES_SOURCE`
+ * hides no picker entry because its entries keep the book's own source, so
+ * that switch does not count toward hiding anything. A switch that only turns
+ * sources on also leaves the device in charge of what stays hidden, so the
+ * reveal offer keeps naming the device's settings.
  */
 export function pickPolicy(
   device: SourcePolicy,
@@ -249,11 +259,15 @@ export function pickPolicy(
   const own = characterPolicy(characterRaw);
   const base = own ?? device;
   const switches = characterSourceSwitches(switchesRaw);
-  const hidesMore = switches.off.some((s) => policyAllows(base, s));
-  return {
-    policy: withSwitches(base, switches),
-    scope: own !== undefined || hidesMore ? 'character' : 'device',
-  };
+  const changes = CHANGES_SOURCE.toLowerCase();
+  // Switching off Changes to the books hides no picker entry, so ignore it here.
+  const hidesMore = switches.off.some((s) => s.toLowerCase() !== changes && policyAllows(base, s));
+  // Switches hiding more over a device that still hides books once the `on`
+  // switches bring theirs back: what a picker hides is both's doing.
+  const deviceHides = isPolicyNarrowed(withSwitches(device, { on: switches.on, off: [] }));
+  const scope: PolicyScope =
+    own !== undefined ? 'character' : !hidesMore ? 'device' : deviceHides ? 'both' : 'character';
+  return { policy: withSwitches(base, switches), scope };
 }
 
 /** Text cue for a pick outside the character's list. Text, so it never relies on colour. */
@@ -262,17 +276,29 @@ export const OUTSIDE_CHARACTER_SOURCES = "Not in this character's sources";
 /** The same cue as an advisory line on a choice option. */
 export const OUTSIDE_CHARACTER_ADVISORY = "From a book outside this character's sources";
 
+/** What hides the books a picker leaves out, by scope. */
+const HIDDEN_BY: Record<PolicyScope, string> = {
+  device: 'hidden by your source settings',
+  character: "outside this character's sources",
+  both: "hidden by your source settings and this character's switches",
+};
+
+/** The way back once they show, by scope. */
+const BACK_TO: Record<PolicyScope, string> = {
+  device: 'Back to your chosen sources',
+  character: "Back to this character's sources",
+  both: "Back to this character's sources",
+};
+
 /** "12 hidden by your source settings" or "12 outside this character's sources". */
 export function hiddenSourcesLabel(count: number, scope: PolicyScope, noun?: string): string {
   const what = noun !== undefined ? `${count} ${noun}` : String(count);
-  return scope === 'character'
-    ? `${what} outside this character's sources. Show them anyway`
-    : `${what} hidden by your source settings. Show them anyway`;
+  return `${what} ${HIDDEN_BY[scope]}. Show them anyway`;
 }
 
 /** Label for the toggle that hides the revealed books again. */
 export function backToSourcesLabel(scope: PolicyScope): string {
-  return scope === 'character' ? "Back to this character's sources" : 'Back to your chosen sources';
+  return BACK_TO[scope];
 }
 
 /**

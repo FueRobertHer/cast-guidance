@@ -449,6 +449,20 @@ work:
   `invalidateRegistry` tells no mounted reader (the rules read it again for
   themselves); the Homebrew page keeps its own pack review and order; the
   Build tab and the rule sheet still say a character follows Settings.
+- The Build page's Content row (ADR-002 U11) lists each collection with this
+  character's switch over the device's choice, the rule packs and whom they
+  reach, and links to the Rules shelf and The books; spell, feature and item
+  sheets mark a changed entry Changed, with the book's version one tap away;
+  a switch change has its own history line, so the Source policy row's
+  "give a switch change a history line" is done.
+  Left out: no Changed mark on list rows (the spell list, the Library); a
+  feature card the sheet builds anew (a race's traits, a feature whose text a
+  card writes) gets no mark, and a trait a change adds shows the book's whole
+  text; a subclass's sheet, whose text comes from its features, has the mark
+  but no book's version; the Library and search read the device's data, not a character's
+  view; house rules stay under Identity. A picker's offer names the device's
+  settings and the character's switches together when both hide books, with
+  one count for both.
 
 ### Maintainability and diagnostics
 

@@ -62,6 +62,8 @@ vi.mock('@/data5e/hooks', () => ({
           (source === undefined || s.source.toLowerCase() === source.toLowerCase()),
       ),
     byType: () => SPELLS,
+    // No changes to the books in this registry.
+    changeOf: () => undefined,
   }),
 }));
 

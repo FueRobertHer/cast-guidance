@@ -135,6 +135,19 @@ describe('filterEntityPrompt', () => {
     );
     expect(advisory('alert|xphb')).toBeUndefined();
 
+    // Hidden by the device and the character's switches together, it says so too.
+    const both = filterEntityPrompt(
+      featPrompt,
+      registry,
+      '2024',
+      policy,
+      ['telekinetic|tce'],
+      'both',
+    );
+    expect(both.options.find((o) => o.id === 'telekinetic|tce')?.advisory).toBe(
+      "From a book outside this character's sources.",
+    );
+
     // The device settings are only a browsing preference: nothing to label.
     const device = filterEntityPrompt(featPrompt, registry, '2024', policy, ['telekinetic|tce']);
     expect(device.options.every((o) => o.advisory === undefined)).toBe(true);

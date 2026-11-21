@@ -364,6 +364,24 @@ describe("EntityCardList under a character's collection switches (ADR-002 E2)", 
     expect(screen.queryByRole('button', { name: 'Hearthling' })).not.toBeNull();
   });
 
+  it('names both when the device hides books and a switch hides more (ADR-002 U11)', () => {
+    // The device hides NewBook; Hild's switch hides MyHomebrew.
+    policyState.current = { mode: 'all', except: ['NewBook'] };
+    render(
+      <EntityCardList entities={mixed} switches={{ off: ['MyHomebrew'] }} onSelect={vi.fn()} />,
+    );
+    fireEvent.click(
+      screen.getByText(
+        "2 hidden by your source settings and this character's switches. Show them anyway",
+      ),
+    );
+    expect(screen.queryByRole('button', { name: 'Driftfolk' })).not.toBeNull();
+    // Each one shown from outside her sources says so, as under her own list.
+    expect(screen.getAllByText("Not in this character's sources")).toHaveLength(2);
+    fireEvent.click(screen.getByText("Back to this character's sources"));
+    expect(screen.queryByRole('button', { name: 'Hearthling' })).toBeNull();
+  });
+
   it('shows a source switched on over the device, and over its own list', () => {
     policyState.current = { mode: 'all', except: ['MyHomebrew'] };
     render(

@@ -179,7 +179,7 @@ export function AddItemDrawer({
                   <span className="truncate">{nameOf(e)}</span>
                   <span className="flex shrink-0 items-center gap-1.5">
                     {/* Only reachable through "show them anyway". */}
-                    {scope === 'character' && !policyAllows(policy, sourceOf(e)) && (
+                    {scope !== 'device' && !policyAllows(policy, sourceOf(e)) && (
                       <OutsideSourcesChip />
                     )}
                     <span className="text-caption text-ink-muted">{sourceOf(e)}</span>

@@ -19,6 +19,12 @@ const ensureTypePacks = vi.fn(async (_type: string) => undefined);
 
 vi.mock('@/data5e/hooks', () => ({ useRegistry: () => registryRef.current }));
 vi.mock('@/data5e/loader', () => ({ ensureTypePacks: (t: string) => ensureTypePacks(t) }));
+// The device's source settings, as the Sources page leaves them; everything by default.
+const device = vi.hoisted(() => ({ current: undefined as unknown }));
+vi.mock('@/data5e/sourceFilter', async (importOriginal) => {
+  const real = await importOriginal<typeof import('@/data5e/sourceFilter')>();
+  return { ...real, useSourcePolicy: () => device.current ?? real.ALLOW_ALL };
+});
 
 // vaul renders through a portal with animation; a pass-through keeps the test
 // about the drawer's own states rather than the library's.
@@ -309,5 +315,47 @@ describe("InventoryTab item search under a character's collection switches (ADR-
     expect(screen.getByRole('button', { name: /Sword of Answering/ })).toBeTruthy();
     expect(screen.queryByRole('button', { name: /Sword of the Tide/ })).toBeNull();
     expect(screen.getByText(/1 outside this character's sources/)).toBeTruthy();
+  });
+
+  it('names both when the device hides a book and a switch another (ADR-002 U11)', () => {
+    device.current = { mode: 'all', except: ['XGE'] };
+    try {
+      const pool = [
+        { name: 'Longsword', source: 'PHB' },
+        { name: 'Sword of Answering', source: 'XGE' },
+        { name: 'Sword of the Tide', source: 'MyHomebrew' },
+      ] as Entity[];
+      registryRef.current = { byType: (t) => (t === 'baseitem' ? pool : []) };
+      const doc = newCharacterDoc('i4', 'Osk', 't');
+      doc.sourceSwitches = { off: ['MyHomebrew'] };
+      const ctx = {
+        doc,
+        sheet: deriveSheet(doc, makeTestContext()),
+        update: () => undefined,
+      } as unknown as CharacterSheetState;
+      const router = createMemoryRouter([
+        {
+          path: '/',
+          element: <Outlet context={ctx} />,
+          children: [{ index: true, element: <InventoryTab /> }],
+        },
+      ]);
+      render(<RouterProvider router={router} />);
+      fireEvent.change(search(), { target: { value: 'sword' } });
+      fireEvent.click(
+        screen.getByText(
+          "2 hidden by your source settings and this character's switches. Show them anyway",
+        ),
+      );
+      // The item hidden by Osk's switch carries the outside-sources label,
+      // while an allowed item does not. Sword of Answering (hidden only by the
+      // device) is left unchecked while its label under 'both' is undecided.
+      expect(screen.getByRole('button', { name: /Sword of the Tide/ }).textContent).toContain(
+        "Not in this character's sources",
+      );
+      expect(screen.getByRole('button', { name: /Longsword/ }).textContent).not.toContain('Not in');
+    } finally {
+      device.current = undefined;
+    }
   });
 });

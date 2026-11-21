@@ -123,12 +123,13 @@ describe('fillSpellPrompt', () => {
     expect(ids(filled)).toEqual(['Fake Vision|BOOK', 'Fake Vision|HB']);
   });
 
-  it("says when an option comes from outside a character's own books", () => {
-    const filled = fillSpellPrompt(
-      promptFor({ levels: [2] }),
-      pool({ policy: onlyHb, scope: 'character' }),
-      ['fake vision|book'],
-    );
+  it.each([
+    'character',
+    'both',
+  ] as const)("says when an option comes from outside a character's own books (%s)", (scope) => {
+    const filled = fillSpellPrompt(promptFor({ levels: [2] }), pool({ policy: onlyHb, scope }), [
+      'fake vision|book',
+    ]);
     expect(filled.options.find((o) => o.id === 'Fake Vision|BOOK')?.advisory).toContain(
       "outside this character's sources",
     );
