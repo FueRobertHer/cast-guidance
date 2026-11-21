@@ -16,10 +16,14 @@ on:
     branches: [main]
   pull_request:
 
-# Cancel superseded runs on the same ref to save CI minutes.
+# A PR's newer push cancels its older run, to save CI minutes. main's runs
+# never cancel: each merge would cancel the run before it, and main would go
+# untested (main's CI is the backstop for merges that skip a full local run).
+# They queue instead, one per ref: GitHub keeps one running and one waiting,
+# so in a burst of merges the waiting run moves to the newest commit.
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
