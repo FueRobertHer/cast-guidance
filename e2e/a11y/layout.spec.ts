@@ -34,9 +34,10 @@ import { expect, test } from '../support/test.ts';
  * - reflow (1.4.10): at 320 by 640 CSS px no main route scrolls sideways;
  * - resize text (1.4.4): with the root font at 200%, the same, and each
  *   route's primary controls still whole on screen once scrolled to;
- * - landscape on a phone (851 by 393): the sheet's sticky header and bottom
- *   tab bar leave its heading and content in sight, and a control that Tab or
- *   Shift+Tab moves to is never entirely hidden behind either (2.4.11).
+ * - landscape on a phone (851 by 393): the sheet header (not sticky at this
+ *   height: it scrolls away) and the bottom tab bar leave its heading and
+ *   content in sight, and a control that Tab or Shift+Tab moves to is never
+ *   entirely hidden behind either (2.4.11).
  * Reduced motion has its own spec (`reduced-motion.spec.ts`).
  */
 
@@ -971,6 +972,29 @@ test.describe('landscape on a phone', () => {
       expect(await hiddenWhileFocused(page, main)).toEqual([]);
     });
   }
+
+  test('sheet Play, scrolled: the header goes with the page, only the tab bar stays', async ({
+    page,
+  }) => {
+    const id = await setUp(page);
+    await addConditions(page, id, ['Poisoned']);
+    await gotoSheetTab(page, id, 'Play');
+    await animationsSettled(page);
+    // Sticky, the header and the tab bar held 41% of a 400px screen (a laptop
+    // at 200% zoom) for as long as the page was scrolled.
+    await page.mouse.wheel(0, 600);
+    const header = page.getByRole('banner');
+    await expect(header).not.toBeInViewport();
+    const nav = await box(tabBar(page));
+    expect(nav.height / 393, 'the tab bar alone').toBeLessThan(0.25);
+    // What sticks under the header (Build's and Items' bars) and the scroll
+    // padding read its height as nothing while it does not stick.
+    expect(
+      await page.evaluate(() =>
+        getComputedStyle(document.documentElement).getPropertyValue('--sheet-header-h').trim(),
+      ),
+    ).toBe('0px');
+  });
 
   test('the roster and Settings: focus clears the app nav', async ({ page }) => {
     await setUp(page);
