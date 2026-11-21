@@ -632,6 +632,96 @@ test.describe('the Workshop with content, in both themes', () => {
   }
 });
 
+/**
+ * The Workshop's editors, each filled in as far as a card, so a card's boxes
+ * and toggles have to fit beside the editor's own fields.
+ */
+const EDITORS: readonly Route[] = [
+  {
+    name: 'workshop feat editor',
+    open: async (page) => {
+      await page.goto('/workshop/new/feat');
+      await page.getByRole('textbox', { name: 'Name', exact: true }).fill(LONG_FEAT);
+      await page.getByRole('button', { name: 'Speed', exact: true }).click();
+      await expect(
+        page.getByRole('heading', { level: 1, name: LONG_FEAT, exact: true }),
+      ).toBeVisible();
+      await expect(page.getByRole('button', { name: /^Remove .* to your Speed$/ })).toBeVisible();
+      // Try it on works the change out after the card is drawn: its row is
+      // part of what has to fit.
+      await expect(page.getByText('was 30 ft.', { exact: true })).toBeVisible();
+    },
+    primary: (page) => [
+      page.getByRole('button', { name: 'Back', exact: true }),
+      page.getByRole('textbox', { name: 'Name', exact: true }),
+      page.getByRole('button', { name: 'Add a benefit', exact: true }),
+      page.getByRole('button', { name: /^Remove .* to your Speed$/ }),
+      page.getByLabel('Speed: Amount', { exact: true }),
+      page.getByRole('button', { name: 'Grows with level', exact: true }),
+      page.getByRole('button', { name: 'Speed', exact: true }),
+      page.getByRole('button', { name: 'Save', exact: true }),
+    ],
+    // The name, beside Back and the file view in the header.
+    keepsRoom: (page) => [page.getByRole('heading', { level: 1, name: LONG_FEAT, exact: true })],
+  },
+  {
+    name: 'workshop spell editor',
+    open: async (page) => {
+      await page.goto('/workshop/new/spell');
+      await page.getByRole('textbox', { name: 'Name', exact: true }).fill('Fire Spark');
+      await page.getByRole('button', { name: 'Material', exact: true }).click();
+      await page.getByRole('button', { name: 'Damage', exact: true }).click();
+      await expect(
+        page.getByRole('heading', { level: 1, name: 'Fire Spark', exact: true }),
+      ).toBeVisible();
+      await expect(page.getByRole('button', { name: /^Remove .* damage$/ })).toBeVisible();
+    },
+    primary: (page) => [
+      page.getByRole('combobox', { name: 'Level', exact: true }),
+      page.getByRole('combobox', { name: 'School', exact: true }),
+      page.getByRole('button', { name: 'Material', exact: true }),
+      page.getByLabel('Cost in gold pieces', { exact: true }),
+      page.getByRole('button', { name: /^Remove .* damage$/ }),
+      page.getByRole('button', { name: 'More at higher levels', exact: true }),
+      page.getByRole('heading', { level: 2, name: 'On the Spells tab', exact: true }),
+      page.getByRole('button', { name: 'Save', exact: true }),
+    ],
+  },
+];
+
+/*
+ * One test per editor, so neither runs near the timeout under load. One
+ * theme, since the theme changes colours, not the layout.
+ */
+test.describe('the Workshop editors, with a card each', () => {
+  test.use({ viewport: { width: 320, height: 640 } });
+
+  for (const route of EDITORS) {
+    test(`${route.name}: does not scroll sideways at 320 px, folds open, and keeps its controls whole with text at 200%`, async ({
+      page,
+    }) => {
+      await skipOfflineReadyNotice(page);
+      await gotoRosterSettled(page);
+      for (const extra of ['', 'html { font-size: 200% !important; }']) {
+        await route.open(page, '');
+        await applyMeasuredFont(page, extra);
+        await openFolds(page);
+        await animationsSettled(page);
+        const at = { ...route, name: `${route.name}${extra === '' ? '' : ' (200%)'}` };
+        await expectNoSidewaysScroll(page, at);
+        for (const control of route.primary(page)) {
+          await control.scrollIntoViewIfNeeded();
+          await expect(control, `${at.name}: ${control}`).toBeInViewport({ ratio: 1 });
+        }
+        for (const text of route.keepsRoom?.(page) ?? []) {
+          const { width } = await box(text);
+          expect(width, `${at.name}: ${text} keeps room to be read`).toBeGreaterThanOrEqual(80);
+        }
+      }
+    });
+  }
+});
+
 test.describe('the condition strip, every condition on', () => {
   test.use({ viewport: { width: 320, height: 640 } });
 
