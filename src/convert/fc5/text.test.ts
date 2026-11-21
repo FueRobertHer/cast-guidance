@@ -690,7 +690,8 @@ describe('entry names', () => {
       key: 'ranger (ember trapper)',
       edition: '2014',
     });
-    expect(ownerKey('Fighter (Ember Knight) [Variant]')).toEqual({ key: 'fighter (ember knight)' });
+    // A bracket that names no edition is part of the name.
+    expect(ownerKey('Warlock [Ember] (Ash)')).toEqual({ key: 'warlock [ember] (ash)' });
     // Marks that disagree name no edition.
     expect(ownerKey('Ranger [5.5e] (Ember Trapper (Legacy))')).toEqual({
       key: 'ranger (ember trapper)',

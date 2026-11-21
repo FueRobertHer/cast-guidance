@@ -1288,8 +1288,22 @@ export function entryName(raw: string): { name: string; edition?: RulesVersion }
   return edition === undefined ? { name: again.name } : { name: again.name, edition };
 }
 
-/** Edition markers anywhere in a name: `Fighter [5.5e] (Eldritch Knight)`. */
+/** A bracket anywhere in a name, an edition marker when it names one: `Fighter [5.5e] (Eldritch Knight)`. */
 const ANY_MARKER = / ?\[([^[\]]{1,12})\]/g;
+
+/**
+ * A name with its edition markers off wherever they sit, each edition they
+ * name told to `found`. A bracket that names no edition (`Warlock [Hexblade]`)
+ * stays.
+ */
+export function dropMarkers(name: string, found?: (edition: RulesVersion) => void): string {
+  return name.replace(ANY_MARKER, (whole, marker: string) => {
+    const edition = markerEdition(marker);
+    if (edition === undefined) return whole;
+    found?.(edition);
+    return '';
+  });
+}
 
 /** Book tags an option list's owner may carry anywhere: `Fighter (Living Crucible (TP))`. */
 const OWNER_TAG = / ?\((ua|tp|hb|legacy)\)/gi;
@@ -1309,12 +1323,7 @@ const DOUBLE_BRACKET = /\(\s*\(([^()]{1,120})\)\s*\)/g;
  */
 export function ownerKey(name: string): { key: string; edition?: RulesVersion } {
   const editions = new Set<RulesVersion>();
-  const key = name
-    .replace(ANY_MARKER, (_, marker: string) => {
-      const edition = markerEdition(marker);
-      if (edition !== undefined) editions.add(edition);
-      return '';
-    })
+  const key = dropMarkers(name, (edition) => editions.add(edition))
     .replace(OWNER_TAG, (_, tag: string) => {
       if (tag.toLowerCase() === 'legacy') editions.add('2014');
       return '';

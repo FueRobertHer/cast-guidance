@@ -20,6 +20,7 @@ import {
 } from './context';
 import {
   DAMAGE_TYPES,
+  dropMarkers,
   type Entry,
   entryName,
   inlineText,
@@ -194,9 +195,6 @@ interface ClassLists {
   mixed?: boolean;
 }
 
-/** Edition markers anywhere in a class list's entry: `Fighter [5.5e] (Eldritch Knight)`. */
-const MARKERS = / ?\[[^[\]]{1,12}\]/g;
-
 /** How many brackets deep {@link subclassOf} unwraps a subclass's name. */
 const MAX_WRAPS = 4;
 
@@ -240,7 +238,7 @@ function subclassOf(
   entry: string,
   fileClasses: FileClasses | undefined,
 ): { base: string; inner: string } | undefined {
-  const name = entry.replace(MARKERS, '').replace(/\s+/g, ' ').trim();
+  const name = dropMarkers(entry).replace(/\s+/g, ' ').trim();
   // Where each of the first few top-level brackets opens: no class's name holds
   // more (`Blood Hunter (Alt. LaserLlama)`), and each lead tried costs its length.
   const cuts: number[] = [];
