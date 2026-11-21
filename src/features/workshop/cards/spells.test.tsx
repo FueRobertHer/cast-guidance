@@ -6,7 +6,7 @@
  * boxes, read back from what it wrote, and counted on a sheet beside one
  * without it: on the class it names, and not on the other.
  */
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { useState } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { CharacterDoc, DerivedSheet } from '@/engine/types';
@@ -341,6 +341,15 @@ describe('Cast a spell, with the spells of the page', () => {
     );
     return { written: () => last };
   }
+  /** The spell names the box lists with nothing typed, opened from the keyboard. */
+  const listed = (label: string) => {
+    fireEvent.keyDown(screen.getByLabelText(label), { key: 'ArrowDown' });
+    const rows = within(screen.getByRole('listbox', { name: 'Spells found' })).getAllByRole(
+      'option',
+    );
+    fireEvent.keyDown(screen.getByLabelText(label), { key: 'Escape' });
+    return rows.map((o) => o.firstElementChild?.textContent);
+  };
   const offered = async () => {
     asked.ids = [];
     fireEvent.click(screen.getByRole('button', { name: 'More' }));
@@ -354,11 +363,7 @@ describe('Cast a spell, with the spells of the page', () => {
     cleanup();
 
     const again = onPage([make('Cast a spell')], PAGE);
-    const options = Array.from(
-      document.querySelectorAll<HTMLOptionElement>('datalist option'),
-      (o) => o.value,
-    );
-    expect(options).toEqual(['Aid', 'Guidance']);
+    expect(listed('Cast a spell: Spell')).toEqual(['Aid', 'Guidance']);
     change('Cast a spell: Spell', 'guidance');
     expect(again.written()).toEqual([{ kind: 'grantSpell', spell: 'Guidance|TST' }]);
     line('Cast Guidance at will');
@@ -372,11 +377,7 @@ describe('Cast a spell, with the spells of the page', () => {
 
   it("names the host's own spells over the page's", () => {
     onPage([make('Cast a spell')], PAGE, [{ name: 'Flame Strike', source: 'TST' }]);
-    const options = Array.from(
-      document.querySelectorAll<HTMLOptionElement>('datalist option'),
-      (o) => o.value,
-    );
-    expect(options).toEqual(['Flame Strike']);
+    expect(listed('Cast a spell: Spell')).toEqual(['Flame Strike']);
   });
 
   it('is not offered with no spells to name, nor in play', async () => {

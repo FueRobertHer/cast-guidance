@@ -1,6 +1,6 @@
 import { Check, CircleCheck, TriangleAlert, X } from 'lucide-react';
 import type { ReactNode } from 'react';
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import type { ChoiceOption, ChoicePrompt } from '@/engine/types';
 import { Button } from '@/ui/Button';
 import { Chip } from '@/ui/Chip';
@@ -179,7 +179,12 @@ export function ChoicePromptRenderer({
   } = pickState(prompt, committed, draft);
   const [filter, setFilter] = useState('');
   const searchable = prompt.options.length > 12;
-  const statusId = `${prompt.id}-status`;
+  // From useId, not the prompt's id: that can hold spaces ("path of tests"),
+  // which split an id list such as aria-labelledby's.
+  const ownId = useId();
+  const statusId = `${ownId}-status`;
+  const labelId = `${ownId}-label`;
+  const originId = `${ownId}-origin`;
 
   const status =
     attainable === 0
@@ -261,16 +266,22 @@ export function ChoicePromptRenderer({
   return (
     // `min-w-0`: a fieldset is otherwise at least as wide as its content's
     // longest line, so one wide row pushes the whole card past the screen.
-    <fieldset className={`${cardClass} flex min-w-0 flex-col gap-3`}>
-      <legend className="sr-only">{prompt.label}</legend>
+    // The group takes its name from the visible label, and its origin and
+    // count as a description: a hidden legend repeating the label had screen
+    // readers say it twice.
+    <fieldset
+      className={`${cardClass} flex min-w-0 flex-col gap-3`}
+      aria-labelledby={labelId}
+      aria-describedby={originId}
+    >
       {/* The label keeps at least 6rem and its longest word beside the
           origin, which otherwise wraps under it, still at the right (large
           text). `max-w-full` caps that word at the row, where it breaks. */}
       <div className="flex flex-wrap items-baseline justify-between gap-x-2">
-        <span className="max-w-full grow basis-24 text-body-strong wrap-break-word">
+        <span id={labelId} className="max-w-full grow basis-24 text-body-strong wrap-break-word">
           {prompt.label}
         </span>
-        <span className="ml-auto text-caption text-ink-muted">
+        <span id={originId} className="ml-auto text-caption text-ink-muted">
           {prompt.origin.label} · pick {prompt.count}
         </span>
       </div>

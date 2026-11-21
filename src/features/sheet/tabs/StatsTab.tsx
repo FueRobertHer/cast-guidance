@@ -318,7 +318,7 @@ export function Component() {
       {/* How to roll is a first-use tip (DS-001 Hint), not a line that stays. */}
       {rollTip.shown && (
         <Tip onDismiss={rollTip.dismiss}>
-          Tap any modifier to roll it. The switch at the bottom applies to every roll.
+          Tap any modifier to roll it, then choose advantage or disadvantage in the roll that opens.
         </Tip>
       )}
       {/* Abilities, with any cue for checks over them. */}

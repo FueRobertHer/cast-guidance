@@ -599,11 +599,13 @@ const WORKSHOP: readonly Route[] = [
 test.describe('the Workshop with content, in both themes', () => {
   test.use({ viewport: { width: 320, height: 640 } });
 
-  test('does not scroll sideways at 320 px, and keeps its controls whole with text at 200%', async ({
-    page,
-  }) => {
-    await setUpWorkshop(page);
-    for (const theme of ['dark', 'light']) {
+  // One test per theme, so neither runs near the timeout under load: each is
+  // a setup and ten route states, where both themes in one came to 20.
+  for (const theme of ['dark', 'light']) {
+    test(`in the ${theme} theme, does not scroll sideways at 320 px, and keeps its controls whole with text at 200%`, async ({
+      page,
+    }) => {
+      await setUpWorkshop(page);
       for (const extra of ['', 'html { font-size: 200% !important; }']) {
         for (const route of WORKSHOP) {
           await route.open(page, '');
@@ -622,8 +624,8 @@ test.describe('the Workshop with content, in both themes', () => {
           }
         }
       }
-    }
-  });
+    });
+  }
 });
 
 test.describe('the condition strip, every condition on', () => {

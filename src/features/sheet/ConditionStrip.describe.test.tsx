@@ -14,7 +14,11 @@ import { ConditionStrip } from './ConditionStrip';
 
 vi.mock('@/data5e/hooks', () => ({ useRegistry: () => ({ byType: () => [] }) }));
 
-beforeAll(() => {
+beforeAll(async () => {
+  // The search is a lazy chunk. Loaded cold under load, its transform can
+  // outlast a findBy wait, so it is loaded here first: the tests are about
+  // what it shows, not how fast it arrives.
+  await import('./EffectFinder');
   // vaul asks for matchMedia, which jsdom does not have.
   window.matchMedia = (query: string) =>
     ({

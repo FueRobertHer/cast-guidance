@@ -310,6 +310,52 @@ test.describe('touch target sizes', () => {
     await expectTargets(page.getByRole('link', { name: 'Back to the Workshop', exact: true }), 1);
   });
 
+  test('the Workshop editors: a feat with a card, and a spell with a damage card', async ({
+    page,
+  }) => {
+    await gotoRosterSettled(page);
+    // A checkbox is drawn 18px square inside its label, and the label, the
+    // height of a tap, is what takes the press: that is the box measured.
+    const checkLabel = (name: string) =>
+      page.locator('label').filter({ has: page.getByRole('checkbox', { name, exact: true }) });
+
+    await page.goto('/workshop/new/feat');
+    await page.getByRole('textbox', { name: 'Name', exact: true }).fill('Target Gift');
+    await button(page, 'Speed').click();
+    const remove = button(page, /^Remove .* to your Speed$/);
+    await expect(remove).toBeVisible();
+    await animationsSettled(page);
+    await expectTargets(button(page, 'Back'), 1);
+    await expectTargets(remove, 1);
+    await expectTargets(checkLabel('Can be taken more than once'), 1);
+    // The card's own toggles, under its boxes.
+    await expectTargets(button(page, /^(Only while|Grows with level|Rules version)$/), 3, FLOOR);
+    await expectTargets(button(page, 'Save'), 1, FLOOR);
+    await expectFloor(page);
+
+    // A spell's About it has selects and chip picks of its own, its tags are
+    // in a fold, and a damage card has its dice and type beside the preview.
+    await page.goto('/workshop/new/spell');
+    await page.getByRole('textbox', { name: 'Name', exact: true }).fill('Target Bolt');
+    await button(page, 'Material').click();
+    await button(page, 'Damage').click();
+    await expect(button(page, /^Remove .* damage$/)).toBeVisible();
+    await page.getByRole('main').locator('details > summary').click();
+    await expect(page.getByRole('main').locator('details')).toHaveAttribute('open', '');
+    await animationsSettled(page);
+    await expectTargets(button(page, 'Back'), 1);
+    await expectTargets(page.getByRole('combobox', { name: 'Level', exact: true }), 1, FLOOR);
+    await expectTargets(
+      page.getByRole('group', { name: 'Components', exact: true }).getByRole('button'),
+      4,
+      FLOOR,
+    );
+    await expectTargets(checkLabel('Consumed by the spell'), 1);
+    await expectTargets(checkLabel('Can be cast as a ritual'), 1);
+    await expectTargets(button(page, /^Remove .* damage$/), 1);
+    await expectFloor(page);
+  });
+
   test("the creator's abilities step, on point buy", async ({ page }) => {
     await gotoRosterSettled(page);
     await page.goto('/create?step=abilities');
