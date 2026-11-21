@@ -1219,6 +1219,35 @@ describe('installed spells on a homebrew class list', () => {
     }
   });
 
+  it('lists the installed spell a stub adds the class to, where the file lacks the spell', () => {
+    const stubs = [
+      '<spell><name>Fire Bolt</name><classes>Ember Knight, Ember Knight (Ash Guard)</classes></spell>',
+      '<spell><name>Ember Spark</name><classes>Ember Knight</classes></spell>',
+    ];
+    for (const order of [
+      [knight, ...stubs],
+      [...stubs, knight],
+    ]) {
+      const { json, report } = convert(order.join(''), opts);
+      expect(lists(json)).toEqual({
+        classSpells: ['fire bolt|phb'],
+        subclassSpells: ['fire bolt|phb'],
+      });
+      // The stub of a spell the data lacks still adds to nothing.
+      expect(report.warnings).toContain(
+        '1 spell entry left out: it only adds class lists to spells this file does not include.',
+      );
+    }
+    const { isInstalled } = opts;
+    const { report } = convert([knight, ...stubs].join(''), {
+      fileName: FILE,
+      ...(isInstalled === undefined ? {} : { isInstalled }),
+    });
+    expect(report.warnings).toContain(
+      '2 spell entries left out: they only add class lists to spells this file does not include.',
+    );
+  });
+
   it('lists nothing without the ids of the installed spells', () => {
     const { isInstalled } = opts;
     const { json } = convert([knight, ...spells].join(''), {

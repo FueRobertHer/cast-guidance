@@ -84,7 +84,7 @@ import { convertFeat } from './feat';
 import { convertItem } from './item';
 import { convertRace } from './race';
 import { nameVariants } from './renames';
-import { convertSpell, readClasses } from './spell';
+import { classListsField, convertSpell, readClasses } from './spell';
 import { readSpellGrants, type SpellBlock, spellsKept } from './spellGrants';
 import {
   abilityKey,
@@ -505,18 +505,22 @@ export function fc5Converter(opts: ConvertOptions): Fc5Converter {
   // spell the converted file lacks cannot carry them.
   const installedOnClass = new Map<string, Set<string>>();
   const installedOnSubclass = new Map<string, Set<string>>();
-  const listInstalled = (name: string, placement: Placement, spell: Record<string, unknown>) => {
+  const listInstalled = (
+    name: string,
+    placement: Placement,
+    spell: Record<string, unknown>,
+  ): boolean => {
     const ask = opts.installedSpellId;
-    if (ask === undefined) return;
+    if (ask === undefined) return false;
     const lists = spell.classes as
       | {
           fromClassList?: { name?: unknown; source?: unknown }[];
           fromSubclass?: { class?: { name?: unknown }; subclass?: { name?: unknown } }[];
         }
       | undefined;
-    if (lists === undefined) return;
+    if (lists === undefined) return false;
     const id = findInstalled(ask, 'spell', name, placement);
-    if (id === undefined) return;
+    if (id === undefined) return false;
     const add = (on: Map<string, Set<string>>, key: string) => {
       const ids = on.get(key);
       if (ids === undefined) on.set(key, new Set([id]));
@@ -531,11 +535,22 @@ export function fc5Converter(opts: ConvertOptions): Fc5Converter {
         `${String(s.class?.name)}|${String(s.subclass?.name)}`.toLowerCase(),
       );
     }
+    return true;
   };
 
   const notes: EntryNote[] = [];
   const leave = (c: Converted, status: EntryNote['status'], why: string) =>
     notes.push({ kind: c.tag, name: c.result.name, status, reasons: [why] });
+
+  // A stub whose spell the file lacks, on the installed spell's list when the
+  // data has it: whether it was.
+  const listStub = (copy: SpellCopy): boolean => {
+    if (copy.classes === undefined) return false;
+    const lists = readClasses(copy.classes, fileClasses);
+    const placement = ctx.place(undefined, copy.edition ?? lists.edition);
+    const spell = classListsField(lists, placement.edition);
+    return spell !== undefined && listInstalled(copy.name, placement, { classes: spell });
+  };
 
   // First pass. The editions each full spell's name marks (undefined for
   // none), by name, and the copies that add lists to them.
@@ -614,7 +629,9 @@ export function fc5Converter(opts: ConvertOptions): Fc5Converter {
     for (const copy of spellCopies) {
       const editions = fullEditions.get(copy.name.toLowerCase());
       if (editions === undefined) {
-        if (copy.stub) unmatchedStubs += 1;
+        // A stub of an installed spell puts the file's classes on its list
+        // (a file holding a class and the lists it adds to the rules' spells).
+        if (copy.stub && !listStub(copy)) unmatchedStubs += 1;
         continue;
       }
       const { classes } = copy;
