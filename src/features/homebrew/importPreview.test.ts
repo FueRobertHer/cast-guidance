@@ -13,6 +13,7 @@ import { IMPORT_LIMITS } from '@/lib/guards';
 import {
   clashKey,
   describeCollision,
+  entryChanges,
   MAX_LISTED_COLLISIONS,
   type OfficialIndex,
   officialIndexFrom,
@@ -437,6 +438,40 @@ describe('previewHomebrewImport for a file of a collection here (ADR-002, D4)', 
   });
 });
 
+describe('entryChanges', () => {
+  it('names each field that differs, short values with what they were and are', () => {
+    expect(
+      entryChanges(
+        { name: 'Aid', source: 'XPHB', level: 2, range: { type: 'point' }, ritual: false },
+        { name: 'Aid', source: 'TBL', level: 3, range: { type: 'self' }, ritual: true },
+      ),
+    ).toBe('Differs in level (2 to 3), range and ritual (no to yes).');
+    // Prose is said once, last; a field only one side has is named alone.
+    expect(
+      entryChanges(
+        { name: 'X', entries: ['a'], entriesHigherLevel: ['b'] },
+        { name: 'X', entries: ['c'], damageInflict: ['fire'] },
+      ),
+    ).toBe('Differs in damage inflict and its text.');
+  });
+
+  it('reads objects as the same whatever their key order, and caps the list', () => {
+    expect(entryChanges({ a: { x: 1, y: 2 } }, { a: { y: 2, x: 1 } })).toBe(
+      'The same as the one here.',
+    );
+    const was = { a: 1, b: 1, c: 1, d: 1, e: 1, f: 1, g: 1 };
+    const now = { a: 2, b: 2, c: 2, d: 2, e: 2, f: 2, g: 2 };
+    expect(entryChanges(was, now)).toBe(
+      'Differs in a (1 to 2), b (1 to 2), c (1 to 2), d (1 to 2), e (1 to 2) and 2 more.',
+    );
+  });
+
+  it('says nothing of a version written as a copy, or of where an entry is printed', () => {
+    expect(entryChanges({ name: 'X' }, { _copy: { name: 'X' }, level: 3 })).toBeUndefined();
+    expect(entryChanges({ page: 3, srd: true }, { page: 9 })).toBe('The same as the one here.');
+  });
+});
+
 describe('officialIndexFrom', () => {
   it('takes official entities and sources across every type, never merged homebrew', () => {
     const reg = new EntityRegistry();
@@ -450,6 +485,16 @@ describe('officialIndexFrom', () => {
     expect([...index.sources].sort()).toEqual(['phb', 'xge']);
     expect(index.complete).toBe(true);
     expect(officialIndexFrom(reg, { complete: false }).complete).toBe(false);
+  });
+
+  it("finds the book's entry of an identity, the first in list order", () => {
+    const reg = new EntityRegistry();
+    reg.addAll('spell', [spell('Aid', 'XPHB', { level: 2 }), spell('Aid', 'XPHB', { level: 9 })]);
+    mergeHomebrew(reg, new Map([['hb', { spell: [spell('Zap', 'HB')] }]]));
+    const index = officialIndexFrom(reg);
+    expect(index.entry?.('spell', 'aid|xphb')?.level).toBe(2);
+    // Homebrew is never the book's.
+    expect(index.entry?.('spell', 'zap|hb')).toBeUndefined();
   });
 
   it('builds once per registry instance', () => {
@@ -960,6 +1005,38 @@ describe('a rule pack’s replaces in the preview (ADR-002, D2)', () => {
         'Nothing here has it, so it replaces nothing until it is here',
       );
     }
+  });
+
+  it('says under each how its version differs from the one it replaces here', () => {
+    const json = pack(
+      [ref('Aid', 'XPHB'), ref('Riptide', 'TWG'), ref('Moonbeam', 'XPHB')],
+      [
+        spell('Aid', 'XPHB', { level: 3, entries: ['Hope, and more of it.'] }),
+        spell('Riptide', 'TWG'),
+        { _copy: { name: 'Moonbeam', source: 'XPHB' }, level: 3 },
+      ],
+    );
+    const reg = new EntityRegistry();
+    reg.addAll('spell', [
+      spell('Aid', 'XPHB', { level: 2, entries: ['Hope.'], page: 239 }),
+      spell('Moonbeam', 'XPHB', { level: 2 }),
+    ]);
+    const details = preview(json, {
+      official: officialIndexFrom(reg),
+      existing: [grimoire()],
+    }).pack?.changes.map((r) => r.detail);
+    expect(details).toEqual([
+      // The book's, found through the index: its page is where it is printed, not a change.
+      'Differs in level (2 to 3) and its text.',
+      // The collection's: the same in every field.
+      'The same as the one here.',
+      // A copy's fields are known only once merged.
+      undefined,
+    ]);
+    // An index built without the book's entries says nothing under the row.
+    expect(
+      preview(json, { official: book(), existing: [grimoire()] }).pack?.changes[0]?.detail,
+    ).toBeUndefined();
   });
 
   it('claims no clash for an entry it replaces, and keeps the rest’s', () => {

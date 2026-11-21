@@ -184,7 +184,10 @@ function Rows({ heading, rows }: { heading: string; rows: readonly PackReviewRow
           // biome-ignore lint/suspicious/noArrayIndexKey: the list is fixed while shown
           <div key={i} className="flex flex-wrap items-baseline justify-between gap-x-3 px-3 py-2">
             <dt className="min-w-0 text-body-strong wrap-anywhere">{r.key}</dt>
-            <dd className="min-w-0 text-ink-muted wrap-anywhere">{r.value}</dd>
+            <dd className="min-w-0 text-ink-muted wrap-anywhere">
+              {r.value}
+              {r.detail !== undefined && <span className="block text-caption">{r.detail}</span>}
+            </dd>
           </div>
         ))}
       </dl>
