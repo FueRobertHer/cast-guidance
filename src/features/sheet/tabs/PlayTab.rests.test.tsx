@@ -186,6 +186,52 @@ describe('the short rest sheet', () => {
     // The rest's own words match what the sheet said it would give back.
     expect(notice()).toBe('Short rest: Restored Ki, pact slots');
   });
+
+  it('gives back the slots picked through a recovery pool, spending its use', async () => {
+    const doc = sorcerer();
+    doc.play.slotsSpent[0] = 3;
+    doc.customEffects = [
+      {
+        kind: 'resource',
+        key: 'arcane-recovery',
+        label: 'Arcane Recovery',
+        max: 1,
+        resetOn: 'long',
+        recoversSlots: 2,
+        recoversBelow: 6,
+        origin: { label: 'Test', uid: 'test', type: 'custom' },
+      },
+    ];
+    const sheet = await renderSheet(doc);
+    expect(left('Level 1 slot')).toBe(1);
+
+    press('Short rest');
+    const pool = within(
+      within(await screen.findByRole('dialog', { name: 'Short rest' })).getByRole('region', {
+        name: 'Arcane Recovery',
+      }),
+    );
+    expect(pool.getByText('1st-level slots, 3 spent')).toBeTruthy();
+    fireEvent.click(
+      pool.getByRole('button', { name: 'One more 1st-level slot back, Arcane Recovery' }),
+    );
+    fireEvent.click(
+      pool.getByRole('button', { name: 'One more 1st-level slot back, Arcane Recovery' }),
+    );
+    expect(pool.getByText('0 of 2 levels left')).toBeTruthy();
+
+    await (await dialog('Short rest')).press('Take the short rest');
+    expect(left('Level 1 slot')).toBe(3);
+    expect(notice()).toBe('Short rest: Arcane Recovery: 2 1st-level slots');
+    const saved = await sheet.saved();
+    expect(saved.play.slotsSpent[0]).toBe(1);
+    expect(saved.play.resources).toEqual([{ key: 'arcane-recovery', used: 1 }]);
+
+    // Its use is spent until a long rest: the next short rest does not offer it.
+    press('Short rest');
+    const again = within(await screen.findByRole('dialog', { name: 'Short rest' }));
+    expect(again.queryByRole('region', { name: 'Arcane Recovery' })).toBeNull();
+  });
 });
 
 describe('long rest (TEST-003)', () => {
