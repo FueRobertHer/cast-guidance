@@ -651,7 +651,7 @@ export function Component() {
     // kit is: those on the steps being walked past, so an undo offered on
     // another step stays. Going back keeps them held (and an undo offered for
     // the change being fixed): they wait on their cards.
-    if (forward) applyStaged(new Set(STEPS.slice(stepIdx, STEPS.indexOf(s))));
+    if (forward) applyStaged(new Set(order.slice(stepIdx, order.indexOf(s))));
     if (forward && step === 'equipment' && doc.equipment.length === 0 && allEqGroups.length > 0) {
       change(grantKit);
     }
