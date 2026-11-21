@@ -185,19 +185,21 @@ export function withCharges(draft: Json, patch: Json, own?: Json): Json {
   };
   const spells = list(kept.spells);
   // A short rest gives them back as the fields say once they say it
-  // (`regainOf`). Written out from fields alone, an amount a short rest cannot
-  // give (dice, or more than it holds) gives none, as those fields read
-  // (`fieldChargesOf`), so the item keeps its pool. Typed into an effect
-  // already there, it stays, and the editor says why it does not count.
+  // (`regainOf`). An amount a short rest cannot give (dice, or more than it
+  // holds) is written only as it is typed, where the editor says why it does
+  // not count; an edit that says nothing of when they come back keeps what the
+  // effect says, or, from fields alone, none, as those fields read
+  // (`fieldChargesOf`), so the item keeps its pool.
   const said = fresh ? regainOf(next.recharge, next.rechargeAmount) : had.regain;
   const short = fresh ? rechargeRest(next.recharge) === 'short' : had.rest === 'short';
-  const shortReads =
+  const reads =
     !short ||
-    had !== undefined ||
     charges === undefined ||
+    'recharge' in patch ||
+    'rechargeAmount' in patch ||
     readItemCharges({ charges, regain: said, rest: 'short', spells: [] }) !== undefined;
-  const rest = short && shortReads;
-  const regain = shortReads ? said : 'none';
+  const rest = reads ? short : had?.rest === 'short';
+  const regain = reads ? said : (had?.regain ?? 'none');
   const made: StoredEffect | undefined =
     charges === undefined
       ? undefined

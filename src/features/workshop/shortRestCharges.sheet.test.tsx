@@ -17,6 +17,7 @@ import { engineContextFor } from '@/data5e/engineAdapter';
 import { EntityRegistry, mergeHomebrew, normalizeDataset } from '@/data5e/normalize';
 import { deriveSheet } from '@/engine/derive';
 import { longRestRecovery, shortRestRecovery } from '@/engine/rest';
+import { readOwnEffects } from '@/engine/effects/mechanics';
 import { newCharacterDoc } from '@/engine/types';
 import { backCaption } from '@/features/sheet/rest';
 import { writeEntry } from './copyWriter';
@@ -173,10 +174,15 @@ describe('item charges back on a short rest, from the Workshop to the sheet', ()
     };
     const draft = mount(fields);
     fireEvent.click(screen.getByRole('button', { name: 'Add spells they cast' }));
+    expect(readOwnEffects((draft().castGuidance as Json).effects, 'effects').charges).toMatchObject({
+      regain: 'none',
+    });
+    // An edit after it that says nothing of when they come back keeps that.
+    type('Fixed save DC', '15');
     const counted = writeEntry({ draft: draft(), source: SOURCE, mode: 'full' });
     cleanup();
     expect((counted.castGuidance as Json).effects).toEqual([
-      { kind: 'charges', charges: 3, regain: 'none' },
+      { kind: 'charges', charges: 3, regain: 'none', dc: 15 },
     ]);
     const alone = writeEntry({
       draft: { ...fields, name: 'Dice Short Rest Wand Alone T8' },
