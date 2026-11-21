@@ -250,6 +250,43 @@ describe('readMechanics', () => {
     ]);
   });
 
+  it('reads the slots a pool gives back on a short rest, a formula or a number, and their cap', () => {
+    const pool = { kind: 'resource', key: 'recovery', label: 'Recovery', max: 1, reset: 'long' };
+    const read = readMechanics({
+      v: 1,
+      effects: [
+        { ...pool, recoversSlots: { f: 'ceil(classLevel / 2)' }, recoversBelow: 6 },
+        { ...pool, recoversSlots: 2 },
+      ],
+    });
+    expect(read.problems).toEqual([]);
+    // A formula holds 0 until the fold works it out.
+    expect(read.effects.map((t) => t.effect)).toEqual([
+      expect.objectContaining({ recoversSlots: 0, recoversBelow: 6 }),
+      expect.objectContaining({ recoversSlots: 2 }),
+    ]);
+    expect(read.effects[0]?.formulas?.map((s) => [s.field, s.formula.text])).toEqual([
+      ['recoversSlots', 'ceil(classLevel / 2)'],
+    ]);
+    expect(read.effects[1]?.effect).not.toHaveProperty('recoversBelow');
+    const bad = readMechanics({
+      v: 1,
+      effects: [
+        { ...pool, recoversBelow: 6 },
+        { ...pool, recoversSlots: 2, recoversBelow: 1 },
+        { ...pool, recoversSlots: 2, recoversBelow: 11 },
+        { ...pool, recoversSlots: -1 },
+      ],
+    });
+    expect(bad.effects).toEqual([]);
+    expect(bad.problems).toEqual([
+      'effect 1 (resource): "recoversBelow" goes with "recoversSlots"',
+      'effect 2 (resource): "recoversBelow" is a whole number from 2 to 10',
+      'effect 3 (resource): "recoversBelow" is a whole number from 2 to 10',
+      'effect 4 (resource): "recoversSlots" is 0 or more',
+    ]);
+  });
+
   it('reads a spell damage bonus for the spells of the class that gives it', () => {
     const bonus = { kind: 'spellDamageBonus', amount: 2 };
     const read = readMechanics({
