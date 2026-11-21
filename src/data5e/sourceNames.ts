@@ -268,8 +268,24 @@ let homebrewNames: ReadonlyMap<string, string> = new Map();
  * Replace the known homebrew titles. Wholesale, so disabling or deleting a
  * file drops its title instead of leaving it to haunt a reused code.
  */
-export function setHomebrewSourceNames(names: ReadonlyMap<string, string>): void {
+export function setHomebrewSourceNames(
+  names: ReadonlyMap<string, string>,
+  codes: ReadonlySet<string> = new Set(names.keys()),
+): void {
   homebrewNames = names;
+  homebrewCodes = codes;
+}
+
+/** Every book code a homebrew file on this device declares, titled or not. */
+let homebrewCodes: ReadonlySet<string> = new Set();
+
+/**
+ * Whether a file on this device declares the code as its book, and no
+ * published book has it: a collection named "Darkwood" keyed "Darkwood" too,
+ * which {@link hasHomebrewTitle} leaves out for having no title of its own.
+ */
+export function isHomebrewSource(source: string): boolean {
+  return entryFor(source) === undefined && homebrewCodes.has(source);
 }
 
 /**

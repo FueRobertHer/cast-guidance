@@ -90,6 +90,28 @@ async function deviceOffFilesSafe(): Promise<{ meta: HomebrewFileMeta[]; files: 
   return { meta, files: read.flatMap((r) => (r.file?.enabled === false ? [r.file] : [])) };
 }
 
+/** Every book code the homebrew files declare in `_meta.sources`, titled or not. */
+export function homebrewSourceCodes(brews: ReadonlyArray<{ json: unknown }>): Set<string> {
+  const out = new Set<string>();
+  for (const brew of brews) {
+    if (typeof brew.json !== 'object' || brew.json === null) continue;
+    const meta = (brew.json as { _meta?: unknown })._meta;
+    const sources =
+      typeof meta === 'object' && meta !== null
+        ? (meta as { sources?: unknown }).sources
+        : undefined;
+    if (!Array.isArray(sources)) continue;
+    for (const entry of sources) {
+      const code =
+        typeof entry === 'object' && entry !== null
+          ? (entry as { json?: unknown }).json
+          : undefined;
+      if (typeof code === 'string' && code !== '') out.add(code);
+    }
+  }
+  return out;
+}
+
 /**
  * Source code to title for every enabled homebrew file, read from the
  * `_meta.sources` block a 5etools brew carries. Tolerant on purpose: an entry
@@ -236,7 +258,10 @@ async function rebuild({
   // Before the registry is published, so the first render that can show a
   // brew's badge already has its title. A file switched off is named too, for
   // the characters that turn it on; the files switched on win a shared code.
-  setHomebrewSourceNames(homebrewSourceNames([...off, ...brews]));
+  setHomebrewSourceNames(
+    homebrewSourceNames([...off, ...brews]),
+    homebrewSourceCodes([...off, ...brews]),
+  );
   let reg: EntityRegistry;
   try {
     reg = normalizeDataset(files);
