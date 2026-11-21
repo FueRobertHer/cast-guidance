@@ -63,7 +63,7 @@ import {
   collectCharacterSources,
 } from '@/features/characters/homebrewExport';
 import { pickWords } from '@/features/homebrew/pickWords';
-import { HOMEBREW_ENTITY_KEYS, IMPORT_LIMITS } from '@/lib/guards';
+import { HOMEBREW_ENTITY_KEYS, IMPORT_LIMITS, type SkippedEntry } from '@/lib/guards';
 
 /**
  * How a `name|source` tie is settled, worded for the player. It has to match
@@ -326,6 +326,11 @@ export interface HomebrewPreview {
    * not bring under the same name and source, so it goes missing.
    */
   oldImportCharacters?: { id: string; name: string }[];
+  /**
+   * Entries the file holds that nothing could read, so they are left out
+   * (finding 14). Import is still offered: the rest of the file is fine.
+   */
+  skipped: SkippedEntry[];
 }
 
 /** One book of a file stored a book at a time, and what importing it would do. */
@@ -361,6 +366,8 @@ export interface HomebrewPreviewInput {
   /** Null when the registry could not be read (no game data yet). */
   official: OfficialIndex | null;
   characters: readonly CharacterDoc[];
+  /** What the prepare step left out (`homebrewRepo.prepareFile`). */
+  skipped?: readonly SkippedEntry[];
 }
 
 /** How a file here is named to the player: one book of a file goes by the book. */
@@ -824,6 +831,7 @@ export function previewHomebrewImport(input: HomebrewPreviewInput): HomebrewPrev
     affectedCharacters,
     officialCoverage: coverage,
     notes,
+    skipped: [...(input.skipped ?? [])],
     ...(pack === undefined ? {} : packSide(row, pack, existing, replaced, updated)),
     ...(books === undefined ? {} : { books: books.choices }),
     ...(oldImports.length === 0
