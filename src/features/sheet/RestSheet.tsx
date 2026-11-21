@@ -188,7 +188,9 @@ function HitDiceSpend({ short }: { short: ShortRestView }) {
       </p>
       {none ? (
         <p className="mt-1 text-ink-muted">
-          No Hit Dice left to spend. A long rest gives some back.
+          {hitDice.length === 0
+            ? 'No Hit Dice to spend.'
+            : 'No Hit Dice left to spend. A long rest gives some back.'}
         </p>
       ) : (
         <ul className="mt-1 flex flex-col">

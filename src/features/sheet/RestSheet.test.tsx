@@ -2,7 +2,7 @@
 // The rest sheet on its own: a short rest's hit points, hit dice to spend one
 // tap at a time and what it gives back, the effects list only with effects in
 // play, and a long rest's sheet as it was.
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ActiveEffect } from '@/engine/types';
 import { RestSheet, type ShortRestView } from './RestSheet';
@@ -97,6 +97,28 @@ describe('the short rest sheet', () => {
     expect(sheet.getByText('No Hit Dice left to spend. A long rest gives some back.')).toBeTruthy();
     expect(sheet.queryByRole('button', { name: /^Spend a/ })).toBeNull();
     expect(sheet.getByText('Nothing spent comes back on a short rest.')).toBeTruthy();
+  });
+
+  it('says so when the character has no hit dice at all', () => {
+    const { sheet } = shortSheet(view({ hitDice: [] }));
+    expect(sheet.getByText('No Hit Dice to spend.')).toBeTruthy();
+    expect(sheet.queryByText(/A long rest gives some back/)).toBeNull();
+  });
+
+  it('works out what comes back afresh at each opening', async () => {
+    const props = {
+      rest: 'short' as const,
+      effects: [],
+      onOpenChange: () => undefined,
+      onRest: () => undefined,
+    };
+    const { rerender } = render(<RestSheet {...props} open short={view()} />);
+    expect(screen.getByText('Gives back Ki and pact slots.')).toBeTruthy();
+    rerender(<RestSheet {...props} open={false} short={view({ restores: [] })} />);
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    rerender(<RestSheet {...props} open short={view({ restores: ['Second Wind'] })} />);
+    const sheet = within(await screen.findByRole('dialog', { name: 'Short rest' }));
+    expect(sheet.getByText('Gives back Second Wind.')).toBeTruthy();
   });
 
   it('lists the effects in play only when there are some, and rests with those ticked', () => {
