@@ -1152,6 +1152,8 @@ interface SubclassFrom {
    * slots of its own: the Fighter's is the Eldritch Knight's.
    */
   spellsKnown?: number[];
+  /** The class's fixed features: a list they name is the class's, not a subclass's. */
+  classFixed?: readonly { name: string; level: number; entries: Entry[] }[];
 }
 
 /**
@@ -1396,6 +1398,12 @@ function optionsReasons(options: HostOptions): string[] {
     const names = [...new Set(options.spellsKept)];
     reasons.push(`its options' tables of spells (${listed(names)}) are kept as text`);
   }
+  if (options.countedFromText.length > 0) {
+    const names = [...new Set(options.countedFromText)];
+    reasons.push(
+      `its picks from ${listed(names)} are counted from its features' text; check them on a sheet`,
+    );
+  }
   return reasons;
 }
 
@@ -1569,6 +1577,7 @@ function convertSubclass(pick: Pick, from: SubclassFrom, bound: ClassBinding): F
     placement,
     edition,
     fixed,
+    ...(from.classFixed !== undefined && { classFixed: from.classFixed }),
     counters: new Map(counters.map((c) => [c.name.toLowerCase(), c])),
   });
   if (options.progression.length > 0) sub.optionalfeatureProgression = options.progression;
@@ -2201,6 +2210,7 @@ export function convertClass(el: XmlElement, ctx: Fc5Context): Fc5Result {
     counters: owners.byPick,
     ...(pools.spellsKnown !== undefined &&
       levels.slots.every((s) => s.optional) && { spellsKnown: pools.spellsKnown }),
+    classFixed: read,
   };
   return {
     kind: 'class',

@@ -64,8 +64,10 @@ export interface LevelManifest {
 
 export const CHARACTER_NAME = 'New hero';
 export const CASTER_NAME = 'Vela Quill';
-/** The imported homebrew file's name, which is its collection's. */
+/** The imported homebrew file's name. */
 export const HOMEBREW_NAME = 'table-brews.json';
+/** Its collection's name: its first book's full name (`_meta.sources[0].full`). */
+export const HOMEBREW_TITLE = 'Table Brews';
 
 const MANIFEST = 'level.json';
 

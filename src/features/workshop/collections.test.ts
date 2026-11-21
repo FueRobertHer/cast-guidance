@@ -94,6 +94,22 @@ describe('collectionsOf', () => {
 });
 
 describe('madeName', () => {
+  it('names an imported file by its title, its file name only without one (F19)', () => {
+    const named = (r: HomebrewFileMeta[]) => collectionsOf(r).map((c) => c.name);
+    expect(named([row('t', { title: 'Tidewater Grimoire' })])).toEqual(['Tidewater Grimoire']);
+    expect(named([row('old')])).toEqual(['old.json']);
+    // A book goes by its own name, and a compendium by the file it came from.
+    expect(named([row('b', { book: 'Frost Codex', title: 'Ember Codex' })])).toEqual([
+      'Frost Codex',
+    ]);
+    expect(
+      named([
+        row('x', { fileName: 'all.xml', book: 'Ember Codex', title: 'Ember Codex' }),
+        row('y', { fileName: 'all.xml', book: 'Frost Codex', title: 'Ember Codex' }),
+      ]),
+    ).toEqual(['all.xml']);
+  });
+
   it("reads the name the player gave the file's book, and nothing else", () => {
     expect(madeName({ _meta: { sources: [{ json: 'HB', full: 'Lantern Coast' }] } })).toBe(
       'Lantern Coast',

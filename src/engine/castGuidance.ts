@@ -212,7 +212,7 @@ export const FORMULA_FIELDS: Readonly<Partial<Record<EffectInput['kind'], readon
   critRange: ['min'],
   rollPaid: ['bonus'],
   rollReroll: ['bonus'],
-  resource: ['max', 'min', 'regainOnShort'],
+  resource: ['max', 'min', 'regainOnShort', 'recoversSlots'],
   resourceRegain: ['amount'],
 };
 

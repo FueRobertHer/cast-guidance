@@ -134,6 +134,25 @@ describe('calcResources: regaining on a short rest', () => {
   });
 });
 
+describe('calcResources: spell slots a use gives back', () => {
+  const pool = (effects: EffectInput[]) => calcResources(docWith([]), effects, abilities(), 2)[0];
+
+  it('carries the levels and the cap, 10 where none is set', () => {
+    expect(pool([res(1, { recoversSlots: 3, recoversBelow: 6 })])?.recoversSlots).toEqual({
+      levels: 3,
+      below: 6,
+    });
+    expect(pool([res(1, { recoversSlots: 2 })])?.recoversSlots).toEqual({ levels: 2, below: 10 });
+  });
+
+  it('leaves it out where none is said, or no levels come back at this level', () => {
+    expect(pool([res(1)])).not.toHaveProperty('recoversSlots');
+    expect(pool([res(1, { recoversSlots: 0, recoversBelow: 6 })])).not.toHaveProperty(
+      'recoversSlots',
+    );
+  });
+});
+
 describe('costOnSheet', () => {
   const pool = (key: string): DerivedResource => ({
     key,

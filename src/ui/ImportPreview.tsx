@@ -12,6 +12,7 @@
 // Icons the app already ships elsewhere, so the preview adds no icon chunks.
 import { Check, ChevronRight, Plus, TriangleAlert } from 'lucide-react';
 import { type ReactNode, useEffect, useId, useState } from 'react';
+import { kindCount } from '@/lib/kindLabels';
 import { Button } from './Button';
 import { DialogFrame } from './dialogs';
 import { Sheet } from './sheet';
@@ -182,10 +183,10 @@ export function sizeText(bytes: number, limitBytes: number): string {
   return `${formatBytes(bytes)} (the limit is ${formatBytes(limitBytes)})`;
 }
 
-/** `12 spell, 3 item` in the counts' own words, or a plain "nothing" line. */
+/** `12 spells, 3 subclass features` in words, never a list's key, or a plain "nothing" line. */
 export function countsText(counts: Record<string, number>): string {
   const parts = Object.entries(counts)
     .filter(([, n]) => n > 0)
-    .map(([type, n]) => `${n} ${type}`);
+    .map(([type, n]) => kindCount(type, n));
   return parts.length > 0 ? parts.join(', ') : 'No entries the app recognizes';
 }
