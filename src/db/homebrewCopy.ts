@@ -1,3 +1,15 @@
+import { own } from '@/engine/castGuidance';
+import { assertJsonWithinLimits, homebrewEntityCounts } from '@/lib/guards';
+import { db, type HomebrewFileRow } from './db';
+import { COLLECTION_ID_KEY } from './homebrewOrder';
+import {
+  freeSource,
+  partitionHomebrewMeta,
+  partitionHomebrewRows,
+  putHomebrewRow,
+  withContent,
+} from './homebrewRepo';
+
 /**
  * An imported collection as a file the player can edit (track 7): the same
  * entries under books of its own, so the copy and the file it came from are
@@ -59,4 +71,63 @@ export function withBooks(json: Row, books: ReadonlyMap<string, string>): Row {
     return out;
   };
   return walk(json) as Row;
+}
+
+/**
+ * The work of `homebrewRepo.copyEditable`, here so its code loads only when a
+ * player asks for a copy. An entry under a book the file does not declare
+ * keeps that book: it may be an official one (a subclass's `classSource`),
+ * which must not move.
+ */
+export async function copyEditable(
+  fileId: string,
+): Promise<HomebrewFileRow & { json: Record<string, unknown> }> {
+  return db.transaction('rw', db.homebrewFiles, db.homebrewJson, async () => {
+    const stored = await db.homebrewFiles.get(fileId);
+    if (stored === undefined) throw new Error('that collection is no longer on this device');
+    const read = partitionHomebrewRows(await withContent([stored]));
+    const file = read.files[0];
+    if (file === undefined)
+      throw new Error(read.errors[0]?.message ?? 'the file could not be read');
+    if (file.editable) throw new Error('that collection is yours to change already');
+    if (file.pack !== undefined || own(file.json, 'castGuidance') !== undefined) {
+      throw new Error('a rule pack is changed from Review, not copied');
+    }
+    const all = partitionHomebrewMeta(await db.homebrewFiles.toArray()).files;
+    const meta = isRecord(file.json._meta) ? file.json._meta : {};
+    const declared = Array.isArray(meta.sources) ? meta.sources.filter(isRecord) : [];
+    const books = new Map<string, string>();
+    const sources = declared.map((s) => {
+      const was = String(s.json);
+      const id = freeSource(was, all, [...books.values()]);
+      books.set(was.toLowerCase(), id);
+      const full = typeof s.full === 'string' && s.full.trim() !== '' ? s.full.trim() : was;
+      return {
+        ...s,
+        json: id,
+        ...(typeof s.abbreviation === 'string' ? { abbreviation: id } : {}),
+        full: `${full} (copy)`,
+      };
+    });
+    const { _meta: _, ...content } = file.json;
+    const { convertedFrom: _from, [COLLECTION_ID_KEY]: _stamp, ...rest } = meta;
+    const json: Record<string, unknown> = {
+      _meta: { ...rest, sources, [COLLECTION_ID_KEY]: crypto.randomUUID() },
+      ...withBooks(content, books),
+    };
+    assertJsonWithinLimits(json);
+    const title = String(sources[0]?.full ?? `${file.fileName} (copy)`);
+    const row: HomebrewFileRow & { json: Record<string, unknown> } = {
+      id: crypto.randomUUID(),
+      fileName: `${title.replaceAll(/[^\w-]+/g, '_')}.json`,
+      json,
+      enabled: true,
+      editable: true,
+      sourceIds: sources.map((s) => s.json),
+      counts: homebrewEntityCounts(json),
+      addedAt: Date.now(),
+    };
+    await putHomebrewRow(row);
+    return row;
+  });
 }
