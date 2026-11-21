@@ -979,10 +979,20 @@ describe('the Import sheet, with a Fight Club 5e compendium', () => {
     expect(within(dialog).getByRole('button', { name: 'Import 9 books' })).toBeTruthy();
     const show = within(books).getByRole('button', { name: 'Show the 9 books' });
     expect(show.getAttribute('aria-expanded')).toBe('false');
+    // Select none and all work on the folded list, and the count says so.
+    fireEvent.click(within(books).getByRole('button', { name: 'Select none' }));
+    expect(books.textContent).toContain('0 of 9');
+    fireEvent.click(within(books).getByRole('button', { name: 'Select all' }));
+    expect(books.textContent).toContain('9 of 9');
 
+    // The same button folds it again, so focus stays where it was pressed.
     fireEvent.click(show);
     expect(within(books).getAllByRole('checkbox')).toHaveLength(9);
-    expect(within(books).queryByRole('button', { name: /^Show the/ })).toBeNull();
+    expect(show.getAttribute('aria-expanded')).toBe('true');
+    expect(show.textContent).toBe('Hide the books');
+    expect(document.getElementById(show.getAttribute('aria-controls') ?? '')).toBeTruthy();
+    fireEvent.click(show);
+    expect(within(books).queryAllByRole('checkbox')).toEqual([]);
     // Eight or fewer are listed open.
     cleanup();
     renderSheet();
@@ -1036,6 +1046,73 @@ describe('the Import sheet, with a Fight Club 5e compendium', () => {
     expect((await handedBack()).message).toBe('Imported 1 book from "library.xml" (1 spell)');
   });
 
+  it('ticks none when another file has every book, and asks for no tick it cannot use', async () => {
+    renderSheet();
+    await readFile('other.xml', LIBRARY(['Ash Bolt']));
+    fireEvent.click(
+      within(await findDialog('Import "other.xml"?')).getByRole('button', {
+        name: 'Import 2 books',
+      }),
+    );
+    await handedBack();
+
+    cleanup();
+    renderSheet();
+    await readFile('library.xml', LIBRARY(['Ash Bolt']));
+    const dialog = await findDialog('Import "library.xml"?');
+    const books = within(dialog).getByRole('region', { name: 'Books' });
+    expect(
+      within(books)
+        .getAllByRole('checkbox')
+        .map((c) => (c as HTMLInputElement).checked),
+    ).toEqual([false, false]);
+    expect(books.textContent).toContain(
+      'Another file here has every one of them already, so none starts ticked: tick the ones you want from this file too.',
+    );
+    expect(books.textContent).not.toContain('Untick the ones you do not want.');
+    // The lead says why: the hint to tick a book not on this device would ask the impossible.
+    expect(dialog.textContent).not.toContain('Tick a book that is not already on this device');
+    expect(
+      within(dialog).getByRole('button', { name: 'Import' }).getAttribute('aria-disabled'),
+    ).toBe('true');
+    // Ticked anyway, it comes in.
+    fireEvent.click(within(books).getByRole('checkbox', { name: /Ember Codex/ }));
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Import 1 book' }));
+    expect((await handedBack()).message).toBe('Imported 1 book from "library.xml" (1 spell)');
+  });
+
+  it('keeps ticked a book that replaces its own older copy, even when another file has it too', async () => {
+    renderSheet();
+    await readFile('other.xml', LIBRARY(['Ash Bolt']));
+    fireEvent.click(
+      within(await findDialog('Import "other.xml"?')).getByRole('button', {
+        name: 'Import 2 books',
+      }),
+    );
+    await handedBack();
+    // library.xml's own copy, ticked by hand: another file had it first.
+    cleanup();
+    renderSheet();
+    await readFile('library.xml', LIBRARY(['Ash Bolt']));
+    let dialog = await findDialog('Import "library.xml"?');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Select all' }));
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Import 2 books' }));
+    await handedBack();
+
+    cleanup();
+    renderSheet();
+    await readFile('library.xml', LIBRARY(['Ash Bolt', 'Ash Veil']));
+    dialog = await findDialog('Import "library.xml"?');
+    const ashen = within(within(dialog).getByRole('region', { name: 'Books' })).getByRole(
+      'checkbox',
+      { name: /Ashen Tome/ },
+    ) as HTMLInputElement;
+    expect(dialog.textContent).toContain('Replaces the copy from "library.xml".');
+    // Unticked, the stale copy would stay.
+    expect(ashen.checked).toBe(true);
+    expect(within(dialog).getByRole('button', { name: 'Import 1 book' })).toBeTruthy();
+  });
+
   it('lists ten entries of what a conversion lost, and more on asking', async () => {
     const spells = Array.from(
       { length: 62 },
@@ -1051,10 +1128,12 @@ describe('the Import sheet, with a Fight Club 5e compendium', () => {
     const listed = () =>
       (dialog.textContent?.match(/: the file gives no duration\./g) ?? []).length;
     expect(listed()).toBe(10);
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Show 50 more of 52' }));
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Show 50 more (52 left)' }));
     expect(listed()).toBe(60);
     fireEvent.click(within(dialog).getByRole('button', { name: 'Show 2 more' }));
     expect(listed()).toBe(62);
+    // The last press took its button away, so focus is on the list it filled.
+    expect(document.activeElement?.textContent).toContain('Lost 62:');
     expect(within(dialog).queryByRole('button', { name: /^Show \d+ more/ })).toBeNull();
   });
 
