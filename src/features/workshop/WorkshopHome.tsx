@@ -203,10 +203,11 @@ function YoursShelf({
         <h2 id="workshop-empty" className="font-display text-title-card">
           Make it yours
         </h2>
+        {/* The Library link is 24 tall, the size floor, though it sits in a sentence. */}
         <p className={NOTE}>
           Make a spell, an item, a subclass or anything else a character can have, or open an entry
           in the{' '}
-          <Link to="/library" className={LINK}>
+          <Link to="/library" className={`${LINK} inline-flex min-h-6 items-center`}>
             Library
           </Link>{' '}
           and make one like it. What you make works on your characters as soon as you save it.

@@ -254,6 +254,45 @@ describe('the Workshop home', () => {
     ).toBeTruthy();
     expect(router.state.location.search).toBe('');
     expect(screen.getByRole('button', { name: 'Yours' }).getAttribute('aria-pressed')).toBe('true');
+    // The line under the header is no live region: the announcer says it.
+    await waitFor(
+      () =>
+        expect(getAnnouncerState().messages.map((m) => m.text)).toContain(
+          'Import canceled. Nothing was added.',
+        ),
+      { timeout: WAIT },
+    );
+  });
+
+  it('stays on the shelf when the file is already here and kept, and says so', async () => {
+    const grimoire = {
+      _meta: { sources: [{ json: 'TWG', full: 'Tidewater Grimoire' }] },
+      spell: [{ name: 'Riptide', source: 'TWG', level: 1, entries: ['Pull.'] }],
+    };
+    await homebrewRepo.importJson(grimoire, 'Tidewater Grimoire.json');
+    const router = await visit('/workshop?shelf=collections');
+    fireEvent.click(
+      await screen.findByRole('link', { name: 'Import a file or a link' }, { timeout: WAIT }),
+    );
+    const sheet = await screen.findByRole('dialog', { name: 'Import' }, { timeout: WAIT });
+    fireEvent.click(within(sheet).getByRole('button', { name: 'Text' }));
+    fireEvent.change(within(sheet).getByRole('textbox', { name: /^Paste a homebrew file/ }), {
+      target: { value: JSON.stringify(grimoire) },
+    });
+    fireEvent.click(within(sheet).getByRole('button', { name: 'Read it' }));
+    const preview = await screen.findByRole(
+      'dialog',
+      { name: '"Tidewater Grimoire.json" is already here' },
+      { timeout: WAIT },
+    );
+    fireEvent.click(within(preview).getByRole('button', { name: 'Keep the existing file' }));
+    const kept = 'Kept the existing "Tidewater Grimoire.json". Nothing was added.';
+    expect(await screen.findByText(kept, {}, { timeout: WAIT })).toBeTruthy();
+    expect(router.state.location.search).toBe('?shelf=collections');
+    await waitFor(() => expect(getAnnouncerState().messages.map((m) => m.text)).toContain(kept), {
+      timeout: WAIT,
+    });
+    expect((await homebrewRepo.listSafe()).files).toHaveLength(1);
   });
 
   it('lands a pasted file as a collection, says so, and shows it under Collections', async () => {

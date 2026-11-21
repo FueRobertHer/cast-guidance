@@ -139,8 +139,8 @@ const sheet = () => screen.findByRole('dialog', { name: 'Import' }, { timeout: W
 const findDialog = (name: string) => screen.findByRole('dialog', { name }, { timeout: WAIT });
 const fileCount = () => db.homebrewFiles.count();
 
-/** Choose a file in the sheet and press Read it, as a person would. Returns Read it. */
-async function readFile(name: string, content: unknown): Promise<HTMLElement> {
+/** Choose a file in the sheet and press Read it (unless `press` is false), as a person would. Returns Read it. */
+async function readFile(name: string, content: unknown, press = true): Promise<HTMLElement> {
   const s = await sheet();
   const text = typeof content === 'string' ? content : JSON.stringify(content);
   const input = s.querySelector<HTMLInputElement>('input[type="file"]');
@@ -149,8 +149,13 @@ async function readFile(name: string, content: unknown): Promise<HTMLElement> {
     target: { files: [new File([text], name, { type: 'application/json' })] },
   });
   const readIt = within(s).getByRole('button', { name: 'Read it' });
-  fireEvent.click(readIt);
+  if (press) fireEvent.click(readIt);
   return readIt;
+}
+
+/** Every promise step queued now, and the ones they queue: what a let-go read does next. */
+async function settle() {
+  for (let i = 0; i < 200; i += 1) await Promise.resolve();
 }
 
 /** Bring in a link, on A link, and press Read it. */
@@ -454,11 +459,11 @@ describe('the Import sheet preview', () => {
     expect(within(dialog).getByRole('region', { name: 'Import details' }).tabIndex).toBe(0);
   });
 
-  // The old page let a newer file start a newer check, and kept the newest
-  // preview. The sheet starts no second read while one is checked, so the
-  // preview that comes is always for the read in progress.
-  it('starts no second read while one is checked, and previews the one it was reading', async () => {
-    const release = holdRegistry();
+  // A second press while a file is checked starts nothing; picking another
+  // file stops the check, since it was of a file no longer chosen. The
+  // preview that comes is always for the file the sheet shows.
+  it('stops a check when another file is picked, and previews the file now chosen', async () => {
+    const releaseA = holdRegistry();
     renderSheet();
     const readIt = await readFile(
       'a.json',
@@ -471,18 +476,68 @@ describe('the Import sheet preview', () => {
     // The Checking line is announced, and no busy ancestor holds it back.
     expect(said()).toBe('Checking "a.json"…');
     expect(importLine().closest('[aria-busy="true"]')).toBeNull();
-
-    await readFile('b.json', brew('BBB', [{ name: 'Quick', source: 'BBB', level: 1 }]));
-    // A read begins by saying what it checks: none began for b.json.
+    fireEvent.click(readIt);
     expect(said()).toBe('Checking "a.json"…');
-    release();
-    const dialog = await findDialog('Import "a.json"?');
-    expect(screen.queryByRole('dialog', { name: 'Import "b.json"?' })).toBeNull();
-
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Import' }));
-    expect(await handedBack()).toEqual({ message: 'Imported "a.json" (1 spell)', landed: true });
-    expect((await db.homebrewFiles.toArray()).map((f) => f.fileName)).toEqual(['a.json']);
     expect(registry.calls).toBe(1);
+
+    // b.json is picked: a.json's check stops, and Read it is free again.
+    await readFile('b.json', brew('BBB', [{ name: 'Quick', source: 'BBB', level: 1 }]), false);
+    const s = await sheet();
+    expect(s.textContent).toContain('b.json');
+    expect(said()).toBe('Stopped. Nothing was added.');
+    expect(readIt.getAttribute('aria-disabled')).toBe('false');
+    expect(readIt.getAttribute('aria-busy')).toBe('false');
+    // a.json's read, let go now, swaps nothing in and says nothing, even
+    // once the announcer's spacing would have let a second line through.
+    releaseA();
+    await settle();
+    await new Promise((resolve) => setTimeout(resolve, THROTTLE_MS + 100));
+    onlyTheSheet();
+    expect(said()).toBe('Stopped. Nothing was added.');
+    expect(heard.lines.filter((line) => line.startsWith('Stopped'))).toHaveLength(1);
+
+    fireEvent.click(readIt);
+    const dialog = await findDialog('Import "b.json"?');
+    expect(screen.queryByRole('dialog', { name: 'Import "a.json"?' })).toBeNull();
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Import' }));
+    expect(await handedBack()).toEqual({ message: 'Imported "b.json" (1 spell)', landed: true });
+    expect((await db.homebrewFiles.toArray()).map((f) => f.fileName)).toEqual(['b.json']);
+  });
+
+  it.each([
+    ['A link', 'Link to a JSON homebrew file'],
+    ['Text', /^Paste a homebrew file/],
+  ] as const)('stops a check when %s is changed while it is read', async (way, field) => {
+    const release = holdRegistry();
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify(ZAP_1)));
+    renderSheet();
+    const s = await sheet();
+    fireEvent.click(within(s).getByRole('button', { name: way }));
+    const box = within(s).getByRole('textbox', { name: field });
+    fireEvent.change(box, {
+      target: {
+        value:
+          way === 'A link'
+            ? 'https://raw.githubusercontent.com/me/brews/main/brew.json'
+            : JSON.stringify(ZAP_1),
+      },
+    });
+    const readIt = within(s).getByRole('button', { name: 'Read it' });
+    fireEvent.click(readIt);
+    await waitFor(() => expect(registry.calls).toBe(1), { timeout: WAIT });
+    expect(readIt.getAttribute('aria-busy')).toBe('true');
+
+    fireEvent.change(box, { target: { value: `${(box as HTMLInputElement).value}x` } });
+    await waitFor(() => expect(said()).toBe('Stopped. Nothing was added.'), { timeout: WAIT });
+    expect(readIt.getAttribute('aria-busy')).toBe('false');
+    // The read, let go now, swaps nothing in and says nothing, even once the
+    // announcer's spacing would have let a second line through.
+    release();
+    await settle();
+    await new Promise((resolve) => setTimeout(resolve, THROTTLE_MS + 100));
+    onlyTheSheet();
+    expect(said()).toBe('Stopped. Nothing was added.');
+    expect(heard.lines.filter((line) => line.startsWith('Stopped'))).toHaveLength(1);
   });
 
   it('lists the copies a file completes and the characters that use its sources', async () => {
@@ -587,8 +642,18 @@ describe('the Import sheet, from a link', () => {
     expect(await fileCount()).toBe(0);
   });
 
-  // A link that is no URL at all never gets this far: the field is a URL
-  // field, so the browser refuses it before the sheet reads anything.
+  // The form leaves the check to the sheet: a browser that checked the URL
+  // field itself would refuse the link with its own bubble, and this line
+  // would never show.
+  it('says a link that is no URL at all is not a complete URL', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch');
+    renderSheet();
+    await readLink('raw.githubusercontent.com/me/brews/main/brew.json');
+    await waitFor(() => expect(said()).toBe('That is not a complete URL.'), { timeout: WAIT });
+    expect(fetchSpy).not.toHaveBeenCalled();
+    onlyTheSheet();
+  });
+
   it('gives an http link its own fix, not the other-sites advice', async () => {
     renderSheet();
     await readLink('http://raw.githubusercontent.com/me/brews/main/brew.json');
