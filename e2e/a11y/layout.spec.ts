@@ -573,6 +573,27 @@ const WORKSHOP: readonly Route[] = [
       page.getByRole('region', { name: 'In the books' }).getByRole('link', { name: /^Fireball/ }),
     ],
   },
+  {
+    // The longest of the Workshop's sheets: with text at 200% here it ran
+    // hundreds of px off the top of the screen, its choices out of reach.
+    name: 'workshop move',
+    open: async (page) => {
+      await gotoHeading(page, '/workshop', 'Workshop');
+      await page.getByRole('button', { name: 'Select', exact: true }).click();
+      await page.getByRole('checkbox', { name: /^Fire Gift\s*,/ }).check();
+      await page.getByRole('button', { name: 'Move', exact: true }).click();
+      await expect(page.getByRole('dialog', { name: 'Move 1 entry', exact: true })).toBeVisible();
+    },
+    primary: (page) => {
+      const sheet = page.getByRole('dialog', { name: 'Move 1 entry', exact: true });
+      return [
+        sheet.getByRole('radio').first(),
+        sheet.getByRole('button', { name: 'Cancel', exact: true }),
+        sheet.getByRole('button', { name: /^(Move here|Make and move)$/ }),
+      ];
+    },
+    panel: (page) => page.getByRole('dialog', { name: 'Move 1 entry', exact: true }),
+  },
 ];
 
 test.describe('the Workshop with content, in both themes', () => {

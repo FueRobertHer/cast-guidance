@@ -386,7 +386,14 @@ export function DialogFrame({
           {...(searches ? { onOpenAutoFocus: focusSheetOnTouch } : {})}
         >
           <Sheet.Heading>{title}</Sheet.Heading>
-          {searches || scrollsItself ? children : <Sheet.Body>{children}</Sheet.Body>}
+          {searches || scrollsItself ? (
+            children
+          ) : (
+            // One body per title: a sheet that turns into the next one (Move
+            // into Moved, one ask into another) starts it from the top, not
+            // scrolled as far down as the last one was.
+            <Sheet.Body key={typeof title === 'string' ? title : undefined}>{children}</Sheet.Body>
+          )}
         </Sheet.Panel>
       </Sheet.Portal>
     </Sheet.Root>
