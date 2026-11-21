@@ -253,6 +253,8 @@ describe('SpellPicker', () => {
     const input = screen.getByLabelText('Spell 1') as HTMLInputElement;
     expect(input.disabled).toBe(true);
     expect(input.value).toBe('Light');
+    fireEvent.keyDown(input, { key: 'ArrowDown' });
+    expect(input.getAttribute('aria-expanded')).toBe('false');
   });
 });
 

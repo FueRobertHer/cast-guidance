@@ -114,6 +114,8 @@ export function SpellPicker({
   }, [active, id]);
 
   const onKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
+    // A box that cannot be changed lists nothing, whatever reaches it.
+    if (disabled === true) return;
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
       e.preventDefault();
       const down = e.key === 'ArrowDown';
