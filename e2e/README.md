@@ -27,10 +27,11 @@ CI runs the suite as five jobs at once, one per Playwright project: `flows`
 `offline-routes` (the route matrix, after its `cache-levels` setup) and
 `webkit` (the flows in WebKit, less what needs Chromium; see
 `playwright.config.ts`). `webkit` is not a gate yet: its failures show in the
-job's summary and log, but do not fail the run. It does not yet cover what
-iOS most needs checking: game data installs and updates (WebKit's routing
-cannot see what the service worker fetches, so the mirror cannot answer it)
-and the route matrix offline. Each
+job's summary and log, but do not fail the run. It runs with service workers
+blocked: WebKit's routing cannot see what a page the worker controls fetches
+through it, so the mirror could not answer and requests reached the real
+CDN. So it does not cover what iOS most needs checking: offline, the
+worker's updates and the route matrix. Each
 job uploads its `playwright-report/` and `test-results/` as the
 `e2e-report-<project>` artifact. A new project needs an entry in the `e2e`
 matrix in `.github/workflows/ci.yml`; the `checks` job fails until it has one.

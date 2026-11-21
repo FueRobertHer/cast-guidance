@@ -116,22 +116,19 @@ export default defineConfig({
         'specs/harness.spec.ts',
         // Install checks through the DevTools protocol.
         'specs/manifest.spec.ts',
+        // The service worker's own flows; WebKit runs with it blocked
+        // (support/device.ts).
+        'specs/offline-reload.spec.ts',
+        'specs/sw-update.spec.ts',
       ],
       grepInvert: [
         // Crashes a tab through the DevTools protocol, which WebKit lacks.
         /a tab that dies without a goodbye/,
-        // WebKit's routing does not see what a page the service worker
-        // controls fetches through it, so the mirror cannot answer these
-        // tests' game data. The first is the check of that; bring the rest
-        // back when it passes.
+        // Tests of the service worker, which WebKit runs blocked.
+        /activates the service worker/,
+        /announces offline readiness/,
         /mirror routes still see requests from a page the service worker controls/,
-        /a first install interrupted by a reload finishes on the next launch/,
-        /a failed update keeps the old release active and usable/,
-        /an update interrupted by closing the app leaves the old release intact/,
-        /a launch whose remembered release list has gone stale/,
-        /a new release that keeps failing to start is rolled back/,
-        /refuses files it cannot import and changes nothing/,
-        /a character file is previewed, and a second import lands as a copy/,
+        /export works offline/,
       ],
       use: WEBKIT,
     },

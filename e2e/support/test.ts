@@ -131,11 +131,18 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
   ],
 
   consoleGuard: [
-    async ({ context, mirror }, use) => {
+    async ({ context, mirror, browserName }, use) => {
       const guard = new ConsoleGuard();
       guard.watch(context);
       // Mirror requests the test asked to fail are expected to log.
       guard.allowResource((url) => mirror.failedUrls.has(url));
+      // WebKit logs the dead proxy refusing index.html's preconnect to the
+      // CDN (launch.ts): the hermetic layer working. Chromium says nothing.
+      if (browserName === 'webkit') {
+        guard.allow(
+          /^Failed to preconnect to https:\/\/cdn\.jsdelivr\.net\/\. Error: Could not connect to proxy server/,
+        );
+      }
       await use(guard);
       guard.assertClean();
     },
@@ -149,11 +156,7 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
   },
 
   network: [
-    async ({ context, server, mirror, consoleGuard, browserName }, use) => {
-      // WebKit's emulated offline fails a reload the service worker would
-      // answer ("WebKit encountered an internal error"), so there the
-      // harness's own two (the mirror refuses, the server is down) stand alone.
-      const browserOffline = browserName !== 'webkit';
+    async ({ context, server, mirror, consoleGuard }, use) => {
       // Where each offline stretch starts and ends in the three logs; `to` is
       // unset while it lasts.
       interface Window {
@@ -197,7 +200,7 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
           windows.push({ from: marks() });
           // The browser first, so a page request is never the one the down
           // server refuses; then the harness's own hosts.
-          if (browserOffline) for (const ctx of contexts) await ctx.setOffline(true);
+          for (const ctx of contexts) await ctx.setOffline(true);
           mirror.setOffline(true);
           server.setDown(true);
         },
@@ -211,7 +214,7 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
           if (current !== undefined && current.to === undefined) current.to = marks();
           mirror.setOffline(false);
           server.setDown(false);
-          if (browserOffline) for (const ctx of contexts) await ctx.setOffline(false);
+          for (const ctx of contexts) await ctx.setOffline(false);
         },
         assertNothingServedOffline() {
           for (const w of windows) {
