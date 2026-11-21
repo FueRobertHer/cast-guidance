@@ -237,9 +237,6 @@ describe('SettingsPage data section', () => {
   });
 });
 
-// A11Y-002: a failure here also reaches the shell's DataBanner, whose alert
-// says it. Two alerts for one failure were read back to back, so the page's own
-// lines are visual, and an outcome nothing else says goes through the announcer.
 describe('SettingsPage data wording', () => {
   // Catches: "4.4 MB of 10244.4 MB", where the reader does the division.
   it('writes a size in MB, and in GB from 1 GB up', () => {
@@ -247,16 +244,24 @@ describe('SettingsPage data wording', () => {
     expect(sizeText(undefined)).toBe('?');
     expect(sizeText(4.4 * MB)).toBe('4.4 MB');
     expect(sizeText(1023.9 * MB)).toBe('1023.9 MB');
+    expect(sizeText(1023.96 * MB)).toBe('1.0 GB');
     expect(sizeText(1024 * MB)).toBe('1.0 GB');
     expect(sizeText(10244.4 * MB)).toBe('10.0 GB');
   });
 
   it('says up to date when the newest version is the installed one', () => {
     expect(updateStatusText(['v2.32.0', 'v2.31.0'], 'v2.32.0')).toBe(
-      'Up to date: v2.32.0 is the newest version.',
+      'Up to date: v2.32.0 is the newest version this app can use.',
     );
     expect(updateStatusText(['v2.33.0', 'v2.32.0'], 'v2.32.0')).toBe(
       'v2.33.0 is available. You have v2.32.0.',
+    );
+    // Like the boot check, it does not offer the release this device went back from.
+    expect(updateStatusText(['v2.33.0', 'v2.32.0'], 'v2.32.0', 'v2.33.0')).toBe(
+      'Up to date: v2.32.0 is the newest version this app can use. v2.33.0 could not start on this device.',
+    );
+    expect(updateStatusText(['v2.34.0', 'v2.33.0', 'v2.32.0'], 'v2.32.0', 'v2.33.0')).toBe(
+      'v2.34.0 is available. You have v2.32.0.',
     );
   });
 
@@ -266,7 +271,7 @@ describe('SettingsPage data wording', () => {
     loader.listAvailableTags.mockResolvedValueOnce(['v2.32.0', 'v2.31.0']);
     render(<SettingsPage />);
     fireEvent.click(screen.getByRole('button', { name: 'Check for data updates' }));
-    const text = 'Up to date: v2.32.0 is the newest version.';
+    const text = 'Up to date: v2.32.0 is the newest version this app can use.';
     expect(await screen.findByText(text)).toBeTruthy();
     expect(screen.getByLabelText('Switch version')).toBeTruthy();
     await waitFor(() => expect(getAnnouncerState().messages.map((m) => m.text)).toContain(text));
@@ -295,6 +300,9 @@ describe('SettingsPage data wording', () => {
   });
 });
 
+// A11Y-002: a failure here also reaches the shell's DataBanner, whose alert
+// says it. Two alerts for one failure were read back to back, so the page's own
+// lines are visual, and an outcome nothing else says goes through the announcer.
 describe('SettingsPage data announcements', () => {
   /** The page as the shell shows it, with the banner beside it. */
   const renderInShell = () =>

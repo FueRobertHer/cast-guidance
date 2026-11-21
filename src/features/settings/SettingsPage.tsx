@@ -102,14 +102,24 @@ const NO_COMPATIBLE_TEXT =
   'No compatible data versions available. Newer releases with a different schema are not shown because this app build cannot read them safely.';
 
 /**
- * The answer to "Check for data updates", said above the version list: the
- * list comes newest first, as the boot-time check reads it.
+ * The answer to "Check for data updates", said above the version list. The
+ * list comes newest first, as the boot-time check reads it, and like that
+ * check it passes over the release this device went back from: offering it
+ * again only invites the same rollback.
  */
-export function updateStatusText(tags: readonly string[], active: string): string {
-  const newest = tags[0];
+export function updateStatusText(
+  tags: readonly string[],
+  active: string,
+  wentBackFrom?: string,
+): string {
+  const newest = tags.find((t) => t !== wentBackFrom);
+  const skipped =
+    wentBackFrom !== undefined && tags[0] === wentBackFrom
+      ? ` ${wentBackFrom} could not start on this device.`
+      : '';
   return newest === undefined || newest === active
-    ? `Up to date: ${active} is the newest version.`
-    : `${newest} is available. You have ${active}.`;
+    ? `Up to date: ${active} is the newest version this app can use.${skipped}`
+    : `${newest} is available. You have ${active}.${skipped}`;
 }
 
 /**
@@ -119,7 +129,8 @@ export function updateStatusText(tags: readonly string[], active: string): strin
 export function sizeText(n?: number): string {
   if (n === undefined) return '?';
   const mb = n / 1024 / 1024;
-  return mb >= 1024 ? `${(mb / 1024).toFixed(1)} GB` : `${mb.toFixed(1)} MB`;
+  // Compared as shown, so 1023.96 MB reads "1.0 GB", not "1024.0 MB".
+  return Number(mb.toFixed(1)) >= 1024 ? `${(mb / 1024).toFixed(1)} GB` : `${mb.toFixed(1)} MB`;
 }
 
 /**
@@ -431,7 +442,9 @@ export function Component() {
         </dl>
 
         {tags !== null && tags.length > 0 && (
-          <p className="text-body text-ink-muted">{updateStatusText(tags, getActiveTag())}</p>
+          <p className="text-body text-ink-muted">
+            {updateStatusText(tags, getActiveTag(), rolledBackFrom)}
+          </p>
         )}
         {tags === null ? (
           <Button
@@ -447,7 +460,13 @@ export function Component() {
                   // said as well as shown (A11Y-002: a line that mounts with
                   // its text is announced unreliably).
                   announce(
-                    list.length === 0 ? NO_COMPATIBLE_TEXT : updateStatusText(list, getActiveTag()),
+                    list.length === 0
+                      ? NO_COMPATIBLE_TEXT
+                      : updateStatusText(
+                          list,
+                          getActiveTag(),
+                          dataStatusStore.getState().rolledBackFrom,
+                        ),
                     { key: 'update-check' },
                   );
                 })
