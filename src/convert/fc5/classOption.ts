@@ -121,7 +121,8 @@ function isOptionList(key: string, listNamed: boolean): boolean {
  * (`Wizard`, `Cleric (Forge)`). Some that work like spells keep their school:
  * an option on an official list (`Arcane Shot: Banishing Arrow`, `Infusion:
  * Enhanced Defense`, `Elemental Discipline: Breath of Winter`), and one named
- * for its list (`Splicer Augment: Amphibious`). A starred copy of a spell
+ * for its list (`Splicer Augment: Amphibious`). One at a higher level is an
+ * option only as {@link isRankedOption} has it. A starred copy of a spell
  * (`Burning Hands*`) is never one.
  */
 export function isClassOption(el: XmlElement): boolean {
@@ -129,14 +130,35 @@ export function isClassOption(el: XmlElement): boolean {
   const classes = childText(el, 'classes');
   if (classes === undefined) return false;
   const level = Number(childText(el, 'level') ?? 0);
-  if (!(level === 0 || level === 1)) return false;
   const name = splitName(childText(el, 'name') ?? '').name;
   if (name.endsWith('*')) return false;
   const listNamed = /^[^:]{1,40}: \S/.test(name);
   const keys = topLevelParts(classes).map(listKey);
   if (keys.length === 0 || !keys.every((key) => isOptionList(key, listNamed))) return false;
-  if ((childText(el, 'school') ?? '') === '') return true;
+  const school = (childText(el, 'school') ?? '') !== '';
+  if (!(level === 0 || level === 1)) return !school && isRankedOption(name, keys);
+  if (!school) return true;
   return listNamed || keys.every((key) => own(OFFICIAL_LISTS, key) !== undefined);
+}
+
+/** A label's singular, lowercased: `draconic powers` and `Draconic Power` alike. */
+function labelKey(label: string): string {
+  return label.trim().toLowerCase().replace(/s$/, '');
+}
+
+/**
+ * Whether an entry at level 2 or more is still a class option: one named for
+ * its list, on lists of a class's own that the name's prefix is the label of
+ * (`Draconic Power: Wings of Wind` on `Dragonblade (Tanares): Draconic
+ * Powers`), its level a rank of power rather than a spell's.
+ */
+function isRankedOption(name: string, keys: readonly string[]): boolean {
+  const prefix = /^([^:]{1,40}): \S/.exec(name)?.[1];
+  if (prefix === undefined) return false;
+  return keys.every((key) => {
+    const label = /^[^:]{1,60}: (.{1,120})$/.exec(key)?.[1];
+    return label !== undefined && labelKey(label) === labelKey(prefix);
+  });
 }
 
 /** `Invocation: Agonizing Blast` as `Agonizing Blast`; a name with no such prefix as it is. */
@@ -274,6 +296,10 @@ export function convertClassOption(el: XmlElement, ctx: Fc5Context): Fc5Result {
   if (prerequisite !== undefined) feature.prerequisite = prerequisite;
 
   const lead: Entry[] = [];
+  // A rank of power (`Draconic Power` at level 3): kept to read, as nothing gates it.
+  const level = Number(childText(el, 'level') ?? 0);
+  const ranked = Number.isInteger(level) && level >= 2;
+  if (ranked) lead.push(`{@b Level:} ${level}`);
   for (const [field, label] of SPELL_FIELDS) {
     const value = childText(el, field)?.trim();
     if (value !== undefined && value !== '') lead.push(`{@b ${label}:} ${inlineText(value)}`);
@@ -289,7 +315,7 @@ export function convertClassOption(el: XmlElement, ctx: Fc5Context): Fc5Result {
     edition: placement.edition,
     entity: feature,
     placement,
-    reasons: [],
+    reasons: ranked ? [`its level (${level}) is kept as text; nothing stops an earlier pick`] : [],
   };
 }
 
