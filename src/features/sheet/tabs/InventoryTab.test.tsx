@@ -207,6 +207,77 @@ describe('InventoryTab rows', () => {
   });
 });
 
+describe('InventoryTab with an item whose entry is gone', () => {
+  const ring = { name: 'Ring of Protection', source: 'DMG', reqAttune: true } as unknown as Entity;
+  function renderGone(data?: Partial<CharacterSheetState['data']>) {
+    registryRef.current = {
+      byType: () => [],
+      get: (_type: string, name: string) => (name === 'Ring of Protection' ? ring : undefined),
+    } as unknown as typeof registryRef.current;
+    const doc = newCharacterDoc('i2', 'Hero', 't');
+    doc.equipment = [
+      {
+        id: 'r',
+        ref: { name: 'Ring of Protection', source: 'DMG' },
+        qty: 1,
+        equipped: true,
+        attuned: true,
+      },
+      // A homebrew item deleted from its collection: the key the engine keeps, lowercased.
+      {
+        id: 's',
+        ref: { name: 'sunblade aegis', source: 'myhomebrew' },
+        qty: 1,
+        equipped: true,
+        attuned: true,
+      },
+      {
+        id: 'p',
+        ref: { name: 'pack of somewhere', source: 'x' },
+        qty: 1,
+        equipped: false,
+        attuned: false,
+      },
+    ];
+    const router = createMemoryRouter([
+      {
+        path: '/',
+        element: (
+          <Outlet
+            context={
+              {
+                doc,
+                sheet: deriveSheet(doc, makeTestContext()),
+                update: () => undefined,
+                data,
+              } as unknown as CharacterSheetState
+            }
+          />
+        ),
+        children: [{ index: true, element: <InventoryTab /> }],
+      },
+    ]);
+    render(<RouterProvider router={router} />);
+  }
+
+  it('marks equipped gear that is gone as missing, by its name, and frees its attunement', () => {
+    renderGone();
+    expect(screen.getByText('attunement 1/3')).toBeTruthy();
+    expect(screen.getAllByText('Missing')).toHaveLength(1);
+    expect(screen.getByRole('button', { name: 'Remove Sunblade Aegis' })).toBeTruthy();
+    // In the backpack it may still be downloading, so it is not called missing.
+    expect(screen.getByRole('button', { name: 'Remove Pack of Somewhere' })).toBeTruthy();
+  });
+
+  it('calls nothing missing while equipped gear could not be downloaded', () => {
+    renderGone({
+      equipment: { status: 'error', error: 'offline', offline: true, retry: () => undefined },
+    });
+    expect(screen.queryByText('Missing')).toBeNull();
+    expect(screen.getByText('attunement 2/3')).toBeTruthy();
+  });
+});
+
 // GAME-005: the item search follows the character's own source list.
 describe("InventoryTab item search under a character's own sources", () => {
   it("searches only the character's books, and says whose list hid the rest", () => {
