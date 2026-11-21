@@ -74,6 +74,50 @@ describe('what a homebrew merge builds', () => {
     ]);
   });
 
+  it('charges every step of the variables, not only the short result', () => {
+    // Doubling 21 times, then collapsing to nothing: each version came out as
+    // `x` after building 15 million characters (3.7 s for 48 of them, unwarned).
+    const vars: Record<string, string> = { a21: '' };
+    for (let i = 0; i < 21; i++) vars[`a${i}`] = `{{a${i + 1}}}{{a${i + 1}}}`;
+    const race = (r: number) => ({
+      name: `Kin ${r}`,
+      source: 'HB',
+      _versions: [
+        {
+          _abstract: { name: 'Kin {{n}}', source: 'HB', entries: ['x{{a0}}'] },
+          _implementations: Array.from({ length: 4 }, (_, n) => ({
+            _variables: { n: `${r}.${n}`, ...vars },
+          })),
+        },
+      ],
+    });
+    const reg = merged({ race: Array.from({ length: 12 }, (_, r) => race(r)) });
+    expect(reg.byType('race')).toHaveLength(12);
+    expect(reg.warnings).toHaveLength(48);
+  });
+
+  it('measures a race once for all its subraces, and not at all for no versions', () => {
+    // Every subrace measured its race's traits, versions or not: 3 s for a
+    // 2 MB file, and minutes at the file limit (22,000 subraces of a 2 MB race).
+    const traits = Array.from({ length: 11 }, (_, i) => ({
+      type: 'entries',
+      name: `Trait ${i}`,
+      entries: ['t'.repeat(190_000)],
+    }));
+    const subraces = Array.from({ length: 22_000 }, (_, i) => ({
+      name: `Line ${i}`,
+      source: 'HB',
+      raceName: 'Kin',
+      raceSource: 'HB',
+      _versions: i === 0 ? [{ name: 'Line 0 (Red)', source: 'HB' }] : [],
+    }));
+    const file = { race: [{ name: 'Kin', source: 'HB', entries: traits }], subrace: subraces };
+    expect(fileSize(file)).toBeLessThan(4_000_000);
+    const reg = merged(file);
+    expect(reg.byType('subrace')).toHaveLength(22_001);
+    expect(reg.warnings).toEqual([]);
+  });
+
   it('builds the copies that fit and leaves the rest unresolved', () => {
     const target = {
       name: 'Big',
@@ -97,6 +141,59 @@ describe('what a homebrew merge builds', () => {
     expect(reg.warnings[0]?.message).toBe(
       `homebrew spell: could not resolve _copy: it would build more than the ${MAX_BUILT_CHARS} characters one merge may`,
     );
+  });
+
+  it('leaves a copy of a copy that did not fit unresolved, and says so', () => {
+    const target = {
+      name: 'Big',
+      source: 'HB',
+      entries: Array.from({ length: 45 }, () => 'y'.repeat(200_000)),
+    };
+    const reg = merged({
+      spell: [
+        target,
+        { name: 'A', source: 'HB', _copy: { name: 'Big', source: 'HB' } },
+        { name: 'B', source: 'HB', _copy: { name: 'Big', source: 'HB' } },
+        { name: 'C', source: 'HB', _copy: { name: 'A', source: 'HB' } },
+      ],
+    });
+    // Only one 9 MB copy fits. Copies resolve from the end of the list, so B
+    // does and A does not; C copied A's stub without a word.
+    expect(reg.get('spell', 'B', 'HB')?.entries).toHaveLength(45);
+    expect(reg.get('spell', 'A', 'HB')?.entries).toBeUndefined();
+    expect(reg.warnings.map((w) => [w.entity, w.message.split(':')[1]?.trim()])).toEqual([
+      ['a|hb', 'could not resolve _copy'],
+      ['c|hb', 'unresolved _copy target A|HB'],
+    ]);
+  });
+
+  it('charges what a replaceTxt makes, and refuses replacements that multiply', () => {
+    const strings = () => ({ entries: Array.from({ length: 5 }, () => 'a'.repeat(4_000)) });
+    for (const w of ['$`', "$'", 'w'.repeat(5_000)]) {
+      const t = strings();
+      const warnings: string[] = [];
+      applyMod(t, { entries: { mode: 'replaceTxt', replace: '', with: w } }, (m) =>
+        warnings.push(m),
+      );
+      expect(t).toEqual(strings());
+      expect(warnings).toEqual([expect.stringMatching(/^replaceTxt replacement refused/)]);
+    }
+    // Each string becomes just over 16 million characters: none fits.
+    const t = strings();
+    const warnings: string[] = [];
+    applyMod(t, { entries: { mode: 'replaceTxt', replace: 'a', with: 'b'.repeat(4_001) } }, (m) =>
+      warnings.push(m),
+    );
+    expect(t).toEqual(strings());
+    expect(warnings).toEqual([expect.stringMatching(/^replaceTxt work budget used up/)]);
+    // The books' kind of replacement, with a capture, still works.
+    const ok = { entries: ['the goblin'] };
+    applyMod(
+      ok,
+      { entries: { mode: 'replaceTxt', replace: 'gob(lin)', with: 'Gob$1s' } },
+      () => {},
+    );
+    expect(ok.entries).toEqual(['the Goblins']);
   });
 
   it('gives every merge a budget of its own', () => {
