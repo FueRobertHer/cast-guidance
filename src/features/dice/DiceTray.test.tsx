@@ -82,7 +82,10 @@ describe('DiceTray', () => {
         await act(() => new Promise((done) => requestAnimationFrame(() => done(undefined))));
       }
       expect(button.className).toBe(before);
-      expect(button.className).not.toMatch(/opacity-0|pointer-events-none/);
+      // Hidden under a sheet is a variant (`data-aria-hidden:opacity-0`), not these.
+      const classes = button.className.split(/\s+/);
+      expect(classes).not.toContain('opacity-0');
+      expect(classes).not.toContain('pointer-events-none');
     } finally {
       // Back to jsdom's own, whatever the run did.
       if (ownY === undefined) Reflect.deleteProperty(window, 'scrollY');
@@ -182,7 +185,7 @@ describe('DiceTray', () => {
     expect(within(tray()).getByText('No rolls yet.')).toBeTruthy();
   });
 
-  it('colours a heal as a heal, and a roll from before kinds by its dice', () => {
+  it('colours a heal as a heal, and a roll with no kind as plain dice, not damage', () => {
     rollLogStore.getState().append(logged('Cure Wounds healing', Date.now(), 'heal'));
     rollLogStore.getState().append(logged('Old roll'));
     render(<DiceTray dock />);
@@ -194,7 +197,8 @@ describe('DiceTray', () => {
       return within(row).getByText('5');
     };
     expect(total('Cure Wounds healing').className).toContain('text-heal');
-    expect(total('Old roll').className).toContain('text-danger');
+    // Dice typed into the tray say nothing of damage (the 2026-11-21 review).
+    expect(total('Old roll').className).toContain('text-roll');
   });
 
   it('says when each roll was made, and keeps saying it as time passes', () => {
