@@ -5,21 +5,41 @@ import { Badge } from '@/ui/Badge';
 import { Lift } from '@/ui/Lift';
 
 /**
- * Rage says it: spells and concentration are out while it lasts. A warning,
+ * Why spells are out, when the sheet says they are: Rage (spells and
+ * concentration are out while it lasts), or armor worn without training under
+ * the `armorTraining` table rule (`DerivedSheet.armorPenalty`). A warning,
  * never a lock, as the conditions' cues are: the table has the last word.
  */
-export const raging = (sheet: Pick<DerivedSheet, 'cues'>) =>
-  sheet.cues.some((c) => c.text === RAGE_NO_SPELLS);
+export function noSpellsWhy(
+  sheet: Pick<DerivedSheet, 'cues' | 'armorPenalty'>,
+): string | undefined {
+  if (sheet.cues.some((c) => c.text === RAGE_NO_SPELLS)) {
+    return 'You cannot cast spells while raging';
+  }
+  if (sheet.armorPenalty !== undefined) {
+    return `You cannot cast spells: ${sheet.armorPenalty.origin}`;
+  }
+  return undefined;
+}
 
 /**
- * Over each spellcasting block while raging (the buffs canvas, Edges), on Play
- * and on the Spells tab: spells are out. A warning, not a lock: Cast still works.
+ * Over each spellcasting block while spells are out (the buffs canvas, Edges),
+ * on Play and on the Spells tab, saying why. Nothing when they are not. A
+ * warning, not a lock: Cast still works.
  */
-export function NoSpellsCue({ className = '' }: { className?: string }) {
+export function NoSpellsCue({
+  sheet,
+  className = '',
+}: {
+  sheet: Pick<DerivedSheet, 'cues' | 'armorPenalty'>;
+  className?: string;
+}) {
+  const why = noSpellsWhy(sheet);
+  if (why === undefined) return null;
   return (
     <p className={`flex gap-1.5 text-caption text-guide ${className}`}>
       <AlertTriangle size={14} aria-hidden="true" className="mt-0.5 shrink-0" />
-      You cannot cast spells while raging
+      {why}
     </p>
   );
 }

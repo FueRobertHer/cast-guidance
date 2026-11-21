@@ -162,7 +162,7 @@ import { SpellInfoSheet } from '../SpellInfoSheet';
 import { spellNeedsConcentration } from '../SpellManager';
 import { SpellSlots } from '../SpellSlots';
 import { hitDiceLeft, hitDiePlan, hitDieRoll, slotLeft, slotPlan, slotsLeftFor } from '../slotCost';
-import { NoSpellsCue, raging, SaveDcBadge } from '../spellcastingMarks';
+import { NoSpellsCue, SaveDcBadge } from '../spellcastingMarks';
 import { findSpell, useSpellData } from '../spellData';
 import { spellSaves } from '../spellMeta';
 import type { CharacterSheetState } from '../useCharacterSheet';
@@ -3084,7 +3084,7 @@ export function Component() {
               </Badge>
             </span>
           </div>
-          {raging(sheet) && <NoSpellsCue className="mb-2" />}
+          <NoSpellsCue sheet={sheet} className="mb-2" />
           <SpellSlots
             block={sc}
             play={play}

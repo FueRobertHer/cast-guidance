@@ -268,6 +268,38 @@ describe('spells while raging', () => {
   });
 });
 
+describe('spells in armor worn without training', () => {
+  const warning = 'You cannot cast spells: Untrained armor (Chain Mail)';
+  const inChainMail = (doc: CharacterDoc): CharacterDoc => {
+    doc.equipment = [
+      {
+        id: 'cm',
+        ref: { name: 'Chain Mail', source: 'TST' },
+        qty: 1,
+        equipped: true,
+        attuned: false,
+      },
+    ];
+    return doc;
+  };
+
+  it('warns over the spellcasting block on Play and on Spells, naming the armor', async () => {
+    await renderSheet(inChainMail(sorcerer()));
+    expect(screen.getByText(warning)).toBeTruthy();
+    await resetSheetHarness();
+
+    await renderSheet(inChainMail(sorcerer()), { path: 'spells' });
+    expect(await screen.findByText(warning)).toBeTruthy();
+  });
+
+  it('says nothing when the house rule waives it', async () => {
+    const doc = inChainMail(sorcerer());
+    doc.tableRules = { armorTraining: 'off' };
+    await renderSheet(doc);
+    expect(screen.queryByText(/You cannot cast spells/)).toBeNull();
+  });
+});
+
 describe('Innate Sorcery from its own Use', () => {
   const world = {
     class: [
