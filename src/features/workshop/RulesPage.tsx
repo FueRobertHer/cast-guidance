@@ -12,7 +12,7 @@
 import { useLiveQuery } from 'dexie-react-hooks';
 import { ArrowLeft, ChevronRight, FileUp, ListOrdered, PenLine } from 'lucide-react';
 import { lazy, Suspense, useEffect, useRef, useState } from 'react';
-import { useSearchParams } from 'react-router';
+import { useLocation, useSearchParams } from 'react-router';
 import { homebrewRepo } from '@/db/homebrewRepo';
 import {
   type PackHere,
@@ -24,7 +24,7 @@ import {
   useRoster,
 } from '@/features/homebrew/PackReviewSheet';
 import { HouseRulesSection } from '@/features/settings/HouseRulesSection';
-import { useBack } from '@/lib/useBack';
+import { keepFirst, useBack } from '@/lib/useBack';
 import { usePageTitle } from '@/lib/usePageTitle';
 import { announce } from '@/stores/announcer';
 import { Button } from '@/ui/Button';
@@ -61,22 +61,28 @@ export function Component() {
   const packs = usePacksHere(rows);
   const roster = useRoster();
   const names = new Map((roster ?? []).map((c) => [c.id, c.name]));
+  const [message, setMessage] = useState<string>();
+  // What opened a sheet, for focus to go back to as it closes: a sheet that
+  // swaps for another (Import's preview) has no trigger of its own.
+  const opener = useRef<HTMLElement | null>(null);
+  const heading = useRef<HTMLHeadingElement>(null);
   // The Workshop's Rules shelf opens the page with its write sheet open
-  // (`?write`), once: the address drops it, so Back or a reload does not.
+  // (`?write`), once: the address drops it, so Back or a reload does not. The
+  // page is still where the tab began if it was (`keepFirst`), so Back goes up
+  // to the Workshop, and focus goes to its heading as the sheet closes, the
+  // link that opened it being on the page before.
+  const location = useLocation();
   const [params, setParams] = useSearchParams();
   const asked = params.has('write');
   const [open, setOpen] = useState<Open | undefined>(() => (asked ? { kind: 'write' } : undefined));
   // biome-ignore lint/correctness/useExhaustiveDependencies: only the address asking matters
   useEffect(() => {
     if (!asked) return;
+    opener.current = heading.current;
     const next = new URLSearchParams(params);
     next.delete('write');
-    setParams(next, { replace: true });
+    setParams(next, { replace: true, state: keepFirst(location, location.state) });
   }, [asked]);
-  const [message, setMessage] = useState<string>();
-  // What opened a sheet, for focus to go back to as it closes: a sheet that
-  // swaps for another (Import's preview) has no trigger of its own.
-  const opener = useRef<HTMLElement | null>(null);
   const show = (next: Open) => {
     opener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     setOpen(next);
@@ -116,7 +122,9 @@ export function Component() {
       <button type="button" aria-label="Back" onClick={back} className={ICON}>
         <ArrowLeft size={20} aria-hidden />
       </button>
-      <h1 className="font-display text-title-page">Rules</h1>
+      <h1 ref={heading} tabIndex={-1} className="font-display text-title-page outline-none">
+        Rules
+      </h1>
       {message !== undefined && <p className="text-caption text-ink-muted">{message}</p>}
 
       <HouseRulesSection heading={H2} title="Table rules" aside="Every character" />
