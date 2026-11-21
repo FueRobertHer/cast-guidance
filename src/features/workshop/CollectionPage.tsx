@@ -429,8 +429,11 @@ function entriesIn(json: Json, own: boolean): Entry[] {
   for (const [type, list] of Object.entries(json)) {
     if (type === '_meta' || !Array.isArray(list)) continue;
     if (own && (OWNED_KINDS.has(type) || !EDITORS.has(type))) continue;
+    // A blank name is no name: the merge leaves such an entry out
+    // (`mergeHomebrewFiles`), so its row would link to nothing.
     for (const e of list)
-      if (isRecord(e) && typeof e.name === 'string') out.push({ type, entry: e, name: e.name });
+      if (isRecord(e) && typeof e.name === 'string' && e.name.trim() !== '')
+        out.push({ type, entry: e, name: e.name });
   }
   return out;
 }

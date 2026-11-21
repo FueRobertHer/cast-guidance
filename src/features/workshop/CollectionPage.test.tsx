@@ -488,6 +488,23 @@ describe('a collection page', () => {
     );
   });
 
+  it('lists no entry with a blank name, which the Library leaves out', async () => {
+    const own = await homebrewRepo.createEditable('Blank Shelf', 'BS');
+    await homebrewRepo.saveEditable(own.id, {
+      ...(own.json as Record<string, unknown>),
+      spell: [
+        { name: '  ', source: 'BS', level: 1 },
+        { name: 'Kept Spell', source: 'BS', level: 1 },
+      ],
+    });
+    visit(collectionPath(own.id));
+    await heading('Blank Shelf');
+    await screen.findByRole('link', { name: /^Kept Spell/ }, { timeout: WAIT });
+    expect(screen.getAllByRole('link', { name: /spell/i }).map((l) => l.textContent)).toEqual([
+      expect.stringMatching(/^Kept Spell/),
+    ]);
+  });
+
   it('offers to add any kind to a collection of your own, classes too (bug 1)', async () => {
     const own = await homebrewRepo.createEditable('Lantern Coast', 'LC');
     const router = visit(collectionPath(own.id));
