@@ -128,6 +128,11 @@ describe('meetsMulticlassRequirements on the shapes the release writes', () => {
     expect(meetsMulticlassRequirements(c, scores({ dex: 13, cha: 13 }))).toBe(true);
     expect(meetsMulticlassRequirements(c, scores({ str: 13 }))).toBe(false);
     expect(meetsMulticlassRequirements(c, scores({ wis: 13 }))).toBe(false);
+    // An object of one score beside one of several is a clause of its own.
+    const mixed = cls({ or: [{ str: 13, dex: 13 }, { int: 13 }] });
+    expect(multiclassRequirementText(mixed)).toBe('STR 13 or DEX 13, and INT 13');
+    expect(meetsMulticlassRequirements(mixed, scores({ dex: 13 }))).toBe(false);
+    expect(meetsMulticlassRequirements(mixed, scores({ dex: 13, int: 13 }))).toBe(true);
     // One score an object stays one choice of them all, as the Workshop writes it.
     const one = cls({ cha: 13, or: [{ str: 13 }, { dex: 13 }] });
     expect(multiclassRequirementText(one)).toBe('CHA 13, and STR 13 or DEX 13');
