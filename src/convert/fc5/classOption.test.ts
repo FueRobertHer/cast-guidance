@@ -36,6 +36,39 @@ describe('isClassOption', () => {
     ).toBe(false);
   });
 
+  it('is one at a higher level only when named for its own class list, with no school', () => {
+    const at = (name: string, classes: string, school = '') =>
+      isClassOption(
+        option(`<name>${name}</name><level>3</level>${school}<classes>${classes}</classes>`),
+      );
+    expect(at('Draconic Power: Ring of Fire', 'Dragonblade (Tanares): Draconic Powers')).toBe(true);
+    expect(at('Esoteric Theory: Flux', 'Sage: Esoteric Theories')).toBe(true);
+    expect(at('Grand Hex: Doom', 'Sage: Grand Hexes')).toBe(true);
+    expect(
+      isClassOption(
+        option(
+          '<name>Draconic Power: Ring of Fire</name><level>high</level><classes>Dragonblade (Tanares): Draconic Powers</classes>',
+        ),
+      ),
+    ).toBe(false);
+    expect(
+      at(
+        'Draconic Power: Ring of Fire',
+        'Dragonblade (Tanares): Draconic Powers',
+        '<school>EV</school>',
+      ),
+    ).toBe(false);
+    expect(at('Ring of Fire', 'Dragonblade (Tanares): Draconic Powers')).toBe(false);
+    expect(at('Draconic Power: Ring of Fire', 'Dragonblade (Tanares): Draconic Feats')).toBe(false);
+    expect(at('Draconic Power: Ring of Fire', 'Draconic Powers')).toBe(false);
+    expect(
+      at(
+        'Draconic Power: Ring of Fire',
+        'Dragonblade (Tanares): Draconic Powers, Ember Knight: Tricks',
+      ),
+    ).toBe(false);
+  });
+
   it('is not a starred copy of a spell, on whatever list', () => {
     expect(
       isClassOption(
@@ -216,5 +249,29 @@ describe('convertClassOption', () => {
       entries: ['{@b Casting Time:} 1 action', 'Ash falls.'],
     });
     expect(isOnOfficialList(result.entity)).toBe(false);
+  });
+
+  it("keeps a higher-level option's level to read, and says nothing gates it", () => {
+    const result = convertClassOption(
+      option(
+        '<name>Draconic Power: Ring of Fire</name><level>3</level>' +
+          '<classes>Dragonblade (Tanares): Draconic Powers</classes><text>Flames rise.</text>',
+      ),
+      ctx,
+    );
+    if ('skip' in result) throw new Error(result.skip);
+    expect(result.entity).toMatchObject({ entries: ['{@b Level:} 3', 'Flames rise.'] });
+    expect(result.reasons).toEqual([
+      'its level (3) is kept as text; nothing stops an earlier pick',
+    ]);
+    const low = convertClassOption(
+      option(
+        '<name>Draconic Power: Spark</name><level>1</level><classes>Dragonblade (Tanares): Draconic Powers</classes><text>A spark.</text>',
+      ),
+      ctx,
+    );
+    if ('skip' in low) throw new Error(low.skip);
+    expect(low.entity).toMatchObject({ entries: ['A spark.'] });
+    expect(low.reasons).toEqual([]);
   });
 });
