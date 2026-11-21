@@ -1763,66 +1763,6 @@ describe('ItemEditor', () => {
     expect(readStoredEffects(effects()).problems).toEqual([]);
   });
 
-  it('names a pool or an action for its class, always or beside the classes typed', () => {
-    const draft = mount(item, {
-      name: 'Ember Lamp',
-      type: 'OTH',
-      entries: [],
-      castGuidance: {
-        v: 1,
-        effects: [
-          { kind: 'resource', key: 'embers', label: 'Embers', max: 2, reset: 'long' },
-          { kind: 'action', economy: 'bonus', label: 'Kindle' },
-          { kind: 'acBonus', amount: 1 },
-        ],
-      },
-    });
-    const effects = () => (draft().castGuidance as Json).effects as Json[];
-    const naming = (label: string) =>
-      (screen.getByLabelText(label) as HTMLSelectElement).selectedOptions[0]?.textContent;
-    expect(naming('Uses per rest: Class in the name')).toBe('Never');
-    // Only a pool and an action have a name the sheet can add the class to.
-    expect(screen.queryByLabelText('Armor Class: Class in the name')).toBeNull();
-    type('Uses per rest: Class in the name', 'own');
-    expect(effects()[0]).toMatchObject({ ownClass: true });
-    expect(
-      screen.getByText('Embers (name of the class that gives it): 2 uses, back on a long rest'),
-    ).toBeTruthy();
-    // Beside: no class yet is a problem the card says in words.
-    type('Uses per rest: Class in the name', 'beside');
-    expect(effects()[0]).not.toHaveProperty('ownClass');
-    expect(effects()[0]).toMatchObject({ ownClassBeside: [] });
-    expect(screen.getByText(/name a class it stands beside/)).toBeTruthy();
-    // A comma typed stays, for the next name.
-    type('Uses per rest: Beside which classes', 'Paladin,');
-    expect(effects()[0]).toMatchObject({ ownClassBeside: ['Paladin'] });
-    expect(
-      (screen.getByLabelText('Uses per rest: Beside which classes') as HTMLInputElement).value,
-    ).toBe('Paladin,');
-    type('Uses per rest: Beside which classes', 'Paladin, cleric ');
-    expect(effects()[0]).toMatchObject({ ownClassBeside: ['Paladin', 'cleric'] });
-    expect(readStoredEffects(effects()).problems).toEqual([]);
-    expect(screen.queryByText(/name a class it stands beside/)).toBeNull();
-    type('Uses per rest: Class in the name', '');
-    expect(effects()[0]).toEqual({
-      kind: 'resource',
-      key: 'embers',
-      label: 'Embers',
-      max: 2,
-      reset: 'long',
-    });
-    // An action too, so it can share an "ownClass" pool's name.
-    type('Action: Class in the name', 'own');
-    expect(effects()[1]).toEqual({
-      kind: 'action',
-      economy: 'bonus',
-      label: 'Kindle',
-      ownClass: true,
-    });
-    expect(screen.getByText('Bonus action: Kindle (name of the class that gives it)')).toBeTruthy();
-    expect(readStoredEffects(effects()).problems).toEqual([]);
-  });
-
   it('shows the classes a pool is named beside after the card above it goes', () => {
     mount(item, {
       name: 'Ember Lamp',

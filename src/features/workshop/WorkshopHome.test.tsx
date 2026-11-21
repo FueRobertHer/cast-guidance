@@ -343,6 +343,19 @@ describe('the Workshop home', () => {
     );
   });
 
+  it('writes a rule pack from the Rules shelf, the Rules page opening with its sheet', async () => {
+    const router = await visit('/workshop');
+    shelf('Rules');
+    const write = await screen.findByRole('link', { name: 'Write a rule pack' }, { timeout: WAIT });
+    fireEvent.click(write);
+    expect(
+      await screen.findByRole('dialog', { name: 'Write a rule pack' }, { timeout: WAIT }),
+    ).toBeTruthy();
+    // Once: the address drops it, so Back to the page or a reload does not open it again.
+    await waitFor(() => expect(router.state.location.search).toBe(''));
+    expect(router.state.location.pathname).toBe('/workshop/rules');
+  });
+
   it('lists the table rules by the value each plays by, opening the Rules page', async () => {
     setAppTableRule('critDamage', 'maxPlusRoll');
     try {

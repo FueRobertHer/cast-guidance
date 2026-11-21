@@ -795,9 +795,9 @@ export function Prerequisites({
   const armor = armorNeed(alt.proficiency);
   const lists = [
     ['race', 'Species', 'Elf, Dwarf', true],
-    ['feat', 'Feat', 'Tough|XPHB', false],
+    ['feat', 'Feat', 'Tough', false],
     ['background', 'Background', 'Sage', true],
-    ['spell', 'Spell known', 'Eldritch Blast#c', false],
+    ['spell', 'Spell known', 'Eldritch Blast', false],
   ] as const;
   // What a box below edits, as long as the file writes it plainly.
   const edits: Readonly<Record<string, boolean>> = {
