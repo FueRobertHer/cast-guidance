@@ -9,11 +9,12 @@
  * runs it: static imports and re-exports, `import()` with a literal
  * specifier, JSON included, `import type` and `export type` left out (they
  * are erased before the code runs). Specifiers resolve with the app's own
- * compiler options, so the `@/` alias works. Packages are not followed: their
+ * compiler options, so its `paths` aliases work. Packages are not followed: their
  * versions live in `package.json` and `bun.lock`, which {@link ALWAYS_INPUTS}
  * covers along with the files the audit reads at run time.
  */
 import { readFileSync } from 'node:fs';
+import { builtinModules } from 'node:module';
 import path from 'node:path';
 import ts from 'typescript';
 
@@ -48,10 +49,28 @@ function resolutionOptions(root: string): ts.CompilerOptions {
   return ts.parseJsonConfigFileContent(read.config, ts.sys, root, undefined, configPath).options;
 }
 
-/** The runtime module specifiers in one source file, in source order. */
+/**
+ * The runtime module specifiers in one source file, in source order. A load
+ * the walk cannot follow (an `import()` or `require()` of a computed name,
+ * `import.meta.glob`, `new URL(..., import.meta.url)`) throws: skipping it
+ * would read as "the audit does not depend on this".
+ */
 export function runtimeSpecifiers(fileName: string, text: string): string[] {
-  const source = ts.createSourceFile(fileName, text, ts.ScriptTarget.Latest, false);
+  const source = ts.createSourceFile(fileName, text, ts.ScriptTarget.Latest, true);
   const specs: string[] = [];
+  const refuse = (node: ts.Node, what: string): never => {
+    const { line } = source.getLineAndCharacterOfPosition(node.getStart(source));
+    throw new Error(`${fileName}:${line + 1}: ${what} is not followed; load a literal path`);
+  };
+  const literalArgument = (call: ts.CallExpression, what: string) => {
+    const arg = call.arguments[0];
+    if (arg === undefined || !ts.isStringLiteralLike(arg)) return refuse(call, what);
+    specs.push(arg.text);
+  };
+  const isImportMeta = (node: ts.Node) =>
+    ts.isMetaProperty(node) &&
+    node.keywordToken === ts.SyntaxKind.ImportKeyword &&
+    node.name.text === 'meta';
   const visit = (node: ts.Node) => {
     if (ts.isImportDeclaration(node)) {
       if (!node.importClause?.isTypeOnly && ts.isStringLiteral(node.moduleSpecifier)) {
@@ -65,13 +84,36 @@ export function runtimeSpecifiers(fileName: string, text: string): string[] {
       }
       return;
     }
-    if (
-      ts.isCallExpression(node) &&
-      node.expression.kind === ts.SyntaxKind.ImportKeyword &&
-      node.arguments[0] &&
-      ts.isStringLiteralLike(node.arguments[0])
-    ) {
-      specs.push(node.arguments[0].text);
+    if (ts.isImportEqualsDeclaration(node)) {
+      const ref = node.moduleReference;
+      if (!node.isTypeOnly && ts.isExternalModuleReference(ref)) {
+        if (!ts.isStringLiteralLike(ref.expression)) return refuse(node, 'an `import = require()`');
+        specs.push(ref.expression.text);
+      }
+      return;
+    }
+    if (ts.isCallExpression(node)) {
+      if (node.expression.kind === ts.SyntaxKind.ImportKeyword) {
+        literalArgument(node, 'an `import()` of a computed name');
+      } else if (ts.isIdentifier(node.expression) && node.expression.text === 'require') {
+        literalArgument(node, 'a `require()` of a computed name');
+      } else if (
+        ts.isPropertyAccessExpression(node.expression) &&
+        isImportMeta(node.expression.expression)
+      ) {
+        refuse(node, `\`import.meta.${node.expression.name.text}()\``);
+      }
+    }
+    if (ts.isNewExpression(node) && ts.isIdentifier(node.expression)) {
+      const second = node.arguments?.[1];
+      if (
+        node.expression.text === 'URL' &&
+        second !== undefined &&
+        ts.isPropertyAccessExpression(second) &&
+        isImportMeta(second.expression)
+      ) {
+        refuse(node, 'a file found with `new URL(..., import.meta.url)`');
+      }
     }
     ts.forEachChild(node, visit);
   };
@@ -79,14 +121,17 @@ export function runtimeSpecifiers(fileName: string, text: string): string[] {
   return specs;
 }
 
-/** Bare package names and `node:` builtins, which the closure does not follow. */
-const isPackage = (spec: string) => !spec.startsWith('.') && !spec.startsWith('@/');
+/** Node's builtins, which resolve to type declarations or not at all. */
+const BUILTINS = new Set(builtinModules);
+const isBuiltin = (spec: string) => spec.startsWith('node:') || BUILTINS.has(spec);
 
 /**
  * Every repository file the audit's code is made of, relative to `root` with
- * forward slashes, sorted. Throws when a relative or `@/` specifier does not
- * resolve: a gap in the closure would read as "the audit does not depend on
- * this" and skip the audit, so it must fail loudly instead.
+ * forward slashes, sorted. Every specifier but a builtin resolves with the
+ * app's compiler options (its `paths` aliases, JSON included); one that lands
+ * in a package is not followed. One that does not resolve throws: a gap in
+ * the closure would read as "the audit does not depend on this" and skip the
+ * audit, so it must fail loudly instead.
  */
 export function auditInputs(root: string, entry: string = AUDIT_ENTRY): string[] {
   const options = resolutionOptions(root);
@@ -97,19 +142,17 @@ export function auditInputs(root: string, entry: string = AUDIT_ENTRY): string[]
     if (seen.has(file)) continue;
     seen.add(file);
     if (file.endsWith('.json')) continue;
-    for (const spec of runtimeSpecifiers(file, readFileSync(file, 'utf8'))) {
-      if (isPackage(spec)) continue;
-      let resolved: string | undefined;
-      if (spec.endsWith('.json')) {
-        resolved = path.resolve(path.dirname(file), spec);
-      } else {
-        resolved = ts.resolveModuleName(spec, file, options, ts.sys).resolvedModule
-          ?.resolvedFileName;
+    const where = toPosix(path.relative(root, file));
+    for (const spec of runtimeSpecifiers(where, readFileSync(file, 'utf8'))) {
+      if (isBuiltin(spec)) continue;
+      const resolved = ts.resolveModuleName(spec, file, options, ts.sys).resolvedModule;
+      if (resolved === undefined || !ts.sys.fileExists(resolved.resolvedFileName)) {
+        throw new Error(`${where}: cannot resolve "${spec}"`);
       }
-      if (!resolved || !ts.sys.fileExists(resolved)) {
-        throw new Error(`${toPosix(path.relative(root, file))}: cannot resolve "${spec}"`);
-      }
-      queue.push(path.resolve(resolved));
+      const target = path.resolve(resolved.resolvedFileName);
+      const inside = !path.relative(root, target).startsWith('..');
+      if (resolved.isExternalLibraryImport || !inside) continue;
+      queue.push(target);
     }
   }
   return [...seen].map((f) => toPosix(path.relative(root, f))).sort();
