@@ -422,7 +422,9 @@ function MoveSheet({
           </p>
         )}
         {movable.length > 0 && (
-          <fieldset className="flex flex-col gap-2">
+          // `min-w-0`: a fieldset is never narrower than its longest word by
+          // default, which ran the choices off the sheet with text at 200%.
+          <fieldset className="flex min-w-0 flex-col gap-2">
             <legend className="sr-only">Move to</legend>
             {places.map((f) => (
               <label key={f.id} className={`${ITEM} cursor-pointer flex-row items-center gap-3`}>
@@ -449,7 +451,7 @@ function MoveSheet({
                 onChange={() => setTo(NEW)}
                 className="size-5 shrink-0 accent-brand"
               />
-              <span className="flex min-w-0 flex-col">
+              <span className="flex min-w-0 flex-col break-words">
                 <span className="text-body-strong">Start a new collection</span>
                 <span className="text-caption text-ink-muted">Name it here</span>
               </span>

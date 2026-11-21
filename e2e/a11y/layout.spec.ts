@@ -442,6 +442,41 @@ test.describe('text at 200%', () => {
   }
 });
 
+/**
+ * The sheets the routes open, on the smallest screen with text at 200% as
+ * well: the reflow check runs at this size with plain text, and the text check
+ * on a taller phone, so neither puts this much text in this little height. A
+ * sheet is pinned to the bottom of the screen, so one that grows taller than
+ * the screen runs off the top, where nothing scrolls to it. Its top must stay
+ * on screen, and each primary control must scroll into view inside it.
+ */
+test.describe('sheets at 320 by 640 with text at 200%', () => {
+  test.use({ viewport: { width: 320, height: 640 } });
+
+  for (const [group, routes, open] of GROUPS) {
+    const sheets = routes.filter((r) => r.panel !== undefined);
+    if (sheets.length === 0) continue;
+    test(`those ${group} open stay on screen and keep primary controls in reach`, async ({
+      page,
+    }) => {
+      const id = await open(page);
+      for (const route of sheets) {
+        await route.open(page, id);
+        await applyMeasuredFont(page, 'html { font-size: 200% !important; }');
+        await animationsSettled(page);
+        await expectNoSidewaysScroll(page, route);
+        const panel = route.panel?.(page);
+        if (panel === undefined) throw new Error(`${route.name} has no panel`);
+        expect((await box(panel)).y, `${route.name}: the sheet's top`).toBeGreaterThanOrEqual(0);
+        for (const control of route.primary(page)) {
+          await control.scrollIntoViewIfNeeded();
+          await expect(control, `${route.name}: ${control}`).toBeInViewport({ ratio: 1 });
+        }
+      }
+    });
+  }
+});
+
 /** A collection with a long file name, as one shared from a friend might have. */
 /** A feat whose name runs long, to measure the room a Yours row leaves it. */
 const LONG_FEAT = 'Gift of the Unending Lantern-Lit Harbour Night';
@@ -537,6 +572,27 @@ const WORKSHOP: readonly Route[] = [
       page.getByRole('region', { name: 'Yours' }).getByRole('link', { name: /^Fire Gift/ }),
       page.getByRole('region', { name: 'In the books' }).getByRole('link', { name: /^Fireball/ }),
     ],
+  },
+  {
+    // The longest of the Workshop's sheets: with text at 200% here it ran
+    // hundreds of px off the top of the screen, its choices out of reach.
+    name: 'workshop move',
+    open: async (page) => {
+      await gotoHeading(page, '/workshop', 'Workshop');
+      await page.getByRole('button', { name: 'Select', exact: true }).click();
+      await page.getByRole('checkbox', { name: /^Fire Gift\s*,/ }).check();
+      await page.getByRole('button', { name: 'Move', exact: true }).click();
+      await expect(page.getByRole('dialog', { name: 'Move 1 entry', exact: true })).toBeVisible();
+    },
+    primary: (page) => {
+      const sheet = page.getByRole('dialog', { name: 'Move 1 entry', exact: true });
+      return [
+        sheet.getByRole('radio').first(),
+        sheet.getByRole('button', { name: 'Cancel', exact: true }),
+        sheet.getByRole('button', { name: /^(Move here|Make and move)$/ }),
+      ];
+    },
+    panel: (page) => page.getByRole('dialog', { name: 'Move 1 entry', exact: true }),
   },
 ];
 

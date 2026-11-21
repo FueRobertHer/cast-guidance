@@ -77,6 +77,16 @@ function SheetNestedRoot(props: DialogProps) {
  * `title-sheet`, with optional context on the right in `caption`. The confirm
  * goes last, as a `lg` block button in reach of a thumb, saying exactly what
  * will happen ("Take 7 damage").
+ *
+ * A panel is pinned to the bottom of the screen and is as tall as what is in
+ * it, so a sheet that can outgrow the screen (a long list, or any sheet with
+ * text at 200% on a small phone) caps it and scrolls inside: the panel takes
+ * `flex max-h-[…] flex-col`, and what may run long goes in a `Body`, between
+ * the heading and anything that must stay in reach. Without the cap the panel
+ * grows off the top of the screen, and nothing scrolls to what is up there.
+ * The panel itself never scrolls: vaul hangs a `::after` twice the panel's
+ * height below it (it fills the gap when the sheet is dragged up), and a
+ * scrolling panel would scroll into that.
  */
 const SCRIM = 'fixed inset-0 z-40 bg-scrim';
 
@@ -97,6 +107,18 @@ function SheetPanel({ className, children, ...props }: ComponentProps<typeof Dra
       {children}
     </Drawer.Content>
   );
+}
+
+/**
+ * The part of a capped panel that scrolls (see `Panel`). It reaches out to the
+ * panel's edges, and a step past its top and bottom, so a focus ring at its
+ * edge is not cut off; `scroll-py-1` keeps that ring in sight when Tab
+ * scrolls a control into view.
+ */
+const BODY = '-mx-4 -my-1 min-h-0 flex-1 scroll-py-1 overflow-y-auto px-4 py-1';
+
+function SheetBody({ className, ...props }: ComponentProps<'div'>) {
+  return <div className={className ? `${BODY} ${className}` : BODY} {...props} />;
 }
 
 function SheetHeading({ children, aside }: { children: ReactNode; aside?: ReactNode }) {
@@ -133,6 +155,7 @@ export const Sheet = {
   NestedRoot: SheetNestedRoot,
   Scrim: SheetScrim,
   Panel: SheetPanel,
+  Body: SheetBody,
   Heading: SheetHeading,
 };
 
