@@ -22,6 +22,7 @@ import {
   onScreen,
   openCharacterActions,
   openHistory,
+  openImportSheet,
   openNewCharacter,
   openSheetMenu,
   renameCharacter,
@@ -443,48 +444,61 @@ test.describe('axe: pages and overlays', () => {
     await scanState(page, 'library-search');
   });
 
-  test('homebrew: the list, a file, its remove confirm and the builder', async ({ page }) => {
+  test('workshop: an import, a collection of yours, its prompts and a missing one', async ({
+    page,
+  }) => {
     await gotoRosterSettled(page);
-    await gotoHeading(page, '/homebrew', 'Homebrew');
-    await scanState(page, 'homebrew-empty');
-
-    // A file is previewed before anything is written (IMP-002).
+    // A file is read in the Import sheet, then previewed before anything is
+    // written (IMP-002).
+    await opened(page, await openImportSheet(page));
+    await scanState(page, 'workshop-import');
     await importHomebrewFile(page, HOMEBREW);
     const preview = importPreview(page, 'Import "axe-brew.json"?');
     await opened(page, preview);
-    await scanState(page, 'homebrew-import-preview');
+    await scanState(page, 'workshop-import-preview');
     await answerImportPreview(page, 'Import "axe-brew.json"?');
     await expect(page.getByText(/^Imported "axe-brew\.json"/).and(onScreen(page))).toBeVisible();
-    await animationsSettled(page);
-    await scanState(page, 'homebrew');
 
-    await page.getByRole('button', { name: 'Delete axe-brew.json' }).click();
-    const confirm = page.getByRole('dialog', { name: 'Remove "axe-brew.json"?' });
+    await page.getByRole('link', { name: /^axe-brew\.json\s*,/ }).click();
+    await expect(page.getByRole('heading', { level: 1, name: 'axe-brew.json' })).toBeVisible();
+    await page.getByRole('button', { name: 'Delete this collection' }).click();
+    const confirm = page.getByRole('dialog', { name: 'Delete axe-brew.json?' });
     await opened(page, confirm);
-    await scanState(page, 'homebrew-remove-confirm');
+    await scanState(page, 'workshop-collection-delete-confirm');
     await confirm.getByRole('button', { name: 'Cancel' }).click();
     await expect(confirm).toBeHidden();
 
-    // A collection of your own opens the builder, by way of a text prompt.
-    await page.getByRole('button', { name: 'Create your own homebrew' }).click();
-    const named = page.getByRole('dialog', { name: 'Homebrew collection name' });
+    // Something made here lands in a collection of the player's own, whose
+    // page lists it to open, rename or delete.
+    await page.goto('/workshop/new/feat');
+    await page.getByRole('textbox', { name: 'Name', exact: true }).fill('Fire Gift');
+    await page.getByRole('button', { name: 'Save', exact: true }).click();
+    await page.waitForURL(/\/workshop\/edit\/feat\//);
+    await gotoHeading(page, '/workshop?shelf=collections', 'Workshop');
+    await page.getByRole('link', { name: /^My homebrew\s*,/ }).click();
+    await expect(page.getByRole('heading', { level: 1, name: 'My homebrew' })).toBeVisible();
+    await expect(page.getByRole('link', { name: /^Fire Gift\s*,/ })).toBeVisible();
+    await animationsSettled(page);
+    await scanState(page, 'workshop-collection-mine');
+
+    await page.getByRole('button', { name: 'More for Fire Gift' }).click();
+    await page
+      .getByRole('dialog', { name: 'Fire Gift' })
+      .getByRole('button', { name: 'Rename' })
+      .click();
+    const named = page.getByRole('dialog', { name: 'Rename Fire Gift' });
     await opened(page, named);
     await scanState(page, 'text-prompt');
-    await named.getByRole('textbox').fill('Axe Table');
-    await named.getByRole('button', { name: 'OK' }).click();
-    const abbrev = page.getByRole('dialog', { name: 'Short source id (shown on badges)' });
-    await abbrev.getByRole('button', { name: 'OK' }).click();
-    await page.waitForURL(/\/homebrew\/edit\/[^/]+$/);
-    await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
-    await animationsSettled(page);
-    await scanState(page, 'homebrew-builder');
+    // A prompt has no Cancel: it is dismissed, which renames nothing.
+    await page.keyboard.press('Escape');
+    await expect(named).toBeHidden();
 
-    await page.goto('/homebrew/edit/no-such-file');
+    await page.goto('/workshop/collection/no-such-file');
     await expect(
-      page.getByText('This homebrew file is no longer on this device.').and(onScreen(page)),
+      page.getByText('This collection is no longer on this device.').and(onScreen(page)),
     ).toBeVisible();
     await animationsSettled(page);
-    await scanState(page, 'homebrew-builder-unknown');
+    await scanState(page, 'workshop-collection-missing');
   });
 
   test('workshop: its home and shelves, search, a collection and the rules', async ({ page }) => {
@@ -503,7 +517,6 @@ test.describe('axe: pages and overlays', () => {
     await page.getByRole('textbox', { name: 'Name', exact: true }).fill('Fire Gift');
     await page.getByRole('button', { name: 'Save', exact: true }).click();
     await page.waitForURL(/\/workshop\/edit\/feat\//);
-    await gotoHeading(page, '/homebrew', 'Homebrew');
     await importHomebrewFile(page, HOMEBREW);
     await answerImportPreview(page, 'Import "axe-brew.json"?');
 

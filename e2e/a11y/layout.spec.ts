@@ -146,12 +146,20 @@ const ROUTES: Route[] = [
     primary: (page) => [page.getByRole('button', { name: 'Back' })],
   },
   {
-    name: 'homebrew',
-    open: (page) => gotoHeading(page, '/homebrew', 'Homebrew'),
-    primary: (page) => [
-      page.getByRole('button', { name: 'Import file', exact: true }),
-      page.getByRole('button', { name: 'Create your own homebrew' }),
-    ],
+    name: 'workshop import',
+    open: async (page) => {
+      await gotoHeading(page, '/workshop?shelf=collections&import=', 'Workshop');
+      await expect(page.getByRole('dialog', { name: 'Import', exact: true })).toBeVisible();
+    },
+    primary: (page) => {
+      const sheet = page.getByRole('dialog', { name: 'Import', exact: true });
+      return [
+        ...['A file', 'A link', 'Text'].map((name) =>
+          sheet.getByRole('group', { name: 'Bring in' }).getByRole('button', { name, exact: true }),
+        ),
+        sheet.getByRole('button', { name: 'Choose a file', exact: true }),
+      ];
+    },
   },
   {
     name: 'workshop',
@@ -173,7 +181,7 @@ const ROUTES: Route[] = [
       await expect(page.getByRole('link', { name: /^The books\s*,/ })).toBeVisible();
     },
     primary: (page) => [
-      page.getByRole('link', { name: 'Import or manage files', exact: true }),
+      page.getByRole('link', { name: 'Import a file or a link', exact: true }),
       page.getByRole('link', { name: /^The books\s*,/ }),
     ],
   },
@@ -447,7 +455,6 @@ async function setUpWorkshop(page: Page): Promise<void> {
   await page.getByRole('textbox', { name: 'Name', exact: true }).fill('Fire Spark');
   await page.getByRole('button', { name: 'Save', exact: true }).click();
   await page.waitForURL(/\/workshop\/edit\/spell\//);
-  await gotoHeading(page, '/homebrew', 'Homebrew');
   await importHomebrewFile(page, LONG_BREW);
   await answerImportPreview(page, `Import "${LONG_BREW.name}"?`);
 }
@@ -480,7 +487,7 @@ const WORKSHOP: readonly Route[] = [
       await expect(page.getByRole('link', { name: /^a-very-long-homebrew/ })).toBeVisible();
     },
     primary: (page) => [
-      page.getByRole('link', { name: 'Import or manage files', exact: true }),
+      page.getByRole('link', { name: 'Import a file or a link', exact: true }),
       page.getByRole('link', { name: /^The books\s*,/ }),
     ],
     // With text at 200% the long name's card is taller than the screen, so it
@@ -501,7 +508,8 @@ const WORKSHOP: readonly Route[] = [
     primary: (page) => [
       page.getByRole('button', { name: 'Back', exact: true }),
       page.getByRole('button', { name: `Use ${LONG_BREW.name}`, exact: true }),
-      page.getByRole('link', { name: 'Open the Homebrew page', exact: true }),
+      page.getByRole('button', { name: 'Export a file', exact: true }),
+      page.getByRole('button', { name: 'Delete this collection', exact: true }),
     ],
   },
   {

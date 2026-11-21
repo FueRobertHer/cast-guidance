@@ -463,6 +463,18 @@ work:
   view; house rules stay under Identity. A picker's offer names the device's
   settings and the character's switches together when both hide books, with
   one count for both.
+- The Homebrew page and the Builder are gone (ADR-002 U12): `/homebrew` lands
+  on the Collections shelf and `/homebrew/edit/<id>` on that collection's
+  page, replacing the old address in history. The pack review and order are
+  the Rules page's alone, and the Build tab and the rule sheet say a
+  character follows the table rules, so the last two of U9's left-outs are
+  done. A file that could not be read is listed on the Collections shelf.
+  Left out: the redirect route stays in the table for old bookmarks, with no
+  date to drop it; a collection of your own with a name and short source id
+  of your choosing is made only by Move's "Start a new collection" (the
+  source id comes from the name); a stored row with no id is named on the
+  shelf but nothing can delete it, as before; the Workshop editor has no
+  axe state of its own (the Builder's was replaced by `workshop-collection-mine`).
 
 ### Maintainability and diagnostics
 

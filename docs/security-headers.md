@@ -140,7 +140,7 @@ toolbar off in the project settings or ignore those errors on previews.
 
 - Locally: `bun run build`, serve `dist/` with the `vercel.json` headers, and
   watch for `securitypolicyviolation` events through a cold load, a data
-  download, a search, the homebrew page, and a service worker install.
+  download, a search, a homebrew import in the Workshop, and a service worker install.
 - In production: `curl -sI https://<prod-domain>/ | grep -i '^content-security-policy:'`
   should print the policy above, and the browser console should stay free of
   CSP errors through the same session.

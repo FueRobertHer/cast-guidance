@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-// A collection's page over the app's routes (ADR-002, D1; board 8): each job
-// the Homebrew page's file card and the Builder did. Turn it on or off, for
+// A collection's page over the app's routes (ADR-002, D1; board 8): every job
+// done on one stored file or compendium. Turn it on or off, for
 // the device and for each character; open, rename and delete an entry;
 // export; delete the collection; The books. Bugs 1, 2 and 4 of the plan's
 // list each have a case here. Updates and Needs a look are in
@@ -99,7 +99,7 @@ async function more(entry: string, choice: string) {
 }
 
 describe('a collection page', () => {
-  it('names the collection, turns it off and on, and leads to the Homebrew page', async () => {
+  it('names the collection, turns it off and on, and offers its update', async () => {
     const row = await homebrewRepo.importJson(IMPORTED, 'imported.json');
     visit(await addressOf(row.id));
     expect(await heading('imported.json')).toBeTruthy();
@@ -114,9 +114,12 @@ describe('a collection page', () => {
     await waitFor(() => expect(use.getAttribute('aria-pressed')).toBe('false'), { timeout: WAIT });
     fireEvent.click(use);
     await waitFor(async () => expect(await enabled(row.id)).toBe(true), { timeout: WAIT });
-    expect(screen.getByRole('link', { name: 'Open the Homebrew page' }).getAttribute('href')).toBe(
-      '/homebrew',
-    );
+    // Its jobs are all here: nothing leads to another page to do them.
+    expect(
+      screen
+        .getAllByRole('link')
+        .filter((l) => (l.getAttribute('href') ?? '').startsWith('/homebrew')),
+    ).toEqual([]);
     expect(screen.getByRole('button', { name: 'Update from a file' })).toBeTruthy();
     expect(namelessControls()).toEqual([]);
   });
@@ -805,7 +808,7 @@ describe('The books', () => {
       { timeout: WAIT },
     );
     expect(ask.textContent).toContain(
-      'One more row named all.xml could not be read, so it stays: the Homebrew page says which.',
+      'One more row named all.xml could not be read, so it stays: the Collections shelf lists it.',
     );
     fireEvent.click(within(ask).getByRole('button', { name: 'Cancel' }));
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull(), { timeout: WAIT });

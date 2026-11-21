@@ -26,8 +26,6 @@ export function nearestPage(pathname: string): NearestPage | null {
       return second !== undefined && isEntityType(decodeSegment(second))
         ? { to: `/library/${second}`, label: 'Browse this library section' }
         : { to: '/library', label: 'Go to the library' };
-    case 'homebrew':
-      return { to: '/homebrew', label: 'Go to homebrew' };
     case 'workshop':
       return { to: '/workshop', label: 'Go to the Workshop' };
     case 'create':

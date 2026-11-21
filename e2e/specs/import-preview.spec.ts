@@ -9,8 +9,8 @@ import {
   exportCharacter,
   gotoRoster,
   importCharacterFile,
-  importHomebrewFile,
   importPreview,
+  readInImportSheet,
   renameCharacter,
 } from '../support/app.ts';
 import { countDataFiles, countHomebrewFiles, listCharacters } from '../support/idb.ts';
@@ -49,9 +49,9 @@ test.describe('import preview', () => {
     page,
   }) => {
     // Every pack in first, so the preview checks against all official data,
-    // then on to Homebrew in the same page load, where the download queue
-    // has already said it is done: by the Workshop tab and its Collections
-    // shelf, where the Homebrew page is reached until the Workshop imports.
+    // then on to the Workshop's Import sheet in the same page load, where the
+    // download queue has already said it is done: by the Workshop tab and its
+    // Collections shelf.
     await page.goto('/');
     await expect.poll(() => countDataFiles(page, PINNED_TAG)).toBe(MIRROR_PATHS.length);
     await expectDataSettled(page);
@@ -64,10 +64,15 @@ test.describe('import preview', () => {
       .getByRole('group', { name: 'Shelf' })
       .getByRole('button', { name: 'Collections', exact: true })
       .click();
-    await page.getByRole('link', { name: 'Import or manage files', exact: true }).click();
-    await expect(page.getByRole('heading', { level: 1, name: 'Homebrew' })).toBeVisible();
+    const importLink = page.getByRole('link', { name: 'Import a file or a link', exact: true });
+    /** Opens the sheet from the shelf, as a player does, and reads `file` in it. */
+    const importHomebrew = async (file: ReturnType<typeof jsonFile>) => {
+      await importLink.click();
+      await expect(page.getByRole('dialog', { name: 'Import', exact: true })).toBeVisible();
+      await readInImportSheet(page, file);
+    };
 
-    await importHomebrewFile(page, jsonFile('brew.json', BREW));
+    await importHomebrew(jsonFile('brew.json', BREW));
     const preview = importPreview(page, 'Import "brew.json"?');
     await expect(preview).toBeVisible();
     await expect(preview).toContainText('2 spell');
@@ -87,17 +92,17 @@ test.describe('import preview', () => {
     await expectSaid(page, 'Import canceled. Nothing was added.');
     expect(await countHomebrewFiles(page)).toBe(0);
     // Focus is back where the import started.
-    await expect(page.getByRole('button', { name: 'Import file', exact: true })).toBeFocused();
+    await expect(importLink).toBeFocused();
 
-    await importHomebrewFile(page, jsonFile('brew.json', BREW));
+    await importHomebrew(jsonFile('brew.json', BREW));
     await answerImportPreview(page, 'Import "brew.json"?');
     await expect(homebrewStatus(page)).toHaveText('Imported "brew.json" (2 spell)');
     await expectSaid(page, 'Imported "brew.json" (2 spell)');
     await expect.poll(() => countHomebrewFiles(page)).toBe(1);
-    await expect(page.getByRole('button', { name: 'Enable brew.json' })).toBeVisible();
+    await expect(page.getByRole('link', { name: /^brew\.json\s*,/ })).toBeVisible();
 
     // The same file again is already here: the preview offers to keep it.
-    await importHomebrewFile(page, jsonFile('brew-again.json', BREW));
+    await importHomebrew(jsonFile('brew-again.json', BREW));
     const again = importPreview(page, '"brew-again.json" is already here');
     await expect(again).toContainText('Already imported on');
     await expect(again.getByRole('button', { name: 'Import', exact: true })).toHaveCount(0);

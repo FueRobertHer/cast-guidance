@@ -1,6 +1,5 @@
 /**
- * One collection, at `/workshop/collection/:id` (ADR-002, D1; board 8): the
- * page that takes the place of the Homebrew page's file card and the Builder.
+ * One collection, at `/workshop/collection/:id` (ADR-002, D1; board 8).
  * What it holds, by kind, each entry opening where it is edited or read;
  * where it is on, for this device and for each character (D3); where it came
  * from, and an update from its link or a newer file through the Import
@@ -485,13 +484,13 @@ async function deleteDetail(c: Collection, strays: number): Promise<string> {
   // Not deleted by its name: another file can share it.
   if (strays > 0) {
     parts.push(
-      `${strays === 1 ? 'One more row' : `${strays} more rows`} named ${c.rows[0]?.fileName ?? c.name} could not be read, so ${strays === 1 ? 'it stays' : 'they stay'}: the Homebrew page says which.`,
+      `${strays === 1 ? 'One more row' : `${strays} more rows`} named ${c.rows[0]?.fileName ?? c.name} could not be read, so ${strays === 1 ? 'it stays' : 'they stay'}: the Collections shelf lists ${strays === 1 ? 'it' : 'them'}.`,
     );
   }
   return parts.join(' ');
 }
 
-/** A compendium's books by name, as the Homebrew page lists them; other rows as they come. */
+/** A compendium's books by name; other rows as they come. */
 const inOrder = (c: Collection) =>
   c.rows[0]?.book === undefined
     ? c.rows
@@ -1274,14 +1273,12 @@ function Found({
       </section>
       <p className={NOTE}>
         A rule pack&rsquo;s review and the order of packs are on the{' '}
-        <Link to="/workshop/rules" className={LINK}>
+        {/* 24 tall, the size floor, though it sits in a sentence. */}
+        <Link to="/workshop/rules" className={`${LINK} inline-flex min-h-6 items-center`}>
           Rules shelf
         </Link>
         .
       </p>
-      <Link to="/homebrew" className={`self-start ${buttonClass({ variant: 'outline' })}`}>
-        Open the Homebrew page
-      </Link>
       {importing !== undefined && (
         <Suspense fallback={null}>
           <ImportSheet

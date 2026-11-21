@@ -1,7 +1,7 @@
 /**
  * The stored homebrew files as the Workshop's Collections shelf lists them
  * (ADR-002, D1): a file is one collection, and the books one compendium was
- * stored as are one together, as the Homebrew page groups them. Copies of
+ * stored as are one together. Copies of
  * one collection that sit side by side (one key, E1) are one collection too.
  *
  * A collection's address outlives an update (D4), since a row's id is its
@@ -81,8 +81,8 @@ function nameOf(rows: readonly HomebrewFileMeta[], names: ReadonlyMap<string, st
 }
 
 /**
- * Every collection in `rows` (newest first, as the Homebrew page lists
- * them), placed where its newest row falls. `names` are the names the
+ * Every collection in `rows` (newest first, as the shelf lists them),
+ * placed where its newest row falls. `names` are the names the
  * player gave the files they made, by id.
  */
 export function collectionsOf(

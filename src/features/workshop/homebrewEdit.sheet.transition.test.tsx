@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 // TEST-003: a homebrew edit reaching a character that uses it. A collection's
-// entries open in the Workshop, which writes the file and invalidates the
+// entries open from its page in the Workshop's editor, which writes the file and invalidates the
 // registry; nothing tells the sheet directly, so what is under test is the
 // whole path: the real homebrew row in IndexedDB, the registry rebuilding on
 // the content revision, and the sheet re-deriving from it when the player
@@ -32,7 +32,7 @@ afterEach(resetSheetHarness);
 /** How long a lazily loaded page or an IndexedDB write may take on a loaded runner. */
 const WAIT = 30_000;
 
-/** An editable file holding a spell and a ring, as the Builder's forms made them. */
+/** An editable file holding a spell and a ring, as the Workshop's editor makes them. */
 async function brewFile() {
   const row = await homebrewRepo.createEditable('My Brews', 'HBX');
   await homebrewRepo.saveEditable(row.id, {
@@ -75,7 +75,13 @@ function brewUser() {
 /** The Armor Class tile's number. */
 const armorClass = () => Number(screen.getByText(/^Armor Class/).previousSibling?.textContent);
 
-/** Open an entry from its collection in the Workshop, change one field, and save it. */
+/** The collection's page, as the Collections shelf opens it. */
+const collection = (fileId: string) => `/workshop/collection/${encodeURIComponent(fileId)}`;
+
+/** An entry's row on its collection's page: its name, then its kind after a hidden comma. */
+const entryRow = (name: string) => new RegExp(`^${name}\\s*,`);
+
+/** Open an entry from its collection's page, change one field, and save it. */
 async function edit(
   sheet: { visit: (to: string) => Promise<void> },
   fileId: string,
@@ -83,9 +89,9 @@ async function edit(
   field: string,
   value: string,
 ) {
-  await sheet.visit(`/homebrew/edit/${fileId}`);
+  await sheet.visit(collection(fileId));
   // A lazily loaded route, so it can take a moment on a cold run.
-  fireEvent.click(await screen.findByRole('link', { name: `Edit ${entity}` }, { timeout: WAIT }));
+  fireEvent.click(await screen.findByRole('link', { name: entryRow(entity) }, { timeout: WAIT }));
   fireEvent.change(await screen.findByLabelText(field, {}, { timeout: WAIT }), {
     target: { value },
   });
@@ -105,8 +111,12 @@ describe('a homebrew edit on a character that uses it (TEST-003)', () => {
     await edit(sheet, fileId, 'Ember Lance', 'Dice', '4d8');
     await edit(sheet, fileId, 'Ring of Warding', 'AC', '+2');
     // A new spell from the collection: made in the Workshop, kept in that file.
-    await sheet.visit(`/homebrew/edit/${fileId}`);
-    fireEvent.click(await screen.findByRole('link', { name: 'New spell' }, { timeout: WAIT }));
+    await sheet.visit(collection(fileId));
+    fireEvent.click(
+      await screen.findByRole('link', { name: 'Add to My Brews' }, { timeout: WAIT }),
+    );
+    fireEvent.click(await screen.findByRole('link', { name: 'Spells' }, { timeout: WAIT }));
+    fireEvent.click(await screen.findByRole('link', { name: 'From nothing' }, { timeout: WAIT }));
     fireEvent.change(await screen.findByLabelText('Name', {}, { timeout: WAIT }), {
       target: { value: 'Glow Ward' },
     });

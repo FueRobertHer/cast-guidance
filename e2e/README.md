@@ -124,7 +124,8 @@ the binary outright, as an escape hatch when the two drift.
   items, no spells or books), `full` the whole release. The mirror fails what
   a level leaves out while it is built; the drain stops at the first failure,
   so each is a real place for an install to stop. Each also holds a character
-  and an editable homebrew file (`level.json` has their ids). `copyLevel`
+  and an imported homebrew file (`level.json` has their ids, the file's as
+  its collection's address). `copyLevel`
   copies one for a cell without the browser's caches, so the precache alone
   must serve the app. A passing cell's profile is deleted at teardown; a
   failing one keeps its IndexedDB but not the worker's CacheStorage, and only
@@ -185,17 +186,17 @@ manual checklist is [`docs/a11y-audit.md`](../docs/a11y-audit.md).
 | Spec | Covers |
 |---|---|
 | `a11y/axe` | axe on every main route, the sheet's tabs, the dialogs, drawers and info sheets, the banners and toasts (the app update toast from the variant server), and four routes at a desktop size; see `docs/a11y-audit.md` for the list of states. |
-| `a11y/keyboard` | At a desktop size: every dialog and drawer (roster actions, Rename, Delete, both import previews, dice tray, history, long rest, a breakdown, an info sheet, Add item) opened with Enter takes focus, keeps Tab and Shift+Tab inside and visits every control, closes on Escape and returns focus to its trigger; the roster, library and sheet tabs by Tab and Enter; a 150-spell library list tabbed through, each row rendered and in view, the list windowed (at most 60 rows) and each row saying its place (`aria-posinset`, `aria-setsize`). |
+| `a11y/keyboard` | At a desktop size: every dialog and drawer (roster actions, Rename, Delete, the Workshop's Import sheet, both import previews, dice tray, history, long rest, a breakdown, an info sheet, Add item) opened with Enter takes focus, keeps Tab and Shift+Tab inside and visits every control, closes on Escape and returns focus to its trigger; the roster, library and sheet tabs by Tab and Enter; a 150-spell library list tabbed through, each row rendered and in view, the list windowed (at most 60 rows) and each row saying its place (`aria-posinset`, `aria-setsize`). |
 | `a11y/layout` | No sideways scrolling on any main route, folds open, at 320 by 640 or with a 200% root font (primary controls whole on screen); the Workshop with content (its shelves, a collection, search results) the same in both themes; in landscape (851 by 393) the sheet header and tab bar leave the name and content in sight, and no focused control is hidden behind them, on the sheet tabs and under the app nav (a 150-spell library list walked down and back). The width checks use DejaVu Sans (and DejaVu Sans Mono), so every machine measures the same text, and fail if either is not installed. |
 | `a11y/reduced-motion` | With `reducedMotion: 'reduce'`, no animation or transition runs longer than 0.01 ms while sheets open and close and a die is rolled; the same flow animates without it. |
-| `a11y/target-size` | Measured boxes on a phone: the inventoried controls (HP, exhaustion and pool steppers, death saves, Build's and the creator's steppers, the back links, Homebrew's row actions) at least 44 by 44, pips 32 by 44, and every other visible control (button, link, `summary`, `role="button"`) at least 24 by 24, a roll chip in a sentence excepted; on a caster's Play tab (and at 0 HP), a known spell's row on Play and the Spells tab, Build, Homebrew with one file and the creator's abilities step. |
+| `a11y/target-size` | Measured boxes on a phone: the inventoried controls (HP, exhaustion and pool steppers, death saves, Build's and the creator's steppers, the back links, a collection page's actions) at least 44 by 44, pips 32 by 44, and every other visible control (button, link, `summary`, `role="button"`) at least 24 by 24, a roll chip in a sentence excepted; on a caster's Play tab (and at 0 HP), a known spell's row on Play and the Spells tab, Build, a collection of the player's own on its page and the creator's abilities step. |
 | `library-scale` | The library with 1,000 spells (`fixtures/manySpells.ts`): at most 60 rows rendered, before and after a filter to 100; a row's estimated height equal to its rendered height at 16 px and 200%; Back from a spell 500 rows down returns to that row; a focused row and its neighbours outlast a scroll far away, and Tab and Shift+Tab go on from it. Timings are annotations, not asserted. |
 | `first-load` | Fresh online boot: roster, download banner, full install of the pinned release, one release-list request, worker activated; SPA fallback for a cold deep link; the one-time "Ready to use offline" notice; the getting-started card and its dismissal; the 404 screen; the routing canary for a controlled page. |
 | `offline-reload` | Reload and deep links offline from the precache and IndexedDB, nothing re-downloaded once back online; a browser restart in airplane mode. |
 | `multi-tab` | One character in two pages of one context (real IndexedDB and BroadcastChannel), REL-007: both warn that it is open in another tab; a tab with nothing unsaved follows the other's save without a reload, and its own edit then lands on top (both changes stored). On a frozen clock (the context's, so the tab that saves first is flushed with a `pagehide`), a tab still holding a rename when the other saves damage is refused: its alert appears and nothing is written; Reload stored version shows the stored copy, focuses the sheet heading and puts the rename in History ("Not saved"); Keep mine saves the rename over it and the other tab follows; a character the other tab deleted is restored by Keep mine or stays deleted ("Character not found") on Discard. The same in process: `characterSession.multitab.indexeddb.test.ts`. Closing one tab clears the other's warning within `STALE_MS`, and a crashed one, which sends no goodbye, ages out. |
 | `lifecycle` | Create, rename, edit, reload, delete; the save debounce on a frozen clock, and the flushes on `visibilitychange` and `pagehide`. |
 | `import-export` | Export file shape (no stored `revision`), import back (through the preview), a duplicate import gets a new id, refused files change nothing and open no preview, export offline. |
-| `import-preview` | IMP-002: a homebrew file is previewed (contents, size, source, a missing dependency, an official clash and its winner), Cancel writes nothing and returns focus, Import stores it, the same file again offers to keep the existing one (reached from the Workshop tab's Collections shelf); a character import previews as a copy and lands as one. |
+| `import-preview` | IMP-002: a homebrew file is previewed (contents, size, source, a missing dependency, an official clash and its winner), Cancel writes nothing and returns focus, Import stores it, the same file again offers to keep the existing one (through the Import sheet, reached from the Workshop tab's Collections shelf); a character import previews as a copy and lands as one. |
 | `sw-update` | Apply, defer (Later) and a failed install, each against a new build served by the variant server, with offline checks. |
 | `manifest` | The manifest's content type, every icon it lists served and decoded at its declared size, opaque maskable corners, the Apple touch icon link; Chromium's own installability verdict in full Chromium (new headless, `launchProfile(dir, { newHeadless: true })`), with a no-manifest canary. |
 | `cache-levels.setup` | Builds the four cache-level profiles (the `cache-levels` project). |
@@ -252,9 +253,8 @@ raw error.
 | `/library/spell/fireball%7Cphb` (entity) | offline | offline | offline | content |
 | `/library/race/nope%7Cx` | offline | not found | not found | not found |
 | `/library/bogus` | not found | not found | not found | not found |
-| `/homebrew` | content | content | content | content |
-| `/homebrew/edit/<id>` (homebrew file) | content | content | content | content |
-| `/homebrew/edit/missing` | not found | not found | not found | not found |
+| `/homebrew`, an old link (lands on the Collections shelf) | content | content | content | content |
+| `/homebrew/edit/<id>`, an old link (lands on the homebrew file's collection page) | content | content | content | content |
 | `/workshop`, and `?shelf=collections` (the homebrew file's card) | content | content | content | content |
 | `/workshop/collection/<id>` (the homebrew file) | content | content | content | content |
 | `/workshop/collection/missing` | not found | not found | not found | not found |

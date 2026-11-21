@@ -23,7 +23,7 @@ export interface BookPart {
 /**
  * The most books one file is stored as. The largest compendium known holds
  * 173; a file citing a new book on every entry would otherwise become as many
- * stored files, each one a row on the Homebrew page and in the picker.
+ * stored files, each one a book on its collection's page and in the picker.
  */
 export const MAX_BOOKS = 1000;
 

@@ -60,7 +60,7 @@ async function context(rules?: EngineContext['rules']): Promise<EngineContext> {
 
 const packFile = (): Record<string, unknown> => structuredClone(grittyTable);
 
-/** Import the pack as the Homebrew page does: prepare, then Add and turn on. */
+/** Import the pack as the Import sheet does: prepare, then Add and turn on. */
 async function addPack(raw: unknown, applyTo?: PackAppliesTo) {
   const row = await homebrewRepo.prepare(raw, 'gritty-table.json');
   return { row, result: await commitHomebrewImport({ row }, undefined, applyTo) };

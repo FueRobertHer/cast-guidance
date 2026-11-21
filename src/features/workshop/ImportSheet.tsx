@@ -298,7 +298,6 @@ export default function ImportSheet({
           onDone('Import canceled. Nothing was added.', false);
         }}
         onKeepExisting={keepExisting}
-        listedAt="under Collections"
       />
     );
   }

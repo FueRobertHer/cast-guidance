@@ -4,8 +4,12 @@ import { cleanup, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 // No stored policy and no homebrew: the section reads "allow everything".
-vi.mock('dexie-react-hooks', () => ({ useLiveQuery: () => undefined }));
+vi.mock('dexie-react-hooks', () => ({ useLiveQuery: () => new Set<string>() }));
 vi.mock('@/data5e/hooks', () => ({ useRegistry: () => null }));
+vi.mock('@/data5e/sourceFilter', async (actual) => ({
+  ...(await actual<typeof import('@/data5e/sourceFilter')>()),
+  useSourcePolicy: () => ({ mode: 'all', except: [] }),
+}));
 
 import { SourcesSection } from './SourcesSection';
 

@@ -11,7 +11,6 @@ import {
   updateSourcePolicy,
   useSourcePolicy,
   withSource,
-  writeSourcePolicy,
 } from '@/data5e/sourceFilter';
 import {
   knownSources,
@@ -25,12 +24,6 @@ import { homebrewRepo } from '@/db/homebrewRepo';
 import { notifyFailure } from '@/stores/notices';
 import { Chip } from '@/ui/Chip';
 
-/** Homebrew gets its own heading rather than falling into "everything else". */
-type Section = SourceGroup | 'homebrew';
-
-const SECTION_LABELS: Record<Section, string> = { ...SOURCE_GROUP_LABELS, homebrew: 'Homebrew' };
-const SECTION_ORDER: readonly Section[] = [...SOURCE_GROUPS, 'homebrew'];
-
 /** Every book the source table knows. */
 const KNOWN = new Set(knownSources());
 
@@ -38,7 +31,7 @@ interface Row {
   source: string;
   name: string;
   count: number;
-  section: Section;
+  section: SourceGroup;
   enabled: boolean;
 }
 
@@ -96,13 +89,10 @@ export function booksShownWords(shown: { shown: number; total: number } | undefi
 
 /**
  * Which books show, on this device, on The books page in the Workshop
- * (ADR-002, D1), which passes `books` and gives the page its own heading:
- * there the collections are left out, since each has its own switch on its
- * page. Without `books` it is the old Content sources list, collections
- * included, which Settings showed until U9 swapped it for a row opening The
- * books.
+ * (ADR-002, D1), which gives it its heading. The collections are left out,
+ * since each has its own switch on its page.
  */
-export function SourcesSection({ books = false }: { books?: boolean } = {}) {
+export function SourcesSection() {
   const registry = useRegistry();
   const policy = useSourcePolicy();
   const brewSources = useBrewSources();
@@ -110,28 +100,25 @@ export function SourcesSection({ books = false }: { books?: boolean } = {}) {
   const rows: Row[] = useMemo(() => {
     const counts = registry?.sourceCounts() ?? new Map<string, number>();
     return [...counts.entries()]
+      .filter(([source]) => brewSources?.has(source) !== true)
       .map(([source, count]) => ({
         source,
         name: sourceName(source),
         count,
-        section: brewSources?.has(source) === true ? ('homebrew' as const) : sourceGroup(source),
+        section: sourceGroup(source),
         enabled: policyAllows(policy, source),
       }))
-      .filter((r) => !books || r.section !== 'homebrew')
       .sort((a, b) => a.name.localeCompare(b.name));
-  }, [registry, policy, brewSources, books]);
+  }, [registry, policy, brewSources]);
 
   const shown = rows.filter((r) => r.enabled).length;
   const listed = new Set(rows.map((r) => r.source));
 
-  const setPolicy = (next: SourcePolicy) => {
-    // The toggles read from the stored policy, so a rejected write leaves them
-    // showing what is actually saved; the toast is what says the tap did not
-    // take, and tapping again is the retry.
-    void writeSourcePolicy(next).catch((err: unknown) => notifyFailure('Save sources', err));
-  };
-
   /**
+   * The toggles read from the stored policy, so a rejected write leaves them
+   * showing what is actually saved; the toast is what says the tap did not
+   * take, and tapping again is the retry.
+   *
    * Edits re-read inside a transaction rather than starting from the policy
    * captured at render: two quick taps would otherwise both build on the same
    * stale value and the second would drop the first one's change.
@@ -141,34 +128,33 @@ export function SourcesSection({ books = false }: { books?: boolean } = {}) {
   };
 
   /**
-   * On The books a preset is a choice of books alone: each collection stays as
-   * it was, since its own page has its switch and this page does not list it.
-   * The page waits for the collections' sources before it offers one, so a
-   * tap reads them here, in order with the taps before it.
+   * A preset is a choice of books alone: each collection stays as it was,
+   * since its own page has its switch and this page does not list it. The
+   * page waits for the collections' sources before it offers one, so a tap
+   * reads them here, in order with the taps before it.
    */
   const choosePreset = (next: SourcePolicy) => {
-    if (!books) return setPolicy(next);
     const brews = [...(brewSources ?? [])];
     editPolicy((current) =>
       brews.reduce((p, code) => withSource(p, code, policyAllows(current, code)), next),
     );
   };
   /**
-   * The books a policy names, on The books: a collection's source is its own
-   * page's, and a code no book has (a collection deleted since) names nothing.
+   * The books a policy names: a collection's source is its own page's, and a
+   * code no book has (a collection deleted since) names nothing.
    */
   const bookPart = (p: SourcePolicy) =>
     (p.mode === 'all' ? p.except : p.sources).filter(
-      (s) => !books || (brewSources?.has(s) !== true && (KNOWN.has(s) || listed.has(s))),
+      (s) => brewSources?.has(s) !== true && (KNOWN.has(s) || listed.has(s)),
     );
 
-  const setGroup = (group: Section, enabled: boolean) => {
+  const setGroup = (group: SourceGroup, enabled: boolean) => {
     const codes = rows.filter((r) => r.section === group).map((r) => r.source);
     editPolicy((current) => codes.reduce((p, code) => withSource(p, code, enabled), current));
   };
 
-  // Until the collections' sources are read, The books cannot tell a book from a collection.
-  if (books && brewSources === undefined) {
+  // Until the collections' sources are read, a book cannot be told from a collection.
+  if (brewSources === undefined) {
     return (
       <section className="flex flex-col gap-2" aria-label="Which books show">
         <p className="px-1 text-caption text-ink-muted">Loading…</p>
@@ -185,8 +171,7 @@ export function SourcesSection({ books = false }: { books?: boolean } = {}) {
   });
 
   return (
-    <section className="flex flex-col gap-2" aria-label={books ? 'Which books show' : undefined}>
-      {!books && <h2 className="px-1 text-heading">Content sources</h2>}
+    <section className="flex flex-col gap-2" aria-label="Which books show">
       <p className="px-1 text-caption text-ink-muted">
         Narrow what you pick from when building a character, and what the library and search show. A
         shorter list is a much easier list. This only affects what you browse: characters already
@@ -243,22 +228,18 @@ export function SourcesSection({ books = false }: { books?: boolean } = {}) {
       {rows.length === 0 ? (
         <p className="px-1 text-body text-ink-muted">Waiting for game data to download.</p>
       ) : (
-        SECTION_ORDER.filter((s) => rows.some((r) => r.section === s)).map((section) => {
+        SOURCE_GROUPS.filter((s) => rows.some((r) => r.section === s)).map((section) => {
           const group = rows.filter((r) => r.section === section);
           const on = group.filter((r) => r.enabled).length;
           return (
-            <details
-              key={section}
-              open={section === 'core' || section === 'homebrew'}
-              className="group"
-            >
+            <details key={section} open={section === 'core'} className="group">
               <summary className="flex min-h-tap cursor-pointer list-none items-center gap-2 rounded-control bg-surface px-3 py-2 text-body-strong ring-1 ring-line ring-inset">
                 <ChevronRight
                   aria-hidden
                   size={14}
                   className="shrink-0 text-ink-muted transition-transform group-open:rotate-90"
                 />
-                <span className="min-w-0 flex-1 break-words">{SECTION_LABELS[section]}</span>
+                <span className="min-w-0 flex-1 break-words">{SOURCE_GROUP_LABELS[section]}</span>
                 <span className="shrink-0 font-normal text-caption text-ink-muted">
                   {on}/{group.length}
                 </span>

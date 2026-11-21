@@ -200,7 +200,7 @@ describe('the id a collection made in the app is stamped with', () => {
     );
     const stamp = await stampOf('mine');
     expect(stamp).toMatch(UUID);
-    // The builder hands back the content it opened, from before the stamp.
+    // An editor hands back the content it opened, from before the stamp.
     await homebrewRepo.saveEditable('mine', file('EMB', ['Ember Ward']));
     expect(await stampOf('mine')).toBe(stamp);
     // Nor does content carrying another id move it.

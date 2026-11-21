@@ -31,7 +31,7 @@ export default function BooksPage() {
         the book&rsquo;s wins. A change you make to a book&rsquo;s entry for your table is kept in
         Changes to the books, under Collections, and takes that entry&rsquo;s place.
       </p>
-      <SourcesSection books />
+      <SourcesSection />
     </main>
   );
 }

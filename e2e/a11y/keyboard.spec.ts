@@ -391,19 +391,30 @@ test.describe('keyboard: dialogs and drawers', () => {
     });
   });
 
-  test('homebrew: the import preview', async ({ page }) => {
+  test('workshop: the Import sheet and the preview it opens', async ({ page }) => {
     await gotoRosterSettled(page);
-    await page.goto('/homebrew');
-    const importButton = page.getByRole('button', { name: 'Import file', exact: true });
-    await importButton.focus();
+    await page.goto('/workshop?shelf=collections');
+    const importLink = page.getByRole('link', { name: 'Import a file or a link', exact: true });
+    const sheet = page.getByRole('dialog', { name: 'Import', exact: true });
+    await checkDialog(page, importLink, sheet);
+
+    // A file chosen and read by keyboard. The sheet gives way to the preview,
+    // which has no opener of its own: Escape gives focus to the way in.
+    await importLink.focus();
+    await page.keyboard.press('Enter');
+    await expect(sheet).toBeVisible();
+    await animationsSettled(page);
+    await sheet.getByRole('button', { name: 'Choose a file', exact: true }).focus();
     const choosing = page.waitForEvent('filechooser');
     await page.keyboard.press('Enter');
     await (await choosing).setFiles(HOMEBREW);
+    await sheet.getByRole('button', { name: 'Read it', exact: true }).focus();
+    await page.keyboard.press('Enter');
     const preview = importPreview(page, 'Import "key-brew.json"?');
     await expect(preview).toBeVisible();
     await animationsSettled(page);
     await expectTrapped(page, preview);
-    await escapeReturnsTo(page, preview, importButton);
+    await escapeReturnsTo(page, preview, importLink);
   });
 });
 

@@ -70,8 +70,9 @@ describe('a pick added where one was taken out, on the Workshop page', () => {
       ],
     });
     const sheet = await renderSheet(sorcerer());
-    await sheet.visit(`/homebrew/edit/${row.id}`);
-    fireEvent.click(await screen.findByRole('link', { name: 'Edit Gift' }, { timeout: WAIT }));
+    // From the collection's page, as a player opens an entry of theirs.
+    await sheet.visit(`/workshop/collection/${encodeURIComponent(row.id)}`);
+    fireEvent.click(await screen.findByRole('link', { name: /^Gift\s*,/ }, { timeout: WAIT }));
     /** Take the pick out, add a new one, and save. */
     const replace = async (ids: string[]) => {
       fireEvent.click(

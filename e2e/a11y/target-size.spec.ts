@@ -238,27 +238,26 @@ test.describe('touch target sizes', () => {
     await expectFloor(page);
   });
 
-  test('Homebrew with one file', async ({ page }) => {
+  test('a collection of yours, on its page', async ({ page }) => {
     await gotoRosterSettled(page);
-    // A collection of your own, so the row has every action, Edit included.
-    await page.goto('/homebrew');
-    await page.getByRole('button', { name: 'Create your own homebrew' }).click();
-    const named = page.getByRole('dialog', { name: 'Homebrew collection name' });
-    await named.getByRole('textbox').fill('Target Table');
-    await named.getByRole('button', { name: 'OK' }).click();
-    const abbrev = page.getByRole('dialog', { name: 'Short source id (shown on badges)' });
-    await abbrev.getByRole('button', { name: 'OK' }).click();
-    await page.waitForURL(/\/homebrew\/edit\/[^/]+$/);
+    // A collection of your own, so its page has every action: an entry to
+    // open, rename or delete, and one to add.
+    await page.goto('/workshop/new/feat');
+    await page.getByRole('textbox', { name: 'Name', exact: true }).fill('Target Gift');
+    await page.getByRole('button', { name: 'Save', exact: true }).click();
+    await page.waitForURL(/\/workshop\/edit\/feat\//);
 
-    await page.goto('/homebrew');
-    const toggle = page.getByRole('button', { name: /^Enable / });
-    await expect(toggle).toHaveCount(1);
-    const fileName = (await toggle.getAttribute('aria-label'))?.slice('Enable '.length) ?? '';
+    await page.goto('/workshop?shelf=collections');
+    await page.getByRole('link', { name: /^My homebrew\s*,/ }).click();
+    await expect(page.getByRole('heading', { level: 1, name: 'My homebrew' })).toBeVisible();
+    await expect(page.getByRole('link', { name: /^Target Gift\s*,/ })).toBeVisible();
     await animationsSettled(page);
-    await expectTargets(toggle, 1);
-    await expectTargets(page.getByRole('link', { name: `Edit ${fileName} in the builder` }), 1);
-    await expectTargets(button(page, `Download ${fileName}`), 1);
-    await expectTargets(button(page, `Delete ${fileName}`), 1);
+    await expectTargets(button(page, 'Use My homebrew'), 1);
+    await expectTargets(page.getByRole('link', { name: /^Target Gift\s*,/ }), 1);
+    await expectTargets(button(page, 'More for Target Gift'), 1);
+    await expectTargets(page.getByRole('link', { name: 'Add to My homebrew', exact: true }), 1);
+    await expectTargets(button(page, 'Export a file'), 1);
+    await expectTargets(button(page, 'Delete this collection'), 1);
     await expectFloor(page);
   });
 

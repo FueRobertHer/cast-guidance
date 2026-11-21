@@ -1,12 +1,14 @@
 import { randomUUID } from 'node:crypto';
 import type { Page } from '@playwright/test';
 import { casterFile } from '../fixtures/caster.ts';
+import { jsonFile } from '../fixtures/characterFile.ts';
 import { PINNED_TAG } from '../fixtures/mirror.ts';
 import {
   answerImportPreview,
   createBlankCharacter,
   gotoRoster,
   importCharacterFile,
+  importHomebrewFile,
   settingsValue,
 } from '../support/app.ts';
 import {
@@ -26,7 +28,7 @@ import { waitForSwControl } from '../support/sw.ts';
 /**
  * Builds one persistent profile per cache level at the stable origin, for the
  * offline route matrix to copy (`offline-routes.spec.ts`). Each holds a
- * blank character, a caster who knows Fireball, an editable homebrew file,
+ * blank character, a caster who knows Fireball, an imported homebrew file,
  * the level's game data, and an installed service worker, and is closed
  * before it is published.
  */
@@ -55,18 +57,41 @@ async function importCaster(page: Page, blankId: string): Promise<string> {
   return CASTER_ID;
 }
 
-/** Creates an editable homebrew collection and returns its id. */
-async function createHomebrew(page: Page): Promise<string> {
-  await page.goto('/homebrew');
-  await page.getByRole('button', { name: 'Create your own homebrew' }).click();
-  const name = page.getByRole('dialog', { name: 'Homebrew collection name' });
-  await name.getByRole('textbox').fill(HOMEBREW_NAME);
-  await name.getByRole('button', { name: 'OK' }).click();
-  const abbrev = page.getByRole('dialog', { name: 'Short source id (shown on badges)' });
-  await abbrev.getByRole('button', { name: 'OK' }).click();
-  await page.waitForURL(/\/homebrew\/edit\/[^/]+$/);
-  const id = /\/homebrew\/edit\/([^/]+)$/.exec(new URL(page.url()).pathname)?.[1];
-  if (id === undefined) throw new Error(`No homebrew id in ${page.url()}`);
+/** The table's homebrew file: one spell under a source of its own. */
+const HOMEBREW = jsonFile(HOMEBREW_NAME, {
+  _meta: {
+    sources: [{ json: 'TBR', abbreviation: 'TBR', full: 'Table Brews', version: '1.0.0' }],
+  },
+  spell: [
+    {
+      name: 'Table Spark',
+      source: 'TBR',
+      level: 0,
+      school: 'V',
+      time: [{ number: 1, unit: 'action' }],
+      range: { type: 'point', distance: { type: 'feet', amount: 30 } },
+      components: { v: true },
+      duration: [{ type: 'instant' }],
+      entries: ['A spark of light.'],
+    },
+  ],
+});
+
+/**
+ * Imports the table's homebrew file through the Workshop's Import sheet and
+ * returns its collection's address. Imported, not made: the editor needs the
+ * game data, which the `none` level never has, and an import's preview does
+ * not.
+ */
+async function importHomebrew(page: Page): Promise<string> {
+  await importHomebrewFile(page, HOMEBREW);
+  await answerImportPreview(page, `Import "${HOMEBREW_NAME}"?`);
+  const card = page
+    .getByRole('main')
+    .getByRole('link', { name: new RegExp(`^${HOMEBREW_NAME}\\s*,`) });
+  const href = (await card.getAttribute('href')) ?? '';
+  const id = /^\/workshop\/collection\/([^/]+)$/.exec(href)?.[1];
+  if (id === undefined) throw new Error(`No collection address in "${href}"`);
   return id;
 }
 
@@ -88,7 +113,7 @@ for (const level of CACHE_LEVELS) {
     await gotoRoster(page);
     const characterId = await createBlankCharacter(page);
     const casterId = await importCaster(page, characterId);
-    const homebrewId = await createHomebrew(page);
+    const homebrewId = await importHomebrew(page);
     await expectLevelSettled(page, level);
     await waitForSwControl(page);
     await context.close();

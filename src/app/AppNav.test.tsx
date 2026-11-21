@@ -18,7 +18,6 @@ function renderAt(path: string) {
           { index: true, element: null },
           { path: 'library', element: null },
           { path: 'workshop/*', element: null },
-          { path: 'homebrew', element: null },
           { path: 'settings', element: null },
           { path: '*', element: null },
         ],
@@ -45,7 +44,6 @@ describe('AppNav current section', () => {
     '/workshop',
     '/workshop/collection/abc',
     '/workshop/rules',
-    '/homebrew',
   ])('names the Workshop, with its Hammer, the section open at %s', (path) => {
     const nav = renderAt(path);
     const current = nav.getAllByRole('link').filter((l) => l.getAttribute('aria-current'));

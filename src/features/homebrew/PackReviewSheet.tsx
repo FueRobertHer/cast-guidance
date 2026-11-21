@@ -1,7 +1,6 @@
 /**
- * Rule packs on the Workshop's Rules page (board 10, B) and, until it goes,
- * the Homebrew page (Packs board, A): what a pack holds, who it applies to,
- * where it clashes with another, and the order that settles a clash. The
+ * Rule packs on the Workshop's Rules page (board 10, B): what a pack holds,
+ * who it applies to, where it clashes with another, and the order that settles a clash. The
  * import preview shows the same details before a pack goes on (H8).
  *
  * Who a pack reaches is this device's alone, kept on the stored file's row,
@@ -353,7 +352,7 @@ export function clashLines(
 }
 
 /**
- * A pack's review from the Homebrew page: what it holds, its clashes, its
+ * A pack's review from the Rules page: what it holds, its clashes, its
  * Apply to, and turning it on or off. A changed Apply to is saved on closing.
  */
 export function PackReviewSheet({

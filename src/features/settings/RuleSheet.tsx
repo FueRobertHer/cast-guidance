@@ -118,12 +118,12 @@ function useRuleContext(): Pick<EngineContext, 'byType' | 'rules'> {
 /**
  * The option sheet for one table rule (the Rules board, A, with C's chip
  * mixed in): every value as a radio card with what it means and what it does
- * to a roll, the choice taking hold as it is made. Opened from Settings it
- * sets the app's rule, which every character without its own follows; opened
- * where a character is (their Build tab, a roll's chip, the rest card) it can
- * also give that character a rule of their own, or take it back.
+ * to a roll, the choice taking hold as it is made. Opened from the Rules page
+ * it sets the table rule, which every character without its own follows;
+ * opened where a character is (their Build tab, a roll's chip, the rest card)
+ * it can also give that character a rule of their own, or take it back.
  *
- * A choice in Settings is stored as made, as written too, so it outranks a
+ * A table rule chosen is stored as made, as written too, so it outranks a
  * rule pack made the app's default; until one is made, the pack's rule shows.
  */
 export function RuleSheet({
@@ -217,12 +217,12 @@ function RuleChoices({
     else setAppTableRule(id, v as TableRuleChoices[typeof id]);
   };
   const who = doc?.name.trim() || 'This character';
-  // What they follow without a rule of their own: a pack applied to them, else Settings.
+  // What they follow without a rule of their own: a pack applied to them, else the table rules.
   const under = doc === undefined ? undefined : ruleSources(withoutOwn(doc, id), ctx)[id];
-  const settings = under?.from === 'pack' ? under.pack : 'Settings';
+  const settings = under?.from === 'pack' ? under.pack : 'the table rules';
   const note = forMe
     ? own !== undefined
-      ? `${who} has a rule of its own here. Other characters follow Settings.`
+      ? `${who} has a rule of its own here. Other characters follow the table rules.`
       : `${who} follows ${settings} here. Pick one to give ${who} a rule of its own.`
     : from?.from === 'own'
       ? `${who} has a rule of its own here, so this does not change ${who}.`
@@ -264,7 +264,7 @@ function RuleChoices({
                 onChange={() => pick(v)}
                 // The value they already play by is checked, and a checked radio
                 // fires no change: a click on it still makes it the choice here
-                // (their own, or stored in Settings as made).
+                // (their own, or stored as the table rule, as made).
                 onClick={() => value === v && pick(v)}
                 className="mt-0.5 size-5 shrink-0 accent-ink"
               />

@@ -382,9 +382,10 @@ test.describe('data installs', () => {
     mirror.setBodies(withNextRelease);
     await putSetting(page, 'dataTagList', { tags: [PINNED_TAG], checkedAt: 0 });
 
-    // Installed from a page that builds no registry, so the install stays on
-    // probation: both releases kept, no build started yet.
-    await page.goto('/homebrew');
+    // Installed from a page that builds no registry (the Workshop's Yours
+    // shelf), so the install stays on probation: both releases kept, no
+    // build started yet.
+    await page.goto('/workshop');
     const toast = dataUpdateToast(page, NEXT_TAG);
     await toast.getByRole('button', { name: 'Update' }).click();
     await expect.poll(() => getSetting(page, 'dataTag')).toBe(NEXT_TAG);

@@ -249,25 +249,25 @@ describe('BuildPage house rules', () => {
   const sheet = () => screen.getByRole('dialog');
   const pick = (name: RegExp) => fireEvent.click(within(sheet()).getByRole('radio', { name }));
 
-  it('follows Settings for one-use dice until the character keeps its own, and takes it back', () => {
+  it('follows the table rules for one-use dice until the character keeps its own, and takes it back', () => {
     const { getDoc } = renderBuild();
     const dice = () => row('Guidance and Bardic Inspiration').textContent;
-    expect(dice()).toContain('Offered after the roll too · As in Settings');
+    expect(dice()).toContain('Offered after the roll too · Table rules');
     act(() => setOneUseDice('before'));
-    expect(dice()).toContain('Named before the roll · As in Settings');
+    expect(dice()).toContain('Named before the roll · Table rules');
 
     fireEvent.click(row('Guidance and Bardic Inspiration'));
     expect(within(sheet()).getByRole('button', { name: 'Only Hero', pressed: true })).toBeTruthy();
-    expect(within(sheet()).getByText(/^Hero follows Settings here/)).toBeTruthy();
+    expect(within(sheet()).getByText(/^Hero follows the table rules here/)).toBeTruthy();
     pick(/^Offered after the roll too/);
     expect(getDoc().oneUseDice).toBe('after');
     expect(dice()).toContain('Offered after the roll too · Your own');
     expect(within(sheet()).getByText(/^Hero has a rule of its own here/)).toBeTruthy();
 
-    // Back to Settings leaves no field behind, as a character that never chose.
-    fireEvent.click(within(sheet()).getByRole('button', { name: 'Follow Settings again' }));
+    // Back to the table rules leaves no field behind, as a character that never chose.
+    fireEvent.click(within(sheet()).getByRole('button', { name: 'Follow the table rules again' }));
     expect('oneUseDice' in getDoc()).toBe(false);
-    expect(dice()).toContain('Named before the roll · As in Settings');
+    expect(dice()).toContain('Named before the roll · Table rules');
   });
 
   it('sets the rule for every character from the same sheet, leaving the character alone', () => {
@@ -278,7 +278,7 @@ describe('BuildPage house rules', () => {
     pick(/^Double the total/);
     expect(localStorage.getItem('cast-guidance:table-rule:critDamage')).toBe('doubleTotal');
     expect('tableRules' in getDoc()).toBe(false);
-    expect(row('Critical hits').textContent).toContain('Double the total · As in Settings');
+    expect(row('Critical hits').textContent).toContain('Double the total · Table rules');
     // Their own then holds over it, and says so.
     fireEvent.click(within(sheet()).getByRole('button', { name: 'Only Hero' }));
     pick(/^Max the dice, then roll them/);
@@ -292,11 +292,11 @@ describe('BuildPage house rules', () => {
 
   it('rolls HP at level-up and offers the rolls under an app rule of rolled, or at least the average', () => {
     const { getDoc } = renderBuild();
-    expect(row('HP each level').textContent).toContain('The fixed amount · As in Settings');
+    expect(row('HP each level').textContent).toContain('The fixed amount · Table rules');
     expect(screen.queryByRole('textbox', { name: 'Warrior level 2 hit points' })).toBeNull();
 
     act(() => setAppTableRule('hpEachLevel', 'rolled'));
-    expect(row('HP each level').textContent).toContain('Roll each level · As in Settings');
+    expect(row('HP each level').textContent).toContain('Roll each level · Table rules');
     expect(screen.getByRole('textbox', { name: 'Warrior level 2 hit points' })).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Level up' }));
     const rolled = getDoc().classes[0]?.hp[3];

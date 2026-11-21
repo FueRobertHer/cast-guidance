@@ -899,7 +899,7 @@ export function describeCollision(c: EntityCollision): string {
 }
 
 // ---------------------------------------------------------------------------
-// Rule packs (H8): what a pack holds, before it goes on and from the Homebrew page
+// Rule packs (H8): what a pack holds, before it goes on and from the Rules page
 // ---------------------------------------------------------------------------
 
 /** Each table rule and its values, worded as the Rules board words them. */
@@ -972,7 +972,7 @@ export interface PackReview {
   moments: PackReviewRow[];
   /** What the app cannot read in it. It still goes on; these parts do nothing. */
   problems: string[];
-  /** "3 rules, 2 changed entries, 1 moment": the Homebrew page's line for it. */
+  /** "3 rules, 2 changed entries, 1 moment": its line in a sentence. */
   holds: string;
   /**
    * The entries its `replaces` names, for a pack that has one. Each is also a
@@ -1571,7 +1571,7 @@ export function packConflicts(
 const names = (all: readonly string[]) =>
   all.length <= 2 ? all.join(' and ') : `${all.slice(0, -1).join(', ')} and ${all[all.length - 1]}`;
 
-/** A clash in a sentence, for the Homebrew page's banner. */
+/** A clash in a sentence, for the pack review and the order sheet. */
 export function describeConflict(c: PackConflict): string {
   const why =
     c.why === 'chosen'

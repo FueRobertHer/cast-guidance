@@ -25,16 +25,17 @@ export const routes: RouteObject[] = [
         children: [
           { index: true, lazy: () => import('@/features/characters/CharacterListPage') },
           { path: 'library/:type?/:uid?', lazy: () => import('@/features/library/LibraryPage') },
-          // The Workshop's home and its shelves' pages (ADR-002, D1). The
-          // Homebrew page stays reachable from Collections until the
-          // Workshop does each of its jobs.
+          // The Workshop's home and its shelves' pages (ADR-002, D1).
           { path: 'workshop', lazy: () => import('@/features/workshop/WorkshopHome') },
           {
             path: 'workshop/collection/:id',
             lazy: () => import('@/features/workshop/CollectionPage'),
           },
           { path: 'workshop/rules', lazy: () => import('@/features/workshop/RulesPage') },
-          { path: 'homebrew', lazy: () => import('@/features/homebrew/ManageHomebrewPage') },
+          // The Homebrew page and the Builder were here until the Workshop
+          // took over their jobs (ADR-002, U12): an old link or bookmark
+          // lands on the Workshop page that does its job.
+          { path: 'homebrew/*', lazy: () => import('@/app/OldAddress') },
           { path: 'settings', lazy: () => import('@/features/settings/SettingsPage') },
           // Anything no other route claims (UX-003). It ranks below every
           // concrete path, and sitting here keeps the app nav on screen.
@@ -56,7 +57,6 @@ export const routes: RouteObject[] = [
           { path: 'build', lazy: () => import('@/features/sheet/BuildPage') },
         ],
       },
-      { path: 'homebrew/edit/:fileId', lazy: () => import('@/features/homebrew/BuilderPage') },
       // Making and editing an entry: `/workshop/new` and an editor's address.
       // The static Workshop paths above outrank this one.
       {

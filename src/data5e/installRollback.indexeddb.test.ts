@@ -210,7 +210,7 @@ describe('phase E: installed, not yet confirmed', () => {
   });
 
   it('does not count launches that build no registry against the release', async () => {
-    // A homebrew page, or a reload on a missing route, builds no registry and
+    // The Workshop's home, or a reload on a missing route, builds no registry and
     // says nothing about the data. Counted as launches, three of them rolled
     // back a release that was working perfectly.
     const started = await installedDevice();

@@ -259,7 +259,7 @@ export function importPreview(page: Page, title: string): Locator {
 
 /**
  * Answers an open import preview with Import (or Cancel) and waits for the
- * outcome. The roster and Homebrew close the preview before they write and
+ * outcome. The roster and the Workshop close the preview before they write and
  * put the outcome on their import line after the write commits, so a closed
  * dialog is not enough: a navigation then (a `page.goto`) could abort the
  * write, and the character would not be there. The line is empty while the
@@ -276,12 +276,33 @@ export async function answerImportPreview(
   await expect(page.locator('[data-import-status]')).not.toBeEmpty();
 }
 
-/** Imports a homebrew file through the Homebrew page's "Import file" button. */
-export async function importHomebrewFile(page: Page, file: FilePayload): Promise<void> {
+/**
+ * Opens the Workshop's Import sheet on the Collections shelf: the way in a
+ * player takes from Import a file or a link.
+ */
+export async function openImportSheet(page: Page): Promise<Locator> {
+  await page.goto('/workshop?shelf=collections&import=');
+  const sheet = page.getByRole('dialog', { name: 'Import', exact: true });
+  await expect(sheet).toBeVisible();
+  return sheet;
+}
+
+/**
+ * Reads a homebrew file in the open Import sheet: the file chosen, then Read
+ * it, which swaps the sheet for the import preview.
+ */
+export async function readInImportSheet(page: Page, file: FilePayload): Promise<void> {
+  const sheet = page.getByRole('dialog', { name: 'Import', exact: true });
   const choosing = page.waitForEvent('filechooser');
-  await page.getByRole('button', { name: 'Import file', exact: true }).click();
-  const chooser = await choosing;
-  await chooser.setFiles(file);
+  await sheet.getByRole('button', { name: 'Choose a file', exact: true }).click();
+  await (await choosing).setFiles(file);
+  await sheet.getByRole('button', { name: 'Read it', exact: true }).click();
+}
+
+/** Imports a homebrew file through the Workshop's Import sheet, up to its preview. */
+export async function importHomebrewFile(page: Page, file: FilePayload): Promise<void> {
+  await openImportSheet(page);
+  await readInImportSheet(page, file);
 }
 
 /**
