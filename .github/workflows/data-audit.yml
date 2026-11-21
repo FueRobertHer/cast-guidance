@@ -6,7 +6,8 @@ name: Data audit
 # branch heuristic, and the prose scanner against the Jev judgments saved in
 # scripts/data-judgments.json (no model is called here; see data-judge.yml).
 # It needs the network, so it runs here rather than in CI:
-#   - on PRs that touch the data pipeline (including a DATA_TAG bump),
+#   - on PRs that touch its inputs (its import closure, the files it reads,
+#     the toolchain; see scripts/dataAuditInputs.ts), a DATA_TAG bump included,
 #   - weekly against the pinned tag and against the newest compatible release,
 #   - on demand, for any tag.
 # A scheduled failure comments on the open `data-audit` issue, or opens one.
@@ -57,20 +58,25 @@ jobs:
           fetch-depth: 2
           persist-credentials: false
 
-      - name: Does the PR touch the data pipeline?
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies (frozen lockfile)
+        # For `typescript`, which reads and resolves the audit's imports.
+        run: bun install --frozen-lockfile
+
+      - name: Does the PR touch the audit's inputs?
         id: diff
+        # The inputs are the audit's own import closure (scripts/dataAuditInputs.ts),
+        # so a new import is covered the day it lands, plus the files it reads
+        # and the toolchain. A failure here fails this job, and `audit` then
+        # runs rather than skip.
         run: |
           set -euo pipefail
-          changed=$(git diff --name-only HEAD^1 HEAD)
-          pattern='^(src/data5e/|src/dice/|src/lib/boundedRead\.ts$|src/engine/effects/(additionalSpells|asiFeatInstance|base|class|feat|featPicks|optionalFeatures|prerequisites|proseScan|race|readers)\.ts$|src/engine/spellQuery\.ts$|src/engine/curated/|src/features/sheet/spellRolls\.ts$|scripts/data-|\.github/workflows/data-audit\.yml$|package\.json$|bun\.lock$)'
-          # A here-string, not a pipe: with pipefail, `grep -q` exiting at the
-          # first match could fail the writer with SIGPIPE and read as false.
-          if grep -qE "$pattern" <<< "$changed"; then
-            echo "data=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "data=false" >> "$GITHUB_OUTPUT"
-            echo "No data pipeline files changed; the audit is skipped." >> "$GITHUB_STEP_SUMMARY"
-          fi
+          git diff --name-only HEAD^1 HEAD > changed.txt
+          bun scripts/data-audit-changes.ts < changed.txt
 
   audit:
     needs: changes

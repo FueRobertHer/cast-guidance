@@ -2,7 +2,8 @@
 /**
  * Homebrew in the condition strip (Workshop phase 7): a homebrew condition is
  * offered beside the built-in ones and says what it does, and + Effect finds a
- * homebrew spell that puts an effect on a target.
+ * homebrew spell that puts an effect on a target. Its search finds conditions,
+ * built-in and homebrew, as well as effects.
  */
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { useState } from 'react';
@@ -14,7 +15,7 @@ import {
   newCharacterDoc,
 } from '@/engine/types';
 import type { DocUpdater } from '@/stores/characterSession';
-import { ConditionStrip } from './ConditionStrip';
+import { ConditionStrip, conditionsMatching } from './ConditionStrip';
 
 vi.mock('@/data5e/hooks', () => {
   const data: Record<string, unknown[]> = {
@@ -149,5 +150,80 @@ describe('homebrew in the condition strip', () => {
         lasts: { minutes: 1, concentration: true },
       },
     ]);
+  });
+});
+
+const type = (picker: ReturnType<typeof within>, words: string) =>
+  fireEvent.change(picker.getByRole('searchbox', { name: 'Search effects' }), {
+    target: { value: words },
+  });
+
+describe('the + Effect search finds conditions', () => {
+  it('matches names by their start first, folding case', () => {
+    expect(conditionsMatching(['Blinded', 'Poisoned', 'Dazed'], 'BLIND').names).toEqual([
+      'Blinded',
+    ]);
+    expect(conditionsMatching(['Unconscious', 'Stunned', 'Dazed'], 'ed').names).toEqual([
+      'Stunned',
+      'Dazed',
+    ]);
+    expect(conditionsMatching(['Blinded'], '  ')).toEqual({ names: [], exhaustion: false });
+    expect(conditionsMatching([], 'exhaust').exhaustion).toBe(true);
+    expect(conditionsMatching([], 'tired').exhaustion).toBe(false);
+    // A word's start, not any letters in it.
+    expect(conditionsMatching([], 'on').exhaustion).toBe(false);
+  });
+
+  it('finds a built-in condition by name, and a tap puts it on', async () => {
+    renderStrip();
+    const picker = await openPicker();
+    type(picker, 'Blinded');
+    const found = within(await picker.findByRole('group', { name: 'Conditions' }));
+    expect(picker.queryByText(/Nothing called/)).toBeNull();
+    fireEvent.click(found.getByRole('button', { name: 'Blinded' }));
+    expect(play().conditions).toEqual([{ id: 'Blinded' }]);
+    // Still found, now pressed, so a second tap takes it off.
+    expect(found.getByRole('button', { name: 'Blinded' }).getAttribute('aria-pressed')).toBe(
+      'true',
+    );
+    fireEvent.click(found.getByRole('button', { name: 'Blinded' }));
+    expect(play().conditions).toEqual([]);
+  });
+
+  it('finds a homebrew condition, once', async () => {
+    renderStrip();
+    const picker = await openPicker();
+    type(picker, 'daz');
+    const found = within(await picker.findByRole('group', { name: 'Conditions' }));
+    expect(found.getAllByRole('button').map((b) => b.textContent)).toEqual(['Dazed']);
+    fireEvent.click(found.getByRole('button', { name: 'Dazed' }));
+    expect(play().conditions).toEqual([{ id: 'Dazed' }]);
+  });
+
+  it('finds conditions beside effects of a like name', async () => {
+    renderStrip();
+    const picker = await openPicker();
+    type(picker, 'invisib');
+    const found = within(await picker.findByRole('group', { name: 'Conditions' }));
+    expect(found.getByRole('button', { name: 'Invisible' })).toBeTruthy();
+    const effects = within(await picker.findByRole('list', { name: 'Effects found' }));
+    expect(effects.getByRole('button', { name: /^Invisibility\b/ })).toBeTruthy();
+  });
+
+  it('finds Exhaustion, with its stepper', async () => {
+    renderStrip();
+    const picker = await openPicker();
+    type(picker, 'exhaus');
+    fireEvent.click(await picker.findByRole('button', { name: 'Increase exhaustion' }));
+    expect(play().conditions).toEqual([{ id: 'Exhaustion', level: 1 }]);
+    expect(picker.queryByText(/Nothing called/)).toBeNull();
+  });
+
+  it('still says nothing was found when no condition or effect is', async () => {
+    renderStrip();
+    const picker = await openPicker();
+    type(picker, 'zzz');
+    expect(await picker.findByText('Nothing called “zzz” that can land on Hero.')).toBeTruthy();
+    expect(picker.queryByRole('group', { name: 'Conditions' })).toBeNull();
   });
 });

@@ -645,6 +645,24 @@ describe('a condition the character is immune to', () => {
     expect(screen.queryByRole('list', { name: 'Active effects', hidden: true })).toBeNull();
   });
 
+  it('is refused from the search too, and the reason goes once the words change', async () => {
+    renderStrip([], { immune: periapt });
+    fireEvent.click(button('Add an effect'));
+    const picker = within(await screen.findByRole('dialog', { name: 'Effects' }));
+    const box = picker.getByRole('searchbox', { name: 'Search effects' });
+    fireEvent.change(box, { target: { value: 'poison' } });
+    const found = within(await picker.findByRole('group', { name: 'Conditions' }));
+    fireEvent.click(found.getByRole('button', { name: 'Poisoned, you are immune' }));
+    await waitFor(() =>
+      expect(picker.getByRole('status').textContent).toMatch(/Nothing was added\.$/),
+    );
+    expect(found.getByRole('button', { name: 'Poisoned, you are immune' })).toBeTruthy();
+    // Other words, other chips: the reason was about the one tapped.
+    fireEvent.change(box, { target: { value: 'blind' } });
+    await picker.findByRole('button', { name: 'Blinded' });
+    expect(picker.getByRole('status').textContent).toBe('');
+  });
+
   it('shows one already on as held off, with the reason in place of the switch', async () => {
     renderStrip([{ id: 'Poisoned' }], { immune: periapt });
     const chip = strip().getByRole('button', {

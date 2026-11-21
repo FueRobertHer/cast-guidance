@@ -12,6 +12,7 @@ import { DATA_TAG } from '@/data5e/config';
 import { migrateCharacter } from '@/engine/migrate';
 import { ABILITIES, type CharacterDoc, newCharacterDoc } from '@/engine/types';
 import { assertCharacterDoc } from '@/lib/guards';
+import type { StagedPick } from './ChoicePromptRenderer';
 import { STEPS, type Step } from './steps';
 
 export const DRAFT_KEY = 'cast-guidance:creator-draft:v2';
@@ -167,10 +168,49 @@ export function saveDraftStep(step: Step): void {
   if (env !== null && env.step !== step) store({ ...env, step });
 }
 
+/**
+ * Taps on pick cards not yet confirmed, kept beside the draft so a reload or a
+ * trip to the roster does not drop them either. Tied to the draft's doc id: a
+ * new draft starts with none.
+ */
+export const STAGED_KEY = 'cast-guidance:creator-staged:v1';
+
+const isIdList = (v: unknown): v is string[] =>
+  Array.isArray(v) && v.every((x) => typeof x === 'string');
+
+/** The held taps stored for the draft with this doc id; anything off is dropped. */
+export function readStaged(docId: string): Record<string, StagedPick> {
+  let env: unknown;
+  try {
+    env = parse(sessionStorage.getItem(STAGED_KEY));
+  } catch {
+    return {};
+  }
+  if (!isRecord(env) || env.docId !== docId || !isRecord(env.picks)) return {};
+  const out: Record<string, StagedPick> = {};
+  for (const [id, p] of Object.entries(env.picks)) {
+    if (!isRecord(p) || !isIdList(p.draft) || typeof p.base !== 'string') continue;
+    const apply = typeof p.apply === 'string' || isIdList(p.apply) ? p.apply : undefined;
+    out[id] = { draft: p.draft, base: p.base, ...(apply !== undefined ? { apply } : {}) };
+  }
+  return out;
+}
+
+/** Keep the held taps for the draft with this doc id (none: nothing stored). */
+export function writeStaged(docId: string, picks: Readonly<Record<string, StagedPick>>): void {
+  try {
+    if (Object.keys(picks).length === 0) sessionStorage.removeItem(STAGED_KEY);
+    else sessionStorage.setItem(STAGED_KEY, JSON.stringify({ docId, picks }));
+  } catch {
+    // storage full/unavailable: the taps just won't survive a reload
+  }
+}
+
 export function clearDraft(): void {
   try {
     sessionStorage.removeItem(DRAFT_KEY);
     sessionStorage.removeItem(LEGACY_DRAFT_KEY);
+    sessionStorage.removeItem(STAGED_KEY);
   } catch {
     // nothing stored, or storage unavailable: either way there is no draft
   }
