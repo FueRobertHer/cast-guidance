@@ -461,9 +461,11 @@ export async function dialog(title: string | RegExp) {
   const el = await screen.findByRole('dialog', { name: title }, { timeout: LOAD_MS });
   return {
     text: el.textContent ?? '',
+    /** The dialog's choices, without its Close in the corner. */
     options: () =>
       within(el)
         .getAllByRole('button')
+        .filter((b) => b.getAttribute('aria-label') !== 'Close')
         .map((b) => b.textContent ?? ''),
     /** Press a button by its name and wait for the dialog to close. */
     async press(name: string | RegExp) {

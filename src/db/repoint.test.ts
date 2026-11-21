@@ -339,6 +339,11 @@ describe('repointDoc on picks', () => {
           'class:brute|myhomebrew:asi:4': 'feat',
           // A feat taken at a class's ASI, its instance the class.
           'feat:tough|phb:asi4@brute|myhomebrew:ability': ['con'],
+          // A feat a class's or subclass's feat progression gave, its instance the progression.
+          'feat:skilled|xphb:feats:fighting style@brute|myhomebrew:skill:0': ['Arcana'],
+          'feat:skilled|xphb:feats:fighting style@path of rocks|myhomebrew:skill:0': ['History'],
+          // A feat a species gave, its instance the species' picks.
+          'feat:skilled|xphb:race:stonefolk|myhomebrew:skill:0': ['Nature'],
           'subclass:path of rocks|myhomebrew:feature:stone skin:3': ['a'],
           "feat:ogre's grip|myhomebrew:asi4:ability": ['str'],
           // An optional feature's picks are under its host's type, its spells under `spells-of`.
@@ -367,6 +372,9 @@ describe('repointDoc on picks', () => {
       'feat:alert|phb:sailor|hb2:pick-x': ['a'],
       'class:brute|hb2:asi:4': 'feat',
       'feat:tough|phb:asi4@brute|hb2:ability': ['con'],
+      'feat:skilled|xphb:feats:fighting style@brute|hb2:skill:0': ['Arcana'],
+      'feat:skilled|xphb:feats:fighting style@path of rocks|hb2:skill:0': ['History'],
+      'feat:skilled|xphb:race:stonefolk|hb2:skill:0': ['Nature'],
       'subclass:path of rocks|hb2:feature:stone skin:3': ['a'],
       "feat:ogre's grip|hb2:asi4:ability": ['str'],
       'class:stone sight|hb2:cantrip': ['Guidance|TST'],
@@ -384,6 +392,10 @@ describe('repointDoc on picks', () => {
           'class:warrior|tst:asi:4': 'feat',
           'class:warrior|tst:asi:4:feat': "ogre's grip|myhomebrew",
           'background:scholar|tst:feat:0': ["Ogre's Grip|MyHomebrew"],
+          'race:human|xphb:feat:0': ["ogre's grip|myhomebrew"],
+          'subrace:variant|phb:feat:0': ["ogre's grip|myhomebrew"],
+          'class:warrior|tst:feats:fighting style:feat': ["ogre's grip|myhomebrew"],
+          'subclass:champion|tst:feats:fighting style:feat': ["ogre's grip|myhomebrew"],
           'class:warrior|tst:optfeature:FS:T': ['stone sight|myhomebrew'],
           'class:warrior|tst:spell:u:0:known:1:0': ['Ember Lance|MyHomebrew', 'Aid|TST'],
         },
@@ -397,6 +409,10 @@ describe('repointDoc on picks', () => {
       'class:warrior|tst:asi:4': 'feat',
       'class:warrior|tst:asi:4:feat': "ogre's grip|hb2",
       'background:scholar|tst:feat:0': ["ogre's grip|hb2"],
+      'race:human|xphb:feat:0': ["ogre's grip|hb2"],
+      'subrace:variant|phb:feat:0': ["ogre's grip|hb2"],
+      'class:warrior|tst:feats:fighting style:feat': ["ogre's grip|hb2"],
+      'subclass:champion|tst:feats:fighting style:feat': ["ogre's grip|hb2"],
       'class:warrior|tst:optfeature:FS:T': ['stone sight|hb2'],
       'class:warrior|tst:spell:u:0:known:1:0': ['Ember Lance|HB2', 'Aid|TST'],
     });
