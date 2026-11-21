@@ -174,13 +174,12 @@ function namesList(text: string, list: string): boolean {
 
 /** `learn two`, `you know one`, `unlock an`: a number of picks, before what is picked. */
 const PICKS_OF =
-  /\b(gain|choose|learn|pick|select|adopt|master|know|unlock)s? (one|two|three|four|five|six|\d{1,2}|an?)\b/gi;
+  /\b(gain|choose|learn|pick|select|adopt|master|know|unlock)s? (one|two|three|four|\d{1,2}|an?)\b/gi;
 /** Verbs that pick at the opening, but later name a pick made already (`choose one mutagen affecting you`). */
 const CHOOSE = /^(?:choose|pick|select)$/i;
 /** How far after the number the picked thing's name may start, in words. */
 const PICKS_REACH = 4;
-/** `Whenever you learn a new trick shot`, `you can replace one formula`: a swap, not a pick. */
-const SWAP = /\b(?:whenever|each time)\b/i;
+/** `you can replace one formula you know with a new one`: a swap, not a pick. */
 const REPLACE = /\breplace/i;
 /** `additional`, `more`, `another`: picks on top of some, at the levels the sentence lists. */
 const EXTRA = /^(?:additional|more|another)$/;
@@ -208,9 +207,8 @@ interface Picks {
  *   you learn another at 13th and 15th level`);
  * - `learn one additional curse at 6th and 10th level` gives its number at
  *   each level listed, none at the feature's own.
- * A swap (`whenever you learn a new trick shot`) and `choose one of` are not
- * picks; after the list's first feature (`opening` false), neither is a
- * `choose`.
+ * A swap (`you can replace one formula you know`) is not a pick; after the
+ * list's first feature (`opening` false), neither is a `choose`.
  */
 function picksOf(
   text: string,
@@ -229,12 +227,11 @@ function picksOf(
     const end = at + m[0].length;
     const next = wordsOf(text.slice(end, end + 80));
     const near = next.slice(0, PICKS_REACH);
-    if (next[0] === 'of' || !near.some((w) => roots.some((r) => w.startsWith(r)))) continue;
+    if (!near.some((w) => roots.some((r) => w.startsWith(r)))) continue;
     if (!opening && CHOOSE.test(m[1] ?? '')) continue;
-    const start = text.lastIndexOf('.', at) + 1;
     const stop = text.indexOf('.', end);
     const rest = text.slice(end, stop < 0 ? undefined : stop);
-    if (SWAP.test(text.slice(start, at)) || REPLACE.test(rest)) continue;
+    if (REPLACE.test(rest)) continue;
     const word = (m[2] ?? '').toLowerCase();
     const n = word === 'a' || word === 'an' ? 1 : countWord(word);
     if (n === undefined) continue;
@@ -275,7 +272,7 @@ function countsFromText(
     const own = new Map<number, number>();
     for (const p of picks) {
       const level = p.level ?? f.level;
-      if (level >= f.level) own.set(level, (own.get(level) ?? 0) + p.n);
+      own.set(level, (own.get(level) ?? 0) + p.n);
     }
     for (const [level, n] of own) added.set(level, Math.max(added.get(level) ?? 0, n));
   }
@@ -302,26 +299,19 @@ function linkTextLists(
   mine: readonly { list: string; label: string }[],
   progression: Record<string, unknown>[],
 ): string[] {
-  const offered = new Set<string>();
   const stems = new Set<string>();
-  for (const p of progression) {
-    if (typeof p.name === 'string') stems.add(stem(p.name));
-    for (const t of Array.isArray(p.featureType) ? p.featureType : []) {
-      if (typeof t === 'string') offered.add(t.toLowerCase());
-    }
-  }
+  for (const p of progression) if (typeof p.name === 'string') stems.add(stem(p.name));
   const named = (f: { name: string; entries: Entry[] }, label: string) =>
     namesList(f.name, label) || namesList(plainText(f.entries), label);
   const candidates: { list: string; label: string }[] = [...mine];
   for (const list of host.ctx.optionLists ?? []) {
     if (list.includes(': ')) continue;
-    if (!host.fixed.some((f) => named(f, list))) continue;
     if (host.classFixed?.some((f) => named(f, list)) === true) continue;
     candidates.push({ list, label: list });
   }
   const counted: string[] = [];
   for (const { list, label } of candidates) {
-    if (offered.has(list.toLowerCase()) || stems.has(stem(label))) continue;
+    if (stems.has(stem(label))) continue;
     // The list's options the host has outright: `Focus Art: Weapon Parry`.
     const granted: string[] = [];
     for (const f of host.fixed) {
@@ -335,7 +325,6 @@ function linkTextLists(
     );
     if (counts === undefined) continue;
     progression.push({ name: label, featureType: [list], progression: counts });
-    offered.add(list.toLowerCase());
     stems.add(stem(label));
     counted.push(label);
   }

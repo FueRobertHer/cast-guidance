@@ -409,6 +409,12 @@ describe("lists stored as spells, counted from their features' text", () => {
       [['Ember Knight: Grand Hexes'], { '11': 1, '13': 2, '15': 3 }],
       [['Ember Knight: Resonants'], { '6': 2, '10': 4 }],
     ]);
+    // A level the opening sentence gives with no `another` is when, not more.
+    const when = storing(
+      ['Ember Knight: Tricks'],
+      [{ name: 'Trickery', level: 3, entries: ['You learn two tricks at 3rd level.'] }],
+    );
+    expect(offer(when).progression).toEqual([[['Ember Knight: Tricks'], { '3': 2 }]]);
   });
 
   it('counts none for the options the host has outright, and an additional one only where listed', () => {
@@ -511,6 +517,16 @@ describe("lists stored as spells, counted from their features' text", () => {
     );
     expect(own.progression.map((p) => p.featureType)).toEqual([['Ember Knight: Tricks']]);
     expect(own.countedFromText).toEqual([]);
+    // Another class's list, named in full, is that class's.
+    const boons = {
+      name: 'Boons',
+      level: 1,
+      entries: ['You learn two boons from the Ash Warden: Boons list.'],
+    };
+    expect(offer(storing(['Ash Warden: Boons'], [boons]))).toEqual({
+      progression: [],
+      counted: [],
+    });
   });
 
   it('offers a list stored with no class name to the class that names it, not its subclass', () => {
@@ -613,6 +629,52 @@ describe('class options in a file', () => {
     const tricky = knight('Ember Knight', `${f('Tricks: Flare')}${f('Tricks: Smoke')}`);
     expect(warnings(`${flare}${tricky}`)).toEqual([]);
     expect(warnings(`${tricky}${flare}`)).toEqual([]);
+  });
+
+  it('offers a list stored with no class name to the class its features name, not again to its subclass', () => {
+    const curses = ['Hemo', 'Rot']
+      .map(
+        (n) =>
+          `<spell><name>${n}</name><level>0</level><classes>Blood Curses</classes><text>A curse.</text></spell>`,
+      )
+      .join('');
+    const hunter = (classText: string) => `<class><name>Ember Knight</name><hd>10</hd>
+      <autolevel level="1">${f('Maledict', classText, '')}</autolevel>
+      <autolevel level="3">${f('Martial Archetype', 'Choose.', '')}${f('Martial Archetype: Ash')}${f('Brand (Ash)', 'You learn one blood curse.')}</autolevel>
+    </class>`;
+    const offers = (classText: string) => {
+      const { json, report } = convertFc5Compendium(
+        parseXml(`<compendium>${curses}${hunter(classText)}</compendium>`),
+        { fileName: FILE },
+      );
+      const of = (e: Record<string, unknown> | undefined) =>
+        ((e?.optionalfeatureProgression ?? []) as Record<string, unknown>[])
+          .filter((p) => (p.featureType as string[]).includes('Blood Curses'))
+          .map((p) => p.progression);
+      return {
+        cls: of(list(json, 'class')[0]),
+        sub: of(list(json, 'subclass')[0]),
+        warnings: report.warnings,
+      };
+    };
+    expect(offers('You know one blood curse.')).toEqual({
+      cls: [{ '1': 1 }],
+      sub: [],
+      warnings: [],
+    });
+    expect(offers('You fight.')).toEqual({ cls: [], sub: [{ '3': 1 }], warnings: [] });
+  });
+
+  it('warns of a list stored with no class name that no class counts', () => {
+    const { report } = convertFc5Compendium(
+      parseXml(
+        `<compendium>${knight('Ember Knight')}<spell><name>Bargain</name><level>0</level><classes>Dark Bargains</classes><text>A deal.</text></spell></compendium>`,
+      ),
+      { fileName: FILE },
+    );
+    expect(report.warnings).toEqual([
+      '1 class option is on a list no class in this file says how many to pick from (Dark Bargains). It is in the Library under Optional features, but no character can pick it yet.',
+    ]);
   });
 
   it('keeps the prerequisite of an option the file stores, whichever list comes first', () => {
