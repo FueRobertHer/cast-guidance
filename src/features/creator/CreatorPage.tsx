@@ -67,7 +67,7 @@ import {
   type PickStage,
   sameChoice,
 } from './OriginChoices';
-import { pendingSteps, stepForOrigin } from './pendingSteps';
+import { pendingSteps, stepForOrigin, withExtraPending } from './pendingSteps';
 import {
   classBlurb,
   makeBackgroundBlurb,
@@ -75,6 +75,7 @@ import {
   makeSubclassEntries,
   raceBlurb,
 } from './pickerHints';
+import { shortfallWords, spellShortfalls, subraceMissing } from './shortfalls';
 import {
   bundleGoldCp,
   bundleToEquipment,
@@ -144,8 +145,9 @@ function OptionCheck({ on }: { on: boolean }) {
 /**
  * The heading over what a pick brings with it, under the picked card, and
  * whether any of it still waits: the guide's count (DS-001), or done.
- * `unpicked` is a pick the count leaves out (a subrace, which the rules
- * engine treats as optional): it says nothing rather than done.
+ * `unpicked` is an optional pick left open (a subrace the race can go
+ * without): it says nothing rather than done. A subrace the race needs is
+ * in `waiting` instead.
  */
 function ChoicesHeading({
   name,
@@ -685,7 +687,27 @@ export function Component() {
 
   /** Which step shows picks from an origin, for each step's list of them. */
   const onStep = (s: Step) => (o: EffectOrigin) => stepForOrigin(doc, o) === s;
-  const waiting = sheet !== null ? pendingSteps(doc, sheet.pending) : [];
+  // The engine's pending picks, by step, and with them what it leaves out: a
+  // subrace the race needs, spells not chosen yet (review item 3).
+  const enginePending = sheet !== null ? pendingSteps(doc, sheet.pending) : [];
+  const missingSubrace =
+    registry !== null && subraceMissing(doc, registry.byType('subrace'), subraces);
+  const spellsShort =
+    sheet !== null && registry !== null
+      ? spellShortfalls(doc, sheet, (r) => {
+          const level = registry.get('spell', r.name, r.source)?.level;
+          return typeof level === 'number' ? level : undefined;
+        })
+      : [];
+  const waiting = withExtraPending(
+    doc,
+    enginePending,
+    new Map<Step, number>([
+      ['species', missingSubrace ? 1 : 0],
+      ['spells', spellsShort.length],
+    ]),
+  );
+  const toChoose = waiting.reduce((n, w) => n + w.count, 0);
   // The pending count leads to this step's own picks first, else to the
   // first step that has any.
   const waitingHere = waiting.find((w) => w.step === step)?.count ?? 0;
@@ -1111,7 +1133,10 @@ export function Component() {
               />
             )}
             {subraces.length > 0 && (
-              <div className="flex flex-col gap-2">
+              <div
+                className="flex flex-col gap-2"
+                data-pending-choice={missingSubrace ? '' : undefined}
+              >
                 <span className="px-1 text-heading">Subrace</span>
                 <CollapsingCardList
                   noun="subrace"
@@ -1297,7 +1322,20 @@ export function Component() {
       }
 
       case 'spells':
-        return sheet !== null ? <SpellManager doc={doc} sheet={sheet} update={update} /> : null;
+        return sheet !== null ? (
+          <div className="flex flex-col gap-3">
+            {spellsShort.length > 0 && (
+              <p className={`${HINT} flex-col bg-guide-soft`} data-pending-choice="">
+                {spellsShort.map((short) => (
+                  <span key={short.className}>
+                    {short.className}: {shortfallWords(short)} still to choose
+                  </span>
+                ))}
+              </p>
+            )}
+            <SpellManager doc={doc} sheet={sheet} update={update} />
+          </div>
+        ) : null;
 
       case 'choices': {
         // Race, class, and background picks now live on their own steps. This
@@ -1310,7 +1348,26 @@ export function Component() {
             sheet.resolvedChoices.some((r) => isOther(r.prompt.origin)));
         return (
           <div className="flex flex-col gap-3">
-            {!hasOther && (
+            {/* Nothing of its own, with picks waiting elsewhere: say where,
+                rather than that nothing is left (review item 3). */}
+            {!hasOther && waiting.length > 0 && (
+              <div className={`${HINT} flex-col bg-guide-soft`}>
+                <span>Nothing to pick on this step. Still to choose:</span>
+                <span className="flex flex-wrap gap-2">
+                  {waiting.map((w) => (
+                    <Button
+                      key={w.step}
+                      variant="outline"
+                      size="sm"
+                      onClick={() => navStep(w.step)}
+                    >
+                      {STEP_LABELS[w.step]}: {w.count}
+                    </Button>
+                  ))}
+                </span>
+              </div>
+            )}
+            {!hasOther && waiting.length === 0 && (
               <p className={`${HINT} bg-heal-soft`}>
                 <Check size={18} aria-hidden className="mt-0.5 shrink-0 text-heal" />
                 <span>
@@ -1389,8 +1446,22 @@ export function Component() {
             step: 'equipment',
           });
         }
+        if (missingSubrace && doc.race !== undefined) {
+          issues.push({
+            key: 'subrace',
+            text: `No subrace picked for ${doc.race.name}`,
+            step: 'species',
+          });
+        }
+        for (const short of spellsShort) {
+          issues.push({
+            key: `spells:${short.className}`,
+            text: `${short.className}: ${shortfallWords(short)} still to choose`,
+            step: 'spells',
+          });
+        }
         // One fix per step with picks waiting, each leading to where they are.
-        for (const { step: s, count } of waiting) {
+        for (const { step: s, count } of enginePending) {
           issues.push({
             key: `choices:${s}`,
             text: `${count} choice${count > 1 ? 's' : ''} still pending on ${STEP_LABELS[s]}`,
@@ -1553,14 +1624,14 @@ export function Component() {
               type="button"
               onClick={showPending}
               className="-my-2 ml-auto inline-flex min-h-tap items-center gap-1 font-bold text-guide"
-              aria-label={`${sheet.pending.length} to choose: ${pendingHere ? 'show the first on this step' : `go to the ${STEP_LABELS[pendingTarget]} step`}`}
+              aria-label={`${toChoose} to choose: ${pendingHere ? 'show the first on this step' : `go to the ${STEP_LABELS[pendingTarget]} step`}`}
               title={
                 pendingHere
-                  ? 'Decisions like skills and languages are waiting on this step'
-                  : `Decisions like skills and languages are waiting on the ${STEP_LABELS[pendingTarget]} step`
+                  ? 'Picks still to make are on this step'
+                  : `Picks still to make are on the ${STEP_LABELS[pendingTarget]} step`
               }
             >
-              {sheet.pending.length} to choose <ChevronRight size={16} aria-hidden />
+              {toChoose} to choose <ChevronRight size={16} aria-hidden />
             </button>
           )}
         </div>

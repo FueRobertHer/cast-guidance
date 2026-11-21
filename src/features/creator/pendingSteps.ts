@@ -43,3 +43,21 @@ export function pendingSteps(
     return count !== undefined ? [{ step, count }] : [];
   });
 }
+
+/**
+ * `pendingSteps` with picks the engine does not list added in (a required
+ * subrace, spells not chosen; see `shortfalls.ts`), by step, in this
+ * character's wizard order.
+ */
+export function withExtraPending(
+  doc: CharacterDoc,
+  base: ReadonlyArray<{ step: Step; count: number }>,
+  extra: ReadonlyMap<Step, number>,
+): Array<{ step: Step; count: number }> {
+  const counts = new Map(base.map((w) => [w.step, w.count]));
+  for (const [step, n] of extra) if (n > 0) counts.set(step, (counts.get(step) ?? 0) + n);
+  return stepsFor(doc.rulesVersion).flatMap((step) => {
+    const count = counts.get(step);
+    return count !== undefined ? [{ step, count }] : [];
+  });
+}

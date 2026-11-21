@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { type ChoicePrompt, type EffectOrigin, newCharacterDoc } from '@/engine/types';
-import { pendingSteps, stepForOrigin } from './pendingSteps';
+import { pendingSteps, stepForOrigin, withExtraPending } from './pendingSteps';
 
 function warrior() {
   const doc = newCharacterDoc('id', 'Aria', 't');
@@ -64,5 +64,23 @@ describe('pendingSteps', () => {
 
   it('has nothing when no pick is waiting', () => {
     expect(pendingSteps(warrior(), [])).toEqual([]);
+  });
+});
+
+describe('withExtraPending', () => {
+  it('adds counts the engine leaves out, in step order, and skips zeros', () => {
+    const doc = warrior();
+    const base = [{ step: 'class' as const, count: 2 }];
+    const extra = new Map([
+      ['spells', 1],
+      ['species', 1],
+      ['class', 1],
+      ['background', 0],
+    ] as const);
+    expect(withExtraPending(doc, base, extra)).toEqual([
+      { step: 'class', count: 3 },
+      { step: 'species', count: 1 },
+      { step: 'spells', count: 1 },
+    ]);
   });
 });

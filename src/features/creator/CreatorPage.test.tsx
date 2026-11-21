@@ -39,6 +39,8 @@ const { registry, create, dialogs } = vi.hoisted(() => ({
 
 vi.mock('@/data5e/hooks', () => ({
   useRegistryRefreshing: () => false,
+  // The Spells step's list reads the registry through this one.
+  useRegistry: () => (registry.loading || registry.error !== null ? null : registry.current),
   useTypePacks: (type: string) => ({
     ...(type === 'class' ? registry.classPacks : { status: 'ready', error: null, offline: false }),
     retry: registry.classRetry,
@@ -747,6 +749,87 @@ describe('changes that take something away', () => {
   const tap = (name: string | RegExp) => fireEvent.click(screen.getByRole('button', { name }));
   const pressed = (name: string) =>
     screen.getByRole('button', { name }).getAttribute('aria-pressed');
+
+  // Review item 3: picks the engine does not list still count, and the
+  // Choices step says where the waiting ones are rather than "nothing left".
+  describe('what is still to choose', () => {
+    it('has Choices name the steps with picks waiting, each a way there', () => {
+      renderDraft('choices', (d) => {
+        d.classes = [{ ref: { name: 'Warrior', source: 'TST' }, levels: 1, hp: ['avg'] }];
+      });
+      expect(screen.queryByText(/Nothing else to decide here/)).toBeNull();
+      expect(screen.getByText('Nothing to pick on this step. Still to choose:')).toBeTruthy();
+      const toClass = screen.getByRole('button', { name: /^Class: \d+$/ });
+      fireEvent.click(toClass);
+      return waitFor(() =>
+        expect(screen.getByRole('heading', { level: 1, name: 'Class' })).toBeTruthy(),
+      );
+    });
+
+    it('counts spells not yet chosen, and Review says whose and how many', () => {
+      renderDraft('review', (d) => {
+        d.classes = [{ ref: { name: 'Mage', source: 'TST' }, levels: 1, hp: ['avg'] }];
+      });
+      expect(screen.getByText(/^Mage: .*still to choose$/)).toBeTruthy();
+      // Counted in the header's "to choose" too.
+      expect(screen.getByRole('button', { name: /^\d+ to choose: go to the / })).toBeTruthy();
+    });
+
+    it('says on Spells what is short, where the to choose count leads', () => {
+      renderDraft('spells', (d) => {
+        d.classes = [{ ref: { name: 'Mage', source: 'TST' }, levels: 1, hp: ['avg'] }];
+      });
+      const hint = screen.getByText(/^Mage: .*still to choose$/);
+      expect(hint.closest('[data-pending-choice]')).not.toBeNull();
+    });
+
+    it('counts a subrace the race needs, and Review names it', () => {
+      const toChoose = () =>
+        Number(
+          /^(\d+) to choose/.exec(
+            screen.getByRole('button', { name: /^\d+ to choose: / }).getAttribute('aria-label') ??
+              '',
+          )?.[1],
+        );
+      // A race with no picks of its own whose every subrace has a name, as the
+      // 2014 Elf.
+      const base = makeTestContext();
+      const extra: Array<[string, Record<string, unknown>]> = [
+        ['race', { name: 'Woodfolk', source: 'TST', size: ['M'], speed: 30 }],
+        ['subrace', { name: 'Deep', source: 'TST', raceName: 'Woodfolk', raceSource: 'TST' }],
+      ];
+      registry.current = {
+        get: (type: string, name: string, source?: string) =>
+          extra.find(
+            ([t, e]) =>
+              t === type &&
+              String(e.name).toLowerCase() === name.toLowerCase() &&
+              (source === undefined || String(e.source).toLowerCase() === source.toLowerCase()),
+          )?.[1] ?? base.get(type as never, name, source),
+        byType: (type: string) => [
+          ...extra.filter(([t]) => t === type).map(([, e]) => e),
+          ...base.byType(type as never),
+        ],
+      };
+      // The header's count shows once there is a class; the Warrior's own
+      // picks are the same in both drafts.
+      const warrior = { ref: { name: 'Warrior', source: 'TST' }, levels: 1, hp: ['avg' as const] };
+      renderDraft('review', (d) => {
+        d.classes = [warrior];
+        d.race = { name: 'Woodfolk', source: 'TST' };
+        d.subrace = { name: 'Deep', source: 'TST' };
+      });
+      const withSubrace = toChoose();
+      expect(screen.queryByText(/^No subrace picked/)).toBeNull();
+      cleanup();
+      renderDraft('review', (d) => {
+        d.classes = [warrior];
+        d.race = { name: 'Woodfolk', source: 'TST' };
+      });
+      expect(screen.getByText('No subrace picked for Woodfolk')).toBeTruthy();
+      expect(toChoose()).toBe(withSubrace + 1);
+    });
+  });
 
   describe('picking another class', () => {
     it("keeps species and background picks and swaps out the old class's", () => {
