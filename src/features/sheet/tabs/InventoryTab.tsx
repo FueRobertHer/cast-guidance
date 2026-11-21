@@ -4,6 +4,7 @@ import { useOutletContext } from 'react-router';
 import type { Entity } from '@/data5e/copyMod';
 import { useRegistry } from '@/data5e/hooks';
 import { ensureTypePacks } from '@/data5e/loader';
+import { registryViewFor } from '@/data5e/registryView';
 import {
   applySourcePolicy,
   backToSourcesLabel,
@@ -15,6 +16,7 @@ import type { CharacterDoc, EquipmentEntry } from '@/engine/types';
 import { usePickSourcePolicy } from '@/lib/usePickSourcePolicy';
 import { useStickyHeight } from '@/lib/useStickyHeight';
 import { captureUpdate, sameForUndo, useUndoOffer } from '@/lib/useUndoOffer';
+import { Badge } from '@/ui/Badge';
 import { Button, buttonClass } from '@/ui/Button';
 import { chipClass } from '@/ui/Chip';
 import { EntityInfoSheet } from '@/ui/EntityInfoSheet';
@@ -23,6 +25,7 @@ import { focusSheetOnTouch, Sheet } from '@/ui/sheet';
 import { listClass } from '@/ui/surfaces';
 import { fieldClass } from '@/ui/TextField';
 import { UndoBar } from '@/ui/UndoBar';
+import { readableName } from '../readableNames';
 import type { CharacterSheetState } from '../useCharacterSheet';
 
 const nameOf = (e: Entity) => String(e.name ?? '?');
@@ -231,9 +234,15 @@ const STEP_FACE =
   'flex size-7 items-center justify-center rounded-control bg-surface-raised text-ink transition-colors duration-120 group-hover:bg-surface-hover';
 
 export function Component() {
-  const { sheet, doc, update, restore } = useOutletContext<CharacterSheetState>();
+  const { sheet, doc, update, restore, data } = useOutletContext<CharacterSheetState>();
   const registry = useRegistry();
   const undo = useUndoOffer({ current: doc, same: sameForUndo, restore });
+  // The books as this character sees them, as the engine reads them: its own
+  // collection switches can bring back a file the device has off.
+  const view = useMemo(
+    () => (registry === null || doc === null ? null : registryViewFor(registry, doc)),
+    [registry, doc],
+  );
   // Under the sheet header, so the scroll padding counts it too (A11Y-003).
   const bar = useStickyHeight('--sheet-bar-h');
   // The row goes with its Remove button, so focus goes on to the offer.
@@ -246,11 +255,10 @@ export function Component() {
    * version dropped something) return undefined and stay plain text.
    */
   const resolve = (entry: EquipmentEntry): { entity: Entity; type: string } | undefined => {
-    if (entry.custom !== undefined || entry.ref === undefined || registry === null)
-      return undefined;
+    if (entry.custom !== undefined || entry.ref === undefined || view === null) return undefined;
     const source = entry.ref.source || undefined;
     for (const type of ['item', 'baseitem', 'itemGroup'] as const) {
-      const entity = registry.get(type, entry.ref.name, source);
+      const entity = view.get(type, entry.ref.name, source);
       // itemGroup has no header-facts case of its own, and reads as an item.
       if (entity !== undefined) return { entity, type: type === 'itemGroup' ? 'item' : type };
     }
@@ -262,10 +270,25 @@ export function Component() {
     if (entry.custom !== undefined) return entry.custom.name;
     if (entry.ref === undefined) return '?';
     const name = resolve(entry)?.entity.name;
-    return typeof name === 'string' ? name : entry.ref.name;
+    return typeof name === 'string' ? name : readableName(entry.ref.name);
   };
 
-  const attunedCount = doc.equipment.filter((e) => e.attuned).length;
+  /**
+   * Equipped gear whose entry is gone (its homebrew file or book was removed):
+   * it gives nothing, so it holds no attunement and says so. The sheet derives
+   * only once equipped gear's packs are in, so an equipped ref that still does
+   * not resolve is not coming; one in the backpack might still be downloading,
+   * and a download that failed is said elsewhere, so neither is called missing.
+   */
+  const missing = (entry: EquipmentEntry): boolean =>
+    entry.equipped &&
+    entry.custom === undefined &&
+    entry.ref !== undefined &&
+    view !== null &&
+    data?.equipment === undefined &&
+    resolve(entry) === undefined;
+
+  const attunedCount = doc.equipment.filter((e) => e.attuned && !missing(e)).length;
 
   const equipped = doc.equipment.filter((e) => e.equipped);
   const backpack = doc.equipment.filter((e) => !e.equipped);
@@ -316,6 +339,12 @@ export function Component() {
         })()}
         {entry.custom?.note !== undefined && (
           <div className="truncate text-caption text-ink-muted">{entry.custom.note}</div>
+        )}
+        {missing(entry) && (
+          <div className="flex flex-wrap items-center gap-x-1.5 text-caption text-ink-muted">
+            <Badge tone="danger">Missing</Badge>
+            Not in your books or homebrew any more, so it gives nothing.
+          </div>
         )}
       </div>
       <span className="ml-auto flex shrink-0 items-center">
