@@ -32,8 +32,20 @@ describe('Try it on', () => {
     const changes = tried.state === 'changed' ? tried.changes : [];
     expect(changes).toContainEqual({ label: 'Strength', now: '19', was: '8', way: 'up' });
     // The modifier follows: the warrior's proficient Strength saves, and Athletics.
-    expect(changes).toContainEqual({ label: 'Strength saves', now: '+7', was: '+2', way: 'up' });
-    expect(changes).toContainEqual({ label: 'Athletics', now: '+4', was: '−1', way: 'up' });
+    expect(changes).toContainEqual({
+      label: 'Strength saves',
+      now: '+7',
+      was: '+2',
+      way: 'up',
+      follows: true,
+    });
+    expect(changes).toContainEqual({
+      label: 'Athletics',
+      now: '+4',
+      was: '−1',
+      way: 'up',
+      follows: true,
+    });
   });
 
   it('shows what the changes do for a character who already wears the saved one', () => {

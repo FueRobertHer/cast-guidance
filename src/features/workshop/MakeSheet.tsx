@@ -31,6 +31,7 @@ import {
   Search,
   Skull,
   Sparkles,
+  Split,
   Star,
   Swords,
   Users,
@@ -59,14 +60,23 @@ const CAPTION = 'text-caption text-ink-muted';
 const ICON = 'tap shrink-0 rounded-control text-ink-muted hover:bg-surface-raised hover:text-ink';
 const ROW = `${listRowClass} w-full text-left hover:bg-surface-raised`;
 
-/** Each kind the Workshop makes, in the board's order, with what one holds. */
-const KINDS: ReadonlyArray<{ type: string; icon: LucideIcon; line: string }> = [
+/**
+ * Each kind the Workshop makes, in the board's order, with what one holds.
+ * `title` names a kind the Library has no section for (a subrace).
+ */
+const KINDS: ReadonlyArray<{ type: string; icon: LucideIcon; line: string; title?: string }> = [
   { type: 'spell', icon: WandSparkles, line: 'A cantrip or spell: damage, saves, what it does' },
   { type: 'item', icon: Backpack, line: 'Gear or a magic item, and what it gives' },
   { type: 'feat', icon: Star, line: 'Benefits that count on the sheet' },
   { type: 'subclass', icon: GitFork, line: 'A path for a class, its features by level' },
   { type: 'class', icon: Swords, line: 'Hit die, class table, features and pools' },
   { type: 'race', icon: Users, line: 'Size, speed, senses and traits' },
+  {
+    type: 'subrace',
+    icon: Split,
+    line: 'A version of a species, with traits of its own',
+    title: 'Subraces',
+  },
   { type: 'background', icon: ScrollText, line: 'Skills, tools, languages, an origin feat' },
   {
     type: 'condition',
@@ -81,6 +91,9 @@ const LATER: ReadonlyArray<{ name: string; icon: LucideIcon; line: string }> = [
   { name: 'Creatures and companions', icon: Skull, line: 'A familiar, a mount, a summoned beast' },
   { name: 'Magic item variants', icon: Package, line: 'One rule for every +1 weapon or armor' },
 ];
+
+/** A kind as the list of kinds names it ("Feats", "Subraces"). */
+const titleOf = (type: string) => KINDS.find((k) => k.type === type)?.title ?? labelOf(type);
 
 /** Every kind with an editor, the board's first; one added later by its file goes last. */
 export function makeKinds(): Array<{ type: string; icon: LucideIcon; line: string }> {
@@ -281,7 +294,7 @@ function Kinds({ heading, file }: { heading: HeadingRef; file?: string }) {
             key={k.type}
             to={query({ kind: k.type, file })}
             state={PUSHED}
-            title={labelOf(k.type)}
+            title={titleOf(k.type)}
             line={k.line}
             icon={k.icon}
           />
@@ -576,7 +589,7 @@ function Like({ heading, step }: { heading: HeadingRef; step: Step }) {
       });
   }, [registry, kind, mine, words]);
   const loading = registry === null || packs.status === 'loading';
-  const label = `Search ${labelOf(kind).toLowerCase()}: yours, your collections and the books`;
+  const label = `Search ${titleOf(kind).toLowerCase()}: yours, your collections and the books`;
   return (
     <>
       <StepHeading heading={heading}>{`Like something: a new ${one}`}</StepHeading>
@@ -673,7 +686,7 @@ function Based({ heading, step }: { heading: HeadingRef; step: Step }) {
       <>
         <StepHeading heading={heading}>{`A new ${one}`}</StepHeading>
         <p className={NOTE}>
-          Nothing in {labelOf(kind).toLowerCase()} is called {pickedName}. Search again.
+          Nothing in {titleOf(kind).toLowerCase()} is called {pickedName}. Search again.
         </p>
       </>
     );

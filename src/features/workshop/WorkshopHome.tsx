@@ -20,7 +20,7 @@
  * offered back with Undo, which puts every entry back in its place.
  */
 import { useLiveQuery } from 'dexie-react-hooks';
-import { ChevronRight, FileUp, ListChecks, Plus, Search, X } from 'lucide-react';
+import { ChevronRight, FileUp, ListChecks, PenLine, Plus, Search, X } from 'lucide-react';
 import { lazy, type ReactNode, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router';
 import { useRegistry, useRegistryState, useSearchState } from '@/data5e/hooks';
@@ -430,6 +430,12 @@ function RulesShelf({ rows }: { rows: readonly HomebrewFileMeta[] | undefined })
             ))}
           </ul>
         )}
+        <Link
+          to="/workshop/rules?write"
+          className={`${buttonClass({ variant: 'outline' })} self-start`}
+        >
+          <PenLine size={18} aria-hidden /> Write a rule pack
+        </Link>
       </section>
     </>
   );
