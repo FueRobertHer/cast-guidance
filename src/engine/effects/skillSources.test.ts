@@ -20,13 +20,22 @@ const COURTIER: DataEntity = {
   feats: [{ 'skilled|tst': true }],
 };
 
+/** A background with a fixed skill Testfolk and Sneak can both have. */
+const LOOKOUT: DataEntity = {
+  name: 'Lookout',
+  source: 'TST',
+  skillProficiencies: [{ perception: true }],
+};
+
+const BACKGROUNDS = [COURTIER, LOOKOUT];
+
 const ctx: EngineContext = {
   get: (type, name, source) =>
-    type === 'background' && name.toLowerCase() === 'courtier'
-      ? COURTIER
-      : world.get(type, name, source),
+    (type === 'background'
+      ? BACKGROUNDS.find((b) => String(b.name).toLowerCase() === name.toLowerCase())
+      : undefined) ?? world.get(type, name, source),
   byType: (type) =>
-    type === 'background' ? [...world.byType(type), COURTIER] : world.byType(type),
+    type === 'background' ? [...world.byType(type), ...BACKGROUNDS] : world.byType(type),
 };
 
 const CLASS_SKILLS = 'class:sneak|tst:skill:0';
@@ -131,6 +140,93 @@ describe('skill picks name what already grants an option', () => {
     expect(advisoryOf(promptOf(doc, 'class:mage|tst:skill:0'), 'Arcana')).toBe(
       'Already proficient from Scholar (background).',
     );
+  });
+});
+
+describe('a skill granted twice, under the 2014 rules', () => {
+  const OVERLAP = 'skill:overlap:perception';
+  /** Testfolk (Perception) whose Sneak class took Perception too. */
+  const twice = (rulesVersion: CharacterDoc['rulesVersion'] = '2014') => {
+    const doc = sneakDoc();
+    doc.rulesVersion = rulesVersion;
+    doc.choices[CLASS_SKILLS] = ['Perception', 'Stealth'];
+    return doc;
+  };
+
+  it('offers any other skill in its place, beside the pick that made the overlap', () => {
+    const prompt = deriveSheet(twice(), ctx).pending.find((p) => p.id === OVERLAP);
+    expect(prompt?.kind).toBe('skill');
+    expect(prompt?.count).toBe(1);
+    expect(prompt?.label).toBe(
+      'Perception from Testfolk (species) and Sneak (class): choose another skill in its place',
+    );
+    // The species, whose step the creator comes to after the class's.
+    expect(prompt?.origin.label).toBe('Testfolk');
+    // Every skill but the duplicate, not only the class's list.
+    expect(prompt?.options.map((o) => o.id)).not.toContain('Perception');
+    expect(prompt?.options.map((o) => o.id)).toContain('Arcana');
+    expect(prompt?.options).toHaveLength(17);
+    expect(advisoryOf(prompt, 'Stealth')).toBe('Already proficient from Sneak (class).');
+  });
+
+  it('grants the skill picked, as the second source', () => {
+    const doc = twice();
+    doc.choices[OVERLAP] = ['Arcana'];
+    const sheet = deriveSheet(doc, ctx);
+    expect(sheet.pending.map((p) => p.id)).not.toContain(OVERLAP);
+    expect(sheet.skills.Arcana?.prof).toBe(1);
+    expect(sheet.skills.Arcana?.sources.map((o) => o.label)).toEqual(['Testfolk']);
+  });
+
+  it('sits on the background step when the background is a source', () => {
+    const doc = twice();
+    doc.background = { name: 'Lookout', source: 'TST' };
+    expect(promptOf(doc, OVERLAP)?.origin.type).toBe('background');
+  });
+
+  it('makes no overlap of its own when the skill picked is held already', () => {
+    // Its grant is the background's, beside the class's Stealth: two sources,
+    // were it counted.
+    const doc = sneakDoc();
+    doc.background = { name: 'Lookout', source: 'TST' };
+    doc.choices[CLASS_SKILLS] = ['Stealth', 'Acrobatics'];
+    doc.choices[OVERLAP] = ['Stealth'];
+    const sheet = deriveSheet(doc, ctx);
+    expect(sheet.skills.Stealth?.sources.map((o) => o.label)).toEqual(['Sneak', 'Lookout']);
+    expect(sheet.pending.map((p) => p.id)).not.toContain('skill:overlap:stealth');
+  });
+
+  it('asks for one more for each further source', () => {
+    const doc = twice();
+    doc.background = { name: 'Lookout', source: 'TST' };
+    const prompt = promptOf(doc, OVERLAP);
+    expect(prompt?.count).toBe(2);
+    expect(prompt?.label).toBe(
+      'Perception from Testfolk (species), Lookout (background) and Sneak (class): choose 2 other skills in its place',
+    );
+  });
+
+  it('counts no feat, item, custom effect or expertise as a source', () => {
+    const doc = sneakDoc();
+    doc.feats = [{ ref: { name: 'Skilled', source: 'TST' }, instanceId: 'f1' }];
+    doc.choices['feat:skilled|tst:f1:skill:0'] = ['Perception', 'History', 'Arcana'];
+    doc.choices[CLASS_SKILLS] = ['Stealth', 'Acrobatics'];
+    doc.choices['class:sneak|tst:expertise:1'] = ['Stealth', 'Perception'];
+    doc.customEffects = [
+      {
+        kind: 'skillProf',
+        skill: 'Perception',
+        level: 1,
+        origin: { label: 'Owl Cloak', uid: 'cloak', type: 'item' },
+      },
+    ];
+    const pending = deriveSheet(doc, ctx).pending.map((p) => p.id);
+    expect(pending.filter((id) => id.startsWith('skill:overlap:'))).toEqual([]);
+  });
+
+  it('offers nothing under the 2024 rules, which have no such swap', () => {
+    const pending = deriveSheet(twice('2024'), ctx).pending.map((p) => p.id);
+    expect(pending).not.toContain(OVERLAP);
   });
 });
 

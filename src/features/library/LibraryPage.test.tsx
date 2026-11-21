@@ -74,6 +74,14 @@ vi.mock('@/data5e/sourceFilter', () => ({
   policyForSearch: () => undefined,
 }));
 vi.mock('@/data5e/search/client', () => ({ searchAll }));
+/** Which classes' lists hold each spell, as the generated lookup has it; settable per test. */
+const classLookup = vi.hoisted(() => ({ current: {} as Record<string, Record<string, unknown>> }));
+vi.mock('@/lib/useClassLookup', () => ({
+  useClassLookup: () => ({
+    lookup: classLookup.current,
+    problem: { status: 'ready', error: null, offline: false, retry: () => undefined },
+  }),
+}));
 // No IndexedDB here: the player has no files of their own, so every entry
 // offers Make it yours.
 vi.mock('@/db/homebrewRepo', () => ({
@@ -467,6 +475,201 @@ describe('an entry the table has changed', () => {
     renderAt('/library/spell/fireball%7Cphb');
     expect(screen.getByRole('heading', { name: 'Fireball' })).toBeTruthy();
     expect(screen.queryByText('Changed')).toBeNull();
+  });
+});
+
+describe('what an entry page lists (Gemini 43)', () => {
+  afterEach(() => {
+    classLookup.current = {};
+  });
+
+  it('names the classes and subclasses whose lists hold a spell, each a link', () => {
+    classLookup.current = {
+      phb: {
+        fireball: {
+          class: { PHB: { Wizard: true, Sorcerer: true } },
+          subclass: {
+            PHB: { Fighter: { PHB: { 'Eldritch Knight': { name: 'Eldritch Knight' } } } },
+          },
+        },
+      },
+    };
+    renderAt('/library/spell/fireball%7Cphb');
+
+    const classes = screen.getByText('Classes').nextElementSibling as HTMLElement;
+    const links = within(classes).getAllByRole('link');
+    // Alphabetical, whatever order the lookup has them in.
+    expect(links.map((l) => l.textContent)).toEqual(['Sorcerer', 'Wizard']);
+    expect(links[1]?.getAttribute('href')).toBe('/library/class/Wizard%7CPHB');
+    const subclass = within(
+      screen.getByText('Subclasses').nextElementSibling as HTMLElement,
+    ).getByRole('link');
+    expect(subclass.textContent).toBe('Eldritch Knight (Fighter)');
+    expect(subclass.getAttribute('href')).toBe(
+      '/library/subclass/Eldritch%20Knight%7CFighter%7CPHB%7CPHB',
+    );
+  });
+
+  it("links a subclass on both rules' lists to the printing for the spell's own rules", () => {
+    // A 2014 spell, on the Eldritch Knight's list in both books: the 2024
+    // printing comes first in the lookup, the 2014 one is the link.
+    classLookup.current = {
+      phb: {
+        fireball: {
+          subclass: {
+            XPHB: { Fighter: { XPHB: { 'Eldritch Knight': { name: 'Eldritch Knight' } } } },
+            PHB: { Fighter: { PHB: { 'Eldritch Knight': { name: 'Eldritch Knight' } } } },
+          },
+        },
+      },
+    };
+    renderAt('/library/spell/fireball%7Cphb');
+
+    const links = within(
+      screen.getByText('Subclasses').nextElementSibling as HTMLElement,
+    ).getAllByRole('link');
+    expect(links).toHaveLength(1);
+    expect(links[0]?.getAttribute('href')).toBe(
+      '/library/subclass/Eldritch%20Knight%7CFighter%7CPHB%7CPHB',
+    );
+  });
+
+  it('leaves out a class from a book the settings hide', () => {
+    classLookup.current = {
+      phb: { fireball: { class: { PHB: { Wizard: true }, WoW: { Mage: true } } } },
+    };
+    policy.current = { mode: 'all', except: ['WoW'] };
+    renderAt('/library/spell/fireball%7Cphb');
+
+    const classes = screen.getByText('Classes').nextElementSibling as HTMLElement;
+    expect(
+      within(classes)
+        .getAllByRole('link')
+        .map((l) => l.textContent),
+    ).toEqual(['Wizard']);
+  });
+
+  it('has no list rows for a spell on no list', () => {
+    renderAt('/library/spell/fireball%7Cphb');
+    expect(screen.queryByText('Classes')).toBeNull();
+  });
+
+  describe('a class', () => {
+    const wizard = {
+      name: 'Wizard',
+      source: 'XPHB',
+      edition: 'one',
+      entries: [],
+      startingProficiencies: { weapons: ['simple'] },
+      classTableGroups: [{ colLabels: ['Cantrips'], rows: [[3]] }],
+    };
+    const subclass = (shortName: string, source: string, edition?: string) => ({
+      name: shortName,
+      shortName,
+      source,
+      className: 'Wizard',
+      classSource: 'XPHB',
+      ...(edition === undefined ? {} : { edition }),
+      entries: [],
+    });
+
+    beforeEach(() => {
+      reg.current = {
+        ...reg.current,
+        registry: registryOfTypes({
+          class: [wizard],
+          classFeature: [
+            {
+              name: 'Arcane Recovery',
+              source: 'XPHB',
+              className: 'Wizard',
+              classSource: 'XPHB',
+              level: 1,
+              entries: [],
+            },
+          ],
+          subclass: [
+            subclass('Abjurer', 'XPHB', 'one'),
+            subclass('Abjuration', 'PHB', 'classic'),
+            subclass('Scribes', 'TCE'),
+          ],
+        }),
+      };
+    });
+
+    it('lists its proficiencies', () => {
+      renderAt('/library/class/wizard%7Cxphb');
+      expect(screen.getByRole('heading', { name: 'Proficiencies' })).toBeTruthy();
+      expect(screen.getByText('Simple weapons')).toBeTruthy();
+    });
+
+    it('has a level table with the proficiency bonus, features and its own columns', () => {
+      renderAt('/library/class/wizard%7Cxphb');
+      const table = within(screen.getByRole('region', { name: 'The Wizard table' })).getByRole(
+        'table',
+      );
+      expect(within(table).getByRole('columnheader', { name: 'Cantrips' })).toBeTruthy();
+      const first = within(table).getByRole('row', { name: /^1 \+2/ });
+      expect(within(first).getByRole('link', { name: 'Arcane Recovery' })).toBeTruthy();
+      expect(within(first).getByRole('cell', { name: '3' })).toBeTruthy();
+      // Twenty levels and the header.
+      expect(within(table).getAllByRole('row')).toHaveLength(21);
+    });
+
+    it('names a feature with no level under the table rather than losing it', () => {
+      reg.current = {
+        ...reg.current,
+        registry: registryOfTypes({
+          class: [wizard],
+          classFeature: [
+            {
+              name: 'Spellbook Lore',
+              source: 'XPHB',
+              className: 'Wizard',
+              classSource: 'XPHB',
+              entries: [],
+            },
+          ],
+        }),
+      };
+      renderAt('/library/class/wizard%7Cxphb');
+      const region = screen.getByRole('region', { name: 'The Wizard table' });
+      expect(within(region).queryByRole('link', { name: 'Spellbook Lore' })).toBeNull();
+      expect(screen.getByText('Other features:').parentElement?.textContent).toBe(
+        'Other features: Spellbook Lore',
+      );
+    });
+
+    it("groups its subclasses by the rules they are for, the class's own first (Gemini 47)", () => {
+      renderAt('/library/class/wizard%7Cxphb');
+      const groups = screen.getAllByRole('heading', { level: 4 }).map((h) => h.textContent);
+      expect(groups).toEqual(['2024 rules', '2014 rules']);
+      const newer = screen.getByRole('heading', { name: '2024 rules' }).nextElementSibling;
+      expect(within(newer as HTMLElement).getByRole('link').textContent).toMatch(/^Abjurer/);
+      const older = screen.getByRole('heading', { name: '2014 rules' }).nextElementSibling;
+      expect(
+        within(older as HTMLElement)
+          .getAllByRole('link')
+          .map((l) => /^\w+/.exec(l.textContent ?? '')?.[0]),
+      ).toEqual(['Abjuration', 'Scribes']);
+    });
+  });
+});
+
+describe('the item sections', () => {
+  it('each say where the other kind of item is (Gemini 46)', () => {
+    renderAt('/library/item');
+    expect(screen.getByRole('link', { name: 'Basic equipment' }).getAttribute('href')).toBe(
+      '/library/baseitem',
+    );
+    cleanup();
+    renderAt('/library/baseitem');
+    expect(screen.getByRole('link', { name: 'Items' }).getAttribute('href')).toBe('/library/item');
+  });
+
+  it('is not said on other sections', () => {
+    renderAt('/library/spell');
+    expect(screen.queryByRole('link', { name: 'Basic equipment' })).toBeNull();
   });
 });
 

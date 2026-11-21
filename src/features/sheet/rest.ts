@@ -5,14 +5,39 @@
  * roll an item's dawn charges and the moments the character has.
  */
 import { roll } from '@/dice/roll';
+import type { RollResult } from '@/dice/types';
 import type { Edition } from '@/engine/conditions';
 import type { EffectChange } from '@/engine/effectLife';
 import { longRestRecovery, type RestDone, shortRestRecovery, takeRest } from '@/engine/rest';
 import { sheetRules } from '@/engine/rules';
 import type { DerivedResource, DerivedSheet, PlayState } from '@/engine/types';
 import { hpLimits } from './effectsInPlay';
+import { hitDieRoll } from './slotCost';
 
-export { giveBack } from '@/engine/rest';
+export { giveBack, shortRestWouldRestore } from '@/engine/rest';
+
+/**
+ * Spend one hit die of a size, as the HP card's chips and the short rest sheet
+ * both do: marks it spent and rolls it plus the Constitution modifier. Says
+ * the roll, for the caller to log and heal by; undefined, changing nothing,
+ * when none of that size is left.
+ */
+export function spendHitDie(
+  play: PlayState,
+  hitDice: DerivedSheet['hitDice'],
+  die: string,
+  conMod: number,
+  rng?: (sides: number) => number,
+): RollResult | undefined {
+  const spent = play.hitDiceSpent[die] ?? 0;
+  if (spent >= (hitDice[die] ?? 0)) return undefined;
+  play.hitDiceSpent[die] = spent + 1;
+  return roll(hitDieRoll(die, 'rollPlusCon', conMod), {
+    label: `Hit die (${die})`,
+    kind: 'heal',
+    ...(rng === undefined ? {} : { rng }),
+  });
+}
 
 /** When a pool comes back, for its row. */
 export function backCaption(
