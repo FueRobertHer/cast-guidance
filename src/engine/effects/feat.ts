@@ -405,8 +405,11 @@ export interface FeatProgressionSource {
   origin: EffectOrigin;
   /** The class level that decides how many each progression gives. */
   level: number;
-  /** Progressions a class feature asks for already, lowercase (Epic Boon). */
-  skip?: ReadonlySet<string>;
+  /**
+   * Whether a class feature asks for this progression already (Epic Boon), by
+   * its lowercase name and the first level it gives a pick at.
+   */
+  skip?: (name: string, from: number | undefined) => boolean;
 }
 
 /**
@@ -423,11 +426,11 @@ export function readFeatProgression(
   for (const prog of asEntityArray(entity.featProgression)) {
     const name = str(prog.name) ?? 'Feat';
     const key = name.toLowerCase();
-    if (skip?.has(key) === true) continue;
+    const from = firstLevelOf(prog.progression);
+    if (skip?.(key, from) === true) continue;
     const count = progressionCount(prog.progression, level);
     if (count === 0) continue;
     const categories = categoriesOf(prog.category);
-    const from = firstLevelOf(prog.progression);
     pickGrantedFeat(col, {
       id: `${idBase}:feats:${key}:feat`,
       origin,

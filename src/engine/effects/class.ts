@@ -774,14 +774,14 @@ export function collectClasses(col: Collector): void {
       }
     }
     // The feats its levels give by category: a 2024 Fighting Style. Its Epic
-    // Boon is in the list too, but the feature above asks for that one, from
-    // every feat as the rules allow.
+    // Boon is in the list too, but the feature above asks for that one at the
+    // same level, from every feat as the rules allow.
     readFeatProgression(col, cls, {
       idBase: `class:${classUid}`,
       uid: classUid,
       origin,
       level: classLevel,
-      skip: new Set(boonAt.length > 0 ? ['epic boon'] : []),
+      skip: (name, from) => name === 'epic boon' && from !== undefined && boonAt.includes(from),
     });
 
     // A spell a class or subclass gives casts with the class's ability by default.

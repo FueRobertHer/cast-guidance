@@ -55,12 +55,23 @@ const WORLD: Record<string, DataEntity[]> = {
       classFeatures: [],
       featProgression: [{ name: 'Epic Boon', category: ['EB'], progression: { '19': 1 } }],
     },
+    // One whose Epic Boon feature comes a level after its progression's: the
+    // feature does not ask for the progression's pick, so both stand.
+    {
+      name: 'Late',
+      source: 'TST',
+      hd: { number: 1, faces: 8 },
+      proficiency: ['wis'],
+      classFeatures: ['Epic Boon|Late|TST|20'],
+      featProgression: [{ name: 'Epic Boon', category: ['EB'], progression: { '19': 1 } }],
+    },
   ],
   classFeature: [
     feature('Fighting Style', 'Knight', 2),
     feature('Ability Score Improvement', 'Knight', 4),
     feature('Knight Path', 'Knight', 3),
     feature('Epic Boon', 'Knight', 19),
+    feature('Epic Boon', 'Late', 20),
   ],
   subclass: [
     {
@@ -76,7 +87,9 @@ const WORLD: Record<string, DataEntity[]> = {
   feat: [
     feat('Defense', 'FS'),
     feat('Dueling', 'FS'),
-    feat('Oathsworn', 'FS:K', { skillProficiencies: [{ religion: true }] }),
+    feat('Oathsworn', 'FS:K', {
+      skillProficiencies: [{ religion: true, choose: { from: ['history', 'insight'] } }],
+    }),
     feat('Alert', 'O'),
     feat('Skilled', 'O', { repeatable: true, skillProficiencies: [{ any: 1 }] }),
     feat('Grit', 'G'),
@@ -157,6 +170,9 @@ describe('class featProgression', () => {
     expect(sheet.pending.map((p) => p.id)).not.toContain(STYLE);
     expect(sheet.features.map((f) => f.name)).toContain('Oathsworn');
     expect(sheet.skills.Religion?.prof).toBe(1);
+    expect(sheet.pending.map((p) => p.id)).toContain(
+      'feat:oathsworn|tst:feats:fighting style@knight|tst:skill:0',
+    );
   });
 
   it("does not let a Champion's second style repeat the class's first", () => {
@@ -178,6 +194,14 @@ describe('class featProgression', () => {
     doc.classes = [{ ref: { name: 'Boonless', source: 'TST' }, levels: 19, hp: [] }];
     const boon = prompt(doc, 'class:boonless|tst:feats:epic boon:feat');
     expect(boon?.options.map((o) => o.id)).toEqual(['boon of testing|tst']);
+  });
+
+  it('keeps an Epic Boon progression that no feature at its level asks for', () => {
+    const doc = newCharacterDoc('c', 'H', 't');
+    doc.classes = [{ ref: { name: 'Late', source: 'TST' }, levels: 20, hp: [] }];
+    const pending = deriveSheet(doc, ctx).pending.map((p) => p.id);
+    expect(pending).toContain('class:late|tst:feats:epic boon:feat');
+    expect(pending).toContain('class:late|tst:asi:20:feat');
   });
 });
 
