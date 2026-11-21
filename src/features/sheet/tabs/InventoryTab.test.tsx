@@ -3,7 +3,7 @@
 // pack, which the background drain fetches after essentials, so the picker can
 // open before they exist. It rendered an empty list with no explanation, which
 // is indistinguishable from a broken feature.
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { createMemoryRouter, Outlet, RouterProvider } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Entity } from '@/data5e/copyMod';
@@ -67,7 +67,12 @@ vi.mock('vaul', async () => {
   };
 });
 
-const { AddItemDrawer, Component: InventoryTab } = await import('./InventoryTab');
+const {
+  AddItemDrawer,
+  Component: InventoryTab,
+  equipMatters,
+  untrainedSays,
+} = await import('./InventoryTab');
 
 const items = (...names: string[]): Entity[] =>
   names.map((name) => ({ name, source: 'PHB' }) as Entity);
@@ -123,10 +128,11 @@ describe('AddItemDrawer while the item compendium is still arriving', () => {
 describe('AddItemDrawer once items are queryable', () => {
   it('prompts for a query instead of sitting blank', () => {
     renderTab(items('Longsword', 'Shortsword'));
-    expect(screen.getByText('Type at least two letters to search 2 items.')).toBeTruthy();
+    const prompt = 'Type at least two letters to search 2 items, or pick a kind.';
+    expect(screen.getByText(prompt)).toBeTruthy();
     // One letter is below the search threshold, so the prompt stands.
     fireEvent.change(search(), { target: { value: 's' } });
-    expect(screen.getByText('Type at least two letters to search 2 items.')).toBeTruthy();
+    expect(screen.getByText(prompt)).toBeTruthy();
   });
 
   it('lists matches', () => {
@@ -137,6 +143,34 @@ describe('AddItemDrawer once items are queryable', () => {
     expect(screen.getByRole('button', { name: /Shortsword/ })).toBeTruthy();
     expect(screen.queryByRole('button', { name: /Shield/ })).toBeNull();
     expect(screen.queryByText(/Downloading/)).toBeNull();
+  });
+
+  it('lists a kind without a word typed, and narrows it by one', () => {
+    const pool = [
+      { name: 'Longsword', source: 'PHB', type: 'M', weaponCategory: 'martial' },
+      { name: 'Dagger', source: 'PHB', type: 'M', weaponCategory: 'simple' },
+      { name: '+1 Moon Sickle', source: 'TCE', type: 'M', rarity: 'uncommon' },
+      { name: 'Leather Armor', source: 'PHB', type: 'LA' },
+      { name: 'Potion of Healing', source: 'DMG', type: 'P', rarity: 'common' },
+      { name: 'Rope', source: 'PHB', type: 'G', rarity: 'none' },
+      { name: 'Bag of Holding', source: 'DMG', rarity: 'uncommon', wondrous: true },
+    ] as unknown as Entity[];
+    renderTab(pool);
+    const kinds = within(screen.getByRole('group', { name: 'Show' }));
+    expect(kinds.getByRole('button', { name: 'Weapons, 3' })).toBeTruthy();
+    expect(kinds.getByRole('button', { name: 'Magic, 2' })).toBeTruthy();
+    fireEvent.click(kinds.getByRole('button', { name: 'Weapons, 3' }));
+    // Everyday ones first, then by name, with nothing typed.
+    expect(
+      screen
+        .getAllByRole('button', { name: /Dagger|Longsword|Moon Sickle|Rope/ })
+        .map((b) => b.textContent?.replace(/PHB|TCE/, '')),
+    ).toEqual(['Dagger', 'Longsword', '+1 Moon Sickle']);
+    fireEvent.change(search(), { target: { value: 'long' } });
+    expect(screen.queryByRole('button', { name: /Dagger/ })).toBeNull();
+    expect(kinds.getByRole('button', { name: 'Weapons, 1' })).toBeTruthy();
+    fireEvent.click(kinds.getByRole('button', { name: 'Gear, 0' }));
+    expect(screen.getByText('No items match “long”.')).toBeTruthy();
   });
 
   it('distinguishes "no match" from "not downloaded yet"', () => {
@@ -450,5 +484,101 @@ describe("InventoryTab item search under a character's collection switches (ADR-
     } finally {
       device.current = undefined;
     }
+  });
+});
+
+describe('InventoryTab controls where they change something', () => {
+  const pool: Record<string, Entity> = {
+    'Leather Armor': { name: 'Leather Armor', source: 'XPHB', type: 'LA|XPHB', ac: 11, weight: 10 },
+    Quill: { name: 'Quill', source: 'PHB', type: 'G', rarity: 'none', weight: 0.5 },
+    'Ring of Protection': {
+      name: 'Ring of Protection',
+      source: 'DMG',
+      type: 'RG',
+      rarity: 'rare',
+      reqAttune: true,
+    },
+  } as unknown as Record<string, Entity>;
+  function renderWizard() {
+    registryRef.current = {
+      byType: () => [],
+      get: (_type: string, name: string) => pool[name],
+    } as unknown as typeof registryRef.current;
+    const doc = newCharacterDoc('i3', 'Wizard', 't');
+    doc.rulesVersion = '2024';
+    doc.equipment = [
+      {
+        id: 'l',
+        ref: { name: 'Leather Armor', source: 'XPHB' },
+        qty: 1,
+        equipped: true,
+        attuned: false,
+      },
+      { id: 'q', ref: { name: 'Quill', source: 'PHB' }, qty: 3, equipped: false, attuned: false },
+      {
+        id: 'r',
+        ref: { name: 'Ring of Protection', source: 'DMG' },
+        qty: 1,
+        equipped: false,
+        attuned: false,
+      },
+      { id: 'c', custom: { name: 'Lucky stone' }, qty: 1, equipped: false, attuned: false },
+    ];
+    const router = createMemoryRouter([
+      {
+        path: '/',
+        element: (
+          <Outlet
+            context={
+              {
+                doc,
+                sheet: { ...deriveSheet(doc, makeTestContext()), armorProfs: [] },
+                update: () => undefined,
+              } as unknown as CharacterSheetState
+            }
+          />
+        ),
+        children: [{ index: true, element: <InventoryTab /> }],
+      },
+    ]);
+    render(<RouterProvider router={router} />);
+  }
+
+  it('offers Attune only where it can matter, and Equip not on gear that does nothing worn', () => {
+    renderWizard();
+    expect(screen.queryByRole('button', { name: 'Attune Quill' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Equip Quill' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Attune Leather Armor' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Equip Leather Armor' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Attune Ring of Protection' })).toBeTruthy();
+    // A custom item says nothing of itself, so both stay.
+    expect(screen.getByRole('button', { name: 'Attune Lucky stone' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Equip Lucky stone' })).toBeTruthy();
+  });
+
+  it('warns of armor worn without training, by the rules the character plays', () => {
+    renderWizard();
+    expect(screen.getByText(untrainedSays('light', '2024'))).toBeTruthy();
+    expect(untrainedSays('light', '2024')).toMatch(/^No light armor training: Disadvantage/);
+    expect(untrainedSays('shield', '2024')).toMatch(/gives no AC/);
+    expect(untrainedSays('heavy', '2014')).toMatch(/^Not proficient with heavy armor/);
+  });
+
+  it('says what everything carried weighs', () => {
+    renderWizard();
+    // Leather Armor 10 lb and three Quills at 0.5 lb; the ring and the stone have no weight.
+    expect(screen.getByText('carrying 11.5 lb')).toBeTruthy();
+  });
+
+  it('counts magic and homebrew effects as worth equipping', () => {
+    expect(equipMatters({ name: 'Rope', type: 'G', rarity: 'none' } as unknown as Entity)).toBe(
+      false,
+    );
+    expect(
+      equipMatters({ name: 'Lucky Quill', type: 'G', castGuidance: { v: 1 } } as unknown as Entity),
+    ).toBe(true);
+    expect(
+      equipMatters({ name: 'Cloak', rarity: 'uncommon', wondrous: true } as unknown as Entity),
+    ).toBe(true);
   });
 });

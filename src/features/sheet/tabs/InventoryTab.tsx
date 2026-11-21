@@ -1,4 +1,4 @@
-import { Plus, Search, Sparkle, Trash2 } from 'lucide-react';
+import { AlertTriangle, Plus, Search, Sparkle, Trash2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { useOutletContext } from 'react-router';
 import type { Entity } from '@/data5e/copyMod';
@@ -12,6 +12,8 @@ import {
   policyAllows,
 } from '@/data5e/sourceFilter';
 import { sourceName } from '@/data5e/sourceNames';
+import { type ArmorCategory, untrainedArmor } from '@/engine/calc/ac';
+import { isArmor, isShield, isWeapon, itemTypeCode, needsAttunement } from '@/engine/effects/item';
 import type { CharacterDoc, EquipmentEntry } from '@/engine/types';
 import { usePickSourcePolicy } from '@/lib/usePickSourcePolicy';
 import { useStickyHeight } from '@/lib/useStickyHeight';
@@ -20,6 +22,7 @@ import { Badge } from '@/ui/Badge';
 import { Button, buttonClass } from '@/ui/Button';
 import { chipClass } from '@/ui/Chip';
 import { EntityInfoSheet } from '@/ui/EntityInfoSheet';
+import { FilterChips } from '@/ui/FilterChips';
 import { OutsideSourcesChip } from '@/ui/OutsideSourcesChip';
 import { focusSheetOnTouch, Sheet } from '@/ui/sheet';
 import { listClass } from '@/ui/surfaces';
@@ -38,6 +41,59 @@ const sourceOf = (e: Entity) => String(e.source ?? '?');
  */
 const OFFER =
   'mb-1 min-h-tap rounded-control border border-line-strong border-dashed px-3 py-2 text-left text-caption text-ink-muted transition-colors duration-120 hover:bg-surface-raised hover:text-ink';
+
+/** The kinds of item Add item can list without a word typed. */
+type ItemKind = 'all' | 'weapons' | 'armor' | 'potions' | 'magic' | 'gear';
+
+/** A magic item: one the data gives a rarity other than none. */
+const isMagic = (e: Entity) => {
+  const rarity = typeof e.rarity === 'string' ? e.rarity : 'none';
+  return rarity !== 'none' && rarity !== 'unknown';
+};
+
+const KINDS: ReadonlyArray<{ value: ItemKind; label: string; keeps: (e: Entity) => boolean }> = [
+  { value: 'all', label: 'All', keeps: () => true },
+  { value: 'weapons', label: 'Weapons', keeps: (e) => isWeapon(e) },
+  { value: 'armor', label: 'Armor', keeps: (e) => isArmor(e) || isShield(e) },
+  { value: 'potions', label: 'Potions', keeps: (e) => itemTypeCode(e) === 'P' },
+  { value: 'magic', label: 'Magic', keeps: (e) => isMagic(e) && itemTypeCode(e) !== 'P' },
+  {
+    value: 'gear',
+    label: 'Gear',
+    keeps: (e) => !isMagic(e) && !isWeapon(e) && !isArmor(e) && !isShield(e),
+  },
+];
+
+/** At most this many rows show; typing narrows the rest. */
+const ROWS_SHOWN = 30;
+
+/**
+ * Types of mundane gear that do nothing worn: tools, instruments, gaming
+ * sets, food, trade goods, treasure, focuses and adventuring gear. Equip is
+ * not offered on one with no magic and no homebrew effects of its own.
+ */
+const GEAR_TYPES = new Set(['G', 'AT', 'T', 'INS', 'GS', 'FD', 'TG', '$', 'TAH', 'SCF', 'OTH']);
+
+/** Equipping it can change something: armor, a weapon, magic, or homebrew effects. */
+export function equipMatters(e: Entity): boolean {
+  if (isMagic(e) || e.castGuidance !== undefined) return true;
+  const type = itemTypeCode(e);
+  return type === undefined || !GEAR_TYPES.has(type);
+}
+
+/** Its weight in pounds, for each one carried; none when the data gives none. */
+const weightOf = (e: Entity): number => (typeof e.weight === 'number' ? e.weight : 0);
+
+/** What wearing armor or a shield without training costs, by the character's rules. */
+export function untrainedSays(category: ArmorCategory, edition: '2014' | '2024'): string {
+  const what = category === 'shield' ? 'shields' : `${category} armor`;
+  if (edition === '2024') {
+    return category === 'shield'
+      ? 'No shield training: by the rules it gives no AC, though the sheet still counts it.'
+      : `No ${what} training: Disadvantage on Strength and Dexterity tests, and no spellcasting (not applied here).`;
+  }
+  return `Not proficient with ${what}: disadvantage on Strength and Dexterity rolls, and no spellcasting (not applied here).`;
+}
 
 /** A section heading inside a screen, as Settings has them. */
 const H2 = 'px-1 text-heading';
@@ -58,25 +114,50 @@ export function AddItemDrawer({
   const [customName, setCustomName] = useState('');
   const [load, setLoad] = useState<'pending' | 'done' | 'failed'>('pending');
   const [showHiddenSources, setShowHiddenSources] = useState(false);
+  const [kind, setKind] = useState<ItemKind>('all');
   const { policy, scope } = usePickSourcePolicy(sources, switches);
 
-  const { results, poolSize, sourceHiddenCount } = useMemo(() => {
-    if (registry === null) return { results: [], poolSize: 0, sourceHiddenCount: 0 };
+  const { results, matched, poolSize, sourceHiddenCount, counts } = useMemo(() => {
+    const none = {
+      results: [] as Entity[],
+      matched: 0,
+      poolSize: 0,
+      sourceHiddenCount: 0,
+      counts: null as Record<ItemKind, number> | null,
+    };
+    if (registry === null) return none;
     const all = [...registry.byType('baseitem'), ...registry.byType('item')];
     // `poolSize` stays the unfiltered total: it exists to tell "still
     // downloading" apart from "nothing matched", and hidden books are neither.
     const pool = showHiddenSources ? all : applySourcePolicy(all, policy, sourceOf);
     const needle = q.trim().toLowerCase();
-    if (needle.length < 2) return { results: [], poolSize: all.length, sourceHiddenCount: 0 };
-    const matches = (e: Entity) => nameOf(e).toLowerCase().includes(needle);
+    // A kind chip lists without a word; a word of two letters searches.
+    const searching = needle.length >= 2;
+    const named = (e: Entity) => !searching || nameOf(e).toLowerCase().includes(needle);
+    const counts = Object.fromEntries(
+      KINDS.map((k) => [k.value, pool.filter((e) => k.keeps(e) && named(e)).length]),
+    ) as Record<ItemKind, number>;
+    if (!searching && kind === 'all') return { ...none, poolSize: all.length, counts };
+    const keeps = KINDS.find((k) => k.value === kind)?.keeps ?? (() => true);
+    const matches = (e: Entity) => named(e) && keeps(e);
+    const found = pool.filter(matches);
+    // A kind listed by itself: everyday items first (a Longsword before a
+    // +1 Moon Sickle), then by name.
+    if (!searching)
+      found.sort(
+        (a, b) => Number(isMagic(a)) - Number(isMagic(b)) || nameOf(a).localeCompare(nameOf(b)),
+      );
     return {
-      results: pool.filter(matches).slice(0, 30),
+      results: found.slice(0, ROWS_SHOWN),
+      matched: found.length,
       poolSize: all.length,
+      counts,
       sourceHiddenCount: showHiddenSources
         ? 0
         : all.filter((e) => matches(e) && !policyAllows(policy, sourceOf(e))).length,
     };
-  }, [registry, q, policy, showHiddenSources]);
+  }, [registry, q, kind, policy, showHiddenSources]);
+  const listing = q.trim().length >= 2 || kind !== 'all';
 
   // Mundane gear ships in the essentials pack, but magic items come from
   // `items-full`, which the background drain fetches later. On a slow phone this
@@ -121,6 +202,20 @@ export function AddItemDrawer({
               className={`${fieldClass} pl-10.5`}
             />
           </div>
+          {ready && counts !== null && (
+            <div className="mb-2">
+              <FilterChips
+                label="Show"
+                options={KINDS.map((k) => ({
+                  value: k.value,
+                  label: k.label,
+                  count: counts[k.value],
+                }))}
+                value={kind}
+                onChange={setKind}
+              />
+            </div>
+          )}
           {/* role=status so the shift from "downloading" to a result count, and
               from a count to "no match", is announced rather than silent. */}
           <div role="status" className="px-1 text-body text-ink-muted empty:hidden">
@@ -146,11 +241,20 @@ export function AddItemDrawer({
                 )}
               </div>
             )}
-            {ready && q.trim().length < 2 && (
-              <p className="py-3">Type at least two letters to search {poolSize} items.</p>
+            {ready && !listing && (
+              <p className="py-3">
+                Type at least two letters to search {poolSize} items, or pick a kind.
+              </p>
             )}
-            {ready && q.trim().length >= 2 && results.length === 0 && (
-              <p className="py-3">No items match “{q.trim()}”.</p>
+            {ready && listing && results.length === 0 && (
+              <p className="py-3">
+                {q.trim().length >= 2 ? `No items match “${q.trim()}”.` : 'No items of this kind.'}
+              </p>
+            )}
+            {ready && matched > results.length && (
+              <p className="py-1">
+                {results.length} of {matched} shown. Type to narrow them.
+              </p>
             )}
           </div>
           {sourceHiddenCount > 0 && (
@@ -290,6 +394,13 @@ export function Component() {
 
   const attunedCount = doc.equipment.filter((e) => e.attuned && !missing(e)).length;
 
+  // What everything carried weighs, by the data's weights: custom items and
+  // coins count nothing. Capacity is left out: size and traits change it.
+  const carried = doc.equipment.reduce((sum, entry) => {
+    const found = resolve(entry);
+    return sum + (found === undefined ? 0 : weightOf(found.entity) * entry.qty);
+  }, 0);
+
   const equipped = doc.equipment.filter((e) => e.equipped);
   const backpack = doc.equipment.filter((e) => !e.equipped);
 
@@ -297,126 +408,158 @@ export function Component() {
   // The toggles keep a stable verb, so aria-pressed alone says the state.
   // At a narrow width the trailing controls wrap under the name as one group
   // rather than squeeze it to a few letters.
-  const row = (entry: EquipmentEntry) => (
-    <div key={entry.id} className="flex flex-wrap items-center gap-x-2 py-1 pr-1 pl-2.5 text-body">
-      <button
-        type="button"
-        aria-label={`Equip ${displayName(entry)}`}
-        aria-pressed={entry.equipped}
-        onClick={() =>
-          update((d) => {
-            const it = d.equipment.find((x) => x.id === entry.id);
-            if (it !== undefined) it.equipped = !it.equipped;
-          })
-        }
-        className={`shrink-0 ${chipClass('outline')}`}
+  const row = (entry: EquipmentEntry) => {
+    const found = resolve(entry);
+    // Equip and Attune show where they can change something: on gear that
+    // does something worn, an item that asks attunement, and anything the
+    // data cannot say about (a custom item, one not found). One already
+    // equipped or attuned keeps its control, so it can be undone.
+    const canEquip = entry.equipped || found === undefined || equipMatters(found.entity);
+    const canAttune = entry.attuned || found === undefined || needsAttunement(found.entity);
+    const untrained =
+      entry.equipped && found !== undefined
+        ? untrainedArmor(found.entity, sheet.armorProfs)
+        : undefined;
+    return (
+      <div
+        key={entry.id}
+        className="flex flex-wrap items-center gap-x-2 py-1 pr-1 pl-2.5 text-body"
       >
-        {entry.equipped ? 'Equipped' : 'Equip'}
-      </button>
-      <div className="min-w-24 flex-1">
-        {(() => {
-          const label = `${displayName(entry)}${entry.qty > 1 ? ` ×${entry.qty}` : ''}`;
-          const found = resolve(entry);
-          // Tapping the name reads the item, the same in-place drawer the
-          // pickers and the Play tab use. Nothing to open for a custom item.
-          if (found === undefined) return <div className="truncate">{label}</div>;
-          return (
-            <EntityInfoSheet
-              type={found.type}
-              entity={found.entity}
-              subtitle={sourceName(sourceOf(found.entity))}
-              trigger={
-                <button
-                  type="button"
-                  title="What does this do?"
-                  className="block min-h-6 w-full truncate text-left underline decoration-line-strong decoration-dotted underline-offset-4 hover:decoration-ink"
-                >
-                  {label}
-                </button>
-              }
-            />
-          );
-        })()}
-        {entry.custom?.note !== undefined && (
-          <div className="truncate text-caption text-ink-muted">{entry.custom.note}</div>
+        {canEquip && (
+          <button
+            type="button"
+            aria-label={`Equip ${displayName(entry)}`}
+            aria-pressed={entry.equipped}
+            onClick={() =>
+              update((d) => {
+                const it = d.equipment.find((x) => x.id === entry.id);
+                if (it !== undefined) it.equipped = !it.equipped;
+              })
+            }
+            className={`shrink-0 ${chipClass('outline')}`}
+          >
+            {entry.equipped ? 'Equipped' : 'Equip'}
+          </button>
         )}
-        {missing(entry) && (
-          <div className="flex flex-wrap items-center gap-x-1.5 text-caption text-ink-muted">
-            <Badge tone="danger">Missing</Badge>
-            Not in your books or homebrew any more, so it gives nothing.
-          </div>
+        <div className="min-w-24 flex-1">
+          {(() => {
+            const label = `${displayName(entry)}${entry.qty > 1 ? ` ×${entry.qty}` : ''}`;
+            // Tapping the name reads the item, the same in-place drawer the
+            // pickers and the Play tab use. Nothing to open for a custom item.
+            if (found === undefined) return <div className="truncate">{label}</div>;
+            return (
+              <EntityInfoSheet
+                type={found.type}
+                entity={found.entity}
+                subtitle={sourceName(sourceOf(found.entity))}
+                trigger={
+                  <button
+                    type="button"
+                    title="What does this do?"
+                    className="block min-h-6 w-full truncate text-left underline decoration-line-strong decoration-dotted underline-offset-4 hover:decoration-ink"
+                  >
+                    {label}
+                  </button>
+                }
+              />
+            );
+          })()}
+          {entry.custom?.note !== undefined && (
+            <div className="truncate text-caption text-ink-muted">{entry.custom.note}</div>
+          )}
+          {missing(entry) && (
+            <div className="flex flex-wrap items-center gap-x-1.5 text-caption text-ink-muted">
+              <Badge tone="danger">Missing</Badge>
+              Not in your books or homebrew any more, so it gives nothing.
+            </div>
+          )}
+        </div>
+        <span className="ml-auto flex shrink-0 items-center">
+          {/* Without Attune, its place stays, so the steps line up down the list. */}
+          {!canAttune && <span aria-hidden="true" className="w-8" />}
+          {canAttune && (
+            <button
+              type="button"
+              aria-label={`Attune ${displayName(entry)}`}
+              aria-pressed={entry.attuned}
+              title="Attune"
+              onClick={() =>
+                update((d) => {
+                  const it = d.equipment.find((x) => x.id === entry.id);
+                  if (it !== undefined) it.attuned = !it.attuned;
+                })
+              }
+              // Attunement is a lasting state, as Inspiration is: `guide` and a
+              // filled spark when on, an outline in `ink-muted` when off, so the
+              // shape says it as well as the colour.
+              className={`inline-flex h-tap w-8 items-center justify-center rounded-control transition-colors duration-120 hover:bg-surface-raised ${
+                entry.attuned ? 'text-guide' : 'text-ink-muted'
+              }`}
+            >
+              <Sparkle
+                size={16}
+                aria-hidden="true"
+                fill={entry.attuned ? 'currentColor' : 'none'}
+              />
+            </button>
+          )}
+          <button
+            type="button"
+            aria-label={`Decrease ${displayName(entry)} quantity`}
+            onClick={() =>
+              update((d) => {
+                const it = d.equipment.find((x) => x.id === entry.id);
+                if (it !== undefined) it.qty = Math.max(1, it.qty - 1);
+              })
+            }
+            className={STEP}
+          >
+            <span aria-hidden="true" className={STEP_FACE}>
+              −
+            </span>
+          </button>
+          <button
+            type="button"
+            aria-label={`Increase ${displayName(entry)} quantity`}
+            onClick={() =>
+              update((d) => {
+                const it = d.equipment.find((x) => x.id === entry.id);
+                if (it !== undefined) it.qty += 1;
+              })
+            }
+            className={STEP}
+          >
+            <span aria-hidden="true" className={STEP_FACE}>
+              +
+            </span>
+          </button>
+          <button
+            type="button"
+            aria-label={`Remove ${displayName(entry)}`}
+            title="Remove"
+            onClick={() => {
+              const change = captureUpdate<CharacterDoc>(update, (d) => {
+                d.equipment = d.equipment.filter((x) => x.id !== entry.id);
+              });
+              if (change === undefined) return;
+              undo.offer(change.before, change.after, `Removed ${displayName(entry)}`);
+              setUndoFocus((n) => n + 1);
+            }}
+            className="inline-flex h-tap w-8 items-center justify-center rounded-control text-ink-muted transition-colors duration-120 hover:bg-surface-raised hover:text-danger"
+          >
+            <Trash2 size={16} aria-hidden="true" />
+          </button>
+        </span>
+        {/* A line of its own under the row, the whole width, so it reads in a few lines. */}
+        {untrained !== undefined && (
+          <p className="flex basis-full gap-1 pb-1 text-caption text-guide">
+            <AlertTriangle size={14} aria-hidden="true" className="mt-0.5 shrink-0" />
+            {untrainedSays(untrained, doc.rulesVersion)}
+          </p>
         )}
       </div>
-      <span className="ml-auto flex shrink-0 items-center">
-        <button
-          type="button"
-          aria-label={`Attune ${displayName(entry)}`}
-          aria-pressed={entry.attuned}
-          title="Attune"
-          onClick={() =>
-            update((d) => {
-              const it = d.equipment.find((x) => x.id === entry.id);
-              if (it !== undefined) it.attuned = !it.attuned;
-            })
-          }
-          // Attunement is a lasting state, as Inspiration is: `guide` and a
-          // filled spark when on, an outline in `ink-muted` when off, so the
-          // shape says it as well as the colour.
-          className={`inline-flex h-tap w-8 items-center justify-center rounded-control transition-colors duration-120 hover:bg-surface-raised ${
-            entry.attuned ? 'text-guide' : 'text-ink-muted'
-          }`}
-        >
-          <Sparkle size={16} aria-hidden="true" fill={entry.attuned ? 'currentColor' : 'none'} />
-        </button>
-        <button
-          type="button"
-          aria-label={`Decrease ${displayName(entry)} quantity`}
-          onClick={() =>
-            update((d) => {
-              const it = d.equipment.find((x) => x.id === entry.id);
-              if (it !== undefined) it.qty = Math.max(1, it.qty - 1);
-            })
-          }
-          className={STEP}
-        >
-          <span aria-hidden="true" className={STEP_FACE}>
-            −
-          </span>
-        </button>
-        <button
-          type="button"
-          aria-label={`Increase ${displayName(entry)} quantity`}
-          onClick={() =>
-            update((d) => {
-              const it = d.equipment.find((x) => x.id === entry.id);
-              if (it !== undefined) it.qty += 1;
-            })
-          }
-          className={STEP}
-        >
-          <span aria-hidden="true" className={STEP_FACE}>
-            +
-          </span>
-        </button>
-        <button
-          type="button"
-          aria-label={`Remove ${displayName(entry)}`}
-          title="Remove"
-          onClick={() => {
-            const change = captureUpdate<CharacterDoc>(update, (d) => {
-              d.equipment = d.equipment.filter((x) => x.id !== entry.id);
-            });
-            if (change === undefined) return;
-            undo.offer(change.before, change.after, `Removed ${displayName(entry)}`);
-            setUndoFocus((n) => n + 1);
-          }}
-          className="inline-flex h-tap w-8 items-center justify-center rounded-control text-ink-muted transition-colors duration-120 hover:bg-surface-raised hover:text-danger"
-        >
-          <Trash2 size={16} aria-hidden="true" />
-        </button>
-      </span>
-    </div>
-  );
+    );
+  };
 
   return (
     <div className="flex flex-col gap-6">
@@ -451,7 +594,14 @@ export function Component() {
       </section>
 
       <section className="flex flex-col gap-2">
-        <h2 className={H2}>Backpack</h2>
+        <h2 className={`flex items-baseline justify-between gap-2 ${H2}`}>
+          Backpack
+          {carried > 0 && (
+            <span className="font-normal text-caption text-ink-muted tabular-nums">
+              carrying {Math.round(carried * 10) / 10} lb
+            </span>
+          )}
+        </h2>
         <div className={listClass}>
           {backpack.length === 0 && (
             <p className="px-4 py-3 text-body text-ink-muted">Backpack is empty.</p>

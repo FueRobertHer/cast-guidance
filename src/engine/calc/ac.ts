@@ -165,3 +165,43 @@ export function calcAc(
   }
   return { ac, label: best.label, notCounted, ...(heavyArmor === undefined ? {} : { heavyArmor }) };
 }
+
+/** The armor categories training or proficiency is given in. */
+export type ArmorCategory = 'light' | 'medium' | 'heavy' | 'shield';
+
+const CATEGORY: Readonly<Record<string, ArmorCategory>> = {
+  LA: 'light',
+  MA: 'medium',
+  HA: 'heavy',
+  S: 'shield',
+};
+
+/** The category an item asks training in, when it is armor or a shield. */
+export function armorCategory(e: DataEntity): ArmorCategory | undefined {
+  return CATEGORY[itemTypeCode(e) ?? ''];
+}
+
+/**
+ * The category of armor or shield the character wears without training
+ * (proficiency, in 2014), read from their armor proficiencies as the books
+ * word them: a category ("light", "shields", "all armor") or the armor by
+ * name. Undefined when it is no armor, or they have the training. The sheet
+ * says so and applies nothing.
+ */
+export function untrainedArmor(
+  e: DataEntity,
+  armorProfs: readonly string[],
+): ArmorCategory | undefined {
+  const category = armorCategory(e);
+  if (category === undefined) return undefined;
+  const name = String(e.name ?? '').toLowerCase();
+  const trained = armorProfs.some((raw) => {
+    const p = raw.toLowerCase();
+    return (
+      p.includes(category) ||
+      (category !== 'shield' && p.includes('all armor')) ||
+      (name !== '' && p === name)
+    );
+  });
+  return trained ? undefined : category;
+}
