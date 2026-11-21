@@ -169,6 +169,10 @@ describe('Try it on, rows that follow a modifier', () => {
     };
     const changes = changesOf(tryOn(ctx, held, 'item', more));
     expect(changes.find((c) => c.label === 'Longsword')).toMatchObject({ follows: true });
+    // Its versatile damage is on the line too.
+    expect(changes.find((c) => c.label === 'Longsword')?.now).toBe(
+      '+7 to hit, 1d8+4 slashing, versatile 1d10+4',
+    );
     expect(changes.find((c) => c.label === 'Searing Blade')).not.toHaveProperty('follows');
     expect(changes.find((c) => c.label === 'Strength saves')).toMatchObject({ follows: true });
   });
@@ -476,5 +480,26 @@ describe('Try it on, a class', () => {
     // Dexterity 14 and no armor: 12, and 14 with the feature.
     expect(ac(trying)).toEqual({ label: 'Armor Class', now: '14', was: '12', way: 'up' });
     expect(ac({ ...trying, owned: [] })).toBeUndefined();
+  });
+
+  it('reads a copy of a class with a changed feature against the ones it copies', () => {
+    const registry = world();
+    const original = registry.get('class', 'Warrior', 'TST') as Json;
+    const draft = classEditor.open?.(structuredClone(original), { original, registry }) ?? {};
+    draft.name = 'Champion of Tests';
+    (draft._features as { changed: Record<string, Json> }).changed['Grit|Warrior|TST|1'] = {
+      ...(registry.byType('classFeature').find((f) => f.name === 'Grit') as Json),
+      entries: ['You are grittier.'],
+    };
+    const trying = written(classEditor, { original, copied: original, draft, registry });
+    expect(trying.entry._copy).toMatchObject({ name: 'Warrior', source: 'TST' });
+    const [cls, ...features] = onSheet(registry, 'class', trying);
+    expect(cls?.entry).not.toHaveProperty('_copy');
+    const grit = features.find((f) => f.entry.name === 'Grit');
+    expect(grit?.type).toBe('classFeature');
+    expect(grit?.entry).not.toHaveProperty('_copy');
+    expect(grit?.entry.entries).toEqual(['You are grittier.']);
+    // In place of the Warrior it copies, at the same level, nothing on the sheet moves.
+    expect(tryWritten(registry, warrior(5), 'class', trying)).toMatchObject({ state: 'none' });
   });
 });
