@@ -985,23 +985,28 @@ function About(props: EditorProps) {
               className={fieldClass}
             />
           </Field>
-          <div className="grid grid-cols-2 items-end gap-2">
+          {/* Side by side while both fit; one above the other on a narrow screen at large text. */}
+          <div className="grid grid-cols-[repeat(auto-fit,minmax(min(8rem,100%),1fr))] items-end gap-2">
             <GoldField
               label="Cost in gold pieces"
               cp={cost}
               disabled={readOnly}
               onChange={(cp) => setMaterial({ cost: cp })}
             />
-            <label className="flex min-h-12 items-center gap-2.5 text-body">
+            <label className="flex min-h-12 min-w-0 items-center gap-2.5 text-body">
               <input
                 type="checkbox"
-                className="size-4.5 accent-ink"
+                className="size-4.5 shrink-0 accent-ink"
                 disabled={readOnly}
                 checked={consume === true || consume === 'optional'}
                 // A choice the file leaves to the caster stays until it is changed.
                 onChange={(e) => setMaterial({ consume: e.target.checked ? true : undefined })}
               />
-              {consume === 'optional' ? 'Consumed if the caster chooses' : 'Consumed by the spell'}
+              <span className="min-w-0">
+                {consume === 'optional'
+                  ? 'Consumed if the caster chooses'
+                  : 'Consumed by the spell'}
+              </span>
             </label>
           </div>
           {(cost !== undefined || given(consume)) && (

@@ -183,8 +183,9 @@ export function EditorShell({
               )}
             </div>
           )}
-          <div className="flex items-center gap-3">
-            <div className="flex min-w-0 flex-1 items-center gap-1.5 text-caption text-ink-muted">
+          {/* Wraps the Save button under where it saves when large text leaves no room beside it. */}
+          <div className="flex flex-wrap items-center justify-end gap-3">
+            <div className="flex min-w-[min(9rem,100%)] flex-1 items-center gap-1.5 text-caption text-ink-muted">
               <Layers size={16} aria-hidden className="shrink-0" />
               <div className="min-w-0 flex-1">{savesTo}</div>
             </div>
