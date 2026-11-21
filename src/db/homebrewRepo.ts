@@ -338,9 +338,13 @@ export async function landHomebrewRow(
  * that is free. Two collections under one source could not be told apart:
  * every entry is known by its name and its source.
  */
-function freeSource(wanted: string, stored: readonly HomebrewFileMeta[]): string {
+export function freeSource(
+  wanted: string,
+  stored: readonly HomebrewFileMeta[],
+  also: readonly string[] = [],
+): string {
   const taken = new Set(
-    [WORKSHOP_SOURCE, CHANGES_SOURCE, ...stored.flatMap((f) => f.sourceIds)].map((s) =>
+    [WORKSHOP_SOURCE, CHANGES_SOURCE, ...stored.flatMap((f) => f.sourceIds), ...also].map((s) =>
       s.toLowerCase(),
     ),
   );
@@ -894,6 +898,21 @@ export const homebrewRepo = {
       await putHomebrewRow(row);
       return row;
     });
+  },
+
+  /**
+   * An imported file as a collection the player owns, to change as they like
+   * (track 7). Its books get ids of their own (`withBooks`), so the copy and
+   * the file it came from never hold one entry under one name and book; the
+   * copy gets a collection stamp of its own, so importing the original again
+   * updates the original, not the copy. Characters stay on what they picked.
+   * A rule pack is not copied: what it does is its Apply to, not its entries.
+   * The work is `copyEditable` in `homebrewCopy.ts`, loaded on asking.
+   */
+  async copyEditable(fileId: string): Promise<HomebrewFileRow & { json: Record<string, unknown> }> {
+    // The copy's code comes with it, not with the app: few players ever ask for one.
+    const { copyEditable } = await import('./homebrewCopy');
+    return copyEditable(fileId);
   },
 
   async saveEditable(id: string, json: Record<string, unknown>): Promise<void> {
