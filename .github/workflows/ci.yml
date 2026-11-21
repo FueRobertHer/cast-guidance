@@ -123,21 +123,29 @@ jobs:
         # Coverage is collected but neither reported nor gated here: this shard
         # runs a slice of the suite, so every floor belongs to the merge job.
         # The blob report carries both its results and its coverage there.
+        # `default` prints each failure in this log and `github-actions` marks
+        # it on the PR: naming any reporter turns both off, and the blob
+        # alone leaves a red shard saying only that the script exited 1.
         env:
           COVERAGE_COLLECT_ONLY: '1'
         run: |
           bun run test:coverage -- \
             --shard=${{ matrix.shard }}/${{ strategy.job-total }} \
+            --reporter=default \
+            --reporter=github-actions \
             --reporter=blob \
-            --outputFile=blob-report/unit-${{ matrix.shard }}.json
+            --outputFile.blob=blob-report/unit-${{ matrix.shard }}.json
 
       - name: Upload blob report
+        # A red shard's blob too: `vitest --merge-reports` replays it locally.
+        if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v4
         with:
           name: unit-blob-${{ matrix.shard }}
           path: blob-report
-          # Only `unit-coverage` reads these, in the same run.
-          retention-days: 1
+          # `unit-coverage` reads these in the same run; a red shard's is
+          # kept long enough to look at.
+          retention-days: 3
           if-no-files-found: error
 
   unit-coverage:
