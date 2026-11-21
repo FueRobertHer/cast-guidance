@@ -4,6 +4,7 @@
 // they disagree, and Write a rule pack, over the real registry.
 import 'fake-indexeddb/auto';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { StrictMode } from 'react';
 import { createMemoryRouter, RouterProvider } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DATA_TAG } from '@/data5e/config';
@@ -56,7 +57,8 @@ afterEach(async () => {
 });
 
 /** The Rules page, with Settings' row beside it as Settings shows it. */
-async function visit() {
+/** `strict`: under StrictMode, as `main.tsx` renders the app (effects run, clean up, run again). */
+async function visit({ strict = false }: { strict?: boolean } = {}) {
   window.matchMedia ??= (query: string) =>
     ({
       matches: false,
@@ -86,7 +88,8 @@ async function visit() {
     ],
     { initialEntries: ['/workshop/rules'] },
   );
-  render(<RouterProvider router={router} />);
+  const app = <RouterProvider router={router} />;
+  render(strict ? <StrictMode>{app}</StrictMode> : app);
   await screen.findByRole('heading', { level: 1, name: 'Rules' }, { timeout: WAIT });
   return router;
 }
@@ -399,9 +402,18 @@ describe('the Rules page', () => {
       }
     });
     watch.observe(document.body, { childList: true, subtree: true, characterData: true });
+    // The page reads each pack's file; once Gritty's is in, its row could show.
+    const packRead = gate();
+    const getSafe = homebrewRepo.getSafe.bind(homebrewRepo);
+    vi.spyOn(homebrewRepo, 'getSafe').mockImplementation(async (id) => {
+      const read = await getSafe(id);
+      if (id === row.id) packRead.release();
+      return read;
+    });
     await visit();
-    // Long enough for the packs to be read while the characters are not.
-    await new Promise((r) => setTimeout(r, 500));
+    await packRead.held;
+    // A render after the read is in, while the characters are not.
+    await new Promise((r) => setTimeout(r, 100));
     roster.release();
     expect(
       await screen.findByRole('button', { name: /^Gritty, On for Hild/ }, { timeout: WAIT }),
@@ -528,9 +540,12 @@ describe('the Rules page', () => {
     const pack = await writtenRow();
     expect(pack?.fileName).toBe('lantern-coast-rules.json');
     expect((pack?.json.spell as Json[]).map((e) => e.name)).toEqual([first.name]);
-    // The done step says what was saved, though the change is removed since.
+    // The done step says what was saved, though the change is removed since:
+    // the sheet reads the changes again (the live query), and still says it.
+    const reads = vi.spyOn(homebrewRepo, 'ownedSafe');
     await homebrewRepo.removeEntry((await changesRow())?.id ?? '', 'spell', first);
-    await new Promise((r) => setTimeout(r, 300));
+    await waitFor(() => expect(reads).toHaveBeenCalled(), { timeout: WAIT });
+    await new Promise((r) => setTimeout(r, 100));
     expect(
       within(done).getByText(/^Saved to Rules\. Lantern Coast rules changes 1 thing/),
     ).toBeTruthy();
@@ -539,7 +554,8 @@ describe('the Rules page', () => {
 
   it('clears a failed save on Back, and reports one that fails after the sheet closes', async () => {
     setAppTableRule('critDamage', 'doubleTotal');
-    await visit();
+    // As the app runs: an effect run twice must not leave the sheet thinking it closed.
+    await visit({ strict: true });
     let sheet = await openWrite();
     vi.spyOn(homebrewRepo, 'commit').mockRejectedValueOnce(new Error('the disk is full'));
     fireEvent.click(within(sheet).getByRole('button', { name: /^Next: name it/ }));

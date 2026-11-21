@@ -266,13 +266,15 @@ export default function WritePackSheet({
   const [exported, setExported] = useState(false);
   // A save still out when the sheet closes reports its failure as a notice,
   // since the sheet is no longer there to say it.
+  // Set in the effect, not only at first render: StrictMode runs it, cleans
+  // up and runs it again, and the sheet is open after that.
   const open = useRef(true);
-  useEffect(
-    () => () => {
+  useEffect(() => {
+    open.current = true;
+    return () => {
       open.current = false;
-    },
-    [],
-  );
+    };
+  }, []);
 
   const defaults = new Set([
     ...RULE_ORDER.filter((id) => !isAsWritten(id, rules)).map(rulePick),

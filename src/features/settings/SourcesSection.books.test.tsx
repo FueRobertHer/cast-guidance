@@ -96,11 +96,20 @@ describe('the books row', () => {
     invalidateRegistry();
     visit();
     const before = await caption();
+    // Every caption from here on: the rows and the registry are read apart, and
+    // one counted against the other for a moment says 6 books.
+    const said: string[] = [];
+    const watch = new MutationObserver(() => said.push(row().textContent ?? ''));
+    watch.observe(row(), { childList: true, subtree: true, characterData: true });
     // Deleted as another tab deletes it: the rows go, and nothing here is told.
+    // The row reads the stored rows again (its live query), and is still right.
+    const reads = vi.spyOn(homebrewRepo, 'listMetaSafe');
     await db.homebrewFiles.delete(file.id);
-    await waitFor(() => expect(homebrewRepo.listMetaSafe()).resolves.toMatchObject({ files: [] }));
-    await new Promise((r) => setTimeout(r, 200));
+    await waitFor(() => expect(reads).toHaveBeenCalled(), { timeout: WAIT });
+    await new Promise((r) => setTimeout(r, 100));
     expect(await caption()).toBe(before);
+    watch.disconnect();
+    expect(said.filter((t) => t.includes('books show') && !t.endsWith(before))).toEqual([]);
   });
 
   it('says it could not read the books when the registry cannot be read', async () => {
