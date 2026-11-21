@@ -1,3 +1,4 @@
+import type { TableRuleChoices } from '../castGuidance';
 import type { Collector } from '../effects/base';
 import {
   isArmor,
@@ -9,6 +10,7 @@ import {
 } from '../effects/item';
 import type {
   Ability,
+  ArmorCategory,
   CharacterDoc,
   DataEntity,
   DerivedAbility,
@@ -57,11 +59,14 @@ export function calcAc(
   col: Collector,
   effects: readonly EffectInput[],
   abilities: Record<Ability, DerivedAbility>,
+  /** The `armorTraining` table rule; off, untrained armor costs nothing here. */
+  armorTraining: TableRuleChoices['armorTraining'] = 'off',
 ): {
   ac: DerivedValue;
   label: string;
   notCounted: DerivedSheet['acNotCounted'];
   heavyArmor?: string;
+  untrained: DerivedSheet['untrainedArmor'];
 } {
   const dexMod = abilities.dex.mod;
   const override = doc.overrides.ac;
@@ -99,11 +104,15 @@ export function calcAc(
 
   let shield: { label: string; amount: number } | undefined;
   let heavyArmor: string | undefined;
+  const armorProfs = effectsOf(effects, 'armorProf').map((p) => p.name);
+  const untrained: DerivedSheet['untrainedArmor'] = [];
   for (const entry of doc.equipment) {
     if (!entry.equipped || entry.ref === undefined) continue;
     const e = lookupItem(col, entry.ref.name, entry.ref.source);
     if (e === undefined) continue;
     const label = String(e.name ?? entry.ref.name);
+    const lacks = untrainedArmor(e, armorProfs);
+    if (lacks !== undefined) untrained.push({ id: entry.id, name: label, category: lacks });
     if (isArmor(e)) {
       if (itemTypeCode(e) === 'HA') heavyArmor ??= label;
       const c = armorCandidate(e, label, dexMod, entry.attuned);
@@ -111,7 +120,13 @@ export function calcAc(
     } else if (isShield(e)) {
       const ac = typeof e.ac === 'number' ? e.ac : 2;
       const bonus = magicWorks(e, entry.attuned) ? parseBonus(e.bonusAc) : 0;
-      shield = { label, amount: ac + bonus };
+      const worn = { label, amount: ac + bonus };
+      // 2024: a shield without training gives no AC (as written, the rule on).
+      if (lacks !== undefined && doc.rulesVersion === '2024' && armorTraining === 'applied') {
+        notCounted.push({ label, value: worn.amount, why: 'untrained' });
+      } else {
+        shield = worn;
+      }
     }
   }
 
@@ -163,11 +178,16 @@ export function calcAc(
   for (const f of floors) {
     if (!raised.has(f)) notCounted.push({ label: f.origin.label, value: f.min, why: 'floor' });
   }
-  return { ac, label: best.label, notCounted, ...(heavyArmor === undefined ? {} : { heavyArmor }) };
+  return {
+    ac,
+    label: best.label,
+    notCounted,
+    ...(heavyArmor === undefined ? {} : { heavyArmor }),
+    untrained,
+  };
 }
 
-/** The armor categories training or proficiency is given in. */
-export type ArmorCategory = 'light' | 'medium' | 'heavy' | 'shield';
+export type { ArmorCategory };
 
 const CATEGORY: Readonly<Record<string, ArmorCategory>> = {
   LA: 'light',
@@ -189,8 +209,8 @@ export function armorCategory(e: DataEntity): ArmorCategory | undefined {
  * The category of armor or shield the character wears without training
  * (proficiency, in 2014), read from their armor proficiencies as the books
  * word them: a category ("light", "shields", "all armor") or the armor by
- * name. Undefined when it is no armor, or they have the training. The sheet
- * says so and applies nothing.
+ * name. Undefined when it is no armor, or they have the training. What it
+ * costs is the `armorTraining` table rule's (`calcAc`, `untrainedPenalty`).
  */
 export function untrainedArmor(
   e: DataEntity,

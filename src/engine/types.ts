@@ -1268,6 +1268,9 @@ export interface DerivedResource {
   recoversSlots?: { levels: number; below: number };
 }
 
+/** The armor categories training or proficiency is given in. */
+export type ArmorCategory = 'light' | 'medium' | 'heavy' | 'shield';
+
 export interface DerivedSheet {
   abilities: Record<Ability, DerivedAbility>;
   profBonus: DerivedValue;
@@ -1308,7 +1311,23 @@ export interface DerivedSheet {
    * (Mage Armor under Unarmored Defense), one an override set aside, or a floor
    * the AC is already over (Barkskin's 16 under 18).
    */
-  acNotCounted: Array<{ label: string; value: number; why: 'lower' | 'override' | 'floor' }>;
+  acNotCounted: Array<{
+    label: string;
+    value: number;
+    why: 'lower' | 'override' | 'floor' | 'untrained';
+  }>;
+  /**
+   * Armor and shields worn without training (proficiency, in 2014), by
+   * equipment entry. Listed whatever the table rule; what they cost is
+   * `armorPenalty` and, for a 2024 shield, its AC in `acNotCounted`.
+   */
+  untrainedArmor: Array<{ id: string; name: string; category: ArmorCategory }>;
+  /**
+   * Untrained armor's cost under the `armorTraining` rule: Disadvantage on
+   * Strength and Dexterity rolls (a roll rider of this origin) and no
+   * spellcasting. Absent when nothing worn costs it, or the rule is off.
+   */
+  armorPenalty?: { origin: string };
   /** The heavy armor worn, by name, for what it rules out (Rage). */
   heavyArmor?: string;
   initiative: DerivedValue;

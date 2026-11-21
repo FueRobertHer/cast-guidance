@@ -19,6 +19,7 @@ export const RULE_ORDER: readonly TableRuleId[] = [
   'hpOnLongRest',
   'flanking',
   'oneUseDice',
+  'armorTraining',
 ];
 
 /** Each rule's title on its row and its sheet. */
@@ -29,6 +30,7 @@ export const RULE_TITLES: Readonly<Record<TableRuleId, string>> = {
   hpOnLongRest: 'HP on a long rest',
   flanking: 'Flanking',
   oneUseDice: 'Guidance and Bardic Inspiration',
+  armorTraining: 'Armor training',
 };
 
 interface Choice {
@@ -87,6 +89,14 @@ const CHOICES: { readonly [K in TableRuleId]: Readonly<Record<TableRuleChoices[K
     after: { t: 'Offered after the roll too', m: ONE_USE_DICE_WHY.after },
     before: { t: 'Named before the roll', m: ONE_USE_DICE_WHY.before },
   },
+  armorTraining: {
+    applied: {
+      t: 'Untrained armor has a cost',
+      m: 'As written',
+      ex: 'Disadvantage on Strength and Dexterity rolls, and no spells; a 2024 shield gives no AC',
+    },
+    off: { t: 'Wear any armor freely', m: 'A house rule' },
+  },
 };
 
 /** A rule's value as its row says it ("Double the dice"). */
@@ -100,6 +110,7 @@ const AFTER: Partial<Record<TableRuleId, string>> = {
   flanking:
     'Offered in the roll prompt on melee attacks, since the app cannot see who stands where.',
   restLength: 'The Rest buttons on the Play tab end effects by these lengths.',
+  armorTraining: 'Items still says which armor a character lacks training in.',
 };
 
 /** The character a sheet opened on their own page can set a rule for. */

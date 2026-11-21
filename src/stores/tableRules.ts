@@ -19,6 +19,7 @@ const KEYS: Readonly<Record<TableRuleId, string>> = {
   hpOnLongRest: 'cast-guidance:table-rule:hpOnLongRest',
   flanking: 'cast-guidance:table-rule:flanking',
   oneUseDice: 'cast-guidance:one-use-dice',
+  armorTraining: 'cast-guidance:table-rule:armorTraining',
 };
 
 const IDS = Object.keys(KEYS) as TableRuleId[];

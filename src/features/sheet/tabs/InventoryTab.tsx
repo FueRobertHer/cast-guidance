@@ -12,8 +12,9 @@ import {
   policyAllows,
 } from '@/data5e/sourceFilter';
 import { sourceName } from '@/data5e/sourceNames';
-import { type ArmorCategory, untrainedArmor } from '@/engine/calc/ac';
+import type { ArmorCategory } from '@/engine/calc/ac';
 import { isArmor, isShield, isWeapon, itemTypeCode, needsAttunement } from '@/engine/effects/item';
+import { sheetRules } from '@/engine/rules';
 import type { CharacterDoc, EquipmentEntry } from '@/engine/types';
 import { usePickSourcePolicy } from '@/lib/usePickSourcePolicy';
 import { useStickyHeight } from '@/lib/useStickyHeight';
@@ -111,15 +112,27 @@ export function equipMatters(e: Entity): boolean {
 /** Its weight in pounds, for each one carried; none when the data gives none. */
 const weightOf = (e: Entity): number => (typeof e.weight === 'number' ? e.weight : 0);
 
-/** What wearing armor or a shield without training costs, by the character's rules. */
-export function untrainedSays(category: ArmorCategory, edition: '2014' | '2024'): string {
+/**
+ * What wearing armor or a shield without training costs, by the character's
+ * rules: as written (the sheet applies it), or waived by the `armorTraining`
+ * house rule, which says where to change it.
+ */
+export function untrainedSays(
+  category: ArmorCategory,
+  edition: '2014' | '2024',
+  applied: boolean,
+): string {
   const what = category === 'shield' ? 'shields' : `${category} armor`;
-  if (edition === '2024') {
-    return category === 'shield'
-      ? 'No shield training: by the rules it gives no AC, though the sheet still counts it.'
-      : `No ${what} training: Disadvantage on Strength and Dexterity tests, and no spellcasting (not applied here).`;
-  }
-  return `Not proficient with ${what}: disadvantage on Strength and Dexterity rolls, and no spellcasting (not applied here).`;
+  const lacks =
+    edition === '2024'
+      ? `No ${category === 'shield' ? 'shield' : what} training`
+      : `Not proficient with ${what}`;
+  if (!applied) return `${lacks}. Your house rules waive what it costs.`;
+  const costs =
+    edition === '2024' && category === 'shield'
+      ? 'it gives no AC'
+      : `${edition === '2024' ? 'Disadvantage' : 'disadvantage'} on Strength and Dexterity rolls, and no spellcasting`;
+  return `${lacks}: ${costs}. House rules can turn this off.`;
 }
 
 /** A section heading inside a screen, as Settings has them. */
@@ -423,6 +436,7 @@ export function Component() {
     resolve(entry) === undefined;
 
   const attunedCount = doc.equipment.filter((e) => e.attuned && !missing(e)).length;
+  const armorApplied = sheetRules(sheet, doc.rulesVersion).armorTraining === 'applied';
 
   // What everything carried weighs, by the data's weights: custom items and
   // coins count nothing. Capacity is left out: size and traits change it.
@@ -446,10 +460,8 @@ export function Component() {
     // equipped or attuned keeps its control, so it can be undone.
     const canEquip = entry.equipped || found === undefined || equipMatters(found.entity);
     const canAttune = entry.attuned || found === undefined || needsAttunement(found.entity);
-    const untrained =
-      entry.equipped && found !== undefined
-        ? untrainedArmor(found.entity, sheet.armorProfs)
-        : undefined;
+    // The engine's reading, so Items says what the sheet applies.
+    const untrained = sheet.untrainedArmor.find((u) => u.id === entry.id)?.category;
     return (
       <div
         key={entry.id}
@@ -584,7 +596,7 @@ export function Component() {
         {untrained !== undefined && (
           <p className="flex basis-full gap-1 pb-1 text-caption text-guide">
             <AlertTriangle size={14} aria-hidden="true" className="mt-0.5 shrink-0" />
-            {untrainedSays(untrained, doc.rulesVersion)}
+            {untrainedSays(untrained, doc.rulesVersion, armorApplied)}
           </p>
         )}
       </div>

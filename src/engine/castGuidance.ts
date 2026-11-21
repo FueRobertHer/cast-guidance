@@ -354,6 +354,12 @@ export const TABLE_RULES = {
   flanking: ['off', 'advantage', 'plusTwo'],
   /** Guidance and Bardic Inspiration: offered after the roll, or before it. */
   oneUseDice: ['after', 'before'],
+  /**
+   * Armor worn without training: Disadvantage on Strength and Dexterity rolls
+   * and no spellcasting, and in 2024 no AC from a shield, as written; or none
+   * of it, for a table that waives it (`calc/ac.ts`, `derive.ts`).
+   */
+  armorTraining: ['applied', 'off'],
 } as const;
 
 export type TableRuleId = keyof typeof TABLE_RULES;
@@ -366,6 +372,7 @@ const firstOf = (): TableRuleChoices => ({
   hpOnLongRest: 'all',
   flanking: 'off',
   oneUseDice: 'after',
+  armorTraining: 'applied',
 });
 
 /** Each rule as written, per edition: what a character with no choice anywhere plays by. */

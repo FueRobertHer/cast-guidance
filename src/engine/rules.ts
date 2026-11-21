@@ -8,7 +8,8 @@
  * Each rule is read where it acts: HP each level in `calc/hp.ts`, rest length
  * and HP on a long rest in `rest.ts` and `effectLife.endsAtRest`, flanking in
  * `playRules.rollEffects`, critical damage in `dice/roll.ts`, one-use dice in
- * the roll prompt (`features/sheet/rollOfferSpending.ts`).
+ * the roll prompt (`features/sheet/rollOfferSpending.ts`), armor training in
+ * `calc/ac.ts` and `derive.ts`.
  */
 import {
   AS_WRITTEN,

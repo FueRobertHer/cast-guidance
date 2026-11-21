@@ -36,7 +36,7 @@ import { collectRace } from './effects/race';
 import { noteSkillSources } from './effects/skillSources';
 import { Formula } from './formula';
 import { collectMoments, type MomentSubject, momentsInForce } from './moments';
-import { sheetRulesField } from './rules';
+import { rulesFor, sheetRulesField } from './rules';
 import type {
   Ability,
   ActiveEffect,
@@ -167,12 +167,18 @@ export function deriveSheet(
   const skills = calcSkills(doc, effects, abilities, profBonus.value, fromBackground);
   const passivePerception = calcPassivePerception(doc, skills, effects);
   const speedWalk = calcWalkSpeed(doc, col, effects, abilities.str.value);
+  // Armor worn without training costs what the table rule says (as written,
+  // Disadvantage on Strength and Dexterity rolls, no spells, no 2024 shield AC).
+  const armorTraining = rulesFor(doc, ctx).armorTraining;
   const {
     ac,
     label: acFormulaLabel,
     notCounted: acNotCounted,
     heavyArmor,
-  } = calcAc(doc, col, effects, abilities);
+    untrained: untrainedArmor,
+  } = calcAc(doc, col, effects, abilities, armorTraining);
+  const armorPenalty =
+    armorTraining === 'applied' ? untrainedPenalty(untrainedArmor, doc.rulesVersion) : undefined;
 
   const initiativeParts = [{ label: 'DEX modifier', amount: abilities.dex.mod }];
   const initiativeOnTop: typeof initiativeParts = [];
@@ -288,6 +294,8 @@ export function deriveSheet(
     acFormulaLabel,
     acNotCounted,
     ...(heavyArmor === undefined ? {} : { heavyArmor }),
+    untrainedArmor,
+    ...(armorPenalty === undefined ? {} : { armorPenalty }),
     initiative,
     speedWalk,
     speedMultiplier: calcSpeedMultiplier(effects),
@@ -323,6 +331,7 @@ export function deriveSheet(
         (a) => abilities[a].value,
       ),
       inspirationRider(doc.rulesVersion),
+      ...(armorPenalty === undefined ? [] : [armorPenaltyRider(armorPenalty.origin)]),
     ],
     extraActions: effectsOf(effects, 'extraAction').map((e) => ({
       label: e.label,
@@ -357,11 +366,16 @@ export function deriveSheet(
           : best,
       undefined,
     ),
-    cues: effectsOf(effects, 'cue').map((e) => ({
-      tone: e.tone,
-      text: e.text,
-      origin: e.origin.label,
-    })),
+    cues: [
+      ...effectsOf(effects, 'cue').map((e) => ({
+        tone: e.tone,
+        text: e.text,
+        origin: e.origin.label,
+      })),
+      ...(armorPenalty === undefined
+        ? []
+        : [{ tone: 'warn' as const, text: ARMOR_PENALTY_CUE, origin: armorPenalty.origin }]),
+    ],
     ...(moments === undefined ? {} : { moments }),
     ...(tableRules.rules === undefined ? {} : { rules: tableRules.rules }),
     effectsNotCounted,
@@ -634,6 +648,38 @@ function rollRiders(
  * under the 2024 rules Heroic Inspiration rerolls a die just rolled (one d20 of
  * the roll, the lowest), under the 2014 rules it gives advantage on the roll.
  */
+/** What untrained armor costs, as the Play tab's cue says it. */
+export const ARMOR_PENALTY_CUE =
+  'Disadvantage on Strength and Dexterity rolls, and no spellcasting';
+
+/**
+ * The cost of the armor worn without training, named for it ("Untrained armor
+ * (Chain Mail)"): any armor, and in 2014 a shield too. A 2024 shield costs its
+ * AC instead (`calcAc`). None when nothing worn costs it.
+ */
+function untrainedPenalty(
+  untrained: DerivedSheet['untrainedArmor'],
+  edition: CharacterDoc['rulesVersion'],
+): DerivedSheet['armorPenalty'] {
+  const costs = untrained.filter((u) => u.category !== 'shield' || edition !== '2024');
+  if (costs.length === 0) return undefined;
+  return { origin: `Untrained armor (${[...new Set(costs.map((u) => u.name))].join(', ')})` };
+}
+
+/**
+ * Disadvantage on every D20 Test made with Strength or Dexterity: attacks,
+ * saves and checks, initiative among them. A spell attack uses the casting
+ * ability, so it is not reached (and no spell can be cast anyway).
+ */
+function armorPenaltyRider(origin: string): RollRider {
+  return {
+    kind: 'advantage',
+    mode: 'dis',
+    on: { rolls: ['attack', 'save', 'check'], abilities: ['str', 'dex'] },
+    origin,
+  };
+}
+
 function inspirationRider(edition: CharacterDoc['rulesVersion']): RollRider {
   const on: RollFilter = { rolls: ['attack', 'check', 'save'] };
   return edition === '2024'

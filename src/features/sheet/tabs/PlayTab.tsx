@@ -2127,7 +2127,9 @@ export function Component() {
                       ? 'lower than the AC that counts'
                       : n.why === 'floor'
                         ? 'a floor under an AC already higher'
-                        : 'the override stands in for it'}
+                        : n.why === 'untrained'
+                          ? 'no shield training'
+                          : 'the override stands in for it'}
                   </li>
                 ))}
               </ul>
