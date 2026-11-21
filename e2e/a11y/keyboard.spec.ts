@@ -90,6 +90,35 @@ async function focusPageStart(page: Page): Promise<void> {
 }
 
 /**
+ * The focused control shows it: it matches `:focus-visible` and draws an
+ * outline at least 2px wide, and some of its box can be seen, not every point
+ * sampled across it covered by something else (a sticky bar, say).
+ */
+async function expectFocusShown(page: Page): Promise<void> {
+  const seen = await page.evaluate(() => {
+    const el = document.activeElement as HTMLElement | null;
+    if (el === null || el === document.body) return { what: 'nothing', ring: false, seen: false };
+    const style = getComputedStyle(el);
+    const ring =
+      el.matches(':focus-visible') &&
+      style.outlineStyle !== 'none' &&
+      Number.parseFloat(style.outlineWidth) >= 2;
+    const b = el.getBoundingClientRect();
+    let seen = false;
+    for (const fx of [0.1, 0.5, 0.9]) {
+      for (const fy of [0.1, 0.5, 0.9]) {
+        const hit = document.elementFromPoint(b.left + b.width * fx, b.top + b.height * fy);
+        if (hit !== null && el.contains(hit)) seen = true;
+      }
+    }
+    const name = el.getAttribute('aria-label') ?? el.textContent?.trim().slice(0, 40) ?? '';
+    return { what: `${el.tagName.toLowerCase()} "${name}"`, ring, seen };
+  });
+  expect(seen.ring, `${seen.what} draws a focus ring`).toBe(true);
+  expect(seen.seen, `${seen.what} is in sight, not covered`).toBe(true);
+}
+
+/**
  * Where focus is relative to `dialog`: the index of the focused element among
  * the dialog's drawn tabbable elements, -1 for anything else inside it, or
  * null when focus is outside it. Also whether the dialog element itself has
@@ -565,6 +594,42 @@ test.describe('keyboard: pages', () => {
     await expectTrapped(page, confirm);
     await escapeReturnsTo(page, confirm, menuButton);
     await expect(page).toHaveURL(new RegExp(`/c/${id}/stats$`));
+  });
+
+  test('the Workshop editor: a feat named, given a card and saved by keyboard alone', async ({
+    page,
+  }) => {
+    await gotoRosterSettled(page);
+    await page.goto('/workshop/new/feat');
+    const name = page.getByRole('textbox', { name: 'Name', exact: true });
+    await expect(name).toBeVisible();
+    await animationsSettled(page);
+
+    // Name, then a card's button, then Save, in that order, each showing its
+    // focus. Save cannot be used until the feat has a name, so the name is
+    // typed before Tab goes looking for it.
+    await focusPageStart(page);
+    await tabTo(page, name);
+    await expectFocusShown(page);
+    await page.keyboard.type('Key Gift');
+    const speed = page.getByRole('button', { name: 'Speed', exact: true });
+    await tabTo(page, speed);
+    await expectFocusShown(page);
+    await page.keyboard.press('Enter');
+    await expect(page.getByRole('button', { name: /^Remove .* to your Speed$/ })).toBeVisible();
+    // The card is added without dropping focus to the page, which would send
+    // the next Tab back to the top.
+    expect(await describeFocus(page), 'focus after adding the card').not.toBe('nothing');
+
+    const save = page.getByRole('button', { name: 'Save', exact: true });
+    await tabTo(page, save);
+    await expectFocusShown(page);
+    await page.keyboard.press('Enter');
+    await page.waitForURL(/\/workshop\/edit\/feat\//);
+    await expect(
+      page.getByRole('heading', { level: 1, name: 'Key Gift', exact: true }),
+    ).toBeVisible();
+    await expect(page.getByRole('button', { name: /^Remove .* to your Speed$/ })).toBeVisible();
   });
 });
 

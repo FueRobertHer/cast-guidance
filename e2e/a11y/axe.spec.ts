@@ -513,6 +513,27 @@ test.describe('axe: pages and overlays', () => {
     await scanState(page, 'workshop-collection-missing');
   });
 
+  test('workshop: a class editor, on its Table', async ({ page }) => {
+    await gotoRosterSettled(page);
+    // Built unlike the feat editor: a switch between the class's parts, and
+    // its levels as a list of rows that open in place, the first one open.
+    await page.goto('/workshop/new/class');
+    await page.getByRole('textbox', { name: 'Name', exact: true }).fill('Axe Warden');
+    await page.getByRole('button', { name: 'Table', exact: true }).click();
+    await expect(page.getByRole('button', { name: 'Table', exact: true })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    const levels = page.getByRole('list', { name: /by level$/ });
+    await expect(levels).toBeVisible();
+    await expect(levels.getByRole('button', { name: /^Level 1,/ })).toHaveAttribute(
+      'aria-expanded',
+      'true',
+    );
+    await animationsSettled(page);
+    await scanState(page, 'workshop-editor-class-table');
+  });
+
   test('workshop: its home and shelves, search, a collection and the rules', async ({ page }) => {
     await gotoRosterSettled(page);
     await gotoHeading(page, '/workshop', 'Workshop');
