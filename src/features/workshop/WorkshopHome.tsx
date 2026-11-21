@@ -332,6 +332,7 @@ function CollectionsShelf({
  */
 function Unreadable({ errors }: { errors: readonly HomebrewReadError[] }) {
   const one = errors.length === 1;
+  const opens = errors.some((e) => e.id !== undefined);
   return (
     <section aria-labelledby="unreadable-head" className="flex flex-col gap-1.5">
       <h2 id="unreadable-head" className={H2}>
@@ -339,7 +340,7 @@ function Unreadable({ errors }: { errors: readonly HomebrewReadError[] }) {
       </h2>
       <p className={NOTE}>
         {one ? 'One file' : `${errors.length} files`} here could not be read, so{' '}
-        {one ? 'it is' : 'they are'} not in use. Open one to delete it.
+        {one ? 'it is' : 'they are'} not in use.{opens && ' Open one to delete it.'}
       </p>
       <ul className="flex flex-col gap-1.5">
         {errors.map((e) => {

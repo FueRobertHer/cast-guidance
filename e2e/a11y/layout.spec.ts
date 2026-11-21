@@ -147,8 +147,10 @@ const ROUTES: Route[] = [
   },
   {
     name: 'workshop import',
+    // The sheet is modal, so the page's heading under it is hidden from
+    // role queries: the sheet itself says the route is open.
     open: async (page) => {
-      await gotoHeading(page, '/workshop?shelf=collections&import=', 'Workshop');
+      await page.goto('/workshop?shelf=collections&import=');
       await expect(page.getByRole('dialog', { name: 'Import', exact: true })).toBeVisible();
     },
     primary: (page) => {

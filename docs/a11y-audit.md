@@ -341,6 +341,10 @@ Open findings, for follow-up issues:
   ("oncentr") beside Inspiration. Nothing scrolls sideways and the control
   keeps its full accessible name, but the visible text is cut; the manual
   Dynamic Type pass should judge it.
+- A collection page's "This collection is no longer on this device." screen
+  (where an old Builder link to a missing file lands) has no heading (axe's
+  `page-has-heading-one`, a best-practice rule, so not gated), as the
+  Builder's own missing page had none.
 - Not scanned yet, for want of a hermetic setup: the data banner's rollback
   notice ("could not start, so the app went back"), the database banner's
   `superseded` and `stale` wordings (same layout as `deleted`, which is

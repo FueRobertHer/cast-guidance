@@ -487,6 +487,29 @@ describe('the Workshop home', () => {
     }
   });
 
+  it('offers no delete when no file that could not be read can be opened', async () => {
+    const real = homebrewRepo.listMetaSafe.bind(homebrewRepo);
+    const read = vi.spyOn(homebrewRepo, 'listMetaSafe').mockImplementation(async () => ({
+      ...(await real()),
+      errors: [{ message: 'the row has no id, so nothing can address it' }],
+    }));
+    try {
+      await visit('/workshop?shelf=collections');
+      const list = await screen.findByRole(
+        'region',
+        { name: 'Could not be read' },
+        { timeout: WAIT },
+      );
+      expect(
+        within(list).getByText('One file here could not be read, so it is not in use.'),
+      ).toBeTruthy();
+      expect(within(list).queryByText(/delete/)).toBeNull();
+      expect(within(list).queryAllByRole('link')).toEqual([]);
+    } finally {
+      read.mockRestore();
+    }
+  });
+
   it('lands an old Homebrew link on the Collections shelf, the Workshop tab lit', async () => {
     const router = await visit('/workshop');
     await act(() => router.navigate('/homebrew'));

@@ -30,6 +30,8 @@ afterEach(cleanup);
 describe('workshopAddress', () => {
   it('sends a Builder link to its collection, the id still encoded', () => {
     expect(workshopAddress('/homebrew/edit/abc')).toBe('/workshop/collection/abc');
+    // The old route matched a trailing slash too.
+    expect(workshopAddress('/homebrew/edit/abc/')).toBe('/workshop/collection/abc');
     expect(workshopAddress('/homebrew/edit/a%2Fb')).toBe('/workshop/collection/a%2Fb');
     // Routes match regardless of case.
     expect(workshopAddress('/Homebrew/Edit/abc')).toBe('/workshop/collection/abc');
@@ -42,6 +44,7 @@ describe('workshopAddress', () => {
       '/homebrew/edit',
       '/homebrew/edit/',
       '/homebrew/edit/abc/more',
+      '/homebrew/edit/abc//',
       '/homebrew/other',
     ]) {
       expect(workshopAddress(path), path).toBe('/workshop?shelf=collections');

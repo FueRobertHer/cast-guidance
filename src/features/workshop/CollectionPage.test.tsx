@@ -609,6 +609,42 @@ describe('a collection page', () => {
       '/workshop?shelf=collections',
     );
   });
+
+  it('deletes a collection that could not be read, the one place that can', async () => {
+    const real = homebrewRepo.listMetaSafe.bind(homebrewRepo);
+    // No write the app makes leaves such a row, so the read is given one.
+    const read = vi.spyOn(homebrewRepo, 'listMetaSafe').mockImplementation(async () => ({
+      ...(await real()),
+      errors: [{ id: 'broken-1', fileName: 'broken.json', message: 'the file content is missing' }],
+    }));
+    const remove = vi.spyOn(homebrewRepo, 'delete');
+    try {
+      visit('/workshop/collection/broken-1');
+      expect(
+        await screen.findByText(
+          'This collection is on this device but could not be read: the file content is missing.',
+          {},
+          { timeout: WAIT },
+        ),
+      ).toBeTruthy();
+      await waitFor(
+        () => expect(document.title).toBe('Collection unreadable · Workshop · Cast Guidance'),
+        { timeout: WAIT },
+      );
+      fireEvent.click(screen.getByRole('button', { name: 'Delete it' }));
+      const ask = await screen.findByRole(
+        'dialog',
+        { name: 'Delete this collection?' },
+        { timeout: WAIT },
+      );
+      expect(ask.textContent).toContain('It could not be read, so what it held is not known.');
+      fireEvent.click(within(ask).getByRole('button', { name: 'Delete' }));
+      await waitFor(() => expect(remove).toHaveBeenCalledWith('broken-1'), { timeout: WAIT });
+    } finally {
+      read.mockRestore();
+      remove.mockRestore();
+    }
+  });
 });
 
 describe('The books', () => {

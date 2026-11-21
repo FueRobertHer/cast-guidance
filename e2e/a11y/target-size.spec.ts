@@ -22,8 +22,8 @@ import { expect, test } from '../support/test.ts';
  * lays out, on the project's phone:
  *
  * - the inventoried controls (HP, exhaustion and pool steppers, death saves,
- *   Build's and the creator's steppers, the back links, Homebrew's row
- *   actions) are at least 44 by 44, and pips at least 32 wide by 44 tall (an
+ *   Build's and the creator's steppers, the back links, a collection
+ *   page's actions) are at least 44 by 44, and pips at least 32 wide by 44 tall (an
  *   owner decision, recorded in docs/a11y-audit.md);
  * - every other visible control is at least 24 by 24 (WCAG 2.5.8), except
  *   a roll chip in a sentence, which 2.5.8 exempts.

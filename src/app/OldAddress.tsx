@@ -12,7 +12,9 @@ import { useLocation, useNavigate } from 'react-router';
  */
 export function workshopAddress(pathname: string): string {
   const [, , action, id, ...rest] = pathname.split('/');
-  return action?.toLowerCase() === 'edit' && id !== undefined && id !== '' && rest.length === 0
+  // The old route took one trailing slash after the id, as the router does.
+  const one = rest.length === 0 || (rest.length === 1 && rest[0] === '');
+  return action?.toLowerCase() === 'edit' && id !== undefined && id !== '' && one
     ? `/workshop/collection/${id}`
     : '/workshop?shelf=collections';
 }

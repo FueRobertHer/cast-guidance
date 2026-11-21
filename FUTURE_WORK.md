@@ -474,7 +474,11 @@ work:
   of your choosing is made only by Move's "Start a new collection" (the
   source id comes from the name); a stored row with no id is named on the
   shelf but nothing can delete it, as before; the Workshop editor has no
-  axe state of its own (the Builder's was replaced by `workshop-collection-mine`).
+  axe state of its own (the Builder's was replaced by `workshop-collection-mine`);
+  a damaged or nameless entry in a collection of your own is no longer listed,
+  so it cannot be deleted alone (the Builder listed it with Delete); a book in
+  more than one file lost its "also in" caption; a pack clash shows only in
+  the Rules page's Order sheet and a pack's review, with no banner on a page.
 
 ### Maintainability and diagnostics
 
