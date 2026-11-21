@@ -477,6 +477,10 @@ test.describe('axe: pages and overlays', () => {
     await page.getByRole('button', { name: 'Save', exact: true }).click();
     await page.waitForURL(/\/workshop\/edit\/feat\//);
     await expect(page.getByRole('button', { name: 'Undo', exact: true })).toBeVisible();
+    // Scanned once the save's toast has gone (scanState), the Saved line staying.
+    const toast = page.getByTestId('notice-toast').getByText('Saved Fire Gift', { exact: true });
+    await expect(toast).toBeVisible();
+    await expect(toast).toBeHidden({ timeout: 15_000 });
     await animationsSettled(page);
     await scanState(page, 'workshop-editor');
 
