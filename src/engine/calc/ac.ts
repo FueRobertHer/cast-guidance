@@ -176,6 +176,10 @@ const CATEGORY: Readonly<Record<string, ArmorCategory>> = {
   S: 'shield',
 };
 
+/** Words by which armor makes its wearer count as proficient with it, whatever they lack. */
+const WEARER_PROFICIENT =
+  /considered proficient with this armor|even if you lack (proficiency|training)|you have training with this armor/i;
+
 /** The category an item asks training in, when it is armor or a shield. */
 export function armorCategory(e: DataEntity): ArmorCategory | undefined {
   return CATEGORY[itemTypeCode(e) ?? ''];
@@ -194,6 +198,8 @@ export function untrainedArmor(
 ): ArmorCategory | undefined {
   const category = armorCategory(e);
   if (category === undefined) return undefined;
+  // Armor that makes its wearer count as proficient (Elven Chain).
+  if (WEARER_PROFICIENT.test(JSON.stringify(e.entries ?? ''))) return undefined;
   const name = String(e.name ?? '').toLowerCase();
   const trained = armorProfs.some((raw) => {
     const p = raw.toLowerCase();

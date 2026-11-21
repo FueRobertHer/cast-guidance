@@ -149,6 +149,18 @@ describe('armor worn without training', () => {
     expect(untrainedArmor(shield, ['all armor'])).toBe('shield');
   });
 
+  it('says nothing of armor that makes its wearer proficient', () => {
+    const elvenChain = {
+      name: 'Elven Chain',
+      source: 'DMG',
+      type: 'MA',
+      entries: [
+        'You are considered proficient with this armor even if you lack proficiency with medium armor.',
+      ],
+    } as DataEntity;
+    expect(untrainedArmor(elvenChain, [])).toBeUndefined();
+  });
+
   it('says nothing of what is not armor', () => {
     expect(untrainedArmor(ring, [])).toBeUndefined();
   });

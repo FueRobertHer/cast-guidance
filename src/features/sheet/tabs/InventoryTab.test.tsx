@@ -577,6 +577,13 @@ describe('InventoryTab controls where they change something', () => {
     expect(
       equipMatters({ name: 'Lucky Quill', type: 'G', castGuidance: { v: 1 } } as unknown as Entity),
     ).toBe(true);
+    // A Workshop item marked Mundane keeps its bonuses as plain fields.
+    expect(
+      equipMatters({ name: 'Warding Lens', type: 'SCF', bonusAc: '+1' } as unknown as Entity),
+    ).toBe(true);
+    expect(
+      equipMatters({ name: 'Fire Charm', type: 'G', resist: ['fire'] } as unknown as Entity),
+    ).toBe(true);
     expect(
       equipMatters({ name: 'Cloak', rarity: 'uncommon', wondrous: true } as unknown as Entity),
     ).toBe(true);

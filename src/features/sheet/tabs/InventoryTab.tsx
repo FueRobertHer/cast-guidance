@@ -74,9 +74,36 @@ const ROWS_SHOWN = 30;
  */
 const GEAR_TYPES = new Set(['G', 'AT', 'T', 'INS', 'GS', 'FD', 'TG', '$', 'TAH', 'SCF', 'OTH']);
 
-/** Equipping it can change something: armor, a weapon, magic, or homebrew effects. */
+/**
+ * Fields the engine reads off an equipped item: bonuses, defenses, spells and
+ * charges. A homebrew "Mundane" item written in the Workshop keeps its
+ * bonuses here, not in `castGuidance`, so any of them makes Equip matter.
+ */
+const WORN_FIELDS = [
+  'castGuidance',
+  'bonusAc',
+  'bonusSavingThrow',
+  'bonusAbilityCheck',
+  'bonusSpellAttack',
+  'bonusSpellSaveDc',
+  'bonusWeapon',
+  'bonusWeaponAttack',
+  'bonusWeaponDamage',
+  'resist',
+  'immune',
+  'vulnerable',
+  'conditionImmune',
+  'additionalSpells',
+  'attachedSpells',
+  'charges',
+  'ability',
+  'modifySpeed',
+  'reqAttune',
+] as const;
+
+/** Equipping it can change something: armor, a weapon, magic, or effects of its own. */
 export function equipMatters(e: Entity): boolean {
-  if (isMagic(e) || e.castGuidance !== undefined) return true;
+  if (isMagic(e) || WORN_FIELDS.some((f) => e[f] !== undefined)) return true;
   const type = itemTypeCode(e);
   return type === undefined || !GEAR_TYPES.has(type);
 }
@@ -134,9 +161,12 @@ export function AddItemDrawer({
     // A kind chip lists without a word; a word of two letters searches.
     const searching = needle.length >= 2;
     const named = (e: Entity) => !searching || nameOf(e).toLowerCase().includes(needle);
-    const counts = Object.fromEntries(
-      KINDS.map((k) => [k.value, pool.filter((e) => k.keeps(e) && named(e)).length]),
-    ) as Record<ItemKind, number>;
+    // One pass over the pool for every chip's count.
+    const counts = Object.fromEntries(KINDS.map((k) => [k.value, 0])) as Record<ItemKind, number>;
+    for (const e of pool) {
+      if (!named(e)) continue;
+      for (const k of KINDS) if (k.keeps(e)) counts[k.value] += 1;
+    }
     if (!searching && kind === 'all') return { ...none, poolSize: all.length, counts };
     const keeps = KINDS.find((k) => k.value === kind)?.keeps ?? (() => true);
     const matches = (e: Entity) => named(e) && keeps(e);
