@@ -38,10 +38,30 @@ function requirementClauses(req: Record<string, unknown>): Clause[] {
   return clauses;
 }
 
-/** What a class needs to multiclass, every clause of it. */
+/**
+ * A 2024 class's `primaryAbility`, which it needs at 13 to multiclass: one of
+ * its objects, with every ability marked in it (a Monk's Dexterity and Wisdom,
+ * a Fighter's Strength or Dexterity).
+ */
+function primaryClauses(primary: unknown): Clause[] {
+  const alternatives = (Array.isArray(primary) ? primary : []).flatMap((o) => {
+    const part = record(o);
+    if (part === undefined) return [];
+    const scores = ABILITIES.filter((a) => part[a] === true).map((a): [Ability, number] => [a, 13]);
+    return scores.length > 0 ? [scores] : [];
+  });
+  return alternatives.length > 0 ? [alternatives] : [];
+}
+
+/**
+ * What a class needs to multiclass, every clause of it: its written
+ * requirements, else its primary ability. No class in the release has both,
+ * and a copy that writes requirements over a 2024 class means them.
+ */
 function clausesOf(cls: DataEntity | undefined): Clause[] {
   const req = record(record(cls?.multiclassing)?.requirements);
-  return req !== undefined ? requirementClauses(req) : [];
+  const written = req !== undefined ? requirementClauses(req) : [];
+  return written.length > 0 ? written : primaryClauses(cls?.primaryAbility);
 }
 
 const scoresText = (scores: Scores) =>

@@ -17,10 +17,17 @@ const scores = (over: Partial<Record<Ability, number>>): Record<Ability, number>
 });
 
 const cls = (requirements: unknown): DataEntity => ({ multiclassing: { requirements } });
+/** A 2024 class: `primaryAbility` and no `requirements`, as XPHB writes it. */
+const primary = (primaryAbility: unknown): DataEntity => ({
+  primaryAbility,
+  multiclassing: { proficienciesGained: {} },
+});
 
-// The shape the pinned release writes (v2.41.0), as 5etools reads it: every
-// score at the top of `requirements` is needed; the scores inside one `or`
-// object are alternatives (the 2014 Fighter's `or: [{ str: 13, dex: 13 }]`).
+// The shapes the pinned release writes (v2.41.0), as 5etools reads them:
+// - `requirements`: every score at the top is needed; the scores inside one
+//   `or` object are alternatives (the 2014 Fighter's `or: [{ str: 13, dex: 13 }]`).
+// - `primaryAbility` (2024 classes, WoW reskins of them): any one object, and
+//   every ability marked in it, at 13.
 // The Workshop and the converter write one-of as one score per `or` object,
 // `or: [{ str: 13 }, { dex: 13 }]`, which reads as either too.
 
@@ -46,11 +53,25 @@ describe('multiclassRequirementText', () => {
     );
   });
 
+  it("says a 2024 class's primary ability at 13", () => {
+    expect(multiclassRequirementText(primary([{ str: true }, { dex: true }]))).toBe(
+      'STR 13 or DEX 13',
+    );
+    expect(multiclassRequirementText(primary([{ dex: true, wis: true }]))).toBe(
+      'DEX 13 and WIS 13',
+    );
+    expect(multiclassRequirementText(primary([{ int: true }]))).toBe('INT 13');
+    expect(multiclassRequirementText(primary([{ str: true, dex: false }]))).toBe('STR 13');
+  });
+
   it('is undefined when the class declares no requirements', () => {
     expect(multiclassRequirementText({})).toBeUndefined();
     expect(multiclassRequirementText(undefined)).toBeUndefined();
     // A copy writes null for what it drops (copyWriter.ts): none of this.
-    expect(multiclassRequirementText({ multiclassing: null })).toBeUndefined();
+    expect(
+      multiclassRequirementText({ multiclassing: null, primaryAbility: null }),
+    ).toBeUndefined();
+    expect(multiclassRequirementText(primary([]))).toBeUndefined();
     expect(multiclassRequirementText(cls({ or: [] }))).toBeUndefined();
   });
 });
@@ -94,9 +115,32 @@ describe('meetsMulticlassRequirements on the shapes the release writes', () => {
     expect(meetsMulticlassRequirements(c, scores({ cha: 13 }))).toBe(false);
   });
 
+  it("checks a 2024 class's primary ability at 13", () => {
+    const fighter = primary([{ str: true }, { dex: true }]);
+    expect(meetsMulticlassRequirements(fighter, scores({ dex: 13 }))).toBe(true);
+    expect(meetsMulticlassRequirements(fighter, scores({ str: 13 }))).toBe(true);
+    expect(meetsMulticlassRequirements(fighter, scores({ str: 12, dex: 12 }))).toBe(false);
+    const monk = primary([{ dex: true, wis: true }]);
+    expect(meetsMulticlassRequirements(monk, scores({ dex: 13, wis: 13 }))).toBe(true);
+    expect(meetsMulticlassRequirements(monk, scores({ dex: 13, wis: 12 }))).toBe(false);
+    // An ability marked false is not needed.
+    const c = primary([{ str: true, dex: false }]);
+    expect(meetsMulticlassRequirements(c, scores({ str: 13, dex: 8 }))).toBe(true);
+  });
+
+  it('reads written requirements before a primary ability, so a copy can change them', () => {
+    const c: DataEntity = { ...primary([{ str: true }]), ...cls({ int: 13 }) };
+    expect(multiclassRequirementText(c)).toBe('INT 13');
+    expect(meetsMulticlassRequirements(c, scores({ int: 13, str: 8 }))).toBe(true);
+    expect(meetsMulticlassRequirements(c, scores({ int: 12, str: 13 }))).toBe(false);
+  });
+
   it("passes a copy's null and an empty list as no requirement", () => {
     const none = scores({ str: 3, dex: 3, con: 3, int: 3, wis: 3, cha: 3 });
-    expect(meetsMulticlassRequirements({ multiclassing: null }, none)).toBe(true);
+    expect(meetsMulticlassRequirements({ multiclassing: null, primaryAbility: null }, none)).toBe(
+      true,
+    );
+    expect(meetsMulticlassRequirements(primary([]), none)).toBe(true);
     expect(meetsMulticlassRequirements(cls({ or: [] }), none)).toBe(true);
   });
 });
