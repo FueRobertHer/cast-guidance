@@ -145,23 +145,9 @@ function ownChargesStand(raw: unknown): boolean {
 }
 
 /**
- * What an item's fields give back, as `fieldChargesOf` reads them: what
- * `regainOf` says, on a short rest with `restShort`. An amount a short rest
- * cannot give back (dice, or words) gives none, as every short rest did
- * before one counted, so the item keeps its pool.
- */
-function fieldRegainOf(entry: DataEntity): { regain: string | number; rest?: 'short' } {
-  const regain = regainOf(entry.recharge, entry.rechargeAmount);
-  if (rechargeRest(entry.recharge) !== 'short') return { regain };
-  return regain === 'all' || typeof regain === 'number'
-    ? { regain, rest: 'short' }
-    : { regain: 'none' };
-}
-
-/**
  * The charges an item's own data fields say (`charges`, `recharge`,
  * `rechargeAmount`), read as its own `charges` effect would be, with what
- * comes back as `regainOf` says it (`fieldRegainOf`), and the spells they cast
+ * comes back as `regainOf` says it (`fieldCount`), and the spells they cast
  * (`fieldChargeSpells`). Absent when the count and regain do not read as a
  * whole (a dice count of charges, an amount the roller cannot roll), and when
  * the item's own guidance leaves them out (`ownChargesStand`).
@@ -172,13 +158,27 @@ export function fieldChargesOf(entry: DataEntity): ItemCharges | undefined {
   const counted =
     entry.charges === undefined || ownChargesStand(entry.castGuidance)
       ? undefined
-      : readItemCharges({ charges: entry.charges, ...fieldRegainOf(entry), spells: [] });
+      : fieldCount(entry);
   const read =
     counted === undefined
       ? undefined
       : { ...counted, spells: fieldChargeSpells(entry.attachedSpells, counted.charges) };
   fromFields.set(entry, read ?? null);
   return read;
+}
+
+/**
+ * `fieldChargesOf`'s count and regain, before its spells: what `regainOf`
+ * says, on a short rest with `restShort`. An amount a short rest cannot give
+ * back (dice, words, or a number the item does not hold) gives none, as every
+ * short rest did before one counted, so the item keeps its pool.
+ */
+function fieldCount(entry: DataEntity): ItemCharges | undefined {
+  const regain = regainOf(entry.recharge, entry.rechargeAmount);
+  const read = (more: { regain: string | number; rest?: 'short' }) =>
+    readItemCharges({ charges: entry.charges, ...more, spells: [] });
+  if (rechargeRest(entry.recharge) !== 'short') return read({ regain });
+  return read({ regain, rest: 'short' }) ?? read({ regain: 'none' });
 }
 
 /** A spell level an `attachedSpells` name says it casts at (`fireball#5`, `cure wounds|xphb#9`). */
@@ -296,8 +296,8 @@ const upgraded = new WeakMap<DataEntity, DataEntity>();
  * agreeing on one ability; no other effect, and nothing outside the effects,
  * naming the pool by its key or the card's name (an action only where the
  * sheet moves it, never paying a buy-back), nor filled in by a pick; no action
- * named by level; no recharge the effect cannot say (a short rest,
- * `special`); and an effect that reads (each card's spell as a spell's name
+ * named by level; no recharge but a time a long rest covers (the card gave
+ * all of them back on a long rest alone, so not a short rest, nor `special`); and an effect that reads (each card's spell as a spell's name
  * and book). Any other item is itself, keeping its older pool, which its
  * fields stand aside for (`ownChargesStand`). The item given is never changed,
  * and one item gives one answer.

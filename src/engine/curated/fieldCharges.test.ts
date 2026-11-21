@@ -98,11 +98,11 @@ describe('fieldChargesOf: what the charge fields count', () => {
 
   it('keeps the pool of a short rest it cannot give back, giving none back as before', () => {
     // A short rest rolls no dice: the pool stands, as it did before a short rest counted.
-    for (const rechargeAmount of ['{@dice 1d4}', 'lots']) {
+    for (const rechargeAmount of ['{@dice 1d4}', 'lots', 0, 5]) {
       const held = fieldChargesOf(
         item('Odd Short Rod', 'TST', { charges: 3, recharge: 'restShort', rechargeAmount }),
       );
-      expect(held, rechargeAmount).toEqual({ charges: 3, regain: 'none', spells: [] });
+      expect(held, String(rechargeAmount)).toEqual({ charges: 3, regain: 'none', spells: [] });
     }
   });
 

@@ -2739,12 +2739,6 @@ function readCharges(
   const charges = own(row, 'charges');
   const counted = isWhole(charges, 1, most);
   if (!counted) problems.push(`"charges" is how many it holds, a whole number from 1 to ${most}`);
-  const regain = readRegain(own(row, 'regain'), counted ? charges : most);
-  if (regain === undefined) {
-    problems.push(
-      '"regain" is what comes back at dawn: dice like 1d6+4, a whole number, "all" or "none"',
-    );
-  }
   // A row with a `rest` is left out before this reads it (`ROW_FIELDS`): a
   // built-in row's charges come back at dawn.
   const rested = own(row, 'rest');
@@ -2752,10 +2746,15 @@ function readCharges(
   if (rested !== undefined && rest === undefined) {
     problems.push('"rest" is "short", for charges that come back on a short rest');
   }
+  const regain = readRegain(own(row, 'regain'), counted ? charges : most);
   // A short rest rolls no dice (`shortRestRecovery`): all of them, a number, or none.
-  if (rest !== undefined && regain !== undefined && regainDice(regain)) {
+  if (rest !== undefined && (regain === undefined || regainDice(regain))) {
     problems.push(
-      '"regain" on a short rest is a whole number, "all" or "none": a short rest rolls no dice',
+      '"regain" on a short rest is a whole number up to its charges, "all" or "none": a short rest rolls no dice',
+    );
+  } else if (regain === undefined) {
+    problems.push(
+      '"regain" is what comes back at dawn: dice like 1d6+4, a whole number, "all" or "none"',
     );
   }
   // A row with an `ability` is left out before this reads it (`ROW_FIELDS`).

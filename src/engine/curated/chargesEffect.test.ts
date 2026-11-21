@@ -116,6 +116,8 @@ describe('an item\'s own "charges" effect, read', () => {
     ['an "edition"', { edition: '2024' }, 'no "while" or "edition"'],
     ['a rest it does not know', { rest: 'long' }, '"rest" is "short"'],
     ['dice back on a short rest', { rest: 'short' }, 'a short rest rolls no dice'],
+    ['words back on a short rest', { rest: 'short', regain: 'half' }, 'a short rest rolls no dice'],
+    ['more back on a short rest than it holds', { rest: 'short', regain: 8 }, 'up to its charges'],
   ])('leaves out one with %s, and says so', (_, fields, problem) => {
     const read = readMechanics({ v: 1, effects: [{ ...WAND, ...fields }] });
     expect(read.charges).toBe(undefined);
