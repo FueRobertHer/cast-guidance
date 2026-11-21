@@ -9,6 +9,7 @@
  *   bun scripts/convert-fc5.ts compendium.xml --notes            # every note, not just counts
  *   bun scripts/convert-fc5.ts srd/*.xml --compare               # field by field against 5etools
  *   bun scripts/convert-fc5.ts srd/*.xml --compare --tag latest  # against the newest release
+ *   bun scripts/convert-fc5.ts compendium.xml --installed        # as an in-app import converts it
  *
  * `--compare` fetches a 5etools release (the pinned one unless `--tag` says
  * otherwise) and sets each converted entry beside the official entry of the
@@ -16,10 +17,21 @@
  * that shows which fields the converter leaves as text, and which it reads
  * differently. Nothing is cached or written.
  *
- * Nothing here leaves an entry out as "already installed", so every entry
- * converts. Game data never lands in the repo: point it at files outside it.
+ * Files are read as they stream, through the import worker's path
+ * (`convertXmlChunks`), so the app's file limits apply (`XML_FILE_LIMITS`, up
+ * to 64 MiB) and a large community compendium converts here as it does in the
+ * app.
+ *
+ * Without `--installed` nothing is left out as "already installed", so every
+ * entry converts. With it, the script fetches the release (the pinned one, or
+ * `--tag`) and passes the converter the same installed check, books, feats
+ * and classes an import in the app gets (`officialChecks`), so its output is
+ * what an import adds. The app asks only about the books a player installed;
+ * this asks about every book in the release.
+ *
+ * Game data never lands in the repo: point it at files outside it.
  */
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { createReadStream, mkdirSync, statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { parseArgs } from 'node:util';
 import {
@@ -29,9 +41,8 @@ import {
   type OfficialData,
   spellClassesFromLookup,
 } from '../src/convert/compareOfficial';
-import { convertXmlText } from '../src/convert/index';
-import { officialFeatLookup } from '../src/convert/official';
-import type { OfficialFeat } from '../src/convert/types';
+import { type ConversionResult, type ConvertOptions, convertXmlChunks } from '../src/convert/index';
+import { officialChecks, officialFeatLookup, officialKeys } from '../src/convert/official';
 import { DATA_TAG, isCompatibleTag } from '../src/data5e/config';
 import { normalizeDataset } from '../src/data5e/normalize';
 import { GithubTagSource } from '../src/data5e/source';
@@ -44,6 +55,7 @@ const { values, positionals } = parseArgs({
     notes: { type: 'boolean', default: false },
     compare: { type: 'boolean', default: false },
     tag: { type: 'string' },
+    installed: { type: 'boolean', default: false },
   },
 });
 
@@ -54,18 +66,27 @@ function die(message: string): never {
 
 if (positionals.length === 0) {
   die(
-    'usage: bun scripts/convert-fc5.ts <file.xml>... [--out dir] [--notes] [--compare [--tag t]]',
+    'usage: bun scripts/convert-fc5.ts <file.xml>... [--out dir] [--notes] [--compare] [--installed] [--tag t]',
   );
 }
-if (values.tag !== undefined && !values.compare) die('--tag only applies with --compare');
+if (values.tag !== undefined && !values.compare && !values.installed) {
+  die('--tag only applies with --compare or --installed');
+}
+
+/** Characters per chunk as a file streams; the import worker reads 1 MiB at a time too. */
+const CHUNK_BYTES = 1 << 20;
 
 /** Examples printed per field and outcome. */
 const EXAMPLES = 3;
 
 let official: OfficialData | undefined;
-/** A background's official feat, as the app finds it; without `--compare`, such a grant is left out. */
-let officialFeat: OfficialFeat | undefined;
-if (values.compare) {
+/**
+ * What the converter is told about the game data. Without `--compare` or
+ * `--installed`, nothing: a background's official feat is left out and every
+ * entry converts.
+ */
+let checks: Omit<ConvertOptions, 'fileName'> = {};
+if (values.compare || values.installed) {
   let tag = values.tag ?? DATA_TAG;
   try {
     if (tag === 'latest') tag = await resolveLatestTag();
@@ -75,12 +96,17 @@ if (values.compare) {
       new GithubTagSource(tag).fetchFile('generated/gendata-spell-source-lookup.json'),
     ]);
     const registry = normalizeDataset(release.files);
-    officialFeat = officialFeatLookup(registry);
-    official = {
-      byType: (type) => registry.byType(type),
-      spellClasses: spellClassesFromLookup(lookup),
-    };
-    console.log(`Comparing with 5etools ${tag}.`);
+    checks = values.installed
+      ? officialChecks(officialKeys(registry))
+      : { officialFeat: officialFeatLookup(registry) };
+    if (values.compare) {
+      official = {
+        byType: (type) => registry.byType(type),
+        spellClasses: spellClassesFromLookup(lookup),
+      };
+      console.log(`Comparing with 5etools ${tag}.`);
+    }
+    if (values.installed) console.log(`Leaving out what 5etools ${tag} already has.`);
   } catch (err) {
     die(`could not fetch 5etools ${tag}: ${err instanceof Error ? err.message : String(err)}`);
   }
@@ -89,11 +115,15 @@ if (values.compare) {
 let failed = false;
 for (const file of positionals) {
   const fileName = path.basename(file);
-  const text = readFileSync(file, 'utf8');
   const started = performance.now();
-  let result: ReturnType<typeof convertXmlText>;
+  let bytes: number;
+  let result: ConversionResult;
   try {
-    result = convertXmlText(text, { fileName, officialFeat });
+    bytes = statSync(file).size;
+    result = await convertXmlChunks(
+      () => createReadStream(file, { encoding: 'utf8', highWaterMark: CHUNK_BYTES }),
+      { fileName, ...checks },
+    );
   } catch (err) {
     failed = true;
     console.log(`\n${fileName}: ${err instanceof Error ? err.message : String(err)}`);
@@ -105,14 +135,14 @@ for (const file of positionals) {
   const byStatus = (s: string) => report.notes.filter((n) => n.status === s);
   const partial = byStatus('partial');
 
-  console.log(`\n${fileName}  (${(text.length / 1024).toFixed(0)} KB, ${ms.toFixed(0)} ms)`);
+  console.log(`\n${fileName}  (${(bytes / 1024).toFixed(0)} KB, ${ms.toFixed(0)} ms)`);
   console.log(
     `  converted ${total}: ${Object.entries(report.converted)
       .map(([k, n]) => `${n} ${k}`)
       .join(', ')}`,
   );
   console.log(
-    `  clean ${total - partial.length}, partial ${partial.length}, skipped ${byStatus('skipped').length}, duplicates ${byStatus('duplicate').length}`,
+    `  clean ${total - partial.length}, partial ${partial.length}, skipped ${byStatus('skipped').length}, duplicates ${byStatus('duplicate').length}, installed ${byStatus('installed').length}`,
   );
 
   // Group reasons with their quoted specifics blanked, so the shape shows.

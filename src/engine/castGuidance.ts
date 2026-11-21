@@ -685,8 +685,15 @@ export interface StoredItemCharges {
   /**
    * What comes back at dawn (a long rest): dice, a die first, added up
    * (`1d6+4`); a whole number of 1 or more; `"all"`; or `"none"`, never.
+   * With `rest: "short"`, what comes back on a short rest instead: `"all"`,
+   * a whole number (and all of them on a long rest) or `"none"`, never dice.
    */
   regain: string | number;
+  /**
+   * `"short"`: they come back on a short rest (the item's `recharge` field
+   * `restShort`), as `regain` says, rather than at dawn. Absent: at dawn.
+   */
+  rest?: 'short';
   spells: StoredChargeSpell[];
   /**
    * The ability its spells cast with. Absent: the character's own spellcasting

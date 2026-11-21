@@ -65,6 +65,76 @@ export const HOMEBREW_ENTITY_KEYS = [
   'variantrule',
 ] as const;
 
+/** An entry {@link withReadableEntries} left out of a file, and why, in words. */
+export interface SkippedEntry {
+  /** The list it was in (`spell`, `subclassFeature`). */
+  type: string;
+  /** Its place in that list, from 0, as the file holds it. */
+  index: number;
+  /** Its name when it has a usable one, for the preview to say which. */
+  name?: string;
+  why: string;
+}
+
+const isPlainObject = (v: unknown): v is Record<string, unknown> =>
+  typeof v === 'object' && v !== null && !Array.isArray(v);
+
+const filled = (v: unknown): v is string => typeof v === 'string' && v.trim() !== '';
+
+/**
+ * Why an entry cannot be stored, or undefined when it can. The rule is the
+ * least every reader assumes: an object, named in words. What the game data
+ * itself leaves out is allowed, measured on v2.41.0: a subrace with no name is
+ * its species' base subrace, and a magic item variant keeps its book under
+ * `inherits`, so a book is never required, only text when given. An entry that
+ * copies another (`_copy`) takes its name from it when it leaves one out, as
+ * the merge reads it, so long as the copy names one.
+ */
+function unreadable(type: string, e: unknown): string | undefined {
+  if (!isPlainObject(e)) return 'it is not an entry';
+  if (e.name !== undefined && typeof e.name !== 'string') return 'its name is not text';
+  const copiesNamed = isPlainObject(e._copy) && filled(e._copy.name);
+  if (!filled(e.name) && type !== 'subrace' && !copiesNamed) return 'it has no name';
+  if (e.source !== undefined && typeof e.source !== 'string') return 'its book is not text';
+  return undefined;
+}
+
+/**
+ * A homebrew file without the entries no part of the app can read (a spell
+ * with no name would show as "?" in the Library, finding 14), with what was
+ * left out. The same object comes back when nothing is, so a file's hash, and
+ * with it "already on this device", never moves for a file that was fine.
+ * Only the lists {@link HOMEBREW_ENTITY_KEYS} names are looked at; anything
+ * else in the file is the file's own.
+ */
+export function withReadableEntries(json: Record<string, unknown>): {
+  json: Record<string, unknown>;
+  skipped: SkippedEntry[];
+} {
+  const skipped: SkippedEntry[] = [];
+  let out: Record<string, unknown> | undefined;
+  for (const type of HOMEBREW_ENTITY_KEYS) {
+    const list = json[type];
+    if (!Array.isArray(list)) continue;
+    const kept: unknown[] = [];
+    list.forEach((e, index) => {
+      const why = unreadable(type, e);
+      if (why === undefined) kept.push(e);
+      else
+        skipped.push({
+          type,
+          index,
+          ...(isPlainObject(e) && filled(e.name) ? { name: e.name.trim() } : {}),
+          why,
+        });
+    });
+    if (kept.length === list.length) continue;
+    out ??= { ...json };
+    out[type] = kept;
+  }
+  return { json: out ?? json, skipped };
+}
+
 export function homebrewEntityCounts(json: Record<string, unknown>): Record<string, number> {
   const counts: Record<string, number> = {};
   for (const key of HOMEBREW_ENTITY_KEYS) {

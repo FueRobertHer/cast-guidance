@@ -85,6 +85,45 @@ describe('homebrewRepo.prepare and commit (IndexedDB-backed)', () => {
     expect((await db.homebrewFiles.get(prepared.id))?.addedAt).toBe(5_000);
   });
 
+  it('never stores an entry nothing can read, and names it (finding 14)', async () => {
+    const raw = {
+      ...file('BREW', ['Zap']),
+      spell: [
+        { source: 'BREW', level: 1 },
+        { name: 'Zap', source: 'BREW', level: 1 },
+      ],
+    };
+    const { row, skipped } = await homebrewRepo.prepareFile(raw, 'brew.json');
+    expect(skipped).toEqual([{ type: 'spell', index: 0, why: 'it has no name' }]);
+    expect(row.counts).toEqual({ spell: 1 });
+    // Stored as the readable file would be: the same id, so "already here" holds.
+    expect(row.id).toBe((await homebrewRepo.prepare(file('BREW', ['Zap']), 'brew.json')).id);
+    const stored = (await homebrewRepo.commit(row)).row;
+    expect((stored.json as { spell: unknown[] }).spell).toEqual([
+      { name: 'Zap', source: 'BREW', level: 1 },
+    ]);
+  });
+
+  it('leaves the same entries out of a file stored a book at a time', async () => {
+    const raw = {
+      _meta: {
+        sources: [
+          { json: 'A', full: 'Book A' },
+          { json: 'B', full: 'Book B' },
+        ],
+      },
+      spell: [
+        { name: 'Zap', source: 'A', level: 1 },
+        { source: 'B', level: 1 },
+        { name: 'Zing', source: 'B', level: 1 },
+      ],
+    };
+    const { whole, books, skipped } = await homebrewRepo.prepareBooks(raw, 'all.xml');
+    expect(skipped).toEqual([{ type: 'spell', index: 1, why: 'it has no name' }]);
+    expect(whole.counts).toEqual({ spell: 2 });
+    expect(books.map((b) => b.counts)).toEqual([{ spell: 1 }, { spell: 1 }]);
+  });
+
   it('reports a duplicate and writes nothing', async () => {
     const first = await homebrewRepo.importJson(file('BREW', ['Zap']), 'brew.json');
     const again = await homebrewRepo.prepare(file('BREW', ['Zap']), 'renamed.json');
