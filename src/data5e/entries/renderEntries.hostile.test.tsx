@@ -35,7 +35,7 @@ describe('hostile rules text', () => {
     const text = nested(depth);
     expect(text.length).toBeLessThanOrEqual(MAX);
     // Past the nesting the plain reader reads, the text stays as written, as
-    // there: the two never disagree.
+    // there, so the two agree on nested emphasis.
     expect(shown(text)).toBe(plainEntryText(text));
   });
 
