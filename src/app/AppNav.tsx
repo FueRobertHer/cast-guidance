@@ -47,12 +47,11 @@ export function AppNavLayout() {
   const pathname = useLocation().pathname.toLowerCase();
   return (
     <>
-      {/* Clears the tab bar: `tabbar` and its hairline, plus the inset. */}
-      <div className="flex flex-1 flex-col pb-[calc(var(--spacing-tabbar)+1px+env(safe-area-inset-bottom))] lg:pb-0 lg:pl-40">
-        <Outlet />
-      </div>
       {/* Content-box as a bar, so the inset adds to its 64px; border-box as
-          the rail, whose 9rem is then its whole width, inside the content's 10rem. */}
+          the rail, whose 9rem is then its whole width, inside the content's 10rem.
+          Before the page in the DOM, though drawn at the bottom (or as the
+          rail from `lg`): Tab and a screen reader reach the sections first,
+          not after every control on the page. */}
       <nav
         aria-label="Main"
         className="fixed inset-x-0 bottom-0 z-10 box-content flex h-tabbar border-line border-t bg-surface px-1 pb-[env(safe-area-inset-bottom)] lg:inset-y-0 lg:box-border lg:right-auto lg:h-auto lg:w-36 lg:flex-col lg:gap-1 lg:border-t-0 lg:border-r lg:px-2 lg:pt-4 lg:pb-0"
@@ -81,6 +80,10 @@ export function AppNavLayout() {
           );
         })}
       </nav>
+      {/* Clears the tab bar: `tabbar` and its hairline, plus the inset. */}
+      <div className="flex flex-1 flex-col pb-[calc(var(--spacing-tabbar)+1px+env(safe-area-inset-bottom))] lg:pb-0 lg:pl-40">
+        <Outlet />
+      </div>
     </>
   );
 }
