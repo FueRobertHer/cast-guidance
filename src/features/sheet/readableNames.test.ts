@@ -39,4 +39,13 @@ describe('the Build notes, read', () => {
     const note = 'Magic Initiate: spellcasting ability is your choice. See the trait text.';
     expect(readableNote(note)).toBe(note);
   });
+
+  it("leaves a rule pack's format hints as written", () => {
+    for (const note of [
+      'My Pack: patch 1: "basedOn" is "name|source"',
+      'Ring of Sun: spell 1: "spell" is "name|source"',
+    ]) {
+      expect(readableNote(note)).toBe(note);
+    }
+  });
 });

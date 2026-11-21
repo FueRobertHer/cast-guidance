@@ -35,10 +35,12 @@ export function readableName(name: string): string {
 
 /**
  * A key the engine writes in a note (`name|source`, or a feature's longer
- * `name|class|source|level|...`): the start of the note, after ": ", or inside
- * quotes. Its name stops at a quote, a colon or a pipe; its keys at a space.
+ * `name|class|source|level|...`): after "not found: ", or inside the curly
+ * quotes a saved choice is named in. Its name stops at a quote, a colon or a
+ * pipe; its keys at a space. A rule pack's problems say the format in straight
+ * quotes (`"basedOn" is "name|source"`), which stays as it is.
  */
-const KEY = /(^|: |“|")([^|:“”"\n]+?)((?:\|[^|\s“”"]*)+)/g;
+const KEY = /(not found: |“)([^|:“”"\n]+?)((?:\|[^|\s“”"]*)+)/g;
 
 /** A note with each `name|source` key read as its name: "Item not found: Sunblade Aegis". */
 export function readableNote(note: string): string {

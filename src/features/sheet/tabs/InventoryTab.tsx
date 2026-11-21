@@ -4,6 +4,7 @@ import { useOutletContext } from 'react-router';
 import type { Entity } from '@/data5e/copyMod';
 import { useRegistry } from '@/data5e/hooks';
 import { ensureTypePacks } from '@/data5e/loader';
+import { registryViewFor } from '@/data5e/registryView';
 import {
   applySourcePolicy,
   backToSourcesLabel,
@@ -236,6 +237,12 @@ export function Component() {
   const { sheet, doc, update, restore, data } = useOutletContext<CharacterSheetState>();
   const registry = useRegistry();
   const undo = useUndoOffer({ current: doc, same: sameForUndo, restore });
+  // The books as this character sees them, as the engine reads them: its own
+  // collection switches can bring back a file the device has off.
+  const view = useMemo(
+    () => (registry === null || doc === null ? null : registryViewFor(registry, doc)),
+    [registry, doc],
+  );
   // Under the sheet header, so the scroll padding counts it too (A11Y-003).
   const bar = useStickyHeight('--sheet-bar-h');
   // The row goes with its Remove button, so focus goes on to the offer.
@@ -248,11 +255,10 @@ export function Component() {
    * version dropped something) return undefined and stay plain text.
    */
   const resolve = (entry: EquipmentEntry): { entity: Entity; type: string } | undefined => {
-    if (entry.custom !== undefined || entry.ref === undefined || registry === null)
-      return undefined;
+    if (entry.custom !== undefined || entry.ref === undefined || view === null) return undefined;
     const source = entry.ref.source || undefined;
     for (const type of ['item', 'baseitem', 'itemGroup'] as const) {
-      const entity = registry.get(type, entry.ref.name, source);
+      const entity = view.get(type, entry.ref.name, source);
       // itemGroup has no header-facts case of its own, and reads as an item.
       if (entity !== undefined) return { entity, type: type === 'itemGroup' ? 'item' : type };
     }
@@ -278,7 +284,7 @@ export function Component() {
     entry.equipped &&
     entry.custom === undefined &&
     entry.ref !== undefined &&
-    registry !== null &&
+    view !== null &&
     data?.equipment === undefined &&
     resolve(entry) === undefined;
 
