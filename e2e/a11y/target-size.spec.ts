@@ -296,7 +296,7 @@ test.describe('touch target sizes', () => {
     await sheet.getByRole('textbox', { name: 'Link to a JSON homebrew file' }).fill(url);
     await sheet.getByRole('button', { name: 'Read it', exact: true }).click();
     await answerImportPreview(page, 'Import "tt.json"?');
-    await page.getByRole('link', { name: /^tt\.json\s*,/ }).click();
+    await page.getByRole('link', { name: /^Target Tides\s*,/ }).click();
     await expect(page.getByRole('heading', { level: 1, name: 'Target Tides' })).toBeVisible();
     await animationsSettled(page);
     await expectTargets(page.getByRole('link', { name: url, exact: true }), 1, FLOOR);
