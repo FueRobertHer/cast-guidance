@@ -388,7 +388,7 @@ function ordinal(n: number): string {
 function skippedText(s: SkippedEntry): string {
   const kind = kindName(s.type).toLowerCase();
   const which =
-    s.name === undefined ? `The ${ordinal(s.index + 1)} ${kind}` : `${s.name} (a ${kind})`;
+    s.name === undefined ? `The ${ordinal(s.index + 1)} ${kind}` : `${s.name} (${kind})`;
   return `${which}: ${s.why}.`;
 }
 
@@ -396,16 +396,25 @@ function skippedText(s: SkippedEntry): string {
  * Entries the file holds that nothing could read, named so the author can
  * fix the file. The rest of it imports, so this never blocks Import.
  */
-function SkippedSection({ skipped }: { skipped: readonly SkippedEntry[] }) {
+function SkippedSection({
+  skipped,
+  rest,
+}: {
+  skipped: readonly SkippedEntry[];
+  /** Whether anything readable is left to import. */
+  rest: boolean;
+}) {
   const [all, setAll] = useState(false);
   if (skipped.length === 0) return null;
   const shown = all ? skipped : skipped.slice(0, MAX_LISTED_NOTES);
+  const lead =
+    skipped.length === 1
+      ? 'One entry in this file cannot be read, so it is left out.'
+      : `${skipped.length} entries in this file cannot be read, so they are left out.`;
   return (
     <PreviewSection heading="Left out">
       <p className="text-ink-muted">
-        {skipped.length === 1
-          ? 'One entry in this file cannot be read, so it is left out. The rest imports as usual.'
-          : `${skipped.length} entries in this file cannot be read, so they are left out. The rest imports as usual.`}
+        {`${lead} ${rest ? 'The rest imports as usual.' : 'Nothing else in it can be read, so importing it adds an empty collection.'}`}
       </p>
       <PreviewList>
         {shown.map((s) => (
@@ -747,7 +756,12 @@ export default function HomebrewImportPreview({
       )}
 
       {/* Needs a look: what will not count in full once it is in. */}
-      {dup === undefined && <SkippedSection skipped={p.skipped} />}
+      {dup === undefined && (
+        <SkippedSection
+          skipped={p.skipped}
+          rest={Object.keys(p.counts).length > 0 || pack !== undefined}
+        />
+      )}
       {conversion !== undefined && dup === undefined && <ConversionSection report={conversion} />}
 
       {p.copyIssues.length > 0 && (

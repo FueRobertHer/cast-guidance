@@ -88,12 +88,13 @@ const filled = (v: unknown): v is string => typeof v === 'string' && v.trim() !=
  * its species' base subrace, and a magic item variant keeps its book under
  * `inherits`, so a book is never required, only text when given. An entry that
  * copies another (`_copy`) takes its name from it when it leaves one out, as
- * the merge reads it.
+ * the merge reads it, so long as the copy names one.
  */
 function unreadable(type: string, e: unknown): string | undefined {
   if (!isPlainObject(e)) return 'it is not an entry';
   if (e.name !== undefined && typeof e.name !== 'string') return 'its name is not text';
-  if (!filled(e.name) && type !== 'subrace' && !isPlainObject(e._copy)) return 'it has no name';
+  const copiesNamed = isPlainObject(e._copy) && filled(e._copy.name);
+  if (!filled(e.name) && type !== 'subrace' && !copiesNamed) return 'it has no name';
   if (e.source !== undefined && typeof e.source !== 'string') return 'its book is not text';
   return undefined;
 }

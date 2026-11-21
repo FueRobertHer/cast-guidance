@@ -68,6 +68,8 @@ describe('withReadableEntries (finding 14)', () => {
         'Fireball',
         { name: 5, source: 'MB' },
         { name: 'Odd Book', source: ['MB'] },
+        // A copy that names nothing can give no name.
+        { _copy: {}, source: 'MB', level: 2 },
       ],
       item: [null],
     };
@@ -76,7 +78,7 @@ describe('withReadableEntries (finding 14)', () => {
     expect(json.item).toEqual([]);
     expect(json._meta).toBe(meta);
     // The file it came from is left as it was.
-    expect(file.spell).toHaveLength(6);
+    expect(file.spell).toHaveLength(7);
     // In the order the lists are read (items before spells), each in file order.
     expect(skipped).toEqual([
       { type: 'item', index: 0, why: 'it is not an entry' },
@@ -85,6 +87,7 @@ describe('withReadableEntries (finding 14)', () => {
       { type: 'spell', index: 3, why: 'it is not an entry' },
       { type: 'spell', index: 4, why: 'its name is not text' },
       { type: 'spell', index: 5, name: 'Odd Book', why: 'its book is not text' },
+      { type: 'spell', index: 6, why: 'it has no name' },
     ]);
     expect(homebrewEntityCounts(json)).toEqual({ spell: 1 });
   });

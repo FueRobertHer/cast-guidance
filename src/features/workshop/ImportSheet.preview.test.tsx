@@ -581,7 +581,7 @@ describe('the Import sheet preview', () => {
       within(left)
         .getAllByRole('listitem')
         .map((li) => li.textContent),
-    ).toEqual(['The 1st spell: it has no name.', 'Odd (a spell): its book is not text.']);
+    ).toEqual(['The 1st spell: it has no name.', 'Odd (spell): its book is not text.']);
     expect(dialog.textContent).toContain('1 spell');
 
     fireEvent.click(within(dialog).getByRole('button', { name: 'Import' }));
@@ -590,6 +590,15 @@ describe('the Import sheet preview', () => {
     expect((stored?.json as { spell: unknown[] }).spell).toEqual([
       { name: 'Zap', source: 'HB', level: 1 },
     ]);
+  });
+
+  it('says when nothing in a file is left to import', async () => {
+    renderSheet();
+    await readFile('brew.json', brew('HB', [{ source: 'HB', level: 1 }]));
+    const dialog = await findDialog('Import "brew.json"?');
+    expect(within(dialog).getByRole('region', { name: 'Left out' }).textContent).toContain(
+      'One entry in this file cannot be read, so it is left out. Nothing else in it can be read, so importing it adds an empty collection.',
+    );
   });
 
   it('refuses a file that is not JSON without a preview', async () => {
