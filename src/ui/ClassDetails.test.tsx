@@ -74,6 +74,65 @@ describe('classFeaturesByLevel', () => {
   });
 });
 
+describe('read from the data', () => {
+  it('takes a qualified line whole, and says which ones are optional', () => {
+    expect(
+      classProficiencies({
+        name: 'Druid',
+        source: 'PHB',
+        startingProficiencies: {
+          armor: ['light', { proficiency: 'shield', full: 'shields (druids will not wear metal)' }],
+          weapons: ['simple', { proficiency: 'firearms', optional: true }],
+          skills: [{ choose: { from: ['nature'], count: 1 } }, { any: 1 }],
+        },
+      }),
+    ).toEqual([
+      ['Armor', 'light, shields (druids will not wear metal)'],
+      ['Weapons', 'simple, firearms (optional)'],
+      ['Skills', 'Choose 1: Nature; Any 1'],
+    ]);
+  });
+
+  it('skips a feature with no level rather than listing it at 0', () => {
+    expect(
+      classFeaturesByLevel({ name: 'X', source: 'PHB', classFeatures: ['Odd|X||', 'Fine|X||1'] }),
+    ).toEqual([{ level: 1, names: ['Fine'] }]);
+  });
+
+  it('marks optional the features the data marks so, whatever book they are in', () => {
+    const features = [
+      {
+        name: 'Cantrip Formulas',
+        className: 'Wizard',
+        level: 3,
+        source: 'TCE',
+        isClassFeatureVariant: true,
+      },
+      // A variant in the class's own book, and a plain feature cited from another.
+      {
+        name: 'Pet Specialization',
+        className: 'Wizard',
+        level: 3,
+        source: 'PHB',
+        isClassFeatureVariant: true,
+      },
+      { name: 'Borrowed', className: 'Wizard', level: 4, source: 'XGE' },
+    ];
+    const entity = {
+      ...wizard,
+      classFeatures: [
+        'Cantrip Formulas|Wizard||3|TCE',
+        'Pet Specialization|Wizard||3',
+        'Borrowed|Wizard||4|XGE',
+      ],
+    };
+    expect(classFeaturesByLevel(entity, features)).toEqual([
+      { level: 3, names: ['Cantrip Formulas (optional)', 'Pet Specialization (optional)'] },
+      { level: 4, names: ['Borrowed'] },
+    ]);
+  });
+});
+
 describe('ClassDetails', () => {
   it('shows proficiencies and features by level under headings', () => {
     render(<ClassDetails entity={wizard} />);

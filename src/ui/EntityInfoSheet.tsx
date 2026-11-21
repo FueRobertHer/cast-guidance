@@ -185,7 +185,7 @@ function EntityInfoSheetContent({
             {record !== undefined && <ChangedBadge />}
           </Sheet.Heading>
           {subtitle !== undefined && (
-            <p className="-mt-2 mb-3 shrink-0 text-caption text-ink-muted">{subtitle}</p>
+            <p className="-mt-2 mb-3 shrink-0 pr-10 text-caption text-ink-muted">{subtitle}</p>
           )}
           {registry !== null && record !== undefined && (
             <ChangedVersions
@@ -210,7 +210,9 @@ function EntityInfoSheetContent({
                 ))}
               </div>
             )}
-            {type === 'class' && <ClassDetails entity={shown} />}
+            {type === 'class' && (
+              <ClassDetails entity={shown} features={registry?.byType('classFeature')} />
+            )}
             {hasEntries ? (
               <EntriesView entries={entries} />
             ) : (

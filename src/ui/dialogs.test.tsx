@@ -98,14 +98,17 @@ describe('DialogHost', () => {
   });
 
   it('names the prompt input after the question', async () => {
-    renderWithOpener();
+    const opener = renderWithOpener();
+    let answer: Promise<string | null> = Promise.resolve('x');
     act(() => {
-      void askText({ title: 'Rename hero', placeholder: 'Name' });
+      answer = askText({ title: 'Rename hero', placeholder: 'Name' });
     });
     expect(await screen.findByRole('textbox', { name: 'Rename hero' })).toBeTruthy();
-    // A text ask has a Close too (review item 6), which leaves nothing open.
+    // A text ask has a Close too (review item 6): no answer, focus back home.
     await press('Close');
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    await expect(answer).resolves.toBeNull();
+    await waitFor(() => expect(document.activeElement).toBe(opener));
   });
 });
 
@@ -128,6 +131,9 @@ describe('a visible Close', () => {
     const buttons = screen.getAllByRole('button');
     // Focus still opens on the first option, not on Close.
     expect(buttons.at(-1)).toBe(close);
+    await waitFor(() => expect(document.activeElement).not.toBe(document.body));
+    expect(document.activeElement).not.toBe(close);
+    expect(document.activeElement?.textContent).toContain('Guided wizard');
     await press('Close');
     await expect(answer).resolves.toBeNull();
     await waitFor(() => expect(document.activeElement).toBe(opener));

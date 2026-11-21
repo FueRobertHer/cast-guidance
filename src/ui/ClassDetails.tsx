@@ -24,7 +24,15 @@ const skillName = (s: string) =>
 function profWords(v: unknown): string | undefined {
   if (typeof v === 'string') return plainEntryText(v);
   if (!isRecord(v)) return undefined;
-  if (typeof v.proficiency === 'string') return plainEntryText(v.proficiency);
+  // `full` is the whole line when the book qualifies it (the 2014 Druid's
+  // "shields (druids will not wear armor or use shields made of metal)").
+  const words =
+    typeof v.full === 'string'
+      ? plainEntryText(v.full)
+      : typeof v.proficiency === 'string'
+        ? plainEntryText(v.proficiency)
+        : undefined;
+  if (words !== undefined) return v.optional === true ? `${words} (optional)` : words;
   // A tool list can be `{ "thieves' tools": true }`.
   const keys = Object.entries(v)
     .filter(([, on]) => on === true)
@@ -52,8 +60,7 @@ function skillWords(list: unknown): string | undefined {
     return out;
   });
   if (parts.length === 0) return undefined;
-  const text = parts.join('; ');
-  return text.charAt(0).toUpperCase() + text.slice(1);
+  return parts.map((p) => p.charAt(0).toUpperCase() + p.slice(1)).join('; ');
 }
 
 /** Label and value rows for a class's starting proficiencies, the ones it has. */
@@ -74,25 +81,47 @@ export function classProficiencies(entity: Entity): Array<[string, string]> {
   return rows;
 }
 
-/** A class's features, grouped by the level they arrive at, in order. */
-export function classFeaturesByLevel(entity: Entity): Array<{ level: number; names: string[] }> {
-  const features = Array.isArray(entity.classFeatures) ? entity.classFeatures : [];
+const lower = (v: unknown) => (typeof v === 'string' ? v.toLowerCase() : '');
+
+/** A class feature's identity, as its ref and its own entry both give it. */
+const featureKey = (name: unknown, className: unknown, level: unknown, source: unknown) =>
+  [lower(name), lower(className), String(level), lower(source)].join('|');
+
+/**
+ * A class's features, grouped by the level they arrive at, in order.
+ * `features` is the data's class features: an optional one (Tasha's on a 2014
+ * class, a variant on a 2024 one), there only when the table turns that rule
+ * on, is the one its entry marks so, as the engine reads it. Without them, a
+ * feature from a book other than the class's is taken as optional, which is
+ * how the official data has it.
+ */
+export function classFeaturesByLevel(
+  entity: Entity,
+  features?: readonly Entity[],
+): Array<{ level: number; names: string[] }> {
+  const list = Array.isArray(entity.classFeatures) ? entity.classFeatures : [];
+  const variants =
+    features === undefined
+      ? undefined
+      : new Set(
+          features
+            .filter((f) => f.isClassFeatureVariant === true)
+            .map((f) => featureKey(f.name, f.className, f.level, f.source)),
+        );
   const byLevel = new Map<number, string[]>();
-  for (const f of features) {
+  for (const f of list) {
     const ref = typeof f === 'string' ? f : isRecord(f) ? f.classFeature : undefined;
     if (typeof ref !== 'string') continue;
     // "Name|Class|ClassSource|Level|Source", the source left out when it is the class's.
-    const [name, , , levelText, source] = ref.split('|');
-    const level = Number(levelText);
+    const [name, className, , levelText, source] = ref.split('|');
+    const level = levelText === undefined || levelText === '' ? Number.NaN : Number(levelText);
     if (name === undefined || name === '' || !Number.isInteger(level)) continue;
     const subclass = isRecord(f) && f.gainSubclassFeature === true;
-    // A feature from another book in a class's own list is an optional one
-    // (Tasha's on a 2014 class), there only when the table turns that rule on.
+    const ownSource = source !== undefined && source !== '' ? source : entity.source;
     const optional =
-      source !== undefined &&
-      source !== '' &&
-      typeof entity.source === 'string' &&
-      source.toLowerCase() !== entity.source.toLowerCase();
+      variants !== undefined
+        ? variants.has(featureKey(name, className, level, ownSource))
+        : lower(ownSource) !== lower(entity.source);
     const shown = `${plainEntryText(name)}${subclass ? ' (subclass)' : optional ? ' (optional)' : ''}`;
     byLevel.set(level, [...(byLevel.get(level) ?? []), shown]);
   }
@@ -102,9 +131,16 @@ export function classFeaturesByLevel(entity: Entity): Array<{ level: number; nam
 }
 
 /** Proficiencies, then features by level, as the class info sheet lists them. */
-export function ClassDetails({ entity }: { entity: Entity }) {
+export function ClassDetails({
+  entity,
+  features,
+}: {
+  entity: Entity;
+  /** The data's class features, to tell the optional ones; see `classFeaturesByLevel`. */
+  features?: readonly Entity[];
+}) {
   const profs = classProficiencies(entity);
-  const levels = classFeaturesByLevel(entity);
+  const levels = classFeaturesByLevel(entity, features);
   if (profs.length === 0 && levels.length === 0) return null;
   return (
     <div className="mb-3 flex flex-col gap-3 text-caption">
