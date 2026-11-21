@@ -48,9 +48,9 @@ What each directive was checked against in the built `dist/`:
   `/theme-boot.js`, sets the colour theme before first paint (DS-001); it is a
   same-origin file for this reason, since an inline one would need a hash or
   `'unsafe-inline'`. There is no `eval` or `new Function` in the bundle.
-  Vercel Web Analytics loads
-  `/_vercel/insights/script.js` and reports to `/_vercel/insights/*` in
-  production, both same-origin.
+  A build with `VITE_ANALYTICS=vercel` adds Vercel Web Analytics, which loads
+  `/_vercel/insights/script.js` and reports to `/_vercel/insights/*`, both
+  same-origin; the default build has neither.
 - **Workers:** the search worker is `/assets/search.worker-*.js` and the
   service worker is `/sw.js`, which imports `/workbox-*.js`. Nothing builds a
   worker from a `blob:` URL, so `blob:` is gone from `worker-src`.
