@@ -2,28 +2,86 @@
  * Import specifiers read from source text, for the architecture tests
  * (`src/engine/architecture.test.ts`, `src/data5e/architecture.test.ts`).
  * Each test loads its sources with `import.meta.glob` (raw), so nothing here
- * needs Node; this only reads and resolves. Paths are relative to `src/`,
- * with forward slashes (`engine/derive.ts`).
+ * needs Node; this only parses (with the TypeScript parser) and resolves.
+ * Paths are relative to `src/`, with forward slashes (`engine/derive.ts`).
  */
+
+import ts from 'typescript';
 
 export interface Import {
   spec: string;
   /** `import type` or `export type`: erased before the code runs. */
   typeOnly: boolean;
+  /**
+   * A load whose target is not a literal (`import(name)`): `spec` is its
+   * source text, and nothing here can say what it loads.
+   */
+  computed?: boolean;
 }
 
-// `import ... from 'x'` and `export ... from 'x'` (with or without `type`),
-// `import('x')`, and the side-effect `import 'x'`. The negated character
-// classes span newlines, so a multi-line import list is one match.
-const IMPORT_RE =
-  /(import|export)(\s+type\b)?[^'"`;]*?from\s*['"]([^'"]+)['"]|import\s*\(\s*['"]([^'"]+)['"]\s*\)|import\s+['"]([^'"]+)['"]/g;
+const isLiteral = (
+  n: ts.Node | undefined,
+): n is ts.StringLiteral | ts.NoSubstitutionTemplateLiteral =>
+  n !== undefined && (ts.isStringLiteral(n) || ts.isNoSubstitutionTemplateLiteral(n));
 
-export function importsOf(source: string): Import[] {
+const isImportMetaUrl = (n: ts.Node | undefined) =>
+  n !== undefined &&
+  ts.isPropertyAccessExpression(n) &&
+  n.name.text === 'url' &&
+  ts.isMetaProperty(n.expression) &&
+  n.expression.keywordToken === ts.SyntaxKind.ImportKeyword;
+
+/**
+ * Every module a file loads, read from its syntax tree, so comments, strings
+ * and types are never mistaken for imports:
+ *
+ * - `import ... from 'x'`, `import 'x'`, `export ... from 'x'` and
+ *   `import x = require('x')`; with `type` on the statement, type-only. An
+ *   `import { type Y } from 'x'` still loads `x` (verbatimModuleSyntax keeps
+ *   it as `import {} from 'x'`).
+ * - `import('x')`, whatever comments sit inside the parentheses; a computed
+ *   `import(name)` is marked `computed`.
+ * - `new URL('x', import.meta.url)`, how a worker or asset is named.
+ *
+ * `typeof import('x')` is a type, so it is not here.
+ */
+export function importsOf(source: string, fileName = 'source.ts'): Import[] {
+  const kind = fileName.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS;
+  const file = ts.createSourceFile(fileName, source, ts.ScriptTarget.Latest, false, kind);
   const out: Import[] = [];
-  for (const m of source.matchAll(IMPORT_RE)) {
-    const spec = m[3] ?? m[4] ?? m[5];
-    if (spec) out.push({ spec, typeOnly: m[3] !== undefined && m[2] !== undefined });
-  }
+  const visit = (node: ts.Node): void => {
+    if (ts.isImportDeclaration(node) && isLiteral(node.moduleSpecifier)) {
+      out.push({
+        spec: node.moduleSpecifier.text,
+        typeOnly: node.importClause?.isTypeOnly ?? false,
+      });
+    } else if (ts.isExportDeclaration(node) && isLiteral(node.moduleSpecifier)) {
+      out.push({ spec: node.moduleSpecifier.text, typeOnly: node.isTypeOnly });
+    } else if (
+      ts.isImportEqualsDeclaration(node) &&
+      ts.isExternalModuleReference(node.moduleReference) &&
+      isLiteral(node.moduleReference.expression)
+    ) {
+      out.push({ spec: node.moduleReference.expression.text, typeOnly: node.isTypeOnly });
+    } else if (ts.isCallExpression(node) && node.expression.kind === ts.SyntaxKind.ImportKeyword) {
+      const [arg] = node.arguments;
+      out.push(
+        isLiteral(arg)
+          ? { spec: arg.text, typeOnly: false }
+          : { spec: arg?.getText(file) ?? '', typeOnly: false, computed: true },
+      );
+    } else if (
+      ts.isNewExpression(node) &&
+      ts.isIdentifier(node.expression) &&
+      node.expression.text === 'URL' &&
+      isLiteral(node.arguments?.[0]) &&
+      isImportMetaUrl(node.arguments?.[1])
+    ) {
+      out.push({ spec: (node.arguments?.[0] as ts.StringLiteral).text, typeOnly: false });
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(file);
   return out;
 }
 
@@ -62,8 +120,8 @@ export function resolveIn(target: string, files: ReadonlySet<string>): string | 
   return undefined;
 }
 
-/** The top `src/` folder a path is in: `data5e` for `data5e/audit/x.ts`. */
-export const layerOf = (srcPath: string) => srcPath.slice(0, srcPath.indexOf('/'));
+/** The top `src/` folder a path is in: `data5e` for `data5e/audit/x.ts`, `app` for `app`. */
+export const layerOf = (srcPath: string) => srcPath.split('/')[0] ?? '';
 
 /** Glob keys relative to a folder under `src/` (`./x.ts`, `../lib/y.ts`) as `src/` paths. */
 export function srcKeyed(sources: Record<string, string>, folder: string): Map<string, string> {
@@ -85,6 +143,8 @@ export const UI_PACKAGES = [
   'vaul',
   'lucide-react',
   '@tanstack/react-virtual',
+  '@vercel/analytics/react',
+  'virtual:pwa-register/react',
 ];
 
 export const matchesPackage = (spec: string, pkg: string) =>

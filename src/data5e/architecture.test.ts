@@ -53,7 +53,7 @@ function crossings(): string[] {
   const found: string[] = [];
   for (const [file, text] of sources) {
     if (isTestFile(file)) continue;
-    for (const { spec } of importsOf(text)) {
+    for (const { spec } of importsOf(text, file)) {
       const target = targetOf(spec, file);
       if (target === undefined) {
         if (!REACT_BOUNDARY(file) && UI_PACKAGES.some((pkg) => matchesPackage(spec, pkg))) {
