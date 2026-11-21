@@ -321,6 +321,8 @@ export interface EffectFinderProps {
   onShowAll?: () => void;
   /** Takes, once, the entry the tab's list opened, so Back puts focus on its row again. */
   takeReturn?: () => string | null;
+  /** How many conditions the same words found, which the sheet shows over these results. */
+  alsoFound?: number;
 }
 
 export default function EffectFinder({
@@ -337,6 +339,7 @@ export default function EffectFinder({
   allShown = false,
   onShowAll,
   takeReturn,
+  alsoFound = 0,
 }: EffectFinderProps) {
   const edition = doc.rulesVersion;
   const registry = useRegistry();
@@ -376,14 +379,14 @@ export default function EffectFinder({
   // change or the search goes away: it is about results nobody is on any more.
   useEffect(() => {
     if (picked !== null || describing !== null || trimmed === '') return;
-    announce(
-      found.length === 0
-        ? `Nothing called ${trimmed} that can land on ${who}`
-        : `${found.length} found`,
-      { key: 'effect-search', settleMs: SEARCH_SETTLE_MS, repeat: true },
-    );
+    const count = found.length + alsoFound;
+    announce(count === 0 ? `Nothing called ${trimmed} that can land on ${who}` : `${count} found`, {
+      key: 'effect-search',
+      settleMs: SEARCH_SETTLE_MS,
+      repeat: true,
+    });
     return () => cancelAnnouncement('effect-search');
-  }, [picked, describing, trimmed, found.length, who]);
+  }, [picked, describing, trimmed, found.length, alsoFound, who]);
   if (describing !== null) {
     return (
       <EffectBuilder
@@ -454,9 +457,12 @@ export default function EffectFinder({
           ))}
         </ul>
       ) : (
-        <p className="text-body text-ink">
-          Nothing called “{trimmed}” that can land on {who}.
-        </p>
+        // Conditions it found show over this, so it is no "nothing".
+        alsoFound === 0 && (
+          <p className="text-body text-ink">
+            Nothing called “{trimmed}” that can land on {who}.
+          </p>
+        )
       )}
       {more > 0 && (
         <p className="text-caption text-ink-muted">{more} more. Keep typing to narrow them.</p>
