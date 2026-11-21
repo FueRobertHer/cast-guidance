@@ -77,6 +77,58 @@ export function subclassSpellUidsFromEntities(
 }
 
 /**
+ * The spells a homebrew class or subclass lists as its own, as 5etools
+ * homebrew writes them (`classSpells`, `subclassSpells`): `"fireball"` (a
+ * Player's Handbook spell) or `"shape water|xge"`. A converted class lists the
+ * installed spells its file names this way, since it cannot put itself on
+ * them. Another class's whole list, an object there, is not read.
+ */
+function listedUids(list: unknown): string[] {
+  if (!Array.isArray(list)) return [];
+  return list.flatMap((ref) => {
+    if (typeof ref !== 'string' || ref.trim() === '') return [];
+    const uid = ref.trim().toLowerCase();
+    return [uid.includes('|') ? uid : `${uid}|phb`];
+  });
+}
+
+/** Spell uids a homebrew class of one of these names lists itself (`classSpells`). */
+export function classListedSpellUids(
+  classes: readonly Record<string, unknown>[],
+  className: ClassNames,
+): Set<string> {
+  const out = new Set<string>();
+  const targets = namesOf(className);
+  for (const c of classes) {
+    if (!targets.has(String(c.name ?? '').toLowerCase())) continue;
+    for (const uid of listedUids(c.classSpells)) out.add(uid);
+  }
+  return out;
+}
+
+/**
+ * Spell uids a homebrew subclass lists itself (`subclassSpells`): one of a
+ * class of these names, by its full name or its short one, as
+ * {@link subclassSpellUidsFromEntities} matches them.
+ */
+export function subclassListedSpellUids(
+  subclasses: readonly Record<string, unknown>[],
+  className: ClassNames,
+  subclassNames: readonly string[],
+): Set<string> {
+  const out = new Set<string>();
+  const targets = namesOf(className);
+  const subs = namesOf(subclassNames);
+  for (const s of subclasses) {
+    if (!targets.has(String(s.className ?? '').toLowerCase())) continue;
+    const names = [s.name, s.shortName].flatMap((n) => (typeof n === 'string' ? [n] : []));
+    if (!names.some((n) => subs.has(n.toLowerCase()))) continue;
+    for (const uid of listedUids(s.subclassSpells)) out.add(uid);
+  }
+  return out;
+}
+
+/**
  * Spell uids on a subclass caster's list (the Eldritch Knight's), any source:
  * `subclass[CLASS_SOURCE][ClassName][SUBCLASS_SOURCE][SubclassShortName]`.
  */
@@ -140,11 +192,13 @@ export function classSpellUids(lookup: SpellClassLookup, className: ClassNames):
 
 /**
  * Asks whether a spell (by its lower-cased `name|source` uid) is on a class's
- * list, the lookup's or a homebrew spell's own, reading each class's list once.
+ * list, the lookup's, a homebrew spell's own or one a homebrew class lists
+ * (`classes`, {@link classListedSpellUids}), reading each class's list once.
  */
 export function classListCheck(
   lookup: SpellClassLookup | null,
   spells: readonly Record<string, unknown>[],
+  classes: readonly Record<string, unknown>[] = [],
 ): (className: string, uid: string) => boolean {
   const lists = new Map<string, ReadonlySet<string>>();
   return (className, uid) => {
@@ -155,6 +209,7 @@ export function classListCheck(
         ...classSpellUids(lookup ?? {}, className),
         // Homebrew spells carry their classes inline.
         ...classSpellUidsFromEntities(spells, className),
+        ...classListedSpellUids(classes, className),
       ]);
       lists.set(key, list);
     }

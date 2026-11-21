@@ -11,9 +11,11 @@ import {
 } from '@/data5e/sourceFilter';
 import {
   classListCheck,
+  classListedSpellUids,
   classSpellUids,
   classSpellUidsFromEntities,
   type SpellClassLookup,
+  subclassListedSpellUids,
   subclassSpellUids,
   subclassSpellUidsFromEntities,
 } from '@/data5e/spellLookup';
@@ -252,24 +254,30 @@ function ClassSpells({
       : `Unlocks at ${levelClass} ${at}`;
   };
 
-  // Homebrew spells carry classes.fromClassList inline — union them in.
+  // Homebrew spells carry classes.fromClassList inline: union them in, with
+  // the installed spells a homebrew class lists itself (`classSpells`).
   // A subclass caster's block is named for the subclass, so only a class's own
   // block reads the original's name. A subclass caster also reads the spells
-  // whose `fromSubclass` names it, by its full name or its short one.
+  // whose `fromSubclass` names it, by its full name or its short one, and
+  // those its subclass lists itself.
   const homebrewUids = useMemo(() => {
     if (registry === null) return new Set<string>();
     const spells = registry.byType('spell');
-    const own = classSpellUidsFromEntities(
-      spells,
+    const names =
       copied !== undefined && subclassOf === undefined
         ? [block.className, copied]
-        : block.className,
-    );
+        : block.className;
+    const own = new Set([
+      ...classSpellUidsFromEntities(spells, names),
+      ...classListedSpellUids(registry.byType('class'), names),
+    ]);
     if (subclassOf === undefined || subclassShort === undefined) return own;
     const also = copied !== undefined ? [subclassOf, copied] : subclassOf;
+    const subclassNames = [subclassShort, block.className];
     return new Set([
       ...own,
-      ...subclassSpellUidsFromEntities(spells, also, [subclassShort, block.className]),
+      ...subclassSpellUidsFromEntities(spells, also, subclassNames),
+      ...subclassListedSpellUids(registry.byType('subclass'), also, subclassNames),
     ]);
   }, [registry, block.className, copied, subclassOf, subclassShort]);
 
@@ -280,7 +288,7 @@ function ClassSpells({
     () =>
       expandedListMatcher(
         JSON.parse(expandedKey) as SpellcastingBlock['expanded'],
-        classListCheck(lookup, registry?.byType('spell') ?? []),
+        classListCheck(lookup, registry?.byType('spell') ?? [], registry?.byType('class') ?? []),
       ),
     [expandedKey, lookup, registry],
   );

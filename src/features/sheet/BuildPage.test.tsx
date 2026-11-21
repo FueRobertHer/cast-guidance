@@ -470,6 +470,13 @@ describe('BuildPage edition cues (GAME-003)', () => {
     ];
   };
 
+  it('names the species with its subrace, as a player says it', () => {
+    renderBuild((d) => {
+      d.subrace = { name: 'Near', source: 'TST' };
+    });
+    expect(screen.getByText('Near Testfolk')).toBeTruthy();
+  });
+
   it('says a subrace was reprinted as a feat, on the chip a phone can read', () => {
     withSubraceReprintedAsFeat();
     renderBuild((d) => {

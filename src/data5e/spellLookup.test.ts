@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
   classListCheck,
+  classListedSpellUids,
   classSpellUids,
   classSpellUidsFromEntities,
   type SpellClassLookup,
+  subclassListedSpellUids,
   subclassSpellUids,
   subclassSpellUidsFromEntities,
 } from './spellLookup';
@@ -158,5 +160,52 @@ describe('classListCheck (the lookup and homebrew together)', () => {
     const onList = classListCheck(null, spells);
     expect(onList('Cleric', 'heal word|hb')).toBe(true);
     expect(onList('Cleric', 'cure wounds|phb')).toBe(false);
+  });
+});
+
+describe('classListedSpellUids and subclassListedSpellUids (a homebrew class’s own list)', () => {
+  const classes = [
+    {
+      name: 'Witch',
+      source: 'HB',
+      classSpells: ['Fire Bolt|PHB', 'shield', 7, { className: 'Wizard', classSource: 'PHB' }],
+    },
+    { name: 'Wizard', source: 'HB2', classSpells: ['alarm|phb'] },
+  ];
+  const subclasses = [
+    {
+      name: 'Coven of Ash',
+      shortName: 'Ash',
+      className: 'Witch',
+      classSource: 'HB',
+      subclassSpells: ['burning hands|phb'],
+    },
+  ];
+
+  it('reads names with a book, and the Player’s Handbook without one, in any case', () => {
+    expect(classListedSpellUids(classes, 'witch')).toEqual(
+      new Set(['fire bolt|phb', 'shield|phb']),
+    );
+    expect(classListedSpellUids(classes, ['Witch', 'Wizard'])).toEqual(
+      new Set(['fire bolt|phb', 'shield|phb', 'alarm|phb']),
+    );
+    expect(classListedSpellUids(classes, 'Druid')).toEqual(new Set());
+  });
+
+  it('reads a subclass by its full name or its short one, on its own class only', () => {
+    expect(subclassListedSpellUids(subclasses, 'Witch', ['Ash'])).toEqual(
+      new Set(['burning hands|phb']),
+    );
+    expect(subclassListedSpellUids(subclasses, 'Witch', ['coven of ash'])).toEqual(
+      new Set(['burning hands|phb']),
+    );
+    expect(subclassListedSpellUids(subclasses, 'Wizard', ['Ash'])).toEqual(new Set());
+  });
+
+  it('puts them on the list classListCheck asks about', () => {
+    const onList = classListCheck({}, [], classes);
+    expect(onList('Witch', 'fire bolt|phb')).toBe(true);
+    expect(onList('Witch', 'alarm|phb')).toBe(false);
+    expect(classListCheck({}, [])('Witch', 'fire bolt|phb')).toBe(false);
   });
 });

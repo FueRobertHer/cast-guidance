@@ -39,6 +39,7 @@ import { choiceTitle, RULE_ORDER, RuleSheet } from '@/features/settings/RuleShee
 import { classRemovalParts, firstClassShift, listJoin, picksCleared } from '@/lib/describeRemoval';
 import { scrollBehavior } from '@/lib/motion';
 import { pruneChoicesFor, pruneClass, pruneOrigin } from '@/lib/pruneChoices';
+import { raceDisplayName } from '@/lib/raceDisplayName';
 import { signed } from '@/lib/signed';
 import { useStickyHeight } from '@/lib/useStickyHeight';
 import { captureUpdate, sameForUndo, type UndoNotice, useUndoOffer } from '@/lib/useUndoOffer';
@@ -513,7 +514,12 @@ export function Component() {
 
   return (
     <div className="flex flex-col gap-3">
-      <div ref={bar} className="sticky top-(--sheet-header-h,0px) z-10 flex flex-col gap-1.5">
+      {/* Sticks under the sheet header, but not on a short screen (a phone
+          on its side), where the bar would hide most of what it is about. */}
+      <div
+        ref={bar}
+        className="sticky top-(--sheet-header-h,0px) z-10 flex flex-col gap-1.5 [@media(max-height:500px)]:static"
+      >
         <ChangeBar sheet={sheet} />
         <UndoBar pending={undo.pending} undone={undo.undone} onUndo={() => void undo.run()} />
       </div>
@@ -836,7 +842,7 @@ export function Component() {
         </details>
       </Section>
 
-      <Section title="Species / Race" summary={doc.subrace?.name ?? doc.race?.name ?? 'none'}>
+      <Section title="Species / Race" summary={raceDisplayName(doc.race, doc.subrace) ?? 'none'}>
         <details key={pickerKey(doc.race)} open={doc.race === undefined}>
           <summary
             className={`cursor-pointer py-1 text-caption ${

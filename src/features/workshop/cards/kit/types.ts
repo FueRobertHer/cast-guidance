@@ -63,6 +63,11 @@ export interface CardProps {
   inPlay?: boolean;
   /** A moment puts it on (Counts when), so it is in play once the moment comes. */
   atMoment?: boolean;
+  /**
+   * A class gives it (a class's, a subclass's or an optional feature's
+   * effects), so the sheet can add that class to a name ("Class in the name").
+   */
+  classGiven?: boolean;
   onChange: (next: Eff, renamedKey?: [string, string]) => void;
   /** The effect list itself, for a card that holds one (what a pick gives). */
   List: ComponentType<ListProps>;

@@ -227,6 +227,38 @@ export function readClasses(raw: string, fileClasses?: FileClasses): ClassLists 
   return out;
 }
 
+/**
+ * A spell's `classes` field from the lists its entry names, or undefined for
+ * none: a class of the rules by its edition's core book, one the file
+ * converts by the source it converts to.
+ */
+export function classListsField(
+  classes: ClassLists,
+  edition: RulesVersion,
+): Record<string, unknown> | undefined {
+  if (
+    classes.classes.length === 0 &&
+    classes.subclasses.length === 0 &&
+    classes.fileClasses.length === 0
+  ) {
+    return undefined;
+  }
+  const classSource = edition === '2024' ? 'XPHB' : 'PHB';
+  const lists: Record<string, unknown> = {};
+  const fromClassList = [
+    ...classes.classes.map((name) => ({ name, source: classSource })),
+    ...classes.fileClasses,
+  ];
+  if (fromClassList.length > 0) lists.fromClassList = fromClassList;
+  if (classes.subclasses.length > 0) {
+    lists.fromSubclass = classes.subclasses.map((s) => ({
+      class: { name: s.className, source: classSource },
+      subclass: { name: s.subclassName, shortName: s.subclassName, source: classSource },
+    }));
+  }
+  return lists;
+}
+
 /** Lead-ins 5etools keeps in `entriesHigherLevel`, a cantrip's upgrade included. */
 const HIGHER_LEVEL_NAMES =
   /^(?:at higher levels|using a higher-level spell slot|higher levels?|cantrip upgrade)$/i;
@@ -484,26 +516,8 @@ export function convertSpell(el: XmlElement, ctx: Fc5Context): Fc5Result {
   const ritual = (childText(el, 'ritual') ?? '').toUpperCase();
   if (ritual === 'YES' || ritual === '1' || ritualInTime) spell.meta = { ritual: true };
 
-  const classSource = edition === '2024' ? 'XPHB' : 'PHB';
-  if (
-    classes.classes.length > 0 ||
-    classes.subclasses.length > 0 ||
-    classes.fileClasses.length > 0
-  ) {
-    const lists: Record<string, unknown> = {};
-    const fromClassList = [
-      ...classes.classes.map((name) => ({ name, source: classSource })),
-      ...classes.fileClasses,
-    ];
-    if (fromClassList.length > 0) lists.fromClassList = fromClassList;
-    if (classes.subclasses.length > 0) {
-      lists.fromSubclass = classes.subclasses.map((s) => ({
-        class: { name: s.className, source: classSource },
-        subclass: { name: s.subclassName, shortName: s.subclassName, source: classSource },
-      }));
-    }
-    spell.classes = lists;
-  }
+  const lists = classListsField(classes, edition);
+  if (lists !== undefined) spell.classes = lists;
 
   // Higher-level text moves to its own field, where the sheet reads upcasting.
   const entries: Entry[] = [];

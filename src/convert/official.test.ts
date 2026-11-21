@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { officialNames } from './official';
+import { normalizeDataset } from '../data5e/normalize';
+import { officialChecks, officialKeys, officialNames } from './official';
 
 describe('officialNames', () => {
   it('names most entries by their own name only', () => {
@@ -108,5 +109,53 @@ describe('officialNames', () => {
     expect(officialNames('race', { name: 'Other', source: 'X', _versionOf: 'elf|xphb' })).toEqual([
       'other',
     ]);
+  });
+});
+
+describe('installedSpellId (officialChecks over officialKeys)', () => {
+  const reg = normalizeDataset(
+    new Map([
+      [
+        'spells/spells-phb.json',
+        {
+          spell: [
+            { name: 'Fireball', source: 'PHB', level: 3 },
+            { name: 'Green-Flame Blade', source: 'TCE', level: 0 },
+          ],
+        },
+      ],
+      ['spells/spells-xphb.json', { spell: [{ name: 'Fireball', source: 'XPHB', level: 3 }] }],
+    ]),
+  );
+  const { installedSpellId, isInstalled } = officialChecks(officialKeys(reg));
+
+  it('names the spell the installed check finds, by edition and by book', () => {
+    expect(installedSpellId('Fireball', '2014')).toBe('fireball|phb');
+    expect(installedSpellId('fireball', '2024')).toBe('fireball|xphb');
+    expect(installedSpellId('Fireball', '2014', 'XPHB')).toBe('fireball|xphb');
+  });
+
+  it('finds a spelling the installed check finds within a book', () => {
+    expect(isInstalled('spell', 'Greenflame Blade', '2014', 'TCE')).toBe(true);
+    expect(installedSpellId('Greenflame Blade', '2014', 'TCE')).toBe('green-flame blade|tce');
+  });
+
+  it('names the first in the data where two answer to one key', () => {
+    const twice = normalizeDataset(
+      new Map([
+        ['spells/spells-phb.json', { spell: [{ name: 'Fireball', source: 'PHB', level: 3 }] }],
+        ['spells/spells-xge.json', { spell: [{ name: 'Fireball', source: 'XGE', level: 3 }] }],
+      ]),
+    );
+    const id = officialChecks(officialKeys(twice)).installedSpellId;
+    expect(id('Fireball', '2014')).toBe(
+      `fireball|${String(twice.byType('spell')[0]?.source).toLowerCase()}`,
+    );
+  });
+
+  it('names none where the installed check says no', () => {
+    expect(isInstalled('spell', 'Ember Lance', '2014')).toBe(false);
+    expect(installedSpellId('Ember Lance', '2014')).toBeUndefined();
+    expect(installedSpellId('Fireball', '2014', 'TCE')).toBeUndefined();
   });
 });
