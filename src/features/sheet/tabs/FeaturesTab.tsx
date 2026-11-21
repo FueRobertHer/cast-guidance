@@ -165,7 +165,7 @@ export function Component() {
           rows={6}
           aria-label="Notes"
           placeholder="Session notes, goals, contacts…"
-          className="w-full rounded-control bg-surface-raised px-4 py-3 text-input text-ink ring-inset transition-shadow duration-120 placeholder:text-ink-faint hover:ring-1 hover:ring-line-strong"
+          className="w-full rounded-control bg-surface-raised px-4 py-3 text-input text-ink ring-1 ring-edge ring-inset transition-shadow duration-120 placeholder:text-ink-faint hover:ring-line-strong"
         />
       </section>
     </div>
