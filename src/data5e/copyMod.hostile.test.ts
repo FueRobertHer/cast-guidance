@@ -244,6 +244,34 @@ describe('what a homebrew merge builds', () => {
   });
 });
 
+describe('a _mod with as many items as a file can hold', () => {
+  // Passed as arguments, 199,000 items overflowed the stack out of applyMod.
+  const items = Array.from({ length: 199_000 }, (_, i) => i);
+  it.each([
+    ['appendArr', { mode: 'appendArr', items }, ['a', 'b', ...items]],
+    ['appendIfNotExistsArr', { mode: 'appendIfNotExistsArr', items }, ['a', 'b', ...items]],
+    ['prependArr', { mode: 'prependArr', items }, [...items, 'a', 'b']],
+    ['insertArr', { mode: 'insertArr', index: 1, items }, ['a', ...items, 'b']],
+    ['replaceArr', { mode: 'replaceArr', replace: 'a', items }, [...items, 'b']],
+  ])('%s', (_, op, expected) => {
+    const t: Entity = { entries: ['a', 'b'] };
+    const warnings: string[] = [];
+    applyMod(t, { entries: op }, (m) => warnings.push(m));
+    expect(t.entries).toEqual(expected);
+    expect(warnings).toEqual([]);
+  });
+
+  it('places items where splice would, from the end too', () => {
+    for (const index of [-1, -5, 0, 2, 9, 1.5]) {
+      const t: Entity = { entries: ['a', 'b', 'c'] };
+      applyMod(t, { entries: { mode: 'insertArr', index, items: ['x', 'y'] } }, () => {});
+      const native = ['a', 'b', 'c'];
+      native.splice(index, 0, 'x', 'y');
+      expect(t.entries).toEqual(native);
+    }
+  });
+});
+
 describe('text a _mod reads, as JSON that String() refuses', () => {
   const odd = { toString: 1 };
   const target = () => ({ entries: ['a', { name: 'Keep', entries: [] }] }) as Entity;

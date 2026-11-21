@@ -58,6 +58,18 @@ function asArray<T>(v: T | T[] | undefined): T[] {
   return Array.isArray(v) ? v : [v];
 }
 
+/**
+ * `a.splice(at, remove, ...items)`, without passing the items as arguments:
+ * a homebrew list can hold 200,000, and a call with that many arguments
+ * overflows the stack (from about 100,000 here).
+ */
+function spliceIn(a: unknown[], at: number, remove: number, items: readonly unknown[]): void {
+  const tail = a.splice(at);
+  tail.splice(0, remove);
+  for (const x of items) a.push(x);
+  for (const x of tail) a.push(x);
+}
+
 function entryName(e: unknown): string | undefined {
   if (typeof e !== 'object' || e === null) return undefined;
   const n = (e as { name?: unknown }).name;
@@ -458,23 +470,28 @@ export function applyMod(
       };
       switch (mode) {
         case 'appendArr':
-          arr().push(...asArray(o.items));
+          spliceIn(arr(), Number.POSITIVE_INFINITY, 0, asArray(o.items));
           break;
         case 'appendIfNotExistsArr': {
           // As in 5etools: each item is checked against what the array held
           // before, not against the other items.
           const a = arr();
           const present = new Set(a.map(deepKey));
-          a.push(...asArray(o.items).filter((x) => !present.has(deepKey(x))));
+          spliceIn(
+            a,
+            a.length,
+            0,
+            asArray(o.items).filter((x) => !present.has(deepKey(x))),
+          );
           break;
         }
         case 'prependArr':
-          arr().unshift(...asArray(o.items));
+          spliceIn(arr(), 0, 0, asArray(o.items));
           break;
         case 'insertArr': {
           const a = arr();
           const idx = typeof o.index === 'number' ? o.index : a.length;
-          a.splice(idx, 0, ...asArray(o.items));
+          spliceIn(a, idx, 0, asArray(o.items));
           break;
         }
         case 'removeArr': {
@@ -556,7 +573,7 @@ export function applyMod(
             idx = (replace as { index: number }).index;
           }
           if (idx >= 0 && idx < a.length) {
-            a.splice(idx, 1, ...asArray(o.items));
+            spliceIn(a, idx, 1, asArray(o.items));
           } else {
             warn(`replaceArr target not found on "${prop}": ${JSON.stringify(replace)}`);
           }
