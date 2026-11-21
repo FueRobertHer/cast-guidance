@@ -495,6 +495,56 @@ describe('books', () => {
   });
 });
 
+describe('editions', () => {
+  const cited = (name: string, line: string, classes = 'Wizard') =>
+    spell(name, `<classes>${classes}</classes><text>Text.\nSource: ${line}</text>`);
+  const XGE = "Xanathar's Guide to Everything";
+  const MIXED = 'Paladin [5.5e], Wizard [Legacy]';
+
+  it('writes a 2014 edition only where the entry, its line or its book states it', () => {
+    const body = `
+      ${spell('Smoke Veil', '<classes>Wizard</classes>')}
+      ${cited('Ember Lance', 'Ember Codex p. 3')}
+      ${cited('Ash Ward', "Player's Handbook p. 1")}
+      ${cited('Cinder Step', `${XGE} p. 2`)}
+      ${cited('Glow Mote', 'System Reference Document 5.1')}
+      ${spell('Soot Cloud (Legacy)', '<classes>Wizard</classes>')}
+      ${spell('Soot Cloud [5.5e]', '<classes>Wizard</classes>')}
+      ${spell('Ash Mote', '<classes>Wizard [Legacy]</classes>')}
+    `;
+    const editions = (json: Record<string, unknown>) =>
+      list(json, 'spell').map((s) => [s.name, s.edition]);
+    // Xanathar's is 2014 only by guess until the data says which books are 2024.
+    expect(editions(convert(body).json)).toEqual([
+      ['Smoke Veil', undefined],
+      ['Ember Lance', undefined],
+      ['Ash Ward', 'classic'],
+      ['Cinder Step', undefined],
+      ['Glow Mote', 'classic'],
+      ['Soot Cloud', 'classic'],
+      ['Soot Cloud', 'one'],
+      ['Ash Mote', 'classic'],
+    ]);
+    const known = convert(body, { fileName: FILE, rulesBooks: new Set(['XPHB']) });
+    expect(editions(known.json)[3]).toEqual(['Cinder Step', 'classic']);
+  });
+
+  it("states none from a document's own version or a class list marking both", () => {
+    const { json } = convert(`
+      ${cited('Rust Bloom', 'Ember Codex v2.5.1 p. 4')}
+      ${cited('Rust Ward', 'Ember Codex v1.5.5 p. 5')}
+      ${spell('Ash Bloom', `<classes>${MIXED}</classes>`)}
+      ${cited('Ash Glow', 'Ember Codex 2024 p. 6', MIXED)}
+    `);
+    expect(list(json, 'spell').map((s) => [s.name, s.edition])).toEqual([
+      ['Rust Bloom', undefined],
+      ['Rust Ward', undefined],
+      ['Ash Bloom', undefined],
+      ['Ash Glow', undefined],
+    ]);
+  });
+});
+
 describe('printingOf', () => {
   const at = (line: string) => `<text>Text.
 Source: ${line}</text>`;
@@ -749,7 +799,7 @@ describe('copies of other entries', () => {
       <spell><name>Ember Hold</name><classes>Cleric (Forge)</classes></spell>
     `);
     expect(fromSubclass(unsure.json)).toEqual([
-      [undefined, 1],
+      ['classic', 1],
       ['one', 1],
     ]);
   });
@@ -925,6 +975,22 @@ describe('subclasses', () => {
         .map((s) => `${f(`Martial Archetype: ${s}`)}${f(`${s} Strike (${s})`)}`)
         .join('')}</autolevel>
     </class>`;
+
+  it('marks a subclass 2014 when its name marks it so, under a class of either edition', () => {
+    const editions = (cls: string) =>
+      list(
+        convert(withSubclasses(cls, '', ['Ash Guard [Legacy]', 'Ash Ward'])).json,
+        'subclass',
+      ).map((s) => [s.name, s.edition]);
+    expect(editions('Ember Knight [5.5e]')).toEqual([
+      ['Ash Guard', 'classic'],
+      ['Ash Ward', 'one'],
+    ]);
+    expect(editions('Ember Knight')).toEqual([
+      ['Ash Guard', 'classic'],
+      ['Ash Ward', undefined],
+    ]);
+  });
 
   it('keeps the subclasses of a kept class on it, after the class in the file', () => {
     const { json, report } = convert(withSubclasses('Ember Knight', '', ['Ash Guard']));

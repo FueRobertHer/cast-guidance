@@ -11,6 +11,12 @@ import type { SpellIndex } from './spellGrants';
 export interface Placement {
   source: HomebrewSource;
   edition: RulesVersion;
+  /**
+   * Whether the entry, its `Source:` line or its book says its edition. When
+   * none does, the edition is the 2014 default, and the entity names none, so
+   * it reads as written for either.
+   */
+  editionStated?: boolean;
   /** The entry's own book, when its `Source:` line names one. */
   book?: Book;
   /** Every book the `Source:` line names, the entry's own first. */
@@ -150,10 +156,15 @@ export function extraClassKey(name: string, edition: RulesVersion | undefined): 
   return `${name.toLowerCase()}|${edition ?? ''}`;
 }
 
-/** Put a placement's source, edition and citation on an entity being built. */
+/**
+ * Put a placement's source, edition and citation on an entity being built. A
+ * 2014 edition is written only when something stated it: homebrew that names
+ * no edition is no cue on a character of either.
+ */
 export function placeEntity(entity: Record<string, unknown>, placement: Placement): void {
   entity.source = placement.source.json;
   if (placement.edition === '2024') entity.edition = 'one';
+  else if (placement.editionStated === true) entity.edition = 'classic';
   Object.assign(entity, placement.fields);
 }
 

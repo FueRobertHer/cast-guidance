@@ -210,9 +210,10 @@ function placer(
     const books = line === undefined ? [] : readSourceLine(line);
     const first = books[0];
     if (first === undefined) {
-      const edition =
-        own ?? (line === undefined ? undefined : sourceLineEdition(line)) ?? fileEd ?? '2014';
+      const stated = own ?? (line === undefined ? undefined : sourceLineEdition(line)) ?? fileEd;
+      const edition = stated ?? '2014';
       const placement: Placement = { source: fileSource, edition, books, fields: {} };
+      if (stated !== undefined) placement.editionStated = true;
       if (line !== undefined && line.trim() !== '') placement.citation = line;
       return placement;
     }
@@ -221,7 +222,11 @@ function placer(
       first.code !== undefined
         ? codeEdition(first.code, rulesBooks)
         : sourceLineEdition(first.title);
-    // A free rules text that names no version is the file's.
+    // A free rules text that names no version is the file's. A known book's
+    // edition is stated only where it is known, not guessed (`editionKnown`).
+    const bookStated =
+      first.code === undefined || editionKnown(first.code, rulesBooks) ? bookEdition : undefined;
+    const stated = own ?? bookStated ?? (first.reference === true ? fileEd : undefined);
     const edition = own ?? bookEdition ?? (first.reference === true ? fileEd : undefined) ?? '2014';
     const split = first.code === undefined && edition === '2024' && bookEdition !== '2024';
     const placement: Placement = {
@@ -231,6 +236,7 @@ function placer(
       books,
       fields: first.page === undefined ? {} : { page: first.page },
     };
+    if (stated === edition) placement.editionStated = true;
     // A name that marks the other edition than its book's is not the book's entry,
     // where the book's edition is known and not guessed.
     if (

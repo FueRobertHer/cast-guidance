@@ -1443,9 +1443,11 @@ function convertSubclass(pick: Pick, from: SubclassFrom, bound: ClassBinding): F
   const placement =
     sourceLine !== undefined
       ? from.ctx.place(sourceLine, edition)
-      : edition === undefined || edition === from.placement.edition
+      : edition === undefined
         ? from.placement
-        : inEdition(from.placement, edition);
+        : edition === from.placement.edition
+          ? { ...from.placement, editionStated: true }
+          : inEdition(from.placement, edition);
   const subclassSource = placement.source.json;
   const reasons: string[] = [];
 
