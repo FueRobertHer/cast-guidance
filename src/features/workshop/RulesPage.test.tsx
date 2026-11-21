@@ -58,7 +58,13 @@ afterEach(async () => {
 
 /** The Rules page, with Settings' row beside it as Settings shows it. */
 /** `strict`: under StrictMode, as `main.tsx` renders the app (effects run, clean up, run again). */
-async function visit({ strict = false }: { strict?: boolean } = {}) {
+async function visit({
+  strict = false,
+  at = '/workshop/rules',
+}: {
+  strict?: boolean;
+  at?: string;
+} = {}) {
   window.matchMedia ??= (query: string) =>
     ({
       matches: false,
@@ -86,7 +92,7 @@ async function visit({ strict = false }: { strict?: boolean } = {}) {
       },
       { path: '*', element: <p>Elsewhere</p> },
     ],
-    { initialEntries: ['/workshop/rules'] },
+    { initialEntries: [at] },
   );
   const app = <RouterProvider router={router} />;
   render(strict ? <StrictMode>{app}</StrictMode> : app);
@@ -207,6 +213,28 @@ describe('the Rules page', () => {
     await waitFor(() => expect(ruleRow('Critical hits').textContent).toContain('Double the total'));
     expect(settingsRow().textContent).toContain('Critical hits: Double the total');
     expect(namelessControls()).toEqual([]);
+  });
+
+  it('opens Write a rule pack from the address once, Back still going up to the Workshop', async () => {
+    // The tab's first page, as a link opened in a new tab or a bookmark.
+    const router = await visit({ at: '/workshop/rules?write' });
+    const sheet = await screen.findByRole(
+      'dialog',
+      { name: 'Write a rule pack' },
+      { timeout: WAIT },
+    );
+    await waitFor(() => expect(router.state.location.search).toBe(''));
+    fireEvent.click(within(sheet).getByRole('button', { name: 'Cancel' }));
+    // No button opened it here: focus lands on the page's heading, not the body.
+    await waitFor(() =>
+      expect(document.activeElement).toBe(screen.getByRole('heading', { level: 1, name: 'Rules' })),
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Back' }));
+    await waitFor(() =>
+      expect(`${router.state.location.pathname}${router.state.location.search}`).toBe(
+        '/workshop?shelf=rules',
+      ),
+    );
   });
 
   it('says every rule is as written when none is a house rule', async () => {

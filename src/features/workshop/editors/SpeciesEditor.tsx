@@ -384,7 +384,7 @@ export function OriginParts(
         <GrantField
           {...grant('weaponProficiencies')}
           label="Weapons"
-          placeholder="Longsword|XPHB"
+          placeholder="Longsword, shortbow"
         />
         <GrantField {...grant('armorProficiencies')} label="Armor" options={ARMOR_WORDS} />
         <OnSheet>{said('proficiencies')}</OnSheet>
