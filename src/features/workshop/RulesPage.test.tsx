@@ -570,7 +570,7 @@ describe('the Rules page', () => {
 
     // Saved, then closed before it fails: a notice says so.
     noticeStore.setState({ notice: null, seq: 0 });
-    let fail = (_: Error): void => undefined;
+    let fail: ((err: Error) => void) | undefined;
     vi.spyOn(homebrewRepo, 'commit').mockImplementationOnce(
       () =>
         new Promise((_, reject) => {
@@ -583,7 +583,10 @@ describe('the Rules page', () => {
     await within(sheet).findByRole('button', { name: 'Saving…' });
     fireEvent.keyDown(sheet, { key: 'Escape' });
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
-    fail(new Error('the disk is full'));
+    // "Saving…" shows at the press, before Save has re-read the changes and
+    // reached the store: fail the write only once it is under way.
+    await waitFor(() => expect(fail).toBeDefined(), { timeout: WAIT });
+    fail?.(new Error('the disk is full'));
     await waitFor(() =>
       expect(noticeStore.getState().notice).toMatchObject({
         title: 'Save rule pack failed',
