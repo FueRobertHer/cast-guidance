@@ -117,7 +117,7 @@ afterEach(() => {
 });
 
 describe('the Content row (ADR-002 U11)', () => {
-  it("says what this character's switches change, closed and without reading anything", async () => {
+  it("says what this character's switches change, closed and without calling homebrewRepo.listMetaSafe", async () => {
     expect(contentSummary(undefined)).toBe('As this device');
     expect(contentSummary({ off: ['MyChanges'] })).toBe('Changes to the books off');
     expect(contentSummary({ on: ['KIB', 'MyChanges'], off: ['MyChanges'] })).toBe(
@@ -136,9 +136,11 @@ describe('the Content row (ADR-002 U11)', () => {
         </MemoryRouter>,
       );
       expect(summary()).toBe('Changes to the books off');
-      // Flush microtasks so an accidentally mounted body's live query runs too.
+      // Wait a macrotask so an accidentally mounted body's liveQuery timer runs too.
       await act(async () => {
-        await Promise.resolve();
+        await new Promise<void>((resolve) => {
+          setTimeout(resolve, 0);
+        });
       });
       expect(listMeta).not.toHaveBeenCalled();
     } finally {
@@ -228,7 +230,7 @@ describe('the Content row (ADR-002 U11)', () => {
     const row = lc.closest('li');
     expect(row).not.toBeNull();
     if (row === null) return;
-    expect(row.textContent).toContain('Off on this device');
+    expect(row.textContent).toContain('Hidden in The books');
     expect(
       within(row).getByText(
         "Off: it leaves Maren's pickers. What is already on Maren's sheet keeps counting.",

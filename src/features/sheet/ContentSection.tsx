@@ -80,7 +80,8 @@ export function ContentSection({
         <p className="text-caption text-ink-muted">
           What {doc.name}&apos;s pickers offer and {doc.name}&apos;s sheet counts, over this
           device&apos;s choice. Off for {doc.name}, a collection leaves {doc.name}&apos;s pickers;
-          what is already on the sheet keeps counting, unless this device has it off too.
+          what is already on the sheet keeps counting, unless the collection is off on this device
+          too (not just hidden in The books).
         </p>
         {/* Read only while open, as the Sources checklist is. */}
         {open && <ContentBody doc={doc} update={update} registry={registry} />}
@@ -244,13 +245,18 @@ function CollectionRow({
   const enabled = c.rows.some((r) => r.enabled);
   const changes = c.rows.some(isChanges);
   const holds = c.entries === 1 ? '1 entry' : `${c.entries} entries`;
+  const onDevice = here
+    ? 'On on this device'
+    : enabled
+      ? 'Hidden in The books'
+      : 'Off on this device';
   return (
     <li className="flex flex-col">
       <div className={`${listRowClass} flex-wrap`}>
         <span className="flex min-w-0 flex-1 basis-40 flex-col">
           <span className="break-words text-body-strong">{c.name}</span>
           <span className="text-caption text-ink-muted">
-            {holds}. {here ? 'On' : 'Off'} on this device
+            {holds}. {onDevice}
           </span>
         </span>
         <Chip
