@@ -349,6 +349,9 @@ const TIMES: ReadonlyArray<readonly [string, string, Json]> = [
   ['1 minute', '1 minute', { number: 1, unit: 'minute' }],
   ['10 minute', '10 minutes', { number: 10, unit: 'minute' }],
   ['1 hour', '1 hour', { number: 1, unit: 'hour' }],
+  ['8 hour', '8 hours', { number: 8, unit: 'hour' }],
+  ['12 hour', '12 hours', { number: 12, unit: 'hour' }],
+  ['24 hour', '24 hours', { number: 24, unit: 'hour' }],
 ];
 const RANGES: Options = [
   ['self', 'Self'],
@@ -463,6 +466,19 @@ export function withComponents(comp: Json, picked: readonly string[]): Json | un
     if (!COMPONENTS.some(([c]) => c === k)) next[k] = v;
   }
   return Object.keys(next).length > 0 ? next : undefined;
+}
+
+/**
+ * A material component with its words, cost or consuming changed, as 5etools
+ * writes it: the words alone while that is all it says, else `{ text, cost,
+ * consume }` with the cost in copper pieces. Any other key it had stays.
+ */
+export function withMaterial(m: unknown, patch: Json): unknown {
+  const had: Json = isRecord(m) ? m : { text: typeof m === 'string' ? m : '' };
+  const next: Json = { ...had, ...patch };
+  for (const [k, v] of Object.entries(patch)) if (v === undefined) delete next[k];
+  const keys = Object.keys(next);
+  return keys.length === 1 && keys[0] === 'text' ? next.text : next;
 }
 
 /** A spell list beyond the class list: a subclass's own (`classes.fromSubclass`). */
@@ -637,6 +653,11 @@ const DURATIONS: ReadonlyArray<readonly [string, string, Json]> = [
   ['24 hour', '24 hours', timed('hour', 24)],
   ['dispel', 'Until dispelled', { type: 'permanent', ends: ['dispel'] }],
 ];
+/** The durations About it offers: none at all, then each that lasts. */
+const DURATION_OPTIONS: Options = [
+  ['instant', 'Instantaneous'],
+  ...DURATIONS.map(([v, t]) => [v, t] as const),
+];
 
 const timeKey = (time: unknown) => {
   const t = list(time);
@@ -645,6 +666,7 @@ const timeKey = (time: unknown) => {
 };
 const durationKey = (d: Json | undefined) => {
   if (d === undefined) return '';
+  if (d.type === 'instant') return 'instant';
   if (d.type === 'permanent') return 'dispel';
   const inner = isRecord(d.duration) ? d.duration : undefined;
   return d.type === 'timed' && inner !== undefined
@@ -697,6 +719,51 @@ function KeptSelect({
   );
 }
 
+/**
+ * A cost in gold pieces, written in copper as 5etools keeps it: 25 gp is 2500.
+ * What is typed stays while it reads as the same cost ("25." on the way to
+ * "25.5"); empty takes the cost away.
+ */
+function GoldField({
+  label,
+  cp,
+  disabled,
+  onChange,
+}: {
+  label: string;
+  cp: number | undefined;
+  disabled: boolean;
+  onChange: (cp: number | undefined) => void;
+}) {
+  const asGp = cp === undefined ? '' : String(cp / 100);
+  const [typed, setTyped] = useState(asGp);
+  // Not a number of gold pieces, or finer than a copper, is refused; none is no cost.
+  const read = (s: string) => {
+    const t = s.trim();
+    if (!/^\d*\.?\d{0,2}$/.test(t)) return Number.NaN;
+    const c = Math.round(Number(`0${t}`) * 100);
+    return c > 0 ? c : undefined;
+  };
+  const shown = read(typed) === cp ? typed : asGp;
+  return (
+    <Field label={label}>
+      <input
+        value={shown}
+        inputMode="decimal"
+        disabled={disabled}
+        placeholder="None"
+        onChange={(e) => {
+          const next = read(e.target.value);
+          if (Number.isNaN(next)) return;
+          setTyped(e.target.value);
+          if (next !== cp) onChange(next);
+        }}
+        className={fieldClass}
+      />
+    </Field>
+  );
+}
+
 /** The casters in the player's data, one chip a name, each with its own book. */
 function classOptions(props: EditorProps): Array<{ name: string; source: string }> {
   const casters = props.registry
@@ -717,8 +784,23 @@ function About(props: EditorProps) {
       : isShape(range?.type)
         ? 'area'
         : '';
+  const times = list(draft.time);
+  const firstTime = isRecord(times[0]) ? times[0] : undefined;
+  // A reaction says what it is taken for; a trigger a file gives another time
+  // shows too, and stays while it is typed over, emptied on the way.
+  const [retyping, setRetyping] = useState(false);
+  const trigger =
+    firstTime !== undefined &&
+    (firstTime.unit === 'reaction' || firstTime.condition !== undefined || retyping)
+      ? String(firstTime.condition ?? '')
+      : undefined;
   const comp = isRecord(draft.components) ? draft.components : {};
   const material = typeof comp.m === 'string' ? comp.m : isRecord(comp.m) ? comp.m.text : undefined;
+  const cost = isRecord(comp.m) && typeof comp.m.cost === 'number' ? comp.m.cost : undefined;
+  const consume = isRecord(comp.m) ? comp.m.consume : undefined;
+  const setMaterial = (patch: Json) =>
+    change({ components: { ...comp, m: withMaterial(comp.m, patch) } });
+  const d = durationOf(draft);
   const classes = isRecord(draft.classes) ? draft.classes : {};
   const picked = list(classes.fromClassList).filter(isRecord);
   const casters = classOptions(props);
@@ -775,6 +857,7 @@ function About(props: EditorProps) {
             const was = list(draft.time)[0];
             // A reaction's trigger stays while it is still a reaction.
             const keep = isRecord(was) && was.unit === t?.unit && was.condition !== undefined;
+            setRetyping(false);
             if (t !== undefined) change({ time: [keep ? { ...t, condition: was.condition } : t] });
           }}
         />
@@ -844,6 +927,34 @@ function About(props: EditorProps) {
           </>
         )}
       </div>
+      {trigger !== undefined && (
+        <>
+          <Field label="Trigger">
+            <input
+              value={trigger}
+              disabled={readOnly}
+              placeholder="which you take when you are hit by an attack roll"
+              onChange={(e) => {
+                const { condition: _, ...rest } = firstTime ?? {};
+                const said = e.target.value;
+                setRetyping(true);
+                change({
+                  time: [
+                    said.trim() !== '' ? { ...rest, condition: said } : rest,
+                    ...times.slice(1),
+                  ],
+                });
+              }}
+              className={fieldClass}
+            />
+          </Field>
+          <Reads>
+            Kept with the casting time, as the books print it after the comma: “1 reaction, which
+            you take when…”. The Library and its rules sheet do not show it yet: there it reads “
+            {castingTime(draft.time)}”.
+          </Reads>
+        </>
+      )}
       {rangeKey === 'area' && (
         <Reads>
           Its range reads “{spellRange(draft.range)}” in the Library and on its rules sheet, and “
@@ -864,23 +975,76 @@ function About(props: EditorProps) {
         </Reads>
       )}
       {material !== undefined && (
-        <Field label="Material">
-          <input
-            value={String(material)}
-            disabled={readOnly}
-            placeholder="a pinch of soot"
-            onChange={(e) =>
-              change({
-                components: {
-                  ...comp,
-                  m: isRecord(comp.m) ? { ...comp.m, text: e.target.value } : e.target.value,
-                },
-              })
-            }
-            className={fieldClass}
-          />
-        </Field>
+        <>
+          <Field label="Material">
+            <input
+              value={String(material)}
+              disabled={readOnly}
+              placeholder="a pinch of soot"
+              onChange={(e) => setMaterial({ text: e.target.value })}
+              className={fieldClass}
+            />
+          </Field>
+          <div className="grid grid-cols-2 items-end gap-2">
+            <GoldField
+              label="Cost in gold pieces"
+              cp={cost}
+              disabled={readOnly}
+              onChange={(cp) => setMaterial({ cost: cp })}
+            />
+            <label className="flex min-h-12 items-center gap-2.5 text-body">
+              <input
+                type="checkbox"
+                className="size-4.5 accent-ink"
+                disabled={readOnly}
+                checked={consume === true || consume === 'optional'}
+                // A choice the file leaves to the caster stays until it is changed.
+                onChange={(e) => setMaterial({ consume: e.target.checked ? true : undefined })}
+              />
+              {consume === 'optional' ? 'Consumed if the caster chooses' : 'Consumed by the spell'}
+            </label>
+          </div>
+          {(cost !== undefined || given(consume)) && (
+            <Reads>
+              The Library and its rules sheet show the material’s words alone, “
+              {spellComponents(comp, level)}”, so say the cost there too. A pick that asks for a
+              spell whose material costs, or is consumed, finds this one by them.
+            </Reads>
+          )}
+        </>
       )}
+      <div className="grid grid-cols-2 items-end gap-2">
+        <KeptSelect
+          label="Duration"
+          value={durationKey(d)}
+          shown={spellDuration(draft.duration)}
+          options={DURATION_OPTIONS}
+          disabled={readOnly}
+          onChange={(v) => {
+            const next =
+              v === 'instant' ? { type: 'instant' } : DURATIONS.find(([k]) => k === v)?.[2];
+            if (next === undefined) return;
+            // Concentration holds through a change of how long, while it is still timed.
+            const conc = d?.concentration === true && next.type === 'timed';
+            change({ duration: [conc ? { ...next, concentration: true } : next] });
+          }}
+        />
+        {d?.type === 'timed' && (
+          <label className="flex min-h-12 items-center gap-2.5 text-body">
+            <input
+              type="checkbox"
+              className="size-4.5 accent-ink"
+              disabled={readOnly}
+              checked={d.concentration === true}
+              onChange={(e) => {
+                const { concentration: _, ...rest } = d;
+                change({ duration: [e.target.checked ? { ...rest, concentration: true } : rest] });
+              }}
+            />
+            Concentration
+          </label>
+        )}
+      </div>
       <label className="flex min-h-tap items-center gap-2.5 text-body">
         <input
           type="checkbox"
@@ -1069,23 +1233,27 @@ function Card({
   sub,
   readOnly,
   onRemove,
+  removes,
   children,
 }: {
   title: string;
   line: string;
   sub?: string;
   readOnly: boolean;
-  onRemove: () => void;
+  /** Takes the card away; a card with nothing of its own to take has none. */
+  onRemove?: () => void;
+  /** What its remove button names, when that is not its line. */
+  removes?: string;
   children?: ReactNode;
 }) {
   return (
     <div className="flex flex-col gap-2 rounded-control bg-surface py-2.5 pr-1 pl-3 ring-1 ring-line ring-inset">
       <div className="flex items-center gap-2">
         <b className="flex-1 text-caption text-ink-muted">{title}</b>
-        {!readOnly && (
+        {!readOnly && onRemove !== undefined && (
           <button
             type="button"
-            aria-label={`Remove ${line}`}
+            aria-label={`Remove ${removes ?? line}`}
             onClick={onRemove}
             className="tap -my-2 rounded-full text-ink-muted hover:bg-surface-raised hover:text-ink"
           >
@@ -1325,55 +1493,32 @@ function Cards({ draft, change, readOnly }: EditorProps) {
       </Card>,
     );
   });
-  if (lasts(draft)) {
-    const effects = list(g.effects);
+  // How long it lasts is set in About it. The card holds what it puts on the
+  // target meanwhile, and stays while it holds any: the sheet still lands them
+  // on a spell that has stopped lasting, so none is kept out of sight.
+  const effects = list(g.effects);
+  if (lasts(draft) || effects.length > 0) {
     cards.push(
       <Card
         key="lasting"
-        title="Lasting effect"
+        title="On the target while it lasts"
         line={spellDuration(draft.duration)}
         sub={
-          d?.concentration === true
-            ? 'The sheet tracks it while you concentrate'
-            : 'What it does to the target while it lasts, below'
+          !lasts(draft)
+            ? 'It does not last: give it a duration in About it, or take these away'
+            : d?.concentration === true
+              ? 'The sheet tracks it while you concentrate'
+              : 'What it does to the target while it lasts, below'
         }
         readOnly={readOnly}
-        onRemove={() =>
-          set({
-            duration: [{ type: 'instant' }],
-            castGuidance: guidanceWith(draft.castGuidance, { effects: undefined }),
-          })
+        removes="what it does on the target"
+        onRemove={
+          effects.length > 0
+            ? () => set({ castGuidance: guidanceWith(draft.castGuidance, { effects: undefined }) })
+            : undefined
         }
       >
-        <KeptSelect
-          label="Lasts"
-          value={durationKey(d)}
-          shown={spellDuration(draft.duration)}
-          options={DURATIONS.map(([v, t]) => [v, t] as const)}
-          disabled={readOnly}
-          onChange={(v) => {
-            const next = DURATIONS.find(([k]) => k === v)?.[2];
-            if (next === undefined) return;
-            const conc = d?.concentration === true && next.type === 'timed';
-            set({ duration: [conc ? { ...next, concentration: true } : next] });
-          }}
-        />
-        {d?.type === 'timed' && (
-          <label className="flex min-h-12 items-center gap-2.5 text-body">
-            <input
-              type="checkbox"
-              className="size-4.5 accent-ink"
-              checked={d.concentration === true}
-              onChange={(e) => {
-                const { concentration: _, ...rest } = d;
-                set({ duration: [e.target.checked ? { ...rest, concentration: true } : rest] });
-              }}
-            />
-            Concentration
-          </label>
-        )}
         <div className="col-span-2 flex flex-col gap-2">
-          <span className="text-label text-ink-muted">On the target while it lasts</span>
           <EffectCards
             effects={effects}
             readOnly={readOnly}
@@ -1428,6 +1573,14 @@ function Cards({ draft, change, readOnly }: EditorProps) {
   adds.push([
     'Damage',
     () => {
+      // The card is the tag on the text's words. Damage the text already says
+      // is tagged where it stands, as taking its finding would; only text that
+      // says none is given a sentence for the card to read.
+      const said = readSpellText(draft).find((f) => f.kind === 'damage');
+      if (said !== undefined) {
+        set(said.patch);
+        return;
+      }
       const dice =
         ['1d8', '2d8', '3d8', '4d8', '1d10', '2d10'].find(
           (x) => !damage.some((r) => r.dice === x),
@@ -1461,11 +1614,6 @@ function Cards({ draft, change, readOnly }: EditorProps) {
       });
     },
   ]);
-  if (!lasts(draft))
-    adds.push([
-      'Lasting effect',
-      () => set({ duration: [{ ...timed('minute', 1), concentration: true }] }),
-    ]);
   if (!scales && roll !== undefined)
     adds.push([
       'More at higher levels',
