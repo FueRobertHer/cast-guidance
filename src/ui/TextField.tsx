@@ -5,16 +5,17 @@ import { type InputHTMLAttributes, type ReactNode, useId } from 'react';
  * Typed input (DS-001): names, searches, dice expressions.
  *
  * `surface-raised` with no resting border, 48px tall, the text at `input`
- * size (16px, so iOS Safari never zooms in on focus). Hover shows a
- * `line-strong` edge, focus the app's focus ring, and an invalid field a
- * `danger` edge. The label sits above in `label` style; help or an error goes
+ * size (16px, so iOS Safari never zooms in on focus). In light it keeps an
+ * `edge` hairline at rest, as paper on paper needs one (none in dark). Hover
+ * shows a `line-strong` edge, focus the app's focus ring, and an invalid
+ * field a `danger` edge. The label sits above in `label` style; help or an error goes
  * below, the error in `danger` with an icon, so it is not told by colour
  * alone. Placeholders start "For example," and never stand in for a label.
  *
  * `fieldClass` is the same field for a `select` or `textarea`.
  */
 export const fieldClass =
-  'h-12 w-full rounded-control bg-surface-raised px-4 text-input text-ink ring-inset transition-shadow duration-120 placeholder:text-ink-faint hover:ring-1 hover:ring-line-strong aria-invalid:ring-1 aria-invalid:ring-danger unavailable:cursor-default unavailable:text-ink-faint unavailable:ring-0';
+  'h-12 w-full rounded-control bg-surface-raised px-4 text-input text-ink ring-1 ring-edge ring-inset transition-shadow duration-120 placeholder:text-ink-faint hover:ring-line-strong aria-invalid:ring-danger unavailable:cursor-default unavailable:text-ink-faint unavailable:ring-edge';
 
 export interface TextFieldProps extends Omit<InputHTMLAttributes<HTMLInputElement>, 'id'> {
   label: ReactNode;

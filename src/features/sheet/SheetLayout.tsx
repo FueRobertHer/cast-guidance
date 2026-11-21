@@ -326,8 +326,10 @@ function Sheet({ id }: { id: string | undefined }) {
         // Opaque `bg` (DS-001): content scrolling under a translucent wash
         // showed through behind the name. It wraps at a large text size: the
         // name keeps 6rem, and Edit and the menu go under it as a pair before
-        // they squeeze it out of sight.
-        className="sticky top-0 z-20 flex min-h-header flex-wrap items-center gap-1 bg-bg py-1 pr-1 pl-1 lg:pl-40"
+        // they squeeze it out of sight. A `line` hairline under it, as over
+        // the tab bar, so a card scrolling under it is cut at an edge rather
+        // than in the middle of its own paper (light most of all).
+        className="sticky top-0 z-20 flex min-h-header flex-wrap items-center gap-1 border-line border-b bg-bg py-1 pr-1 pl-1 lg:pl-40"
       >
         <Link
           to={from?.to ?? '/'}
