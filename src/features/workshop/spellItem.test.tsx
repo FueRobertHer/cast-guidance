@@ -375,9 +375,10 @@ describe('SpellEditor', () => {
     expect(within(preview()).getByText('2d6')).toBeTruthy();
   });
 
-  it('turns a lasting effect into a duration with concentration, and effects on the target', () => {
+  it('gives a duration with concentration in About it, and effects on the target', () => {
     const draft = mount(spell, { name: 'Ward', ...spell.blank() });
-    press('Lasting effect');
+    type('Duration', 'minute');
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Concentration' }));
     expect(draft().duration).toEqual([
       { type: 'timed', duration: { type: 'minute', amount: 1 }, concentration: true },
     ]);
