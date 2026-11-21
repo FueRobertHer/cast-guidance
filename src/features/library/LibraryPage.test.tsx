@@ -74,6 +74,25 @@ vi.mock('@/data5e/sourceFilter', () => ({
   policyForSearch: () => undefined,
 }));
 vi.mock('@/data5e/search/client', () => ({ searchAll }));
+// No IndexedDB here: the player has no files of their own, so every entry
+// offers Make it yours.
+vi.mock('@/db/homebrewRepo', () => ({
+  homebrewRepo: { ownedSafe: async () => ({ files: [], errors: [] }) },
+}));
+// Dexie's live query waits on a database jsdom does not have; the query above
+// needs none, so its answer is simply awaited.
+vi.mock('dexie-react-hooks', async () => {
+  const { useEffect, useState } = await import('react');
+  return {
+    useLiveQuery: <T,>(query: () => Promise<T>) => {
+      const [value, setValue] = useState<T | undefined>(undefined);
+      useEffect(() => {
+        void query().then(setValue);
+      }, []);
+      return value;
+    },
+  };
+});
 
 import { getAnnouncerState, resetAnnouncer } from '@/stores/announcer';
 import { dataStatusStore } from '@/stores/dataStatus';
@@ -92,6 +111,7 @@ const registryWith = (entities: Array<Record<string, unknown>>) => ({
     entities.find((e) => String(e.name).toLowerCase() === name.toLowerCase()),
   counts: () => ({}),
   sourceCounts: () => new Map(),
+  changeOf: () => undefined,
 });
 
 /** A registry whose sections differ, which is what a book's index reads. */
@@ -101,6 +121,7 @@ const registryOfTypes = (byType: Record<string, Array<Record<string, unknown>>>)
     (byType[type] ?? []).find((e) => String(e.name).toLowerCase() === name.toLowerCase()),
   counts: () => ({}),
   sourceCounts: () => new Map(),
+  changeOf: () => undefined,
 });
 
 /** The page writes its scope into the URL, so the URL has to be observable. */
@@ -320,6 +341,132 @@ describe('the detail view when it works', () => {
     renderAt('/library/spell/fireball%7Cphb');
 
     expect(screen.getByRole('heading', { name: 'Fireball' })).toBeTruthy();
+  });
+});
+
+describe("a spell's page", () => {
+  it('shows its At Higher Levels text, which the data keeps apart from the rest', () => {
+    // Review finding 15: only the sheet's spell sheet showed it.
+    reg.current = {
+      ...reg.current,
+      registry: registryWith([
+        {
+          name: 'Fireball',
+          source: 'XPHB',
+          level: 3,
+          entries: ['A bright streak flashes.'],
+          entriesHigherLevel: [
+            {
+              type: 'entries',
+              name: 'Using a Higher-Level Spell Slot',
+              entries: ['The damage increases by 1d6 for each spell slot level above 3.'],
+            },
+          ],
+        },
+      ]),
+    };
+    renderAt('/library/spell/fireball%7Cxphb');
+
+    expect(screen.getByText('A bright streak flashes.')).toBeTruthy();
+    expect(screen.getByText('Using a Higher-Level Spell Slot', { exact: false })).toBeTruthy();
+    expect(screen.getByText(/increases by/)).toBeTruthy();
+  });
+
+  it('puts Make it yours after the rules text, which a lookup is for', async () => {
+    reg.current = {
+      ...reg.current,
+      registry: registryWith([
+        { name: 'Fireball', source: 'PHB', level: 3, entries: ['A bright streak flashes.'] },
+      ]),
+    };
+    renderAt('/library/spell/fireball%7Cphb');
+
+    const offer = await screen.findByRole('heading', { name: 'Make it yours' });
+    const text = screen.getByText('A bright streak flashes.');
+    expect(text.compareDocumentPosition(offer) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+});
+
+describe('an entry the table has changed', () => {
+  /** A registry whose one spell stands over the book's, as a change to the books places it. */
+  const changedWorld = (from: { kind: string; source: string }) => {
+    const base = { name: 'Guiding Bolt', source: 'XPHB', level: 1, entries: ['4d6 radiant.'] };
+    const placed = { ...base, entries: ['5d6 radiant.'] };
+    const pack = { name: 'Dawnstar Campaign Rules', source: 'DAWN' };
+    const record = {
+      type: 'spell',
+      base,
+      placed,
+      layers: [{ from, entry: placed, below: base, shared: true, needsLook: [] }],
+    };
+    return {
+      byType: (type: string) => (type === 'spell' ? [placed] : type === 'rulePack' ? [pack] : []),
+      get: () => placed,
+      counts: () => ({}),
+      sourceCounts: () => new Map(),
+      changeOf: (e: unknown) => (e === placed || e === base ? record : undefined),
+    };
+  };
+
+  it('is marked Changed, says whose version it is, and shows the book’s on a tap', () => {
+    reg.current = { ...reg.current, registry: changedWorld({ kind: 'changes', source: 'MINE' }) };
+    renderAt('/library/spell/guiding%20bolt%7Cxphb');
+
+    expect(screen.getByRole('heading', { name: 'Guiding Bolt' })).toBeTruthy();
+    expect(screen.getByText('Changed')).toBeTruthy();
+    expect(screen.getByText(/from Changes to the books/)).toBeTruthy();
+    expect(screen.getByText('5d6 radiant.')).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Show the book’s version' }));
+    expect(screen.getByText('4d6 radiant.')).toBeTruthy();
+    expect(screen.queryByText('5d6 radiant.')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Show your table’s version' }));
+    expect(screen.getByText('5d6 radiant.')).toBeTruthy();
+  });
+
+  it('names the rule pack that changed it for everyone', () => {
+    // Gemini track B, F22: a pack's change showed with no sign of it.
+    reg.current = { ...reg.current, registry: changedWorld({ kind: 'pack', source: 'DAWN' }) };
+    renderAt('/library/spell/guiding%20bolt%7Cxphb');
+
+    expect(screen.getByText('Changed')).toBeTruthy();
+    expect(screen.getByText(/from the rule pack Dawnstar Campaign Rules/)).toBeTruthy();
+  });
+
+  it("opens on the table's version again after a trip to another printing", () => {
+    const world = changedWorld({ kind: 'changes', source: 'MINE' });
+    const old = {
+      name: 'Guiding Bolt',
+      source: 'PHB',
+      reprintedAs: ['Guiding Bolt|XPHB'],
+      entries: ['The 2014 text.'],
+    };
+    const [placed] = world.byType('spell');
+    reg.current = {
+      ...reg.current,
+      registry: {
+        ...world,
+        byType: (type: string) => (type === 'spell' ? [old, placed] : world.byType(type)),
+        get: (_t: string, _n: string, source?: string) =>
+          source?.toLowerCase() === 'phb' ? old : placed,
+      },
+    };
+    renderAt('/library/spell/guiding%20bolt%7Cxphb');
+    const chip = (name: RegExp) =>
+      within(screen.getByRole('group', { name: 'Printed in' })).getByRole('button', { name });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Show the book’s version' }));
+    expect(screen.getByText('4d6 radiant.')).toBeTruthy();
+    fireEvent.click(chip(/^PHB/));
+    expect(screen.getByText('The 2014 text.')).toBeTruthy();
+    fireEvent.click(chip(/^XPHB/));
+    expect(screen.getByText('5d6 radiant.')).toBeTruthy();
+  });
+
+  it('is not marked for a book entry nothing changed', () => {
+    renderAt('/library/spell/fireball%7Cphb');
+    expect(screen.getByRole('heading', { name: 'Fireball' })).toBeTruthy();
+    expect(screen.queryByText('Changed')).toBeNull();
   });
 });
 
@@ -857,6 +1004,7 @@ describe('a title printed in more than one book', () => {
       ),
     counts: () => Object.fromEntries(Object.entries(byType).map(([t, list]) => [t, list.length])),
     sourceCounts: () => new Map(),
+    changeOf: () => undefined,
   });
   const shownCount = () =>
     screen.getByRole('heading', { name: 'Spells' }).nextElementSibling?.textContent;

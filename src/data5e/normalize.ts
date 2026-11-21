@@ -898,6 +898,20 @@ function laterCopiesOut(entities: Entity[], seen: Set<string>): Entity[] {
   return kept;
 }
 
+/**
+ * Whether a homebrew entry of `type` has a name to be listed by: text with
+ * something besides spaces in it. One without has no row the Library can show
+ * (it listed as "?") and no identity a character can keep. The import step
+ * checks names too, but a file stored before it did is merged as it stands, so
+ * the merge checks again. A subrace is the exception: the books have nameless
+ * ones, a race's base lineage that holds its `_versions` (5 in v2.41.0), and
+ * the subrace pickers know them.
+ */
+function hasName(type: EntityType, e: Entity): boolean {
+  if (type === 'subrace') return true;
+  return typeof e.name === 'string' && e.name.trim() !== '';
+}
+
 /** Finds the entity a lowercased `name|source` names in one list, or undefined. */
 type CopyIndex = (uid: string) => Entity | undefined;
 
@@ -1010,16 +1024,34 @@ function mergeHomebrewFiles(
       ),
     );
     const seen = SHARED_UID_TYPES.has(type) ? undefined : new Set<string>();
-    for (const listed of perFile) {
-      const entities = seen === undefined ? listed : laterCopiesOut(listed, seen);
-      if (entities.length === 0) continue;
-      if (type === 'race' || type === 'subrace') {
-        const versions = entities.flatMap((e) =>
-          expandVersions(e, reg.warnings, type === 'subrace' ? raceTraitsOf(reg, e) : undefined),
-        );
-        reg.addAll(type, [...entities, ...versions]);
-      } else {
-        reg.addAll(type, entities);
+    for (const [i, listed] of perFile.entries()) {
+      // After copies resolve, since a nameless copy takes its target's name.
+      let nameless = 0;
+      const withNames = (list: Entity[]): Entity[] => {
+        const kept = list.filter((e) => hasName(type, e));
+        nameless += list.length - kept.length;
+        return kept;
+      };
+      const named = withNames(listed);
+      const entities = seen === undefined ? named : laterCopiesOut(named, seen);
+      if (entities.length > 0) {
+        const versions =
+          type === 'race' || type === 'subrace'
+            ? entities.flatMap((e) =>
+                expandVersions(
+                  e,
+                  reg.warnings,
+                  type === 'subrace' ? raceTraitsOf(reg, e) : undefined,
+                ),
+              )
+            : [];
+        reg.addAll(type, [...entities, ...withNames(versions)]);
+      }
+      if (nameless > 0) {
+        reg.warnings.push({
+          entity: files[i]?.[0] ?? '',
+          message: `homebrew ${type}: ${nameless} ${nameless === 1 ? 'entry' : 'entries'} with no name left out`,
+        });
       }
     }
     placeChanges(reg, type, found);

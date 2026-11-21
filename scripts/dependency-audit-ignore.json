@@ -1,0 +1,14 @@
+[
+  {
+    "package": "react-router",
+    "advisory": "GHSA-qwww-vcr4-c8h2",
+    "reason": "A CSRF bypass in React Router's RSC (React Server Components) mode, a server feature. The app is a static client-side SPA with no server actions, so nothing it ships runs that path.",
+    "reviewed": "2026-11-21"
+  },
+  {
+    "package": "vite",
+    "advisory": "GHSA-587h-7wmj-h5pm",
+    "reason": "In launch-editor, which Vite's dev server uses to open files on Windows. The build ships only Vite's module preload helper, never the dev server.",
+    "reviewed": "2026-11-21"
+  }
+]

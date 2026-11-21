@@ -922,6 +922,34 @@ describe('a real build, derived before and after', () => {
     });
   });
 
+  it('derives the same once its class and subclass are renamed from the collection menu', async () => {
+    const ash = await collection('Ash Book', ASH, ashContent());
+    const { docs, ctx } = await built();
+    const before = docs.map((d) => view(deriveSheet(d, ctx)));
+
+    // The menu's Rename passes only the new name; the class takes its
+    // features, their refs and its subclass along by itself.
+    const names: Array<[string, string, string]> = [
+      ['class', 'Hexer', 'Curser'],
+      ['subclass', 'Way of Coals', 'Way of Cinders'],
+    ];
+    for (const [type, from, to] of names) {
+      const result = await homebrewRepo.renameEntry(ash, type, { name: from, source: ASH }, to);
+      expect(result.repointed?.changes, type).toEqual([
+        { type, from: { name: from, source: ASH }, to: { name: to, source: ASH } },
+      ]);
+    }
+
+    const after = await context();
+    const renamed = await stored(['grog', 'mira']);
+    renamed.forEach((doc, i) => {
+      const sheet = deriveSheet(doc, after);
+      expect(view(sheet), doc.name).toEqual(renamedView(before[i], names));
+      holds(doc, sheet, after);
+    });
+    expect(JSON.stringify(await content(ash))).not.toMatch(/Hexer/);
+  });
+
   it('keeps a subclass in another collection on its class once the class is renamed', async () => {
     const ash = await collection('Ash Book', ASH, ashContent());
     const bone = await collection('Bone Book', BONE);

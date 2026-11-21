@@ -587,6 +587,12 @@ export function Component() {
             {untrainedSays(untrained, doc.rulesVersion)}
           </p>
         )}
+        {missing(entry) && (
+          <div className="flex flex-wrap items-center gap-x-1.5 text-caption text-ink-muted">
+            <Badge tone="danger">Missing</Badge>
+            Not in your books or homebrew any more, so it gives nothing.
+          </div>
+        )}
       </div>
     );
   };

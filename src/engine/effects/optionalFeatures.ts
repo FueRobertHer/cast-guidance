@@ -21,7 +21,7 @@ import { castsWithASlot, proseScanFeature } from './proseScan';
  * How many picks a progression gives by `level`: an array indexed by level-1, or
  * levels as keys ({"1": 1, "10": 2}), where a feat's "*" means at any level.
  */
-function progressionCount(progression: unknown, level: number): number {
+export function progressionCount(progression: unknown, level: number): number {
   let count = 0;
   if (Array.isArray(progression)) {
     for (let lvl = 0; lvl < Math.min(level, progression.length); lvl++) {

@@ -1,7 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { type EffectChange, endsAtRest, type HpLimits, restEndings, restTaken } from './effectLife';
 import { type MomentsInForce, readMoments } from './moments';
-import { longRestRecovery, type RestSheet, takeRest } from './rest';
+import {
+  longRestRecovery,
+  type RestSheet,
+  shortRestRecovery,
+  shortRestWouldRestore,
+  takeRest,
+} from './rest';
 import { type ActiveEffect, type FormulaScope, newCharacterDoc, type PlayState } from './types';
 
 /** A character at 10 of 40 HP, in play. */
@@ -224,5 +230,41 @@ describe('the rest moments', () => {
     const p = play();
     const change = restTaken(p, 'short', limits(inForce([{ at: 'shortRest', do: [temp] }])));
     expect(change.moments?.done).toEqual([{ text: '5 temporary hit points', from: 'Gritty' }]);
+  });
+});
+
+describe('what a short rest would give back', () => {
+  /** Second Wind spent, Grit spent with one back a short rest, a pact slot spent. */
+  const spent = () => {
+    const p = play();
+    p.resources = [
+      { key: 'wind', used: 1 },
+      { key: 'grit', used: 3 },
+    ];
+    p.pactSlotsSpent = 1;
+    return p;
+  };
+  const regains: RestSheet = {
+    ...sheet,
+    resources: [
+      { key: 'grit', label: 'Grit', max: 4, resetOn: 'long', regainOnShort: 1 },
+      { key: 'wind', label: 'Second Wind', max: 1, resetOn: 'short' },
+    ] as RestSheet['resources'],
+  };
+
+  it('says what the rest itself would say, and leaves the play state alone', () => {
+    const p = spent();
+    const before = structuredClone(p);
+    const would = shortRestWouldRestore(p, regains);
+    expect(would).toEqual(['1 Grit', 'Second Wind', 'pact slots']);
+    expect(p).toEqual(before);
+    // The rest taken says the same.
+    expect(shortRestRecovery(p, regains)).toEqual(would);
+  });
+
+  it('says nothing when nothing short-rest is spent', () => {
+    const p = play();
+    p.resources = [{ key: 'grit', used: 2 }];
+    expect(shortRestWouldRestore(p, sheet)).toEqual([]);
   });
 });

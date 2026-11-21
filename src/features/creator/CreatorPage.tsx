@@ -28,6 +28,7 @@ import {
 } from '@/lib/describeRemoval';
 import { scrollBehavior } from '@/lib/motion';
 import { pruneChoicesFor, pruneClass, pruneOrigin } from '@/lib/pruneChoices';
+import { raceDisplayName } from '@/lib/raceDisplayName';
 import { signed } from '@/lib/signed';
 import { usePageTitle } from '@/lib/usePageTitle';
 import { sameForUndo, type UndoNotice, useUndoOffer } from '@/lib/useUndoOffer';
@@ -82,7 +83,7 @@ import {
   itemsForEquipmentType,
   parseStartingEquipment,
 } from './startingEquipment';
-import { normalizeStep, STEP_LABELS, STEPS, type Step, wizardDepth, wizardState } from './steps';
+import { normalizeStep, STEP_LABELS, type Step, stepsFor, wizardDepth, wizardState } from './steps';
 
 const nameOf = (e: Entity) => String(e.name ?? '?');
 const sourceOf = (e: Entity) => String(e.source ?? '?');
@@ -205,9 +206,7 @@ function rulesSwitchClears(d: Draft, active: ReadonlySet<string>): string[] {
     );
   }
   if (doc.race !== undefined) {
-    parts.push(
-      `species ${doc.race.name}${doc.subrace !== undefined ? ` (${doc.subrace.name})` : ''}`,
-    );
+    parts.push(`species ${raceDisplayName(doc.race, doc.subrace) ?? doc.race.name}`);
   }
   if (doc.background !== undefined) parts.push(`background ${doc.background.name}`);
   const picks = pickCount(doc, Object.keys(doc.choices), active);
@@ -457,13 +456,15 @@ export function Component() {
     pushed.current = { key: location.key, at: now };
     setParams({ step: s }, { replace: false, state: wizardState(wizardDepth(location.state) + 1) });
   };
-  const stepIdx = STEPS.indexOf(step);
-  const nextStep: Step | undefined = STEPS[stepIdx + 1];
+  // 2024 takes Background before Abilities (see `stepsFor`).
+  const order = stepsFor(doc.rulesVersion);
+  const stepIdx = order.indexOf(step);
+  const nextStep: Step | undefined = order[stepIdx + 1];
 
   usePageTitle(
     ...(opening !== null
       ? ['Opening character']
-      : [STEP_LABELS[step], `Step ${stepIdx + 1} of ${STEPS.length}`, 'New character']),
+      : [STEP_LABELS[step], `Step ${stepIdx + 1} of ${order.length}`, 'New character']),
   );
 
   if (opening !== null) {
@@ -505,11 +506,11 @@ export function Component() {
           {STEP_LABELS[step]}
         </h1>
         <span className="ml-auto text-caption whitespace-nowrap text-ink-muted tabular-nums">
-          Step {stepIdx + 1} of {STEPS.length}
+          Step {stepIdx + 1} of {order.length}
         </span>
       </div>
       <div aria-hidden="true" className="flex gap-0.75">
-        {STEPS.map((s, i) => (
+        {order.map((s, i) => (
           <span
             key={s}
             className={`h-1 flex-1 rounded-full ${
@@ -644,12 +645,12 @@ export function Component() {
    * the undo offered for that change. Walking forward again grants it.
    */
   const navStep = (s: Step) => {
-    const forward = STEPS.indexOf(s) > stepIdx;
+    const forward = order.indexOf(s) > stepIdx;
     // Picks tapped full but not confirmed are applied going forward, as the
     // kit is: those on the steps being walked past, so an undo offered on
     // another step stays. Going back keeps them held (and an undo offered for
     // the change being fixed): they wait on their cards.
-    if (forward) applyStaged(new Set(STEPS.slice(stepIdx, STEPS.indexOf(s))));
+    if (forward) applyStaged(new Set(order.slice(stepIdx, order.indexOf(s))));
     if (forward && step === 'equipment' && doc.equipment.length === 0 && allEqGroups.length > 0) {
       change(grantKit);
     }
@@ -826,8 +827,17 @@ export function Component() {
         d.doc.subrace = next;
       },
       (before) => ({
-        title: `Subrace: ${before.doc.subrace?.name ?? 'none'} → ${next?.name ?? 'none'}`,
-        detail: picksCleared(before.doc, removed, before.doc.subrace?.name, activeChoices),
+        title: `Subrace: ${
+          before.doc.subrace !== undefined
+            ? raceDisplayName(before.doc.race, before.doc.subrace)
+            : 'none'
+        } → ${next !== undefined ? raceDisplayName(before.doc.race, next) : 'none'}`,
+        detail: picksCleared(
+          before.doc,
+          removed,
+          raceDisplayName(before.doc.race, before.doc.subrace),
+          activeChoices,
+        ),
       }),
       (before, after) => !sameDraft(before, after) && before.doc.subrace !== undefined,
     );
@@ -1384,7 +1394,7 @@ export function Component() {
             {/* Who you built */}
             <div className={cardClass}>
               <p className="font-display text-title-card">
-                {doc.subrace?.name ?? doc.race?.name ?? 'No species'} ·{' '}
+                {raceDisplayName(doc.race, doc.subrace) ?? 'No species'} ·{' '}
                 {doc.classes
                   .map(
                     (c) =>
@@ -1561,7 +1571,7 @@ export function Component() {
             size="lg"
             disabled={stepIdx === 0}
             onClick={() => {
-              const prev = STEPS[stepIdx - 1];
+              const prev = order[stepIdx - 1];
               if (prev !== undefined) navStep(prev);
             }}
           >
