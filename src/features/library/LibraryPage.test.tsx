@@ -4,7 +4,7 @@
 // "Not found" if it did not. ERR-001 is about telling those apart, and giving
 // each one something to press.
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { MemoryRouter, Route, Routes, useLocation } from 'react-router';
+import { Link, MemoryRouter, Route, Routes, useLocation } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { namelessControls } from '../../../tests-fixtures/a11y';
 
@@ -75,11 +75,21 @@ vi.mock('@/data5e/sourceFilter', () => ({
 }));
 vi.mock('@/data5e/search/client', () => ({ searchAll }));
 /** Which classes' lists hold each spell, as the generated lookup has it; settable per test. */
-const classLookup = vi.hoisted(() => ({ current: {} as Record<string, Record<string, unknown>> }));
+const classLookup = vi.hoisted(() => ({
+  current: {} as Record<string, Record<string, unknown>>,
+  /** Whether its read failed, and what Retry calls. */
+  failed: false,
+  retry: vi.fn(),
+}));
 vi.mock('@/lib/useClassLookup', () => ({
   useClassLookup: () => ({
-    lookup: classLookup.current,
-    problem: { status: 'ready', error: null, offline: false, retry: () => undefined },
+    lookup: classLookup.failed ? {} : classLookup.current,
+    problem: {
+      status: classLookup.failed ? 'error' : 'ready',
+      error: classLookup.failed ? 'storage refused' : null,
+      offline: false,
+      retry: classLookup.retry,
+    },
   }),
 }));
 // No IndexedDB here: the player has no files of their own, so every entry
@@ -718,12 +728,14 @@ describe('filtering a section (Gemini 44)', () => {
           { name: 'Wizard', source: 'PHB' },
           { name: 'Wizard', source: 'XPHB' },
           { name: 'Mage', source: 'WoW' },
+          { name: 'Fighter', source: 'PHB' },
         ],
       }),
     };
   });
   afterEach(() => {
     classLookup.current = {};
+    classLookup.failed = false;
   });
 
   it("puts each row's facts under its name", () => {
@@ -759,7 +771,7 @@ describe('filtering a section (Gemini 44)', () => {
     expect(rowNames()).toEqual(['Fire Bolt', 'Fireball']);
   });
 
-  it("offers the classes under the settings, each once, and keeps a class's spells", () => {
+  it("offers the classes with a list under the settings, each once, and keeps a class's spells", () => {
     policy.current = { mode: 'all', except: ['WoW'] };
     classLookup.current = { phb: { fireball: { class: { PHB: { Wizard: true } } } } };
     renderAt('/library/spell');
@@ -774,6 +786,21 @@ describe('filtering a section (Gemini 44)', () => {
     expect(locationNow()).toBe('/library/spell?class=Wizard');
   });
 
+  it('says the class lists could not be read, with a Retry, rather than blaming the filters', () => {
+    classLookup.failed = true;
+    renderAt('/library/spell?class=Wizard');
+    const alert = screen.getByRole('alert');
+    expect(alert.textContent).toContain('class spell lists');
+    fireEvent.click(within(alert).getByRole('button', { name: 'Retry' }));
+    expect(classLookup.retry).toHaveBeenCalled();
+    // Every class stays offered while the lists are not in hand.
+    expect(
+      within(screen.getByRole('combobox', { name: 'Class' }))
+        .getAllByRole('option')
+        .map((o) => o.textContent),
+    ).toEqual(['Any class', 'Fighter', 'Mage', 'Wizard']);
+  });
+
   it('says when the filters leave nothing', () => {
     renderAt('/library/spell?level=9');
     // The pick stays in the dropdown, though no spell here has it.
@@ -784,12 +811,12 @@ describe('filtering a section (Gemini 44)', () => {
   it('keeps the name filter in the URL, and its clear button empties it and refocuses it', () => {
     renderAt('/library/spell');
     const input = screen.getByLabelText('Filter spells') as HTMLInputElement;
-    expect(screen.queryByRole('button', { name: 'Clear' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Clear search' })).toBeNull();
     fireEvent.change(input, { target: { value: 'bolt' } });
     expect(locationNow()).toBe('/library/spell?q=bolt');
     expect(rowNames()).toEqual(['Fire Bolt']);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Clear' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Clear search' }));
     expect(input.value).toBe('');
     expect(document.activeElement).toBe(input);
     expect(locationNow()).toBe('/library/spell');
@@ -802,6 +829,26 @@ describe('filtering a section (Gemini 44)', () => {
 });
 
 describe('the library search, kept in the URL', () => {
+  it('empties when a link opens the library without one', () => {
+    render(
+      <MemoryRouter initialEntries={['/library?q=fire']}>
+        <LocationProbe />
+        <Link to="/library">Library tab</Link>
+        <Routes>
+          <Route path="/library/:type?/:uid?" element={<LibraryPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    const box = screen.getByLabelText('Search everything') as HTMLInputElement;
+    fireEvent.change(box, { target: { value: 'fireb' } });
+    // Its own write keeps the text.
+    expect(box.value).toBe('fireb');
+    expect(locationNow()).toBe('/library?q=fireb');
+    fireEvent.click(screen.getByRole('link', { name: 'Library tab' }));
+    expect(locationNow()).toBe('/library');
+    expect(box.value).toBe('');
+  });
+
   it('opens with the search Back returns to, and asks it again', async () => {
     renderAt('/library?q=fire');
     expect((screen.getByLabelText('Search everything') as HTMLInputElement).value).toBe('fire');

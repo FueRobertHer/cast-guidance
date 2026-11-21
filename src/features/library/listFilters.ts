@@ -51,7 +51,9 @@ export function isRitual(e: Entity): boolean {
 /** An item's rarity as a word, or none for a mundane one. */
 function rarityOf(e: Entity): string | undefined {
   const r = e.rarity;
-  if (typeof r !== 'string' || r === '' || r === 'none' || r === 'unknown') return undefined;
+  // "unknown (magic)" is the data's word for a magic item with no rarity given.
+  if (typeof r !== 'string' || r === '' || r === 'none' || r.startsWith('unknown'))
+    return undefined;
   return r.toLowerCase();
 }
 
@@ -68,9 +70,9 @@ function itemKind(e: Entity): string | undefined {
   return itemTypeName(e.type);
 }
 
-/** Whether an item needs attunement. */
+/** Whether an item needs attunement: true, or by whom; "optional" is not needing it. */
 export function needsAttunement(e: Entity): boolean {
-  return e.reqAttune !== undefined && e.reqAttune !== false;
+  return e.reqAttune !== undefined && e.reqAttune !== false && e.reqAttune !== 'optional';
 }
 
 const SPELL_FILTERS: readonly ListFilter[] = [

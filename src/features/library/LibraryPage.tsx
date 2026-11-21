@@ -1,7 +1,7 @@
 import { useLiveQuery } from 'dexie-react-hooks';
 import { ArrowLeft, ChevronDown, GitFork, Hammer, Pencil, Plus, Search, X } from 'lucide-react';
 import { Fragment, type ReactNode, useEffect, useId, useMemo, useRef, useState } from 'react';
-import { Link, useNavigate, useParams, useSearchParams } from 'react-router';
+import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router';
 import type { Entity } from '@/data5e/copyMod';
 import { EntriesView, InlineText } from '@/data5e/entries/renderEntries';
 import {
@@ -162,7 +162,7 @@ function SearchField({
       {value !== '' && !disabled && (
         <button
           type="button"
-          aria-label="Clear"
+          aria-label="Clear search"
           onClick={() => {
             onChange('');
             input.current?.focus();
@@ -177,28 +177,40 @@ function SearchField({
 }
 
 /**
- * One search parameter as state. Written with replace: refining a list is
- * one screen, not a trail of screens to walk back through, and being in the
- * URL is what has Back from an entry return to the list as it was left.
+ * How a list's search and filters are written to the URL. Replace: refining a
+ * list is one screen, not a trail of screens to walk back through, and being
+ * in the URL is what has Back from an entry return to the list as it was
+ * left. No scroll reset, as the page has not changed. The state marks the
+ * write as the page's own, for {@link useParam}.
  */
+const REFINE = { replace: true, preventScrollReset: true, state: { refine: true } } as const;
+
+/** Whether a location came from {@link REFINE}, not a link or Back. */
+const isRefine = (state: unknown) =>
+  typeof state === 'object' && state !== null && (state as { refine?: unknown }).refine === true;
+
+/** One search parameter as a text box's state, written to the URL as {@link REFINE}. */
 function useParam(key: string): [string, (next: string) => void] {
   const [params, setParams] = useSearchParams();
+  const location = useLocation();
   // The box reads its own state, seeded from the URL: read from the URL, keys
   // typed faster than the URL updates are lost (each change writes over the
-  // one before it lands). Back mounts the page again, which reads the URL, and
-  // each section is its own mount (keyed by type).
+  // one before it lands). A location the page did not write (the Library tab
+  // tapped while a search is up) is taken up instead.
   const [value, setValue] = useState(() => params.get(key) ?? '');
+  const [seenKey, setSeenKey] = useState(location.key);
+  if (seenKey !== location.key) {
+    setSeenKey(location.key);
+    if (!isRefine(location.state)) setValue(params.get(key) ?? '');
+  }
   const set = (next: string) => {
     setValue(next);
-    setParams(
-      (prev) => {
-        const out = new URLSearchParams(prev);
-        if (next === '') out.delete(key);
-        else out.set(key, next);
-        return out;
-      },
-      { replace: true },
-    );
+    setParams((prev) => {
+      const out = new URLSearchParams(prev);
+      if (next === '') out.delete(key);
+      else out.set(key, next);
+      return out;
+    }, REFINE);
   };
   return [value, set];
 }
@@ -630,6 +642,9 @@ const SEE_ALSO: Partial<Record<EntityType, { text: string; type: EntityType }>> 
 const MY_SOURCES = '';
 const EVERY_SOURCE = '*';
 
+/** The class spell lists as last read, for a list mounted again (Back). */
+let lookupRead: SpellClassLookup | null = null;
+
 function TypeList({ type, reg }: { type: EntityType; reg: RegistryState }) {
   const [filter, setFilter] = useParam('q');
   // In the URL rather than in state, so a book's index can link straight to
@@ -644,9 +659,9 @@ function TypeList({ type, reg }: { type: EntityType; reg: RegistryState }) {
         else out.set('source', next);
         return out;
       },
-      // Replace: working the dropdown is refining one screen, not a trail of
-      // screens to walk back through on the way out of the section.
-      { replace: true },
+      // Working the dropdown is refining one screen, not a trail of screens to
+      // walk back through on the way out of the section.
+      REFINE,
     );
   };
   const policy = useSourcePolicy();
@@ -735,38 +750,44 @@ function TypeList({ type, reg }: { type: EntityType; reg: RegistryState }) {
     .join('&');
   const anyPicked = filterKeys(type).some((k) => (params.get(k) ?? '') !== '');
   const classPick = type === 'spell' ? (params.get('class') ?? '') : '';
-  // Read only once a class is picked: the dropdown's classes come from the registry.
-  const { lookup } = useClassLookup(classPick !== '', packs.status);
+  const classes = useClassLookup(type === 'spell', packs.status);
+  if (classes.problem.status === 'ready' && classes.lookup !== null) lookupRead = classes.lookup;
+  // The last one read, while this mount reads it again: Back to a list a
+  // class filters must have its rows on the first render, or the restored
+  // scroll lands on an empty page and is lost.
+  const lookup = classes.lookup ?? lookupRead;
+  const classesFailed = classes.problem.status === 'error';
   const onList = useMemo(
     () => (lookup === null ? null : classListCheck(lookup, registry?.byType('spell') ?? [])),
     [lookup, registry],
   );
   const classOptions = useMemo(() => {
     if (type !== 'spell') return [];
+    const spells = registry?.byType('spell') ?? [];
     const names = new Set(
       applySourcePolicy(registry?.byType('class') ?? [], policy, sourceOf).map(nameOf),
     );
-    return [...names].sort((a, b) => a.localeCompare(b));
-  }, [registry, type, policy]);
+    // Only the classes with a list: a Fighter would filter to nothing. Every
+    // class while the lists are not in hand.
+    return [...names]
+      .filter(
+        (name) => onList === null || classesFailed || spells.some((sp) => onList(name, uidOf(sp))),
+      )
+      .sort((a, b) => a.localeCompare(b));
+  }, [registry, type, policy, onList, classesFailed]);
   const clearFilters = () =>
-    setParams(
-      (prev) => {
-        const out = new URLSearchParams(prev);
-        for (const k of filterKeys(type)) out.delete(k);
-        return out;
-      },
-      { replace: true },
-    );
+    setParams((prev) => {
+      const out = new URLSearchParams(prev);
+      for (const k of filterKeys(type)) out.delete(k);
+      return out;
+    }, REFINE);
   const setPick = (key: string, value: string) =>
-    setParams(
-      (prev) => {
-        const out = new URLSearchParams(prev);
-        if (value === '') out.delete(key);
-        else out.set(key, value);
-        return out;
-      },
-      { replace: true },
-    );
+    setParams((prev) => {
+      const out = new URLSearchParams(prev);
+      if (value === '') out.delete(key);
+      else out.set(key, value);
+      return out;
+    }, REFINE);
 
   // Its own step, so typing in the filter does not group the section again.
   // A title is kept when one of its printings passes every filter, so a
@@ -791,6 +812,7 @@ function TypeList({ type, reg }: { type: EntityType; reg: RegistryState }) {
     );
   }, [titles, filter, picks, classPick, onList]);
   const readingClasses = classPick !== '' && onList === null;
+  const printings = useMemo(() => titles.flatMap((t) => t.printings), [titles]);
 
   return (
     <main className="flex min-h-0 flex-1 flex-col gap-3 px-4 pt-3 pb-4">
@@ -864,12 +886,24 @@ function TypeList({ type, reg }: { type: EntityType; reg: RegistryState }) {
       {(filters.length > 0 || classOptions.length > 0) && (
         <ListFilterBar
           filters={filters}
-          entries={titles.flatMap((t) => t.printings)}
+          entries={printings}
           classOptions={classOptions}
           value={(key) => params.get(key) ?? ''}
           onPick={setPick}
           onClear={anyPicked ? clearFilters : undefined}
         />
+      )}
+      {/* Read failed, the class filter keeps homebrew spells only: said, not
+          passed off as the filters matching nothing. */}
+      {classPick !== '' && classesFailed && (
+        <div className={PROBLEM} role="alert">
+          <span className="min-w-0 flex-1 text-caption">
+            Couldn&rsquo;t read the class spell lists
+          </span>
+          <Button variant="outline" size="sm" className="shrink-0" onClick={classes.problem.retry}>
+            Retry
+          </Button>
+        </div>
       )}
       {items.length === 0 && !failed && (
         <p className={NOTE}>

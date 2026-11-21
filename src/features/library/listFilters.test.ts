@@ -86,6 +86,8 @@ describe('the item filters', () => {
     expect(needsAttunement(cloak)).toBe(true);
     expect(needsAttunement({ reqAttune: 'by a wizard' })).toBe(true);
     expect(needsAttunement(potion)).toBe(false);
+    // The Spell Gems: attuning is the wielder's choice.
+    expect(needsAttunement({ reqAttune: 'optional' })).toBe(false);
   });
 });
 
@@ -105,6 +107,10 @@ describe("a row's facts", () => {
       'Very rare',
       'Wondrous item',
       'Attunement',
+    ]);
+    // Neither is a magic item's unknown rarity.
+    expect(rowFacts('item', { rarity: 'unknown (magic)', wondrous: true })).toEqual([
+      'Wondrous item',
     ]);
     // Mundane rarity is no fact.
     expect(rowFacts('item', { rarity: 'none', type: 'P' })).toEqual(['Potion']);
