@@ -57,6 +57,18 @@ const warlock: DataEntity = {
   spellsKnownProgression: [2, 3, 4, 5, 6, 7, 8, 9, 10, 10, 11],
 };
 const fighter: DataEntity = { name: 'Fighter', source: 'PHB' };
+/**
+ * A Workshop copy of the 2014 Cleric switched to "Knows a set number": a copy
+ * writes `preparedSpells: null` for the formula it drops (copyWriter.ts).
+ */
+const knowingCleric: DataEntity = {
+  name: 'Knowing Cleric',
+  source: 'PHB',
+  casterProgression: 'full',
+  spellcastingAbility: 'wis',
+  preparedSpells: null,
+  spellsKnownProgression: [4, 5, 6, 7, 8],
+};
 const eldritchKnight: DataEntity = {
   name: 'Eldritch Knight',
   shortName: 'Eldritch Knight',
@@ -86,7 +98,7 @@ const eldritchKnight: DataEntity = {
 };
 
 const WORLD: Record<string, DataEntity[]> = {
-  class: [paladin, ranger, spellblade, wizard, warlock, fighter],
+  class: [paladin, ranger, spellblade, wizard, warlock, fighter, knowingCleric],
   subclass: [eldritchKnight],
 };
 const ctx: EngineContext = {
@@ -150,6 +162,15 @@ describe('spell slots', () => {
     const [pal, lock] = blocks(entry('Paladin', 5), entry('Warlock', 2));
     expect(pal?.slots.slice(0, 2)).toEqual([4, 2]);
     expect(lock?.pactSlots).toEqual({ count: 2, level: 1 });
+  });
+});
+
+describe('a copy that knows its spells', () => {
+  it("knows a number of spells from its table, with no formula's prepared count", () => {
+    const [block] = blocks(entry('Knowing Cleric', 5));
+    expect(block?.mode).toBe('known');
+    expect(block?.spellsKnownMax).toBe(8);
+    expect(block?.preparedMax).toBeUndefined();
   });
 });
 

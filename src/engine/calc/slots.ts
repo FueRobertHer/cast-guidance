@@ -26,7 +26,8 @@ export function classSpellcastingMode(cls: DataEntity | undefined): Spellcasting
   const progression = str(cls.casterProgression);
   if (progression === undefined) return 'none';
   if (progression === 'pact') return 'pact';
-  const prepared = cls.preparedSpells !== undefined || Array.isArray(cls.preparedSpellsProgression);
+  // A copy writes `preparedSpells: null` for the formula it drops (copyWriter.ts).
+  const prepared = cls.preparedSpells != null || Array.isArray(cls.preparedSpellsProgression);
   const knowsFixed = Array.isArray(cls.spellsKnownProgressionFixed);
   if (prepared) return knowsFixed ? 'spellbook' : 'prepared';
   if (Array.isArray(cls.spellsKnownProgression) || knowsFixed) return 'known';
