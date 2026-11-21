@@ -176,6 +176,12 @@ describe('meetsMulticlassRequirements on the shapes the release writes', () => {
     expect(meetsMulticlassRequirements(primary([]), none)).toBe(true);
     expect(meetsMulticlassRequirements(cls({ or: [] }), none)).toBe(true);
   });
+
+  it('skips an `or` object with no score in it', () => {
+    const c = cls({ or: [{ str: 13 }, {}, null, { dex: 13 }] });
+    expect(multiclassRequirementText(c)).toBe('STR 13 or DEX 13');
+    expect(meetsMulticlassRequirements(c, scores({ dex: 13 }))).toBe(true);
+  });
 });
 
 describe('subclassUnlockLevel', () => {
