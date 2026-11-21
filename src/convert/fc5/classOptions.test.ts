@@ -260,6 +260,19 @@ describe('convertOptions', () => {
         ).progression.map((p) => p.featureType);
       expect(offered('2024')).toEqual([['Ember Knight ((Ash) (TP)) [5.5e]: Tricks']]);
       expect(offered('2014')).toEqual([['Ember Knight (Ash (Legacy)): Tricks']]);
+      // The host's own edition over its book's: a legacy subclass in a 2024 book.
+      const legacy: OptionHost = {
+        ...host({
+          owner: 'Ember Knight (Ash)',
+          edition: '2014',
+          ctx: lists,
+          counters: [counter('Tricks Known', [3, '2'])],
+        }),
+        placement: lists.place(undefined, '2024'),
+      };
+      expect(convertOptions([], legacy).progression.map((p) => p.featureType)).toEqual([
+        ['Ember Knight (Ash (Legacy)): Tricks'],
+      ]);
     });
 
     it('offers a list that names its class without the author’s qualifier, when no other class goes by that name', () => {

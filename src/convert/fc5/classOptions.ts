@@ -514,12 +514,24 @@ export function ownerKeys(
   if (bare === undefined || classes === undefined) return keys;
   const key = ownerKey(bare).key;
   if (BASE_CLASSES.has(key)) return keys;
-  let named = 0;
-  for (const c of classes.values()) {
-    if (ownerKey(lastGroup(c.name)?.base ?? c.name).key === key) named += 1;
+  if (bareNames(classes).get(key) === 1) {
+    keys.push(ownerKey(`${bare}${owner.slice(className.length)}`).key);
   }
-  if (named === 1) keys.push(ownerKey(`${bare}${owner.slice(className.length)}`).key);
   return keys;
+}
+
+/** Each file class's name, qualifier off, with how many classes go by it; counted once a map. */
+const bareCounts = new WeakMap<FileClasses, { size: number; counts: Map<string, number> }>();
+function bareNames(classes: FileClasses): Map<string, number> {
+  const known = bareCounts.get(classes);
+  if (known !== undefined && known.size === classes.size) return known.counts;
+  const counts = new Map<string, number>();
+  for (const c of classes.values()) {
+    const key = ownerKey(lastGroup(c.name)?.base ?? c.name).key;
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  bareCounts.set(classes, { size: classes.size, counts });
+  return counts;
 }
 
 /** A host's `X Known` counters (not its spells known), each with the label words it names. */

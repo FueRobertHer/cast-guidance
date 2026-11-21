@@ -53,6 +53,15 @@ describe('hostile input', () => {
     expect(ownerKey(owner).key.startsWith('fighter')).toBe(true);
   });
 
+  it('names many qualified classes in linear time', () => {
+    const classes = Array.from(
+      { length: 20_000 },
+      (_, i) => `<class><name>Ember${i} (Valda)</name><hd>10</hd></class>`,
+    ).join('');
+    const { json } = convert(`<compendium>${classes}</compendium>`);
+    expect(json.class as unknown[]).toHaveLength(20_000);
+  });
+
   it('reads a very long list of option lists in linear time', () => {
     const lists = Array.from({ length: 200_000 }, (_, i) => `Order ${i % 1000}: Tricks [5.5e]`);
     const { json } = convert(spell(`<classes>${lists.join(',')}</classes>`));
