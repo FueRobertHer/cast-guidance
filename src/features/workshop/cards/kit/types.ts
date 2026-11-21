@@ -75,6 +75,16 @@ export interface FieldSet {
   renamed?: [string, string];
 }
 
+/**
+ * Where a new card is added: the name of what gives it (a trait's, a
+ * feature's, the entry's) and the keys of the pools already there (its list's
+ * own and those kept elsewhere it may spend, a class's).
+ */
+export interface MakeAt {
+  name?: string;
+  pools?: readonly string[];
+}
+
 export interface KindSpec {
   kinds: readonly string[];
   /** For a kind two cards share: whether this card is the one for `e`. */
@@ -86,7 +96,8 @@ export interface KindSpec {
    * sheet, and what that sheet's search reads, so name what a player would type.
    */
   does: string;
-  make: () => Eff;
+  /** A new card, made where `at` says (absent: anywhere, as a sample is). */
+  make: (at?: MakeAt) => Eff;
   /**
    * A whole one, as the reader takes it, when a new card is not (Cast a spell
    * names no spell yet): what the kind may take is asked of it (`Modifiers`).

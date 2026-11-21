@@ -14,7 +14,7 @@ import { Chip } from '@/ui/Chip';
 import { fieldClass } from '@/ui/TextField';
 import { Field, Select } from '../fields';
 import { KEPT_ASKS, NEW_PICK, PickFields } from '../PickFields';
-import type { Eff, KindSpec, Options } from './kit/types';
+import type { Eff, KindSpec, MakeAt, Options } from './kit/types';
 import {
   amount,
   held,
@@ -338,6 +338,24 @@ function keyOf(label: string): string {
   return key === SLOT_COST || key === HIT_DIE_COST ? `${key}-uses` : key;
 }
 
+/** The longest name a pool may take (the reader's `labelLength`). */
+const LABEL_MOST = 100;
+
+/**
+ * A new pool, named for what gives it (a trait's "Solar Corona"), else Uses,
+ * with a key no pool where it is added has: two pools of one key are one pool
+ * on the sheet, which keeps the first and drops the other. A second pool on the
+ * same feature is "Solar Corona 2".
+ */
+function newPool(at: MakeAt | undefined): Eff {
+  const named = at?.name?.trim() ?? '';
+  const base = named !== '' && named.length <= LABEL_MOST - 3 ? named : 'Uses';
+  const taken = new Set(at?.pools ?? []);
+  let label = base;
+  for (let n = 2; taken.has(keyOf(label)); n++) label = `${base} ${n}`;
+  return { kind: 'resource', key: keyOf(label), label, max: 1, reset: 'long' };
+}
+
 /**
  * A pool's or an action's "Class in the name" box, and the classes it names
  * when the name says the class only beside another (`ownClassBeside`).
@@ -636,7 +654,7 @@ export const cards: readonly KindSpec[] = [
     kinds: ['resource'],
     add: 'Uses per rest',
     does: 'A number of uses that come back on a rest',
-    make: () => ({ kind: 'resource', key: 'uses', label: 'Uses', max: 1, reset: 'long' }),
+    make: newPool,
     fields: [
       { key: 'label', label: 'Name', type: 'text' },
       { key: 'max', label: 'Uses', type: 'amount' },
@@ -730,7 +748,8 @@ export const cards: readonly KindSpec[] = [
     kinds: ['resourceRegain'],
     add: 'Uses back on a short rest',
     does: 'Some uses of a pool come back on a short rest, as a long rest pool may',
-    make: () => ({ kind: 'resourceRegain', key: 'uses', amount: 1 }),
+    // The pool it gives back to: the one beside it, else the first kept elsewhere.
+    make: (at) => ({ kind: 'resourceRegain', key: at?.pools?.[0] ?? 'uses', amount: 1 }),
     fields: [{ key: 'amount', label: 'Uses back', type: 'amount' }],
     line: (e) =>
       `${amount(e.amount, false)} ${e.amount === 1 ? 'use' : 'uses'} of ${String(e.key)} back on a short rest`,
