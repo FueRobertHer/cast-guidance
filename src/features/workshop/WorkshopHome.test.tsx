@@ -185,7 +185,7 @@ describe('the Workshop home', () => {
     );
     expect(cards.map((c) => c.textContent)).toEqual([
       'all.xml, A compendium of 2 books, 2 entries. On',
-      'imported.json, A homebrew file you imported, 1 entry. On',
+      'Imported Brews, A homebrew file you imported, 1 entry. On',
       'Lantern Coast, Yours. Made in this app, 2 entries. On',
       'The books, Game data harness, Choose which books show',
     ]);
@@ -326,7 +326,7 @@ describe('the Workshop home', () => {
     ).toBeTruthy();
     expect(router.state.location.search).toBe('?shelf=collections');
     expect(
-      await screen.findByRole('link', { name: /^Tidewater Grimoire\.json/ }, { timeout: WAIT }),
+      await screen.findByRole('link', { name: /^Tidewater Grimoire,/ }, { timeout: WAIT }),
     ).toBeTruthy();
     // From the empty Yours shelf to Collections: focus goes to the way in there.
     await waitFor(() =>

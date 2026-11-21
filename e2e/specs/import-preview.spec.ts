@@ -75,7 +75,7 @@ test.describe('import preview', () => {
     await importHomebrew(jsonFile('brew.json', BREW));
     const preview = importPreview(page, 'Import "brew.json"?');
     await expect(preview).toBeVisible();
-    await expect(preview).toContainText('2 spell');
+    await expect(preview).toContainText('2 spells');
     await expect(preview).toContainText('E2E Brews (E2EB)');
     await expect(preview.getByRole('heading', { name: 'Depends on' })).toBeVisible();
     await expect(preview).toContainText(
@@ -96,8 +96,8 @@ test.describe('import preview', () => {
 
     await importHomebrew(jsonFile('brew.json', BREW));
     await answerImportPreview(page, 'Import "brew.json"?');
-    await expect(homebrewStatus(page)).toHaveText('Imported "brew.json" (2 spell)');
-    await expectSaid(page, 'Imported "brew.json" (2 spell)');
+    await expect(homebrewStatus(page)).toHaveText('Imported "brew.json" (2 spells)');
+    await expectSaid(page, 'Imported "brew.json" (2 spells)');
     await expect.poll(() => countHomebrewFiles(page)).toBe(1);
     await expect(page.getByRole('link', { name: /^brew\.json\s*,/ })).toBeVisible();
 

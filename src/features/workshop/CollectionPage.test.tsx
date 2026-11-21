@@ -102,12 +102,12 @@ describe('a collection page', () => {
   it('names the collection, turns it off and on, and offers its update', async () => {
     const row = await homebrewRepo.importJson(IMPORTED, 'imported.json');
     visit(await addressOf(row.id));
-    expect(await heading('imported.json')).toBeTruthy();
+    expect(await heading('Imported Brews')).toBeTruthy();
     // The title is set in an effect, which can run after the heading shows.
-    await waitFor(() => expect(document.title).toBe('imported.json · Workshop · Cast Guidance'), {
+    await waitFor(() => expect(document.title).toBe('Imported Brews · Workshop · Cast Guidance'), {
       timeout: WAIT,
     });
-    const use = screen.getByRole('button', { name: 'Use imported.json' });
+    const use = screen.getByRole('button', { name: 'Use Imported Brews' });
     expect(use.getAttribute('aria-pressed')).toBe('true');
     fireEvent.click(use);
     await waitFor(async () => expect(await enabled(row.id)).toBe(false), { timeout: WAIT });
@@ -128,7 +128,7 @@ describe('a collection page', () => {
     const row = await homebrewRepo.importJson(IMPORTED, 'imported.json');
     expect(row.key).toBeDefined();
     visit(`/workshop/collection/${row.id}`);
-    expect(await heading('imported.json')).toBeTruthy();
+    expect(await heading('Imported Brews')).toBeTruthy();
   });
 
   it('goes up to Collections from an old Builder link opened in a new tab', async () => {
@@ -136,7 +136,7 @@ describe('a collection page', () => {
     // The redirect and the page's own address each replace the tab's first
     // entry: Back still goes up, not out of the app.
     const router = visit(`/homebrew/edit/${row.id}`);
-    expect(await heading('imported.json')).toBeTruthy();
+    expect(await heading('Imported Brews')).toBeTruthy();
     await waitFor(() =>
       expect(router.state.location.pathname).toBe(
         `/workshop/collection/${encodeURIComponent(row.key ?? '')}`,
@@ -161,7 +161,7 @@ describe('a collection page', () => {
         <RouterProvider router={router} />
       </StrictMode>,
     );
-    expect(await heading('imported.json')).toBeTruthy();
+    expect(await heading('Imported Brews')).toBeTruthy();
     await waitFor(() => expect(router.state.location.pathname).not.toContain(row.id));
     fireEvent.click(screen.getByRole('button', { name: 'Back' }));
     await waitFor(() => expect(router.state.location.pathname).toBe('/settings'));
@@ -319,7 +319,7 @@ describe('a collection page', () => {
     const osk = await character('Osk');
     const row = await homebrewRepo.importJson(IMPORTED, 'imported.json');
     visit(await addressOf(row.id));
-    await heading('imported.json');
+    await heading('Imported Brews');
     const chip = (who: string) =>
       screen.findByRole('button', { name: `${who} picks from it` }, { timeout: WAIT });
     expect((await chip('Osk')).getAttribute('aria-pressed')).toBe('true');
@@ -343,7 +343,7 @@ describe('a collection page', () => {
     expect(screen.getByText(/^Hild picks from it\. New characters do too\./)).toBeTruthy();
 
     // Off on the device: only a character's own On brings it back for that character.
-    fireEvent.click(screen.getByRole('button', { name: 'Use imported.json' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Use Imported Brews' }));
     await waitFor(
       async () => expect((await chip('Hild')).getAttribute('aria-pressed')).toBe('false'),
       {
@@ -380,7 +380,7 @@ describe('a collection page', () => {
     await character('Osk');
     const row = await homebrewRepo.importJson(IMPORTED, 'imported.json');
     visit(await addressOf(row.id));
-    await heading('imported.json');
+    await heading('Imported Brews');
     const chip = (who: string) =>
       screen.findByRole('button', { name: `${who} picks from it` }, { timeout: WAIT });
     // Each save waits for its own release.
@@ -600,7 +600,7 @@ describe('a collection page', () => {
     expect(item?.querySelector('a')).toBeNull();
     expect(item?.textContent).not.toContain('Turn it on');
     // Off, the kinds the Library lists say how to open them; a kind it does not list, still not.
-    fireEvent.click(screen.getByRole('button', { name: 'Use imported.json' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Use Imported Brews' }));
     await waitFor(
       () =>
         expect(screen.getByText('Glimmer').closest('li')?.textContent).toContain(
@@ -614,7 +614,7 @@ describe('a collection page', () => {
   it('exports the file as it leaves this device', async () => {
     const row = await homebrewRepo.importJson(IMPORTED, 'imported.json');
     visit(await addressOf(row.id));
-    await heading('imported.json');
+    await heading('Imported Brews');
     fireEvent.click(screen.getByRole('button', { name: 'Export a file' }));
     await waitFor(() => expect(downloadJson).toHaveBeenCalledTimes(1), { timeout: WAIT });
     expect(vi.mocked(downloadJson).mock.calls[0]).toEqual(['imported.json', IMPORTED]);
@@ -630,13 +630,13 @@ describe('a collection page', () => {
     await character('Brin');
     const row = await homebrewRepo.importJson(IMPORTED, 'imported.json');
     visit(await addressOf(row.id));
-    await heading('imported.json');
-    const use = screen.getByRole('button', { name: 'Use imported.json' });
+    await heading('Imported Brews');
+    const use = screen.getByRole('button', { name: 'Use Imported Brews' });
 
     fireEvent.click(use);
     const ask = await screen.findByRole(
       'dialog',
-      { name: 'Turn off imported.json?' },
+      { name: 'Turn off Imported Brews?' },
       { timeout: WAIT },
     );
     expect(ask.textContent).toContain('Its entries leave the sheets that have them');
@@ -650,7 +650,7 @@ describe('a collection page', () => {
     fireEvent.click(use);
     const again = await screen.findByRole(
       'dialog',
-      { name: 'Turn off imported.json?' },
+      { name: 'Turn off Imported Brews?' },
       { timeout: WAIT },
     );
     fireEvent.click(within(again).getByRole('button', { name: 'Turn off' }));
@@ -792,11 +792,11 @@ describe('a collection page', () => {
     await character('Osk');
     const row = await homebrewRepo.importJson(IMPORTED, 'imported.json');
     const router = visit(await addressOf(row.id));
-    await heading('imported.json');
+    await heading('Imported Brews');
     fireEvent.click(screen.getByRole('button', { name: 'Delete this collection' }));
     const ask = await screen.findByRole(
       'dialog',
-      { name: 'Delete imported.json?' },
+      { name: 'Delete Imported Brews?' },
       { timeout: WAIT },
     );
     expect(ask.textContent).toContain('Hild has Lanternfolk.');
@@ -983,11 +983,11 @@ describe('The books', () => {
       'imported.json',
     );
     visit(await addressOf(row.id));
-    await heading('imported.json');
+    await heading('Imported Brews');
     fireEvent.click(screen.getByRole('button', { name: 'Delete this collection' }));
     const ask = await screen.findByRole(
       'dialog',
-      { name: 'Delete imported.json?' },
+      { name: 'Delete Imported Brews?' },
       { timeout: WAIT },
     );
     expect(ask.textContent).toContain('Hild has Mothkin.');
@@ -1002,11 +1002,11 @@ describe('The books', () => {
     const row = await homebrewRepo.importJson(IMPORTED, 'imported.json');
     await db.homebrewJson.delete(row.id);
     visit(await addressOf(row.id));
-    await heading('imported.json');
+    await heading('Imported Brews');
     fireEvent.click(screen.getByRole('button', { name: 'Delete this collection' }));
     const ask = await screen.findByRole(
       'dialog',
-      { name: 'Delete imported.json?' },
+      { name: 'Delete Imported Brews?' },
       { timeout: WAIT },
     );
     expect(ask.textContent).toContain(
@@ -1024,11 +1024,11 @@ describe('The books', () => {
     await db.homebrewFiles.add({ ...meta, id: 'older-copy', addedAt: meta.addedAt - 1 });
     await db.homebrewJson.delete(row.id);
     visit(await addressOf(row.id));
-    await heading('imported.json');
+    await heading('Imported Brews');
     fireEvent.click(screen.getByRole('button', { name: 'Delete this collection' }));
     const ask = await screen.findByRole(
       'dialog',
-      { name: 'Delete imported.json?' },
+      { name: 'Delete Imported Brews?' },
       { timeout: WAIT },
     );
     expect(ask.textContent).toContain(
@@ -1145,7 +1145,7 @@ describe('where it is on, source by source', () => {
     await writeSourcePolicy({ mode: 'all', except: ['IMP'] });
     const row = await homebrewRepo.importJson(IMPORTED, 'imported.json');
     visit(await addressOf(row.id));
-    await heading('imported.json');
+    await heading('Imported Brews');
     expect(
       await screen.findByText('Hidden by The books’ choice of what shows', {}, { timeout: WAIT }),
     ).toBeTruthy();
