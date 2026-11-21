@@ -748,6 +748,32 @@ describe('changes that take something away', () => {
   const pressed = (name: string) =>
     screen.getByRole('button', { name }).getAttribute('aria-pressed');
 
+  // Review item 3: picks the engine does not list still count, and the
+  // Choices step says where the waiting ones are rather than "nothing left".
+  describe('what is still to choose', () => {
+    it('has Choices name the steps with picks waiting, each a way there', () => {
+      renderDraft('choices', (d) => {
+        d.classes = [{ ref: { name: 'Warrior', source: 'TST' }, levels: 1, hp: ['avg'] }];
+      });
+      expect(screen.queryByText(/Nothing else to decide here/)).toBeNull();
+      expect(screen.getByText('Nothing to pick on this step. Still to choose:')).toBeTruthy();
+      const toClass = screen.getByRole('button', { name: /^Class: \d+$/ });
+      fireEvent.click(toClass);
+      return waitFor(() =>
+        expect(screen.getByRole('heading', { level: 1, name: 'Class' })).toBeTruthy(),
+      );
+    });
+
+    it('counts spells not yet chosen, and Review says whose and how many', () => {
+      renderDraft('review', (d) => {
+        d.classes = [{ ref: { name: 'Mage', source: 'TST' }, levels: 1, hp: ['avg'] }];
+      });
+      expect(screen.getByText(/^Mage: .*still to choose$/)).toBeTruthy();
+      // Counted in the header's "to choose" too.
+      expect(screen.getByRole('button', { name: /^\d+ to choose: go to the / })).toBeTruthy();
+    });
+  });
+
   describe('picking another class', () => {
     it("keeps species and background picks and swaps out the old class's", () => {
       renderDraft('class', (d) => {
