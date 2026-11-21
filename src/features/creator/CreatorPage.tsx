@@ -324,11 +324,15 @@ export function Component() {
   // screen reader user starts at its top rather than on a Next button that
   // now names the step after. Not on the step the page opened on, which the
   // page's own load handles.
+  // Start over from a later step moves to Basics and offers its undo, which
+  // takes focus first (a child's effect runs before this one): that stays.
   const stepHeading = useRef<HTMLHeadingElement>(null);
+  const undoLine = useRef<HTMLDivElement>(null);
   const focusedStep = useRef(step);
   useEffect(() => {
     if (focusedStep.current === step) return;
     focusedStep.current = step;
+    if (undoLine.current?.contains(document.activeElement) === true) return;
     stepHeading.current?.focus();
   }, [step]);
 
@@ -1584,6 +1588,7 @@ export function Component() {
         className="fixed inset-x-0 bottom-0 flex flex-col [@media(max-height:30rem)]:contents"
       >
         <div
+          ref={undoLine}
           className={`[@media(max-height:30rem)]:sticky [@media(max-height:30rem)]:bottom-0 ${
             undoShown ? 'mx-auto w-full max-w-5xl px-3 pb-2' : ''
           }`}

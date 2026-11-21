@@ -1380,6 +1380,10 @@ describe('an unfinished draft', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Start over' }));
     await waitFor(() => expect(router.state.location.search).toBe('?step=basics'));
     expect(nameInput().value).toBe('');
+    // The step changed, but focus stays on the undo, not the new heading.
+    expect(document.activeElement).toBe(
+      screen.getByRole('button', { name: 'Undo: Started a new character' }),
+    );
   });
 
   it('says nothing for a blank draft, a step of this load, or the roster Resume', () => {
