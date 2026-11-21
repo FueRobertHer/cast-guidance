@@ -634,26 +634,22 @@ describe('a collection page', () => {
     expect(await json(row.id)).toEqual(IMPORTED);
   });
 
-  it('offers no editable copy of a compendium of books', async () => {
+  it('offers no editable copy of a book of a compendium, even its only one', async () => {
     const { books } = await homebrewRepo.prepareBooks(
       {
         _meta: {
-          sources: [
-            { json: 'FCA', full: 'Ember Codex' },
-            { json: 'FCB', full: 'Frost Codex' },
-          ],
+          sources: [{ json: 'FCA', full: 'Ember Codex' }],
           convertedFrom: { format: 'fc5-compendium', fileName: 'all.xml' },
         },
-        spell: [
-          { name: 'Ember Lance', source: 'FCA', level: 1 },
-          { name: 'Frost Lance', source: 'FCB', level: 1 },
-        ],
+        spell: [{ name: 'Ember Lance', source: 'FCA', level: 1 }],
       },
       'all.xml',
     );
+    expect(books.map((b) => b.book)).toEqual(['Ember Codex']);
     await homebrewRepo.commitBooks(books);
     visit(await addressOf(books[0]?.id ?? ''));
-    await heading('all.xml');
+    await heading('Ember Codex');
+    await screen.findByRole('button', { name: 'Update from a file' }, { timeout: WAIT });
     expect(screen.queryByRole('button', { name: 'Make an editable copy' })).toBeNull();
   });
 

@@ -907,7 +907,9 @@ export const homebrewRepo = {
    * copy gets a collection stamp of its own, so importing the original again
    * updates the original, not the copy. Characters stay on what they picked.
    * A rule pack is not copied: what it does is its Apply to, not its entries.
-   * Loads the copy's code first (`homebrewCopy.ts`).
+   * Loads the copy's code first (`homebrewCopy.ts`). An entry under a book
+   * the file does not declare keeps that book: it may be an official one (a
+   * subclass's `classSource`), which must not move.
    */
   async copyEditable(fileId: string): Promise<HomebrewFileRow & { json: Record<string, unknown> }> {
     // Loaded first: an import awaited inside the transaction would end it.

@@ -1135,7 +1135,10 @@ function FromSection({
 }: {
   c: Collection;
   onImport: (link?: string) => void;
-  /** Set for an imported file of one row that is no rule pack: what can be copied to change. */
+  /**
+   * Set for an imported file of one row, no book of a compendium and no rule
+   * pack: what can be copied to change.
+   */
   onCopy?: () => void;
 }) {
   const [r] = c.rows;
@@ -1211,9 +1214,9 @@ function FromSection({
           {onCopy !== undefined && (
             <>
               <p className={`px-1 ${CAPTION}`}>
-                It stays as it came, so an update can take its place. To change its entries, make a
-                copy of your own: it comes under books of its own, and characters keep what they
-                picked from this one.
+                It stays as it came, so an update can take its place. A copy of your own can be
+                changed in every part: it comes under books of its own, and characters, and the
+                changes you made here, stay with this one.
               </p>
               <Button variant="outline" className="self-start" onClick={onCopy}>
                 Make an editable copy
@@ -1346,7 +1349,9 @@ function Found({
       <FromSection
         c={c}
         onImport={(link) => setImporting({ link })}
-        {...(single !== undefined && !single.editable && pack === false ? { onCopy: copy } : {})}
+        {...(single !== undefined && !single.editable && single.book === undefined && pack === false
+          ? { onCopy: copy }
+          : {})}
       />
       <section aria-labelledby="share-delete" className="flex flex-col gap-2">
         <h2 id="share-delete" className={HEAD}>

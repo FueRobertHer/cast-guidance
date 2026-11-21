@@ -16,7 +16,9 @@ const TAG = /\{@(\w+) ([^{}]*)\}/g;
 /**
  * `json` with every book in `books` (old id, lowercased, to new id) replaced
  * wherever a book is named: a `source` or `...Source` field, the parts of a
- * `Name|Book|...` ref after its name, and the same inside `{@tag ...}` prose.
+ * `Name|Book|...` ref after its name (a `#c` after the book kept), whether the
+ * ref is a value or a key (`feats: [{ "name|book": true }]`), and the same
+ * inside `{@tag ...}` prose.
  * A part that only spells like a book in a ref is taken as one: refs hold
  * books in their later parts, and a display text that is exactly a book's
  * id is rare enough to accept.
@@ -26,7 +28,12 @@ export function withBooks(json: Row, books: ReadonlyMap<string, string>): Row {
   const ref = (s: string) => {
     const parts = s.split('|');
     if (parts.length < 2) return s;
-    return parts.map((p, i) => (i === 0 ? p : (book(p) ?? p))).join('|');
+    const part = (p: string) => {
+      const at = p.indexOf('#');
+      const id = book(at === -1 ? p : p.slice(0, at));
+      return id === undefined ? p : at === -1 ? id : `${id}${p.slice(at)}`;
+    };
+    return parts.map((p, i) => (i === 0 ? p : part(p))).join('|');
   };
   const text = (s: string) =>
     s.includes('{@')
@@ -47,7 +54,7 @@ export function withBooks(json: Row, books: ReadonlyMap<string, string>): Row {
     const out: Row = {};
     for (const [k, x] of Object.entries(v)) {
       if (k === '__proto__') continue;
-      out[k] = walk(x, k);
+      out[k.includes('|') ? ref(k) : k] = walk(x, k);
     }
     return out;
   };

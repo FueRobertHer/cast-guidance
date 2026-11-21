@@ -36,7 +36,14 @@ describe('withBooks', () => {
         },
       ],
       item: [{ name: 'Rod', source: 'FRC', _copy: { name: 'Wand', source: 'EMB' } }],
-      race: [{ name: 'Kin', source: 'EMB', additionalSpells: [{ known: { 1: ['ember|emb'] } }] }],
+      race: [
+        {
+          name: 'Kin',
+          source: 'EMB',
+          additionalSpells: [{ known: { 1: ['ember|emb', 'thaw|frc#c'] } }],
+        },
+      ],
+      background: [{ name: 'Scribe', source: 'EMB', feats: [{ 'ember adept|emb': true }] }],
       feat: [{ name: 'EMB Fan', source: 'PHB', entries: ['Say EMB out loud.'] }],
     };
     expect(withBooks(json, books)).toEqual({
@@ -67,7 +74,14 @@ describe('withBooks', () => {
         },
       ],
       item: [{ name: 'Rod', source: 'FRC2', _copy: { name: 'Wand', source: 'EMB2' } }],
-      race: [{ name: 'Kin', source: 'EMB2', additionalSpells: [{ known: { 1: ['ember|EMB2'] } }] }],
+      race: [
+        {
+          name: 'Kin',
+          source: 'EMB2',
+          additionalSpells: [{ known: { 1: ['ember|EMB2', 'thaw|FRC2#c'] } }],
+        },
+      ],
+      background: [{ name: 'Scribe', source: 'EMB2', feats: [{ 'ember adept|EMB2': true }] }],
       feat: [{ name: 'EMB Fan', source: 'PHB', entries: ['Say EMB out loud.'] }],
     });
   });
