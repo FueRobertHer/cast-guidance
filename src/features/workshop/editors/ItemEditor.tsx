@@ -1179,6 +1179,7 @@ function Effects(props: EditorProps) {
         spells={spellOptions(props)}
         hide={isCharges}
         holdsCharges
+        hostName={typeof draft.name === 'string' ? draft.name : undefined}
         // The charges effect is shown under Charges, and stays in the list it is hidden from.
         onChange={(effects) => set({ effects: effects.length > 0 ? effects : undefined })}
       />

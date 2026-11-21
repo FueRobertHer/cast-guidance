@@ -1456,6 +1456,7 @@ function ClassEffects({
         effects={g.effects}
         hide={isPool}
         resources={poolsOf(draft)}
+        hostName={typeof draft.name === 'string' ? draft.name : undefined}
         readOnly={readOnly}
         inherits={original !== undefined ? String(original.name) : undefined}
         replace={g.replace === true}

@@ -83,6 +83,46 @@ export function Select(props: Omit<SelectHTMLAttributes<HTMLSelectElement>, 'cla
   );
 }
 
+/**
+ * The rules edition an entry is written for (5etools' `edition`), or neither:
+ * new homebrew suits a character of either, and only an edition its author
+ * picks makes the sheet say "Mixed editions" (`editionNeutral`).
+ */
+export function EditionField({
+  draft,
+  change,
+  readOnly,
+}: {
+  draft: Record<string, unknown>;
+  change: (patch: Record<string, unknown>) => void;
+  readOnly: boolean;
+}) {
+  const now = typeof draft.edition === 'string' ? draft.edition : '';
+  const known = ENTRY_EDITIONS.some(([v]) => v === now);
+  return (
+    <Field label="Rules edition">
+      <Select
+        value={now}
+        disabled={readOnly}
+        onChange={(e) => change({ edition: e.target.value === '' ? undefined : e.target.value })}
+      >
+        {!known && <option value={now}>{now}, as written</option>}
+        {ENTRY_EDITIONS.map(([v, text]) => (
+          <option key={v} value={v}>
+            {text}
+          </option>
+        ))}
+      </Select>
+    </Field>
+  );
+}
+
+const ENTRY_EDITIONS: ReadonlyArray<readonly [string, string]> = [
+  ['', 'Either edition'],
+  ['classic', '2014 rules'],
+  ['one', '2024 rules'],
+];
+
 /** A whole number, or nothing when the box is empty. */
 export function NumberField({
   label,

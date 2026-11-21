@@ -6,7 +6,7 @@ Cast Guidance's own code is released under the MIT License; see [LICENSE](LICENS
 
 The production build ships code and fonts from the open source packages below: the app bundle, the search worker, the service worker and the stylesheet. Their license texts and NOTICE files follow, reproduced as each package publishes them. This file lists only what the build ships, not every dependency in package.json, and it covers code and fonts only, not game data, which the app downloads at runtime (see [docs/content-notice.md](docs/content-notice.md)).
 
-50 packages.
+49 packages.
 
 | Package | Version | License | Ships in |
 | --- | --- | --- | --- |
@@ -31,7 +31,6 @@ The production build ships code and fonts from the open source packages below: t
 | @tanstack/react-virtual | 3.14.5 | MIT | app |
 | @tanstack/virtual-core | 3.17.3 | MIT | app |
 | @trickfilm400/rollup-plugin-off-main-thread | 3.0.0-pre1 | Apache-2.0 | service worker |
-| @vercel/analytics | 2.0.1 | MIT | app |
 | aria-hidden | 1.2.6 | MIT | app |
 | dexie | 4.4.4 | Apache-2.0 | app |
 | dexie-react-hooks | 4.4.0 | Apache-2.0 | app |
@@ -971,34 +970,6 @@ Apache License
    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
    See the License for the specific language governing permissions and
    limitations under the License.
-```
-
-## @vercel/analytics 2.0.1
-
-License: MIT
-
-```text
-The MIT License (MIT)
-
-Copyright (c) 2026 Vercel, Inc.
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
 ```
 
 ## aria-hidden 1.2.6
