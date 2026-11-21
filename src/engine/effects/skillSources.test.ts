@@ -160,8 +160,8 @@ describe('a skill granted twice, under the 2014 rules', () => {
     expect(prompt?.label).toBe(
       'Perception from Testfolk (species) and Sneak (class): choose another skill in its place',
     );
-    // The second source's, so the creator shows it on that step.
-    expect(prompt?.origin.label).toBe('Sneak');
+    // The species, whose step the creator comes to after the class's.
+    expect(prompt?.origin.label).toBe('Testfolk');
     // Every skill but the duplicate, not only the class's list.
     expect(prompt?.options.map((o) => o.id)).not.toContain('Perception');
     expect(prompt?.options.map((o) => o.id)).toContain('Arcana');
@@ -175,14 +175,25 @@ describe('a skill granted twice, under the 2014 rules', () => {
     const sheet = deriveSheet(doc, ctx);
     expect(sheet.pending.map((p) => p.id)).not.toContain(OVERLAP);
     expect(sheet.skills.Arcana?.prof).toBe(1);
-    expect(sheet.skills.Arcana?.sources.map((o) => o.label)).toEqual(['Sneak']);
+    expect(sheet.skills.Arcana?.sources.map((o) => o.label)).toEqual(['Testfolk']);
+  });
+
+  it('sits on the background step when the background is a source', () => {
+    const doc = twice();
+    doc.background = { name: 'Lookout', source: 'TST' };
+    expect(promptOf(doc, OVERLAP)?.origin.type).toBe('background');
   });
 
   it('makes no overlap of its own when the skill picked is held already', () => {
-    const doc = twice();
+    // Its grant is the background's, beside the class's Stealth: two sources,
+    // were it counted.
+    const doc = sneakDoc();
+    doc.background = { name: 'Lookout', source: 'TST' };
+    doc.choices[CLASS_SKILLS] = ['Stealth', 'Acrobatics'];
     doc.choices[OVERLAP] = ['Stealth'];
-    const pending = deriveSheet(doc, ctx).pending.map((p) => p.id);
-    expect(pending).not.toContain('skill:overlap:stealth');
+    const sheet = deriveSheet(doc, ctx);
+    expect(sheet.skills.Stealth?.sources.map((o) => o.label)).toEqual(['Sneak', 'Lookout']);
+    expect(sheet.pending.map((p) => p.id)).not.toContain('skill:overlap:stealth');
   });
 
   it('asks for one more for each further source', () => {

@@ -89,39 +89,47 @@ export const OVERLAP_PICK = 'skill:overlap:';
  */
 const BUILD_ORIGINS = new Set<EffectOrigin['type']>(['race', 'background', 'class']);
 
+/** The creator's order: class, then species, then background (`features/creator/steps.ts`). */
+const CREATOR_ORDER: readonly EffectOrigin['type'][] = ['class', 'race', 'background'];
+
+/** Of a skill's sources, the one whose creator step comes last. */
+function lastInCreator(from: readonly EffectOrigin[]): EffectOrigin {
+  const rank = (o: EffectOrigin) => CREATOR_ORDER.indexOf(o.type);
+  return from.reduce((a, b) => (rank(b) > rank(a) ? b : a));
+}
+
 /**
  * Under the 2014 rules, a character who would gain the same skill from two
  * sources can choose a different skill instead (PHB, Backgrounds,
  * Proficiencies): a Sage Wizard who takes Arcana from both gets another skill.
  * One pick per skill granted twice or more, of any skill, one for each source
- * past the first, on the second source's step, so it sits beside the pick that
- * made the overlap. It is saved by the skill, so it holds while the overlap
- * does, whatever brings it. The 2024 rules have no such swap.
+ * past the first. It goes to the source the creator comes to last, so it shows
+ * on the step where the overlap appears (Background for a Sage Wizard). It is
+ * saved by the skill, so it holds while the overlap does, whatever brings it.
+ * The 2024 rules have no such swap.
  *
- * Its own grants do not count as sources, so a replacement that lands on a
- * skill held already makes no overlap of its own; the cue below says so.
+ * The sources are counted before any replacement is granted, so a replacement
+ * that lands on a skill held already makes no overlap of its own; the cue
+ * below says so.
  */
 function offerOverlapReplacements(col: Collector): void {
   if (col.doc.rulesVersion !== '2014') return;
-  const sources = skillSources(col.effects, {
-    skip: (e) =>
-      !BUILD_ORIGINS.has(e.origin.type) || col.pickOf.get(e)?.startsWith(OVERLAP_PICK) === true,
-  });
+  const sources = skillSources(col.effects, { skip: (e) => !BUILD_ORIGINS.has(e.origin.type) });
   for (const { name } of SKILLS) {
     const from = sources.get(name.toLowerCase());
-    const second = from?.[1];
-    if (from === undefined || second === undefined) continue;
+    if (from === undefined || from.length < 2) continue;
+    const last = lastInCreator(from);
     col.choice(
       {
         id: `${OVERLAP_PICK}${name.toLowerCase()}`,
-        origin: second,
+        origin: last,
         kind: 'skill',
         label: `${name} from ${originList(from)}: choose ${from.length > 2 ? `${from.length - 1} other skills` : 'another skill'} in its place`,
         count: from.length - 1,
         options: skillOptions().filter((o) => o.id.toLowerCase() !== name.toLowerCase()),
       },
       (picked) => {
-        for (const skill of picked) col.add({ kind: 'skillProf', skill, level: 1, origin: second });
+        for (const skill of picked) col.add({ kind: 'skillProf', skill, level: 1, origin: last });
       },
     );
   }
