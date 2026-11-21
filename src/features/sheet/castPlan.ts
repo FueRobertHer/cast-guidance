@@ -30,6 +30,7 @@ import {
   castWays,
   defaultCastTile,
   ordinal,
+  type RitualWay,
   type UseWay,
   upcastEffectSummary,
 } from './castResources';
@@ -64,6 +65,8 @@ export interface SpellCast {
   numbers?: string | undefined;
   /** It casts with a spell attack: its hit offers the damage, and its d20 is the prompt's. */
   attack: boolean;
+  /** It can be cast as a ritual (`ritualWay`): beside its slots, or as the only way. */
+  ritual?: RitualWay | undefined;
   /** The registry's lookups: what a carried item's charges cast (`itemChargesOf`). */
   entities: ChargeLookup;
 }
@@ -153,6 +156,51 @@ export function grantUseWays(sheet: DerivedSheet, name: string): UseWay[] {
   });
 }
 
+/** A named entry anywhere in a feature's entries: "Ritual Casting" inside a 2014 Spellcasting. */
+function namesEntry(entries: unknown, name: RegExp): boolean {
+  if (Array.isArray(entries)) return entries.some((e) => namesEntry(e, name));
+  if (entries === null || typeof entries !== 'object') return false;
+  const e = entries as { name?: unknown; entries?: unknown; items?: unknown };
+  if (typeof e.name === 'string' && name.test(e.name)) return true;
+  return namesEntry(e.entries, name) || namesEntry(e.items, name);
+}
+
+const RITUAL_FEATURE = /^ritual (casting|adept)$/i;
+
+/**
+ * Whether a class's own features say it casts rituals: 2014's "Ritual
+ * Casting" (Bard, Cleric, Druid, Wizard and Artificer write it inside their
+ * Spellcasting) or 2024's Ritual Adept, as the data has them.
+ */
+function classCastsRituals(sheet: DerivedSheet, block: SpellcastingBlock): boolean {
+  return sheet.features.some(
+    (f) =>
+      f.origin.uid === block.classUid &&
+      (RITUAL_FEATURE.test(f.name) || namesEntry(f.entries, RITUAL_FEATURE)),
+  );
+}
+
+/**
+ * How a class spell can be cast as a ritual, if at all. The spell needs the
+ * Ritual tag. Under the 2024 rules any caster casts a prepared ritual spell as
+ * a ritual; under 2014 only a class whose features say so (Ritual Casting). A
+ * spell the class has not prepared casts as a ritual only from a spellbook
+ * whose class says it need not be prepared (a wizard's, both editions).
+ */
+export function ritualWay(
+  sheet: DerivedSheet,
+  block: SpellcastingBlock,
+  entity: Entity | undefined,
+  rulesVersion: CharacterDoc['rulesVersion'],
+  prepared: boolean,
+): RitualWay | undefined {
+  if ((entity?.meta as { ritual?: unknown } | undefined)?.ritual !== true) return undefined;
+  if (entity?.level === 0) return undefined;
+  const byFeature = classCastsRituals(sheet, block);
+  if (prepared) return rulesVersion === '2024' || byFeature ? 'also' : undefined;
+  return block.mode === 'spellbook' && byFeature ? 'only' : undefined;
+}
+
 function contextOf(c: SpellCast): CastContext {
   return {
     block: c.block,
@@ -209,9 +257,16 @@ export function castWaysOf(c: SpellCast): CastWay[] {
       : c.grantPool === undefined
         ? []
         : [c.grantPool];
+  // A spell cast only as a ritual spends nothing else.
+  if (c.block !== undefined && c.ritual === 'only')
+    return castWays(contextOf(c), { ritual: 'only' });
   // Another row offers an item's charges only where the item casts with the
   // character's numbers: one whose text fixes a DC has its own row for them.
-  return castWays(contextOf(c), { uses, charges: charges.filter((w) => w.fixed !== true) });
+  return castWays(contextOf(c), {
+    uses,
+    charges: charges.filter((w) => w.fixed !== true),
+    ...(c.block !== undefined && c.ritual !== undefined ? { ritual: c.ritual } : {}),
+  });
 }
 
 /**
@@ -360,7 +415,7 @@ export function castPlan(c: SpellCast): HeldCast {
       sub: w.sub,
       tiles: w.tiles.map((t) => ({
         id: castResourceId(t.resource),
-        head: ordinal(t.resource.level),
+        head: t.resource.kind === 'ritual' ? 'Ritual' : ordinal(t.resource.level),
         sub: t.sub,
         ok: t.ok,
         aria: `${castResourceLabel(t.resource)}, ${t.sub}${t.ok ? '' : ', cannot pay now'}`,
@@ -372,7 +427,7 @@ export function castPlan(c: SpellCast): HeldCast {
     line: (id) => {
       const level = levelOf(id);
       const dice = upcastEffectSummary(c.entity, c.sheet.totalLevel, level);
-      const at = `${ordinal(level)} level`;
+      const at = `${ordinal(level)} level${resourceOf(id)?.kind === 'ritual' ? ', as a ritual' : ''}`;
       if (dice === undefined) return at;
       return c.attack ? `${at}, then ${dice}` : `${at}: ${dice}`;
     },

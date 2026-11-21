@@ -16,6 +16,7 @@ import { signed } from '@/lib/signed';
 import type { DocUpdater } from '@/stores/characterSession';
 import { Badge, badgeClass } from '@/ui/Badge';
 import { Button } from '@/ui/Button';
+import { chipClass } from '@/ui/Chip';
 import type { ChipWear } from '@/ui/ChipFace';
 import { PackProblem } from '@/ui/PackProblem';
 import { cardClass, openListClass } from '@/ui/surfaces';
@@ -28,6 +29,7 @@ import {
   grantNumbersKey,
   grantRowKey,
   grantUsedUp,
+  ritualWay,
   type SpellCast,
 } from './castPlan';
 import { castingEconomy, isConcentratingOn } from './castResources';
@@ -192,18 +194,42 @@ function EndButton({
   );
 }
 
+/** Prepares a class's known spell, or unprepares it, as Choose's Prepare does. */
+function setPrepared(
+  update: DocUpdater,
+  block: SpellcastingBlock,
+  ref: { name: string; source: string },
+  on: boolean,
+): void {
+  update(
+    (d) => {
+      const sc = d.spellcasting[block.classUid] ?? { known: [], prepared: [] };
+      d.spellcasting[block.classUid] = sc;
+      const uid = refUid(ref);
+      const at = sc.prepared.findIndex((r) => refUid(r) === uid);
+      if (on && at < 0) sc.prepared.push({ name: ref.name, source: ref.source });
+      if (!on && at >= 0) sc.prepared.splice(at, 1);
+    },
+    `${on ? 'Prepared' : 'Unprepared'} ${ref.name}`,
+  );
+}
+
 /** A spell cast with the class's slots: known, prepared or always prepared. */
 function SlotSpellRow({
   spell,
   block,
   muted = false,
   withLevel = false,
+  preparing,
   ctx,
 }: {
   spell: OwnSpell;
   block: SpellcastingBlock;
+  /** Known but not prepared: it casts only as a ritual, if at all. */
   muted?: boolean;
   withLevel?: boolean;
+  /** For a class that prepares: Prepare on the row, or Unprepare under its rules. */
+  preparing?: 'prepare' | 'unprepare';
   ctx: RowContext;
 }) {
   const { doc, sheet, update } = ctx;
@@ -214,6 +240,9 @@ function SlotSpellRow({
   const level = spell.level ?? 1;
   const concentrating = isConcentratingOn(play, name);
   const attackModifier = hasSpellAttack(entity) ? block.attackMod.value : undefined;
+  const ritual = ritualWay(sheet, block, entity, doc.rulesVersion, !muted);
+  // An unprepared spell casts only as a ritual, from a wizard's spellbook.
+  const casts = !muted || ritual === 'only';
   const cast: SpellCast = {
     doc,
     sheet,
@@ -231,6 +260,7 @@ function SlotSpellRow({
     abilityModifier: sheet.abilities[block.ability].mod,
     attack: attackModifier !== undefined,
     entities: ctx.entities,
+    ritual,
   };
   const locked =
     block.learnable !== undefined &&
@@ -252,12 +282,30 @@ function SlotSpellRow({
       marks={
         <>
           {locked && !spell.always && <span className={badgeClass('guide')}>Above your level</span>}
+          {muted && ritual === 'only' && <Badge tone="arcane">Ritual</Badge>}
           <VerbalMark entity={entity} noVerbal={ctx.noVerbal} />
         </>
       }
+      rulesFooter={
+        preparing === 'unprepare' ? (
+          <Button variant="outline" block onClick={() => setPrepared(update, block, spell, false)}>
+            Unprepare {name}
+          </Button>
+        ) : undefined
+      }
       actions={
         <>
-          {spellSaves(entity).length > 0 && (
+          {preparing === 'prepare' && (
+            <button
+              type="button"
+              aria-label={`Prepare ${name}`}
+              onClick={() => setPrepared(update, block, spell, true)}
+              className={chipClass('outline')}
+            >
+              Prepare
+            </button>
+          )}
+          {casts && spellSaves(entity).length > 0 && (
             <SaveDcBadge
               value={block.saveDc.value}
               raisedBy={ctx.dcRaisedBy(block)}
@@ -265,35 +313,37 @@ function SlotSpellRow({
               short
             />
           )}
-          <SpellCastChips
-            cast={cast}
-            running={concentrating}
-            runningLevel={play.concentratingOn?.level}
-            castButton={!concentrating}
-            attack={
-              attackModifier === undefined
-                ? undefined
-                : {
-                    expr: `1d20${fmt(attackModifier)}`,
-                    display: signed(attackModifier),
-                    roller: ctx.rollAttack(
-                      attackModifier,
-                      `${name} spell attack`,
-                      name,
-                      spell.className,
-                      spellAttackRange(entity),
-                      block.ability,
-                    ),
-                  }
-            }
-            wear={ctx.wear}
-            castWear={ctx.castWear}
-            castTitle={
-              level === 0 && spell.level !== undefined
-                ? 'Cast cantrip (marks the action economy its casting time uses)'
-                : 'Cast: choose how to cast it'
-            }
-          />
+          {casts && (
+            <SpellCastChips
+              cast={cast}
+              running={concentrating}
+              runningLevel={play.concentratingOn?.level}
+              castButton={!concentrating}
+              attack={
+                attackModifier === undefined
+                  ? undefined
+                  : {
+                      expr: `1d20${fmt(attackModifier)}`,
+                      display: signed(attackModifier),
+                      roller: ctx.rollAttack(
+                        attackModifier,
+                        `${name} spell attack`,
+                        name,
+                        spell.className,
+                        spellAttackRange(entity),
+                        block.ability,
+                      ),
+                    }
+              }
+              wear={ctx.wear}
+              castWear={ctx.castWear}
+              castTitle={
+                level === 0 && spell.level !== undefined
+                  ? 'Cast cantrip (marks the action economy its casting time uses)'
+                  : 'Cast: choose how to cast it'
+              }
+            />
+          )}
           {concentrating && (
             <EndButton
               name={name}
@@ -583,7 +633,15 @@ function ClassSection({
             caption={levelCaption(block, play, level)}
           >
             {[...spells].sort(byName).map((s) => (
-              <SlotSpellRow key={refUid(s)} spell={s} block={block} ctx={ctx} />
+              <SlotSpellRow
+                key={refUid(s)}
+                spell={s}
+                block={block}
+                preparing={
+                  preparesSpells(block) && !s.always && s.level !== 0 ? 'unprepare' : undefined
+                }
+                ctx={ctx}
+              />
             ))}
           </SpellGroup>
         ))}
@@ -613,8 +671,8 @@ function ClassSection({
           ))}
         </SpellGroup>
       )}
-      {/* Folded rather than gone: a wizard's spellbook, still castable, since
-          a ritual needs no preparing and the sheet guides without gatekeeping. */}
+      {/* Folded rather than gone: a wizard's spellbook, a tap from preparing
+          each, and its rituals still cast as rituals with no slot. */}
       {notPrepared.length > 0 && (
         <details
           open={f !== ''}
@@ -635,7 +693,15 @@ function ClassSection({
             {[...notPrepared]
               .sort((a, b) => (a.level ?? 0) - (b.level ?? 0) || byName(a, b))
               .map((s) => (
-                <SlotSpellRow key={refUid(s)} spell={s} block={block} muted withLevel ctx={ctx} />
+                <SlotSpellRow
+                  key={refUid(s)}
+                  spell={s}
+                  block={block}
+                  muted
+                  withLevel
+                  preparing="prepare"
+                  ctx={ctx}
+                />
               ))}
           </div>
         </details>
