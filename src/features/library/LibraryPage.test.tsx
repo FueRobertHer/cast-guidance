@@ -412,7 +412,8 @@ describe('an entry the table has changed', () => {
     reg.current = { ...reg.current, registry: changedWorld({ kind: 'changes', source: 'MINE' }) };
     renderAt('/library/spell/guiding%20bolt%7Cxphb');
 
-    expect(screen.getByRole('heading', { name: /^Guiding Bolt\s*Changed$/ })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Guiding Bolt' })).toBeTruthy();
+    expect(screen.getByText('Changed')).toBeTruthy();
     expect(screen.getByText(/from Changes to the books/)).toBeTruthy();
     expect(screen.getByText('5d6 radiant.')).toBeTruthy();
 
@@ -428,8 +429,38 @@ describe('an entry the table has changed', () => {
     reg.current = { ...reg.current, registry: changedWorld({ kind: 'pack', source: 'DAWN' }) };
     renderAt('/library/spell/guiding%20bolt%7Cxphb');
 
-    expect(screen.getByRole('heading', { name: /Changed$/ })).toBeTruthy();
+    expect(screen.getByText('Changed')).toBeTruthy();
     expect(screen.getByText(/from the rule pack Dawnstar Campaign Rules/)).toBeTruthy();
+  });
+
+  it("opens on the table's version again after a trip to another printing", () => {
+    const world = changedWorld({ kind: 'changes', source: 'MINE' });
+    const old = {
+      name: 'Guiding Bolt',
+      source: 'PHB',
+      reprintedAs: ['Guiding Bolt|XPHB'],
+      entries: ['The 2014 text.'],
+    };
+    const [placed] = world.byType('spell');
+    reg.current = {
+      ...reg.current,
+      registry: {
+        ...world,
+        byType: (type: string) => (type === 'spell' ? [old, placed] : world.byType(type)),
+        get: (_t: string, _n: string, source?: string) =>
+          source?.toLowerCase() === 'phb' ? old : placed,
+      },
+    };
+    renderAt('/library/spell/guiding%20bolt%7Cxphb');
+    const chip = (name: RegExp) =>
+      within(screen.getByRole('group', { name: 'Printed in' })).getByRole('button', { name });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Show the book’s version' }));
+    expect(screen.getByText('4d6 radiant.')).toBeTruthy();
+    fireEvent.click(chip(/^PHB/));
+    expect(screen.getByText('The 2014 text.')).toBeTruthy();
+    fireEvent.click(chip(/^XPHB/));
+    expect(screen.getByText('5d6 radiant.')).toBeTruthy();
   });
 
   it('is not marked for a book entry nothing changed', () => {

@@ -908,6 +908,13 @@ function EntityDetail({ type, uid, reg }: { type: EntityType; uid: string; reg: 
   // The printing whose book's version is on screen, so another printing (or
   // entry) opens on the table's version again.
   const [bookFor, setBookFor] = useState<string | null>(null);
+  // The page stays mounted as the printing switch replaces the URL, so coming
+  // back to the printing that was flipped must not find it still flipped.
+  const [lastUid, setLastUid] = useState(uid);
+  if (lastUid !== uid) {
+    setLastUid(uid);
+    setBookFor(null);
+  }
   const owner = useOwner(type, entity);
 
   const typeLabel = TYPE_LABELS.get(type) ?? FEATURE_TYPES.get(type) ?? type;
@@ -992,10 +999,12 @@ function EntityDetail({ type, uid, reg }: { type: EntityType; uid: string; reg: 
       <BackLink onClick={back} />
       <header className="flex flex-col gap-1">
         <div className="flex items-start justify-between gap-2">
-          <h1 className="font-display text-title-page">
-            {nameOf(shown)}
+          {/* The badge beside the heading, not in it: the heading's name stays
+              the entry's, which is what a search for it looks for. */}
+          <div>
+            <h1 className="inline font-display text-title-page">{nameOf(shown)}</h1>
             {record !== undefined && <ChangedBadge />}
-          </h1>
+          </div>
           <span className="flex shrink-0 items-center gap-1.5 pt-1.5 text-caption text-ink-muted">
             <SourceBadge source={sourceOf(entity)} titleShownNearby />
             {typeof entity.page === 'number' && <span>p. {entity.page}</span>}
