@@ -643,11 +643,6 @@ function rollRiders(
   return out;
 }
 
-/**
- * What spending Inspiration does, which any character may have (`PlayState.inspiration`):
- * under the 2024 rules Heroic Inspiration rerolls a die just rolled (one d20 of
- * the roll, the lowest), under the 2014 rules it gives advantage on the roll.
- */
 /** What untrained armor costs, as the Play tab's cue says it. */
 export const ARMOR_PENALTY_CUE =
   'Disadvantage on Strength and Dexterity rolls, and no spellcasting';
@@ -680,6 +675,11 @@ function armorPenaltyRider(origin: string): RollRider {
   };
 }
 
+/**
+ * What spending Inspiration does, which any character may have (`PlayState.inspiration`):
+ * under the 2024 rules Heroic Inspiration rerolls a die just rolled (one d20 of
+ * the roll, the lowest), under the 2014 rules it gives advantage on the roll.
+ */
 function inspirationRider(edition: CharacterDoc['rulesVersion']): RollRider {
   const on: RollFilter = { rolls: ['attack', 'check', 'save'] };
   return edition === '2024'
