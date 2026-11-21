@@ -1547,14 +1547,30 @@ export function Component() {
 
       {stepBody()}
 
-      {/* Room for the fixed block below, measured so a long undo line fits. */}
-      <div aria-hidden="true" className="shrink-0" style={{ height: bottomHeight }} />
+      {/* Room for the fixed block below, measured so a long undo line fits.
+          A short screen (a phone on its side, 200% text) has the block in
+          the page instead, so it needs no room. */}
+      <div
+        aria-hidden="true"
+        className="shrink-0 [@media(max-height:30rem)]:hidden"
+        style={{ height: bottomHeight }}
+      />
 
       {/* The undo line rides on top of the step navigation, in the same fixed
           block, so the bar never covers it and it stays in reach while the
-          step scrolls. */}
-      <div ref={setBottomBlock} className="fixed inset-x-0 bottom-0 flex flex-col">
-        <div className={undoShown ? 'mx-auto w-full max-w-5xl px-3 pb-2' : undefined}>
+          step scrolls. On a short screen the navigation would take a fifth
+          of it or more, so the two join the page after the step: Back and
+          Next at the end, and only the undo line, while it shows, pinned to
+          the bottom, where it settles just above them. */}
+      <div
+        ref={setBottomBlock}
+        className="fixed inset-x-0 bottom-0 flex flex-col [@media(max-height:30rem)]:contents"
+      >
+        <div
+          className={`[@media(max-height:30rem)]:sticky [@media(max-height:30rem)]:bottom-0 ${
+            undoShown ? 'mx-auto w-full max-w-5xl px-3 pb-2' : ''
+          }`}
+        >
           <UndoBar
             pending={undo.pending}
             undone={undo.undone}
@@ -1565,23 +1581,32 @@ export function Component() {
         {/* Step navigation: a ghost Back beside the one primary Next (DS-001),
             above the safe area. Next names the step it goes to, as that
             step's heading does, so a press never lands somewhere unsaid. */}
-        <nav className="flex gap-2 border-line border-t bg-bg px-4 pt-3 pb-[max(env(safe-area-inset-bottom),0.75rem)]">
-          <Button
-            variant="ghost"
-            size="lg"
-            disabled={stepIdx === 0}
-            onClick={() => {
-              const prev = order[stepIdx - 1];
-              if (prev !== undefined) navStep(prev);
-            }}
-          >
-            <ArrowLeft size={18} aria-hidden /> Back
-          </Button>
-          {nextStep !== undefined && (
-            <Button variant="brand" size="lg" onClick={() => navStep(nextStep)} className="flex-1">
-              Next: {STEP_LABELS[nextStep]} <ArrowRight size={18} aria-hidden />
+        {/* The bar runs the full width; its buttons line up with the step's
+            cards, which the app keeps to max-w-5xl. */}
+        <nav className="border-line border-t bg-bg pt-3 pb-[max(env(safe-area-inset-bottom),0.75rem)]">
+          <div className="mx-auto flex w-full max-w-5xl gap-2 px-4 [@media(max-height:30rem)]:px-0">
+            <Button
+              variant="ghost"
+              size="lg"
+              disabled={stepIdx === 0}
+              onClick={() => {
+                const prev = order[stepIdx - 1];
+                if (prev !== undefined) navStep(prev);
+              }}
+            >
+              <ArrowLeft size={18} aria-hidden /> Back
             </Button>
-          )}
+            {nextStep !== undefined && (
+              <Button
+                variant="brand"
+                size="lg"
+                onClick={() => navStep(nextStep)}
+                className="flex-1"
+              >
+                Next: {STEP_LABELS[nextStep]} <ArrowRight size={18} aria-hidden />
+              </Button>
+            )}
+          </div>
         </nav>
       </div>
     </main>
