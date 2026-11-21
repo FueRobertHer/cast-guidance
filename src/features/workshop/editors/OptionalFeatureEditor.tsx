@@ -71,7 +71,14 @@ function OptionalFeatureBody({ draft, change, original, readOnly }: EditorProps)
           onChange={(entries) => change({ entries })}
         />
       </Section>
-      <EntryEffects draft={draft} change={change} original={original} readOnly={readOnly} />
+      {/* Its host class gives it, the class whose pick of options offers it. */}
+      <EntryEffects
+        draft={draft}
+        change={change}
+        original={original}
+        readOnly={readOnly}
+        classGiven
+      />
     </>
   );
 }

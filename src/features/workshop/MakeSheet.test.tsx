@@ -52,6 +52,14 @@ describe('Make your own', () => {
     expect(screen.getByRole('link', { name: 'Species / Races' }).getAttribute('href')).toBe(
       '/workshop/new?kind=race',
     );
+    // A subrace by its kind's name, after the species, never its raw type.
+    const subraces = screen.getByRole('link', { name: 'Subraces' });
+    expect(subraces.getAttribute('href')).toBe('/workshop/new?kind=subrace');
+    const kinds = screen.getAllByRole('link').map((l) => l.textContent ?? '');
+    expect(kinds.findIndex((t) => t.startsWith('Subraces'))).toBe(
+      kinds.findIndex((t) => t.startsWith('Species / Races')) + 1,
+    );
+    expect(screen.queryByRole('link', { name: 'subrace' })).toBeNull();
     // On the board as Later: shown, not a way in.
     expect(screen.getByText('Creatures and companions')).toBeTruthy();
     expect(screen.queryByRole('link', { name: 'Creatures and companions' })).toBeNull();

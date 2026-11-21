@@ -40,6 +40,17 @@ export type InstalledCheck = (
 ) => boolean;
 
 /**
+ * The installed spell an {@link InstalledCheck} for a spell says yes to, as
+ * its registry id (`fireball|phb`), asked the same way; undefined where it
+ * says no.
+ */
+export type InstalledSpellId = (
+  name: string,
+  edition: RulesVersion,
+  book?: string,
+) => string | undefined;
+
+/**
  * The installed feat a name stands for in a rules edition, as its registry id
  * (`alert|xphb`), or undefined when the game data has none: a background's
  * feat that the imported file does not hold itself.
@@ -61,6 +72,11 @@ export interface ConvertOptions {
   /** The imported file's name; it names the homebrew source of entries that cite no book. */
   fileName: string;
   isInstalled?: InstalledCheck;
+  /**
+   * The id of a spell {@link isInstalled} finds: a spell left out as
+   * installed still adds the file's classes to its list, by this id.
+   */
+  installedSpellId?: InstalledSpellId;
   officialFeat?: OfficialFeat;
   officialClass?: OfficialClass;
   /**

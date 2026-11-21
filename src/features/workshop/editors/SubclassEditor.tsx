@@ -679,6 +679,7 @@ function SubclassBody({ draft, change, original, registry, readOnly }: EditorPro
                       foldable
                       onMode={(m) => void setMode(n, m)}
                       withEffects
+                      classGiven
                       inherits={String(n.entity?.name)}
                       onChange={(next) => set({ changed: { ...edits.changed, [n.ref]: next } })}
                       onRename={(name) =>
@@ -701,6 +702,7 @@ function SubclassBody({ draft, change, original, registry, readOnly }: EditorPro
                     readOnly={readOnly}
                     foldable
                     withEffects
+                    classGiven
                     onDelete={() => set({ added: edits.added.filter((_, j) => j !== i) })}
                     onChange={(next) => setAdded(i, next)}
                     onRename={(name) => setAdded(i, { ...a, name })}
@@ -754,6 +756,7 @@ function SubclassBody({ draft, change, original, registry, readOnly }: EditorPro
             typeof draft.name === 'string' && draft.name.trim() !== '' ? draft.name : undefined
           }
           hostName={typeof draft.name === 'string' ? draft.name : undefined}
+          classGiven
           onMoments={(moments, effects) =>
             setGuidance({
               moments: moments.length > 0 ? moments : undefined,

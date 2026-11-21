@@ -9,6 +9,7 @@ import {
   type ConvertedKind,
   type ConvertOptions,
   type InstalledCheck,
+  type InstalledSpellId,
   type OfficialClass,
   type OfficialFeat,
   subclassKey,
@@ -169,10 +170,22 @@ interface KindKeys {
   byBook: Set<string>;
 }
 
-function kindKeys(reg: EntityRegistry, kind: ConvertedKind): KindKeys {
+/**
+ * The keys of one kind. With `ids`, each key also names the entry it is
+ * under, as its registry id (`fireball|phb`), the first in the data winning.
+ */
+function kindKeys(reg: EntityRegistry, kind: ConvertedKind, ids?: Map<string, string>): KindKeys {
   const built: KindKeys = { byEdition: new Set<string>(), byBook: new Set<string>() };
   const add = (type: EntityType, anyBook: boolean) => {
     for (const e of reg.byType(type).slice(0, reg.officialCount(type))) {
+      const id =
+        ids !== undefined && typeof e.name === 'string' && typeof e.source === 'string'
+          ? `${e.name}|${e.source}`.toLowerCase()
+          : undefined;
+      const put = (set: Set<string>, key: string) => {
+        set.add(key);
+        if (id !== undefined && !ids?.has(key)) ids?.set(key, id);
+      };
       const ed = editionOf(e);
       const books = entityBooks(e);
       // A subclass is its class's (`subclassKey`).
@@ -181,11 +194,11 @@ function kindKeys(reg: EntityRegistry, kind: ConvertedKind): KindKeys {
           ? (n: string) => subclassKey(n, String(e.className).toLowerCase())
           : (n: string) => n;
       const names = officialNames(type, e).map(of);
-      if (anyBook) for (const n of names) built.byEdition.add(`${n}|${ed}`);
+      if (anyBook) for (const n of names) put(built.byEdition, `${n}|${ed}`);
       for (const n of [...names, ...bookNames(type, e).map(of)]) {
         for (const b of books) {
-          built.byBook.add(`${n}|${b}`);
-          built.byBook.add(`~${compact(n)}|${b}`);
+          put(built.byBook, `${n}|${b}`);
+          put(built.byBook, `~${compact(n)}|${b}`);
         }
       }
     }
@@ -195,11 +208,40 @@ function kindKeys(reg: EntityRegistry, kind: ConvertedKind): KindKeys {
   return built;
 }
 
-function hasKey(keys: KindKeys, name: string, edition: string, book: string | undefined): boolean {
+/** The keys {@link hasKey} asks under, in the order it asks them. */
+function keysFor(name: string, edition: string, book: string | undefined): string[] {
   const n = name.toLowerCase();
-  if (book === undefined) return keys.byEdition.has(`${n}|${edition}`);
+  if (book === undefined) return [`${n}|${edition}`];
   const b = book.toLowerCase();
-  return keys.byBook.has(`${n}|${b}`) || keys.byBook.has(`~${compact(n)}|${b}`);
+  return [`${n}|${b}`, `~${compact(n)}|${b}`];
+}
+
+function hasKey(keys: KindKeys, name: string, edition: string, book: string | undefined): boolean {
+  const set = book === undefined ? keys.byEdition : keys.byBook;
+  return keysFor(name, edition, book).some((k) => set.has(k));
+}
+
+/**
+ * The official spells by every key {@link installedCheck} finds one under,
+ * each as its registry id: what a spell left out as installed is, for the
+ * class lists its entry names.
+ */
+function spellIds(reg: EntityRegistry): [string, string][] {
+  const ids = new Map<string, string>();
+  kindKeys(reg, 'spell', ids);
+  return [...ids];
+}
+
+/** {@link InstalledSpellId} over a set of {@link spellIds}. */
+function spellIdLookup(ids: Iterable<[string, string]>): InstalledSpellId {
+  const byKey = new Map(ids);
+  return (name, edition, book) => {
+    for (const k of keysFor(name, edition, book)) {
+      const id = byKey.get(k);
+      if (id !== undefined) return id;
+    }
+    return undefined;
+  };
 }
 
 /** Whether the official part of a registry holds anything from a book, by code. */
@@ -300,6 +342,8 @@ export interface OfficialKeys {
   rulesBooks: string[];
   feats: [string, string][];
   classes: [string, string][];
+  /** {@link spellIds}. */
+  spells: [string, string][];
 }
 
 export function officialKeys(reg: EntityRegistry): OfficialKeys {
@@ -314,6 +358,7 @@ export function officialKeys(reg: EntityRegistry): OfficialKeys {
     rulesBooks: [...reg.rulesBooks],
     feats: featIds(reg),
     classes: classIds(reg),
+    spells: spellIds(reg),
   };
 }
 
@@ -321,7 +366,10 @@ export function officialKeys(reg: EntityRegistry): OfficialKeys {
 export function officialChecks(
   keys: OfficialKeys,
 ): Required<
-  Pick<ConvertOptions, 'isInstalled' | 'hasBook' | 'rulesBooks' | 'officialFeat' | 'officialClass'>
+  Pick<
+    ConvertOptions,
+    'isInstalled' | 'hasBook' | 'rulesBooks' | 'officialFeat' | 'officialClass' | 'installedSpellId'
+  >
 > {
   const byKind = new Map<ConvertedKind, KindKeys>();
   for (const kind of Object.keys(OFFICIAL_TYPES) as ConvertedKind[]) {
@@ -338,6 +386,7 @@ export function officialChecks(
     rulesBooks: new Set(keys.rulesBooks),
     officialFeat: featLookup(keys.feats),
     officialClass: classLookup(keys.classes),
+    installedSpellId: spellIdLookup(keys.spells),
   };
 }
 

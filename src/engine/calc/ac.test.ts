@@ -8,7 +8,7 @@ import {
   type EffectOrigin,
   newCharacterDoc,
 } from '../types';
-import { calcAc } from './ac';
+import { calcAc, untrainedArmor } from './ac';
 
 const origin: EffectOrigin = { label: 'Barbarian', uid: 'class|barb', type: 'class' };
 // The equipment loop is skipped for a doc with no equipment, so `col` is unused.
@@ -124,5 +124,44 @@ describe('calcAc', () => {
     const { ac } = calcAc(doc, noCol, [], abilities({ dex: 2 }));
     expect(ac.value).toBe(18);
     expect(ac.overridden).toBe(true);
+  });
+});
+
+describe('armor worn without training', () => {
+  const leather = { name: 'Leather Armor', source: 'XPHB', type: 'LA|XPHB', ac: 11 } as DataEntity;
+  const plate = { name: 'Plate Armor', source: 'PHB', type: 'HA', ac: 18 } as DataEntity;
+  const shield = { name: 'Shield', source: 'XPHB', type: 'S|XPHB', ac: 2 } as DataEntity;
+  const ring = { name: 'Ring of Protection', source: 'DMG', type: 'RG' } as DataEntity;
+
+  it('names the category a character lacks', () => {
+    expect(untrainedArmor(leather, [])).toBe('light');
+    expect(untrainedArmor(plate, ['light', 'medium'])).toBe('heavy');
+    expect(untrainedArmor(shield, ['light'])).toBe('shield');
+  });
+
+  it('reads proficiencies as the books word them', () => {
+    expect(untrainedArmor(leather, ['light'])).toBeUndefined();
+    expect(untrainedArmor(leather, ['Light Armor'])).toBeUndefined();
+    expect(untrainedArmor(shield, ['shields'])).toBeUndefined();
+    expect(untrainedArmor(plate, ['all armor'])).toBeUndefined();
+    expect(untrainedArmor(plate, ['plate armor'])).toBeUndefined();
+    // "All armor" is no shield.
+    expect(untrainedArmor(shield, ['all armor'])).toBe('shield');
+  });
+
+  it('says nothing of armor that makes its wearer proficient', () => {
+    const elvenChain = {
+      name: 'Elven Chain',
+      source: 'DMG',
+      type: 'MA',
+      entries: [
+        'You are considered proficient with this armor even if you lack proficiency with medium armor.',
+      ],
+    } as DataEntity;
+    expect(untrainedArmor(elvenChain, [])).toBeUndefined();
+  });
+
+  it('says nothing of what is not armor', () => {
+    expect(untrainedArmor(ring, [])).toBeUndefined();
   });
 });
