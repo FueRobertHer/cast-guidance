@@ -76,6 +76,16 @@ export const WINNER_POLICY =
   'the one imported first wins, and only its version is listed. Entries with the same name and ' +
   'source count as one, so a character that picks either gets the winning version.';
 
+/**
+ * The same for a rule pack that replaces entries: those it names take the
+ * place of the version here for the characters it applies to (`replacersOf`,
+ * `normalize.ts`), and the rest of its entries keep the rule above.
+ */
+export const PACK_WINNER_POLICY =
+  'The entries this pack replaces take the place of the version here, for the characters it ' +
+  'applies to. Its other entries follow the usual rule: official content wins over homebrew with ' +
+  'the same name and source, and between homebrew files the one imported first wins.';
+
 /** The most clashes a preview lists per kind; the totals keep the full counts. */
 export const MAX_LISTED_COLLISIONS = 50;
 
@@ -98,6 +108,12 @@ export interface OfficialIndex {
    * hand, which then knows no book entry a pack replaces.
    */
   identities?: Map<EntityType, Set<string>>;
+  /**
+   * The book's entry of an {@link identityKey}, the first in list order as the
+   * merge finds it, for a pack's review to say what its version changes. Left
+   * out by an index built by hand.
+   */
+  entry?: (type: EntityType, identity: string) => Entity | undefined;
   complete: boolean;
 }
 
@@ -182,7 +198,22 @@ export function officialIndexFrom(
       clashKeys.set(type, keys);
       identities.set(type, known);
     }
-    index = { uids, clashKeys, sources, identities };
+    // Built a type at a time on first asking: only a pack's review asks.
+    const entries = new Map<EntityType, Map<string, Entity>>();
+    const entry = (type: EntityType, identity: string): Entity | undefined => {
+      let byId = entries.get(type);
+      if (byId === undefined) {
+        byId = new Map();
+        for (const e of reg.byType(type).slice(0, reg.officialCount(type))) {
+          const id = identityKey(type, e);
+          // The book's own: a change here (the player's, or a pack's) stands in its place.
+          if (!byId.has(id)) byId.set(id, reg.changeOf(e)?.base ?? e);
+        }
+        entries.set(type, byId);
+      }
+      return byId.get(identity);
+    };
+    index = { uids, clashKeys, sources, identities, entry };
     indexCache.set(reg, index);
   }
   return { ...index, complete };
@@ -678,9 +709,13 @@ export function previewHomebrewImport(input: HomebrewPreviewInput): HomebrewPrev
       // An index built without identities: `name|source` is the identity of a type without a parent.
       return !Object.hasOwn(ENTRY_PARENT_KEYS, type) && official?.uids.get(type)?.has(r.identity);
     };
-    const belowOf = (r: PackReplacement): ReplacedBelow | undefined => {
-      if (!r.inPack) return undefined;
-      if (inBooks(r) === true) return { kind: 'book' };
+    /** What a replaced entry takes the place of, and that entry when it can be read. */
+    const belowOf = (r: PackReplacement): { below?: ReplacedBelow; was?: Entity } => {
+      if (!r.inPack) return {};
+      if (inBooks(r) === true) {
+        const was = official?.entry?.(r.type as EntityType, r.identity);
+        return { below: { kind: 'book' }, ...(was === undefined ? {} : { was }) };
+      }
       for (const f of enabled) {
         // The player's changes are changes too, not what a pack's stands on.
         if (f.role === 'changes') continue;
@@ -690,16 +725,27 @@ export function previewHomebrewImport(input: HomebrewPreviewInput): HomebrewPrev
           const id = itsOwn?.length ? changeIdentity(r.type, e) : undefined;
           return id === undefined || !itsOwn?.some((o) => o.identity === id);
         });
-        if (content.some((e) => identityKey(r.type, e) === r.identity))
-          return { kind: 'collection', fileName: fileLabel(f) };
+        const was = content.find((e) => identityKey(r.type, e) === r.identity);
+        if (was !== undefined) {
+          // A copy's fields are known only once merged, so it is compared with nothing.
+          const read = Object.hasOwn(was, '_copy') ? {} : { was };
+          return { below: { kind: 'collection', fileName: fileLabel(f) }, ...read };
+        }
       }
-      return { kind: 'missing', complete: officialKnown };
+      return { below: { kind: 'missing', complete: officialKnown } };
     };
     const patches = review.changes.slice(0, review.changes.length - replaces.entries.length);
-    return {
-      ...review,
-      changes: [...patches, ...replaces.entries.map((r) => replacedRow(r, belowOf(r)))],
+    const rowOf = (r: PackReplacement): PackReviewRow => {
+      const { below, was } = belowOf(r);
+      const reviewRow = replacedRow(r, below);
+      // Found as the merge finds it, a copy by the identity it leaves to what it copies.
+      const now = entitiesOf(row.json, r.type).find(
+        (e) => changeIdentity(r.type, e) === r.identity,
+      );
+      const detail = was === undefined || now === undefined ? undefined : entryChanges(was, now);
+      return detail === undefined ? reviewRow : { ...reviewRow, detail };
     };
+    return { ...review, changes: [...patches, ...replaces.entries.map(rowOf)] };
   }
   const statusOf = (sourceId: string): DependencyStatus => {
     const s = lower(sourceId);
@@ -989,6 +1035,8 @@ const ruleValue = (id: TableRuleId, value: string) =>
 export interface PackReviewRow {
   key: string;
   value: string;
+  /** For an entry a pack replaces, how its version differs from the one here. */
+  detail?: string;
 }
 
 /** What a pack holds, worded for the review sheet. */
@@ -1160,6 +1208,125 @@ export function replacedRow(r: PackReplacement, below?: ReplacedBelow): PackRevi
     value =
       "Not found yet: not all game data is on this device, so it may replace the book's once the rest is";
   return { key: r.words, value };
+}
+
+/**
+ * Fields that say where an entry comes from, or that the app or the data adds
+ * to index it, not what it does: never a difference. `bookEdition` is set on
+ * the book's rows here and never written by a pack (`fingerprint.ts`).
+ */
+const UNCOMPARED = new Set([
+  'name',
+  'source',
+  'page',
+  'edition',
+  'bookEdition',
+  'otherSources',
+  'additionalSources',
+  'referenceSources',
+  'reprintedAs',
+  'printingOf',
+  'alias',
+  'srd',
+  'srd52',
+  'basicRules',
+  'basicRules2024',
+  'freeRules2024',
+  'hasFluff',
+  'hasFluffImages',
+  'hasToken',
+  'soundClip',
+  'savingThrow',
+  'abilityCheck',
+  'spellAttack',
+  'affectsCreatureType',
+]);
+
+/** Index lists the data derives from an entry's text (`miscTags`, `damageInflict`): never a difference. */
+const INDEX_FIELD = /(Tags|Inflict)$/;
+
+/** Fields of prose, said together as "its text". */
+const PROSE = new Set(['entries', 'entriesHigherLevel', 'additionalEntries', 'fluff']);
+
+/** The most fields a difference names before "and N more". */
+const MAX_DIFFERENCES = 5;
+
+function sameValue(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (Array.isArray(a) || Array.isArray(b)) {
+    return (
+      Array.isArray(a) &&
+      Array.isArray(b) &&
+      a.length === b.length &&
+      a.every((v, i) => sameValue(v, b[i]))
+    );
+  }
+  if (isRecord(a) && isRecord(b)) {
+    const keys = Object.keys(a);
+    return (
+      keys.length === Object.keys(b).length &&
+      keys.every((k) => Object.hasOwn(b, k) && sameValue(a[k], b[k]))
+    );
+  }
+  return false;
+}
+
+/**
+ * A value said as it is: a number, or yes or no. Text is not, since much of
+ * it is a code (a school's `EV`, a size's `M`) that reads as nothing.
+ */
+function shortWords(v: unknown): string | undefined {
+  if (typeof v === 'number' && Number.isFinite(v)) return String(v);
+  if (typeof v === 'boolean') return v ? 'yes' : 'no';
+  return undefined;
+}
+
+/** A field's name as words: `damageInflict` is "damage inflict". */
+function fieldWords(key: string): string {
+  return key
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .replace(/[_-]+/g, ' ')
+    .trim()
+    .toLowerCase();
+}
+
+/**
+ * How a pack's version of an entry differs from the one it replaces, as a
+ * line under its row: each top-level field that differs, a short value with
+ * what it was and is, the prose together as "its text". Undefined for a
+ * version written as a `_copy`, whose fields are known only once merged.
+ */
+export function entryChanges(was: Entity, now: Entity): string | undefined {
+  if (Object.hasOwn(now, '_copy')) return undefined;
+  const keys = [...new Set([...Object.keys(was), ...Object.keys(now)])].filter(
+    (k) => !UNCOMPARED.has(k) && !INDEX_FIELD.test(k) && !k.startsWith('_'),
+  );
+  // Those with what they were and are come first, so no bare name reads as sharing a value.
+  const valued: string[] = [];
+  const named: string[] = [];
+  let prose = false;
+  for (const k of keys) {
+    const a = own(was, k);
+    const b = own(now, k);
+    if (sameValue(a, b)) continue;
+    if (PROSE.has(k)) {
+      prose = true;
+      continue;
+    }
+    const before = shortWords(a);
+    const after = shortWords(b);
+    if (before !== undefined && after !== undefined) {
+      valued.push(`${fieldWords(k)} (${before} to ${after})`);
+    } else named.push(fieldWords(k));
+  }
+  const parts = [...valued, ...named, ...(prose ? ['its text'] : [])];
+  if (parts.length === 0) return 'The same as the one here.';
+  const said = parts.slice(0, MAX_DIFFERENCES);
+  const more = parts.length - said.length;
+  if (more > 0) said.push(`${more} more`);
+  const list =
+    said.length === 1 ? said[0] : `${said.slice(0, -1).join(', ')} and ${said[said.length - 1]}`;
+  return `Differs in ${list}.`;
 }
 
 const plural = (count: number, one: string, many = `${one}s`) =>

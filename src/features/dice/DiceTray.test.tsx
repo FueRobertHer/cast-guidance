@@ -64,6 +64,37 @@ describe('DiceTray', () => {
     expect(button.hasAttribute('data-dice-dock')).toBe(true);
   });
 
+  it('stays put as the page scrolls down, over the page rather than tucked away', async () => {
+    render(<DiceTray dock />);
+    const button = screen.getByRole('button', { name: 'Dice tray' });
+    const before = button.className;
+    const ownY = Object.getOwnPropertyDescriptor(window, 'scrollY');
+    const ownHeight = Object.getOwnPropertyDescriptor(document.documentElement, 'scrollHeight');
+    // A page long enough that these are mid-page, not its end.
+    Object.defineProperty(document.documentElement, 'scrollHeight', {
+      value: 5000,
+      configurable: true,
+    });
+    try {
+      for (const y of [200, 400, 600]) {
+        Object.defineProperty(window, 'scrollY', { value: y, configurable: true });
+        window.dispatchEvent(new Event('scroll'));
+        await act(() => new Promise((done) => requestAnimationFrame(() => done(undefined))));
+      }
+      expect(button.className).toBe(before);
+      // Hidden under a sheet is a variant (`data-aria-hidden:opacity-0`), not these.
+      const classes = button.className.split(/\s+/);
+      expect(classes).not.toContain('opacity-0');
+      expect(classes).not.toContain('pointer-events-none');
+    } finally {
+      // Back to jsdom's own, whatever the run did.
+      if (ownY === undefined) Reflect.deleteProperty(window, 'scrollY');
+      else Object.defineProperty(window, 'scrollY', ownY);
+      if (ownHeight === undefined) Reflect.deleteProperty(document.documentElement, 'scrollHeight');
+      else Object.defineProperty(document.documentElement, 'scrollHeight', ownHeight);
+    }
+  });
+
   it('says which mode the d20 is in', () => {
     render(<DiceTray dock />);
     fireEvent.click(screen.getByTitle('Dice tray'));
