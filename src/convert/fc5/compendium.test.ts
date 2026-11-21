@@ -511,6 +511,7 @@ describe('editions', () => {
       ${spell('Soot Cloud (Legacy)', '<classes>Wizard</classes>')}
       ${spell('Soot Cloud [5.5e]', '<classes>Wizard</classes>')}
       ${spell('Ash Mote', '<classes>Wizard [Legacy]</classes>')}
+      ${cited('Glow Shard', 'System Reference Document v.5.1')}
     `;
     const editions = (json: Record<string, unknown>) =>
       list(json, 'spell').map((s) => [s.name, s.edition]);
@@ -524,9 +525,18 @@ describe('editions', () => {
       ['Soot Cloud', 'classic'],
       ['Soot Cloud', 'one'],
       ['Ash Mote', 'classic'],
+      ['Glow Shard', 'classic'],
     ]);
-    const known = convert(body, { fileName: FILE, rulesBooks: new Set(['XPHB']) });
+    const rulesBooks = new Set(['XPHB']);
+    const known = convert(body, { fileName: FILE, rulesBooks });
     expect(editions(known.json)[3]).toEqual(['Cinder Step', 'classic']);
+    // Data that lacks the book (a release before it, or none downloaded) only guesses.
+    const lacking = convert(body, {
+      fileName: FILE,
+      rulesBooks,
+      hasBook: (code) => code.toUpperCase() !== 'XGE',
+    });
+    expect(editions(lacking.json)[3]).toEqual(['Cinder Step', undefined]);
   });
 
   it("states none from a document's own version or a class list marking both", () => {
@@ -541,6 +551,21 @@ describe('editions', () => {
       ['Rust Ward', undefined],
       ['Ash Bloom', undefined],
       ['Ash Glow', undefined],
+    ]);
+  });
+
+  it('states none from a class option list marking both editions', () => {
+    const option = (name: string, classes: string) =>
+      `<spell><name>${name}</name><level>0</level><classes>${classes}</classes><text>You see.</text></spell>`;
+    const { json } = convert(`
+      ${option('Ember Sight', 'Eldritch Invocations [Legacy], Eldritch Invocations [5.5e]')}
+      ${option('Ember Gaze', 'Eldritch Invocations [5.5e], Eldritch Invocations [Legacy]')}
+      ${option('Ember Glare', 'Eldritch Invocations [Legacy]')}
+    `);
+    expect(list(json, 'optionalfeature').map((o) => [o.name, o.edition])).toEqual([
+      ['Ember Sight', undefined],
+      ['Ember Gaze', 'one'],
+      ['Ember Glare', 'classic'],
     ]);
   });
 });

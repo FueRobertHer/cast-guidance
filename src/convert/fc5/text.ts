@@ -1290,9 +1290,9 @@ export function entryName(raw: string): { name: string; edition?: RulesVersion }
 
 /** The edition a `Source:` line points at, when it says. */
 export function sourceLineEdition(line: string): RulesVersion | undefined {
-  // Not the tail of a document's own version (`v2.5.1`, `v1.5.0`).
-  if (/(?<![\d.])\bv?(?:5\.2(?:\.\d)?|2024|5\.5e?)\b/.test(line)) return '2024';
-  if (/(?<![\d.])\bv?(?:5\.0|5\.1|2014)\b/.test(line)) return '2014';
+  // Not the tail of a document's own version or a date (`v2.5.1`, `01.02.2024`).
+  if (/(?<!\d\.)\bv?(?:5\.2(?:\.\d)?|2024|5\.5e?)\b/.test(line)) return '2024';
+  if (/(?<!\d\.)\bv?(?:5\.0|5\.1|2014)\b/.test(line)) return '2014';
   if (/Player's Handbook \(2024\)|Dungeon Master's Guide \(2024\)/i.test(line)) return '2024';
   return undefined;
 }

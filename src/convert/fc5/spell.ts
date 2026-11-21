@@ -15,6 +15,7 @@ import {
   type FileClass,
   type FileClasses,
   placeEntity,
+  placeMarked,
 } from './context';
 import {
   DAMAGE_TYPES,
@@ -461,15 +462,7 @@ export function convertSpell(el: XmlElement, ctx: Fc5Context): Fc5Result {
       .join(', '),
     ctx.classes,
   );
-  const placement = ctx.place(sourceLine, named.edition ?? classes.edition);
-  // A class list that marks both editions states neither: the edition is stated
-  // only if the spell's line or book states the same one.
-  if (named.edition === undefined && classes.mixed === true) {
-    const bare = ctx.place(sourceLine, undefined);
-    if (bare.edition !== placement.edition || bare.editionStated !== true) {
-      delete placement.editionStated;
-    }
-  }
+  const placement = placeMarked(ctx, sourceLine, named.edition, classes);
   const edition = placement.edition;
 
   const spell: Record<string, unknown> = { name: named.name };

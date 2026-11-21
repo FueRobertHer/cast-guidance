@@ -157,6 +157,28 @@ export function extraClassKey(name: string, edition: RulesVersion | undefined): 
 }
 
 /**
+ * Where an entry belongs whose edition its name marks, else its class list's
+ * markers. A list that marks both editions (`Paladin [5.5e], Tamer [Legacy]`)
+ * states neither, so the edition is stated only if the line or book states the
+ * same one; the edition itself is the list's, as before.
+ */
+export function placeMarked(
+  ctx: Fc5Context,
+  line: string | undefined,
+  named: RulesVersion | undefined,
+  list: { edition?: RulesVersion; mixed?: boolean },
+): Placement {
+  const placement = ctx.place(line, named ?? list.edition);
+  if (named === undefined && list.mixed === true) {
+    const bare = ctx.place(line, undefined);
+    if (bare.edition !== placement.edition || bare.editionStated !== true) {
+      delete placement.editionStated;
+    }
+  }
+  return placement;
+}
+
+/**
  * Put a placement's source, edition and citation on an entity being built. A
  * 2014 edition is written only when something stated it: homebrew that names
  * no edition is no cue on a character of either.

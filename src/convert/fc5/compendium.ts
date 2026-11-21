@@ -51,6 +51,7 @@ import {
   bookSource,
   codeEdition,
   editionKnown,
+  editionSure,
   type HomebrewSource,
   readSourceLine,
 } from './books';
@@ -205,6 +206,7 @@ function placer(
   fileSource: HomebrewSource,
   fileEd: RulesVersion | undefined,
   rulesBooks: ReadonlySet<string> | undefined,
+  hasBook: ((code: string) => boolean) | undefined,
 ): Fc5Context['place'] {
   return (line, own) => {
     const books = line === undefined ? [] : readSourceLine(line);
@@ -223,9 +225,11 @@ function placer(
         ? codeEdition(first.code, rulesBooks)
         : sourceLineEdition(first.title);
     // A free rules text that names no version is the file's. A known book's
-    // edition is stated only where it is known, not guessed (`editionKnown`).
+    // edition is stated only where it is sure, not guessed (`editionSure`).
     const bookStated =
-      first.code === undefined || editionKnown(first.code, rulesBooks) ? bookEdition : undefined;
+      first.code === undefined || editionSure(first.code, rulesBooks, hasBook)
+        ? bookEdition
+        : undefined;
     const stated = own ?? bookStated ?? (first.reference === true ? fileEd : undefined);
     const edition = own ?? bookEdition ?? (first.reference === true ? fileEd : undefined) ?? '2014';
     const split = first.code === undefined && edition === '2024' && bookEdition !== '2024';
@@ -378,13 +382,14 @@ export function fc5Context(
   fileName: string,
   more: {
     rulesBooks?: ReadonlySet<string>;
+    hasBook?: (code: string) => boolean;
     featSources?: ReadonlyMap<string, readonly FeatRef[]>;
     extraClasses?: ReadonlyMap<string, readonly string[]>;
     officialFeat?: OfficialFeat;
   } = {},
 ): Fc5Context {
   const ctx: Fc5Context = {
-    place: placer(sourceFor(fileName), fileEdition(fileName), more.rulesBooks),
+    place: placer(sourceFor(fileName), fileEdition(fileName), more.rulesBooks, more.hasBook),
     featSources: more.featSources ?? new Map(),
   };
   if (more.extraClasses !== undefined) ctx.extraClasses = more.extraClasses;
@@ -433,6 +438,7 @@ export function fc5Converter(opts: ConvertOptions): Fc5Converter {
     featSources,
     extraClasses: extra,
     ...(opts.rulesBooks === undefined ? {} : { rulesBooks: opts.rulesBooks }),
+    ...(opts.hasBook === undefined ? {} : { hasBook: opts.hasBook }),
     ...(opts.officialFeat === undefined ? {} : { officialFeat: opts.officialFeat }),
   });
   // The spells the file defines in full, by lowercased name, with their level
