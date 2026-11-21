@@ -4,7 +4,7 @@
 // dropped at the top of the page. The prompt's input had no name either.
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
-import { askConfirm, askText, DialogHost } from './dialogs';
+import { askChoice, askConfirm, askText, DialogHost } from './dialogs';
 
 // jsdom has no matchMedia and the drawer asks for one on mount.
 beforeAll(() => {
@@ -103,5 +103,42 @@ describe('DialogHost', () => {
       void askText({ title: 'Rename hero', placeholder: 'Name' });
     });
     expect(await screen.findByRole('textbox', { name: 'Rename hero' })).toBeTruthy();
+    // A text ask has a Close too (review item 6), which leaves nothing open.
+    await press('Close');
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  });
+});
+
+// Review item 6: on a desktop the New character sheet (an askChoice) had no
+// way out on screen, only Escape and the scrim.
+describe('a visible Close', () => {
+  it('closes a choice as no answer, and is last in the tab order', async () => {
+    const opener = renderWithOpener();
+    let answer: Promise<string | null> = Promise.resolve('x');
+    act(() => {
+      answer = askChoice({
+        title: 'New character',
+        options: [
+          { id: 'wizard', label: 'Guided wizard' },
+          { id: 'blank', label: 'Blank sheet' },
+        ],
+      });
+    });
+    const close = await screen.findByRole('button', { name: 'Close' });
+    const buttons = screen.getAllByRole('button');
+    // Focus still opens on the first option, not on Close.
+    expect(buttons.at(-1)).toBe(close);
+    await press('Close');
+    await expect(answer).resolves.toBeNull();
+    await waitFor(() => expect(document.activeElement).toBe(opener));
+  });
+
+  it('is not on a confirm, whose Cancel is the way out', async () => {
+    renderWithOpener();
+    act(() => {
+      void askConfirm({ title: 'Delete it?' });
+    });
+    await screen.findByRole('button', { name: 'Cancel' });
+    expect(screen.queryByRole('button', { name: 'Close' })).toBeNull();
   });
 });

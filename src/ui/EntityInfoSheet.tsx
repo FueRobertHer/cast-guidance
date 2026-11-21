@@ -11,6 +11,7 @@ import { headerFacts } from '@/features/library/fmt';
 import { RegistryViewContext } from '@/stores/registryViewContext';
 import { Badge } from './Badge';
 import { Button } from './Button';
+import { ClassDetails } from './ClassDetails';
 import { Sheet, SheetStandIn, useSheetOpenOnMount } from './sheet';
 
 /**
@@ -179,7 +180,7 @@ function EntityInfoSheetContent({
       <Sheet.Portal>
         <Sheet.Scrim />
         <Sheet.Panel className="flex max-h-[80dvh] flex-col">
-          <Sheet.Heading>
+          <Sheet.Heading close>
             {String(shown.name ?? '?')}
             {record !== undefined && <ChangedBadge />}
           </Sheet.Heading>
@@ -209,6 +210,7 @@ function EntityInfoSheetContent({
                 ))}
               </div>
             )}
+            {type === 'class' && <ClassDetails entity={shown} />}
             {hasEntries ? (
               <EntriesView entries={entries} />
             ) : (
@@ -221,6 +223,7 @@ function EntityInfoSheetContent({
               )
             )}
           </div>
+          <Sheet.CloseButton />
         </Sheet.Panel>
       </Sheet.Portal>
     </Sheet.Root>
