@@ -230,25 +230,27 @@ export function OriginChoices({
   const { policy, scope } = usePickSourcePolicy(doc.allowedSources, doc.sourceSwitches);
   const pending = sheet.pending.filter((p) => match(p.origin) && listsPick(p));
   const resolved = sheet.resolvedChoices.filter((r) => match(r.prompt.origin));
-  // Which already-made pick is open for editing, if any (by prompt id).
-  const [editing, setEditing] = useState<string>();
+  // Which already-made picks are open for editing (by prompt id).
+  const [editing, setEditing] = useState<ReadonlySet<string>>(() => new Set());
   // Forget an id whose prompt has gone (the origin behind it was swapped out),
-  // so it can't silently re-open an editor if that prompt ever comes back.
-  if (editing !== undefined && !resolved.some((r) => r.prompt.id === editing)) {
-    setEditing(undefined);
+  // so it can't silently re-open an editor if that prompt ever comes back. A
+  // made pick with taps still held over it opens on them, so a swap left
+  // part-done on another visit is in sight, never applied unseen; it stays
+  // open until Confirm or Cancel, even once tapped back to what is saved.
+  const open = new Set([...editing].filter((id) => resolved.some((r) => r.prompt.id === id)));
+  for (const { prompt } of resolved) {
+    const held = stage?.picks[prompt.id];
+    if (held !== undefined && held.base === stagedBase(doc.choices[prompt.id])) open.add(prompt.id);
   }
-  // A made pick with taps still held over it opens on them, so a swap left
-  // part-done on another visit is in sight, never applied unseen by Next.
-  const isOpen = (id: string, value: unknown) => {
-    const held = stage?.picks[id];
-    return editing === id || (held !== undefined && held.base === stagedBase(value));
-  };
+  if (open.size !== editing.size || [...open].some((id) => !editing.has(id))) setEditing(open);
+  const close = (id: string) =>
+    setEditing((now) => new Set([...now].filter((other) => other !== id)));
 
   // Spell files and class lists load on demand, so only for a spell pick that is
   // open: most characters never see one, and a made pick reads from its save.
   const openSpellPrompts = [
     ...pending,
-    ...resolved.flatMap((r) => (isOpen(r.prompt.id, doc.choices[r.prompt.id]) ? [r.prompt] : [])),
+    ...resolved.flatMap((r) => (open.has(r.prompt.id) ? [r.prompt] : [])),
   ].filter((p) => p.kind === 'spell');
   const spellPacks = useTypePacks(openSpellPrompts.length > 0 ? 'spell' : undefined);
   const needsClassLists = openSpellPrompts.some((p) => (p.spellQuery?.classes.length ?? 0) > 0);
@@ -301,12 +303,9 @@ export function OriginChoices({
     // Confirming an untouched pick just closes the editor. Writing it would
     // schedule a save and log a history entry for a no-op.
     stage?.set(id, undefined);
-    if (sameChoice(doc.choices[id], value)) {
-      setEditing(undefined);
-      return;
-    }
+    close(id);
+    if (sameChoice(doc.choices[id], value)) return;
     update((d) => applyPick(d, id, value));
-    setEditing(undefined);
   };
 
   const editor = (prompt: ChoicePrompt, onCancel?: () => void) => {
@@ -366,13 +365,13 @@ export function OriginChoices({
         </div>
       ))}
       {resolved.map(({ prompt, selected }) =>
-        isOpen(prompt.id, doc.choices[prompt.id]) ? (
+        open.has(prompt.id) ? (
           // Re-opened with the current picks still selected, so swapping one
           // out is a deselect-and-replace rather than starting over.
           <div key={prompt.id}>
             {editor(prompt, () => {
               stage?.set(prompt.id, undefined);
-              setEditing(undefined);
+              close(prompt.id);
             })}
           </div>
         ) : (
@@ -393,7 +392,7 @@ export function OriginChoices({
               type="button"
               aria-label={`Change ${prompt.label}`}
               title="Change this pick"
-              onClick={() => setEditing(prompt.id)}
+              onClick={() => setEditing(new Set([...open, prompt.id]))}
               className={`shrink-0 ${buttonClass({ variant: 'outline', size: 'sm' })}`}
             >
               <RefreshCcw size={14} aria-hidden /> Change

@@ -103,6 +103,24 @@ function pickState(prompt: ChoicePrompt, committed: string[], draft: string[]) {
 }
 
 /**
+ * What held taps would save now, as the card's Confirm would, or undefined
+ * when that could not save them: worked out against the prompt as it stands,
+ * so a tap another pick has since closed lapses here as it does on the card.
+ * A spell prompt's options are filled in by the page showing it, so for one
+ * the value worked out when the taps were made stands.
+ */
+export function stagedApply(
+  prompt: ChoicePrompt,
+  value: string[] | string | number | undefined,
+  held: StagedPick,
+): string[] | string | undefined {
+  if (held.base !== stagedBase(value)) return undefined;
+  if (prompt.kind === 'spell') return held.apply;
+  const now = pickState(prompt, canonicalize(prompt, value), canonicalize(prompt, held.draft));
+  return now.canConfirm && now.dirty ? now.value : undefined;
+}
+
+/**
  * Generic renderer for engine ChoicePrompts — the wizard AND level-up flow
  * are both just lists of these. Never hardcodes rules content.
  *

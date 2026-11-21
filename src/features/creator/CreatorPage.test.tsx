@@ -570,6 +570,47 @@ describe('picks tapped but not confirmed', () => {
     await waitFor(() => expect(router.state.location.pathname).toBe('/'));
     expect(saved().choices[SKILLS]).toEqual(['Athletics', 'Survival']);
   });
+
+  it('keeps taps over a reload', () => {
+    renderClass();
+    tap(/^Athletics/);
+    cleanup();
+    renderClass();
+    // The seeded draft has the same id, so its held taps come back with it.
+    expect(screen.getByRole('button', { name: /^Athletics/ }).getAttribute('aria-pressed')).toBe(
+      'true',
+    );
+  });
+
+  it('applies only the picks on the steps walked past', async () => {
+    renderClass();
+    tap(/^Athletics/);
+    tap(/^Survival/);
+    back();
+    await onStep('Basics');
+    tap('Next: Class');
+    await onStep('Class');
+    // Basics was walked past, not Class: the taps still wait on their card.
+    expect(saved().choices[SKILLS]).toBeUndefined();
+    next();
+    await onStep('Species / Race');
+    expect(saved().choices[SKILLS]).toEqual(['Athletics', 'Survival']);
+  });
+
+  it('keeps a made pick open on held taps, even once tapped back to what is saved', async () => {
+    renderClass((d) => {
+      d.choices[SKILLS] = ['Athletics', 'Survival'];
+    });
+    tap('Change Class skill proficiency');
+    tap(/^Survival/);
+    back();
+    await onStep('Basics');
+    tap('Next: Class');
+    await onStep('Class');
+    // Opened by the held taps, not by Change.
+    tap(/^Survival/);
+    expect(screen.getByRole('button', { name: 'Confirm Class skill proficiency' })).toBeTruthy();
+  });
 });
 
 // UX-004: the wizard's destructive changes. Picking another class used to clear
