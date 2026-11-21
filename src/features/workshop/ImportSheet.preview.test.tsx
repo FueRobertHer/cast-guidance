@@ -957,6 +957,107 @@ describe('the Import sheet, with a Fight Club 5e compendium', () => {
     expect(dialog.textContent).not.toContain('Turned off. It is under Collections.');
   });
 
+  /** One made-up spell per book, from `count` books, `Book 1` on. */
+  const SHELF = (count: number) => `<compendium version="5">${Array.from(
+    { length: count },
+    (_, i) => `
+  <spell>
+    <name>Shelf Spell ${i + 1}</name><level>1</level><school>EV</school><time>1 action</time>
+    <range>Self</range><components>V</components><duration>1 minute</duration>
+    <classes>Wizard</classes><text>A spell.\nSource: Book ${i + 1} p. 1</text>
+  </spell>`,
+  ).join('')}
+</compendium>`;
+
+  it('starts a long list of books folded, its count and Select all in view', async () => {
+    renderSheet();
+    await readFile('shelf.xml', SHELF(9));
+    const dialog = await findDialog('Import "shelf.xml"?');
+    const books = within(dialog).getByRole('region', { name: 'Books' });
+    expect(within(books).queryAllByRole('checkbox')).toEqual([]);
+    expect(books.textContent).toContain('9 of 9');
+    expect(within(dialog).getByRole('button', { name: 'Import 9 books' })).toBeTruthy();
+    const show = within(books).getByRole('button', { name: 'Show the 9 books' });
+    expect(show.getAttribute('aria-expanded')).toBe('false');
+
+    fireEvent.click(show);
+    expect(within(books).getAllByRole('checkbox')).toHaveLength(9);
+    expect(within(books).queryByRole('button', { name: /^Show the/ })).toBeNull();
+    // Eight or fewer are listed open.
+    cleanup();
+    renderSheet();
+    await readFile('shelf.xml', SHELF(8));
+    const eight = within(await findDialog('Import "shelf.xml"?')).getByRole('region', {
+      name: 'Books',
+    });
+    expect(within(eight).getAllByRole('checkbox')).toHaveLength(8);
+  });
+
+  it('leaves unticked a book another file here has already, and says why', async () => {
+    renderSheet();
+    await readFile('other.xml', LIBRARY(['Ash Bolt']));
+    fireEvent.click(
+      within(await findDialog('Import "other.xml"?')).getByRole('button', {
+        name: 'Import 2 books',
+      }),
+    );
+    await handedBack();
+
+    cleanup();
+    renderSheet();
+    await readFile(
+      'library.xml',
+      `<compendium version="5">
+  <spell>
+    <name>Ash Bolt</name><level>2</level><school>C</school><time>1 action</time>
+    <range>Self</range><components>V</components><duration>1 minute</duration>
+    <classes>Sorcerer</classes><text>Grey ash.\nSource: Ashen Tome p. 4</text>
+  </spell>
+  <spell>
+    <name>Cinder Step</name><level>1</level><school>C</school><time>1 action</time>
+    <range>Self</range><components>V</components><duration>1 minute</duration>
+    <classes>Sorcerer</classes><text>A step.\nSource: Cinder Book p. 2</text>
+  </spell>
+</compendium>`,
+    );
+    const dialog = await findDialog('Import "library.xml"?');
+    const books = within(dialog).getByRole('region', { name: 'Books' });
+    const ashen = within(books).getByRole('checkbox', { name: /Ashen Tome/ }) as HTMLInputElement;
+    const cinder = within(books).getByRole('checkbox', { name: /Cinder Book/ }) as HTMLInputElement;
+    expect([ashen.checked, cinder.checked]).toEqual([false, true]);
+    expect(books.textContent).toContain(
+      'One is in another file here already, so it starts unticked.',
+    );
+    // Its clash names the book and the file it came from, not the book as a file.
+    expect(dialog.textContent).toContain(
+      'Ash Bolt (FCAshenTome) is also in Ashen Tome, from "other.xml"',
+    );
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Import 1 book' }));
+    expect((await handedBack()).message).toBe('Imported 1 book from "library.xml" (1 spell)');
+  });
+
+  it('lists ten entries of what a conversion lost, and more on asking', async () => {
+    const spells = Array.from(
+      { length: 62 },
+      (_, i) => `
+  <spell>
+    <name>Lost ${i + 1}</name><level>1</level><school>EV</school><time>1 action</time>
+    <range>Self</range><components>V</components><classes>Wizard</classes><text>A spell.</text>
+  </spell>`,
+    ).join('');
+    renderSheet();
+    await readFile('lost.xml', `<compendium version="5">${spells}</compendium>`);
+    const dialog = await findDialog('Import "lost.xml"?');
+    const listed = () =>
+      (dialog.textContent?.match(/: the file gives no duration\./g) ?? []).length;
+    expect(listed()).toBe(10);
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Show 50 more of 52' }));
+    expect(listed()).toBe(60);
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Show 2 more' }));
+    expect(listed()).toBe(62);
+    expect(within(dialog).queryByRole('button', { name: /^Show \d+ more/ })).toBeNull();
+  });
+
   it('turns Import off while no book that is new is ticked', async () => {
     renderSheet();
     await readFile('library.xml', LIBRARY(['Ash Bolt']));

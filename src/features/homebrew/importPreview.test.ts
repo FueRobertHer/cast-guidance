@@ -22,6 +22,7 @@ import {
   previewHomebrewImport,
   replacedRow,
   WINNER_POLICY,
+  whereIn,
 } from './importPreview';
 
 type Json = Record<string, unknown>;
@@ -733,6 +734,21 @@ describe('previewHomebrewImport for a file stored a book at a time', () => {
     ]);
   });
 
+  it('names a clash with a stored book by the book and the file it came from', () => {
+    const p = previewBooks([
+      { ...bookRow('ash-5e', 'ASH', ['Ash Bolt'], 'five.xml'), addedAt: 1 },
+      { ...bookRow('off-5e', 'NEW', ['Zap'], 'five.xml'), addedAt: 1, enabled: false },
+    ]);
+    const [clash] = p.entityCollisions;
+    expect(clash?.against).toEqual({ id: 'ash-5e', fileName: 'ASH Book', file: 'five.xml' });
+    expect(clash === undefined ? '' : describeCollision(clash)).toBe(
+      'Ash Bolt (ASH) is also in ASH Book, from "five.xml", which was imported first, so a character that picks it gets that version.',
+    );
+    expect(p.disabledClashes.map((c) => whereIn(c.against))).toEqual(['NEW Book, from "five.xml"']);
+    // A file kept whole is named as a file, as before.
+    expect(whereIn({ id: 'x', fileName: 'brew.json' })).toBe('"brew.json"');
+  });
+
   it('names only files ahead of a book that keeps its own copy`s place', () => {
     // This file's ASH copy came first (1), five.xml's copy later (3). The new
     // ASH replaces the old copy and keeps its place, so five.xml does not win.
@@ -802,7 +818,7 @@ describe('previewHomebrewImport for a file stored a book at a time', () => {
     expect(p.books?.every((b) => b.status === 'same')).toBe(true);
   });
 
-  it('names a stored book by its book, not the file it came from', () => {
+  it('names a stored book by its book, with the file it came from beside it', () => {
     const p = preview(
       { _meta: meta(['HB']), spell: [spell('Ember Lance', 'HB')] },
       {
@@ -812,7 +828,11 @@ describe('previewHomebrewImport for a file stored a book at a time', () => {
         })),
       },
     );
-    expect(p.entityCollisions[0]?.against).toEqual({ id: 'emb', fileName: 'EMB Book' });
+    expect(p.entityCollisions[0]?.against).toEqual({
+      id: 'emb',
+      fileName: 'EMB Book',
+      file: 'all.xml',
+    });
   });
 });
 

@@ -46,6 +46,7 @@ import {
   type OfficialCoverage,
   previewHomebrewImport,
   WINNER_POLICY,
+  whereIn,
 } from './importPreview';
 import { loadOfficialIndex } from './loadOfficialIndex';
 import {
@@ -309,21 +310,32 @@ function keyedNotes(notes: EntryNote[]): { key: string; note: EntryNote }[] {
   });
 }
 
-/** One list of converted entries with what each lost, capped. */
+/** How many more a list's Show more adds: a compendium can name thousands. */
+const MORE_NOTES = 50;
+
+/** One list of converted entries with what each lost, ten at first, then more on asking. */
 function NoteList({ notes, intro }: { notes: EntryNote[]; intro: string }) {
+  const [shown, setShown] = useState(MAX_LISTED_NOTES);
   if (notes.length === 0) return null;
+  const left = notes.length - shown;
   return (
     <>
       <p className="text-ink-muted">{intro}</p>
       <PreviewList>
-        {keyedNotes(notes.slice(0, MAX_LISTED_NOTES)).map(({ key, note }) => (
+        {keyedNotes(notes.slice(0, shown)).map(({ key, note }) => (
           <StatusItem key={key} tone="info" status={`${note.name}:`}>
             {note.reasons.join('; ')}.
           </StatusItem>
         ))}
       </PreviewList>
-      {notes.length > MAX_LISTED_NOTES && (
-        <p className="text-ink-muted">And {notes.length - MAX_LISTED_NOTES} more.</p>
+      {left > 0 && (
+        <button
+          type="button"
+          onClick={() => setShown((n) => n + MORE_NOTES)}
+          className="inline-flex min-h-tap items-center self-start text-ink-muted underline underline-offset-3 hover:text-ink"
+        >
+          {left > MORE_NOTES ? `Show ${MORE_NOTES} more of ${left}` : `Show ${left} more`}
+        </button>
       )}
     </>
   );
@@ -458,10 +470,23 @@ function bookStatus(b: BookChoice): string {
   return also === '' ? counts : `${counts}.${also}`;
 }
 
+/** The most books the picker lists open; past it the list starts folded, so the report shows. */
+const BOOKS_OPEN = 8;
+
 /**
- * The books of a file stored a book at a time, each ticked to come in. All
- * are ticked to begin with; a book left out can be imported later by
- * importing the file again.
+ * The books ticked to begin with: every one, but a book another file here
+ * already has a copy of. Its entries would show once, from the copy imported
+ * first, so importing it again mostly adds a second switch.
+ */
+export function booksTicked(books: readonly BookChoice[] | undefined): Set<string> {
+  return new Set((books ?? []).filter((b) => b.alsoIn === undefined).map((b) => b.id));
+}
+
+/**
+ * The books of a file stored a book at a time, each ticked to come in, but
+ * those another file here has already (`booksTicked`). A book left out can
+ * be imported later by importing the file again. A long list starts folded,
+ * with its count and Select all in view.
  */
 function BookPicker({
   books,
@@ -472,16 +497,23 @@ function BookPicker({
   chosen: ReadonlySet<string>;
   onChange: (next: Set<string>) => void;
 }) {
+  const [open, setOpen] = useState(books.length <= BOOKS_OPEN);
   const toggle = (id: string, on: boolean) => {
     const next = new Set(chosen);
     if (on) next.add(id);
     else next.delete(id);
     onChange(next);
   };
+  const shared = books.filter((b) => b.alsoIn !== undefined).length;
   return (
     <PreviewSection heading="Books">
       <p className="text-ink-muted">
         Each book is kept on its own, with its own switch. Untick the ones you do not want.
+        {shared === 0
+          ? ''
+          : shared === books.length
+            ? ' Another file here has every one of them already, so none is ticked: tick the ones you want here too.'
+            : ` ${shared === 1 ? 'One is' : `${shared} are`} in another file here already, so ${shared === 1 ? 'it starts' : 'they start'} unticked.`}
       </p>
       <div className="flex flex-col overflow-hidden rounded-control bg-surface ring-1 ring-line ring-inset">
         <div className="flex gap-1 border-line border-b px-2 py-1 text-caption">
@@ -499,11 +531,21 @@ function BookPicker({
           >
             Select none
           </button>
+          {!open && (
+            <button
+              type="button"
+              aria-expanded={false}
+              onClick={() => setOpen(true)}
+              className="inline-flex min-h-tap items-center px-1 text-ink-muted underline underline-offset-3 hover:text-ink"
+            >
+              Show the {books.length} books
+            </button>
+          )}
           <span className="ml-auto inline-flex items-center px-1 text-ink-muted">
             {chosen.size} of {books.length}
           </span>
         </div>
-        {books.map((b) => (
+        {(open ? books : []).map((b) => (
           <label
             key={b.id}
             className="flex min-h-tap items-start gap-2.5 px-3 py-2 hover:bg-surface-raised"
@@ -548,9 +590,7 @@ export default function HomebrewImportPreview({
   const dup = p.duplicateOf;
   const hasClashes = p.entityCollisions.length > 0 || p.sourceCollisions.length > 0;
   const books = p.books;
-  const [chosen, setChosen] = useState<ReadonlySet<string>>(
-    () => new Set(books?.map((b) => b.id) ?? []),
-  );
+  const [chosen, setChosen] = useState<ReadonlySet<string>>(() => booksTicked(books));
   const pack = dup === undefined ? p.pack : undefined;
   const [applyTo, setApplyTo] = useState<PackAppliesTo>({ characters: [], appDefault: true });
   // A file of a collection here updates it, keeping who its pack applies to.
@@ -706,7 +746,8 @@ export default function HomebrewImportPreview({
       {picking && dup === undefined && (
         <>
           <BookPicker books={books} chosen={chosen} onChange={setChosen} />
-          {storing === 0 && (
+          {/* Every book unticked because another file has it: the picker says so. */}
+          {storing === 0 && (chosen.size > 0 || books.some((b) => b.alsoIn === undefined)) && (
             <p className="text-ink-muted">
               Tick a book that is not already on this device to import it.
             </p>
@@ -841,7 +882,7 @@ export default function HomebrewImportPreview({
           <PreviewList>
             {p.disabledClashes.map((c) => (
               <StatusItem key={`${c.type}:${c.name}|${c.source}:${c.against.id}`} tone="info">
-                {c.name} ({c.source}) is also in "{c.against.fileName}", which is turned off.
+                {`${c.name} (${c.source}) is also in ${whereIn(c.against)}, which is turned off.`}
               </StatusItem>
             ))}
           </PreviewList>
