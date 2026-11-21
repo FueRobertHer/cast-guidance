@@ -257,6 +257,7 @@ function Card({
   picked,
   inPick = false,
   charges = false,
+  classGiven = false,
   place,
   toMoment,
 }: {
@@ -278,6 +279,8 @@ function Card({
   inPick?: boolean;
   /** An action's cost can spend the item's charges (`EffectCards`' `holdsCharges`). */
   charges?: boolean;
+  /** A class gives it (`EffectCards`' `classGiven`). */
+  classGiven?: boolean;
   /** Where it sits in a moment, for a card a moment puts on. */
   place?: MomentPlace;
   /** Puts it on at a moment instead, where the list keeps moments. */
@@ -312,6 +315,7 @@ function Card({
     inPick,
     inPlay,
     atMoment: place !== undefined,
+    classGiven,
     onChange,
     List: EffectCards,
   };
@@ -470,6 +474,7 @@ export function EffectCards({
   onMoments,
   momentName,
   hostName,
+  classGiven = false,
 }: {
   effects: unknown;
   /** The effects, and the prices (`amend`) when renaming a pool moved them too. */
@@ -537,6 +542,12 @@ export function EffectCards({
    * entry's): a new pool is named for it, so two features' pools are two.
    */
   hostName?: string;
+  /**
+   * A class gives these effects (a class's, a subclass's, their features', an
+   * optional feature's): a pool or an action can say the class in its name.
+   * Elsewhere no class is there to name, so it says so only when a file has.
+   */
+  classGiven?: boolean;
 }) {
   const pageSpells = useContext(SpellChoices);
   // A page with no spells in its books has none to name, so Cast a spell waits.
@@ -830,6 +841,7 @@ export function EffectCards({
             picked={picked}
             inPick={inPick}
             charges={charges}
+            classGiven={classGiven}
             toMoment={
               onMoments === undefined || !movable
                 ? undefined
@@ -870,6 +882,7 @@ export function EffectCards({
             problems={problemsAt(mi, k)}
             inPlay={inPlay}
             readOnly={readOnly}
+            classGiven={classGiven}
             place={place}
             onRemove={() => onMoments?.(without(mi, k))}
             onChange={(next) => {
@@ -947,13 +960,18 @@ export function guidanceWith(
   return Object.keys(next).some((k) => k !== 'v') ? next : undefined;
 }
 
-/** An entry's own effects, as a section of its editor. */
+/**
+ * An entry's own effects, as a section of its editor. A class gives them when
+ * the host says so (an optional feature's), or when the entry is a class's or
+ * a subclass's feature, which names its class (`className`).
+ */
 export function EntryEffects({
   draft,
   change,
   original,
   readOnly,
-}: Pick<EditorProps, 'draft' | 'change' | 'original' | 'readOnly'>) {
+  classGiven = typeof draft.className === 'string',
+}: Pick<EditorProps, 'draft' | 'change' | 'original' | 'readOnly'> & { classGiven?: boolean }) {
   const g = isRecord(draft.castGuidance) ? draft.castGuidance : {};
   const set = (patch: Record<string, unknown>) =>
     change({ castGuidance: guidanceWith(draft.castGuidance, patch) });
@@ -977,6 +995,7 @@ export function EntryEffects({
           typeof draft.name === 'string' && draft.name.trim() !== '' ? draft.name : undefined
         }
         hostName={typeof draft.name === 'string' ? draft.name : undefined}
+        classGiven={classGiven}
         onMoments={(moments, effects) =>
           set({
             moments: moments.length > 0 ? moments : undefined,

@@ -819,7 +819,10 @@ describe('mergeHomebrew', () => {
         ],
       ]),
     );
-    expect(reg.byType('feat')).toHaveLength(2);
+    // The registry stands. The first feat has no name to list it by, so the
+    // merge leaves it out (normalize.hostile.test.ts); the copy that finds
+    // nothing by that name stays.
+    expect(reg.byType('feat').map((e) => e.name)).toEqual(['Y']);
     expect(reg.warnings.map((w) => w.entity)).toContain('?|hb');
   });
 });

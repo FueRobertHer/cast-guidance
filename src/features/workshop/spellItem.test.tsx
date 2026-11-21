@@ -489,11 +489,13 @@ describe('item fields', () => {
     expect(regainOf('dusk', '{@dice 1d6 + 1}')).toBe('1d6+1');
     expect(regainOf('dawn', 3)).toBe(3);
     expect(regainOf('dawn', 'all')).toBe('all');
-    // Only a time a long rest covers gives anything back, as the sheet reads the fields.
+    // Only a time a rest covers gives anything back, as the sheet reads the fields.
     expect(regainOf('Midnight', 2)).toBe(2);
     expect(regainOf('restLong', '{@dice 1d4}')).toBe('1d4');
     expect(regainOf('special', '{@dice 1d6 + 1}')).toBe('none');
-    expect(regainOf('restShort', 2)).toBe('none');
+    // A short rest's, which the effect says with `rest: "short"`.
+    expect(regainOf('restShort', 2)).toBe(2);
+    expect(regainOf('restShort', undefined)).toBe('all');
   });
 
   it("writes a built-in row's count and what comes back in fields still the original's", () => {
@@ -535,6 +537,11 @@ describe('item fields', () => {
         rechargeAmount: 1,
       },
     );
+    // A row's come back at dawn, never on a short rest: dawn in its place.
+    expect(pool(row(3, 'all'), { charges: 3, recharge: 'restShort' })).toStrictEqual({
+      recharge: 'dawn',
+      rechargeAmount: undefined,
+    });
     // Ring of Three Wishes and Staff of Charming: no count in the fields.
     expect(pool(row(3, 'none'), {})).toStrictEqual({ charges: 3 });
     expect(pool(row(10, '1d8+2'), {})).toStrictEqual({
@@ -768,6 +775,48 @@ describe('ItemEditor', () => {
     expect(screen.queryByText(/counts these the older way/)).toBeNull();
     press('Add a spell its charges cast');
     expect(screen.getByLabelText('Charge spell 1')).toBeTruthy();
+  });
+
+  it('gives its charges back on a short rest, all of them or a number, never dice', () => {
+    const draft = mount(item, { name: 'Short Rest Wand', ...item.blank() });
+    const effects = () => (draft().castGuidance as Json | undefined)?.effects;
+    type('Charges', '3');
+    type('Regains them', 'dawn');
+    type('How many', '1d4');
+    // Picked, a short rest takes the dice out: all of them come back.
+    type('Regains them', 'restShort');
+    expect(draft()).toMatchObject({ recharge: 'restShort' });
+    expect(draft()).not.toHaveProperty('rechargeAmount');
+    expect(effects()).toEqual([{ kind: 'charges', charges: 3, regain: 'all', rest: 'short' }]);
+    expect(screen.getByLabelText('How many')).toHaveProperty('placeholder', '1, or all');
+    type('How many', '1');
+    expect(effects()).toEqual([{ kind: 'charges', charges: 3, regain: 1, rest: 'short' }]);
+    expect(readOwnEffects(effects(), 'effects').charges).toEqual({
+      charges: 3,
+      regain: '1',
+      rest: 'short',
+      spells: [],
+    });
+    // Dice typed in anyway do not count, and say why.
+    type('How many', '1d4');
+    expect(readOwnEffects(effects(), 'effects').charges).toBe(undefined);
+    expect(screen.getByText(/a short rest rolls no dice/)).toBeTruthy();
+    // Back to dawn, the dice count again and the rest goes.
+    type('Regains them', 'dawn');
+    expect(effects()).toEqual([{ kind: 'charges', charges: 3, regain: '1d4' }]);
+    // An effect written by hand says its rest.
+    cleanup();
+    mount(item, {
+      name: 'Hand Short Rod',
+      charges: 3,
+      castGuidance: {
+        v: 1,
+        effects: [{ kind: 'charges', charges: 3, regain: 'all', rest: 'short' }],
+      },
+    });
+    expect(
+      (screen.getByLabelText('Regains them') as HTMLSelectElement).selectedOptions[0]?.text,
+    ).toBe('All on a short rest, as written');
   });
 
   it('shows the count and regain an effect written by hand says, with no fields', () => {
@@ -1711,66 +1760,6 @@ describe('ItemEditor', () => {
     type('Uses per rest: Rules', '');
     expect(effects()[0]).not.toHaveProperty('edition');
     expect(rules('Uses per rest: Rules')).toBe('Either rules');
-    expect(readStoredEffects(effects()).problems).toEqual([]);
-  });
-
-  it('names a pool or an action for its class, always or beside the classes typed', () => {
-    const draft = mount(item, {
-      name: 'Ember Lamp',
-      type: 'OTH',
-      entries: [],
-      castGuidance: {
-        v: 1,
-        effects: [
-          { kind: 'resource', key: 'embers', label: 'Embers', max: 2, reset: 'long' },
-          { kind: 'action', economy: 'bonus', label: 'Kindle' },
-          { kind: 'acBonus', amount: 1 },
-        ],
-      },
-    });
-    const effects = () => (draft().castGuidance as Json).effects as Json[];
-    const naming = (label: string) =>
-      (screen.getByLabelText(label) as HTMLSelectElement).selectedOptions[0]?.textContent;
-    expect(naming('Uses per rest: Class in the name')).toBe('Never');
-    // Only a pool and an action have a name the sheet can add the class to.
-    expect(screen.queryByLabelText('Armor Class: Class in the name')).toBeNull();
-    type('Uses per rest: Class in the name', 'own');
-    expect(effects()[0]).toMatchObject({ ownClass: true });
-    expect(
-      screen.getByText('Embers (name of the class that gives it): 2 uses, back on a long rest'),
-    ).toBeTruthy();
-    // Beside: no class yet is a problem the card says in words.
-    type('Uses per rest: Class in the name', 'beside');
-    expect(effects()[0]).not.toHaveProperty('ownClass');
-    expect(effects()[0]).toMatchObject({ ownClassBeside: [] });
-    expect(screen.getByText(/name a class it stands beside/)).toBeTruthy();
-    // A comma typed stays, for the next name.
-    type('Uses per rest: Beside which classes', 'Paladin,');
-    expect(effects()[0]).toMatchObject({ ownClassBeside: ['Paladin'] });
-    expect(
-      (screen.getByLabelText('Uses per rest: Beside which classes') as HTMLInputElement).value,
-    ).toBe('Paladin,');
-    type('Uses per rest: Beside which classes', 'Paladin, cleric ');
-    expect(effects()[0]).toMatchObject({ ownClassBeside: ['Paladin', 'cleric'] });
-    expect(readStoredEffects(effects()).problems).toEqual([]);
-    expect(screen.queryByText(/name a class it stands beside/)).toBeNull();
-    type('Uses per rest: Class in the name', '');
-    expect(effects()[0]).toEqual({
-      kind: 'resource',
-      key: 'embers',
-      label: 'Embers',
-      max: 2,
-      reset: 'long',
-    });
-    // An action too, so it can share an "ownClass" pool's name.
-    type('Action: Class in the name', 'own');
-    expect(effects()[1]).toEqual({
-      kind: 'action',
-      economy: 'bonus',
-      label: 'Kindle',
-      ownClass: true,
-    });
-    expect(screen.getByText('Bonus action: Kindle (name of the class that gives it)')).toBeTruthy();
     expect(readStoredEffects(effects()).problems).toEqual([]);
   });
 

@@ -211,6 +211,78 @@ export function itemDamage(e: Entity): string | undefined {
     .join(' + ');
 }
 
+/** The common weapon properties by their code; any other is named by the data's own list. */
+const PROPERTY_NAMES: Readonly<Record<string, string>> = {
+  A: 'Ammunition',
+  AF: 'Ammunition',
+  BF: 'Burst fire',
+  F: 'Finesse',
+  H: 'Heavy',
+  L: 'Light',
+  LD: 'Loading',
+  R: 'Reach',
+  RLD: 'Reload',
+  S: 'Special',
+  T: 'Thrown',
+  V: 'Versatile',
+  '2H': 'Two-handed',
+};
+
+/** Names a property code the table above does not know, from the data's own list. */
+export type PropertyNamer = (code: string, source: string | undefined) => string | undefined;
+
+/** A `Name|SOURCE` reference's two halves; an object written with a `uid` counts too. */
+function refParts(ref: unknown): [string, string | undefined] | undefined {
+  const raw =
+    typeof ref === 'string'
+      ? ref
+      : typeof ref === 'object' && ref !== null && typeof (ref as Entity).uid === 'string'
+        ? ((ref as Entity).uid as string)
+        : undefined;
+  if (raw === undefined) return undefined;
+  const [name = '', source] = raw.split('|');
+  return name.trim() === '' ? undefined : [name.trim(), source];
+}
+
+/**
+ * A weapon's properties as the book lists them, each with what it needs:
+ * Versatile its two-handed die, Ammunition and Thrown their range.
+ */
+export function weaponProperties(e: Entity, name?: PropertyNamer): string | undefined {
+  if (!Array.isArray(e.property)) return undefined;
+  const range = typeof e.range === 'string' && e.range !== '' ? e.range : undefined;
+  const named = e.property.flatMap((p) => {
+    const parts = refParts(p);
+    if (parts === undefined) return [];
+    const [code, source] = parts;
+    const label = PROPERTY_NAMES[code.toUpperCase()] ?? name?.(code, source) ?? code;
+    const upper = code.toUpperCase();
+    if (upper === 'V' && typeof e.dmg2 === 'string') return [`${label} (${e.dmg2})`];
+    if ((upper === 'A' || upper === 'AF' || upper === 'T') && range !== undefined) {
+      return [`${label} (range ${range} ft.)`];
+    }
+    return [label];
+  });
+  return named.length > 0 ? named.join(', ') : undefined;
+}
+
+/** A weapon's mastery properties (2024 rules), by name. */
+export function weaponMastery(e: Entity): string | undefined {
+  if (!Array.isArray(e.mastery)) return undefined;
+  const names = e.mastery.flatMap((m) => {
+    const parts = refParts(m);
+    return parts === undefined ? [] : [parts[0]];
+  });
+  return names.length > 0 ? names.join(', ') : undefined;
+}
+
+/** "Martial weapon", from a weapon's category. */
+function weaponCategory(e: Entity): string | undefined {
+  const cat = e.weaponCategory;
+  if (typeof cat !== 'string' || cat === '') return undefined;
+  return `${cat.charAt(0).toUpperCase()}${cat.slice(1).toLowerCase()} weapon`;
+}
+
 const MONTHS = [
   'January',
   'February',
@@ -239,8 +311,15 @@ export function publishedDate(value: unknown): string | undefined {
   return month === undefined ? value : `${Number(m[3])} ${month} ${m[1]}`;
 }
 
-/** [label, value] fact rows for the detail header, per entity type. */
-export function headerFacts(type: string, e: Entity): Array<[string, string]> {
+/**
+ * [label, value] fact rows for the detail header, per entity type. `property`
+ * names a weapon property the common ones leave out, where a registry is to hand.
+ */
+export function headerFacts(
+  type: string,
+  e: Entity,
+  property?: PropertyNamer,
+): Array<[string, string]> {
   const facts: Array<[string, string]> = [];
   const push = (label: string, value: string | undefined) => {
     if (value !== undefined && value !== '') facts.push([label, value]);
@@ -258,8 +337,11 @@ export function headerFacts(type: string, e: Entity): Array<[string, string]> {
     case 'baseitem':
       push('Rarity', typeof e.rarity === 'string' && e.rarity !== 'none' ? e.rarity : undefined);
       push('Type', itemTypeName(e.type));
+      push('Category', weaponCategory(e));
       push('AC', typeof e.ac === 'number' ? String(e.ac) : undefined);
       push('Damage', itemDamage(e));
+      push('Properties', weaponProperties(e, property));
+      push('Mastery', weaponMastery(e));
       push('Weight', typeof e.weight === 'number' ? `${e.weight} lb.` : undefined);
       push('Value', itemValue(e.value));
       push(

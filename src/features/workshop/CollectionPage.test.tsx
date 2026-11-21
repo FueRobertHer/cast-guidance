@@ -16,7 +16,7 @@ import { registryViewFor } from '@/data5e/registryView';
 import { policyAllows, readSourcePolicy, writeSourcePolicy } from '@/data5e/sourceFilter';
 import { characterRepo } from '@/db/characterRepo';
 import { db } from '@/db/db';
-import { homebrewRepo } from '@/db/homebrewRepo';
+import { CHANGES_SOURCE, homebrewRepo } from '@/db/homebrewRepo';
 import type { CharacterDoc } from '@/engine/types';
 import { downloadJson } from '@/lib/download';
 import { namelessControls } from '../../../tests-fixtures/a11y';
@@ -488,6 +488,23 @@ describe('a collection page', () => {
     );
   });
 
+  it('lists no entry with a blank name, which the Library leaves out', async () => {
+    const own = await homebrewRepo.createEditable('Blank Shelf', 'BS');
+    await homebrewRepo.saveEditable(own.id, {
+      ...(own.json as Record<string, unknown>),
+      spell: [
+        { name: '  ', source: 'BS', level: 1 },
+        { name: 'Kept Spell', source: 'BS', level: 1 },
+      ],
+    });
+    visit(collectionPath(own.id));
+    await heading('Blank Shelf');
+    await screen.findByRole('link', { name: /^Kept Spell/ }, { timeout: WAIT });
+    expect(screen.getAllByRole('link', { name: /spell/i }).map((l) => l.textContent)).toEqual([
+      expect.stringMatching(/^Kept Spell/),
+    ]);
+  });
+
   it('offers to add any kind to a collection of your own, classes too (bug 1)', async () => {
     const own = await homebrewRepo.createEditable('Lantern Coast', 'LC');
     const router = visit(collectionPath(own.id));
@@ -601,6 +618,173 @@ describe('a collection page', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Export a file' }));
     await waitFor(() => expect(downloadJson).toHaveBeenCalledTimes(1), { timeout: WAIT });
     expect(vi.mocked(downloadJson).mock.calls[0]).toEqual(['imported.json', IMPORTED]);
+  });
+
+  it('asks before turning it off on this device, naming who would lose what (finding 17)', async () => {
+    await character('Hild', { race: { name: 'Lanternfolk', source: 'IMP' } });
+    // Its own switch brings the collection back for it, so it loses nothing.
+    await character('Osk', {
+      race: { name: 'Lanternfolk', source: 'IMP' },
+      sourceSwitches: { on: ['IMP'] },
+    });
+    await character('Brin');
+    const row = await homebrewRepo.importJson(IMPORTED, 'imported.json');
+    visit(await addressOf(row.id));
+    await heading('imported.json');
+    const use = screen.getByRole('button', { name: 'Use imported.json' });
+
+    fireEvent.click(use);
+    const ask = await screen.findByRole(
+      'dialog',
+      { name: 'Turn off imported.json?' },
+      { timeout: WAIT },
+    );
+    expect(ask.textContent).toContain('Its entries leave the sheets that have them');
+    expect(ask.textContent).toContain('Hild has Lanternfolk.');
+    expect(ask.textContent).not.toContain('Osk');
+    expect(ask.textContent).not.toContain('Brin');
+    fireEvent.click(within(ask).getByRole('button', { name: 'Cancel' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull(), { timeout: WAIT });
+    expect(await enabled(row.id)).toBe(true);
+
+    fireEvent.click(use);
+    const again = await screen.findByRole(
+      'dialog',
+      { name: 'Turn off imported.json?' },
+      { timeout: WAIT },
+    );
+    fireEvent.click(within(again).getByRole('button', { name: 'Turn off' }));
+    await waitFor(async () => expect(await enabled(row.id)).toBe(false), { timeout: WAIT });
+    // On again asks nothing.
+    await waitFor(() => expect(use.getAttribute('aria-pressed')).toBe('false'), { timeout: WAIT });
+    fireEvent.click(use);
+    await waitFor(async () => expect(await enabled(row.id)).toBe(true), { timeout: WAIT });
+    expect(screen.queryByRole('dialog', { name: /^Turn off/ })).toBeNull();
+  });
+
+  it('names nobody when another copy still on serves what they have', async () => {
+    await character('Hild', { race: { name: 'Lanternfolk', source: 'IMP' } });
+    const row = await homebrewRepo.importJson(IMPORTED, 'imported.json');
+    const meta = await db.homebrewFiles.get(row.id);
+    if (meta === undefined) throw new Error('no row');
+    await db.homebrewFiles.add({ ...meta, id: 'older-copy', addedAt: 1 });
+    await db.homebrewJson.add({ id: 'older-copy', json: IMPORTED });
+    visit(await addressOf(row.id));
+    const list = await screen.findByRole('list', { name: 'Its copies' }, { timeout: WAIT });
+    const [first, second] = within(list).getAllByRole('button', { name: /^Use / });
+    if (first === undefined || second === undefined) throw new Error('two switches');
+    fireEvent.click(first);
+    await waitFor(
+      async () =>
+        expect((await db.homebrewFiles.toArray()).filter((r) => !r.enabled)).toHaveLength(1),
+      { timeout: WAIT },
+    );
+    expect(screen.queryByRole('dialog', { name: /^Turn off/ })).toBeNull();
+    await waitFor(() => expect(first.getAttribute('aria-pressed')).toBe('false'), {
+      timeout: WAIT,
+    });
+    // The last copy on does take it away.
+    fireEvent.click(second);
+    const ask = await screen.findByRole('dialog', { name: /^Turn off/ }, { timeout: WAIT });
+    expect(ask.textContent).toContain('Hild has Lanternfolk.');
+    fireEvent.click(within(ask).getByRole('button', { name: 'Cancel' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull(), { timeout: WAIT });
+  });
+
+  it('names only who the Changes file reaches, when it goes off', async () => {
+    const { fileId } = await homebrewRepo.saveEntry(
+      'feat',
+      {
+        name: 'Glimmer',
+        source: 'IMP',
+        _copy: { name: 'Glimmer', source: 'IMP' },
+        entries: ['Glow.'],
+      },
+      { role: 'changes' },
+    );
+    const pick = { 'class:fighter|phb:feat:4': 'glimmer|imp' };
+    await character('Osk', { choices: pick, sourceSwitches: { off: [CHANGES_SOURCE] } });
+    visit(collectionPath(fileId));
+    const use = await screen.findByRole('button', { name: /^Use / }, { timeout: WAIT });
+    // Osk has it off already, so nothing changes for anyone: no question.
+    fireEvent.click(use);
+    await waitFor(async () => expect(await enabled(fileId)).toBe(false), { timeout: WAIT });
+    expect(screen.queryByRole('dialog', { name: /^Turn off/ })).toBeNull();
+    await waitFor(() => expect(use.getAttribute('aria-pressed')).toBe('false'), { timeout: WAIT });
+    fireEvent.click(use);
+    await waitFor(async () => expect(await enabled(fileId)).toBe(true), { timeout: WAIT });
+    await waitFor(() => expect(use.getAttribute('aria-pressed')).toBe('true'), { timeout: WAIT });
+
+    await character('Hild', { choices: pick });
+    fireEvent.click(use);
+    const ask = await screen.findByRole('dialog', { name: /^Turn off/ }, { timeout: WAIT });
+    expect(ask.textContent).toContain('Every entry it changes is the book’s again');
+    expect(ask.textContent).toContain('Hild has Glimmer.');
+    expect(ask.textContent).not.toContain('Osk');
+    fireEvent.click(within(ask).getByRole('button', { name: 'Cancel' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull(), { timeout: WAIT });
+  });
+
+  it('names an entry as its file does, though a pick holds it lowercased (F26)', async () => {
+    const { fileId } = await homebrewRepo.saveEntry('feat', {
+      name: 'Solar Tactician',
+      source: 'MyHomebrew',
+      entries: ['Plan.'],
+    });
+    await character('Hild', {
+      choices: { 'class:fighter|phb:feat:4': 'solar tactician|myhomebrew' },
+    });
+    visit(await addressOf(fileId));
+    await screen.findByRole('link', { name: /^Solar Tactician/ }, { timeout: WAIT });
+    await more('Solar Tactician', 'Delete');
+    const ask = await screen.findByRole(
+      'dialog',
+      { name: 'Delete Solar Tactician?' },
+      { timeout: WAIT },
+    );
+    expect(ask.textContent).toContain('Hild has Solar Tactician.');
+    fireEvent.click(within(ask).getByRole('button', { name: 'Cancel' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull(), { timeout: WAIT });
+  });
+
+  it('renames a class of your own from its menu, its features with it (F26)', async () => {
+    const { fileId } = await homebrewRepo.saveEntry(
+      'class',
+      {
+        name: 'Warden',
+        source: 'MyHomebrew',
+        hd: { number: 1, faces: 10 },
+        classFeatures: ['Vigil|Warden|MyHomebrew|1|MyHomebrew'],
+      },
+      {
+        owned: [
+          {
+            name: 'Vigil',
+            source: 'MyHomebrew',
+            className: 'Warden',
+            classSource: 'MyHomebrew',
+            level: 1,
+            entries: ['Watch.'],
+          },
+        ],
+      },
+    );
+    visit(await addressOf(fileId));
+    await screen.findByRole('link', { name: /^Warden/ }, { timeout: WAIT });
+    await more('Warden', 'Rename');
+    const name = await screen.findByRole('textbox', { name: 'Rename Warden' }, { timeout: WAIT });
+    fireEvent.change(name, { target: { value: 'Keeper' } });
+    fireEvent.click(screen.getByRole('button', { name: 'OK' }));
+    await waitFor(
+      async () =>
+        expect((await json(fileId)).class).toMatchObject([
+          { name: 'Keeper', classFeatures: ['Vigil|Keeper|MyHomebrew|1|MyHomebrew'] },
+        ]),
+      { timeout: WAIT },
+    );
+    expect((await json(fileId)).classFeature).toMatchObject([
+      { name: 'Vigil', className: 'Keeper' },
+    ]);
   });
 
   it('deletes the collection, saying who loses what first', async () => {

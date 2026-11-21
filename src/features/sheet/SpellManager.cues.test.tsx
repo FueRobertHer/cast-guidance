@@ -132,10 +132,13 @@ describe('prepared and known limits (TEST-003)', () => {
     expect(spellBlock('Mage').counters).toContain('prepared 1/1');
     expect(spellBlock('Mage').overLimit).toBeUndefined();
 
-    // The Play tab marks what is prepared; Quick Bolt stays known, unmarked.
+    // The Play tab casts what is prepared; Quick Bolt, known but not prepared,
+    // waits on Spells, a tap from preparing.
     await sheet.tab('Play');
     expect(playSpell('Searing Bolt')).toEqual({ prepared: true });
-    expect(playSpell('Quick Bolt')).toEqual({ prepared: false });
+    expect(screen.queryByRole('button', { name: /^Quick Bolt/ })).toBeNull();
+    expect(screen.getByText(/1 more not prepared\./)).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Prepare on Spells' })).toBeTruthy();
     const saved = (await sheet.saved()).spellcasting['mage|tst'];
     expect(saved?.prepared).toEqual([ref('Searing Bolt')]);
     expect(saved?.known).toEqual([ref('Searing Bolt'), ref('Quick Bolt')]);

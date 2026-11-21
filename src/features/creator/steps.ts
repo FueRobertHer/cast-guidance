@@ -14,6 +14,29 @@ export const STEPS = [
 export type Step = (typeof STEPS)[number];
 
 /**
+ * 2024 rules move the ability bonuses from the species to the background, so
+ * the background comes before the scores: its +2/+1 then shows on each score
+ * as it is set. 2014 keeps species bonuses right before the scores (review
+ * item 2; the owner may overrule this default).
+ */
+const STEPS_2024: readonly Step[] = [
+  'basics',
+  'class',
+  'species',
+  'background',
+  'abilities',
+  'equipment',
+  'spells',
+  'choices',
+  'review',
+];
+
+/** The wizard's steps in the order a character of these rules walks them. */
+export function stepsFor(version: string): readonly Step[] {
+  return version === '2024' ? STEPS_2024 : STEPS;
+}
+
+/**
  * Coerce a raw `?step=` value into a valid step. A bad or missing deep-link
  * value (e.g. `?step=garbage`) recovers to the first step instead of rendering
  * a broken wizard with an out-of-range index.

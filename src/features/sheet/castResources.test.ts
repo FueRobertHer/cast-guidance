@@ -954,3 +954,60 @@ describe('2024 slot creation level (GAME-008)', () => {
     );
   });
 });
+
+describe('casting as a ritual', () => {
+  const ritual = { kind: 'ritual', level: 1 } as const;
+
+  it('comes after the slots, the slower way, and alone where it is the only way', () => {
+    const ways = castWays(ctxOf(block()), { ritual: 'also' });
+    expect(ways.map((w) => w.title)).toEqual(['Spell slots', 'Ritual']);
+    expect(ways[1]).toEqual({
+      title: 'Ritual',
+      sub: '10 minutes longer',
+      tiles: [{ resource: ritual, ok: true, sub: 'no slot' }],
+    });
+    expect(castWays(ctxOf(block()), { ritual: 'only' }).map((w) => w.title)).toEqual(['Ritual']);
+    expect(castWays(ctxOf(block()))).toHaveLength(1);
+  });
+
+  it('starts on a slot while one is left, and on the ritual once none is', () => {
+    const play = emptyPlayState();
+    const caster = block({ slots: [1] });
+    const ctx = ctxOf(caster, play);
+    expect(defaultCastTile(castWays(ctx, { ritual: 'also' }), ctx)?.resource).toEqual({
+      kind: 'slot',
+      level: 1,
+    });
+    play.slotsSpent = [1, 0, 0, 0, 0, 0, 0, 0, 0];
+    expect(defaultCastTile(castWays(ctx, { ritual: 'also' }), ctx)?.resource).toEqual(ritual);
+  });
+
+  it('says what it spends: no slot, and 10 minutes more', () => {
+    expect(castNote(ritual, ctxOf(block()))).toBe(
+      'As a ritual: no slot, and it takes 10 minutes longer to cast.',
+    );
+    expect(castResourceLabel(ritual)).toBe('Ritual · level 1');
+    expect(castResourceId(ritual)).toBe('ritual-1');
+    expect(castCost(ritual, 1)).toBe(' (ritual)');
+  });
+
+  it('spends no slot and no slice of the turn, and concentrates at the spell level', () => {
+    const doc = { play: emptyPlayState(), rulesVersion: '2024' } as unknown as CharacterDoc;
+    let label: string | undefined;
+    castSpell(
+      (recipe, history) => {
+        recipe(doc);
+        label = typeof history === 'function' ? history(doc) : history;
+      },
+      HP,
+      block(),
+      1,
+      { name: 'Detect Magic', source: 'XPHB', concentration: true, economy: 'action' },
+      ritual,
+    );
+    expect(doc.play.slotsSpent.every((n) => n === 0)).toBe(true);
+    expect(doc.play.turn).toBeUndefined();
+    expect(doc.play.concentratingOn).toEqual({ label: 'Detect Magic', level: 1 });
+    expect(label).toBe('Cast Detect Magic (ritual)');
+  });
+});

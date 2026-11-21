@@ -474,6 +474,31 @@ test.describe('keyboard: pages', () => {
     await expect(page.getByRole('heading', { level: 1, name: 'Fireball' })).toBeVisible();
   });
 
+  test('every page: the first Tab is Skip to content, and Enter goes past the bars', async ({
+    page,
+  }) => {
+    await gotoRosterSettled(page);
+    const id = await importCaster(page);
+    for (const url of ['/', '/library', `/c/${id}`]) {
+      await page.goto(url);
+      const main = page.getByRole('main');
+      await expect(main).toBeVisible();
+      await focusPageStart(page);
+      await page.keyboard.press('Tab');
+      const skip = page.getByRole('button', { name: 'Skip to content' });
+      await expect(skip, url).toBeFocused();
+      await expect(skip, url).toBeInViewport();
+      await page.keyboard.press('Enter');
+      await expect(main, url).toBeFocused();
+      // Tab carries on from inside the page, not from the bars or the header.
+      await page.keyboard.press('Tab');
+      expect(
+        await main.evaluate((el) => el.contains(document.activeElement)),
+        `${url}: Tab after the skip moved to ${await describeFocus(page)}`,
+      ).toBe(true);
+    }
+  });
+
   test('the sheet: every tab, in order, by Tab and Enter', async ({ page }) => {
     await gotoRosterSettled(page);
     // A caster, so Spells is in the bar too.
