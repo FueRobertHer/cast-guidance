@@ -5,7 +5,7 @@ import { type StaticServer, startStaticServer } from '../server/staticServer.ts'
 import { swVariantTransform } from '../server/swVariants.ts';
 import { loadVercelRouting } from '../server/vercelRouting.ts';
 import { handleOverlays } from './app.ts';
-import { DEVICE } from './device.ts';
+import { deviceFor } from './device.ts';
 import { ConsoleGuard, NetworkGuard } from './guards.ts';
 import { hermeticLaunchOptions } from './launch.ts';
 
@@ -250,9 +250,9 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
         // The project's browser build (`channel`, unset for the headless
         // shell), or full Chromium in new headless when a spec asks for it,
         // held off the real network either way.
-        ...hermeticLaunchOptions(launchOptions),
+        ...hermeticLaunchOptions(launchOptions, browserName),
         channel: options.newHeadless ? 'chromium' : channel,
-        ...DEVICE,
+        ...deviceFor(browserName),
         baseURL: server.url,
         offline: options.offline ?? false,
       });

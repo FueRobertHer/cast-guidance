@@ -20,6 +20,11 @@ import type { LaunchOptions } from '@playwright/test';
  * resolver, such as WebRTC over UDP. The app uses no WebRTC.
  *
  * `harness.spec.ts` checks both launch paths with a WebSocket.
+ *
+ * The flags are Chromium's. WebKit has no resolver or proxy flags, so a
+ * WebKit launch (the `webkit` project) gets none: it is held only by the
+ * routing layer's guards (`support/test.ts`), and a socket opened without a
+ * request (a preconnect) can reach a real host there.
  */
 export const HERMETIC_ARGS: readonly string[] = [
   '--proxy-server=direct://',
@@ -37,7 +42,11 @@ const isHermeticArg = (arg: string) =>
  * in `support/test.ts`), and a caller's own proxy or resolver flags cannot
  * replace them.
  */
-export function hermeticLaunchOptions(base: LaunchOptions = {}): LaunchOptions {
+export function hermeticLaunchOptions(
+  base: LaunchOptions = {},
+  browserName: string = 'chromium',
+): LaunchOptions {
+  if (browserName !== 'chromium') return base;
   return {
     ...base,
     args: [...(base.args ?? []).filter((arg) => !isHermeticArg(arg)), ...HERMETIC_ARGS],
@@ -60,7 +69,11 @@ export const AIRPLANE_ARGS: readonly string[] = [
 ];
 
 /** `base` with {@link AIRPLANE_ARGS} in force, in place of any proxy or resolver flags. */
-export function airplaneLaunchOptions(base: LaunchOptions = {}): LaunchOptions {
+export function airplaneLaunchOptions(
+  base: LaunchOptions = {},
+  browserName: string = 'chromium',
+): LaunchOptions {
+  if (browserName !== 'chromium') return base;
   return {
     ...base,
     args: [...(base.args ?? []).filter((arg) => !isHermeticArg(arg)), ...AIRPLANE_ARGS],

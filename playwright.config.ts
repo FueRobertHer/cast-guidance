@@ -1,5 +1,5 @@
 import { defineConfig } from '@playwright/test';
-import { DEVICE } from './e2e/support/device.ts';
+import { DEVICE, WEBKIT_DEVICE } from './e2e/support/device.ts';
 import { hermeticLaunchOptions } from './e2e/support/launch.ts';
 
 const CI = process.env.CI !== undefined && process.env.CI !== '';
@@ -15,6 +15,13 @@ const BROWSER = {
       : {},
   ),
 };
+
+/**
+ * WebKit, as on an iPhone: the flows only, and not yet a gate (its CI job
+ * reports failures without failing). No hermetic flags exist for WebKit (see
+ * launch.ts), and the specs left out below need what only Chromium has.
+ */
+const WEBKIT = { ...WEBKIT_DEVICE };
 
 /** The route matrix, which runs in its own project after the cache levels are built. */
 const OFFLINE_ROUTES = 'specs/offline-routes.spec.ts';
@@ -97,6 +104,18 @@ export default defineConfig({
       testMatch: OFFLINE_ROUTES,
       dependencies: ['cache-levels'],
       use: BROWSER,
+    },
+    {
+      name: 'webkit',
+      testMatch: 'specs/**/*.spec.ts',
+      testIgnore: [
+        OFFLINE_ROUTES,
+        // Chromium's hermetic launch flags, which this spec checks.
+        'specs/harness.spec.ts',
+        // Install checks through the DevTools protocol.
+        'specs/manifest.spec.ts',
+      ],
+      use: WEBKIT,
     },
   ],
 });

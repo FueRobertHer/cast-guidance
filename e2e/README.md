@@ -1,7 +1,9 @@
 # Browser E2E
 
 Playwright specs that run the production build in Chromium, as a phone
-(Pixel 7), with the service worker on and no real network.
+(Pixel 7), with the service worker on and no real network. The flows also run
+in WebKit, as an iPhone (the `webkit` project), since iOS is where an
+installed PWA is most likely to break.
 
 ```bash
 bun run build          # the suite tests dist/, so build first
@@ -9,7 +11,7 @@ bun run e2e            # run every spec
 bun run e2e:ci         # build, then run every spec
 bun run e2e -- e2e/specs/sw-update.spec.ts   # one file
 bun run e2e -- -g "offline"                  # by title
-bun run e2e -- --project=flows               # one project: flows, axe, a11y or offline-routes
+bun run e2e -- --project=flows               # one project: flows, axe, a11y, offline-routes or webkit
 bun run e2e -- --headed --workers=1          # watch it
 bun run e2e -- --debug                       # step through with the inspector
 bun run e2e:a11y                             # the accessibility specs only (axe, keyboard, layout, motion)
@@ -19,9 +21,12 @@ bun run e2e:a11y:update                      # rewrite the axe baseline from a r
 A failing test keeps a trace in `test-results/e2e/`; open it with
 `bunx playwright show-trace <path>/trace.zip`.
 
-CI runs the suite as four jobs at once, one per Playwright project: `flows`
-(`specs/`), `axe` (`a11y/axe.spec.ts`), `a11y` (the other accessibility specs)
-and `offline-routes` (the route matrix, after its `cache-levels` setup). Each
+CI runs the suite as five jobs at once, one per Playwright project: `flows`
+(`specs/`), `axe` (`a11y/axe.spec.ts`), `a11y` (the other accessibility specs),
+`offline-routes` (the route matrix, after its `cache-levels` setup) and
+`webkit` (the flows in WebKit, less the specs that need Chromium; see
+`playwright.config.ts`). `webkit` is not a gate yet: its failures show in the
+job's summary and log, but do not fail the run. Each
 job uploads its `playwright-report/` and `test-results/` as the
 `e2e-report-<project>` artifact. A new project needs an entry in the `e2e`
 matrix in `.github/workflows/ci.yml`; the `checks` job fails until it has one.
@@ -29,7 +34,8 @@ matrix in `.github/workflows/ci.yml`; the `checks` job fails until it has one.
 ## Browsers
 
 `@playwright/test` is pinned to an exact version, which pins the Chromium
-build. Install it once with `bunx playwright install chromium` (CI adds
+and WebKit builds. Install them once with `bunx playwright install chromium
+webkit` (CI adds
 `--with-deps`). If your machine already has browsers for that version, point
 `PLAYWRIGHT_BROWSERS_PATH` at them instead. `PW_CHROMIUM_EXECUTABLE` overrides
 the binary outright, as an escape hatch when the two drift.
@@ -81,7 +87,8 @@ the binary outright, as an escape hatch when the two drift.
   `--host-resolver-rules` that leaves only `localhost` and `127.0.0.1`
   resolvable, so a socket opened by host name cannot reach a real host or a
   proxy. Routed requests are answered before any lookup, so the mirror is
-  unaffected. `harness.spec.ts` checks it with a WebSocket from both launch
+  unaffected. WebKit has no such flags, so the `webkit` project is held by the
+  routing layer alone. `harness.spec.ts` checks it with a WebSocket from both launch
   paths. Not covered: a connection to a literal IP address other than
   127.0.0.1, which needs no lookup, such as WebRTC over UDP. The app uses no
   WebRTC and names every host it talks to. Launch with
