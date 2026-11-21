@@ -36,6 +36,24 @@ describe('assertHomebrewFile', () => {
       expect(() => assertHomebrewFile(input)).toThrowError(ValidationError);
     });
   }
+
+  it('says why in words a player can check, naming no other app', () => {
+    const why = (input: unknown) => {
+      try {
+        assertHomebrewFile(input);
+      } catch (err) {
+        return (err as Error).message;
+      }
+      return undefined;
+    };
+    expect(bad.map(([, input]) => why(input))).toEqual([
+      'not a homebrew file (a homebrew file is one JSON object, with a "_meta" block naming its books)',
+      'not a homebrew file (a homebrew file is one JSON object, with a "_meta" block naming its books)',
+      'not a homebrew file (it has no "_meta" block naming its books)',
+      'the "_meta" block names no books (it has no "sources" list, or an empty one)',
+      'a book in the "_meta" block has no "json" id to know it by',
+    ]);
+  });
 });
 
 describe('withReadableEntries (finding 14)', () => {
@@ -110,6 +128,33 @@ describe('assertCharacterExport', () => {
     );
     expect(() => assertCharacterExport({ $format: CHARACTER_EXPORT_FORMAT })).toThrowError(
       ValidationError,
+    );
+  });
+
+  it('says what is wrong without repeating what the file calls itself', () => {
+    const why = (input: unknown) => () => assertCharacterExport(input);
+    expect(why({ $format: 'someone-else/character@1', character: {} })).toThrowError(
+      /^this is not a character file from this app$/,
+    );
+    expect(why([])).toThrowError(/^this is not a character file from this app$/);
+    // A later version of this app's own format asks for an update instead.
+    expect(why({ $format: 'cast-guidance/character@2', character: {} })).toThrowError(
+      /^this character file is from a newer version of the app: update the app, then import it again$/,
+    );
+    // Never "newer" for a version that is not one above this app's.
+    for (const format of [
+      'cast-guidance/character@0',
+      'cast-guidance/character@',
+      'cast-guidance/character@2.0',
+      'cast-guidance/character@02',
+      'cast-guidance/character@1 ',
+    ]) {
+      expect(why({ $format: format, character: {} })).toThrowError(
+        /^this is not a character file from this app$/,
+      );
+    }
+    expect(why({ $format: CHARACTER_EXPORT_FORMAT })).toThrowError(
+      /^this character file has no character in it$/,
     );
   });
 

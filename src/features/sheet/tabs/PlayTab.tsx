@@ -153,9 +153,18 @@ import { ForetoldNumbers } from '../ForetoldNumbers';
 import { type HpMode, HpSheet } from '../HpSheet';
 import { answersTo, namedStart, recklessStart } from '../namedStarts';
 import { clampPlayStateToMax, detectPlayStateOverages } from '../playStateLimits';
-import { RestSheet } from '../RestSheet';
+import { type RecoveryPicks, RestSheet } from '../RestSheet';
 import { RollEffectCue } from '../RollEffectCue';
-import { backCaption, giveBack, restWith, shortRestWouldRestore, spendHitDie } from '../rest';
+import {
+  backCaption,
+  giveBack,
+  recoverSlots,
+  restWith,
+  shortRestWouldRestore,
+  slotRecoveries,
+  spendHitDie,
+  spentSlots,
+} from '../rest';
 import { payOffer, pricedRollEffects } from '../rollPrice';
 import { SpellCastChips } from '../SpellCastChips';
 import { SpellInfoSheet } from '../SpellInfoSheet';
@@ -476,9 +485,14 @@ export function Component() {
    * Take a rest, ending the effects ticked first, so Aid's +5 does not outlive
    * it, then the rest's moments (H9), once its recovery is done.
    */
-  const finishRest = (rest: 'short' | 'long', ends: ReadonlySet<string>) => {
+  const finishRest = (
+    rest: 'short' | 'long',
+    ends: ReadonlySet<string>,
+    recover: RecoveryPicks = new Map(),
+  ) => {
     let done: RestDone | undefined;
     let full = true;
+    const recovered: string[] = [];
     update(
       (d) => {
         done = restWith(d.play, sheet, rest, doc.rulesVersion, {
@@ -486,6 +500,13 @@ export function Component() {
           idle: idleChargePools(d, sheet.resources, entities),
           conditionEntry,
         });
+        // Slots picked back as the short rest ends (Arcane Recovery), each pool's use spent.
+        if (rest === 'short') {
+          for (const [key, picks] of recover) {
+            const said = recoverSlots(d.play, sheet, key, picks);
+            if (said !== undefined) recovered.push(said);
+          }
+        }
         // A table that heals less on a long rest can leave it short of full.
         full = d.play.currentHp >= hpNow.maxHp + done.change.maxHpChange;
       },
@@ -495,6 +516,7 @@ export function Component() {
     const ended = done?.change.ended ?? [];
     const said = [
       ...(restored.length > 0 ? [`Restored ${restored.join(', ')}`] : []),
+      ...recovered,
       ...(ended.length > 0 ? [`Ended ${andList(ended)}`] : []),
     ];
     const notice: Notice =
@@ -3479,12 +3501,14 @@ export function Component() {
                 onSpendHitDie: healWithHitDie,
                 // Worked out only while it is asked; the sheet keeps the first.
                 restores: restAsked.open ? shortRestWouldRestore(play, sheet) : [],
+                recoveries: slotRecoveries(play, sheet),
+                spentSlots: spentSlots(play, sheet),
               },
             })}
         onOpenChange={(open) => setRestAsked((was) => ({ ...was, open }))}
-        onRest={(rest, ends) => {
+        onRest={(rest, ends, recover) => {
           setRestAsked((was) => ({ ...was, open: false }));
-          finishRest(rest, ends);
+          finishRest(rest, ends, recover);
         }}
       />
     </div>

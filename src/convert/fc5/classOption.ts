@@ -16,7 +16,13 @@
 
 import type { RulesVersion } from '../../data5e/rulesVersion';
 import { childText, childTexts, type XmlElement } from '../xml';
-import { citationEntry, type Fc5Context, type Fc5Result, placeEntity } from './context';
+import {
+  citationEntry,
+  type Fc5Context,
+  type Fc5Result,
+  placeEntity,
+  placeMarked,
+} from './context';
 import { type Entry, entryName, inlineText, markerEdition, own, readText, splitName } from './text';
 
 /** The classes a plain spell list names. */
@@ -264,10 +270,13 @@ export function convertClassOption(el: XmlElement, ctx: Fc5Context): Fc5Result {
   const lists = topLevelParts(childText(el, 'classes') ?? '');
   const official: OfficialList[] = [];
   const types = new Set<string>();
-  let listEdition: RulesVersion | undefined;
+  const marks: { edition?: RulesVersion; mixed?: boolean } = {};
   for (const list of lists) {
     for (const marker of list.matchAll(/\[([^[\]]{1,12})\]/g)) {
-      listEdition ??= markerEdition(marker[1] ?? '');
+      const edition = markerEdition(marker[1] ?? '');
+      if (edition === undefined) continue;
+      if (marks.edition === undefined) marks.edition = edition;
+      else if (marks.edition !== edition) marks.mixed = true;
     }
     const bare = withoutMarkers(list);
     const known = own(OFFICIAL_LISTS, listKey(list));
@@ -291,9 +300,11 @@ export function convertClassOption(el: XmlElement, ctx: Fc5Context): Fc5Result {
       .join('\n'),
   );
   const text = readText(blocks);
-  const placement = ctx.place(
+  const placement = placeMarked(
+    ctx,
     childText(el, 'source') ?? text.sourceLine,
-    named.edition ?? listEdition,
+    named.edition,
+    marks,
   );
 
   const feature: Record<string, unknown> = { name };

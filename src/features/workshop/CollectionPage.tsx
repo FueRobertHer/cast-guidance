@@ -1128,7 +1128,19 @@ function Frame({ children }: { children: ReactNode }) {
   );
 }
 
-function FromSection({ c, onImport }: { c: Collection; onImport: (link?: string) => void }) {
+function FromSection({
+  c,
+  onImport,
+  onCopy,
+}: {
+  c: Collection;
+  onImport: (link?: string) => void;
+  /**
+   * Set for an imported file of one row, no book of a compendium and no rule
+   * pack: what can be copied to change.
+   */
+  onCopy?: () => void;
+}) {
   const [r] = c.rows;
   if (r === undefined) return null;
   const link = c.rows.find((x) => x.url !== undefined)?.url;
@@ -1199,6 +1211,18 @@ function FromSection({ c, onImport }: { c: Collection; onImport: (link?: string)
               </Button>
             )}
           </div>
+          {onCopy !== undefined && (
+            <>
+              <p className={`px-1 ${CAPTION}`}>
+                It stays as it came, so an update can take its place. A copy of your own can be
+                changed in every part: it comes under books of its own, and characters, and the
+                changes you made here, stay with this one.
+              </p>
+              <Button variant="outline" className="self-start" onClick={onCopy}>
+                Make an editable copy
+              </Button>
+            </>
+          )}
         </>
       )}
     </section>
@@ -1268,6 +1292,19 @@ function Found({
   // shows every book: a tap then would write switches for the wrong choice.
   const device = useLiveQuery(() => readSourcePolicy(), []);
 
+  /** An imported file as a collection of the player's own, opened at once. */
+  const copy = async () => {
+    if (single === undefined) return;
+    try {
+      const made = await homebrewRepo.copyEditable(single.id);
+      invalidateRegistry();
+      notify({ title: `Made ${madeName(made.json) ?? 'a copy'}`, tone: 'good' });
+      void navigate(collectionPath(made.id));
+    } catch (err) {
+      notifyFailure('Make an editable copy', err);
+    }
+  };
+
   const removeAll = async () => {
     const ok = await askConfirm({
       title: `Delete ${c.name}?`,
@@ -1309,7 +1346,13 @@ function Found({
       <EntriesSection c={c} looks={looked} />
       <OnSection c={c} device={device} characters={characters} pack={pack} />
       <NeedsLookSection c={c} items={looks} />
-      <FromSection c={c} onImport={(link) => setImporting({ link })} />
+      <FromSection
+        c={c}
+        onImport={(link) => setImporting({ link })}
+        {...(single !== undefined && !single.editable && single.book === undefined && pack === false
+          ? { onCopy: copy }
+          : {})}
+      />
       <section aria-labelledby="share-delete" className="flex flex-col gap-2">
         <h2 id="share-delete" className={HEAD}>
           Share or delete

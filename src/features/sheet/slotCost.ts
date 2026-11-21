@@ -16,7 +16,7 @@ import {
 } from './castResources';
 
 /** The shared slot table and the pact slots, from whichever casting class carries them. */
-function slotTables(sheet: DerivedSheet) {
+export function slotTables(sheet: DerivedSheet) {
   const slots = sheet.spellcasting.find((b) => b.slots.some((n) => n > 0))?.slots ?? [];
   const pact = sheet.spellcasting.find((b) => b.pactSlots !== undefined)?.pactSlots;
   return { slots, pact };

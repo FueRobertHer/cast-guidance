@@ -15,6 +15,7 @@ import {
   type FileClass,
   type FileClasses,
   placeEntity,
+  placeMarked,
 } from './context';
 import {
   DAMAGE_TYPES,
@@ -188,6 +189,8 @@ interface ClassLists {
   /** Classes the file converts, by the name and source they convert to. */
   fileClasses: FileClass[];
   edition?: RulesVersion;
+  /** Whether the list marks both editions (`Paladin [5.5e], Tamer [Legacy]`). */
+  mixed?: boolean;
 }
 
 /**
@@ -204,7 +207,10 @@ export function readClasses(raw: string, fileClasses?: FileClasses): ClassLists 
     // Filter tags some files mix in: "School: Evocation", "Ritual Caster", "Touch Spells".
     if (trimmed === '' || /^school:|^ritual caster$|\bspells$/i.test(trimmed)) continue;
     const { name, edition } = splitName(trimmed);
-    if (edition !== undefined) out.edition = edition;
+    if (edition !== undefined) {
+      if (out.edition !== undefined && out.edition !== edition) out.mixed = true;
+      out.edition = edition;
+    }
     const fileClass = fileClasses?.get(entryName(trimmed).name.toLowerCase());
     if (fileClass !== undefined) {
       if (!seen.has(fileClass.name.toLowerCase())) {
@@ -456,7 +462,7 @@ export function convertSpell(el: XmlElement, ctx: Fc5Context): Fc5Result {
       .join(', '),
     ctx.classes,
   );
-  const placement = ctx.place(sourceLine, named.edition ?? classes.edition);
+  const placement = placeMarked(ctx, sourceLine, named.edition, classes);
   const edition = placement.edition;
 
   const spell: Record<string, unknown> = { name: named.name };

@@ -419,16 +419,26 @@ describe('the Import sheet', () => {
     const status = () => document.querySelector('[data-import-status] p')?.textContent;
     renderSheet();
     await bringIn('Text', {} as Json);
-    await waitFor(() => expect(status()).toMatch(/^Import failed/), { timeout: WAIT });
+    await waitFor(
+      () =>
+        expect(status()).toBe(
+          'Import failed: not a homebrew file (it has no "_meta" block naming its books)',
+        ),
+      { timeout: WAIT },
+    );
     // Text that starts as JSON but is none says so, not that an import failed.
     const s = await sheet();
     fireEvent.change(within(s).getByRole('textbox', { name: /^Paste a homebrew file/ }), {
       target: { value: '{ "spell": [ ' },
     });
     fireEvent.click(within(s).getByRole('button', { name: 'Read it' }));
-    await waitFor(() => expect(status()).toMatch(/^That text is not a homebrew file: /), {
-      timeout: WAIT,
-    });
+    await waitFor(
+      () =>
+        expect(status()).toBe(
+          'That text could not be read as JSON. It may be cut short, or have a typo such as a missing comma or bracket.',
+        ),
+      { timeout: WAIT },
+    );
     expect(await stored()).toEqual([]);
     expect(done).toEqual([]);
     expect(closed).toBe(0);
