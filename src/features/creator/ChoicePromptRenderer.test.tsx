@@ -402,3 +402,17 @@ describe('a weighted ability prompt', () => {
     expect(screen.getByRole('button', { name: 'CON' }).getAttribute('aria-pressed')).toBe('true');
   });
 });
+
+describe('ChoicePromptRenderer group name', () => {
+  // A hidden legend repeated the visible label, so screen readers said it twice.
+  it('names the group by its visible label once, with the origin as its description', () => {
+    render(<ChoicePromptRenderer prompt={prompt} value={undefined} onChange={vi.fn()} />);
+    const group = screen.getByRole('group', { name: 'Level 4: choose a feat' });
+    expect(group.getAttribute('aria-describedby')).not.toBeNull();
+    expect(document.getElementById(group.getAttribute('aria-describedby') ?? '')?.textContent).toBe(
+      'Warrior · pick 1',
+    );
+    expect(screen.getAllByText('Level 4: choose a feat')).toHaveLength(1);
+    expect(group.querySelector('legend')).toBeNull();
+  });
+});
