@@ -299,6 +299,28 @@ describe('the roll prompt', () => {
     fireEvent.keyDown(document.body, { key: 'Escape' });
     expect(prompt('Athletics check')).toBeTruthy();
     page.removeAttribute('data-aria-hidden');
+
+    // Inside a sheet, or a key something else already took.
+    const sheet = document.createElement('div');
+    sheet.setAttribute('role', 'dialog');
+    const inSheet = document.createElement('button');
+    sheet.appendChild(inSheet);
+    document.body.appendChild(sheet);
+    fireEvent.keyDown(inSheet, { key: 'Escape' });
+    expect(prompt('Athletics check')).toBeTruthy();
+    const taken = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
+    taken.preventDefault();
+    document.body.dispatchEvent(taken);
+    expect(prompt('Athletics check')).toBeTruthy();
+  });
+
+  it('leaves Esc to the page once the control that asked has left it', () => {
+    render(<RollToast />);
+    const from = control('Athletics');
+    act(() => rollFrom(from, check));
+    from.remove();
+    fireEvent.keyDown(document.body, { key: 'Escape' });
+    expect(prompt('Athletics check')).toBeTruthy();
   });
 
   it('steps out of sight under a modal sheet, unless a sheet asked it', () => {

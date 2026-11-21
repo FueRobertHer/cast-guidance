@@ -1243,7 +1243,8 @@ function promptFrame(held: HeldRoll): string {
  * inside it, and focus goes back to the control that asked: focus that tabbed
  * out can still close it (the 2026-11-21 keyboard review). Not from a field,
  * whose Escape is its own, nor while a modal sheet holds the page, whose
- * Escape closes the sheet.
+ * Escape closes the sheet, nor once the control that asked has left the page
+ * (a chip on another page), where Escape belongs to the page now shown.
  */
 function useEscapeFromPage(box: RefObject<HTMLElement | null>, held: HeldRoll): void {
   useEffect(() => {
@@ -1251,12 +1252,14 @@ function useEscapeFromPage(box: RefObject<HTMLElement | null>, held: HeldRoll): 
       if (event.key !== 'Escape' || event.defaultPrevented) return;
       const target = event.target instanceof Element ? event.target : null;
       if (target !== null && box.current?.contains(target) === true) return;
-      if (target?.closest('input, textarea, select, [contenteditable="true"], [role="dialog"]')) {
-        return;
-      }
+      const own =
+        'input, textarea, select, [contenteditable]:not([contenteditable="false"]), [role="dialog"]';
+      if (target?.closest(own)) return;
       if (box.current?.closest('[data-aria-hidden]') != null) return;
+      const from = held.from;
+      if (from?.isConnected !== true) return;
       cancelHeld();
-      if (held.from?.isConnected === true) held.from.focus();
+      from.focus();
     };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
