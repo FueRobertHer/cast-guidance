@@ -93,9 +93,10 @@ const pickerKey = (ref: { name: string; source: string } | undefined) =>
  * that keeps its `fieldset` and the legend naming it. The pressed segment is
  * an `ink` pill, as `SegmentedControl` draws its own.
  */
-const SEGMENTS = 'flex flex-wrap gap-0.5 rounded-control bg-surface-raised p-0.75';
+const SEGMENTS =
+  'flex flex-wrap gap-0.5 rounded-control bg-surface-raised p-0.75 ring-1 ring-edge ring-inset';
 const SEGMENT =
-  'min-h-9.5 flex-1 rounded-lg px-3 text-label text-ink-muted transition-colors duration-120 not-aria-pressed:hover:text-ink aria-pressed:bg-ink aria-pressed:text-bg';
+  'min-h-9.5 flex-1 rounded-lg px-3 text-label text-ink-muted transition-[color,background-color] duration-120 not-aria-pressed:hover:text-ink aria-pressed:bg-ink aria-pressed:text-bg';
 
 /** A list of rows inside a section: hairline-divided, each row pads itself. */
 const ROWS =
