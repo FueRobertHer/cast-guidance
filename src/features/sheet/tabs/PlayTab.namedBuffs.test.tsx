@@ -269,7 +269,7 @@ describe('spells while raging', () => {
 });
 
 describe('spells in armor worn without training', () => {
-  const warning = 'You cannot cast spells: Untrained armor (Chain Mail)';
+  const warning = 'You cannot cast spells in untrained armor (Chain Mail)';
   const inChainMail = (doc: CharacterDoc): CharacterDoc => {
     doc.equipment = [
       {
@@ -296,6 +296,8 @@ describe('spells in armor worn without training', () => {
     const doc = inChainMail(sorcerer());
     doc.tableRules = { armorTraining: 'off' };
     await renderSheet(doc);
+    // The block is there, only the warning is not.
+    expect(screen.getByText('Sorcerer spellcasting')).toBeTruthy();
     expect(screen.queryByText(/You cannot cast spells/)).toBeNull();
   });
 });

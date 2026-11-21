@@ -17,7 +17,9 @@ export function noSpellsWhy(
     return 'You cannot cast spells while raging';
   }
   if (sheet.armorPenalty !== undefined) {
-    return `You cannot cast spells: ${sheet.armorPenalty.origin}`;
+    // The origin names the armor: "Untrained armor (Chain Mail)".
+    const { origin } = sheet.armorPenalty;
+    return `You cannot cast spells in ${origin.charAt(0).toLowerCase()}${origin.slice(1)}`;
   }
   return undefined;
 }
