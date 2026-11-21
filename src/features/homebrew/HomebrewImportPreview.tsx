@@ -10,7 +10,7 @@
  * preview, its gathering and its commit stay out of the Workshop's first load
  * and out of the entry chunk.
  */
-import { type ReactNode, useState } from 'react';
+import { type ReactNode, useId, useRef, useState } from 'react';
 import { type ConversionReport, convertedTotal, type EntryNote, notesWith } from '@/convert/types';
 import { invalidateRegistry } from '@/data5e/registry';
 import { packGuidance, packName, packRefusals } from '@/data5e/rulePack';
@@ -46,6 +46,7 @@ import {
   type OfficialCoverage,
   previewHomebrewImport,
   WINNER_POLICY,
+  whereIn,
 } from './importPreview';
 import { loadOfficialIndex } from './loadOfficialIndex';
 import {
@@ -309,21 +310,40 @@ function keyedNotes(notes: EntryNote[]): { key: string; note: EntryNote }[] {
   });
 }
 
-/** One list of converted entries with what each lost, capped. */
+/** How many more a list's Show more adds: a compendium can name thousands. */
+const MORE_NOTES = 50;
+
+/** One list of converted entries with what each lost, ten at first, then more on asking. */
 function NoteList({ notes, intro }: { notes: EntryNote[]; intro: string }) {
+  const [shown, setShown] = useState(MAX_LISTED_NOTES);
+  const list = useRef<HTMLDivElement>(null);
   if (notes.length === 0) return null;
+  const left = notes.length - shown;
+  const showMore = () => {
+    setShown((n) => n + MORE_NOTES);
+    // The last press takes its button away: focus goes to the list it filled, not the dialog.
+    if (left <= MORE_NOTES) list.current?.focus();
+  };
   return (
     <>
       <p className="text-ink-muted">{intro}</p>
-      <PreviewList>
-        {keyedNotes(notes.slice(0, MAX_LISTED_NOTES)).map(({ key, note }) => (
-          <StatusItem key={key} tone="info" status={`${note.name}:`}>
-            {note.reasons.join('; ')}.
-          </StatusItem>
-        ))}
-      </PreviewList>
-      {notes.length > MAX_LISTED_NOTES && (
-        <p className="text-ink-muted">And {notes.length - MAX_LISTED_NOTES} more.</p>
+      <div ref={list} tabIndex={-1} className="outline-none">
+        <PreviewList>
+          {keyedNotes(notes.slice(0, shown)).map(({ key, note }) => (
+            <StatusItem key={key} tone="info" status={`${note.name}:`}>
+              {note.reasons.join('; ')}.
+            </StatusItem>
+          ))}
+        </PreviewList>
+      </div>
+      {left > 0 && (
+        <button
+          type="button"
+          onClick={showMore}
+          className="inline-flex min-h-tap items-center self-start text-ink-muted underline underline-offset-3 hover:text-ink"
+        >
+          {left > MORE_NOTES ? `Show ${MORE_NOTES} more (${left} left)` : `Show ${left} more`}
+        </button>
       )}
     </>
   );
@@ -458,10 +478,42 @@ function bookStatus(b: BookChoice): string {
   return also === '' ? counts : `${counts}.${also}`;
 }
 
+/** The most books the picker lists open; past it the list starts folded, so the report shows. */
+const BOOKS_OPEN = 8;
+
 /**
- * The books of a file stored a book at a time, each ticked to come in. All
- * are ticked to begin with; a book left out can be imported later by
- * importing the file again.
+ * A book new from this file that another file here has a copy of. Its
+ * entries would show once, from the copy imported first, so importing it
+ * again mostly adds a second switch. A book that replaces this file's own
+ * older copy is not one: leaving it out would keep the old copy.
+ */
+function inAnotherFile(b: BookChoice): boolean {
+  return b.status === 'new' && b.alsoIn !== undefined;
+}
+
+/** The books ticked to begin with: every one, but those {@link inAnotherFile}. */
+function booksTicked(books: readonly BookChoice[] | undefined): Set<string> {
+  return new Set((books ?? []).filter((b) => !inAnotherFile(b)).map((b) => b.id));
+}
+
+/** The Books lead: what the switches are, and why some start unticked. */
+function booksLead(books: readonly BookChoice[]): string {
+  const lead = 'Each book is kept on its own, with its own switch.';
+  const shared = books.filter(inAnotherFile).length;
+  if (shared === 0) return `${lead} Untick the ones you do not want.`;
+  if (shared === books.length) {
+    return `${lead} Another file here has every one of them already, so none starts ticked: tick the ones you want from this file too.`;
+  }
+  const which = shared === 1 ? 'One is' : `${shared} are`;
+  const start = shared === 1 ? 'it starts' : 'they start';
+  return `${lead} Untick the ones you do not want. ${which} in another file here already, so ${start} unticked.`;
+}
+
+/**
+ * The books of a file stored a book at a time, each ticked to come in, but
+ * those another file here has already (`booksTicked`). A book left out can
+ * be imported later by importing the file again. A long list starts folded,
+ * with its count and Select all in view.
  */
 function BookPicker({
   books,
@@ -472,6 +524,9 @@ function BookPicker({
   chosen: ReadonlySet<string>;
   onChange: (next: Set<string>) => void;
 }) {
+  const folds = books.length > BOOKS_OPEN;
+  const [open, setOpen] = useState(!folds);
+  const listId = useId();
   const toggle = (id: string, on: boolean) => {
     const next = new Set(chosen);
     if (on) next.add(id);
@@ -480,9 +535,7 @@ function BookPicker({
   };
   return (
     <PreviewSection heading="Books">
-      <p className="text-ink-muted">
-        Each book is kept on its own, with its own switch. Untick the ones you do not want.
-      </p>
+      <p className="text-ink-muted">{booksLead(books)}</p>
       <div className="flex flex-col overflow-hidden rounded-control bg-surface ring-1 ring-line ring-inset">
         <div className="flex gap-1 border-line border-b px-2 py-1 text-caption">
           <button
@@ -499,27 +552,40 @@ function BookPicker({
           >
             Select none
           </button>
+          {folds && (
+            <button
+              type="button"
+              aria-expanded={open}
+              aria-controls={listId}
+              onClick={() => setOpen((o) => !o)}
+              className="inline-flex min-h-tap items-center px-1 text-ink-muted underline underline-offset-3 hover:text-ink"
+            >
+              {open ? 'Hide the books' : `Show the ${books.length} books`}
+            </button>
+          )}
           <span className="ml-auto inline-flex items-center px-1 text-ink-muted">
             {chosen.size} of {books.length}
           </span>
         </div>
-        {books.map((b) => (
-          <label
-            key={b.id}
-            className="flex min-h-tap items-start gap-2.5 px-3 py-2 hover:bg-surface-raised"
-          >
-            <input
-              type="checkbox"
-              checked={chosen.has(b.id)}
-              onChange={(e) => toggle(b.id, e.target.checked)}
-              className="mt-1 size-4 shrink-0 accent-ink"
-            />
-            <span className="flex min-w-0 flex-1 flex-col">
-              <span className={chosen.has(b.id) ? '' : 'text-ink-muted'}>{b.full}</span>
-              <span className="text-caption text-ink-muted">{bookStatus(b)}</span>
-            </span>
-          </label>
-        ))}
+        <div id={listId} hidden={!open} className="flex flex-col">
+          {(open ? books : []).map((b) => (
+            <label
+              key={b.id}
+              className="flex min-h-tap items-start gap-2.5 px-3 py-2 hover:bg-surface-raised"
+            >
+              <input
+                type="checkbox"
+                checked={chosen.has(b.id)}
+                onChange={(e) => toggle(b.id, e.target.checked)}
+                className="mt-1 size-4 shrink-0 accent-ink"
+              />
+              <span className="flex min-w-0 flex-1 flex-col">
+                <span className={chosen.has(b.id) ? '' : 'text-ink-muted'}>{b.full}</span>
+                <span className="text-caption text-ink-muted">{bookStatus(b)}</span>
+              </span>
+            </label>
+          ))}
+        </div>
       </div>
     </PreviewSection>
   );
@@ -548,9 +614,7 @@ export default function HomebrewImportPreview({
   const dup = p.duplicateOf;
   const hasClashes = p.entityCollisions.length > 0 || p.sourceCollisions.length > 0;
   const books = p.books;
-  const [chosen, setChosen] = useState<ReadonlySet<string>>(
-    () => new Set(books?.map((b) => b.id) ?? []),
-  );
+  const [chosen, setChosen] = useState<ReadonlySet<string>>(() => booksTicked(books));
   const pack = dup === undefined ? p.pack : undefined;
   const [applyTo, setApplyTo] = useState<PackAppliesTo>({ characters: [], appDefault: true });
   // A file of a collection here updates it, keeping who its pack applies to.
@@ -706,7 +770,8 @@ export default function HomebrewImportPreview({
       {picking && dup === undefined && (
         <>
           <BookPicker books={books} chosen={chosen} onChange={setChosen} />
-          {storing === 0 && (
+          {/* Only when a book here would come in: one another file has, the lead speaks for. */}
+          {storing === 0 && books.some((b) => b.status !== 'same' && !inAnotherFile(b)) && (
             <p className="text-ink-muted">
               Tick a book that is not already on this device to import it.
             </p>
@@ -771,7 +836,7 @@ export default function HomebrewImportPreview({
               <StatusItem key={`${c.type}:${c.name}:${c.target}`} tone="warn">
                 {c.disabledIn === undefined
                   ? `${c.name} copies ${c.target}, which is not on this device, so it will be missing what it copies.`
-                  : `${c.name} copies ${c.target}, which is only in "${c.disabledIn.fileName}", a file that is turned off. Until that file is turned on, ${c.name} will be missing what it copies.`}
+                  : `${c.name} copies ${c.target}, which is only in ${whereIn(c.disabledIn)}, a file that is turned off. Until that file is turned on, ${c.name} will be missing what it copies.`}
               </StatusItem>
             ))}
           </PreviewList>
@@ -841,7 +906,7 @@ export default function HomebrewImportPreview({
           <PreviewList>
             {p.disabledClashes.map((c) => (
               <StatusItem key={`${c.type}:${c.name}|${c.source}:${c.against.id}`} tone="info">
-                {c.name} ({c.source}) is also in "{c.against.fileName}", which is turned off.
+                {`${c.name} (${c.source}) is also in ${whereIn(c.against)}, which is turned off.`}
               </StatusItem>
             ))}
           </PreviewList>
