@@ -323,20 +323,38 @@ function readTable(
   // A table by spell level that the class learns from as it rises (a
   // Strixhaven mage's) is a table this cannot place.
   if (byLevel && section !== 'expanded') return undefined;
-  const out: Gated = {};
+  const rows: { level: number; names: string[] }[] = [];
   for (const row of table.rows) {
     const level = rowLevel(row.level);
     // Notes first, which may hold commas: `conjure animals (bats, rats, or wolves only)`.
     const cell = row.cell.replace(NOTE, '').trim();
     if (COUNT_CELL.test(cell)) continue;
-    if (level === undefined) return undefined;
-    if (section === 'expanded' ? level > 9 : level < 1 || level > 20) return undefined;
+    if (level === undefined || level > 20) return undefined;
     const names = cell.split(',').map((part) => cellName(part, index));
     if (names.some((n) => n === undefined)) return undefined;
-    const gate = section === 'expanded' ? `s${level}` : String(level);
-    for (const n of names) if (n !== undefined) add(out, gate, n);
+    rows.push({ level, names: names as string[] });
+  }
+  // An expanded list's rows are spell levels (1st to 5th, The Undead's even
+  // under `Warlock Level`), unless they are the odd class levels a patron's
+  // spells come at: `1st, 3rd ... 9th`, `3, 5, 7, 9`.
+  const byClassLevel = section === 'expanded' && !byLevel && oddClassLevels(rows);
+  const out: Gated = {};
+  // A cantrip row only on an expanded list; spell levels up to 9th.
+  const min = section === 'expanded' ? 0 : 1;
+  const max = section === 'expanded' && !byClassLevel ? 9 : 20;
+  for (const { level, names } of rows) {
+    if (level < min || level > max) return undefined;
+    const gate =
+      section !== 'expanded' || (byClassLevel && level > 0) ? String(level) : `s${level}`;
+    for (const n of names) add(out, gate, n);
   }
   return Object.keys(out).length > 0 ? out : undefined;
+}
+
+/** Whether a table's levels past its cantrip row are all odd and reach past 5th: class levels, not spell levels. */
+function oddClassLevels(rows: readonly { level: number }[]): boolean {
+  const levels = rows.map((r) => r.level).filter((l) => l > 0);
+  return levels.every((l) => l % 2 === 1) && levels.some((l) => l > 5);
 }
 
 /** Whether a table names a spell the file or the installed data has. */

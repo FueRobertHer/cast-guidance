@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
+import { engineContextFor } from '../../data5e/engineAdapter';
+import { mergeHomebrew, normalizeDataset } from '../../data5e/normalize';
+import { STANDARD_SLOTS } from '../../engine/calc/slots';
+import { deriveSheet } from '../../engine/derive';
+import { newCharacterDoc } from '../../engine/types';
+import { parseXml } from '../xml';
 import { readFeatureSpells } from './classSpells';
+import { convertFc5Compendium } from './compendium';
 import type { SpellIndex } from './spellGrants';
 import { type Entry, readText } from './text';
 
@@ -56,6 +63,68 @@ describe('readFeatureSpells', () => {
         },
       },
     ]);
+  });
+
+  it("reads a patron's expanded list by warlock level when its rows are odd levels past 5th", () => {
+    const words =
+      'The Ember Fool lets you choose from an expanded list of spells when you learn a warlock spell. The following spells are added to the warlock spell list for you.';
+    const fool = read(1, [
+      words,
+      table('Warlock Level', [
+        ['3', 'disguise self, rope trick, vicious mockery'],
+        ['5', 'blink'],
+        ['9', 'mislead'],
+      ]),
+    ]);
+    expect(fool.blocks).toEqual([
+      {
+        expanded: {
+          3: ['disguise self', 'rope trick', 'vicious mockery'],
+          5: ['blink'],
+          9: ['mislead'],
+        },
+      },
+    ]);
+    // A cantrip row stays a cantrip; a spell level table of 9th is by spell level.
+    const goat = read(1, [
+      words,
+      `Cantrip ${DASH} light`,
+      `1st ${DASH} bane`,
+      `7th ${DASH} stoneskin`,
+    ]);
+    expect(goat.blocks).toEqual([{ expanded: { s0: ['light'], 1: ['bane'], 7: ['stoneskin'] } }]);
+    const sphinx = read(1, [
+      words,
+      table('Spell Level', [
+        ['1st', 'command'],
+        ['3rd', 'slow'],
+        ['9th', 'time stop'],
+      ]),
+    ]);
+    expect(sphinx.blocks).toEqual([
+      { expanded: { s1: ['command'], s3: ['slow'], s9: ['time stop'] } },
+    ]);
+    // Odd levels up to 5th are spell levels still.
+    const low = read(1, [words, `1st ${DASH} bane`, `3rd ${DASH} slow`, `5th ${DASH} cloudkill`]);
+    expect(low.blocks).toEqual([{ expanded: { s1: ['bane'], s3: ['slow'], s5: ['cloudkill'] } }]);
+    // So are even ones past it, and none past 9th is a spell level.
+    const study = read(1, [
+      words,
+      `2nd ${DASH} augury`,
+      `6th ${DASH} contingency`,
+      `9th ${DASH} weird`,
+    ]);
+    expect(study.blocks).toEqual([
+      { expanded: { s2: ['augury'], s6: ['contingency'], s9: ['weird'] } },
+    ]);
+    const past = read(1, [
+      words,
+      table('Spell Level', [
+        ['1st', 'bane'],
+        ['11th', 'slow'],
+      ]),
+    ]);
+    expect(past).toEqual({ unread: true });
   });
 
   it('reads a 2014 land as prepared by druid level, though it adds to the druid list', () => {
@@ -332,5 +401,49 @@ describe('readFeatureSpells', () => {
       false,
     );
     expect(got).toEqual({ unread: false });
+  });
+});
+
+describe('subclass spells on the sheet', () => {
+  /** A full caster with one subclass, these features at its first level, as a sheet at `levels`. */
+  const sheetOf = (subclassFeatures: string, levels: number) => {
+    const opt = ' optional="YES"';
+    const f = (name: string, text: string, attrs = opt) =>
+      `<feature${attrs}><name>${name}</name><text>${text}</text></feature>`;
+    const rows = STANDARD_SLOTS.map(
+      (row, i) =>
+        `<autolevel level="${i + 1}"><slots>${[3, ...row].join(',')}</slots>${
+          i === 0
+            ? `${f('Otherworldly Patron', 'Choose a patron.', '')}${f('Otherworldly Patron: The Ember Fool', 'A patron.')}${subclassFeatures}`
+            : ''
+        }</autolevel>`,
+    ).join('');
+    const xml = `<compendium><class><name>Ember Caller</name><hd>8</hd><spellAbility>Charisma</spellAbility>${rows}</class></compendium>`;
+    const { json } = convertFc5Compendium(parseXml(xml), { fileName: 'Ember Homebrew.xml' });
+    const reg = normalizeDataset(new Map());
+    mergeHomebrew(reg, new Map([['ember', json]]));
+    const [cls] = (json.class ?? []) as Record<string, unknown>[];
+    const [sub] = (json.subclass ?? []) as Record<string, unknown>[];
+    const doc = newCharacterDoc('e', 'E', 'v2.41.0');
+    doc.classes = [
+      {
+        ref: { name: String(cls?.name), source: String(cls?.source) },
+        subclass: { name: String(sub?.name), source: String(sub?.source) },
+        levels,
+        hp: Array<'avg'>(levels).fill('avg'),
+      },
+    ];
+    return deriveSheet(doc, engineContextFor(reg));
+  };
+  const expandedAt = (features: string, levels: number) =>
+    sheetOf(features, levels)
+      .spellcasting.flatMap((b) => b.expanded ?? [])
+      .flatMap((x) => x.spells);
+
+  it("opens a patron's spells at the warlock levels its table lists", () => {
+    const table =
+      '<feature optional="YES"><name>Expanded Spell List (The Ember Fool)</name><text>The Ember Fool lets you choose from an expanded list of spells when you learn a warlock spell. The following spells are added to the warlock spell list for you.</text><text>Fool Spells:</text><text>Warlock Level | Spells</text><text>3rd | disguise self, rope trick</text><text>5th | blink</text><text>9th | mislead</text></feature>';
+    expect(expandedAt(table, 3)).toEqual(['disguise self', 'rope trick']);
+    expect(expandedAt(table, 5)).toEqual(['disguise self', 'rope trick', 'blink']);
   });
 });
