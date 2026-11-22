@@ -735,6 +735,56 @@ describe('readFeatureSpells', () => {
     );
     expect(got).toEqual({ unread: false });
   });
+  describe('names checked against the index', () => {
+    const levels: Record<string, number> = {
+      'fire bolt': 0,
+      light: 0,
+      'feather fall': 1,
+      bless: 1,
+    };
+    const known = (vouches: boolean): SpellIndex => ({
+      level: (n) => (Object.hasOwn(levels, n) ? levels[n] : undefined),
+      vouches: () => vouches,
+    });
+
+    it("grants a feature's cantrip as the index has it, and none it vouches is no spell", () => {
+      const got = read(1, ['You learn the firebolt and zorblax cantrips.'], true, known(true));
+      expect(got).toEqual({ blocks: [{ known: { 1: ['fire bolt#c'] } }], unread: true });
+    });
+
+    it('keeps a name the index lacks when it cannot vouch', () => {
+      const got = read(1, ['You learn the zorblax cantrip.'], true, known(false));
+      expect(got).toEqual({ blocks: [{ known: { 1: ['zorblax#c'] } }], unread: false });
+    });
+
+    it('drops a vouched-out name from spells always prepared', () => {
+      const got = read(
+        1,
+        ['You always have the bless and zorblax spells prepared.'],
+        true,
+        known(true),
+      );
+      expect(got.unread).toBe(true);
+      expect(JSON.stringify(got.blocks)).not.toContain('zorblax');
+      expect(JSON.stringify(got.blocks)).toContain('bless');
+    });
+
+    it("resolves a table's names and keeps the ones the index lacks", () => {
+      const got = read(
+        1,
+        [
+          'At each indicated cleric level, you add the listed spells to your spells prepared.',
+          `1st ${DASH} featherfall, zorblax`,
+        ],
+        true,
+        known(true),
+      );
+      expect(got).toEqual({
+        blocks: [{ prepared: { 1: ['feather fall', 'zorblax'] } }],
+        unread: false,
+      });
+    });
+  });
 });
 
 describe('subclass spells on the sheet', () => {

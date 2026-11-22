@@ -1401,3 +1401,31 @@ describe('installed spells on a homebrew class list', () => {
     expect(JSON.stringify(json)).not.toContain('classSpells');
   });
 });
+
+describe('spell names checked against the file and the installed data', () => {
+  const RACE = `<race><name>Emberkin</name><size>M</size><speed>30</speed>
+    <trait><name>Ember Magic</name><text>You know the produce flames cantrip. When you reach 3rd level, you can cast the zorblax spell once with this trait and regain the ability to do so when you finish a long rest. Charisma is your spellcasting ability for these spells.</text></trait></race>`;
+  const spellsOf = (opts: ConvertOptions) => {
+    const { json, report } = convert(RACE, opts);
+    const [race] = list(json, 'race');
+    return { spells: race?.additionalSpells, notes: report.notes.map((n) => n.reasons) };
+  };
+
+  it('grants a name as the installed data has it, and none the file and the data lack', () => {
+    const { check } = recorder((kind, name) => kind === 'spell' && name === 'produce flame');
+    expect(spellsOf({ fileName: FILE, isInstalled: check })).toEqual({
+      spells: [{ ability: 'cha', known: { 1: ['produce flame#c'] } }],
+      notes: [['some of its spells are kept as text']],
+    });
+  });
+
+  it('keeps every name when the installed data is not asked', () => {
+    expect(spellsOf({ fileName: FILE }).spells).toEqual([
+      {
+        ability: 'cha',
+        known: { 1: ['produce flames#c'] },
+        innate: { 3: { daily: { 1: ['zorblax'] } } },
+      },
+    ]);
+  });
+});

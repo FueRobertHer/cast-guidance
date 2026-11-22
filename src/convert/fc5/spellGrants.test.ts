@@ -1,9 +1,15 @@
 import { describe, expect, it } from 'vitest';
-import { readSpellGrants, type SpellIndex } from './spellGrants';
+import { knownSpellName, readSpellGrants, type SpellIndex } from './spellGrants';
 
 /** An index of the spells named, at the levels given. */
 const indexOf = (levels: Record<string, number>): SpellIndex => ({
   level: (name) => (Object.hasOwn(levels, name) ? levels[name] : undefined),
+});
+
+/** An index that holds every spell there is, so a name it lacks is no spell. */
+const vouching = (levels: Record<string, number>): SpellIndex => ({
+  ...indexOf(levels),
+  vouches: () => true,
 });
 
 const race = (traits: string[], index?: SpellIndex) =>
@@ -415,5 +421,105 @@ describe('readSpellGrants', () => {
     expect(feat('You learn two cantrips of your choice.').blocks).toEqual([
       { known: { _: [{ choose: 'level=0', count: 2 }] } },
     ]);
+  });
+});
+
+describe('knownSpellName', () => {
+  const index = indexOf({
+    "melf's acid arrow": 2,
+    'tiny servant': 3,
+    'produce flame': 0,
+    'mage hand': 0,
+    darkvision: 2,
+    'feather fall': 1,
+    'tree heal': 0,
+    'dancing lights': 0,
+  });
+
+  it('finds a name as the index has it, or as the file likely meant it', () => {
+    expect(knownSpellName('mage hand', index)).toBe('mage hand');
+    expect(knownSpellName('acid arrow', index)).toBe("melf's acid arrow");
+    expect(knownSpellName('tiny servant xge', index)).toBe('tiny servant');
+    expect(knownSpellName('produce flames', index)).toBe('produce flame');
+    expect(knownSpellName('mage hands', index)).toBe('mage hand');
+    expect(knownSpellName('dancing light', index)).toBe('dancing lights');
+    expect(knownSpellName('dark vision', index)).toBe('darkvision');
+    expect(knownSpellName('featherfall', index)).toBe('feather fall');
+    expect(knownSpellName('treeheal', index)).toBe('tree heal');
+  });
+
+  it('finds none for a name the index lacks in every form, or a lone book tag', () => {
+    expect(knownSpellName('another', index)).toBeUndefined();
+    expect(knownSpellName('xge', index)).toBeUndefined();
+    expect(knownSpellName('acid arrows', index)).toBeUndefined();
+    expect(knownSpellName('mage', index)).toBeUndefined();
+  });
+
+  it('splits no word longer than any spell name', () => {
+    const long = indexOf({ 'abcdefghij klmnopqrstu': 1 });
+    expect(knownSpellName('abcdefghijklmnopqrst', indexOf({ 'abcdefghij klmnopqrst': 1 }))).toBe(
+      'abcdefghij klmnopqrst',
+    );
+    expect(knownSpellName('abcdefghijklmnopqrstu', long)).toBeUndefined();
+  });
+});
+
+describe('readSpellGrants, names checked against the index', () => {
+  const trait = (name: string) =>
+    `You know the ${name} cantrip. Charisma is your spellcasting ability for this spell.`;
+
+  it('grants a name as the index has it', () => {
+    const { blocks, unread } = race([trait('produce flames')], vouching({ 'produce flame': 0 }));
+    expect(unread).toBe(false);
+    expect(blocks).toEqual([{ ability: 'cha', known: { 1: ['produce flame#c'] } }]);
+  });
+
+  it('grants no name the index vouches is no spell, and notes the trait as unread', () => {
+    const { blocks, unread } = race([trait('zorblax')], vouching({ 'produce flame': 0 }));
+    expect(blocks).toBeUndefined();
+    expect(unread).toBe(true);
+  });
+
+  it('keeps a name the index lacks when it cannot vouch', () => {
+    const { blocks, unread } = race([trait('zorblax')], indexOf({ 'produce flame': 0 }));
+    expect(unread).toBe(false);
+    expect(blocks).toEqual([{ ability: 'cha', known: { 1: ['zorblax#c'] } }]);
+  });
+
+  it('drops a vouched-out name from a list and grants the rest', () => {
+    const { blocks, unread } = race(
+      [
+        [
+          'You have an innate ability to cast the following spells:',
+          '• At will: light, zorblax, mage hands',
+          'Charisma is your spellcasting ability for these spells.',
+        ].join('\n'),
+      ],
+      vouching({ light: 0, 'mage hand': 0 }),
+    );
+    expect(unread).toBe(true);
+    expect(blocks).toEqual([{ ability: 'cha', known: { 1: ['light#c', 'mage hand#c'] } }]);
+  });
+
+  it('drops a vouched-out name from "the following spells" set down in a sentence', () => {
+    const { blocks, unread } = feat(
+      'You can cast each of the following spells once with this ability: blur, zorblax, and featherfall. You regain the ability to cast these spells when you finish a long rest. Intelligence is your spellcasting ability for these spells.',
+      vouching({ blur: 2, 'feather fall': 1 }),
+    );
+    expect(unread).toBe(true);
+    expect(blocks).toEqual([
+      { ability: 'int', innate: { _: { daily: { '1e': ['blur', 'feather fall'] } } } },
+    ]);
+  });
+
+  it("resolves a table's names and keeps the ones the index lacks", () => {
+    const rows = [
+      'For you, the spells on the Ember Spells table are added to the spell list of your spellcasting class.',
+      '1st | featherfall, zorblax',
+    ].join('\n');
+    expect(feat(rows, vouching({ 'feather fall': 1 }))).toEqual({
+      blocks: [{ expanded: { s1: ['feather fall', 'zorblax'] } }],
+      unread: false,
+    });
   });
 });

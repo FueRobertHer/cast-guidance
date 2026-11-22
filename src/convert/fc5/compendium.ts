@@ -454,6 +454,8 @@ export function fc5Converter(opts: ConvertOptions): Fc5Converter {
   ctx.spells = {
     level: (name) =>
       spellLevels.has(name) ? spellLevels.get(name) : installedSpell(name) ? null : undefined,
+    // Every spell once the first pass is done, when the installed data is asked.
+    vouches: () => prepared && opts.isInstalled !== undefined,
   };
   // The classes the file defines whole, for the spell lists that name them;
   // one the rules have by that name keeps the rules' (`Wizard|PHB`).
