@@ -995,6 +995,18 @@ describe('races', () => {
       ).toEqual({ walk: 30, climb: 20 });
     });
 
+    it('reads "You can speak" with no word of writing only in a Languages trait', () => {
+      const text = 'You can speak Erina and either Common or Sylvan. You learn them young.';
+      expect(traitRules('Languages', text, []).languages).toEqual({
+        erina: true,
+        choose: { from: ['common', 'sylvan'] },
+      });
+      expect(
+        traitRules('Language', 'You can speak both Common and Draconic.', []).languages,
+      ).toEqual({ common: true, draconic: true });
+      expect(traitRules('Mind Link', 'You can speak Common and Draconic.', [])).toEqual({});
+    });
+
     it('reads a speed after a first sentence that grants a proficiency', () => {
       const text =
         'You have proficiency in the Athletics skill. You also have a climbing speed of 30 feet.';

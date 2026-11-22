@@ -1,4 +1,8 @@
 import { describe, expect, it } from 'vitest';
+import { engineContextFor } from '../../data5e/engineAdapter';
+import { mergeHomebrew, normalizeDataset } from '../../data5e/normalize';
+import { deriveSheet } from '../../engine/derive';
+import { newCharacterDoc } from '../../engine/types';
 import {
   type ConvertedKind,
   type ConvertOptions,
@@ -1426,6 +1430,36 @@ describe('spell names checked against the file and the installed data', () => {
         known: { 1: ['produce flames#c'] },
         innate: { 3: { daily: { 1: ['zorblax'] } } },
       },
+    ]);
+  });
+});
+
+describe('a race read from its words, on a sheet', () => {
+  it("offers a race's pick of two scores and its pick of three languages", () => {
+    const { json } = convert(
+      `<race><name>Erina, Spiritfarer</name><size>S</size><speed>25</speed><ability>Wis 2</ability>
+        <trait><name>Ability Score Increase</name><text>Your Wisdom score increases by 2, and you can choose to increase either your Dexterity or Charisma score by 1.</text></trait>
+        <trait><name>Languages</name><text>You can speak Erina and Umbral and either Common, Elvish, or Sylvan.</text></trait></race>`,
+    );
+    const reg = normalizeDataset(new Map());
+    mergeHomebrew(reg, new Map([['ember', json]]));
+    const [race] = list(json, 'race');
+    const doc = newCharacterDoc('e', 'E', 'v2.41.0');
+    doc.race = { name: String(race?.name), source: String(race?.source) };
+    const open = deriveSheet(doc, engineContextFor(reg));
+    const ability = open.pending.find((p) => p.kind === 'ability');
+    const language = open.pending.find((p) => p.kind === 'language');
+    expect(ability?.options.map((o) => o.id)).toEqual(['dex', 'cha']);
+    expect(language?.options.map((o) => o.id).sort()).toEqual(['common', 'elvish', 'sylvan']);
+    doc.choices = { [String(ability?.id)]: ['cha'], [String(language?.id)]: ['elvish'] };
+    const sheet = deriveSheet(doc, engineContextFor(reg));
+    // Every score starts the same: the tag's Wisdom +2 and the Charisma picked.
+    const over = (k: 'wis' | 'cha' | 'dex') => sheet.abilities[k].value - sheet.abilities.str.value;
+    expect([over('wis'), over('cha'), over('dex')]).toEqual([2, 1, 0]);
+    expect(sheet.languages.map((l) => l.toLowerCase()).sort()).toEqual([
+      'elvish',
+      'erina',
+      'umbral',
     ]);
   });
 });
