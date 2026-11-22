@@ -70,6 +70,7 @@ import {
   isOnOfficialList,
 } from './classOption';
 import { ownerKeys } from './classOptions';
+import { giveNamedClassLists } from './classSpells';
 import {
   type ClassBinding,
   extraClassKey,
@@ -1228,6 +1229,11 @@ export function fc5Converter(opts: ConvertOptions): Fc5Converter {
       const ids = installedOnSubclass.get(`${String(e.className)}|${String(e.name)}`.toLowerCase());
       if (ids !== undefined) e.subclassSpells = [...ids];
     }
+    giveNamedClassLists(out, (name) => {
+      const key = name.trim();
+      if (BASE_CLASSES.has(key)) return key.replace(/\b[a-z]/g, (c) => c.toUpperCase());
+      return fileClasses.get(key)?.name;
+    });
 
     const converted: Partial<Record<ConvertedKind, number>> = {};
     const json: Record<string, unknown> = {

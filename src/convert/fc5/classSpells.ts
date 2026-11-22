@@ -24,7 +24,7 @@
  * is linear, with bounded runs.
  */
 import type { SpellBlock, SpellIndex } from './spellGrants';
-import type { Entry } from './text';
+import { type Entry, plainText } from './text';
 
 /** A feature as the class lists it: the level it is gained at, and its entries. */
 export interface FeatureText {
@@ -460,4 +460,85 @@ export function readFeatureSpells(
   if (Object.keys(common).length > 0) blocks.push(common);
   blocks.push(...branches);
   return blocks.length > 0 ? { blocks, unread } : { unread };
+}
+
+/**
+ * The words just before a `spell list`, up to two: `from the warlock spell
+ * list`, `the blood hunter spell list`. Each word is bounded, so a start is
+ * looked past at most that far.
+ */
+const CLASS_LIST = /([a-z']{1,20}(?: [a-z']{1,20})?) spell list\b/g;
+
+/**
+ * The one class whose spell list a subclass caster's features name, as
+ * `classNamed` names it (`Warlock`), or undefined when they name none or two.
+ */
+export function namedClassList(
+  texts: readonly string[],
+  classNamed: (name: string) => string | undefined,
+): string | undefined {
+  const named = new Set<string>();
+  for (const text of texts) {
+    for (const m of text.toLowerCase().matchAll(CLASS_LIST)) {
+      // The longest class name the last words make: `the blood hunter` is the Blood Hunter's.
+      const words = (m[1] ?? '').split(' ');
+      for (let n = words.length; n > 0; n -= 1) {
+        const name = classNamed(words.slice(-n).join(' '));
+        if (name === undefined) continue;
+        named.add(name);
+        break;
+      }
+    }
+  }
+  const [only] = named;
+  return named.size === 1 ? only : undefined;
+}
+
+type Row = Record<string, unknown>;
+
+/**
+ * A subclass caster with no list of its own (none it lists, no spell of the
+ * file naming it) casts from the class list its features name: a Profane
+ * Soul's warlock list, a Wildkeeper's druid one. That class's list is added to
+ * every block of its `additionalSpells`, as a block more would be a choice.
+ * A printing of an official subclass keeps the official one's list.
+ */
+export function giveNamedClassLists(
+  out: { spell: Row[]; subclass: Row[]; subclassFeature: Row[] },
+  classNamed: (name: string) => string | undefined,
+): void {
+  const key = (...parts: unknown[]) => parts.map((p) => String(p).toLowerCase()).join('|');
+  const listed = new Set<string>();
+  for (const spell of out.spell) {
+    const lists = (spell.classes as { fromSubclass?: unknown } | undefined)?.fromSubclass;
+    for (const s of Array.isArray(lists) ? (lists as Row[]) : []) {
+      const cls = (s.class as Row | undefined)?.name;
+      const sub = s.subclass as Row | undefined;
+      listed.add(key(cls, sub?.name));
+    }
+  }
+  const texts = new Map<string, string[]>();
+  for (const f of out.subclassFeature) {
+    const at = key(f.className, f.subclassShortName, f.subclassSource);
+    let list = texts.get(at);
+    if (list === undefined) texts.set(at, (list = []));
+    list.push(plainText(Array.isArray(f.entries) ? (f.entries as Entry[]) : []));
+  }
+  for (const e of out.subclass) {
+    if (e.casterProgression === undefined || e.printingOf !== undefined) continue;
+    if (Array.isArray(e.subclassSpells) && e.subclassSpells.length > 0) continue;
+    if (listed.has(key(e.className, e.name))) continue;
+    const named = namedClassList(
+      texts.get(key(e.className, e.shortName, e.source)) ?? [],
+      classNamed,
+    );
+    if (named === undefined) continue;
+    const filter = { all: `class=${named}` };
+    const blocks = Array.isArray(e.additionalSpells) ? (e.additionalSpells as Row[]) : [];
+    e.additionalSpells = (blocks.length > 0 ? blocks : [{}]).map((b) => {
+      const expanded = { ...((b.expanded as Row | undefined) ?? {}) };
+      expanded._ = [...(Array.isArray(expanded._) ? expanded._ : []), filter];
+      return { ...b, expanded };
+    });
+  }
 }

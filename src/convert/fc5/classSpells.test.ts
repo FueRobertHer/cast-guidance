@@ -4,8 +4,9 @@ import { mergeHomebrew, normalizeDataset } from '../../data5e/normalize';
 import { STANDARD_SLOTS } from '../../engine/calc/slots';
 import { deriveSheet } from '../../engine/derive';
 import { newCharacterDoc } from '../../engine/types';
+import type { ConvertOptions } from '../types';
 import { parseXml } from '../xml';
-import { readFeatureSpells } from './classSpells';
+import { giveNamedClassLists, namedClassList, readFeatureSpells } from './classSpells';
 import { convertFc5Compendium } from './compendium';
 import type { SpellIndex } from './spellGrants';
 import { type Entry, readText } from './text';
@@ -445,5 +446,145 @@ describe('subclass spells on the sheet', () => {
       '<feature optional="YES"><name>Expanded Spell List (The Ember Fool)</name><text>The Ember Fool lets you choose from an expanded list of spells when you learn a warlock spell. The following spells are added to the warlock spell list for you.</text><text>Fool Spells:</text><text>Warlock Level | Spells</text><text>3rd | disguise self, rope trick</text><text>5th | blink</text><text>9th | mislead</text></feature>';
     expect(expandedAt(table, 3)).toEqual(['disguise self', 'rope trick']);
     expect(expandedAt(table, 5)).toEqual(['disguise self', 'rope trick', 'blink']);
+  });
+});
+
+describe('a subclass caster with no list of its own', () => {
+  const opt = ' optional="YES"';
+  const f = (name: string, text: string, attrs = opt) =>
+    `<feature${attrs}><name>${name}</name><text>${text}</text></feature>`;
+  /** A class whose subclasses cast by its optional slot rows, with these spells beside it. */
+  const convert = (
+    spells = '',
+    spellcasting = 'You learn two cantrips of your choice from the wizard spell list.',
+    opts: Partial<ConvertOptions> = {},
+  ) => {
+    const rows = Array.from(
+      { length: 20 },
+      (_, i) =>
+        `<autolevel level="${i + 1}"><slots optional="YES">2,${i < 2 ? '0,0' : i < 6 ? '2,0' : '4,2'}</slots>${
+          i === 2
+            ? `${f('Ember Path', 'Choose a path.', '')}${f('Ember Path: Ash Mage', 'x')}${f('Spellcasting (Ash Mage)', spellcasting)}`
+            : ''
+        }</autolevel>`,
+    ).join('');
+    const xml = `<compendium>${spells}<class><name>Ember Knight</name><hd>10</hd><spellAbility>Intelligence</spellAbility>${rows}</class></compendium>`;
+    return convertFc5Compendium(parseXml(xml), { fileName: 'Ember Homebrew.xml', ...opts }).json;
+  };
+  const subOf = (json: Record<string, unknown>) =>
+    ((json.subclass ?? []) as Record<string, unknown>[])[0];
+
+  it('casts from the class list its features name, on the sheet', () => {
+    const json = convert();
+    expect(subOf(json)?.additionalSpells).toEqual([{ expanded: { _: [{ all: 'class=Wizard' }] } }]);
+    const reg = normalizeDataset(new Map());
+    mergeHomebrew(reg, new Map([['ember', json]]));
+    const cls = ((json.class ?? []) as Record<string, unknown>[])[0];
+    const sub = subOf(json);
+    const doc = newCharacterDoc('e', 'E', 'v2.41.0');
+    doc.classes = [
+      {
+        ref: { name: String(cls?.name), source: String(cls?.source) },
+        subclass: { name: String(sub?.name), source: String(sub?.source) },
+        levels: 3,
+        hp: ['avg', 'avg', 'avg'],
+      },
+    ];
+    const blocks = deriveSheet(doc, engineContextFor(reg)).spellcasting;
+    expect(blocks.flatMap((b) => b.expanded ?? []).flatMap((x) => x.filters)).toEqual([
+      'class=Wizard',
+    ]);
+  });
+
+  it("names the file's own class as the file names it, and adds the list to the spells it has", () => {
+    const own = convert(
+      '',
+      'You learn spells from the ember knight spell list. You always have the shield spell prepared.',
+    );
+    expect(subOf(own)?.additionalSpells).toEqual([
+      { prepared: { 3: ['shield'] }, expanded: { _: [{ all: 'class=Ember Knight' }] } },
+    ]);
+  });
+
+  it('takes no class list when it has one of its own, or its features name two', () => {
+    const own =
+      '<spell><name>Ember Bolt</name><level>1</level><school>EV</school><classes>Ember Knight (Ash Mage)</classes><text>A bolt.</text></spell>';
+    expect(subOf(convert(own))?.additionalSpells).toBeUndefined();
+    expect(
+      subOf(
+        convert(
+          '',
+          'You learn cantrips from the wizard spell list and spells from the cleric spell list.',
+        ),
+      )?.additionalSpells,
+    ).toBeUndefined();
+    // An installed spell the file puts on it is a list of its own too.
+    const installed = convert(
+      '<spell><name>Shield</name><level>1</level><school>A</school><classes>Ember Knight (Ash Mage)</classes><text>A ward.</text></spell>',
+      undefined,
+      {
+        isInstalled: (kind, name) => kind === 'spell' && name === 'Shield',
+        installedSpellId: (name) => (name === 'Shield' ? 'shield|phb' : undefined),
+      },
+    );
+    expect(subOf(installed)?.subclassSpells).toEqual(['shield|phb']);
+    expect(subOf(installed)?.additionalSpells).toBeUndefined();
+    // A list that is no class's names none.
+    expect(
+      subOf(convert('', 'You learn spells from the ember spell list.'))?.additionalSpells,
+    ).toBeUndefined();
+  });
+});
+
+describe('namedClassList', () => {
+  const classes: Record<string, string> = {
+    'ember knight': 'Ember Knight',
+    knight: 'Knight',
+    wizard: 'Wizard',
+  };
+  const named = (name: string) => (Object.hasOwn(classes, name) ? classes[name] : undefined);
+
+  it('takes the longest class name before the words, and one class only', () => {
+    expect(namedClassList(['Spells of the Ember Knight spell list.'], named)).toBe('Ember Knight');
+    expect(namedClassList(['The spells of the wizard spell list.'], named)).toBe('Wizard');
+    expect(
+      namedClassList(['The wizard spell list.', 'The knight spell list.'], named),
+    ).toBeUndefined();
+    expect(namedClassList(['Your expanded spell list.'], named)).toBeUndefined();
+  });
+});
+
+describe('giveNamedClassLists', () => {
+  const out = (sub: Record<string, unknown>) => ({
+    spell: [],
+    subclass: [
+      { name: 'Ash Mage', shortName: 'Ash Mage', source: 'X', className: 'Ember Knight', ...sub },
+    ] as Record<string, unknown>[],
+    subclassFeature: [
+      {
+        className: 'Ember Knight',
+        subclassShortName: 'Ash Mage',
+        subclassSource: 'X',
+        entries: ['You learn spells from the Wizard spell list.'],
+      },
+    ],
+  });
+  const named = (name: string) => (name === 'wizard' ? 'Wizard' : undefined);
+
+  it('keeps what the expanded list already opens at once', () => {
+    const o = out({ casterProgression: '1/3', additionalSpells: [{ expanded: { _: ['light'] } }] });
+    giveNamedClassLists(o, named);
+    expect(o.subclass[0]?.additionalSpells).toEqual([
+      { expanded: { _: ['light', { all: 'class=Wizard' }] } },
+    ]);
+  });
+
+  it('gives none to a printing of an official subclass, or a subclass that casts nothing', () => {
+    const printing = out({ casterProgression: '1/3', printingOf: 'eldritch knight|phb' });
+    giveNamedClassLists(printing, named);
+    expect(printing.subclass[0]?.additionalSpells).toBeUndefined();
+    const plain = out({});
+    giveNamedClassLists(plain, named);
+    expect(plain.subclass[0]?.additionalSpells).toBeUndefined();
   });
 });

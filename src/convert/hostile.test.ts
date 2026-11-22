@@ -4,6 +4,7 @@
 // assertion.
 import { describe, expect, it } from 'vitest';
 import { CAST_GUIDANCE_LIMITS } from '../engine/castGuidance';
+import { namedClassList } from './fc5/classSpells';
 import { ownerKey } from './fc5/text';
 import { convertXmlText } from './index';
 import { looksLikeXml } from './sniff';
@@ -60,6 +61,11 @@ describe('hostile input', () => {
     ).join('');
     const { json } = convert(`<compendium>${classes}</compendium>`);
     expect(json.class as unknown[]).toHaveLength(20_000);
+  });
+
+  it('reads a class list a caster names, in very long text, in linear time', () => {
+    const text = `${'the wizard '.repeat(100_000)}and the wizard spell list`;
+    expect(namedClassList([text], (n) => (n === 'wizard' ? 'Wizard' : undefined))).toBe('Wizard');
   });
 
   it('reads a very long list of option lists in linear time', () => {
