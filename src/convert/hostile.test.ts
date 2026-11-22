@@ -4,7 +4,7 @@
 // assertion.
 import { describe, expect, it } from 'vitest';
 import { CAST_GUIDANCE_LIMITS } from '../engine/castGuidance';
-import { namedClassList } from './fc5/classSpells';
+import { namedClassList, readFeatureSpells } from './fc5/classSpells';
 import { ownerKey } from './fc5/text';
 import { convertXmlText } from './index';
 import { looksLikeXml } from './sniff';
@@ -66,6 +66,27 @@ describe('hostile input', () => {
   it('reads a class list a caster names, in very long text, in linear time', () => {
     const text = `${'the wizard '.repeat(100_000)}and the wizard spell list`;
     expect(namedClassList([text], (n) => (n === 'wizard' ? 'Wizard' : undefined))).toBe('Wizard');
+  });
+
+  it('reads a table of very many columns and very long cells in linear time', () => {
+    const labels = ['Level', ...Array.from({ length: 200_000 }, (_, i) => `Aspect ${i}`)];
+    const cell = 'fireball, '.repeat(20_000).slice(0, -2);
+    const row = ['1st', ...labels.slice(1).map(() => cell)];
+    const index = { level: (n: string) => (n === 'fireball' ? 3 : undefined) };
+    const entries = [
+      'Choose an aspect. You gain domain spells.',
+      { type: 'table', colLabels: labels, rows: [row] },
+    ];
+    expect(readFeatureSpells([{ level: 1, entries }], { tables: true, index })).toEqual({
+      unread: false,
+    });
+    // Eight columns of long cells are read whole.
+    const eight = { type: 'table', colLabels: labels.slice(0, 9), rows: [row.slice(0, 9)] };
+    const got = readFeatureSpells([{ level: 1, entries: [entries[0] as string, eight] }], {
+      tables: true,
+      index,
+    });
+    expect(got.blocks).toHaveLength(8);
   });
 
   it('reads a very long list of option lists in linear time', () => {

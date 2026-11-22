@@ -337,6 +337,262 @@ describe('readFeatureSpells', () => {
     });
   });
 
+  describe('a table with a column for each pick', () => {
+    const columns = (labels: string[], rows: string[][], caption?: string): Entry => ({
+      type: 'table',
+      colLabels: labels,
+      rows,
+      ...(caption !== undefined && { caption }),
+    });
+    const known = new Set([
+      'goodberry',
+      'entangle',
+      'inflict wounds',
+      'plant growth',
+      'blight',
+      'chromatic orb',
+      'feather fall',
+      'shield',
+      'color spray',
+      'ray of sickness',
+    ]);
+    const index: SpellIndex = { level: (n) => (known.has(n) ? 1 : undefined) };
+    const seasons = columns(
+      ['Cleric Level', 'Sowing', 'Growing', 'Reaping'],
+      [
+        ['1st', 'Goodberry', 'Entangle', 'Inflict Wounds'],
+        ['5th', 'Harvest Moonglow', 'Plant Growth', 'Culling Sickle'],
+      ],
+      'Harvest Domain Spells',
+    );
+
+    it("makes each column one of a choice, as the words before it pick one: a harvest's seasons", () => {
+      const got = read(
+        1,
+        [
+          'Whenever you finish a short or long rest, choose an aspect of the harvest cycle: Sowing, Growing, or Reaping. You gain domain spells listed in the table for your cycle.',
+          seasons,
+        ],
+        true,
+        index,
+      );
+      expect(got).toEqual({
+        blocks: [
+          { name: 'Sowing', prepared: { 1: ['goodberry'], 5: ['harvest moonglow'] } },
+          { name: 'Growing', prepared: { 1: ['entangle'], 5: ['plant growth'] } },
+          { name: 'Reaping', prepared: { 1: ['inflict wounds'], 5: ['culling sickle'] } },
+        ],
+        unread: false,
+      });
+    });
+
+    it("gives every pick the first column when the words say so, a column's spells word left off its name", () => {
+      const got = read(
+        3,
+        [
+          'When you reach a Warlock level specified in the table, you thereafter always have the listed primordial spells prepared, along with the spells corresponding to your chosen element.',
+          columns(
+            ['Warlock Level', 'Primordial Spells', 'Air Spells', 'Earth Spells'],
+            [
+              ['3', 'Chromatic Orb', 'Feather Fall', 'Entangle'],
+              ['7', 'Summon Elemental (the spirit matches your element)', '', 'Blight'],
+            ],
+          ),
+        ],
+        true,
+        index,
+      );
+      expect(got).toEqual({
+        blocks: [
+          { prepared: { 3: ['chromatic orb'], 7: ['summon elemental'] } },
+          { name: 'Air', prepared: { 3: ['feather fall'] } },
+          { name: 'Earth', prepared: { 3: ['entangle'], 7: ['blight'] } },
+        ],
+        unread: false,
+      });
+    });
+
+    it("joins a feature's tables of columns as one choice, and keeps as text two columns of one name", () => {
+      const words =
+        'When you finish a long rest, you can attune to your environment and gain the corresponding spells. You always have them prepared.';
+      const lands = (a: string, b: string) =>
+        columns(['Level', a, b], [['2nd', 'entangle', 'goodberry']], 'Localized Spells');
+      const got = read(2, [words, lands('Arctic', 'Cave'), lands('Forest', 'Swamp')], true, index);
+      expect(got.blocks?.map((b) => b.name)).toEqual(['Arctic', 'Cave', 'Forest', 'Swamp']);
+      expect(got.unread).toBe(false);
+      const twice = read(2, [words, lands('Arctic', 'Cave'), lands('Cave', 'Swamp')], true, index);
+      expect(twice).toEqual({ unread: true });
+    });
+
+    it('keeps as text a table of columns the words before it pick none of: a lunar sorcerer learns them all', () => {
+      const got = read(
+        1,
+        [
+          'You learn additional spells when you reach certain levels in this class, as shown on the Lunar Spells table.',
+          columns(
+            ['Sorcerer Level', 'Full Moon Spells', 'New Moon Spells', 'Crescent Moon Spells'],
+            [['1st', 'shield', 'ray of sickness', 'color spray']],
+          ),
+          'Whenever you finish a long rest, you can choose what lunar phase manifests its power through your magic.',
+        ],
+        true,
+        index,
+      );
+      expect(got).toEqual({ unread: true });
+    });
+
+    it('keeps as text a column that names no spell the data has, or a pick in a cell', () => {
+      const words = 'Choose an aspect. You gain domain spells listed in the table for your aspect.';
+      const unknown = read(
+        1,
+        [
+          words,
+          columns(
+            ['Cleric Level', 'Sowing', 'Growing'],
+            [['1st', 'goodberry', 'harvest moonglow']],
+          ),
+        ],
+        true,
+        index,
+      );
+      expect(unknown).toEqual({ unread: true });
+      const pick = read(
+        1,
+        [
+          words,
+          columns(
+            ['Cleric Level', 'Sowing', 'Growing'],
+            [['1st', 'goodberry', 'entangle or bane']],
+          ),
+        ],
+        true,
+        index,
+      );
+      expect(pick).toEqual({ unread: true });
+    });
+
+    it("keeps as text a second choice after a feature's columns", () => {
+      const words = 'Choose an aspect. You gain domain spells listed in the table for your aspect.';
+      const got = read(
+        1,
+        [
+          words,
+          seasons,
+          table('Cleric Level', [['3', 'blight']], 'Arid Land'),
+          table('Cleric Level', [['3', 'shield']], 'Polar Land'),
+        ],
+        true,
+        index,
+      );
+      expect(got.blocks?.map((b) => b.name)).toEqual(['Sowing', 'Growing', 'Reaping']);
+      expect(got.unread).toBe(true);
+    });
+
+    it("keeps as text a feature's columns after an earlier feature's choice", () => {
+      const lands = {
+        level: 1,
+        entries: [
+          'You have the spells listed prepared.',
+          table('Cleric Level', [['1', 'blight']], 'Arid Land'),
+          table('Cleric Level', [['1', 'shield']], 'Polar Land'),
+        ],
+      };
+      const harvest = {
+        level: 1,
+        entries: [
+          'Choose an aspect. You gain domain spells listed in the table for your aspect.',
+          seasons,
+        ],
+      };
+      const got = readFeatureSpells([lands, harvest], { tables: true, index });
+      expect(got.blocks?.map((b) => b.name)).toEqual(['Arid Land', 'Polar Land']);
+      expect(got.unread).toBe(true);
+    });
+
+    it('makes the first column a pick when the words give it to every pick only after the table', () => {
+      const got = read(
+        3,
+        [
+          'You always have the listed spells prepared for your chosen element.',
+          columns(
+            ['Warlock Level', 'Air Spells', 'Earth Spells'],
+            [['3', 'feather fall', 'entangle']],
+          ),
+          'Along with the spells of your element, you gain a gift.',
+        ],
+        true,
+        index,
+      );
+      expect(got.blocks?.map((b) => b.name)).toEqual(['Air', 'Earth']);
+    });
+
+    it('keeps as text a pick of one beside the column every pick has', () => {
+      const got = read(
+        3,
+        [
+          'You always have the listed spells prepared, along with the spells corresponding to your chosen element.',
+          columns(
+            ['Warlock Level', 'Primordial Spells', 'Air Spells'],
+            [['3', 'chromatic orb', 'feather fall']],
+          ),
+        ],
+        true,
+        index,
+      );
+      expect(got).toEqual({ unread: true });
+    });
+
+    it('says a table of columns told no section is left as text when it names a spell the data has', () => {
+      const got = read(
+        1,
+        [
+          'The harvest turns.',
+          columns(['Cleric Level', 'Sowing', 'Growing'], [['1st', 'harvest moonglow', 'entangle']]),
+        ],
+        true,
+        index,
+      );
+      expect(got).toEqual({ unread: true });
+    });
+
+    it("passes over a caster's table of counts in columns, and a table of more than eight columns", () => {
+      const counts = read(
+        3,
+        [
+          'You learn two spells of your choice. Choose them from the wizard spell list.',
+          columns(['Fighter Level', 'Cantrips Known', 'Spells Known'], [['3rd', '2', '3']]),
+        ],
+        true,
+        index,
+      );
+      expect(counts).toEqual({ unread: false });
+      const nine = Array.from({ length: 9 }, (_, i) => `Aspect ${i + 1}`);
+      const wide = read(
+        1,
+        [
+          'Choose an aspect. You gain domain spells listed in the table for your aspect.',
+          columns(['Cleric Level', ...nine], [['1st', ...nine.map(() => 'goodberry')]]),
+        ],
+        true,
+        index,
+      );
+      expect(wide).toEqual({ unread: false });
+    });
+
+    it("reads no table of columns that holds more than spells' names: a companion's challenge ratings", () => {
+      const got = read(
+        3,
+        [
+          'You choose a companion. You gain domain spells listed in the table.',
+          columns(['Level', 'Max. CR', 'Limitations'], [['3rd', '1/4', 'No flying speed']]),
+        ],
+        true,
+        index,
+      );
+      expect(got).toEqual({ unread: false });
+    });
+  });
+
   it('reads no spell from words that only look like a name', () => {
     for (const text of [
       'You gain the ability to cast the light cantrip.',
@@ -407,7 +663,12 @@ describe('readFeatureSpells', () => {
 
 describe('subclass spells on the sheet', () => {
   /** A full caster with one subclass, these features at its first level, as a sheet at `levels`. */
-  const sheetOf = (subclassFeatures: string, levels: number) => {
+  const sheetOf = (
+    subclassFeatures: string,
+    levels: number,
+    choices: Record<string, string[]> = {},
+    spells = '',
+  ) => {
     const opt = ' optional="YES"';
     const f = (name: string, text: string, attrs = opt) =>
       `<feature${attrs}><name>${name}</name><text>${text}</text></feature>`;
@@ -419,7 +680,7 @@ describe('subclass spells on the sheet', () => {
             : ''
         }</autolevel>`,
     ).join('');
-    const xml = `<compendium><class><name>Ember Caller</name><hd>8</hd><spellAbility>Charisma</spellAbility>${rows}</class></compendium>`;
+    const xml = `<compendium>${spells}<class><name>Ember Caller</name><hd>8</hd><spellAbility>Charisma</spellAbility>${rows}</class></compendium>`;
     const { json } = convertFc5Compendium(parseXml(xml), { fileName: 'Ember Homebrew.xml' });
     const reg = normalizeDataset(new Map());
     mergeHomebrew(reg, new Map([['ember', json]]));
@@ -434,10 +695,16 @@ describe('subclass spells on the sheet', () => {
         hp: Array<'avg'>(levels).fill('avg'),
       },
     ];
+    doc.choices = choices;
     return deriveSheet(doc, engineContextFor(reg));
   };
-  const expandedAt = (features: string, levels: number) =>
-    sheetOf(features, levels)
+  const expandedAt = (
+    features: string,
+    levels: number,
+    choices?: Record<string, string[]>,
+    spells?: string,
+  ) =>
+    sheetOf(features, levels, choices, spells)
       .spellcasting.flatMap((b) => b.expanded ?? [])
       .flatMap((x) => x.spells);
 
@@ -446,6 +713,23 @@ describe('subclass spells on the sheet', () => {
       '<feature optional="YES"><name>Expanded Spell List (The Ember Fool)</name><text>The Ember Fool lets you choose from an expanded list of spells when you learn a warlock spell. The following spells are added to the warlock spell list for you.</text><text>Fool Spells:</text><text>Warlock Level | Spells</text><text>3rd | disguise self, rope trick</text><text>5th | blink</text><text>9th | mislead</text></feature>';
     expect(expandedAt(table, 3)).toEqual(['disguise self', 'rope trick']);
     expect(expandedAt(table, 5)).toEqual(['disguise self', 'rope trick', 'blink']);
+  });
+
+  it("offers a patron's expanded list of the element picked, beside the one every element has", () => {
+    const spell = (name: string) =>
+      `<spell><name>${name}</name><level>1</level><school>EV</school><classes>Wizard</classes><text>A spell.</text></spell>`;
+    const spells = ['Speak with Animals', 'Thunderwave', 'Longstrider'].map(spell).join('');
+    const feature =
+      '<feature optional="YES"><name>Expanded Spell List (The Ember Fool)</name><text>The Ember Fool lets you choose from an expanded list of spells when you learn a warlock spell. The table shows the spells that are added to the warlock spell list for you, along with the spells associated with the affinity of your patron: air or earth.</text><text>Spell Level | Fool Spells | Air Spells | Earth Spells</text><text>1st | speak with animals | thunderwave | longstrider</text><text>2nd | mark prey | gust of wind | pass without trace</text></feature>';
+    const open = sheetOf(feature, 3, {}, spells);
+    const pick = open.pending.find((p) => p.id.endsWith(':branch'));
+    expect(pick?.options.map((o) => o.label)).toEqual(['Air', 'Earth']);
+    expect(expandedAt(feature, 3, { [String(pick?.id)]: ['air'] }, spells)).toEqual([
+      'speak with animals',
+      'mark prey',
+      'thunderwave',
+      'gust of wind',
+    ]);
   });
 });
 

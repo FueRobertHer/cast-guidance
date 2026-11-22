@@ -13,7 +13,10 @@
  *   levels under `Warlock Level`). Two or more captioned tables in one
  *   feature are a choice, a named block each (the 2024 Circle of the Land's
  *   lands); one missing a table it cannot read, or a second choice, stays as
- *   text. A cantrip row (`Cantrip: light`) goes at `s0` of an expanded list.
+ *   text. A table with a column of spells for each pick (a harvest's
+ *   seasons, a nightstalker's forms) is the same choice when the words
+ *   before it pick one, its first column every pick's when they say "along
+ *   with the spells". A cantrip row (`Cantrip: light`) goes at `s0` of an expanded list.
  *   A caster's own table of counts and slots is no table of spells.
  * - A sentence naming a spell the feature always gives: "You always have
  *   the Hunter's Mark spell prepared", "you learn the light cantrip".
@@ -43,9 +46,26 @@ interface SpellTable {
   rows: { level: string; cell: string }[];
 }
 
+/**
+ * A table of spells with a column each for what the character picks: a
+ * harvest's seasons (`Cleric Level | Sowing | Growing | Reaping`), a patron's
+ * elements after the spells every one of them gives.
+ */
+interface WideTable {
+  caption?: string;
+  head: string;
+  /** The headers after the level's. */
+  columns: string[];
+  rows: { level: string; cells: string[] }[];
+  /** How many of the feature's lines of words come before it. */
+  at: number;
+}
+
 const MAX_TEXT = 6000;
 const MAX_ROWS = 40;
 const MAX_WORDS = 7;
+/** Columns of spells a table may have after its level's. */
+const MAX_COLUMNS = 8;
 
 /** A dash between a level and its spells: em and en dashes, or a spaced hyphen. */
 const DASHES = String.fromCharCode(0x2014, 0x2013);
@@ -185,14 +205,46 @@ function rowLevel(raw: string): number | undefined {
 /** A cell that only counts (`4`, `-`): a spellcasting table's, not a table of spells. */
 const COUNT_CELL = new RegExp(`^[\\d\\s+${DASHES}-]*$`);
 
+/** A cell that holds something more than a count or a dash. */
+const filled = (cell: string): boolean => !COUNT_CELL.test(cell.replace(NOTE, '').trim());
+
+/** A cell that holds only spells' names. */
+const namesOnly = (cell: string): boolean =>
+  cell
+    .replace(NOTE, '')
+    .split(',')
+    .every((part) => spellName(part) !== undefined);
+
+/**
+ * A table's columns past the level's as a table of picks, when there are
+ * two to eight and every one holds names and only names: not a companion's
+ * challenge ratings, a die's size, or a caster's counts.
+ */
+function wideTable(
+  labels: readonly string[],
+  rows: readonly unknown[][],
+): WideTable['rows'] | undefined {
+  const columns = labels.length - 1;
+  if (columns < 2 || columns > MAX_COLUMNS) return undefined;
+  const out = rows.slice(0, MAX_ROWS).map((r) => ({
+    level: String(r[0] ?? ''),
+    cells: Array.from({ length: columns }, (_, i) => String(r[i + 1] ?? '')),
+  }));
+  for (let i = 0; i < columns; i += 1)
+    if (!out.some((r) => filled(r.cells[i] ?? ''))) return undefined;
+  return out.every((r) => r.cells.every((c) => !filled(c) || namesOnly(c))) ? out : undefined;
+}
+
 /** The feature's tables of spells by level, and its words around them, lowercased. */
 function readEntries(entries: readonly Entry[]): {
   tables: SpellTable[];
+  wide: WideTable[];
   words: string[];
   /** Tables of spells this cannot read: more than one column of spells. */
   odd: number;
 } {
   const tables: SpellTable[] = [];
+  const wide: WideTable[] = [];
   const words: string[] = [];
   let odd = 0;
   let size = 0;
@@ -247,15 +299,26 @@ function readEntries(entries: readonly Entry[]): {
       const labels = Array.isArray(o.colLabels) ? o.colLabels.map(String) : [];
       const rows = (Array.isArray(o.rows) ? o.rows : []).filter(Array.isArray) as unknown[][];
       const head = labels[0] ?? '';
+      const caption = typeof o.caption === 'string' ? o.caption.trim().replace(/:$/, '') : '';
+      const picks = LEVEL_HEAD.test(head) ? wideTable(labels, rows) : undefined;
+      if (picks !== undefined) {
+        wide.push({
+          ...(caption !== '' && { caption }),
+          head,
+          columns: labels.slice(1).map((l) => l.trim()),
+          rows: picks,
+          at: words.length,
+        });
+        return;
+      }
       // Columns of spells, not a caster's counts (`Spell Slots`, `Spells Known` of numbers).
       const spellCol = labels.map((l, i) => i > 0 && SPELL_HEAD.test(l) && !SLOT_HEAD.test(l));
       const named = rows.some((r) => r.some((c, i) => spellCol[i] && !COUNT_CELL.test(String(c))));
       if (LEVEL_HEAD.test(head) && named) {
         if (labels.length > 2) odd += 1;
         else {
-          const caption = typeof o.caption === 'string' ? o.caption.trim() : '';
           tables.push({
-            ...(caption !== '' && { caption: caption.replace(/:$/, '') }),
+            ...(caption !== '' && { caption }),
             head,
             rows: rows
               .slice(0, MAX_ROWS)
@@ -269,7 +332,7 @@ function readEntries(entries: readonly Entry[]): {
     walk(o.items);
   };
   walk(entries);
-  return { tables, words, odd };
+  return { tables, wide, words, odd };
 }
 
 /** What a feature's words say its tables hold. */
@@ -372,6 +435,63 @@ function namesKnown(table: SpellTable, index: SpellIndex | undefined): boolean {
 }
 
 /**
+ * The words before a table of columns that say a column is picked: "choose
+ * an aspect of the harvest cycle", "based on the form you chose", "the
+ * corresponding spells". Said only after it (a lunar sorcerer's phase, which
+ * picks a free cast), they pick nothing the table gives.
+ */
+const PICKED = /\b(?:choose|chose|chosen|choosing|corresponding|associated with)\b/;
+/** The words that say a table's first column is everyone's: "along with the spells associated with your patron's affinity". */
+const ALONG_WITH = /\balong with the spells\b/;
+
+/**
+ * A feature's tables of columns as one choice, a named block a column, and
+ * a first column every pick has when the words say so. Undefined when one
+ * cannot be read whole: words that pick no column, a column that names no
+ * spell the data has, a row this cannot place, two columns of one name.
+ */
+function readWide(
+  wide: readonly WideTable[],
+  words: readonly string[],
+  section: Section,
+  index: SpellIndex | undefined,
+): { common?: Gated; branches: SpellBlock[] } | undefined {
+  let common: Gated | undefined;
+  const branches: SpellBlock[] = [];
+  const names = new Set<string>();
+  // The first line that says so, once, so many tables cost no more than one.
+  const first = (re: RegExp) => {
+    const at = words.findIndex((w) => re.test(w));
+    return at < 0 ? Number.POSITIVE_INFINITY : at;
+  };
+  const picked = first(PICKED);
+  const along = first(ALONG_WITH);
+  for (const t of wide) {
+    if (picked >= t.at) return undefined;
+    const shared = along < t.at;
+    for (let i = 0; i < t.columns.length; i += 1) {
+      const column: SpellTable = {
+        ...(t.caption !== undefined && { caption: t.caption }),
+        head: t.head,
+        rows: t.rows.map((r) => ({ level: r.level, cell: r.cells[i] ?? '' })),
+      };
+      const spells = namesKnown(column, index) ? readTable(column, section, index) : undefined;
+      if (spells === undefined) return undefined;
+      if (shared && i === 0) {
+        common = spells;
+        continue;
+      }
+      // `Air Spells` is the Air pick.
+      const name = (t.columns[i] ?? '').replace(/\s+spells$/i, '').trim();
+      if (name === '' || names.has(name.toLowerCase())) return undefined;
+      names.add(name.toLowerCase());
+      branches.push({ name, [section]: spells });
+    }
+  }
+  return { ...(common !== undefined && { common }), branches };
+}
+
+/**
  * A frame's catch as names: `power word heal and power word kill` when
  * plural, else whole. One of two (`the druidcraft or thaumaturgy cantrip`) is
  * a pick, which this does not read.
@@ -418,15 +538,31 @@ export function readFeatureSpells(
           add((common.known ??= {}), feature, `${n}#c`);
       }
     }
-    if (!opts.tables || read.tables.length === 0) continue;
-    const captions = read.tables.map((t) => t.caption?.toLowerCase() ?? '');
+    if (!opts.tables || read.tables.length + read.wide.length === 0) continue;
+    const captions = [...read.tables, ...read.wide].map((t) => t.caption?.toLowerCase() ?? '');
     const section = sectionOf([...read.words, ...captions].join(' '));
     if (section === undefined) {
       // Untold, it is a table of spells only if it names one the data has,
       // not a Channel Divinity's challenge ratings by level.
-      if (read.tables.some((t) => namesKnown(t, opts.index))) unread = true;
+      const columns = read.wide.flatMap((t) =>
+        t.columns.map((_, i) => ({
+          rows: t.rows.map((r) => ({ level: r.level, cell: r.cells[i] ?? '' })),
+        })),
+      );
+      if ([...read.tables, ...columns].some((t) => namesKnown(t, opts.index))) unread = true;
       continue;
     }
+    if (read.wide.length > 0) {
+      // One choice, as with captioned tables: a second would join the first as one pick.
+      const got = readWide(read.wide, read.words, section, opts.index);
+      if (got === undefined || got.branches.length < 2 || branches.length > 0) unread = true;
+      else {
+        for (const [gate, names] of Object.entries(got.common ?? {}))
+          for (const n of names) add((common[section] ??= {}), gate, n);
+        branches.push(...got.branches);
+      }
+    }
+    if (read.tables.length === 0) continue;
     const readOnes = read.tables.map((t) => ({
       table: t,
       spells: readTable(t, section, opts.index),
