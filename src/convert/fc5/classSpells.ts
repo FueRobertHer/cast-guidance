@@ -13,7 +13,10 @@
  *   levels under `Warlock Level`). Two or more captioned tables in one
  *   feature are a choice, a named block each (the 2024 Circle of the Land's
  *   lands); one missing a table it cannot read, or a second choice, stays as
- *   text. A cantrip row (`Cantrip: light`) goes at `s0` of an expanded list.
+ *   text. A table with a column of spells for each pick (a harvest's
+ *   seasons, a nightstalker's forms) is the same choice when the words
+ *   before it pick one, its first column every pick's when they say "along
+ *   with the spells". A cantrip row (`Cantrip: light`) goes at `s0` of an expanded list.
  *   A caster's own table of counts and slots is no table of spells.
  * - A sentence naming a spell the feature always gives: "You always have
  *   the Hunter's Mark spell prepared", "you learn the light cantrip".
@@ -24,7 +27,7 @@
  * is linear, with bounded runs.
  */
 import type { SpellBlock, SpellIndex } from './spellGrants';
-import type { Entry } from './text';
+import { type Entry, plainText } from './text';
 
 /** A feature as the class lists it: the level it is gained at, and its entries. */
 export interface FeatureText {
@@ -43,9 +46,28 @@ interface SpellTable {
   rows: { level: string; cell: string }[];
 }
 
+/**
+ * A table of spells with a column each for what the character picks: a
+ * harvest's seasons (`Cleric Level | Sowing | Growing | Reaping`), a patron's
+ * elements after the spells every one of them gives.
+ */
+interface WideTable {
+  caption?: string;
+  head: string;
+  /** The headers after the level's. */
+  columns: string[];
+  rows: { level: string; cells: string[] }[];
+  /** How many of the feature's lines of words come before it. */
+  at: number;
+  /** Whether a header after the level's says spells: `Air Spells`. */
+  spellHeads: boolean;
+}
+
 const MAX_TEXT = 6000;
 const MAX_ROWS = 40;
 const MAX_WORDS = 7;
+/** Columns of spells a table may have after its level's. */
+const MAX_COLUMNS = 8;
 
 /** A dash between a level and its spells: em and en dashes, or a spaced hyphen. */
 const DASHES = String.fromCharCode(0x2014, 0x2013);
@@ -185,14 +207,46 @@ function rowLevel(raw: string): number | undefined {
 /** A cell that only counts (`4`, `-`): a spellcasting table's, not a table of spells. */
 const COUNT_CELL = new RegExp(`^[\\d\\s+${DASHES}-]*$`);
 
+/** A cell that holds something more than a count or a dash. */
+const filled = (cell: string): boolean => !COUNT_CELL.test(cell.replace(NOTE, '').trim());
+
+/** A cell that holds only spells' names. */
+const namesOnly = (cell: string): boolean =>
+  cell
+    .replace(NOTE, '')
+    .split(',')
+    .every((part) => spellName(part) !== undefined);
+
+/**
+ * A table's columns past the level's as a table of picks, when there are
+ * two to eight and every one holds names and only names: not a companion's
+ * challenge ratings, a die's size, or a caster's counts.
+ */
+function wideTable(
+  labels: readonly string[],
+  rows: readonly unknown[][],
+): WideTable['rows'] | undefined {
+  const columns = labels.length - 1;
+  if (columns < 2 || columns > MAX_COLUMNS) return undefined;
+  const out = rows.slice(0, MAX_ROWS).map((r) => ({
+    level: String(r[0] ?? ''),
+    cells: Array.from({ length: columns }, (_, i) => String(r[i + 1] ?? '')),
+  }));
+  for (let i = 0; i < columns; i += 1)
+    if (!out.some((r) => filled(r.cells[i] ?? ''))) return undefined;
+  return out.every((r) => r.cells.every((c) => !filled(c) || namesOnly(c))) ? out : undefined;
+}
+
 /** The feature's tables of spells by level, and its words around them, lowercased. */
 function readEntries(entries: readonly Entry[]): {
   tables: SpellTable[];
+  wide: WideTable[];
   words: string[];
   /** Tables of spells this cannot read: more than one column of spells. */
   odd: number;
 } {
   const tables: SpellTable[] = [];
+  const wide: WideTable[] = [];
   const words: string[] = [];
   let odd = 0;
   let size = 0;
@@ -247,15 +301,27 @@ function readEntries(entries: readonly Entry[]): {
       const labels = Array.isArray(o.colLabels) ? o.colLabels.map(String) : [];
       const rows = (Array.isArray(o.rows) ? o.rows : []).filter(Array.isArray) as unknown[][];
       const head = labels[0] ?? '';
+      const caption = typeof o.caption === 'string' ? o.caption.trim().replace(/:$/, '') : '';
+      const picks = LEVEL_HEAD.test(head) ? wideTable(labels, rows) : undefined;
+      if (picks !== undefined) {
+        wide.push({
+          ...(caption !== '' && { caption }),
+          head,
+          columns: labels.slice(1).map((l) => l.trim()),
+          rows: picks,
+          at: words.length,
+          spellHeads: labels.some((l, i) => i > 0 && SPELL_HEAD.test(l) && !SLOT_HEAD.test(l)),
+        });
+        return;
+      }
       // Columns of spells, not a caster's counts (`Spell Slots`, `Spells Known` of numbers).
       const spellCol = labels.map((l, i) => i > 0 && SPELL_HEAD.test(l) && !SLOT_HEAD.test(l));
       const named = rows.some((r) => r.some((c, i) => spellCol[i] && !COUNT_CELL.test(String(c))));
       if (LEVEL_HEAD.test(head) && named) {
         if (labels.length > 2) odd += 1;
         else {
-          const caption = typeof o.caption === 'string' ? o.caption.trim() : '';
           tables.push({
-            ...(caption !== '' && { caption: caption.replace(/:$/, '') }),
+            ...(caption !== '' && { caption }),
             head,
             rows: rows
               .slice(0, MAX_ROWS)
@@ -269,7 +335,7 @@ function readEntries(entries: readonly Entry[]): {
     walk(o.items);
   };
   walk(entries);
-  return { tables, words, odd };
+  return { tables, wide, words, odd };
 }
 
 /** What a feature's words say its tables hold. */
@@ -318,25 +384,45 @@ function readTable(
   table: SpellTable,
   section: Section,
   index: SpellIndex | undefined,
+  /** Whether an expanded list's rows are class levels, when a wider table than this one decides. */
+  classLevels?: boolean,
 ): Gated | undefined {
   const byLevel = table.head !== undefined && /\bspell level\b/i.test(table.head);
   // A table by spell level that the class learns from as it rises (a
   // Strixhaven mage's) is a table this cannot place.
   if (byLevel && section !== 'expanded') return undefined;
-  const out: Gated = {};
+  const rows: { level: number; names: string[] }[] = [];
   for (const row of table.rows) {
     const level = rowLevel(row.level);
     // Notes first, which may hold commas: `conjure animals (bats, rats, or wolves only)`.
     const cell = row.cell.replace(NOTE, '').trim();
     if (COUNT_CELL.test(cell)) continue;
-    if (level === undefined) return undefined;
-    if (section === 'expanded' ? level > 9 : level < 1 || level > 20) return undefined;
+    if (level === undefined || level > 20) return undefined;
     const names = cell.split(',').map((part) => cellName(part, index));
     if (names.some((n) => n === undefined)) return undefined;
-    const gate = section === 'expanded' ? `s${level}` : String(level);
-    for (const n of names) if (n !== undefined) add(out, gate, n);
+    rows.push({ level, names: names as string[] });
+  }
+  // An expanded list's rows are spell levels (1st to 5th, The Undead's even
+  // under `Warlock Level`), unless they are the odd class levels a patron's
+  // spells come at: `1st, 3rd ... 9th`, `3, 5, 7, 9`.
+  const byClassLevel = section === 'expanded' && !byLevel && (classLevels ?? oddClassLevels(rows));
+  const out: Gated = {};
+  // A cantrip row only on an expanded list; spell levels up to 9th.
+  const min = section === 'expanded' ? 0 : 1;
+  const max = section === 'expanded' && !byClassLevel ? 9 : 20;
+  for (const { level, names } of rows) {
+    if (level < min || level > max) return undefined;
+    const gate =
+      section !== 'expanded' || (byClassLevel && level > 0) ? String(level) : `s${level}`;
+    for (const n of names) add(out, gate, n);
   }
   return Object.keys(out).length > 0 ? out : undefined;
+}
+
+/** Whether a table's levels past its cantrip row are all odd and reach past 5th: class levels, not spell levels. */
+function oddClassLevels(rows: readonly { level: number }[]): boolean {
+  const levels = rows.map((r) => r.level).filter((l) => l > 0);
+  return levels.every((l) => l % 2 === 1) && levels.some((l) => l > 5);
 }
 
 /** Whether a table names a spell the file or the installed data has. */
@@ -351,6 +437,82 @@ function namesKnown(table: SpellTable, index: SpellIndex | undefined): boolean {
         return name !== undefined && index.level(name) !== undefined;
       }),
   );
+}
+
+/**
+ * The words before a table of columns that say a column is picked: "choose
+ * an aspect of the harvest cycle", "based on the form you chose", "the
+ * corresponding spells". Said only after it (a lunar sorcerer's phase, which
+ * picks a free cast), they pick nothing the table gives.
+ */
+const PICKED = /\b(?:choose|chose|chosen|choosing|corresponding|associated with)\b/;
+/** The words that say a table's first column is everyone's: "along with the spells associated with your patron's affinity". */
+const ALONG_WITH = /\balong with the spells\b/;
+
+/**
+ * A feature's tables of columns as one choice, a named block a column, and
+ * a first column every pick has when the words say so. Undefined when one
+ * cannot be read whole: words that pick no column, a column that names no
+ * spell the data has, a row this cannot place, two columns of one name.
+ */
+/** A table of columns as a table of spells a column. */
+function columnsOf(t: WideTable): SpellTable[] {
+  return t.columns.map((_, i) => ({
+    ...(t.caption !== undefined && { caption: t.caption }),
+    head: t.head,
+    rows: t.rows.map((r) => ({ level: r.level, cell: r.cells[i] ?? '' })),
+  }));
+}
+
+/** Whether a table of columns is one of spells: its headers say so, or it names a spell the data has. */
+const ofSpells = (t: WideTable, index: SpellIndex | undefined): boolean =>
+  t.spellHeads || columnsOf(t).some((c) => namesKnown(c, index));
+
+function readWide(
+  wide: readonly WideTable[],
+  words: readonly string[],
+  section: Section,
+  index: SpellIndex | undefined,
+): { common?: Gated; branches: SpellBlock[] } | undefined {
+  let common: Gated | undefined;
+  const branches: SpellBlock[] = [];
+  const names = new Set<string>();
+  // The first line that says so, once, so many tables cost no more than one.
+  const first = (re: RegExp) => {
+    const at = words.findIndex((w) => re.test(w));
+    return at < 0 ? Number.POSITIVE_INFINITY : at;
+  };
+  const picked = first(PICKED);
+  const along = first(ALONG_WITH);
+  for (const t of wide) {
+    if (picked >= t.at) return undefined;
+    const shared = along < t.at;
+    // Class levels or spell levels by the whole table's rows, not a column's
+    // own: a column blank at 7th and 9th still opens at the same levels.
+    const levels = t.rows.flatMap((r) => {
+      const level = rowLevel(r.level);
+      return level === undefined || !r.cells.some(filled) ? [] : [{ level }];
+    });
+    const classLevels = oddClassLevels(levels);
+    for (const [i, column] of columnsOf(t).entries()) {
+      const spells = namesKnown(column, index)
+        ? readTable(column, section, index, classLevels)
+        : undefined;
+      if (spells === undefined) return undefined;
+      if (shared && i === 0) {
+        common ??= {};
+        for (const [gate, names] of Object.entries(spells))
+          for (const n of names) add(common, gate, n);
+        continue;
+      }
+      // `Air Spells` is the Air pick.
+      const name = (t.columns[i] ?? '').replace(/\s+spells$/i, '').trim();
+      if (name === '' || names.has(name.toLowerCase())) return undefined;
+      names.add(name.toLowerCase());
+      branches.push({ name, [section]: spells });
+    }
+  }
+  return { ...(common !== undefined && { common }), branches };
 }
 
 /**
@@ -400,15 +562,28 @@ export function readFeatureSpells(
           add((common.known ??= {}), feature, `${n}#c`);
       }
     }
-    if (!opts.tables || read.tables.length === 0) continue;
-    const captions = read.tables.map((t) => t.caption?.toLowerCase() ?? '');
+    // A table of columns of names that are not spells (a beast's forms) is no table of spells.
+    const wide = read.wide.filter((t) => ofSpells(t, opts.index));
+    if (!opts.tables || read.tables.length + wide.length === 0) continue;
+    const captions = [...read.tables, ...wide].map((t) => t.caption?.toLowerCase() ?? '');
     const section = sectionOf([...read.words, ...captions].join(' '));
     if (section === undefined) {
       // Untold, it is a table of spells only if it names one the data has,
       // not a Channel Divinity's challenge ratings by level.
-      if (read.tables.some((t) => namesKnown(t, opts.index))) unread = true;
+      if (wide.length > 0 || read.tables.some((t) => namesKnown(t, opts.index))) unread = true;
       continue;
     }
+    if (wide.length > 0) {
+      // One choice, as with captioned tables: a second would join the first as one pick.
+      const got = readWide(wide, read.words, section, opts.index);
+      if (got === undefined || got.branches.length < 2 || branches.length > 0) unread = true;
+      else {
+        for (const [gate, names] of Object.entries(got.common ?? {}))
+          for (const n of names) add((common[section] ??= {}), gate, n);
+        branches.push(...got.branches);
+      }
+    }
+    if (read.tables.length === 0) continue;
     const readOnes = read.tables.map((t) => ({
       table: t,
       spells: readTable(t, section, opts.index),
@@ -442,4 +617,95 @@ export function readFeatureSpells(
   if (Object.keys(common).length > 0) blocks.push(common);
   blocks.push(...branches);
   return blocks.length > 0 ? { blocks, unread } : { unread };
+}
+
+/**
+ * The words just before a `spell list`, up to two: `from the warlock spell
+ * list`, `the blood hunter spell list`. Each word is bounded, so a start is
+ * looked past at most that far.
+ */
+const CLASS_LIST = /([a-z']{1,20}(?: [a-z']{1,20})?) spell list\b/g;
+/** The end of the words before a class's name that join it to another. */
+const JOINED = /(?:\b(?:or|and) |, ?)$/;
+
+/**
+ * The one class whose spell list a subclass caster's features name, as
+ * `classNamed` names it (`Warlock`), or undefined when they name none or two.
+ */
+export function namedClassList(
+  texts: readonly string[],
+  classNamed: (name: string) => string | undefined,
+): string | undefined {
+  const named = new Set<string>();
+  for (const text of texts) {
+    const lower = text.toLowerCase();
+    for (const m of lower.matchAll(CLASS_LIST)) {
+      // The longest class name the last words make: `the blood hunter` is the Blood Hunter's.
+      const words = (m[1] ?? '').split(' ');
+      for (let n = words.length; n > 0; n -= 1) {
+        const name = classNamed(words.slice(-n).join(' '));
+        if (name === undefined) continue;
+        // `the wizard or sorcerer spell list`, `the cleric, druid, or wizard
+        // spell list`: one of several, which names no one list.
+        const before =
+          n < words.length
+            ? `${words.slice(0, -n).join(' ')} `
+            : lower.slice(Math.max(0, m.index - 5), m.index);
+        if (JOINED.test(before)) return undefined;
+        named.add(name);
+        break;
+      }
+    }
+  }
+  const [only] = named;
+  return named.size === 1 ? only : undefined;
+}
+
+type Row = Record<string, unknown>;
+
+/**
+ * A subclass caster with no list of its own (none it lists, no spell of the
+ * file naming it) casts from the class list its features name: a Profane
+ * Soul's warlock list, a Wildkeeper's druid one. That class's list is added to
+ * every block of its `additionalSpells`, as a block more would be a choice.
+ * A printing of an official subclass keeps the official one's list.
+ */
+export function giveNamedClassLists(
+  out: { spell: Row[]; subclass: Row[]; subclassFeature: Row[] },
+  classNamed: (name: string) => string | undefined,
+): void {
+  const key = (...parts: unknown[]) => parts.map((p) => String(p).toLowerCase()).join('|');
+  const listed = new Set<string>();
+  for (const spell of out.spell) {
+    const lists = (spell.classes as { fromSubclass?: unknown } | undefined)?.fromSubclass;
+    for (const s of Array.isArray(lists) ? (lists as Row[]) : []) {
+      const cls = (s.class as Row | undefined)?.name;
+      const sub = s.subclass as Row | undefined;
+      listed.add(key(cls, sub?.name));
+    }
+  }
+  const texts = new Map<string, string[]>();
+  for (const f of out.subclassFeature) {
+    const at = key(f.className, f.subclassShortName, f.subclassSource);
+    let list = texts.get(at);
+    if (list === undefined) texts.set(at, (list = []));
+    list.push(plainText(Array.isArray(f.entries) ? (f.entries as Entry[]) : []));
+  }
+  for (const e of out.subclass) {
+    if (e.casterProgression === undefined || e.printingOf !== undefined) continue;
+    if (Array.isArray(e.subclassSpells) && e.subclassSpells.length > 0) continue;
+    if (listed.has(key(e.className, e.name))) continue;
+    const named = namedClassList(
+      texts.get(key(e.className, e.shortName, e.source)) ?? [],
+      classNamed,
+    );
+    if (named === undefined) continue;
+    const filter = { all: `class=${named}` };
+    const blocks = Array.isArray(e.additionalSpells) ? (e.additionalSpells as Row[]) : [];
+    e.additionalSpells = (blocks.length > 0 ? blocks : [{}]).map((b) => {
+      const expanded = { ...((b.expanded as Row | undefined) ?? {}) };
+      expanded._ = [...(Array.isArray(expanded._) ? expanded._ : []), filter];
+      return { ...b, expanded };
+    });
+  }
 }
