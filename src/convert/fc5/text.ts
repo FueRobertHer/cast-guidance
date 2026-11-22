@@ -248,6 +248,7 @@ export function readLanguages(raw: string): Record<string, unknown> | undefined 
   }
   // "Umbral and either Abyssal, Infernal, or Void Speech", "Common, and your
   // choice of two of the following standard languages: Draconic, Dwarvish, …".
+  // A list that does not read whole is left to the words below.
   const tail = PICK_TAIL.exec(named);
   if (tail !== null) {
     const from = named
@@ -255,10 +256,16 @@ export function readLanguages(raw: string): Record<string, unknown> | undefined 
       .split(/,? or |, /)
       .map((s) => s.trim());
     const count = tail[1] === undefined ? 1 : countWord(tail[1]);
-    if (from.length < 2 || count === undefined || !from.every(languageName)) return undefined;
-    const lower = from.map((l) => l.toLowerCase());
-    out.choose = count === 1 ? { from: lower } : { from: lower, count };
-    named = named.slice(0, tail.index);
+    if (
+      from.length >= 2 &&
+      count !== undefined &&
+      count <= from.length &&
+      from.every(languageName)
+    ) {
+      const lower = from.map((l) => l.toLowerCase());
+      out.choose = count === 1 ? { from: lower } : { from: lower, count };
+      named = named.slice(0, tail.index);
+    }
   }
   for (const name of splitList(named)) {
     // `Any 1 language`, `Any two languages`: the tag some files use for a choice.

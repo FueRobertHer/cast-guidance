@@ -100,6 +100,42 @@ import {
   splitName,
 } from './text';
 
+/**
+ * The books the pinned game data prints spells in. Without all of them, a
+ * name neither the file nor the data has may still be a spell.
+ */
+const SPELL_BOOKS = [
+  'aag',
+  'ai',
+  'aitfr-avt',
+  'aitfr-fcd',
+  'au',
+  'bmt',
+  'eepc',
+  'efa',
+  'egw',
+  'erlw',
+  'frhof',
+  'ftd',
+  'ggr',
+  'idrotf',
+  'llk',
+  'mot',
+  'phb',
+  'rmr',
+  'sato',
+  'scag',
+  'scc',
+  'tce',
+  'vgm',
+  'wow',
+  'xge',
+  'xphb',
+];
+
+/** A spell's name as the index keys it: lowercased, curly quotes straight. */
+const spellKey = (name: string) => name.toLowerCase().replace(/[‘’]/g, "'");
+
 export const FC5_FORMAT = 'fc5-compendium';
 export const FC5_FORMAT_NAME = 'Fight Club 5e';
 /** Bump when the same file would convert differently, so old imports can be told apart. */
@@ -452,10 +488,16 @@ export function fc5Converter(opts: ConvertOptions): Fc5Converter {
     opts.isInstalled !== undefined &&
     (opts.isInstalled('spell', name, '2014') || opts.isInstalled('spell', name, '2024'));
   ctx.spells = {
-    level: (name) =>
-      spellLevels.has(name) ? spellLevels.get(name) : installedSpell(name) ? null : undefined,
-    // Every spell once the first pass is done, when the installed data is asked.
-    vouches: () => prepared && opts.isInstalled !== undefined,
+    level: (name) => {
+      const key = spellKey(name);
+      return spellLevels.has(key) ? spellLevels.get(key) : installedSpell(name) ? null : undefined;
+    },
+    // Every spell once the first pass is done, when the installed data is
+    // asked and holds every book that prints spells.
+    vouches: () =>
+      prepared &&
+      opts.isInstalled !== undefined &&
+      SPELL_BOOKS.every((code) => opts.hasBook?.(code) !== false),
   };
   // The classes the file defines whole, for the spell lists that name them;
   // one the rules have by that name keeps the rules' (`Wizard|PHB`).
@@ -593,7 +635,10 @@ export function fc5Converter(opts: ConvertOptions): Fc5Converter {
       if (isFull(el)) {
         const key = named.name.toLowerCase();
         const level = Number(childText(el, 'level'));
-        if (!spellLevels.has(key)) spellLevels.set(key, Number.isInteger(level) ? level : null);
+        const levelKey = spellKey(key);
+        if (!spellLevels.has(levelKey)) {
+          spellLevels.set(levelKey, Number.isInteger(level) ? level : null);
+        }
         const editions = fullEditions.get(key);
         if (editions === undefined) fullEditions.set(key, new Set([named.edition]));
         else editions.add(named.edition);

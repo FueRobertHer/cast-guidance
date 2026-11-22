@@ -480,6 +480,13 @@ describe('readSpellGrants, names checked against the index', () => {
     expect(unread).toBe(true);
   });
 
+  it('grants no count as a spell, whatever the index', () => {
+    for (const name of ['another', 'four']) {
+      expect(race([trait(name)]).blocks).toBeUndefined();
+      expect(race([trait(name)], indexOf({})).blocks).toBeUndefined();
+    }
+  });
+
   it('keeps a name the index lacks when it cannot vouch', () => {
     const { blocks, unread } = race([trait('zorblax')], indexOf({ 'produce flame': 0 }));
     expect(unread).toBe(false);

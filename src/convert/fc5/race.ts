@@ -315,6 +315,12 @@ function abilityEntry(
 /** `You can speak Common and Draconic`, with no word of reading or writing. */
 const SPEAKS = /^(?:you|your character) (?:can )?speak (?:both )?(.{1,160})$/;
 
+/** {@link SPEAKS}, unless the rest says what the race reads or writes: `speak but not write`. */
+function bareSpeak(sentence: string): RegExpExecArray | null {
+  const m = SPEAKS.exec(sentence);
+  return m !== null && !/\b(?:read|write)\b/.test(m[1] ?? '') ? m : null;
+}
+
 /** What a trait's rules text says, read into 5etools fields ({@link traitRules}). */
 interface TraitRules extends ProficiencyGrant {
   languages?: Record<string, unknown>;
@@ -357,7 +363,7 @@ export function traitRules(traitName: string, text: string, lines: readonly stri
   const speak =
     /^(?:you|your character) (?:can )?(?:speak, read,? and write|read, speak,? and write) (?:both )?(.{1,160})$/.exec(
       sentence,
-    ) ?? (/^languages?$/i.test(traitName) ? SPEAKS.exec(sentence) : null);
+    ) ?? (/^languages?$/i.test(traitName) ? bareSpeak(sentence) : null);
   if (speak !== null) {
     const langs = readLanguages(
       (speak[1] ?? '').replace(

@@ -1005,6 +1005,9 @@ describe('races', () => {
         traitRules('Language', 'You can speak both Common and Draconic.', []).languages,
       ).toEqual({ common: true, draconic: true });
       expect(traitRules('Mind Link', 'You can speak Common and Draconic.', [])).toEqual({});
+      expect(
+        traitRules('Languages', 'You can speak but not read or write Common and Elvish.', []),
+      ).toEqual({});
     });
 
     it('reads a speed after a first sentence that grants a proficiency', () => {

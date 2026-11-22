@@ -345,6 +345,21 @@ describe('readLanguages', () => {
     expect(
       readLanguages('Common, and your choice of five of the following languages: Draconic, Orc'),
     ).toBeUndefined();
+    expect(
+      readLanguages('Common and three of the following languages: Elvish, Giant'),
+    ).toBeUndefined();
+  });
+
+  it('leaves a pick with words after it to the list it is part of', () => {
+    expect(readLanguages('Either Elvish or Sylvan, and Common')).toEqual({
+      choose: { from: ['elvish', 'sylvan'] },
+      common: true,
+    });
+    expect(readLanguages('Common and either Elvish or Sylvan, and Giant')).toEqual({
+      common: true,
+      choose: { from: ['elvish', 'sylvan'] },
+      giant: true,
+    });
   });
 
   it('reads no phrase about languages as a language', () => {

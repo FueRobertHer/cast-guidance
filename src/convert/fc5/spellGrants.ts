@@ -200,6 +200,8 @@ function sentencesOf(text: string): string[] {
 
 function isName(name: string): boolean {
   if (name === '' || name.length > 60) return false;
+  // `another spell`, `four cantrips`: a count, under any data.
+  if (name === 'another' || countWord(name) !== undefined) return false;
   const words = name.split(' ');
   if (words.length > MAX_NAME_WORDS) return false;
   return words.every((w) => w !== '' && !NOT_NAME.has(w) && !/^\d/.test(w));
