@@ -73,6 +73,7 @@ describe('hostile input', () => {
     const cell = 'fireball, '.repeat(20_000).slice(0, -2);
     const row = ['1st', ...labels.slice(1).map(() => cell)];
     const index = { level: (n: string) => (n === 'fireball' ? 3 : undefined) };
+    // More than eight columns are no table of picks, looked at no further than their count.
     const entries = [
       'Choose an aspect. You gain domain spells.',
       { type: 'table', colLabels: labels, rows: [row] },

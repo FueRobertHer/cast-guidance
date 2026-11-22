@@ -579,6 +579,82 @@ describe('readFeatureSpells', () => {
       expect(wide).toEqual({ unread: false });
     });
 
+    it('adds the first column of every table of columns to the one every pick has', () => {
+      const words =
+        'You always have the listed spells prepared, along with the spells corresponding to your chosen element.';
+      const elements = (a: string, b: string, level: string, spells: string[]) =>
+        columns(
+          ['Warlock Level', 'Primordial Spells', `${a} Spells`, `${b} Spells`],
+          [[level, ...spells]],
+        );
+      const got = read(
+        3,
+        [
+          words,
+          elements('Air', 'Earth', '3', ['chromatic orb', 'feather fall', 'entangle']),
+          elements('Fire', 'Water', '5', ['blight', 'shield', 'goodberry']),
+        ],
+        true,
+        index,
+      );
+      expect(got.blocks?.[0]).toEqual({ prepared: { 3: ['chromatic orb'], 5: ['blight'] } });
+      expect(got.blocks?.slice(1).map((b) => b.name)).toEqual(['Air', 'Earth', 'Fire', 'Water']);
+    });
+
+    it("opens every column of a patron's table at the same levels, one blank past 5th or not", () => {
+      const got = read(
+        1,
+        [
+          'The following spells are added to the warlock spell list for you, along with the spells associated with your chosen affinity.',
+          columns(
+            ['Warlock Level', 'Fool Spells', 'Air Spells', 'Earth Spells'],
+            [
+              ['3', 'goodberry', 'feather fall', 'entangle'],
+              ['5', 'blight', 'shield', 'plant growth'],
+              ['7', 'color spray', '', 'inflict wounds'],
+              ['8th', '-', '-', '-'],
+            ],
+          ),
+        ],
+        true,
+        index,
+      );
+      expect(got.blocks).toEqual([
+        { expanded: { 3: ['goodberry'], 5: ['blight'], 7: ['color spray'] } },
+        { name: 'Air', expanded: { 3: ['feather fall'], 5: ['shield'] } },
+        {
+          name: 'Earth',
+          expanded: { 3: ['entangle'], 5: ['plant growth'], 7: ['inflict wounds'] },
+        },
+      ]);
+    });
+
+    it('passes over a table of columns of names that are not spells, but not one its headers say holds spells', () => {
+      const beasts = read(
+        3,
+        [
+          'You always have the shield spell prepared. Choose a beast.',
+          columns(['Druid Level', 'Beast', 'Terrain'], [['3rd', 'Wolf', 'Forest']]),
+        ],
+        true,
+        index,
+      );
+      expect(beasts).toEqual({ blocks: [{ prepared: { 3: ['shield'] } }], unread: false });
+      const unknown = read(
+        1,
+        [
+          'The moon turns.',
+          columns(
+            ['Sorcerer Level', 'Fire Spells', 'Ice Spells'],
+            [['1st', 'Ember Lash', 'Frost Lash']],
+          ),
+        ],
+        true,
+        index,
+      );
+      expect(unknown).toEqual({ unread: true });
+    });
+
     it("reads no table of columns that holds more than spells' names: a companion's challenge ratings", () => {
       const got = read(
         3,
@@ -835,6 +911,15 @@ describe('namedClassList', () => {
       namedClassList(['The wizard spell list.', 'The knight spell list.'], named),
     ).toBeUndefined();
     expect(namedClassList(['Your expanded spell list.'], named)).toBeUndefined();
+  });
+
+  it('takes no class from a list of several', () => {
+    for (const text of [
+      'You learn spells from the wizard or ember knight spell list.',
+      'You learn spells from the ember knight and wizard spell list.',
+      'Choose from the cleric, wizard spell list.',
+    ])
+      expect(namedClassList([text], named)).toBeUndefined();
   });
 });
 

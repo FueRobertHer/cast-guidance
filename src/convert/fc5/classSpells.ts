@@ -59,6 +59,8 @@ interface WideTable {
   rows: { level: string; cells: string[] }[];
   /** How many of the feature's lines of words come before it. */
   at: number;
+  /** Whether a header after the level's says spells: `Air Spells`. */
+  spellHeads: boolean;
 }
 
 const MAX_TEXT = 6000;
@@ -308,6 +310,7 @@ function readEntries(entries: readonly Entry[]): {
           columns: labels.slice(1).map((l) => l.trim()),
           rows: picks,
           at: words.length,
+          spellHeads: labels.some((l, i) => i > 0 && SPELL_HEAD.test(l) && !SLOT_HEAD.test(l)),
         });
         return;
       }
@@ -381,6 +384,8 @@ function readTable(
   table: SpellTable,
   section: Section,
   index: SpellIndex | undefined,
+  /** Whether an expanded list's rows are class levels, when a wider table than this one decides. */
+  classLevels?: boolean,
 ): Gated | undefined {
   const byLevel = table.head !== undefined && /\bspell level\b/i.test(table.head);
   // A table by spell level that the class learns from as it rises (a
@@ -400,7 +405,7 @@ function readTable(
   // An expanded list's rows are spell levels (1st to 5th, The Undead's even
   // under `Warlock Level`), unless they are the odd class levels a patron's
   // spells come at: `1st, 3rd ... 9th`, `3, 5, 7, 9`.
-  const byClassLevel = section === 'expanded' && !byLevel && oddClassLevels(rows);
+  const byClassLevel = section === 'expanded' && !byLevel && (classLevels ?? oddClassLevels(rows));
   const out: Gated = {};
   // A cantrip row only on an expanded list; spell levels up to 9th.
   const min = section === 'expanded' ? 0 : 1;
@@ -450,6 +455,19 @@ const ALONG_WITH = /\balong with the spells\b/;
  * cannot be read whole: words that pick no column, a column that names no
  * spell the data has, a row this cannot place, two columns of one name.
  */
+/** A table of columns as a table of spells a column. */
+function columnsOf(t: WideTable): SpellTable[] {
+  return t.columns.map((_, i) => ({
+    ...(t.caption !== undefined && { caption: t.caption }),
+    head: t.head,
+    rows: t.rows.map((r) => ({ level: r.level, cell: r.cells[i] ?? '' })),
+  }));
+}
+
+/** Whether a table of columns is one of spells: its headers say so, or it names a spell the data has. */
+const ofSpells = (t: WideTable, index: SpellIndex | undefined): boolean =>
+  t.spellHeads || columnsOf(t).some((c) => namesKnown(c, index));
+
 function readWide(
   wide: readonly WideTable[],
   words: readonly string[],
@@ -469,16 +487,22 @@ function readWide(
   for (const t of wide) {
     if (picked >= t.at) return undefined;
     const shared = along < t.at;
-    for (let i = 0; i < t.columns.length; i += 1) {
-      const column: SpellTable = {
-        ...(t.caption !== undefined && { caption: t.caption }),
-        head: t.head,
-        rows: t.rows.map((r) => ({ level: r.level, cell: r.cells[i] ?? '' })),
-      };
-      const spells = namesKnown(column, index) ? readTable(column, section, index) : undefined;
+    // Class levels or spell levels by the whole table's rows, not a column's
+    // own: a column blank at 7th and 9th still opens at the same levels.
+    const levels = t.rows.flatMap((r) => {
+      const level = rowLevel(r.level);
+      return level === undefined || !r.cells.some(filled) ? [] : [{ level }];
+    });
+    const classLevels = oddClassLevels(levels);
+    for (const [i, column] of columnsOf(t).entries()) {
+      const spells = namesKnown(column, index)
+        ? readTable(column, section, index, classLevels)
+        : undefined;
       if (spells === undefined) return undefined;
       if (shared && i === 0) {
-        common = spells;
+        common ??= {};
+        for (const [gate, names] of Object.entries(spells))
+          for (const n of names) add(common, gate, n);
         continue;
       }
       // `Air Spells` is the Air pick.
@@ -538,23 +562,20 @@ export function readFeatureSpells(
           add((common.known ??= {}), feature, `${n}#c`);
       }
     }
-    if (!opts.tables || read.tables.length + read.wide.length === 0) continue;
-    const captions = [...read.tables, ...read.wide].map((t) => t.caption?.toLowerCase() ?? '');
+    // A table of columns of names that are not spells (a beast's forms) is no table of spells.
+    const wide = read.wide.filter((t) => ofSpells(t, opts.index));
+    if (!opts.tables || read.tables.length + wide.length === 0) continue;
+    const captions = [...read.tables, ...wide].map((t) => t.caption?.toLowerCase() ?? '');
     const section = sectionOf([...read.words, ...captions].join(' '));
     if (section === undefined) {
       // Untold, it is a table of spells only if it names one the data has,
       // not a Channel Divinity's challenge ratings by level.
-      const columns = read.wide.flatMap((t) =>
-        t.columns.map((_, i) => ({
-          rows: t.rows.map((r) => ({ level: r.level, cell: r.cells[i] ?? '' })),
-        })),
-      );
-      if ([...read.tables, ...columns].some((t) => namesKnown(t, opts.index))) unread = true;
+      if (wide.length > 0 || read.tables.some((t) => namesKnown(t, opts.index))) unread = true;
       continue;
     }
-    if (read.wide.length > 0) {
+    if (wide.length > 0) {
       // One choice, as with captioned tables: a second would join the first as one pick.
-      const got = readWide(read.wide, read.words, section, opts.index);
+      const got = readWide(wide, read.words, section, opts.index);
       if (got === undefined || got.branches.length < 2 || branches.length > 0) unread = true;
       else {
         for (const [gate, names] of Object.entries(got.common ?? {}))
@@ -604,6 +625,8 @@ export function readFeatureSpells(
  * looked past at most that far.
  */
 const CLASS_LIST = /([a-z']{1,20}(?: [a-z']{1,20})?) spell list\b/g;
+/** The end of the words before a class's name that join it to another. */
+const JOINED = /(?:\b(?:or|and) |, ?)$/;
 
 /**
  * The one class whose spell list a subclass caster's features name, as
@@ -615,12 +638,20 @@ export function namedClassList(
 ): string | undefined {
   const named = new Set<string>();
   for (const text of texts) {
-    for (const m of text.toLowerCase().matchAll(CLASS_LIST)) {
+    const lower = text.toLowerCase();
+    for (const m of lower.matchAll(CLASS_LIST)) {
       // The longest class name the last words make: `the blood hunter` is the Blood Hunter's.
       const words = (m[1] ?? '').split(' ');
       for (let n = words.length; n > 0; n -= 1) {
         const name = classNamed(words.slice(-n).join(' '));
         if (name === undefined) continue;
+        // `the wizard or sorcerer spell list`, `the cleric, druid, or wizard
+        // spell list`: one of several, which names no one list.
+        const before =
+          n < words.length
+            ? `${words.slice(0, -n).join(' ')} `
+            : lower.slice(Math.max(0, m.index - 5), m.index);
+        if (JOINED.test(before)) return undefined;
         named.add(name);
         break;
       }
