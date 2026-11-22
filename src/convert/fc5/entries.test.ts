@@ -10,7 +10,7 @@ import {
 import { fc5Context } from './compendium';
 import type { Fc5Context, Fc5Result, FeatRef } from './context';
 import { abilityFromProse, convertFeat, featCategory, readPrerequisite } from './feat';
-import { convertRace, raceAbility, traitLines, traitRules } from './race';
+import { abilityChoices, convertRace, raceAbility, traitLines, traitRules } from './race';
 
 const ctx: Fc5Context = fc5Context('test.xml');
 
@@ -571,6 +571,96 @@ describe('races', () => {
     it('gives up on anything else', () => {
       expect(raceAbility('Str 2, Luck 1')).toBeUndefined();
       expect(raceAbility('one of your choice')).toBeUndefined();
+    });
+  });
+
+  describe('abilityChoices', () => {
+    it('reads a pick of one of two scores, as the files word it', () => {
+      const pick = (from: string[], amount = 1) => ({ from, amount });
+      expect(
+        abilityChoices([
+          'Your Wisdom score increases by 2, and you can choose to increase either your Dexterity or Charisma score by 1.',
+        ]),
+      ).toEqual({ fixed: { wis: 2 }, choices: [], either: pick(['dex', 'cha']) });
+      expect(
+        abilityChoices([
+          'Your Constitution score increases by 2. And either your Intelligence or Charisma score increases by 1 (your choice).',
+        ]),
+      ).toEqual({ fixed: { con: 2 }, choices: [], either: pick(['int', 'cha']) });
+      expect(
+        abilityChoices([
+          'Your Constitution score increases by 1. In addition, either your Strength or Dexterity score increases by 2.',
+        ]),
+      ).toEqual({ fixed: { con: 1 }, choices: [], either: pick(['str', 'dex'], 2) });
+      expect(
+        abilityChoices([
+          'Your Intelligence score increases by 2, and either your Dexterity score or Wisdom score increases by 1 (your choice).',
+        ])?.either,
+      ).toEqual(pick(['dex', 'wis']));
+      expect(
+        abilityChoices([
+          'Your Dexterity score increases by 2, and either your Intelligence score or your Charisma score increases by 1.',
+        ])?.either,
+      ).toEqual(pick(['int', 'cha']));
+      expect(
+        abilityChoices([
+          'Your Dexterity score increases by 2. Increase either your Intelligence or Wisdom score by 1.',
+        ])?.either,
+      ).toEqual(pick(['int', 'wis']));
+      expect(
+        abilityChoices(['Either your Intelligence or Charisma score increases by 1.']),
+      ).toEqual({ fixed: {}, choices: [], either: pick(['int', 'cha']) });
+    });
+
+    it('reads no pick of two scores beside another pick, two of them, or one score twice', () => {
+      expect(
+        abilityChoices([
+          'Your Constitution and either your Strength or Wisdom scores increase by 1 and one ability score of your choice increases by 1.',
+        ]),
+      ).toBeUndefined();
+      expect(
+        abilityChoices([
+          'Either your Strength or Dexterity score increases by 1, and one ability score of your choice increases by 1.',
+        ]),
+      ).toBeUndefined();
+      expect(
+        abilityChoices([
+          'Either your Strength or Dexterity score increases by 1. Either your Intelligence or Charisma score increases by 1.',
+        ]),
+      ).toBeUndefined();
+      expect(
+        abilityChoices(['Either your Strength or Strength score increases by 1.']),
+      ).toBeUndefined();
+      expect(
+        abilityChoices(['Either your Strength or Luck score increases by 1.']),
+      ).toBeUndefined();
+      expect(
+        abilityChoices(['Increase either Intelligence or Dexterity by an additional 1 point.']),
+      ).toBeUndefined();
+    });
+
+    it('gives a race the pick, with its amount when it is not 1', () => {
+      const race = (ability: string, text: string) =>
+        done(
+          convertRace(
+            parseXml(
+              `<race><name>Oddkin</name><ability>${ability}</ability>${trait('Ability Score Increase', text)}</race>`,
+            ),
+            ctx,
+          ),
+        ).entity.ability;
+      expect(
+        race(
+          'Con 1',
+          'Your Constitution score increases by 1. In addition, either your Strength or Dexterity score increases by 2.',
+        ),
+      ).toEqual([{ con: 1, choose: { from: ['str', 'dex'], count: 1, amount: 2 } }]);
+      expect(
+        race(
+          'Wis 2',
+          'Your Wisdom score increases by 2, and you can choose to increase either your Dexterity or Charisma score by 1.',
+        ),
+      ).toEqual([{ wis: 2, choose: { from: ['dex', 'cha'], count: 1 } }]);
     });
   });
 
