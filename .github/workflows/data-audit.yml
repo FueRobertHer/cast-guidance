@@ -52,7 +52,7 @@ jobs:
       data: ${{ steps.diff.outputs.data }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           # The PR merge commit and its first parent, the base branch tip.
           fetch-depth: 2
@@ -97,7 +97,7 @@ jobs:
       latest_tag: ${{ steps.latest.outputs.tag }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           # On a PR, the bump check reads DATA_TAG from the merge commit's
           # first parent, the base branch tip.
@@ -159,7 +159,7 @@ jobs:
 
       - name: Upload audit reports
         if: ${{ !cancelled() }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: data-audit
           path: |
