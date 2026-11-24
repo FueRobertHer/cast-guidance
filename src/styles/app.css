@@ -68,6 +68,11 @@
   --cg-roll-soft: #1b2438;
   --cg-arcane: #bfa8f8;
   --cg-arcane-soft: #282042;
+  /* The HP card's cues (features/sheet/hpCues.css): the pale piece of the bar a
+     hit took, the bright piece healing gave, and the glint across temp HP. */
+  --cg-hp-trail: #f9aea0;
+  --cg-hp-bloom: #b9e9cf;
+  --cg-hp-sheen: #ffffff80;
   --cg-scrim: #000000a3;
   --cg-shadow-float: 0 1px 0 0 #ffffff0f inset, 0 6px 16px #00000073, 0 2px 4px #00000059;
   --cg-shadow-overlay: 0 1px 0 0 #ffffff12 inset, 0 16px 40px #0000008c;
@@ -111,6 +116,9 @@
   --cg-roll-soft: #e3e8f1;
   --cg-arcane: #6a40c0;
   --cg-arcane-soft: #eee8fb;
+  --cg-hp-trail: #d98f86;
+  --cg-hp-bloom: #96bea8;
+  --cg-hp-sheen: #ffffffd9;
   --cg-scrim: #1c1a1666;
   --cg-shadow-float: 0 6px 16px #1c1a161f, 0 2px 4px #1c1a1614;
   --cg-shadow-overlay: 0 16px 40px #1c1a1629, 0 2px 6px #1c1a1614;
