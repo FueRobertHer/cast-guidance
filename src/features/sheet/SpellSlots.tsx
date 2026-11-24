@@ -111,7 +111,7 @@ export function SpellSlots({
     </>
   );
   return framed ? (
-    <div className="flex flex-col divide-y divide-line overflow-hidden rounded-card ring-1 ring-line ring-inset">
+    <div className="flex flex-col divide-y divide-line overflow-hidden rounded-card ring ring-line ring-inset">
       {rows}
     </div>
   ) : (

@@ -171,9 +171,11 @@ license is outside the allowlist in `scripts/thirdPartyNotices.ts`.
 - `src/dice/`: pure dice expression parser + roller.
 - `src/db/`: Dexie tables behind repo interfaces (cloud sync can slot in later).
 - `src/features/`: UI for the character list, creator wizard, sheet tabs, library, homebrew, and settings.
-- `src/styles/app.css`: the design tokens for both themes (colour, type, spacing, radii,
-  shadows, motion); `src/ui/` holds the shared
-  controls built on them (Button, Chip, Badge, TextField, SegmentedControl, ToggleChip,
+- `src/styles/themes.css`: the built-in themes, each setting every value in the theme
+  vocabulary (`src/theme/vocabulary.ts`: colours, fonts, weights, corners, edges,
+  shadows, icon stroke); `src/styles/app.css` maps them to utilities and holds what no
+  theme changes (type sizes, spacing, motion). `docs/theming-plan.md` has the plan for
+  more themes and theme files. `src/ui/` holds the shared controls built on them (Button, Chip, Badge, TextField, SegmentedControl, ToggleChip,
   Banner, Snackbar, sheet). `src/lib/theme.ts` owns the System/Light/Dark choice.
 
 Characters store **choices + play state, never derived results**; every derived number is

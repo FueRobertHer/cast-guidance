@@ -701,7 +701,7 @@ function Based({ heading, step }: { heading: HeadingRef; step: Step }) {
   return (
     <>
       <StepHeading heading={heading}>{`A new ${one}, based on ${pickedName}`}</StepHeading>
-      <span className="inline-flex min-h-8 items-center gap-1.5 self-start rounded-full px-3 text-caption font-semibold text-ink-muted ring-1 ring-line-strong ring-inset">
+      <span className="inline-flex min-h-8 items-center gap-1.5 self-start rounded-pill px-3 text-caption font-semibold text-ink-muted ring ring-line-strong ring-inset">
         <Copy size={14} aria-hidden />
         Based on {pickedName}, {from}
       </span>

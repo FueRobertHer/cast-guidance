@@ -752,7 +752,7 @@ export function TryItOn({
           ))}
         </Select>
       </Field>
-      <div className="flex flex-col gap-2 rounded-card bg-surface p-3 ring-1 ring-line ring-inset">
+      <div className="flex flex-col gap-2 rounded-card bg-surface p-3 ring ring-line ring-inset">
         <p className="text-caption text-ink-muted">
           {HELD[type]?.(entry)} {who.note}
           {tried.state !== 'failed' &&

@@ -13,7 +13,7 @@ const LABEL: Record<ThemeChoice, string> = { system: 'System', light: 'Light', d
 function Bar({ brand = false }: { brand?: boolean }) {
   return (
     <span
-      className={`block h-3.5 rounded ${brand ? 'w-1/2 bg-brand' : 'bg-surface ring-1 ring-line ring-inset'}`}
+      className={`block h-3.5 rounded-tick ${brand ? 'w-1/2 bg-brand' : 'bg-surface ring ring-line ring-inset'}`}
     />
   );
 }
@@ -30,7 +30,7 @@ function Mini({ theme, half = false }: { theme: Theme; half?: boolean }) {
       className={
         half
           ? 'flex flex-1 flex-col gap-1.25 bg-bg px-1.5 py-2'
-          : 'flex h-18 w-full flex-col gap-1.25 overflow-hidden rounded-lg bg-bg p-2 ring-1 ring-line ring-inset'
+          : 'flex h-18 w-full flex-col gap-1.25 overflow-hidden rounded-thumb bg-bg p-2 ring ring-line ring-inset'
       }
     >
       {!half && <Bar />}
@@ -63,7 +63,7 @@ export function ThemePicker() {
         {THEME_CHOICES.map((option) => (
           <label
             key={option}
-            className="relative flex cursor-pointer flex-col items-center gap-2 rounded-control bg-surface px-2 pt-2 pb-3 text-label text-ink ring-1 ring-line ring-inset has-checked:ring-2 has-checked:ring-ink has-focus-visible:outline-2 has-focus-visible:outline-focus has-focus-visible:outline-offset-2"
+            className="relative flex cursor-pointer flex-col items-center gap-2 rounded-control bg-surface px-2 pt-2 pb-3 text-label text-ink ring ring-line ring-inset has-checked:ring-strong has-checked:ring-ink has-focus-visible:outline-2 has-focus-visible:outline-focus has-focus-visible:outline-offset-2"
           >
             <input
               type="radio"
@@ -74,7 +74,7 @@ export function ThemePicker() {
               className="absolute inset-0 size-full cursor-pointer appearance-none rounded-control opacity-0"
             />
             {option === 'system' ? (
-              <span className="flex h-18 w-full overflow-hidden rounded-lg ring-1 ring-line ring-inset">
+              <span className="flex h-18 w-full overflow-hidden rounded-thumb ring ring-line ring-inset">
                 <Mini theme="dark" half />
                 <Mini theme="light" half />
               </span>

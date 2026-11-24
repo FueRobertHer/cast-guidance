@@ -176,7 +176,7 @@ export function SpellPicker({
         {/* The list is beside the label, never in it, so it is no part of the box's name. */}
         <div
           hidden={!expanded}
-          className="absolute top-full left-0 z-30 mt-1 w-full min-w-[min(15rem,calc(100vw-2rem))] max-w-[calc(100vw-2rem)] overflow-hidden rounded-control bg-surface shadow-overlay ring-1 ring-line ring-inset"
+          className="absolute top-full left-0 z-30 mt-1 w-full min-w-[min(15rem,calc(100vw-2rem))] max-w-[calc(100vw-2rem)] overflow-hidden rounded-control bg-surface shadow-overlay ring ring-line ring-inset"
         >
           <div
             id={listId}

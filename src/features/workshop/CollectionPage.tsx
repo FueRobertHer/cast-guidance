@@ -660,7 +660,7 @@ function EntriesSection({ c, looks }: { c: Collection; looks: ReadonlySet<string
               setKind('all');
               setAll(false);
             }}
-            className="min-h-tap rounded-control bg-surface px-2 text-body ring-1 ring-line-strong ring-inset"
+            className="min-h-tap rounded-control bg-surface px-2 text-body ring ring-line-strong ring-inset"
           >
             {rows.map((r) => (
               <option key={r.id} value={bookOf(r)}>

@@ -9,10 +9,10 @@
  * settings group or a set of links. Each row pads itself (`px-4 py-2`, at
  * least 56px tall with a title and a caption).
  */
-export const cardClass = 'rounded-card bg-surface p-4 shadow-card ring-1 ring-line ring-inset';
+export const cardClass = 'rounded-card bg-surface p-4 shadow-card ring ring-line ring-inset';
 
 export const listClass =
-  'flex flex-col divide-y divide-line overflow-hidden rounded-card bg-surface shadow-card ring-1 ring-line ring-inset';
+  'flex flex-col divide-y divide-line overflow-hidden rounded-card bg-surface shadow-card ring ring-line ring-inset';
 
 /**
  * A list with attack chips in its rows: unclipped, because a condition's marks
@@ -21,7 +21,7 @@ export const listClass =
  * for a row that paints a ground of its own (`SpellRow`, while concentrating).
  */
 export const openListClass =
-  'flex flex-col divide-y divide-line rounded-card bg-surface shadow-card ring-1 ring-line ring-inset *:first:rounded-t-card *:last:rounded-b-card';
+  'flex flex-col divide-y divide-line rounded-card bg-surface shadow-card ring ring-line ring-inset *:first:rounded-t-card *:last:rounded-b-card';
 
 /** A list row's padding and size: a title over a caption, an action at the end. */
 export const listRowClass = 'flex min-h-14 items-center gap-3 px-4 py-2';

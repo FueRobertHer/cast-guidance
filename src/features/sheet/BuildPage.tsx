@@ -94,13 +94,13 @@ const pickerKey = (ref: { name: string; source: string } | undefined) =>
  * an `ink` pill, as `SegmentedControl` draws its own.
  */
 const SEGMENTS =
-  'flex flex-wrap gap-0.5 rounded-control bg-surface-raised p-0.75 ring-1 ring-edge ring-inset';
+  'flex flex-wrap gap-0.5 rounded-control bg-surface-raised p-0.75 ring ring-edge ring-inset';
 const SEGMENT =
-  'min-h-9.5 flex-1 rounded-lg px-3 text-label text-ink-muted transition-[color,background-color] duration-120 not-aria-pressed:hover:text-ink aria-pressed:bg-ink aria-pressed:text-bg';
+  'min-h-9.5 flex-1 rounded-thumb px-3 text-label text-ink-muted transition-[color,background-color] duration-120 not-aria-pressed:hover:text-ink aria-pressed:bg-ink aria-pressed:text-bg';
 
 /** A list of rows inside a section: hairline-divided, each row pads itself. */
 const ROWS =
-  'flex flex-col divide-y divide-line overflow-hidden rounded-control ring-1 ring-line ring-inset';
+  'flex flex-col divide-y divide-line overflow-hidden rounded-control ring ring-line ring-inset';
 
 /** A small group label inside a section (SAVING THROWS). */
 const OVERLINE = 'text-overline text-ink-muted uppercase';
@@ -173,7 +173,7 @@ function ChangeBar({ sheet }: { sheet: DerivedSheet }) {
 
   if (diff.length === 0) {
     return (
-      <div className="rounded-control bg-surface/95 px-3 py-2 text-caption text-ink-muted shadow-card ring-1 ring-line ring-inset backdrop-blur">
+      <div className="rounded-control bg-surface/95 px-3 py-2 text-caption text-ink-muted shadow-card ring ring-line ring-inset backdrop-blur">
         Change anything below: the effects on your stats show up here instantly.
       </div>
     );
@@ -185,7 +185,7 @@ function ChangeBar({ sheet }: { sheet: DerivedSheet }) {
       {diff.map((d) => (
         <span
           key={d.label}
-          className="rounded-full bg-surface px-2 py-0.5 text-caption tabular-nums"
+          className="rounded-pill bg-surface px-2 py-0.5 text-caption tabular-nums"
         >
           {d.label} <span className="text-ink-muted">{d.from}</span>
           <span className={d.to > d.from ? 'text-heal' : 'text-danger'}> → {d.to}</span>
@@ -240,7 +240,7 @@ function Section({
     <details
       id={id}
       open={defaultOpen}
-      className="group scroll-mt-4 rounded-card bg-surface shadow-card ring-1 ring-line ring-inset"
+      className="group scroll-mt-4 rounded-card bg-surface shadow-card ring ring-line ring-inset"
     >
       {/* Wraps so a long summary (six ability scores, no spaces) moves
           under the title at large text instead of widening the page, and
@@ -580,7 +580,7 @@ export function Component() {
           </div>
         </div>
         {cueNotes.length > 0 && (
-          <div className="flex flex-col gap-1 rounded-control p-3 ring-1 ring-line ring-inset">
+          <div className="flex flex-col gap-1 rounded-control p-3 ring ring-line ring-inset">
             <span className="text-label text-ink-muted">Mixed editions ({cueNotes.length})</span>
             {cueNotes.map(({ key, note }) => (
               <p key={key} className="text-caption text-ink-muted">
@@ -647,7 +647,7 @@ export function Component() {
           return (
             <div
               key={`${entry.ref.name}|${entry.ref.source}`}
-              className="flex flex-col gap-2 rounded-control p-3 ring-1 ring-line ring-inset"
+              className="flex flex-col gap-2 rounded-control p-3 ring ring-line ring-inset"
             >
               {/* The level controls wrap under the name where both do not fit. */}
               <div className="flex flex-wrap items-center justify-between gap-2">
@@ -1208,7 +1208,7 @@ export function Component() {
                     type="button"
                     className={`rounded-control bg-surface-raised px-2 py-1.5 text-sm tabular-nums transition-colors hover:bg-surface-hover ${
                       sheet.saves[a].prof
-                        ? 'font-semibold ring-1 ring-line-strong ring-inset'
+                        ? 'font-semibold ring ring-line-strong ring-inset'
                         : 'text-ink-muted'
                     }`}
                   >
@@ -1310,7 +1310,7 @@ export function Component() {
       </Section>
 
       {sheet.warnings.length > 0 && (
-        <details className="rounded-card bg-surface p-4 text-caption text-ink-muted shadow-card ring-1 ring-line ring-inset">
+        <details className="rounded-card bg-surface p-4 text-caption text-ink-muted shadow-card ring ring-line ring-inset">
           <summary className="cursor-pointer text-body">
             {sheet.warnings.length} note{sheet.warnings.length > 1 ? 's' : ''}
           </summary>

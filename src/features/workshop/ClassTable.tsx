@@ -64,7 +64,7 @@ export function ClassTable({
   const cell = cellClass(columns.length);
   const stacked = columns.length > INLINE;
   return (
-    <div className="flex flex-col overflow-hidden rounded-card bg-surface ring-1 ring-line ring-inset">
+    <div className="flex flex-col overflow-hidden rounded-card bg-surface ring ring-line ring-inset">
       <div
         aria-hidden
         className="flex items-center gap-2 border-line border-b px-3 py-2 font-semibold text-caption text-ink-muted"

@@ -265,7 +265,7 @@ function RuleChoices({
           return (
             <label
               key={v}
-              className="relative flex min-h-tap cursor-pointer items-start gap-3 rounded-control px-3 py-2.5 ring-1 ring-line ring-inset has-checked:ring-2 has-checked:ring-ink has-focus-visible:outline-2 has-focus-visible:outline-focus has-focus-visible:outline-offset-2"
+              className="relative flex min-h-tap cursor-pointer items-start gap-3 rounded-control px-3 py-2.5 ring ring-line ring-inset has-checked:ring-strong has-checked:ring-ink has-focus-visible:outline-2 has-focus-visible:outline-focus has-focus-visible:outline-offset-2"
             >
               <input
                 type="radio"

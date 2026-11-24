@@ -12,18 +12,23 @@ import type { LucideProps } from 'lucide-react';
  * stroke width, the front face at three quarters of it, the nine facet lines
  * at half (2, 1.5 and 1 by default), which keeps a fully faceted die open at
  * 16px. Use it at 14px and up. It has no spark, so it never reads as the logo.
+ *
+ * Given no stroke, it takes the theme's (`d20-themed`, app.css), as a Lucide
+ * icon at its default does; the three weights keep their ratios.
  */
 export function D20Icon({
   size = 24,
-  strokeWidth = 2,
+  strokeWidth,
   absoluteStrokeWidth = false,
   color = 'currentColor',
   className,
   ...props
 }: LucideProps) {
   const px = Number(size);
+  const themed = strokeWidth === undefined && !absoluteStrokeWidth;
+  const width = Number(strokeWidth ?? 2);
   // As Lucide does: an absolute width stays that many pixels at any size.
-  const outline = absoluteStrokeWidth ? (Number(strokeWidth) * 24) / px : Number(strokeWidth);
+  const outline = absoluteStrokeWidth ? (width * 24) / px : width;
   // Decorative, as a Lucide icon is, unless the caller names it.
   const named = props['aria-label'] !== undefined || props['aria-labelledby'] !== undefined;
   return (
@@ -38,15 +43,19 @@ export function D20Icon({
       strokeLinejoin="round"
       aria-hidden={named ? undefined : true}
       role={named ? 'img' : undefined}
-      className={className}
+      className={
+        themed ? (className === undefined ? 'd20-themed' : `d20-themed ${className}`) : className
+      }
       {...props}
     >
       <path
+        className="d20-outline"
         strokeWidth={outline}
         d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"
       />
-      <path strokeWidth={outline * 0.75} d="M12 7.5 16.5 15.3H7.5Z" />
+      <path className="d20-face" strokeWidth={outline * 0.75} d="M12 7.5 16.5 15.3H7.5Z" />
       <path
+        className="d20-facets"
         strokeWidth={outline * 0.5}
         d="M12 2.5v5M3.6 16.8l3.9-1.5M20.4 16.8l-3.9-1.5M3.6 7.2 12 7.5l8.4-.3M3.6 7.2l3.9 8.1L12 21.5l4.5-6.2 3.9-8.1"
       />

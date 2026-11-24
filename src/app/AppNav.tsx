@@ -30,7 +30,7 @@ function TabPill({ active, children }: { active: boolean; children: ReactNode })
   return (
     <span
       {...(active ? { 'data-indicator': '' } : {})}
-      className={`flex h-[30px] w-[56px] items-center justify-center rounded-full transition-colors duration-200 ease-out lg:size-auto lg:bg-transparent ${active ? 'bg-surface-raised' : ''}`}
+      className={`flex h-[30px] w-[56px] items-center justify-center rounded-pill transition-colors duration-200 ease-out lg:size-auto lg:bg-transparent ${active ? 'bg-surface-raised' : ''}`}
     >
       {children}
     </span>

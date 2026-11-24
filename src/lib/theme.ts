@@ -29,7 +29,7 @@ export const THEME_CHOICES: readonly ThemeChoice[] = ['system', 'light', 'dark']
  * Each theme's `bg`, for `<meta name="theme-color">`, which colours the
  * browser's own bars and the installed app's title bar. A meta tag cannot read
  * a CSS variable, so the value is repeated here and in the boot script; the
- * test compares both with app.css.
+ * test compares both with themes.css.
  */
 export const THEME_COLOR: Readonly<Record<Theme, string>> = {
   dark: '#121110',

@@ -304,7 +304,7 @@ export function RollChip({
               // resting edge keeps it a button in light (nothing in dark), the
               // strong line on hover, which the brightness filter lifts too.
               wear === undefined
-                ? 'px-2 ring-1 ring-edge ring-inset hover:ring-(--cx-edge-hover,transparent)'
+                ? 'px-2 ring ring-edge ring-inset hover:ring-(--cg-cx-edge-hover)'
                 : 'relative'
             }`
       } rounded-chip font-semibold tabular-nums transition-[filter,transform] duration-120 ease-out hover:brightness-112 active:scale-95 ${

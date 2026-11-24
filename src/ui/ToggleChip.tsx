@@ -43,7 +43,7 @@ export function ToggleChip({
       disabled={disabled}
       onClick={() => onChange(!on)}
       className={`inline-flex min-h-tap items-center justify-center gap-2 rounded-control px-4 text-label transition-colors duration-120 unavailable:cursor-default unavailable:text-ink-faint ${
-        on ? ON[tone] : 'text-ink-muted ring-1 ring-line-strong ring-inset hover:text-ink'
+        on ? ON[tone] : 'text-ink-muted ring ring-line-strong ring-inset hover:text-ink'
       }`}
     >
       {Icon !== undefined && <Icon size={16} aria-hidden="true" />}

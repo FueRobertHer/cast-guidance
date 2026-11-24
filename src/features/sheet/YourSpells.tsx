@@ -711,7 +711,7 @@ function ClassSection({
       {notPrepared.length > 0 && (
         <details
           open={f !== ''}
-          className="group overflow-hidden rounded-card bg-surface shadow-card ring-1 ring-line ring-inset"
+          className="group overflow-hidden rounded-card bg-surface shadow-card ring ring-line ring-inset"
         >
           <summary
             ref={fold}

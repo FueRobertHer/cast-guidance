@@ -1,50 +1,28 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { themeIds, themeTokens } from '../../tests-fixtures/themeCss';
 
-// DS-001: every pair the design system promises, held in both themes. Text
-// clears 4.5:1 (WCAG 1.4.3), edges, marks and the focus ring 3:1 (WCAG
-// 1.4.11). The values come from the two `--cg-*` blocks in app.css, which the
+// DS-001: every pair the design system promises, held in every built-in
+// theme. Text clears 4.5:1 (WCAG 1.4.3), edges, marks and the focus ring 3:1
+// (WCAG 1.4.11). The values come from the theme rules in themes.css, which the
 // colour utilities of the same name read, so a token that moves is measured
-// where it lands. The axe gate (e2e/a11y) measures the rendered pages in both
-// themes.
+// where it lands. The axe gate (e2e/a11y) measures the rendered pages in each.
+// Themes people make for themselves are theirs, and held to none of this.
 
 const SRC = path.resolve(import.meta.dirname, '..');
-const CSS = readFileSync(path.join(SRC, 'styles/app.css'), 'utf8');
 
-type Theme = 'dark' | 'light';
-const THEMES: readonly Theme[] = ['dark', 'light'];
+type Theme = string;
+const THEMES: readonly Theme[] = themeIds();
 
-/** One theme's `--cg-*` values, with `var(--cg-…)` references followed. */
-function themeTokens(theme: Theme): Record<string, string> {
-  const selector = theme === 'dark' ? ':root,\n[data-theme="dark"] {' : '[data-theme="light"] {';
-  const start = CSS.indexOf(selector);
-  if (start < 0) throw new Error(`no ${theme} block in app.css`);
-  const body = CSS.slice(start, CSS.indexOf('\n}', start));
-  const raw: Record<string, string> = {};
-  for (const m of body.matchAll(/--cg-([\w-]+):\s*([^;]+);/g)) {
-    if (m[1] !== undefined && m[2] !== undefined) raw[m[1]] = m[2].trim();
-  }
-  const resolve = (name: string, seen = new Set<string>()): string => {
-    const value = raw[name];
-    if (value === undefined) throw new Error(`no --cg-${name} in the ${theme} block`);
-    const ref = /^var\(--cg-([\w-]+)\)$/.exec(value)?.[1];
-    if (ref === undefined) return value;
-    if (seen.has(ref)) throw new Error(`--cg-${name} refers to itself`);
-    return resolve(ref, seen.add(name));
-  };
-  return Object.fromEntries(Object.keys(raw).map((k) => [k, resolve(k)]));
-}
-
-const TOKENS: Record<Theme, Record<string, string>> = {
-  dark: themeTokens('dark'),
-  light: themeTokens('light'),
-};
+const TOKENS: Readonly<Record<Theme, Record<string, string>>> = Object.fromEntries(
+  THEMES.map((theme) => [theme, themeTokens(theme)]),
+);
 
 /** A colour in one theme: a token name, or a hex value as written. */
 function colour(theme: Theme, name: string): string {
   if (name.startsWith('#')) return name;
-  const value = TOKENS[theme][name];
+  const value = TOKENS[theme]?.[name];
   if (value === undefined || !/^#[0-9a-f]{6}$/i.test(value)) {
     throw new Error(`${name} is not an opaque #rrggbb colour in ${theme}: ${value}`);
   }
@@ -93,11 +71,7 @@ const cross = (fgs: readonly string[], grounds: readonly string[]) =>
 /** The grounds text sits on: the page, a card, a raised control. */
 const GROUNDS = ['bg', 'surface', 'surface-raised'] as const;
 
-describe('design token contrast, both themes (DS-001)', () => {
-  it('reads the same token names in both themes', () => {
-    expect(Object.keys(TOKENS.light).sort()).toEqual(Object.keys(TOKENS.dark).sort());
-  });
-
+describe('design token contrast, every built-in theme (DS-001)', () => {
   it('holds every text colour to 4.5:1 on the page, a card and a raised control', () => {
     const text = ['ink', 'ink-muted', 'brand', 'guide', 'danger', 'heal', 'ward', 'roll', 'arcane'];
     expect(below(4.5, cross(text, GROUNDS))).toEqual([]);
@@ -172,7 +146,7 @@ describe('design token contrast, both themes (DS-001)', () => {
 });
 
 // The condition hues on rolls (ui/chipFace.css) are a named exception to the
-// design's roles, so they are not tokens, but the number on them is text.
+// design's roles, but the number on them is text.
 
 const CHIP_CSS = readFileSync(path.join(SRC, 'ui/chipFace.css'), 'utf8');
 
@@ -202,13 +176,9 @@ const FILLS: Readonly<Record<string, string | null>> = {
 
 /** A condition's colour (`c`) and tint (`cs`) in one theme. */
 function hue(theme: Theme, look: string): { c: string; cs: string } {
-  const selector = theme === 'dark' ? `.cx-${look}` : `[data-theme="light"] .cx-${look}`;
-  const at = CHIP_CSS.split('\n').indexOf(`${selector} {`);
-  if (at < 0) throw new Error(`no ${theme} hue for ${look} in chipFace.css`);
-  const [c, cs] = CHIP_CSS.split('\n')
-    .slice(at + 1, at + 3)
-    .map((line) => /:\s*([^;]+);/.exec(line)?.[1]);
-  if (c === undefined || cs === undefined) throw new Error(`unreadable hue for ${look}`);
+  const c = TOKENS[theme]?.[`cx-${look}`];
+  const cs = TOKENS[theme]?.[`cx-${look}-soft`];
+  if (c === undefined || cs === undefined) throw new Error(`no ${theme} hue for ${look}`);
   return { c, cs };
 }
 
@@ -223,7 +193,7 @@ function strength(piece: string): number {
   return Math.max(Number(rule[1]), ...raised);
 }
 
-describe('the number on a condition’s chip, both themes', () => {
+describe('the number on a condition’s chip, every built-in theme', () => {
   it('holds ink to 4.5:1 over each condition’s strongest layer on its tint', () => {
     const failing = THEMES.flatMap((theme) =>
       Object.entries(FILLS).flatMap(([look, piece]) => {

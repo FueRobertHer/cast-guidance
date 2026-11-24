@@ -664,7 +664,7 @@ export function Component() {
           {COINS.map((coin) => (
             <label
               key={coin}
-              className="flex flex-col items-center gap-1 rounded-control bg-surface px-1 pt-2 pb-1 shadow-card ring-1 ring-line ring-inset"
+              className="flex flex-col items-center gap-1 rounded-control bg-surface px-1 pt-2 pb-1 shadow-card ring ring-line ring-inset"
             >
               <span className="text-ink-muted text-overline uppercase">{coin}</span>
               <input

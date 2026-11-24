@@ -1,126 +1,16 @@
 @import "tailwindcss";
+@import "./themes.css";
 
 /*
- * Design tokens: the Cast Guidance design system (DS-001), both themes.
- *
- * The values live here as `--cg-*` custom properties, one block per theme,
- * and `@theme inline` below turns each into Tailwind utilities under the
- * token's own name: `bg-surface`, `text-ink-muted`, `ring-line-strong`,
- * `shadow-card`. `inline` makes a utility read the `--cg-*` property where it
- * is used rather than where it was declared, so a subtree with its own
- * `data-theme` (the theme picker's miniatures) is drawn in that theme. In
- * hand-written CSS, use `var(--cg-*)` for the same reason.
- *
- * The theme is `data-theme` on <html>: `dark` (the default, also when the
- * attribute is missing) or `light`. `public/theme-boot.js` sets it before
- * first paint from the player's choice, and `src/lib/theme.ts` keeps it in
- * step afterwards. Both themes share every name, so a component never asks
- * which theme it is in.
- *
- * What each colour is for (the spec's README has the long form):
- * - grounds: `bg` the page, `surface` cards and panels, `surface-raised`
- *   controls inside a card, `surface-hover` their hover and pressed step,
- *   `line` decorative hairlines, `line-strong` the 3:1 edge of an outlined
- *   control (WCAG 1.4.11), `track` the empty part of a meter, `edge` the
- *   resting edge of a filled control with no border (a field, a segmented
- *   control's track): none in dark, `line` in light, where `surface-raised`
- *   sits 1.03:1 off the page and the control all but vanished.
- * - text: `ink` anything that must be read, `ink-muted` labels and metadata,
- *   `ink-faint` disabled labels and placeholders only (under 4.5:1 by design).
- * - roles, each a text colour with a `-soft` tint to sit on: `brand` action
- *   (one primary button per screen, the dice button; labels on it are
- *   `on-brand`), `guide` guidance and the focus ring, `danger` damage and
- *   errors (`danger-fill` with `on-danger` for destructive buttons), `heal`,
- *   `ward` temporary HP, `roll` (the brand blue) for rolls, `arcane` for
- *   spellcasting resources. Selection is never a hue: it is `ink`.
- *
- * src/styles/contrast.test.ts holds every pairing the spec promises to its
- * ratio in both themes; the axe gate (e2e/a11y) measures the rendered pages in
- * both.
+ * The themes' values live in themes.css, one rule per theme, as `--cg-*`
+ * custom properties. `@theme inline` below turns each into Tailwind
+ * utilities under the token's own name: `bg-surface`, `text-ink-muted`,
+ * `rounded-card`, `font-display`, `ring-strong`. `inline` makes a utility read
+ * the `--cg-*` property where it is used rather than where it was declared, so
+ * a subtree with its own `data-theme` (the theme picker's miniatures) is drawn
+ * in that theme. Every themeable value goes in that block for the same reason;
+ * in hand-written CSS, use `var(--cg-*)`.
  */
-:root,
-[data-theme="dark"] {
-  color-scheme: dark;
-  --cg-bg: #121110;
-  --cg-surface: #1b1a17;
-  --cg-surface-raised: #26241f;
-  --cg-surface-hover: #322f29;
-  --cg-line: #2e2b26;
-  --cg-line-strong: #7a7468;
-  --cg-track: #33302a;
-  --cg-edge: transparent;
-  --cg-ink: #f3efe6;
-  --cg-ink-muted: #aca598;
-  --cg-ink-faint: #7d776c;
-  --cg-brand: #8fb0ea;
-  --cg-brand-hover: #a7c2f1;
-  --cg-on-brand: #121110;
-  --cg-guide: #f0c470;
-  --cg-guide-soft: #352b17;
-  --cg-danger: #ff8170;
-  --cg-danger-fill: #c8372a;
-  --cg-on-danger: #ffffff;
-  --cg-danger-soft: #3b1d18;
-  --cg-heal: #74d39f;
-  --cg-heal-soft: #17301f;
-  --cg-ward: #7fd0e6;
-  --cg-ward-soft: #132d35;
-  --cg-roll-soft: #1b2438;
-  --cg-arcane: #bfa8f8;
-  --cg-arcane-soft: #282042;
-  --cg-scrim: #000000a3;
-  --cg-shadow-float: 0 1px 0 0 #ffffff0f inset, 0 6px 16px #00000073, 0 2px 4px #00000059;
-  --cg-shadow-overlay: 0 1px 0 0 #ffffff12 inset, 0 16px 40px #0000008c;
-  /* No shadow, written as a transparent one: `none` is not valid inside the
-     comma list Tailwind builds when a card also takes a ring. */
-  --cg-shadow-card: 0 0 #0000;
-  /* Shared by both themes: aliases of a role above, resolved per theme. */
-  --cg-focus: var(--cg-guide);
-  --cg-roll: var(--cg-brand);
-  --cg-meter-mid: var(--cg-guide);
-}
-
-[data-theme="light"] {
-  color-scheme: light;
-  --cg-bg: #eee6d5;
-  --cg-surface: #faf6ec;
-  --cg-surface-raised: #ebe3d1;
-  --cg-surface-hover: #e0d6c1;
-  --cg-line: #ddd2bc;
-  --cg-line-strong: #8a8170;
-  --cg-track: #e2d8c4;
-  /* Paper on paper again, as the cards' shadow below: a field or a segment
-     track on the page would otherwise show only as its words. */
-  --cg-edge: var(--cg-line);
-  --cg-ink: #1c1a16;
-  --cg-ink-muted: #5d564b;
-  --cg-ink-faint: #8a8172;
-  --cg-brand: #2a4d8f;
-  --cg-brand-hover: #22417a;
-  --cg-on-brand: #faf6ec;
-  --cg-guide: #8a4f00;
-  --cg-guide-soft: #f4dfbd;
-  --cg-danger: #b3261e;
-  --cg-danger-fill: #b3261e;
-  --cg-on-danger: #ffffff;
-  --cg-danger-soft: #fbe6e1;
-  --cg-heal: #16703d;
-  --cg-heal-soft: #e1f2e6;
-  --cg-ward: #0b6378;
-  --cg-ward-soft: #ddf0f4;
-  --cg-roll-soft: #e3e8f1;
-  --cg-arcane: #6a40c0;
-  --cg-arcane-soft: #eee8fb;
-  --cg-scrim: #1c1a1666;
-  --cg-shadow-float: 0 6px 16px #1c1a161f, 0 2px 4px #1c1a1614;
-  --cg-shadow-overlay: 0 16px 40px #1c1a1629, 0 2px 6px #1c1a1614;
-  /* Paper on paper needs an edge: cards take a shadow in light only. */
-  --cg-shadow-card: 0 1px 2px #1c1a160f;
-  --cg-focus: var(--cg-guide);
-  --cg-roll: var(--cg-brand);
-  --cg-meter-mid: var(--cg-guide);
-}
-
 @theme inline {
   --color-bg: var(--cg-bg);
   --color-surface: var(--cg-surface);
@@ -159,22 +49,62 @@
   --shadow-float: var(--cg-shadow-float);
   --shadow-overlay: var(--cg-shadow-overlay);
   --shadow-card: var(--cg-shadow-card);
+
+  /*
+   * Type and shape (themes.css has what each is for). The type scale's sizes
+   * stay in the plain block below; only its weights are themeable, so they
+   * sit here, where a subtree's own theme reaches them.
+   */
+  --font-sans: var(--cg-font-sans);
+  --font-display: var(--cg-font-display);
+  --font-weight-normal: var(--cg-weight-normal);
+  --font-weight-semibold: var(--cg-weight-semibold);
+  --font-weight-bold: var(--cg-weight-bold);
+  --text-title-page--font-weight: var(--cg-weight-semibold);
+  --text-title-sheet--font-weight: var(--cg-weight-semibold);
+  --text-title-card--font-weight: var(--cg-weight-semibold);
+  --text-stat-hero--font-weight: var(--cg-weight-bold);
+  --text-stat--font-weight: var(--cg-weight-bold);
+  --text-heading--font-weight: var(--cg-weight-bold);
+  --text-body-strong--font-weight: var(--cg-weight-semibold);
+  --text-label--font-weight: var(--cg-weight-semibold);
+  --text-overline--font-weight: var(--cg-weight-bold);
+  --text-tab--font-weight: var(--cg-weight-semibold);
+  --text-dice--font-weight: var(--cg-weight-semibold);
+
+  /*
+   * Corners, by what they round, named apart from Tailwind's own `rounded-lg`
+   * and friends, which src/styles/themeScan.test.ts keeps out of the source.
+   * The derived sizes follow their tier, so a theme's corners move them too:
+   * `thumb` sits 2px inside a control (a segment's thumb, a framed preview),
+   * `tick` 2px inside a chip (a checkbox), `control-lg` is a large button,
+   * and `tile` a 44px icon tile or a button inside a 4px transparent tap
+   * border, whose visible corner is then a control's.
+   */
+  --radius-chip: var(--cg-radius-chip);
+  --radius-control: var(--cg-radius-control);
+  --radius-card: var(--cg-radius-card);
+  --radius-sheet: var(--cg-radius-sheet);
+  --radius-pill: var(--cg-radius-pill);
+  --radius-tick: calc(var(--cg-radius-chip) - 2px);
+  --radius-thumb: calc(var(--cg-radius-control) - 2px);
+  --radius-control-lg: calc(var(--cg-radius-control) + 2px);
+  --radius-tile: calc(var(--cg-radius-control) + 0.25rem);
+
+  /*
+   * Edges: bare `border`, `border-t`, `divide-y` and `ring` draw the theme's
+   * edge width, `ring-strong` its selected one. Explicit widths (`border-4`,
+   * `border-8`) are transparent tap insets and stay fixed.
+   */
+  --default-border-width: var(--cg-border);
+  --default-ring-width: var(--cg-border);
+  --ring-width-strong: var(--cg-border-strong);
 }
 
 @theme {
   /*
-   * Two families (DS-001), self-hosted from src/main.tsx. Until one loads,
-   * the stacks fall back to Georgia and the system sans, which share metrics
-   * closely enough that nothing reflows. Literata is for names and titles
-   * only; everything else, numbers included, is Atkinson Hyperlegible Next,
-   * chosen for small sizes in bad light (distinct 0/O and 1/l/I).
-   */
-  --font-sans: "Atkinson Hyperlegible Next", system-ui, -apple-system, "Segoe UI", sans-serif;
-  --font-display: "Literata", Georgia, "Times New Roman", serif;
-
-  /*
    * The type scale, as `text-<name>` utilities carrying size, line height,
-   * weight and tracking. Titles also take `font-display`, numbers
+   * weight (from the theme, in the block above) and tracking. Titles also take `font-display`, numbers
    * `tabular-nums` so digits do not shift as values tick, overlines
    * `uppercase`. In rem, so a larger browser text size scales them (WCAG
    * 1.4.4). Tailwind's own `text-xs` and `text-sm` stay until each screen
@@ -182,40 +112,31 @@
    */
   --text-title-page: 1.75rem; /* 28px: the one title of a section screen */
   --text-title-page--line-height: 2.125rem;
-  --text-title-page--font-weight: 600;
   --text-title-page--letter-spacing: -0.01em;
   --text-title-sheet: 1.25rem; /* 20px: a character's name, a sheet's title */
   --text-title-sheet--line-height: 1.625rem;
-  --text-title-sheet--font-weight: 600;
   --text-title-card: 1.0625rem; /* 17px: a card that is a person or a choice */
   --text-title-card--line-height: 1.375rem;
-  --text-title-card--font-weight: 600;
   --text-stat-hero: 3rem; /* 48px: current HP, and only that */
   --text-stat-hero--line-height: 3.25rem;
-  --text-stat-hero--font-weight: 700;
   --text-stat-hero--letter-spacing: -0.02em;
   --text-stat: 1.625rem; /* 26px: AC, initiative, modifiers, roll totals */
   --text-stat--line-height: 1.875rem;
-  --text-stat--font-weight: 700;
   --text-stat--letter-spacing: -0.01em;
   --text-heading: 0.9375rem; /* 15px: a section heading inside a screen */
   --text-heading--line-height: 1.25rem;
-  --text-heading--font-weight: 700;
   --text-body: 0.9375rem; /* 15px: prose, and the page default */
   --text-body--line-height: 1.375rem;
   --text-body-strong: 0.9375rem; /* row titles and button labels */
   --text-body-strong--line-height: 1.375rem;
-  --text-body-strong--font-weight: 600;
   --text-input: 1rem; /* 16px, so iOS Safari never zooms on focus */
   --text-input--line-height: 1.375rem;
   --text-caption: 0.8125rem; /* 13px: metadata, helper text, under a number */
   --text-caption--line-height: 1.125rem;
   --text-label: 0.8125rem; /* 13px: chips, toggles, segments */
   --text-label--line-height: 1rem;
-  --text-label--font-weight: 600;
   --text-overline: 0.6875rem; /* 11px uppercase: STR, HIT POINTS */
   --text-overline--line-height: 0.875rem;
-  --text-overline--font-weight: 700;
   --text-overline--letter-spacing: 0.08em;
   /*
    * Tab bar labels only, and in px, as they were before DS-001: the phone's
@@ -225,10 +146,8 @@
    */
   --text-tab: 11px;
   --text-tab--line-height: 14px;
-  --text-tab--font-weight: 600;
   --text-dice: 0.875rem; /* 14px: dice expressions, with tabular-nums */
   --text-dice--line-height: 1.25rem;
-  --text-dice--font-weight: 600;
   --text-dice-small: 0.75rem; /* 12px: a roll's breakdown line */
   --text-dice-small--line-height: 1rem;
 
@@ -243,17 +162,6 @@
   --spacing-tabbar: 64px; /* the tab bar, before the safe-area inset; px with its labels */
   --spacing-dock: 3.25rem; /* 52px: the dice button */
   --container-content: 40rem; /* 640px: the widest one column gets */
-
-  /*
-   * Corners, by what they round (the spec's radius-sm to radius-xl), named
-   * apart from Tailwind's `rounded-lg` and friends, which 200-odd call sites
-   * use at their old sizes. Nested corners step down one: a `control` row in
-   * a `card`.
-   */
-  --radius-chip: 0.375rem; /* 6px: chips, badges, a segment's thumb */
-  --radius-control: 0.625rem; /* 10px: buttons, inputs, rows, toggles */
-  --radius-card: 1rem; /* 16px: cards and panels */
-  --radius-sheet: 1.5rem; /* 24px: a bottom sheet's top, the roll toast */
 
   /*
    * Motion confirms a result; it never decorates. 120ms for presses and
@@ -389,6 +297,23 @@ body {
   line-height: calc(22 / 15);
   -webkit-font-smoothing: antialiased;
   overscroll-behavior-y: none;
+}
+
+/*
+ * Icons take the theme's stroke (`--cg-icon-stroke`) where they are drawn at
+ * their default: a Lucide icon whose stroke is Lucide's 2, and a D20Icon
+ * given none (`d20-themed`), whose front face and facet lines keep their
+ * three-quarter and half weights. An icon given its own stroke keeps it.
+ */
+svg.lucide[stroke-width="2"],
+.d20-themed > .d20-outline {
+  stroke-width: var(--cg-icon-stroke);
+}
+.d20-themed > .d20-face {
+  stroke-width: calc(var(--cg-icon-stroke) * 0.75);
+}
+.d20-themed > .d20-facets {
+  stroke-width: calc(var(--cg-icon-stroke) * 0.5);
 }
 
 /* Keep tap targets from flashing the default highlight on mobile */

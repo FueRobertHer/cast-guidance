@@ -88,17 +88,17 @@ export function Banner({ tone, icon, children, actions, ...rest }: BannerProps) 
 const ACTION: Record<BannerTone, Record<'primary' | 'secondary', string>> = {
   guide: {
     primary: 'bg-surface text-ink hover:bg-surface-raised',
-    secondary: 'text-ink ring-1 ring-line-strong ring-inset hover:bg-surface',
+    secondary: 'text-ink ring ring-line-strong ring-inset hover:bg-surface',
   },
   neutral: {
     primary: 'bg-surface text-ink hover:bg-surface-hover',
-    secondary: 'text-ink ring-1 ring-line-strong ring-inset hover:bg-surface',
+    secondary: 'text-ink ring ring-line-strong ring-inset hover:bg-surface',
   },
   // A white button with the fill's red as its label: a translucent white
   // pill, as drawn, left white text at 4.1:1 on the dark theme's red.
   danger: {
     primary: 'bg-on-danger text-danger-fill',
-    secondary: 'text-on-danger ring-1 ring-on-danger ring-inset',
+    secondary: 'text-on-danger ring ring-on-danger ring-inset',
   },
 };
 
@@ -126,7 +126,7 @@ export function BannerDismiss({
     <button
       type={type}
       aria-label={label}
-      className={`inline-flex size-tap shrink-0 items-center justify-center rounded-[0.875rem] border-[0.375rem] border-transparent bg-clip-padding [--tap-inset:0.375rem] transition-colors duration-120 ${DISMISS[tone]}${className ? ` ${className}` : ''}`}
+      className={`inline-flex size-tap shrink-0 items-center justify-center rounded-tile border-[0.375rem] border-transparent bg-clip-padding [--tap-inset:0.375rem] transition-colors duration-120 ${DISMISS[tone]}${className ? ` ${className}` : ''}`}
       {...props}
     >
       <X size={16} aria-hidden="true" />
@@ -150,7 +150,7 @@ export function BannerAction({
     <button
       type={type}
       data-emphasis={emphasis}
-      className={`inline-flex min-h-tap min-w-tap shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-[0.875rem] border-[0.375rem] border-transparent bg-clip-padding [--tap-inset:0.375rem] px-1.5 font-bold text-caption transition-colors duration-120 unavailable:cursor-default unavailable:opacity-60 ${ACTION[tone][emphasis]}${className ? ` ${className}` : ''}`}
+      className={`inline-flex min-h-tap min-w-tap shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-tile border-[0.375rem] border-transparent bg-clip-padding [--tap-inset:0.375rem] px-1.5 font-bold text-caption transition-colors duration-120 unavailable:cursor-default unavailable:opacity-60 ${ACTION[tone][emphasis]}${className ? ` ${className}` : ''}`}
       {...props}
     />
   );

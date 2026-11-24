@@ -138,7 +138,7 @@ function VitalsLine({ v }: { v?: Vitals }) {
     // Nowrap because the line is a fixed 16px: letting "19 / 27 HP" fall to a
     // second line at the narrowest widths spills it out of the space held for it.
     <div className="mt-1.5 flex h-4 items-center gap-2 text-xs whitespace-nowrap text-ink-muted tabular-nums">
-      <span className="inline-block h-1.5 w-16 overflow-hidden rounded-full bg-track">
+      <span className="inline-block h-1.5 w-16 overflow-hidden rounded-pill bg-track">
         {v !== undefined && (
           <span
             className={`block h-full motion-safe:animate-fade-in ${color}`}
@@ -147,7 +147,7 @@ function VitalsLine({ v }: { v?: Vitals }) {
         )}
       </span>
       {v === undefined ? (
-        <span className="h-2 w-16 rounded-full bg-track" />
+        <span className="h-2 w-16 rounded-pill bg-track" />
       ) : (
         <span className="motion-safe:animate-fade-in">
           {v.hp} / {v.maxHp} HP
@@ -193,7 +193,7 @@ function CharacterCard({
         to={`/c/${c.id}`}
         draggable={false}
         {...hold}
-        className="flex items-center gap-3 rounded-card bg-surface py-3 pr-3 pl-4 shadow-card ring-1 ring-line ring-inset transition-colors select-none [-webkit-touch-callout:none] group-hover:bg-surface-raised"
+        className="flex items-center gap-3 rounded-card bg-surface py-3 pr-3 pl-4 shadow-card ring ring-line ring-inset transition-colors select-none [-webkit-touch-callout:none] group-hover:bg-surface-raised"
       >
         {/* Decoration, so it is the first thing to go when a large text size
             leaves the card narrow (under 15rem, so measured in text): the
@@ -201,7 +201,7 @@ function CharacterCard({
             needs the rest. */}
         <span
           aria-hidden="true"
-          className="flex size-12 shrink-0 items-center justify-center rounded-full bg-surface-raised font-display text-title-sheet ring-1 ring-line ring-inset @max-[15rem]:hidden"
+          className="flex size-12 shrink-0 items-center justify-center rounded-full bg-surface-raised font-display text-title-sheet ring ring-line ring-inset @max-[15rem]:hidden"
         >
           {initials(c.name)}
         </span>

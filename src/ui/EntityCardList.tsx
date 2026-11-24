@@ -25,7 +25,7 @@ export const uidOf = (e: Entity) => `${nameOf(e)}|${sourceOf(e)}`.toLowerCase();
 /** An option card's ground and edge: picked takes the 2px `ink` edge. */
 const cardShell = (selected: boolean) =>
   `@container flex flex-wrap items-start rounded-control bg-surface shadow-card ring-inset ${
-    selected ? 'ring-2 ring-ink' : 'ring-1 ring-line'
+    selected ? 'ring-strong ring-ink' : 'ring ring-line'
   }`;
 
 /** A card's right-hand side: the pick's check, the source badge, and ⓘ when asked for. */

@@ -79,12 +79,12 @@ import { fieldClass, TextField } from './TextField';
  * floating panel has; a nat 20 or nat 1 a 2px edge in its colour instead.
  */
 const TONE: Record<RollTone, { edge: string; tile: string }> = {
-  d20: { edge: 'ring-1 ring-line', tile: 'bg-roll-soft text-roll' },
-  dice: { edge: 'ring-1 ring-line', tile: 'bg-roll-soft text-roll' },
-  damage: { edge: 'ring-1 ring-line', tile: 'bg-danger-soft text-danger' },
-  heal: { edge: 'ring-1 ring-line', tile: 'bg-heal-soft text-heal' },
-  crit: { edge: 'ring-2 ring-heal', tile: 'bg-heal-soft text-heal' },
-  fumble: { edge: 'ring-2 ring-danger', tile: 'bg-danger-soft text-danger' },
+  d20: { edge: 'ring ring-line', tile: 'bg-roll-soft text-roll' },
+  dice: { edge: 'ring ring-line', tile: 'bg-roll-soft text-roll' },
+  damage: { edge: 'ring ring-line', tile: 'bg-danger-soft text-danger' },
+  heal: { edge: 'ring ring-line', tile: 'bg-heal-soft text-heal' },
+  crit: { edge: 'ring-strong ring-heal', tile: 'bg-heal-soft text-heal' },
+  fumble: { edge: 'ring-strong ring-danger', tile: 'bg-danger-soft text-danger' },
 };
 
 type Term = RollResult['terms'][number];
@@ -571,7 +571,7 @@ function RollResultToast({
   const body = (
     <>
       <span
-        className={`flex size-11 shrink-0 items-center justify-center rounded-[0.875rem] ${TONE[tone].tile}`}
+        className={`flex size-11 shrink-0 items-center justify-center rounded-tile ${TONE[tone].tile}`}
       >
         <Icon size={24} strokeWidth={1.75} aria-hidden="true" />
       </span>
@@ -755,7 +755,7 @@ function RollResultToast({
             aria-pressed={on}
             aria-label={offerName(o, r, on)}
             onClick={() => toggle(i)}
-            className={`inline-flex min-h-tap items-center gap-1 rounded-full px-3 font-semibold text-label ${
+            className={`inline-flex min-h-tap items-center gap-1 rounded-pill px-3 font-semibold text-label ${
               on ? 'bg-ink text-bg' : 'bg-surface-raised text-ink hover:bg-surface-hover'
             }`}
           >
@@ -788,7 +788,7 @@ function RollResultToast({
             damageOffer.go();
             if (inside && back?.isConnected === true) back.focus();
           }}
-          className="inline-flex min-h-tap items-center gap-1.5 rounded-full bg-danger-soft px-3.5 font-bold text-danger text-label hover:brightness-112"
+          className="inline-flex min-h-tap items-center gap-1.5 rounded-pill bg-danger-soft px-3.5 font-bold text-danger text-label hover:brightness-112"
         >
           <HeartCrack size={16} aria-hidden="true" className="shrink-0" />
           Roll {damageOffer.expr}
@@ -800,7 +800,7 @@ function RollResultToast({
           type="button"
           aria-label={`Reroll the weapon's dice with ${damageReroll.source}, keeping the higher`}
           onClick={rerollWeapon}
-          className="inline-flex min-h-tap items-center gap-1 rounded-full bg-surface-raised px-3 font-semibold text-ink text-label hover:bg-surface-hover"
+          className="inline-flex min-h-tap items-center gap-1 rounded-pill bg-surface-raised px-3 font-semibold text-ink text-label hover:bg-surface-hover"
         >
           <RefreshCw size={14} aria-hidden="true" className="shrink-0 text-heal" />
           Reroll weapon dice, {damageReroll.source}
@@ -823,7 +823,7 @@ function RollResultToast({
             if (inside && back?.isConnected === true && heldRollStore.getState().held === null)
               back.focus();
           }}
-          className="inline-flex min-h-tap items-center gap-1.5 rounded-full bg-roll-soft px-3.5 font-bold text-label text-roll hover:brightness-112"
+          className="inline-flex min-h-tap items-center gap-1.5 rounded-pill bg-roll-soft px-3.5 font-bold text-label text-roll hover:brightness-112"
         >
           <D20Icon size={16} aria-hidden="true" className="shrink-0" />
           Next attack
@@ -851,7 +851,7 @@ function RollResultToast({
               }
               aria-disabled={rerolledWith[i] === true}
               onClick={() => rerollWith(i)}
-              className={`inline-flex min-h-tap items-center gap-1 rounded-full px-3 font-semibold text-ink text-label ${
+              className={`inline-flex min-h-tap items-center gap-1 rounded-pill px-3 font-semibold text-ink text-label ${
                 rerolledWith[i] === true
                   ? 'bg-heal-soft ring-[1.5px] ring-heal ring-inset'
                   : 'bg-surface-raised hover:bg-surface-hover'
@@ -956,7 +956,7 @@ function RollResultToast({
             setFocused(false);
             onRule(ownCrit, back);
           }}
-          className="inline-flex min-h-tap items-center gap-1.5 rounded-full bg-surface-raised px-3 font-semibold text-label text-ink hover:bg-surface-hover"
+          className="inline-flex min-h-tap items-center gap-1.5 rounded-pill bg-surface-raised px-3 font-semibold text-label text-ink hover:bg-surface-hover"
         >
           <SlidersHorizontal size={14} aria-hidden="true" className="shrink-0 text-ink-muted" />
           {ownCrit
@@ -1101,7 +1101,7 @@ function Extra({
       aria-pressed={on}
       aria-label={`${name}, ${when}${holds === undefined ? '' : `: ${holds}`}`}
       onClick={onClick}
-      className={`inline-flex min-h-tap items-center gap-1 rounded-full px-3 font-semibold text-label ${
+      className={`inline-flex min-h-tap items-center gap-1 rounded-pill px-3 font-semibold text-label ${
         on
           ? 'bg-heal-soft text-ink ring-[1.5px] ring-heal ring-inset'
           : 'bg-surface-raised text-ink hover:bg-surface-hover'
@@ -1128,7 +1128,7 @@ function PromptHeader({ face, setAside }: { face: RollFace | undefined; setAside
   if (face === undefined) {
     return (
       <span
-        className={`flex size-11 shrink-0 items-center justify-center rounded-[0.875rem] ${TONE.d20.tile}`}
+        className={`flex size-11 shrink-0 items-center justify-center rounded-tile ${TONE.d20.tile}`}
       >
         <D20Icon size={24} strokeWidth={1.75} aria-hidden="true" />
       </span>
@@ -1139,7 +1139,7 @@ function PromptHeader({ face, setAside }: { face: RollFace | undefined; setAside
   const cast = face.tone === 'cast';
   if (face.wear !== undefined) {
     return (
-      <span className={`relative ${chip} ${cast ? 'ring-1 ring-line-strong ring-inset' : ''}`}>
+      <span className={`relative ${chip} ${cast ? 'ring ring-line-strong ring-inset' : ''}`}>
         <span aria-hidden="true" className="contents">
           <ChipFace
             wear={{ ...face.wear, ignored: face.wear.ignored || setAside }}
@@ -1170,7 +1170,7 @@ const FACE_TONE = {
   roll: 'bg-roll-soft text-roll',
   danger: 'bg-danger-soft text-danger',
   heal: 'bg-heal-soft text-heal',
-  cast: 'text-ink ring-1 ring-line-strong ring-inset',
+  cast: 'text-ink ring ring-line-strong ring-inset',
 } as const;
 
 /**
@@ -1207,7 +1207,7 @@ function CastTiles({ held }: { held: HeldRoll }) {
                       ? 'bg-ink text-bg'
                       : tile.ok
                         ? 'bg-surface-raised text-ink hover:bg-surface-hover'
-                        : 'cursor-default text-ink-muted ring-1 ring-line ring-inset'
+                        : 'cursor-default text-ink-muted ring ring-line ring-inset'
                   }`}
                 >
                   <span className="font-bold text-label">{tile.head}</span>
@@ -1544,7 +1544,7 @@ function RollPrompt({
           ref={rollButton}
           type="button"
           onClick={() => leave(rollHeld)}
-          className={`inline-flex min-h-tap shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full px-5 font-bold text-label ${go.tone}`}
+          className={`inline-flex min-h-tap shrink-0 items-center gap-1.5 whitespace-nowrap rounded-pill px-5 font-bold text-label ${go.tone}`}
         >
           <GoIcon size={16} aria-hidden="true" />
           {go.word}
@@ -1616,7 +1616,7 @@ function DamageExtraChip({
         aria-pressed={on}
         aria-label={`${name}, ${tag}${extra.note === undefined ? '' : `: ${extra.note}`}`}
         onClick={onClick}
-        className={`inline-flex min-h-tap items-center gap-1 rounded-full px-3 font-semibold text-label ${
+        className={`inline-flex min-h-tap items-center gap-1 rounded-pill px-3 font-semibold text-label ${
           on
             ? 'bg-heal-soft text-ink ring-[1.5px] ring-heal ring-inset'
             : 'bg-surface-raised text-ink hover:bg-surface-hover'
@@ -1761,14 +1761,14 @@ function AddDamageForm({
         <button
           type="button"
           onClick={onCancel}
-          className="inline-flex min-h-tap items-center rounded-full px-4 font-semibold text-ink-muted text-label hover:bg-surface-hover"
+          className="inline-flex min-h-tap items-center rounded-pill px-4 font-semibold text-ink-muted text-label hover:bg-surface-hover"
         >
           Cancel
         </button>
         <button
           type="button"
           onClick={add}
-          className="inline-flex min-h-tap items-center rounded-full bg-ink px-4 font-semibold text-bg text-label"
+          className="inline-flex min-h-tap items-center rounded-pill bg-ink px-4 font-semibold text-bg text-label"
         >
           Add
         </button>
@@ -1950,7 +1950,7 @@ function DamagePrompt({
           <button
             type="button"
             onClick={() => setAdding(true)}
-            className="inline-flex min-h-tap items-center gap-1.5 self-start rounded-full px-3 font-semibold text-ink text-label ring-1 ring-line-strong ring-inset hover:bg-surface-hover"
+            className="inline-flex min-h-tap items-center gap-1.5 self-start rounded-pill px-3 font-semibold text-ink text-label ring ring-line-strong ring-inset hover:bg-surface-hover"
           >
             <Plus size={14} aria-hidden="true" className="shrink-0" />
             Add damage
@@ -1962,7 +1962,7 @@ function DamagePrompt({
           ref={rollButton}
           type="button"
           onClick={() => leave(rollHeld)}
-          className={`inline-flex min-h-tap shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full px-5 font-bold text-label ${GO.roll}`}
+          className={`inline-flex min-h-tap shrink-0 items-center gap-1.5 whitespace-nowrap rounded-pill px-5 font-bold text-label ${GO.roll}`}
         >
           <HeartCrack size={16} aria-hidden="true" />
           Roll

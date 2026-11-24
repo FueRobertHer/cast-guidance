@@ -240,7 +240,7 @@ const NAME = 'wrap-anywhere @min-[15rem]:truncate';
  */
 const TOGGLE =
   'flex min-h-tap min-w-0 grow items-center justify-center gap-2 rounded-control px-3 text-label transition-colors duration-120';
-const TOGGLE_OFF = 'text-ink-muted ring-1 ring-line-strong ring-inset hover:text-ink';
+const TOGGLE_OFF = 'text-ink-muted ring ring-line-strong ring-inset hover:text-ink';
 /** The HP card's ±1: round `surface-raised` steppers, the icon in `danger` or `heal`. */
 const STEP =
   'flex h-12 w-12 items-center justify-center rounded-full bg-surface-raised transition-[background-color,scale] duration-120 hover:bg-surface-hover active:scale-92';
@@ -248,7 +248,7 @@ const STEP =
 const FIVE =
   'tap rounded-full text-label tabular-nums transition-[filter] duration-120 hover:brightness-112';
 /** A card without its padding (surfaces' `cardClass`), for one whose rows pad themselves. */
-const FLUSH = 'rounded-card bg-surface shadow-card ring-1 ring-line ring-inset';
+const FLUSH = 'rounded-card bg-surface shadow-card ring ring-line ring-inset';
 /**
  * A cell of the Armor Class / Initiative / Speed / Proficiency strip (DS-001
  * StatStrip), and the small label under its number. Four across, two by two
@@ -276,7 +276,7 @@ function longRestDetail(hp: TableRuleChoices['hpOnLongRest']): string {
 const NONE: ReadonlySet<string> = new Set();
 /** A point pool's −5 / −1 / +1 / +5 (sorcery points, Lay on Hands). */
 const POOL_STEP =
-  'tap rounded-full bg-surface-raised px-2 text-label tabular-nums leading-none hover:bg-surface-hover unavailable:bg-surface-raised unavailable:text-ink-faint';
+  'tap rounded-pill bg-surface-raised px-2 text-label tabular-nums leading-none hover:bg-surface-hover unavailable:bg-surface-raised unavailable:text-ink-faint';
 
 /** A cue line's look for an effect's own line (`DerivedSheet.cues`), by tone. */
 const CUE_TONE: Record<
@@ -383,7 +383,7 @@ function RestRule({
       type="button"
       aria-haspopup="dialog"
       onClick={() => onOpen(id)}
-      className="inline-flex min-h-tap items-center gap-1 rounded-full bg-surface-raised px-3 text-label text-ink hover:bg-surface-hover"
+      className="inline-flex min-h-tap items-center gap-1 rounded-pill bg-surface-raised px-3 text-label text-ink hover:bg-surface-hover"
     >
       {words}
       <span className="text-ink-muted">· Change</span>
@@ -1756,10 +1756,10 @@ export function Component() {
               aria-label={play.tempHp > 0 ? `+${play.tempHp} temporary hit points` : undefined}
               aria-haspopup="dialog"
               title="Temporary hit points"
-              className={`-my-2 inline-flex min-h-tap items-center gap-1 whitespace-nowrap rounded-full border-8 border-transparent bg-clip-padding [--tap-inset:0.5rem] px-2 text-caption tabular-nums transition-colors duration-120 ${
+              className={`-my-2 inline-flex min-h-tap items-center gap-1 whitespace-nowrap rounded-pill border-8 border-transparent bg-clip-padding [--tap-inset:0.5rem] px-2 text-caption tabular-nums transition-colors duration-120 ${
                 play.tempHp > 0
                   ? 'bg-ward-soft font-bold text-ward'
-                  : 'font-semibold text-ink-muted ring-1 ring-line-strong ring-inset hover:text-ink'
+                  : 'font-semibold text-ink-muted ring ring-line-strong ring-inset hover:text-ink'
               }`}
               onClick={(event) => openHpSheet('temp', event.currentTarget)}
             >
@@ -1893,7 +1893,7 @@ export function Component() {
                 aria-valuetext={`${play.currentHp} of ${max}${
                   play.tempHp > 0 ? `, plus ${play.tempHp} temporary` : ''
                 }`}
-                className="mt-3 flex h-2.5 overflow-hidden rounded-full bg-track"
+                className="mt-3 flex h-2.5 overflow-hidden rounded-pill bg-track"
               >
                 <div
                   className={`h-full ${color} transition-[width,background-color] duration-200 ease-arrive`}
@@ -2480,7 +2480,7 @@ export function Component() {
                 className={`flex min-h-15 flex-1 flex-col items-center justify-center gap-0.5 rounded-control px-2 text-label transition-colors duration-120 ${
                   used
                     ? 'bg-surface-raised text-ink-muted'
-                    : 'text-ink ring-1 ring-line-strong ring-inset hover:bg-surface-raised'
+                    : 'text-ink ring ring-line-strong ring-inset hover:bg-surface-raised'
                 }`}
                 title={
                   used

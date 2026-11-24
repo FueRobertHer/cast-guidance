@@ -30,7 +30,7 @@ import type { CharacterSheetState } from '../useCharacterSheet';
 const fmt = (n: number) => `${n >= 0 ? '+' : ''}${n}`;
 
 /** A tile on `bg` (DS-001): `surface`, a `line` hairline, `shadow-card` in light. */
-const TILE = 'bg-surface shadow-card ring-1 ring-line ring-inset';
+const TILE = 'bg-surface shadow-card ring ring-line ring-inset';
 
 /** A section heading inside a screen, as Settings has them. */
 const H2 = 'px-1 text-heading';
@@ -125,7 +125,7 @@ function AbilityTile({
                 // padding, so the card grows less than the target does.
                 className="group tap -mb-2"
               >
-                <span className="cx-ink h-5.5 min-w-8.5 rounded-full bg-surface-raised px-2 text-center text-ink-muted text-label leading-5.5 tabular-nums transition-colors duration-120 group-hover:bg-surface-hover">
+                <span className="cx-ink h-5.5 min-w-8.5 rounded-pill bg-surface-raised px-2 text-center text-ink-muted text-label leading-5.5 tabular-nums transition-colors duration-120 group-hover:bg-surface-hover">
                   {ability.value}
                   {ability.overridden ? '•' : ''}
                 </span>

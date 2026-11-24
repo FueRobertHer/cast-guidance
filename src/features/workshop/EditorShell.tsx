@@ -22,7 +22,7 @@ const ICON = 'tap shrink-0 rounded-control text-ink-muted hover:bg-surface-raise
 
 export function BasedOnChip({ name }: { name: string }) {
   return (
-    <span className="inline-flex min-h-8 items-center gap-1.5 self-start rounded-full px-3 text-caption font-semibold text-ink-muted ring-1 ring-line-strong ring-inset">
+    <span className="inline-flex min-h-8 items-center gap-1.5 self-start rounded-pill px-3 text-caption font-semibold text-ink-muted ring ring-line-strong ring-inset">
       <GitFork size={14} aria-hidden />
       Based on {name}
     </span>

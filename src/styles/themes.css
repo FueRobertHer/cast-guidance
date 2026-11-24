@@ -1,0 +1,219 @@
+/*
+ * The built-in themes (DS-001). app.css imports this file right after
+ * Tailwind, and its `@theme inline` block turns every `--cg-*` name here into
+ * utilities, so a component never asks which theme it is in. The vocabulary of
+ * names is src/theme/vocabulary.ts; vocabulary.test.ts holds every theme to
+ * all of it, and src/styles/contrast.test.ts to the design system's ratios.
+ *
+ * A theme is every rule whose selector list names it: its own rule, and the
+ * shared rules further down (type and shape, the condition hues for its
+ * kind of ground). `:root` is Dark, the default when `data-theme` is missing.
+ */
+
+/*
+ * The theme is `data-theme` on <html>. `public/theme-boot.js` sets it before
+ * first paint from the player's choice, and `src/lib/theme.ts` keeps it in
+ * step afterwards.
+ *
+ * What each colour is for (the spec's README has the long form):
+ * - grounds: `bg` the page, `surface` cards and panels, `surface-raised`
+ *   controls inside a card, `surface-hover` their hover and pressed step,
+ *   `line` decorative hairlines, `line-strong` the 3:1 edge of an outlined
+ *   control (WCAG 1.4.11), `track` the empty part of a meter, `edge` the
+ *   resting edge of a filled control with no border (a field, a segmented
+ *   control's track): none in dark, `line` in light, where `surface-raised`
+ *   sits 1.03:1 off the page and the control all but vanished.
+ * - text: `ink` anything that must be read, `ink-muted` labels and metadata,
+ *   `ink-faint` disabled labels and placeholders only (under 4.5:1 by design).
+ * - roles, each a text colour with a `-soft` tint to sit on: `brand` action
+ *   (one primary button per screen, the dice button; labels on it are
+ *   `on-brand`), `guide` guidance and the focus ring, `danger` damage and
+ *   errors (`danger-fill` with `on-danger` for destructive buttons), `heal`,
+ *   `ward` temporary HP, `roll` (the brand blue) for rolls, `arcane` for
+ *   spellcasting resources. Selection is never a hue: it is `ink`.
+ *
+ * src/styles/contrast.test.ts holds every pairing the spec promises to its
+ * ratio in every built-in theme; the axe gate (e2e/a11y) measures the
+ * rendered pages in each.
+ */
+:root,
+[data-theme="dark"] {
+  color-scheme: dark;
+  --cg-bg: #121110;
+  --cg-surface: #1b1a17;
+  --cg-surface-raised: #26241f;
+  --cg-surface-hover: #322f29;
+  --cg-line: #2e2b26;
+  --cg-line-strong: #7a7468;
+  --cg-track: #33302a;
+  --cg-edge: transparent;
+  --cg-ink: #f3efe6;
+  --cg-ink-muted: #aca598;
+  --cg-ink-faint: #7d776c;
+  --cg-brand: #8fb0ea;
+  --cg-brand-hover: #a7c2f1;
+  --cg-on-brand: #121110;
+  --cg-guide: #f0c470;
+  --cg-guide-soft: #352b17;
+  --cg-danger: #ff8170;
+  --cg-danger-fill: #c8372a;
+  --cg-on-danger: #ffffff;
+  --cg-danger-soft: #3b1d18;
+  --cg-heal: #74d39f;
+  --cg-heal-soft: #17301f;
+  --cg-ward: #7fd0e6;
+  --cg-ward-soft: #132d35;
+  --cg-roll-soft: #1b2438;
+  --cg-arcane: #bfa8f8;
+  --cg-arcane-soft: #282042;
+  --cg-scrim: #000000a3;
+  --cg-shadow-float: 0 1px 0 0 #ffffff0f inset, 0 6px 16px #00000073, 0 2px 4px #00000059;
+  --cg-shadow-overlay: 0 1px 0 0 #ffffff12 inset, 0 16px 40px #0000008c;
+  /* No shadow, written as a transparent one: `none` is not valid inside the
+     comma list Tailwind builds when a card also takes a ring. */
+  --cg-shadow-card: 0 0 #0000;
+  /* Shared by both themes: aliases of a role above, resolved per theme. */
+  --cg-focus: var(--cg-guide);
+  --cg-roll: var(--cg-brand);
+  --cg-meter-mid: var(--cg-guide);
+  /* Hover's edge on a roll chip: none on dark ground. */
+  --cg-cx-edge-hover: transparent;
+}
+
+[data-theme="light"] {
+  color-scheme: light;
+  --cg-bg: #eee6d5;
+  --cg-surface: #faf6ec;
+  --cg-surface-raised: #ebe3d1;
+  --cg-surface-hover: #e0d6c1;
+  --cg-line: #ddd2bc;
+  --cg-line-strong: #8a8170;
+  --cg-track: #e2d8c4;
+  /* Paper on paper again, as the cards' shadow below: a field or a segment
+     track on the page would otherwise show only as its words. */
+  --cg-edge: var(--cg-line);
+  --cg-ink: #1c1a16;
+  --cg-ink-muted: #5d564b;
+  --cg-ink-faint: #8a8172;
+  --cg-brand: #2a4d8f;
+  --cg-brand-hover: #22417a;
+  --cg-on-brand: #faf6ec;
+  --cg-guide: #8a4f00;
+  --cg-guide-soft: #f4dfbd;
+  --cg-danger: #b3261e;
+  --cg-danger-fill: #b3261e;
+  --cg-on-danger: #ffffff;
+  --cg-danger-soft: #fbe6e1;
+  --cg-heal: #16703d;
+  --cg-heal-soft: #e1f2e6;
+  --cg-ward: #0b6378;
+  --cg-ward-soft: #ddf0f4;
+  --cg-roll-soft: #e3e8f1;
+  --cg-arcane: #6a40c0;
+  --cg-arcane-soft: #eee8fb;
+  --cg-scrim: #1c1a1666;
+  --cg-shadow-float: 0 6px 16px #1c1a161f, 0 2px 4px #1c1a1614;
+  --cg-shadow-overlay: 0 16px 40px #1c1a1629, 0 2px 6px #1c1a1614;
+  /* Paper on paper needs an edge: cards take a shadow in light only. */
+  --cg-shadow-card: 0 1px 2px #1c1a160f;
+  --cg-focus: var(--cg-guide);
+  --cg-roll: var(--cg-brand);
+  --cg-meter-mid: var(--cg-guide);
+  /* A roll chip's tint on a cream card lifts to near white on hover, so it
+     keeps the strong line there (ui/chipFace.css). */
+  --cg-cx-edge-hover: var(--cg-line-strong);
+}
+
+/*
+ * Type and shape, shared by Dark and Light: the two families, the three
+ * weights the type scale and `font-*` utilities use, the corners by what they
+ * round, the edge and selected-edge widths that bare `border`, `ring` and
+ * `ring-strong` draw, and the stroke Lucide icons take at their default.
+ *
+ * Literata is for names and titles only; everything else, numbers included,
+ * is Atkinson Hyperlegible Next, chosen for small sizes in bad light
+ * (distinct 0/O and 1/l/I). Until one loads, the stacks fall back to Georgia
+ * and the system sans, which share metrics closely enough that nothing
+ * reflows. Corners nest one step down: a `control` row in a `card`.
+ */
+:root,
+[data-theme="dark"],
+[data-theme="light"] {
+  --cg-font-sans: "Atkinson Hyperlegible Next", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --cg-font-display: "Literata", Georgia, "Times New Roman", serif;
+  --cg-weight-normal: 400;
+  --cg-weight-semibold: 600;
+  --cg-weight-bold: 700;
+  --cg-radius-chip: 0.375rem; /* 6px: chips, badges, a segment's thumb */
+  --cg-radius-control: 0.625rem; /* 10px: buttons, inputs, rows, toggles */
+  --cg-radius-card: 1rem; /* 16px: cards and panels */
+  --cg-radius-sheet: 1.5rem; /* 24px: a bottom sheet's top, the roll toast */
+  --cg-radius-pill: calc(infinity * 1px); /* fully round ends: pill chips, buttons, meter tracks */
+  --cg-border: 1px;
+  --cg-border-strong: 2px; /* a selected card or row, a crit's edge */
+  --cg-icon-stroke: 2;
+}
+
+/*
+ * The condition hues (ui/chipFace.css): a colour and a tint each, for dark
+ * grounds and for light ones. The number on a chip is `ink` in both, and
+ * contrast.test.ts holds it to 4.5:1 over the strongest layer behind it.
+ */
+:root,
+[data-theme="dark"] {
+  --cg-cx-poisoned: #b7d94c;
+  --cg-cx-poisoned-soft: #27301a;
+  --cg-cx-paralyzed: #ffe94a;
+  --cg-cx-paralyzed-soft: #2f2c10;
+  --cg-cx-frightened: #a67dff;
+  --cg-cx-frightened-soft: #241538;
+  --cg-cx-blinded: #b9b4a8;
+  --cg-cx-blinded-soft: #2b2a27;
+  --cg-cx-prone: #d0a878;
+  --cg-cx-prone-soft: #2f2517;
+  --cg-cx-restrained: #e5894d;
+  --cg-cx-restrained-soft: #38200f;
+  --cg-cx-grappled: #c98fa6;
+  --cg-cx-grappled-soft: #321c26;
+  --cg-cx-exhaustion: #9fd6ff;
+  --cg-cx-exhaustion-soft: #18283a;
+  --cg-cx-invisible: #efeaff;
+  --cg-cx-invisible-soft: transparent;
+  --cg-cx-stunned: #ff86d8;
+  --cg-cx-stunned-soft: #3a1730;
+  --cg-cx-unconscious: #8f9bf5;
+  --cg-cx-unconscious-soft: #191c3a;
+  --cg-cx-incapacitated: #6fd3c4;
+  --cg-cx-incapacitated-soft: #14302c;
+  --cg-cx-petrified: #93a4ad;
+  --cg-cx-petrified-soft: #232a2e;
+}
+
+[data-theme="light"] {
+  --cg-cx-poisoned: #5b7a0e;
+  --cg-cx-poisoned-soft: #e9f0cf;
+  --cg-cx-paralyzed: #a88c00;
+  --cg-cx-paralyzed-soft: #f7f0bf;
+  --cg-cx-frightened: #5a2db0;
+  --cg-cx-frightened-soft: #e9dffa;
+  --cg-cx-blinded: #6b665c;
+  --cg-cx-blinded-soft: #e4dfd3;
+  --cg-cx-prone: #8a5f2c;
+  --cg-cx-prone-soft: #f1e3cd;
+  --cg-cx-restrained: #a94e12;
+  --cg-cx-restrained-soft: #f8e1cf;
+  --cg-cx-grappled: #8f3f5f;
+  --cg-cx-grappled-soft: #f5e0e8;
+  --cg-cx-exhaustion: #2a6fa8;
+  --cg-cx-exhaustion-soft: #dcebf7;
+  --cg-cx-invisible: #4a4a7a;
+  --cg-cx-invisible-soft: transparent;
+  --cg-cx-stunned: #b0237f;
+  --cg-cx-stunned-soft: #f9dcef;
+  --cg-cx-unconscious: #3a46b0;
+  --cg-cx-unconscious-soft: #e2e4f9;
+  --cg-cx-incapacitated: #11756a;
+  --cg-cx-incapacitated-soft: #d5efeb;
+  --cg-cx-petrified: #4f6069;
+  --cg-cx-petrified-soft: #dde4e8;
+}

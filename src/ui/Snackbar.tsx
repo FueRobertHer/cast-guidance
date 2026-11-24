@@ -25,7 +25,7 @@ export function SnackbarAction({ className, type = 'button', ...props }: Compone
   return (
     <button
       type={type}
-      className={`inline-flex min-h-tap min-w-tap shrink-0 items-center justify-center rounded-[0.75rem] border-4 border-transparent bg-clip-padding [--tap-inset:0.25rem] px-2 font-bold underline underline-offset-3 hover:bg-bg/10 ${className ?? ''}`}
+      className={`inline-flex min-h-tap min-w-tap shrink-0 items-center justify-center rounded-control-lg border-4 border-transparent bg-clip-padding [--tap-inset:0.25rem] px-2 font-bold underline underline-offset-3 hover:bg-bg/10 ${className ?? ''}`}
       {...props}
     />
   );

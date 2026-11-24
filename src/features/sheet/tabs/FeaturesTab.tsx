@@ -28,7 +28,7 @@ function FeatureDetails({ f, open }: { f: FeatureCard; open: boolean }) {
   }`;
   return (
     <details
-      className="group rounded-card bg-surface shadow-card ring-1 ring-line ring-inset"
+      className="group rounded-card bg-surface shadow-card ring ring-line ring-inset"
       open={open}
     >
       <summary className="flex min-h-tap cursor-pointer list-none items-baseline gap-2 px-4 py-3 text-body-strong">
@@ -165,7 +165,7 @@ export function Component() {
           rows={6}
           aria-label="Notes"
           placeholder="Session notes, goals, contacts…"
-          className="w-full rounded-control bg-surface-raised px-4 py-3 text-input text-ink ring-1 ring-edge ring-inset transition-shadow duration-120 placeholder:text-ink-faint hover:ring-line-strong"
+          className="w-full rounded-control bg-surface-raised px-4 py-3 text-input text-ink ring ring-edge ring-inset transition-shadow duration-120 placeholder:text-ink-faint hover:ring-line-strong"
         />
       </section>
     </div>

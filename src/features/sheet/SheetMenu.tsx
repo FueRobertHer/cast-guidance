@@ -129,7 +129,7 @@ export function SheetMenu({
           role="menu"
           aria-labelledby={`${id}-button`}
           onKeyDown={onMenuKeyDown}
-          className="absolute top-full right-0 z-30 mt-1 flex min-w-48 flex-col rounded-card bg-surface p-1 shadow-overlay ring-1 ring-line"
+          className="absolute top-full right-0 z-30 mt-1 flex min-w-48 flex-col rounded-card bg-surface p-1 shadow-overlay ring ring-line"
         >
           {items.map((item, i) => {
             const Icon = item.icon;

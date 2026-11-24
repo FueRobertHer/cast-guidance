@@ -537,7 +537,7 @@ function BookPicker({
   return (
     <PreviewSection heading="Books">
       <p className="text-ink-muted">{booksLead(books)}</p>
-      <div className="flex flex-col overflow-hidden rounded-control bg-surface ring-1 ring-line ring-inset">
+      <div className="flex flex-col overflow-hidden rounded-control bg-surface ring ring-line ring-inset">
         <div className="flex gap-1 border-line border-b px-2 py-1 text-caption">
           <button
             type="button"

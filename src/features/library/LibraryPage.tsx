@@ -122,7 +122,7 @@ const NOTE = 'text-body text-ink-muted';
 const BACK_ICON = 'tap rounded-control text-ink-muted hover:bg-surface-raised hover:text-ink';
 /** A tile on the library home and a book's index: a card that is a link. */
 const TILE =
-  'flex flex-col gap-1 rounded-card bg-surface p-3 shadow-card ring-1 ring-line ring-inset transition-colors duration-120 hover:bg-surface-raised';
+  'flex flex-col gap-1 rounded-card bg-surface p-3 shadow-card ring ring-line ring-inset transition-colors duration-120 hover:bg-surface-raised';
 /** A search or filter box: the design's search field, a leading Search icon. */
 const SEARCH_ICON = 'pointer-events-none absolute top-3.5 left-3.5 text-ink-muted';
 // Room on the right for the clear button.
@@ -1063,7 +1063,7 @@ function SubclassChips({ titles }: { titles: readonly Title[] }) {
           to={`/library/subclass/${encodeURIComponent(uidOf(t.preferred))}`}
           // Wraps the books under the name where both do not fit, as a
           // one-word name and two books do not at 200% text (A11Y-003).
-          className="inline-flex min-h-tap flex-wrap items-center gap-x-2 gap-y-1 rounded-control bg-surface px-3 py-1 text-label shadow-card ring-1 ring-line ring-inset transition-colors duration-120 hover:bg-surface-raised"
+          className="inline-flex min-h-tap flex-wrap items-center gap-x-2 gap-y-1 rounded-control bg-surface px-3 py-1 text-label shadow-card ring ring-line ring-inset transition-colors duration-120 hover:bg-surface-raised"
         >
           {t.name} <SourceBadges sources={t.printings.map(sourceOf)} />
         </Link>
@@ -1132,7 +1132,7 @@ function ClassLevelTable({
         aria-labelledby={headingId}
         // biome-ignore lint/a11y/noNoninteractiveTabindex: a scroll area must take focus to be scrolled by keyboard.
         tabIndex={0}
-        className="overflow-x-auto rounded-card bg-surface shadow-card ring-1 ring-line ring-inset"
+        className="overflow-x-auto rounded-card bg-surface shadow-card ring ring-line ring-inset"
       >
         <table className="w-full border-collapse text-caption tabular-nums">
           {/* Column groups, so a group's title (Spell Slots per Spell Level)

@@ -8,7 +8,7 @@
 import type { DerivedResource } from '@/engine/types';
 
 const NUMBER =
-  'tap rounded-full bg-surface-raised px-3 font-bold text-label tabular-nums leading-none hover:bg-surface-hover';
+  'tap rounded-pill bg-surface-raised px-3 font-bold text-label tabular-nums leading-none hover:bg-surface-hover';
 
 export function ForetoldNumbers({
   pool,

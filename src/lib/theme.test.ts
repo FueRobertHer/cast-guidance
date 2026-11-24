@@ -5,6 +5,7 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { themeTokens } from '../../tests-fixtures/themeCss';
 import {
   installThemeSync,
   readThemeChoice,
@@ -16,7 +17,6 @@ import {
 
 const ROOT = path.resolve(import.meta.dirname, '../..');
 const BOOT = readFileSync(path.join(ROOT, 'public/theme-boot.js'), 'utf8');
-const CSS = readFileSync(path.join(ROOT, 'src/styles/app.css'), 'utf8');
 
 /** A device that does or does not ask for light, with its change listeners. */
 function device(light: boolean) {
@@ -82,13 +82,9 @@ describe('theme boot script (DS-001)', () => {
     expect(readThemeChoice()).toBe('dark');
   });
 
-  it("colours the bars with each theme's page colour from app.css", () => {
-    const bg = (selector: string) => {
-      const block = CSS.slice(CSS.indexOf(selector));
-      return /--cg-bg:\s*(#[0-9a-f]{6})/i.exec(block)?.[1];
-    };
-    expect(THEME_COLOR.dark).toBe(bg('[data-theme="dark"] {'));
-    expect(THEME_COLOR.light).toBe(bg('[data-theme="light"] {'));
+  it("colours the bars with each theme's page colour from themes.css", () => {
+    expect(THEME_COLOR.dark).toBe(themeTokens('dark').bg);
+    expect(THEME_COLOR.light).toBe(themeTokens('light').bg);
   });
 });
 

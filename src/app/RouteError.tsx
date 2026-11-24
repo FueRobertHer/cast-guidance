@@ -38,7 +38,7 @@ export function RouteError() {
         It couldn&rsquo;t render, but your other characters and saved data are safe on this device.
         Try reloading, or head back and open something else.
       </p>
-      <p className="max-w-full overflow-x-auto rounded-control bg-surface px-3 py-2 font-mono text-caption text-ink-muted ring-1 ring-line ring-inset">
+      <p className="max-w-full overflow-x-auto rounded-control bg-surface px-3 py-2 font-mono text-caption text-ink-muted ring ring-line ring-inset">
         {detail}
       </p>
       <div className="flex flex-wrap gap-3">

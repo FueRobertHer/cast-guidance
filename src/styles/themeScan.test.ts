@@ -1,0 +1,87 @@
+import { readdirSync, readFileSync } from 'node:fs';
+import path from 'node:path';
+import { describe, expect, it } from 'vitest';
+
+// A theme sets corners, edge widths and weights (src/theme/vocabulary.ts), so a
+// class that hard-codes one draws the same in every theme and breaks the
+// reskin. These are the utilities that do: Tailwind's own corner sizes and
+// arbitrary corners (use a tier: `rounded-chip`, `-control`, `-card`,
+// `-sheet`, `-pill`, or a derived one in app.css; `rounded-full` is for true
+// circles), ring widths (bare `ring` is the theme's edge, `ring-strong` its
+// selected edge; `ring-0` is none), and weights the vocabulary has no token
+// for. Explicit border widths (`border-4`, `border-8`) are transparent tap
+// insets, and arbitrary ring widths (`ring-[1.5px]`) an effect's mark, as in
+// ui/lift.css, so they may stay.
+
+const SRC = path.resolve(import.meta.dirname, '..');
+
+function sources(dir: string): string[] {
+  return readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
+    const file = path.join(dir, e.name);
+    if (e.isDirectory()) return sources(file);
+    return /\.tsx?$/.test(e.name) && !e.name.includes('.test.') ? [file] : [];
+  });
+}
+
+const VARIANTS = String.raw`(?:[\w\-\[\]&:*>@/.()]+:)*`;
+const SIZED = new RegExp(
+  String.raw`(?<![\w-])${VARIANTS}(?:` +
+    // Tailwind's corner scale and arbitrary corners, on any side.
+    String.raw`rounded(?:-[trblse]{1,2})?-(?:xs|sm|md|lg|xl|2xl|3xl|4xl|\[[^\]]*\]|\([^)]*\))` +
+    // A ring width other than the theme's.
+    String.raw`|ring-[1-9]\d*` +
+    // A weight with no token.
+    '|font-(?:thin|extralight|light|medium|extrabold|black)' +
+    String.raw`)(?![\w-])`,
+);
+/**
+ * Bare `rounded` (4px) is also English, so it counts only in a class list:
+ * right after a quote, or after a token shaped like a class (it has a hyphen
+ * or a variant colon, and nothing a sentence has).
+ */
+const BARE = new RegExp(
+  String.raw`(?:['"\x60]|\}\s+|(?<![\w,.])[a-z0-9]+(?:[-:][\w.\[\]/%-]+)+\s+)${VARIANTS}rounded(?:-[trblse]{1,2})?(?=[\s'"\x60])`,
+);
+
+function hardCoded(line: string): boolean {
+  return SIZED.test(line) || BARE.test(line);
+}
+
+describe('classes leave the look to the theme (DS-001)', () => {
+  it('hard-codes no corner, ring width or untokened weight', () => {
+    const uses = sources(SRC).flatMap((file) => {
+      const rel = path.relative(SRC, file).split(path.sep).join('/');
+      return readFileSync(file, 'utf8')
+        .split('\n')
+        .filter(hardCoded)
+        .map((line) => `${rel}: ${line.trim()}`);
+    });
+    expect(uses).toEqual([]);
+  });
+
+  it('sees them under variants, in conditionals and in arbitrary values, and not the tokens', () => {
+    // Joined from halves, so Tailwind scanning this file builds none of them.
+    const caught = [
+      ['className="h-3.5 ', 'rounded bg-surface"'],
+      ["'", "rounded px-2'"],
+      ['hover:rounded-', 'lg'],
+      ['rounded-tr-', 'md'],
+      ['rounded-[0.', '875rem]'],
+      ['has-checked:ring-', '2'],
+      ['ring-', '1 ring-line'],
+      ['font-', 'medium'],
+      // biome-ignore lint/suspicious/noTemplateCurlyInString: source text to scan, not a template
+      ['`flex ${a} ', 'rounded`'],
+    ].map((halves) => halves.join(''));
+    expect(caught.filter((s) => !hardCoded(s))).toEqual([]);
+
+    const fine = [
+      'rounded-control ring ring-line ring-inset has-checked:ring-strong',
+      'rounded-full rounded-pill rounded-tile rounded-tr-none ring-0 font-semibold',
+      'ring-[1.5px] ring-heal ring-inset hover:ring-(--cg-cx-edge-hover)',
+      ' * the 1 px line above it, rounded as a measured',
+      'return `Half your proficiency bonus, rounded down`;',
+    ];
+    expect(fine.filter(hardCoded)).toEqual([]);
+  });
+});

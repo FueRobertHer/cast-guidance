@@ -103,7 +103,7 @@ function SheetPanel({ className, children, ...props }: ComponentProps<typeof Dra
     <Drawer.Content className={className ? `${PANEL} ${className}` : PANEL} {...props}>
       <div
         aria-hidden="true"
-        className="mx-auto mb-3 h-1 w-9 shrink-0 rounded-full bg-line-strong"
+        className="mx-auto mb-3 h-1 w-9 shrink-0 rounded-pill bg-line-strong"
       />
       {children}
     </Drawer.Content>

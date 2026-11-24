@@ -327,7 +327,7 @@ function Card({
     else onChange({ ...effect, [f.key]: v });
   };
   return (
-    <div className="flex flex-col gap-2 rounded-control bg-surface py-2.5 pr-1 pl-3 ring-1 ring-line ring-inset">
+    <div className="flex flex-col gap-2 rounded-control bg-surface py-2.5 pr-1 pl-3 ring ring-line ring-inset">
       <div className="flex items-center gap-2">
         <b className="flex-1 text-caption text-ink-muted">{name}</b>
         {!readOnly && (

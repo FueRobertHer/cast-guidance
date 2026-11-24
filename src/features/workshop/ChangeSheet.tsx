@@ -485,7 +485,7 @@ function ChangeEditor({
       onMore={stored !== undefined ? () => void more() : undefined}
       banner={
         <>
-          <span className="inline-flex min-h-8 items-center gap-1.5 self-start rounded-full px-3 text-caption font-semibold text-ink-muted ring-1 ring-line-strong ring-inset">
+          <span className="inline-flex min-h-8 items-center gap-1.5 self-start rounded-pill px-3 text-caption font-semibold text-ink-muted ring ring-line-strong ring-inset">
             <Pencil size={14} aria-hidden />
             Changes the book's {name}, {sourceName(String(original.source))}
           </span>
