@@ -1,7 +1,7 @@
 import { HeartCrack, Shield } from 'lucide-react';
 import { type RefObject, useEffect, useLayoutEffect, useRef } from 'react';
 import { prefersReducedMotion } from '@/lib/motion';
-import { type HpChange, type HpPoint, hpChange } from './hpChange';
+import { fillShare, type HpChange, type HpPoint, hpChange } from './hpChange';
 import './hpCues.css';
 
 /*
@@ -58,10 +58,13 @@ const TALLY_MS = 1000;
 /** How long a colour holds under reduced motion. */
 const HOLD_MS = 600;
 /**
- * A change made in the HP sheet plays this long after the sheet starts to go:
- * it takes half a second, and covers the card until about half of it has.
+ * A change made while a sheet covers the card (the HP sheet, a rest) plays this
+ * long after the sheet starts to go: it takes half a second, and covers the
+ * card until about half of it has.
  */
 export const AFTER_SHEET_MS = 250;
+/** The least time between two rises of a glow: three a second at most (WCAG 2.3.1). */
+const FLASH_GAP_MS = 1000 / 3;
 
 /** The animation each element plays, by what it is for: a new one of a kind replaces the last. */
 const playing = new WeakMap<Element, Map<string, Animation>>();
@@ -69,21 +72,25 @@ const playing = new WeakMap<Element, Map<string, Animation>>();
 const totals = new WeakMap<Element, number>();
 /** Where the bloom starts while it shows. */
 const bloomFrom = new WeakMap<Element, number>();
+/** When each glow last rose. */
+const risen = new WeakMap<Element, number>();
 
 function play(
   el: Element | null,
   key: string,
   frames: Keyframe[],
   options: KeyframeAnimationOptions,
-): void {
-  if (el === null) return;
+): Animation | null {
+  if (el === null) return null;
   let mine = playing.get(el);
   if (mine === undefined) {
     mine = new Map();
     playing.set(el, mine);
   }
   mine.get(key)?.cancel();
-  mine.set(key, el.animate(frames, options));
+  const animation = el.animate(frames, options);
+  mine.set(key, animation);
+  return animation;
 }
 
 const showing = (el: Element, key: string) => playing.get(el)?.get(key)?.playState === 'running';
@@ -93,19 +100,19 @@ interface Stage {
   readonly at: (name: Part) => HTMLElement | null;
   /** Reduced motion. */
   readonly still: boolean;
-  readonly maxHp: number;
 }
 
-/** The bar's width for an amount of HP, in percent, as the fill draws it. */
-const share = (s: Stage, hp: number) =>
-  s.maxHp > 0 ? Math.max(0, Math.min(1, hp / s.maxHp)) * 100 : 0;
-
 /**
- * A glow that is already showing is held, not fired again, so a run of taps
- * never flashes more than three times a second (WCAG 2.3.1).
+ * A glow rises from wherever it is, and at most three times a second (WCAG
+ * 2.3.1): one asked for sooner, while the last still shows, lets that one run.
  */
 function glow(el: HTMLElement | null, peak: number, rise: number, hold: number, fall: number) {
   if (el === null) return;
+  const now = performance.now();
+  if (showing(el, 'glow') && now - (risen.get(el) ?? Number.NEGATIVE_INFINITY) < FLASH_GAP_MS) {
+    return;
+  }
+  risen.set(el, now);
   const from = Number.parseFloat(getComputedStyle(el).opacity) || 0;
   const total = rise + hold + fall;
   play(
@@ -159,6 +166,7 @@ const OPPOSITE = { 'tally-damage': 'tally-heal', 'tally-heal': 'tally-damage' } 
 /**
  * Counts up in place while it shows (M6), and drifts away once the taps stop.
  * One beside the number cuts the other direction's short: they share the spot.
+ * Its words go with it, so a faded tally is not found or copied with the HP.
  */
 function tally(
   s: Stage,
@@ -178,22 +186,27 @@ function tally(
   const total = (again ? (totals.get(el) ?? 0) : 0) + amount;
   totals.set(el, total);
   el.textContent = `${sign}${total}`;
-  if (s.still) {
-    play(el, 'tally', [{ opacity: 1 }, { opacity: 1 }], { duration: TALLY_MS });
-    return;
-  }
   const at = (p: number, scale = 1) => `translate(${dx * p}px, ${dy * p}px) scale(${scale})`;
-  play(
+  const animation = play(
     el,
     'tally',
-    [
-      again ? { opacity: 1, transform: at(0.3, 1.18) } : { opacity: 0, transform: at(0, 0.8) },
-      { opacity: 1, transform: at(0.3), offset: again ? 0.14 : 0.16 },
-      { opacity: 1, transform: at(0.5), offset: 0.6 },
-      { opacity: 0, transform: at(1) },
-    ],
-    { duration: TALLY_MS, easing: 'ease-out' },
+    s.still
+      ? [{ opacity: 1 }, { opacity: 1 }]
+      : [
+          again ? { opacity: 1, transform: at(0.3, 1.18) } : { opacity: 0, transform: at(0, 0.8) },
+          { opacity: 1, transform: at(0.3), offset: again ? 0.14 : 0.16 },
+          { opacity: 1, transform: at(0.5), offset: 0.6 },
+          { opacity: 0, transform: at(1) },
+        ],
+    s.still ? { duration: TALLY_MS } : { duration: TALLY_MS, easing: 'ease-out' },
   );
+  if (animation === null) return;
+  // Not when a newer count took over: that one clears its own.
+  const gone = () => {
+    if (playing.get(el)?.get('tally') === animation) el.textContent = '';
+  };
+  animation.onfinish = gone;
+  animation.oncancel = gone;
 }
 
 /** The lost piece of the bar lingers, then drains. Taps in a row extend one trail from its top. */
@@ -201,11 +214,11 @@ function trail(s: Stage, before: HpPoint, after: HpPoint) {
   const el = s.at('trail');
   const meter = s.at('meter');
   if (el === null || meter === null) return;
-  let from = share(s, before.currentHp);
+  let from = fillShare(before);
   if (showing(el, 'trail')) {
     from = Math.max(from, (el.getBoundingClientRect().width / (meter.clientWidth || 1)) * 100);
   }
-  const to = share(s, after.currentHp);
+  const to = fillShare(after);
   const held = { width: `${from}%`, opacity: 1 };
   play(
     el,
@@ -226,8 +239,8 @@ function trail(s: Stage, before: HpPoint, after: HpPoint) {
 function bloom(s: Stage, before: HpPoint, after: HpPoint) {
   const el = s.at('bloom');
   if (el === null) return;
-  const to = share(s, after.currentHp);
-  let from = share(s, before.currentHp);
+  const to = fillShare(after);
+  let from = fillShare(before);
   if (showing(el, 'bloom')) from = Math.min(from, bloomFrom.get(el) ?? from);
   bloomFrom.set(el, from);
   el.style.left = `${from}%`;
@@ -289,7 +302,6 @@ export function playHpCues(
   before: HpPoint,
   after: HpPoint,
   change: HpChange,
-  maxHp: number,
   still: boolean,
 ): void {
   // Without Web Animations nothing plays, and no tally text is left standing.
@@ -297,7 +309,6 @@ export function playHpCues(
   const s: Stage = {
     root,
     still,
-    maxHp,
     at: (name) => root.querySelector<HTMLElement>(`[data-hp-cue="${name}"]`),
   };
   const moving = !still;
@@ -378,12 +389,32 @@ export function playHpCues(
 const maxOf = (root: HTMLElement) =>
   Number(root.querySelector('[data-hp-cue="meter"]')?.getAttribute('aria-valuemax')) || 0;
 
+interface Pending {
+  readonly go: () => void;
+  readonly timer: ReturnType<typeof setTimeout>;
+}
+/** Forgets the change waiting for a sheet to go: another character's, or one gone stale. */
+function drop(pending: { current: Pending | null }) {
+  if (pending.current !== null) clearTimeout(pending.current.timer);
+  pending.current = null;
+}
+/** Plays the change waiting for a sheet to go, now: a newer change is about to. */
+function flush(pending: { current: Pending | null }) {
+  const waiting = pending.current;
+  drop(pending);
+  waiting?.go();
+}
+
 /**
  * Cues the card marked by the returned ref whenever HP changes, from what
- * changed. The first reading for a character, the one after switching
- * character, and any while current HP still follows max HP (`follows`: not yet
- * in play, so a new maximum is not healing) only set the baseline. While `hold`
- * is on (the HP sheet is up) the change waits, and plays as the sheet goes.
+ * changed. The first reading for a character, and the one after switching
+ * character, only set the baseline. While current HP still follows max HP
+ * (`follows`: not yet in play) a new maximum is not healing, so only temp HP
+ * counts. While `hold` is on (a sheet covers the card) changes add up, and play
+ * as the sheet goes; so does one that lands as it closes.
+ *
+ * It reads after every render, max HP included, from the card's meter: the
+ * hook runs before the sheet that works max HP out has loaded.
  */
 export function useHpCues({
   id,
@@ -401,17 +432,25 @@ export function useHpCues({
   const root = useRef<HTMLElement>(null);
   const seen = useRef<{ id: string; at: HpPoint } | null>(null);
   const waited = useRef(false);
-  const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
-  useEffect(() => () => clearTimeout(timer.current), []);
+  const held = useRef(hold);
+  const pending = useRef<Pending | null>(null);
+  useEffect(() => () => drop(pending), []);
   useLayoutEffect(() => {
-    const now: HpPoint = { currentHp, tempHp };
+    const el = root.current;
+    const now: HpPoint = { currentHp, tempHp, maxHp: el === null ? 0 : maxOf(el) };
+    const closed = held.current && !hold;
+    held.current = hold;
     const last = seen.current;
-    if (last === null || last.id !== id || follows) {
-      seen.current = { id, at: now };
+    if (last === null || last.id !== id) {
+      drop(pending);
       waited.current = false;
+      seen.current = { id, at: now };
       return;
     }
-    if (last.at.currentHp === currentHp && last.at.tempHp === tempHp) {
+    const from: HpPoint = follows ? { ...now, tempHp: last.at.tempHp } : last.at;
+    if (from.currentHp === now.currentHp && from.tempHp === now.tempHp) {
+      // Nothing to cue, though max HP may have moved: count on from here.
+      seen.current = { id, at: now };
       if (!hold) waited.current = false;
       return;
     }
@@ -420,18 +459,16 @@ export function useHpCues({
       return;
     }
     seen.current = { id, at: now };
-    const el = root.current;
-    if (el === null) return;
-    const maxHp = maxOf(el);
-    const change = hpChange(last.at, now, maxHp);
-    if (change === null) return;
-    const go = () => playHpCues(el, last.at, now, change, maxHp, prefersReducedMotion());
-    if (waited.current) {
-      waited.current = false;
-      clearTimeout(timer.current);
-      timer.current = setTimeout(go, AFTER_SHEET_MS);
-    } else go();
-  }, [id, currentHp, tempHp, follows, hold]);
+    const later = waited.current || closed;
+    waited.current = false;
+    const change = hpChange(from, now);
+    if (change === null || el === null) return;
+    const go = () => playHpCues(el, from, now, change, prefersReducedMotion());
+    // One still waiting plays first, so the newest change has the last word.
+    flush(pending);
+    if (later) pending.current = { go, timer: setTimeout(() => flush(pending), AFTER_SHEET_MS) };
+    else go();
+  });
   return root;
 }
 

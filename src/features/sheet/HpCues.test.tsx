@@ -16,11 +16,13 @@ import {
   TrailCue,
   useHpCues,
 } from './HpCues';
+import { fillShare } from './hpChange';
 
 interface Call {
   part: string;
   frames: Keyframe[];
   options: KeyframeAnimationOptions;
+  animation: Animation;
 }
 let calls: Call[] = [];
 
@@ -35,12 +37,14 @@ beforeEach(() => {
     frames: Keyframe[] | PropertyIndexedKeyframes | null,
     options?: number | KeyframeAnimationOptions,
   ) {
+    const animation = { cancel: vi.fn(), playState: 'running' } as unknown as Animation;
     calls.push({
       part: nameOf(this),
       frames: frames as Keyframe[],
       options: options as KeyframeAnimationOptions,
+      animation,
     });
-    return { cancel: vi.fn(), playState: 'running' } as unknown as Animation;
+    return animation;
   });
 });
 afterEach(() => {
@@ -108,6 +112,11 @@ const callsOn = (part: string) => calls.filter((c) => c.part === part);
 const text = (view: ReturnType<typeof render>, part: string) =>
   view.container.querySelector(`[data-hp-cue="${part}"]`)?.textContent;
 const moves = (c: Call) => c.frames.some((f) => f.transform !== undefined);
+/** The newest animation an element was given. */
+const newestOn = (part: string) => callsOn(part).at(-1)?.animation as Animation;
+/** As the browser does when an animation ends, or is cancelled. */
+const end = (animation: Animation, how: 'onfinish' | 'oncancel') =>
+  animation[how]?.call(animation, {} as AnimationPlaybackEvent);
 
 describe('useHpCues', () => {
   it('plays nothing for the first reading, which is only the baseline', () => {
@@ -206,17 +215,79 @@ describe('useHpCues', () => {
     expect(text(view, 'tally-damage')).toBe('−8');
   });
 
+  it('plays a change that lands as a sheet closes once the sheet has gone', () => {
+    vi.useFakeTimers();
+    const view = render(<Card hp={20} hold />);
+    // A long rest: the HP and the sheet closing come in one update.
+    view.rerender(<Card hp={42} />);
+    expect(calls).toEqual([]);
+    act(() => vi.advanceTimersByTime(AFTER_SHEET_MS));
+    expect(text(view, 'tally-heal')).toBe('+22');
+  });
+
+  it('plays a change still waiting for a sheet before a newer one, which has the last word', () => {
+    vi.useFakeTimers();
+    const view = render(<Card hp={20} />);
+    view.rerender(<Card hp={20} hold />);
+    view.rerender(<Card hp={28} hold />);
+    view.rerender(<Card hp={28} />);
+    expect(calls).toEqual([]);
+    // A tap before the heal from the sheet has played.
+    view.rerender(<Card hp={27} />);
+    expect(parts().filter((p) => p.startsWith('tally'))).toEqual(['tally-heal', 'tally-damage']);
+    const played = calls.length;
+    act(() => vi.advanceTimersByTime(AFTER_SHEET_MS));
+    expect(calls).toHaveLength(played);
+  });
+
+  it('drops a change still waiting for a sheet on switching character', () => {
+    vi.useFakeTimers();
+    const view = render(<Card id="a" hp={30} />);
+    view.rerender(<Card id="a" hp={30} hold />);
+    view.rerender(<Card id="a" hp={22} hold />);
+    view.rerender(<Card id="a" hp={22} />);
+    view.rerender(<Card id="b" hp={12} />);
+    act(() => vi.advanceTimersByTime(AFTER_SHEET_MS));
+    expect(calls).toEqual([]);
+  });
+
   it('lets one tally beside the number at a time: the newest direction', () => {
     const view = render(<Card hp={30} />);
     view.rerender(<Card hp={35} />);
-    const heal = view.container.querySelector('[data-hp-cue="tally-heal"]');
-    const healAnimation = vi
-      .mocked(Element.prototype.animate)
-      .mock.results.find((_, i) => vi.mocked(Element.prototype.animate).mock.contexts[i] === heal)
-      ?.value as Animation;
+    const heal = newestOn('tally-heal');
     view.rerender(<Card hp={33} />);
-    expect(healAnimation.cancel).toHaveBeenCalled();
+    expect(heal.cancel).toHaveBeenCalled();
     expect(text(view, 'tally-damage')).toBe('\u22122');
+  });
+
+  it('takes a tally\u2019s words away with it, not a newer count\u2019s', () => {
+    const view = render(<Card hp={30} />);
+    view.rerender(<Card hp={29} />);
+    const first = newestOn('tally-damage');
+    view.rerender(<Card hp={28} />);
+    end(first, 'oncancel');
+    expect(text(view, 'tally-damage')).toBe('\u22122');
+    end(newestOn('tally-damage'), 'onfinish');
+    expect(text(view, 'tally-damage')).toBe('');
+  });
+
+  it('raises the cyan glow at most three times a second, however fast the soaks come', () => {
+    const view = render(<Card hp={30} temp={20} />);
+    view.rerender(<Card hp={30} temp={19} />);
+    view.rerender(<Card hp={30} temp={18} />);
+    view.rerender(<Card hp={30} temp={17} />);
+    expect(callsOn('chip-flash')).toHaveLength(1);
+    expect(callsOn('cap-flash')).toHaveLength(1);
+    expect(text(view, 'tally-ward')).toBe('\u22123');
+  });
+
+  it('places the bloom on the fill as drawn, squeezed by temp HP past the bar', () => {
+    const view = change({ hp: 38, temp: 10 }, { hp: 40, temp: 10 });
+    const bloom = view.container.querySelector<HTMLElement>('[data-hp-cue="bloom"]');
+    const from = fillShare({ currentHp: 38, tempHp: 10, maxHp: MAX });
+    const to = fillShare({ currentHp: 40, tempHp: 10, maxHp: MAX });
+    expect(Number.parseFloat(bloom?.style.left ?? '')).toBeCloseTo(from);
+    expect(Number.parseFloat(bloom?.style.width ?? '')).toBeCloseTo(to - from);
   });
 
   it('plays nothing while current HP follows max HP, which is not healing', () => {
@@ -226,6 +297,12 @@ describe('useHpCues', () => {
     // The first change in play counts from where it follows to.
     view.rerender(<Card hp={37} />);
     expect(text(view, 'tally-damage')).toBe('\u22125');
+  });
+
+  it('still cues temp HP while current HP follows max HP', () => {
+    const view = render(<Card hp={42} follows />);
+    view.rerender(<Card hp={42} temp={8} follows />);
+    expect(parts()).toEqual(expect.arrayContaining(['chip-sheen', 'cap-sheen', 'shield']));
   });
 
   it('plays nothing on switching character, only a new baseline', () => {

@@ -471,14 +471,14 @@ export function Component() {
     mode: 'damage',
   });
   const hpSheetFrom = useRef<HTMLElement>(null);
-  // The HP card's cues for damage, healing and temp HP. A change made in the
-  // HP sheet waits for it, and plays as the sheet goes.
+  // The HP card's cues for damage, healing and temp HP. A change made while
+  // the HP sheet or the rest sheet covers the card plays as the sheet goes.
   const hpCues = useHpCues({
     id: doc?.id ?? '',
     currentHp: doc?.play.currentHp ?? 0,
     tempHp: doc?.play.tempHp ?? 0,
     follows: doc?.play.hpInitialized === false,
-    hold: hpSheet.open,
+    hold: hpSheet.open || restAsked.open,
   });
   // When a Use that starts an effect last turned into End, or back: the
   // button changes under the finger, so a second tap within a second is the

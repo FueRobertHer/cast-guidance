@@ -5,10 +5,11 @@
  * temp HP, an undo, another tab.
  */
 
-/** Hit points as the card shows them. */
+/** Hit points as the card shows them, out of the maximum it showed them against. */
 export interface HpPoint {
   readonly currentHp: number;
   readonly tempHp: number;
+  readonly maxHp: number;
 }
 
 /** The bar's colour: `heal` over half, `meter-mid` over a quarter, `danger` below. */
@@ -17,6 +18,18 @@ export type HpBand = 'high' | 'mid' | 'low';
 export function hpBand(currentHp: number, maxHp: number): HpBand {
   const ratio = maxHp > 0 ? Math.max(0, Math.min(1, currentHp / maxHp)) : 0;
   return ratio > 0.5 ? 'high' : ratio > 0.25 ? 'mid' : 'low';
+}
+
+/**
+ * How much of the bar the fill draws, in percent. The temp HP piece follows it
+ * in the same row, and where the two come to more than the whole bar both
+ * shrink alike to fit (flex), so the fill ends short of current over max.
+ */
+export function fillShare({ currentHp, tempHp, maxHp }: HpPoint): number {
+  if (maxHp <= 0) return 0;
+  const fill = Math.max(0, Math.min(1, currentHp / maxHp)) * 100;
+  const temp = tempHp > 0 ? Math.min(100, (tempHp / maxHp) * 100) : 0;
+  return fill + temp > 100 ? (fill * 100) / (fill + temp) : fill;
 }
 
 /** The smallest hit that recoils, as a share of max HP. */
@@ -46,9 +59,11 @@ export interface HpChange {
 
 /**
  * What changed between two readings, or null when nothing a cue shows did:
- * healing at full, damage at 0 with no temp HP, the same temp HP again.
+ * healing at full, damage at 0 with no temp HP, the same temp HP again. Each
+ * reading's band is against its own maximum, as the bar showed it; a hit is
+ * big against the maximum it landed on.
  */
-export function hpChange(before: HpPoint, after: HpPoint, maxHp: number): HpChange | null {
+export function hpChange(before: HpPoint, after: HpPoint): HpChange | null {
   const lost = Math.max(0, before.currentHp - after.currentHp);
   const gained = Math.max(0, after.currentHp - before.currentHp);
   const soaked = Math.max(0, before.tempHp - after.tempHp);
@@ -63,8 +78,9 @@ export function hpChange(before: HpPoint, after: HpPoint, maxHp: number): HpChan
     shieldBroke: before.tempHp > 0 && after.tempHp <= 0,
     down,
     up: before.currentHp <= 0 && after.currentHp > 0,
-    big: down || (lost > 0 && maxHp > 0 && lost >= maxHp * BIG_HIT),
+    big: down || (lost > 0 && before.maxHp > 0 && lost >= before.maxHp * BIG_HIT),
     bandChanged:
-      lost + gained > 0 && hpBand(before.currentHp, maxHp) !== hpBand(after.currentHp, maxHp),
+      lost + gained > 0 &&
+      hpBand(before.currentHp, before.maxHp) !== hpBand(after.currentHp, after.maxHp),
   };
 }
