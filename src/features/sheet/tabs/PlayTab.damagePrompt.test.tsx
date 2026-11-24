@@ -51,6 +51,11 @@ function nextFaces(...faces: number[]) {
 }
 
 const rolls = () => rollLogStore.getState().rolls;
+/** The roll toast's large numbers, in order: what heads it, and its damage under an attack. */
+const headlines = () =>
+  [...screen.getByRole('group', { name: 'Roll result' }).querySelectorAll('.text-stat')].map(
+    (e) => e.textContent,
+  );
 /** A roll's die groups as "d8 [3, 5]" faces. */
 const dice = (r: RollResult | undefined) =>
   (r?.terms ?? [])
@@ -138,8 +143,11 @@ describe('a weapon damage chip', () => {
     expect(flame?.label).toBe('Ember Sword fire damage');
     expect(flame?.meta?.withRoll).toBe(slashing?.id);
     expect(dice(flame)).toEqual(['d6 [4]']);
-    // The toast shows them together, added up before the target resists each type.
-    expect(screen.getByText('Total before resistances').parentElement?.textContent).toContain('12');
+    // The toast heads with what they come to before the target resists each
+    // type, and each part is a row under it, the weapon's first.
+    expect(headlines()).toEqual(['12']);
+    expect(screen.getByText('Ember Sword damage')).toBeTruthy();
+    expect(screen.getByText('Before resistances')).toBeTruthy();
   });
 });
 
@@ -177,7 +185,8 @@ describe('what the player puts on a weapon', () => {
     expect(poison?.label).toBe('Basic Poison poison damage');
     expect(poison?.meta?.withRoll).toBe(slashing?.id);
     expect(poison?.total).toBe(3);
-    expect(screen.getByText('Total before resistances').parentElement?.textContent).toContain('12');
+    expect(headlines()).toEqual(['12']);
+    expect(screen.getByText('Longsword damage')).toBeTruthy();
     const saved = await sheet.saved();
     expect(saved.play.weaponExtras).toBeUndefined();
     const history = await sheet.history();
