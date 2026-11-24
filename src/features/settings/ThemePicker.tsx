@@ -1,13 +1,6 @@
 import { useId } from 'react';
-import {
-  setThemeChoice,
-  THEME_CHOICES,
-  type Theme,
-  type ThemeChoice,
-  useThemeChoice,
-} from '@/lib/theme';
-
-const LABEL: Record<ThemeChoice, string> = { system: 'System', light: 'Light', dark: 'Dark' };
+import { setThemeChoice, THEME_CHOICES, type Theme, useThemeChoice } from '@/lib/theme';
+import { builtInTheme } from '@/theme/builtins';
 
 /** A bar in a miniature: a card, or the action blue when `brand`. */
 function Bar({ brand = false }: { brand?: boolean }) {
@@ -19,30 +12,41 @@ function Bar({ brand = false }: { brand?: boolean }) {
 }
 
 /**
- * A tiny sheet drawn in one theme. `data-theme` scopes the theme's tokens to
- * it, which works because the colour utilities read the raw `--cg-*`
+ * A tiny sheet drawn in one theme: its title font, a card and its action
+ * colour, at its own corners and edges. `data-theme` scopes the theme's
+ * tokens to it, which works because the utilities read the raw `--cg-*`
  * variables where they are used (`@theme inline` in app.css).
  */
 function Mini({ theme, half = false }: { theme: Theme; half?: boolean }) {
+  if (half) {
+    return (
+      <span data-theme={theme} className="flex flex-1 flex-col gap-1.25 bg-bg px-1.5 py-2">
+        <Bar />
+        <Bar />
+        <Bar brand />
+      </span>
+    );
+  }
   return (
     <span
       data-theme={theme}
-      className={
-        half
-          ? 'flex flex-1 flex-col gap-1.25 bg-bg px-1.5 py-2'
-          : 'flex h-18 w-full flex-col gap-1.25 overflow-hidden rounded-thumb bg-bg p-2 ring ring-line ring-inset'
-      }
+      className="flex h-18 w-full flex-col justify-between overflow-hidden rounded-thumb bg-bg p-2 ring ring-line ring-inset"
     >
-      {!half && <Bar />}
-      <Bar />
-      <Bar brand />
+      {/* The option's name is the label's text; this is only the font. */}
+      <span aria-hidden="true" className="font-display text-title-card leading-none text-ink">
+        Aa
+      </span>
+      <span className="flex flex-col gap-1.25">
+        <Bar />
+        <Bar brand />
+      </span>
     </span>
   );
 }
 
 /**
- * System, Light or Dark (DS-001), each a radio card with the theme drawn in
- * it; System is split down the middle. The choice is a device preference, not
+ * System or a built-in theme (DS-001, src/theme/builtins.ts), each a radio
+ * card with the theme drawn in it; System is split down the middle. The choice is a device preference, not
  * character data: `setThemeChoice` stores it and applies it at once, and the
  * boot script applies it before the next first paint.
  *
@@ -63,7 +67,7 @@ export function ThemePicker() {
         {THEME_CHOICES.map((option) => (
           <label
             key={option}
-            className="relative flex cursor-pointer flex-col items-center gap-2 rounded-control bg-surface px-2 pt-2 pb-3 text-label text-ink ring ring-line ring-inset has-checked:ring-strong has-checked:ring-ink has-focus-visible:outline-2 has-focus-visible:outline-focus has-focus-visible:outline-offset-2"
+            className="relative flex cursor-pointer flex-col items-center gap-2 rounded-control bg-surface px-2 pt-2 pb-3 text-center text-label text-ink ring ring-line ring-inset has-checked:ring-strong has-checked:ring-ink has-focus-visible:outline-2 has-focus-visible:outline-focus has-focus-visible:outline-offset-2"
           >
             <input
               type="radio"
@@ -81,7 +85,7 @@ export function ThemePicker() {
             ) : (
               <Mini theme={option} />
             )}
-            {LABEL[option]}
+            {option === 'system' ? 'System' : builtInTheme(option).label}
           </label>
         ))}
       </div>

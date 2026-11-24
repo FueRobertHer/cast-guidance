@@ -42,6 +42,9 @@ export interface ScanOptions {
 export const SCAN_THEMES = [
   { theme: 'dark', suffix: '' },
   { theme: 'light', suffix: '@light' },
+  { theme: 'parchment', suffix: '@parchment' },
+  { theme: 'modern', suffix: '@modern' },
+  { theme: 'contrast', suffix: '@contrast' },
 ] as const;
 
 /**

@@ -1,6 +1,7 @@
 # Themes: build plan
 
-Status: in progress. Owner decisions, 2026-11-24: full reskins in the VS Code
+Status: phases 1 and 2 built (2026-11-24); phase 3 waits on the owner's look
+at the three reskins. Owner decisions, 2026-11-24: full reskins in the VS Code
 sense (layout fixed, look free), theme files with a closed vocabulary rather
 than CSS themes, no contrast rules on themes people make for themselves, no
 in-app gallery and no server storage, and three showcase reskins: Parchment,
@@ -66,7 +67,7 @@ for looks.
 Each phase lands as its own commit on the working branch, with `bun run ci`
 green.
 
-### Phase 1: make everything themeable (no visible change)
+### Phase 1: make everything themeable (no visible change; built)
 
 1. Move the two theme blocks into `src/styles/themes.css` and add tokens with
    today's values: `font-sans`, `font-display`, `weight-normal`,
@@ -103,13 +104,13 @@ green.
 9. Proof of no change: screenshots of key screens in both themes before and
    after, compared pixel for pixel, including a sheet with a condition on.
 
-### Phase 2: three showcase reskins
+### Phase 2: three showcase reskins (built)
 
 | | Parchment | Modern | High contrast |
 |---|---|---|---|
 | Scheme | light, warm paper | light, cool greys | dark, near black |
 | Body font | Literata | Inter | Atkinson Hyperlegible Next |
-| Display font | Cormorant Garamond | Inter | Atkinson Hyperlegible Next |
+| Display font | Alegreya | Inter | Atkinson Hyperlegible Next |
 | Corners (chip, control, card, sheet) | 2, 4, 6, 10 px | 8, 12, 20, 28 px | 4, 6, 8, 12 px |
 | Borders (edge, selected) | 1, 2 px | 1, 2 px | 2, 3 px |
 | Shadows | soft, warm | almost flat | none |
@@ -121,14 +122,15 @@ green.
    falls back to the default, never to a blank page.
 2. The three theme rules in `themes.css`, each clearing every contrast pair.
 3. Fonts: Inter (the variable package, so weights are not limited to three)
-   and Cormorant Garamond from `@fontsource` (OFL-1.1, already on the notices
+   and Alegreya from `@fontsource` (OFL-1.1, already on the notices
    allowlist), and Literata's 400 and 700 alongside its 600. Literata's latin
    files carry `tnum`, so Parchment's stats stay tabular; no separate numbers
    font. Theme fonts stay out of precache; a new runtime cache route stores
    them, and picking a theme loads every face it uses, so all of them are
-   there offline, not just the ones already drawn. Cormorant's small
-   x-height is checked at card-title size before it is kept. Notices
-   regenerated.
+   there offline, not just the ones already drawn. The plan first named
+   Cormorant Garamond; at card-title size its small x-height (0.39) made
+   titles barely larger than the subtitles under them, so Alegreya (0.45)
+   replaced it. Notices regenerated.
 4. Settings: the picker lists System, Dark, Light, Parchment, Modern and High
    contrast, each miniature with an "Aa" in its fonts.
 5. Gates: the axe scan and the layout checks run every built-in; the theme

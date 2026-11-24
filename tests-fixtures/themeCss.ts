@@ -69,6 +69,25 @@ export function rawTokens(
   return merged;
 }
 
+/**
+ * One theme's declarations as <html> sees them, where `:root` rules apply
+ * whatever the theme: the cascade on the page itself, as against a
+ * miniature's subtree (`rawTokens`). The two must agree, or the page and its
+ * preview in Settings draw a theme differently.
+ */
+export function pageTokens(
+  id: string,
+  rules: readonly ThemeRule[] = themeRules(),
+): Record<string, string> {
+  const merged: Record<string, string> = {};
+  for (const rule of rules) {
+    if (rule.selectors.includes(':root') || rule.selectors.includes(`[data-theme="${id}"]`)) {
+      Object.assign(merged, rule.tokens);
+    }
+  }
+  return merged;
+}
+
 /** One theme's other declarations (`color-scheme`), merged the same way. */
 export function themeProperties(
   id: string,

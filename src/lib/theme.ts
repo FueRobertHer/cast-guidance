@@ -1,9 +1,16 @@
 import { useSyncExternalStore } from 'react';
+import {
+  BUILT_IN_THEMES,
+  type BuiltInThemeId,
+  builtInTheme,
+  isBuiltInTheme,
+} from '@/theme/builtins';
 
 /**
- * The colour theme (DS-001). The player picks System, Light or Dark in
- * Settings; the choice is a preference of this device, not character data, so
- * it lives in localStorage, where the boot script can read it synchronously.
+ * The colour theme (DS-001). The player picks System or one of the built-in
+ * themes (src/theme/builtins.ts) in Settings; the choice is a preference of
+ * this device, not character data, so it lives in localStorage, where the
+ * boot script can read it synchronously.
  *
  * `public/theme-boot.js` applies the stored choice before first paint, since
  * the app's own bundle runs too late to stop a flash of the wrong theme and
@@ -14,27 +21,24 @@ import { useSyncExternalStore } from 'react';
  * boot script and this module to the same answers.
  */
 
-/** What the player chose. */
-export type ThemeChoice = 'system' | 'light' | 'dark';
-
 /** What the page is drawn in, as `data-theme` on <html>. */
-export type Theme = 'light' | 'dark';
+export type Theme = BuiltInThemeId;
+
+/** What the player chose: System follows the device between Dark and Light. */
+export type ThemeChoice = 'system' | Theme;
 
 export const THEME_KEY = 'cast-guidance:theme';
 
 /** Settings' order: System first, since it is the one that needs no thought. */
-export const THEME_CHOICES: readonly ThemeChoice[] = ['system', 'light', 'dark'];
+export const THEME_CHOICES: readonly ThemeChoice[] = [
+  'system',
+  ...BUILT_IN_THEMES.map((t) => t.id),
+];
 
-/**
- * Each theme's `bg`, for `<meta name="theme-color">`, which colours the
- * browser's own bars and the installed app's title bar. A meta tag cannot read
- * a CSS variable, so the value is repeated here and in the boot script; the
- * test compares both with themes.css.
- */
-export const THEME_COLOR: Readonly<Record<Theme, string>> = {
-  dark: '#121110',
-  light: '#eee6d5',
-};
+/** Each theme's page colour, for `<meta name="theme-color">` (builtins.ts). */
+export const THEME_COLOR: Readonly<Record<Theme, string>> = Object.fromEntries(
+  BUILT_IN_THEMES.map((t) => [t.id, t.pageColour]),
+) as Record<Theme, string>;
 
 /** Dark is the original, and stays the default for anyone who has not chosen. */
 const DEFAULT_CHOICE: ThemeChoice = 'dark';
@@ -42,7 +46,7 @@ const DEFAULT_CHOICE: ThemeChoice = 'dark';
 const LIGHT_QUERY = '(prefers-color-scheme: light)';
 
 function isChoice(value: unknown): value is ThemeChoice {
-  return value === 'system' || value === 'light' || value === 'dark';
+  return value === 'system' || isBuiltInTheme(value);
 }
 
 /**
@@ -73,10 +77,19 @@ export function resolveTheme(choice: ThemeChoice, deviceLight: boolean = prefers
   return choice;
 }
 
-/** Draws the page in `theme` and colours the browser's bars to match. */
+/**
+ * Draws the page in `theme`, colours the browser's bars to match, and asks
+ * for every face the theme draws in, so each is cached (the service worker
+ * keeps theme fonts on first fetch) before the player is offline at the table.
+ */
 export function applyTheme(theme: Theme): void {
   document.documentElement.dataset.theme = theme;
   document.querySelector('meta[name="theme-color"]')?.setAttribute('content', THEME_COLOR[theme]);
+  const fonts = typeof document.fonts === 'object' ? document.fonts : undefined;
+  for (const face of builtInTheme(theme).faces) {
+    // A face that fails to load leaves the stack's fallback; nothing to undo.
+    fonts?.load(face).catch(() => undefined);
+  }
 }
 
 const listeners = new Set<() => void>();

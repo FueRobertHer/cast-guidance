@@ -9,16 +9,24 @@
 // src/lib/theme.ts owns the theme from then on and documents the choices;
 // src/lib/theme.test.ts runs this file against it, so the two cannot disagree.
 (function () {
-  var color = { dark: '#121110', light: '#eee6d5' };
+  // Each built-in theme's page colour (src/theme/builtins.ts).
+  var color = {
+    dark: '#121110',
+    light: '#eee6d5',
+    parchment: '#e9dfc6',
+    modern: '#f2f4f7',
+    contrast: '#000000',
+  };
   var theme = 'dark';
   try {
     var choice = localStorage.getItem('cast-guidance:theme');
-    if (choice === 'light') theme = 'light';
+    if (choice !== 'system' && Object.prototype.hasOwnProperty.call(color, choice)) theme = choice;
     else if (choice === 'system' && window.matchMedia('(prefers-color-scheme: light)').matches)
       theme = 'light';
   } catch (_) {
     // Storage or matchMedia unavailable: the default, dark.
   }
+  // Anything else stored (a theme a newer or older build knew) is dark too.
   document.documentElement.setAttribute('data-theme', theme);
   var meta = document.querySelector('meta[name="theme-color"]');
   if (meta) meta.setAttribute('content', color[theme]);

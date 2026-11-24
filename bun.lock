@@ -5,6 +5,8 @@
     "": {
       "name": "cast-guidance",
       "dependencies": {
+        "@fontsource-variable/inter": "^5.3.0",
+        "@fontsource/alegreya": "^5.3.0",
         "@fontsource/atkinson-hyperlegible-next": "^5.3.0",
         "@fontsource/literata": "^5.3.0",
         "@tanstack/react-virtual": "^3.14.5",
@@ -278,6 +280,10 @@
     "@emnapi/wasi-threads": ["@emnapi/wasi-threads@1.2.2", "", { "dependencies": { "tslib": "^2.4.0" } }, "sha512-c95qOXkHdydNKhscBTebqEC1CVAZpyqOfVfBzQ1qgzyl3gfeldUjIggDbIZgDKsHLgnsM+igH7TJ/eAasaVuMA=="],
 
     "@exodus/bytes": ["@exodus/bytes@1.15.1", "", { "peerDependencies": { "@noble/hashes": "^1.8.0 || ^2.0.0" }, "optionalPeers": ["@noble/hashes"] }, "sha512-S6mL0yNB/Abt9Ei4tq8gDhcczc4S3+vQ4ra7vxnAf+YHC02srtqxKKZghx2Dq6p0e66THKwR6r8N6P95wEty7Q=="],
+
+    "@fontsource-variable/inter": ["@fontsource-variable/inter@5.3.0", "", {}, "sha512-OupL48va4JNofb97w6NYeF9S7W/kHNKM0Er8Dem5nqi4jeOLrVJDoE8tZEpnMJmtkvNbB1EIPPwHcdkF6b1oUA=="],
+
+    "@fontsource/alegreya": ["@fontsource/alegreya@5.3.0", "", {}, "sha512-YCsp9dHYfMNdggXxinMMS0nkGlZkzs2MvPL7qPVjSO4DM1uJ29hmKEdTC/fBP+2K4Aa+4Z44JuOQz05eDcvNJA=="],
 
     "@fontsource/atkinson-hyperlegible-next": ["@fontsource/atkinson-hyperlegible-next@5.3.0", "", {}, "sha512-8p1tHVoPDo6oYwSO3sMw5snGwFwSf3TmeSF9Gcj792GXdsg6oqvhoItbj6Hj/XZIk0Xs+Cwu6pkLBAl3Q5HrwA=="],
 

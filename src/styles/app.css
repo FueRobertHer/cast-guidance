@@ -366,7 +366,7 @@ a {
  * `outline-none` utility that ~20 inputs use, without touching each call site.
  * `:where(...)` keeps specificity at 0 so components can still opt into a
  * stronger custom ring later. The colour is `focus`, the guidance gold, which
- * holds 3:1 on every ground in both themes (WCAG 1.4.11).
+ * holds 3:1 on every ground in every built-in theme (WCAG 1.4.11).
  */
 :where(
   a,

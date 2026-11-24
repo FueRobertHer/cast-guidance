@@ -1,4 +1,5 @@
 import type { Page } from '@playwright/test';
+import { waitForSwControl } from '../support/sw.ts';
 import { expect, test } from '../support/test.ts';
 
 // DS-001. `src/lib/theme.test.ts` holds the boot script and the theme module
@@ -6,7 +7,13 @@ import { expect, test } from '../support/test.ts';
 // drawn at once, kept on this device, and drawn before the first frame of the
 // next load, with the browser's bars in the theme's page colour.
 
-const BAR = { dark: '#121110', light: '#eee6d5' } as const;
+const BAR = {
+  dark: '#121110',
+  light: '#eee6d5',
+  parchment: '#e9dfc6',
+  modern: '#f2f4f7',
+  contrast: '#000000',
+} as const;
 
 /** Records the root's `data-theme` at each change, and at the first frame. */
 async function watchTheme(page: Page): Promise<void> {
@@ -35,7 +42,10 @@ async function expectTheme(page: Page, theme: keyof typeof BAR): Promise<void> {
 }
 
 /** Picks a theme the way a person does, by its card. */
-async function pick(page: Page, label: 'System' | 'Light' | 'Dark'): Promise<void> {
+async function pick(
+  page: Page,
+  label: 'System' | 'Light' | 'Dark' | 'Parchment' | 'Modern' | 'High contrast',
+): Promise<void> {
   await page.getByRole('group', { name: 'Theme' }).locator('label', { hasText: label }).click();
   await expect(page.getByRole('radio', { name: label })).toBeChecked();
 }
@@ -61,6 +71,55 @@ test.describe('colour theme', () => {
     const seen = await themesSeen(page);
     expect(seen.find((s) => s.startsWith('frame:'))).toBe('frame:light');
     expect(seen.filter((s) => !s.endsWith(':light'))).toEqual([]);
+  });
+
+  test('takes a reskin, draws it from the first frame after, and keeps its fonts for offline', async ({
+    page,
+  }) => {
+    await watchTheme(page);
+    await page.goto('/settings');
+    await expect(page.getByRole('heading', { level: 1, name: 'Settings' })).toBeVisible();
+    // The service worker keeps a theme's fonts as they are fetched, so it
+    // has to be in charge before the theme asks for them.
+    await waitForSwControl(page);
+
+    await pick(page, 'Parchment');
+    await expectTheme(page, 'parchment');
+    // Picking it asked for every face it draws in, and the worker kept each.
+    // (Settings' previews draw each theme's title font, so others come too.)
+    await expect
+      .poll(() =>
+        page.evaluate(async () => {
+          const cache = await caches.open('theme-fonts');
+          return (await cache.keys())
+            .map((r) => new URL(r.url).pathname.replace(/^\/assets\/|-[\w-]{8}\.woff2$/g, ''))
+            .sort();
+        }),
+      )
+      .toEqual(
+        expect.arrayContaining([
+          'alegreya-latin-600-normal',
+          'alegreya-latin-700-normal',
+          'literata-latin-400-normal',
+          'literata-latin-700-normal',
+        ]),
+      );
+
+    await page.reload();
+    await expect(page.getByRole('heading', { level: 1, name: 'Settings' })).toBeVisible();
+    await expectTheme(page, 'parchment');
+    await expect(page.getByRole('radio', { name: 'Parchment' })).toBeChecked();
+    const seen = await themesSeen(page);
+    expect(seen.find((s) => s.startsWith('frame:'))).toBe('frame:parchment');
+    expect(seen.filter((s) => !s.endsWith(':parchment'))).toEqual([]);
+    // Drawn in its own faces, not the default themes'.
+    await page.evaluate(() => document.fonts.ready);
+    const fonts = await page.evaluate(() => ({
+      body: getComputedStyle(document.body).fontFamily,
+      title: getComputedStyle(document.querySelector('h1') as Element).fontFamily,
+    }));
+    expect(fonts.body).toMatch(/^"?Literata/);
+    expect(fonts.title).toMatch(/^"?Alegreya/);
   });
 
   test('System follows the device as it changes', async ({ page }) => {

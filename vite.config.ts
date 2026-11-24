@@ -64,7 +64,29 @@ export default defineConfig({
         // the manifest lists, so the glob skips `icons/` rather than adding
         // every PNG there. The Apple touch icon stays out: iOS fetches it
         // once, online, when the app is added to the Home Screen.
-        globIgnores: ['icons/**'],
+        globIgnores: [
+          'icons/**',
+          // Faces only Parchment and Modern draw in (src/theme/builtins.ts):
+          // fetched when a theme first asks, then kept by the route below.
+          'assets/literata-latin-400-*',
+          'assets/literata-latin-700-*',
+          'assets/alegreya-*',
+          'assets/inter-*',
+        ],
+        // Theme fonts, cache first: a face's file name carries its content
+        // hash, so a stored copy is never stale. The precache's route comes
+        // first, so the default themes' faces are still served from it.
+        runtimeCaching: [
+          {
+            urlPattern: ({ url, sameOrigin }) =>
+              sameOrigin && url.pathname.startsWith('/assets/') && url.pathname.endsWith('.woff2'),
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'theme-fonts',
+              expiration: { maxEntries: 32 },
+            },
+          },
+        ],
       },
       manifest: pwaManifest,
     }),

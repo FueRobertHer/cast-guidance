@@ -1,11 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
+  pageTokens,
   rawTokens,
   themeIds,
   themeProperties,
   themeRules,
   themeTokens,
 } from '../../tests-fixtures/themeCss';
+import { BUILT_IN_THEMES } from './builtins';
 import { TOKEN_NAMES, type TokenKind, VOCABULARY } from './vocabulary';
 
 // Every built-in theme in src/styles/themes.css sets every token in the
@@ -32,9 +34,13 @@ describe('the theme vocabulary (DS-001)', () => {
     expect(TOKEN_NAMES.size).toBe(VOCABULARY.length);
   });
 
-  it('finds the built-in themes, Dark first', () => {
+  it('finds the built-in themes, Dark first, as builtins.ts lists them', () => {
     expect(IDS[0]).toBe('dark');
-    expect(IDS).toContain('light');
+    expect([...IDS].sort()).toEqual(BUILT_IN_THEMES.map((t) => t.id).sort());
+  });
+
+  it.each(BUILT_IN_THEMES)('gives $label the colour scheme builtins.ts says', (theme) => {
+    expect(themeProperties(theme.id, RULES)['color-scheme']).toBe(theme.scheme);
   });
 
   it.each(IDS)('has %s set every token, and no others', (id) => {
@@ -53,6 +59,12 @@ describe('the theme vocabulary (DS-001)', () => {
 
   it.each(IDS)('gives %s a colour scheme, for native controls and scrollbars', (id) => {
     expect(['light', 'dark']).toContain(themeProperties(id, RULES)['color-scheme']);
+  });
+
+  it.each(IDS)('draws %s the same on the page as in its preview', (id) => {
+    // A `:root` rule further down the file than a theme's own would win on
+    // <html> (`:root` matches whatever the theme) and nowhere else.
+    expect(pageTokens(id, RULES)).toEqual(rawTokens(id, RULES));
   });
 
   it('draws a page with no `data-theme` in Dark: `:root` goes with Dark, and only with it', () => {

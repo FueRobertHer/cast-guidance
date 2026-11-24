@@ -6,8 +6,11 @@
  * all of it, and src/styles/contrast.test.ts to the design system's ratios.
  *
  * A theme is every rule whose selector list names it: its own rule, and the
- * shared rules further down (type and shape, the condition hues for its
- * kind of ground). `:root` is Dark, the default when `data-theme` is missing.
+ * shared ones (type and shape, the condition hues for its kind of ground).
+ * `:root` is Dark, the default when `data-theme` is missing, and every rule
+ * that names `:root` comes before any other theme's: on the page, `:root`
+ * matches whatever the theme, so one further down would override it there
+ * and nowhere else (vocabulary.test.ts draws each theme both ways).
  */
 
 /*
@@ -72,12 +75,79 @@
   /* No shadow, written as a transparent one: `none` is not valid inside the
      comma list Tailwind builds when a card also takes a ring. */
   --cg-shadow-card: 0 0 #0000;
-  /* Shared by both themes: aliases of a role above, resolved per theme. */
+  /* Aliases of a role above, resolved per theme; every theme sets them. */
   --cg-focus: var(--cg-guide);
   --cg-roll: var(--cg-brand);
   --cg-meter-mid: var(--cg-guide);
   /* Hover's edge on a roll chip: none on dark ground. */
   --cg-cx-edge-hover: transparent;
+}
+
+/*
+ * Type and shape, shared by Dark and Light: the two families, the three
+ * weights the type scale and `font-*` utilities use, the corners by what they
+ * round, the edge and selected-edge widths that bare `border`, `ring` and
+ * `ring-strong` draw, and the stroke Lucide icons take at their default.
+ *
+ * Literata is for names and titles only; everything else, numbers included,
+ * is Atkinson Hyperlegible Next, chosen for small sizes in bad light
+ * (distinct 0/O and 1/l/I). Until one loads, the stacks fall back to Georgia
+ * and the system sans, which share metrics closely enough that nothing
+ * reflows. Corners nest one step down: a `control` row in a `card`.
+ */
+:root,
+[data-theme="dark"],
+[data-theme="light"] {
+  --cg-font-sans: "Atkinson Hyperlegible Next", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --cg-font-display: "Literata", Georgia, "Times New Roman", serif;
+  --cg-weight-normal: 400;
+  --cg-weight-semibold: 600;
+  --cg-weight-bold: 700;
+  --cg-radius-chip: 0.375rem; /* 6px: chips, badges, a segment's thumb */
+  --cg-radius-control: 0.625rem; /* 10px: buttons, inputs, rows, toggles */
+  --cg-radius-card: 1rem; /* 16px: cards and panels */
+  --cg-radius-sheet: 1.5rem; /* 24px: a bottom sheet's top, the roll toast */
+  --cg-radius-pill: calc(infinity * 1px); /* fully round ends: pill chips, buttons, meter tracks */
+  --cg-border: 1px;
+  --cg-border-strong: 2px; /* a selected card or row, a crit's edge */
+  --cg-icon-stroke: 2;
+}
+
+/*
+ * The condition hues (ui/chipFace.css): a colour and a tint each, for dark
+ * grounds and for light ones. A theme joins the list for its ground, or sets
+ * its own in its rule. The number on a chip is `ink` in both, and
+ * contrast.test.ts holds it to 4.5:1 over the strongest layer behind it.
+ */
+:root,
+[data-theme="dark"],
+[data-theme="contrast"] {
+  --cg-cx-poisoned: #b7d94c;
+  --cg-cx-poisoned-soft: #27301a;
+  --cg-cx-paralyzed: #ffe94a;
+  --cg-cx-paralyzed-soft: #2f2c10;
+  --cg-cx-frightened: #a67dff;
+  --cg-cx-frightened-soft: #241538;
+  --cg-cx-blinded: #b9b4a8;
+  --cg-cx-blinded-soft: #2b2a27;
+  --cg-cx-prone: #d0a878;
+  --cg-cx-prone-soft: #2f2517;
+  --cg-cx-restrained: #e5894d;
+  --cg-cx-restrained-soft: #38200f;
+  --cg-cx-grappled: #c98fa6;
+  --cg-cx-grappled-soft: #321c26;
+  --cg-cx-exhaustion: #9fd6ff;
+  --cg-cx-exhaustion-soft: #18283a;
+  --cg-cx-invisible: #efeaff;
+  --cg-cx-invisible-soft: transparent;
+  --cg-cx-stunned: #ff86d8;
+  --cg-cx-stunned-soft: #3a1730;
+  --cg-cx-unconscious: #8f9bf5;
+  --cg-cx-unconscious-soft: #191c3a;
+  --cg-cx-incapacitated: #6fd3c4;
+  --cg-cx-incapacitated-soft: #14302c;
+  --cg-cx-petrified: #93a4ad;
+  --cg-cx-petrified-soft: #232a2e;
 }
 
 [data-theme="light"] {
@@ -124,72 +194,9 @@
   --cg-cx-edge-hover: var(--cg-line-strong);
 }
 
-/*
- * Type and shape, shared by Dark and Light: the two families, the three
- * weights the type scale and `font-*` utilities use, the corners by what they
- * round, the edge and selected-edge widths that bare `border`, `ring` and
- * `ring-strong` draw, and the stroke Lucide icons take at their default.
- *
- * Literata is for names and titles only; everything else, numbers included,
- * is Atkinson Hyperlegible Next, chosen for small sizes in bad light
- * (distinct 0/O and 1/l/I). Until one loads, the stacks fall back to Georgia
- * and the system sans, which share metrics closely enough that nothing
- * reflows. Corners nest one step down: a `control` row in a `card`.
- */
-:root,
-[data-theme="dark"],
-[data-theme="light"] {
-  --cg-font-sans: "Atkinson Hyperlegible Next", system-ui, -apple-system, "Segoe UI", sans-serif;
-  --cg-font-display: "Literata", Georgia, "Times New Roman", serif;
-  --cg-weight-normal: 400;
-  --cg-weight-semibold: 600;
-  --cg-weight-bold: 700;
-  --cg-radius-chip: 0.375rem; /* 6px: chips, badges, a segment's thumb */
-  --cg-radius-control: 0.625rem; /* 10px: buttons, inputs, rows, toggles */
-  --cg-radius-card: 1rem; /* 16px: cards and panels */
-  --cg-radius-sheet: 1.5rem; /* 24px: a bottom sheet's top, the roll toast */
-  --cg-radius-pill: calc(infinity * 1px); /* fully round ends: pill chips, buttons, meter tracks */
-  --cg-border: 1px;
-  --cg-border-strong: 2px; /* a selected card or row, a crit's edge */
-  --cg-icon-stroke: 2;
-}
-
-/*
- * The condition hues (ui/chipFace.css): a colour and a tint each, for dark
- * grounds and for light ones. The number on a chip is `ink` in both, and
- * contrast.test.ts holds it to 4.5:1 over the strongest layer behind it.
- */
-:root,
-[data-theme="dark"] {
-  --cg-cx-poisoned: #b7d94c;
-  --cg-cx-poisoned-soft: #27301a;
-  --cg-cx-paralyzed: #ffe94a;
-  --cg-cx-paralyzed-soft: #2f2c10;
-  --cg-cx-frightened: #a67dff;
-  --cg-cx-frightened-soft: #241538;
-  --cg-cx-blinded: #b9b4a8;
-  --cg-cx-blinded-soft: #2b2a27;
-  --cg-cx-prone: #d0a878;
-  --cg-cx-prone-soft: #2f2517;
-  --cg-cx-restrained: #e5894d;
-  --cg-cx-restrained-soft: #38200f;
-  --cg-cx-grappled: #c98fa6;
-  --cg-cx-grappled-soft: #321c26;
-  --cg-cx-exhaustion: #9fd6ff;
-  --cg-cx-exhaustion-soft: #18283a;
-  --cg-cx-invisible: #efeaff;
-  --cg-cx-invisible-soft: transparent;
-  --cg-cx-stunned: #ff86d8;
-  --cg-cx-stunned-soft: #3a1730;
-  --cg-cx-unconscious: #8f9bf5;
-  --cg-cx-unconscious-soft: #191c3a;
-  --cg-cx-incapacitated: #6fd3c4;
-  --cg-cx-incapacitated-soft: #14302c;
-  --cg-cx-petrified: #93a4ad;
-  --cg-cx-petrified-soft: #232a2e;
-}
-
-[data-theme="light"] {
+[data-theme="light"],
+[data-theme="parchment"],
+[data-theme="modern"] {
   --cg-cx-poisoned: #5b7a0e;
   --cg-cx-poisoned-soft: #e9f0cf;
   --cg-cx-paralyzed: #a88c00;
@@ -216,4 +223,176 @@
   --cg-cx-incapacitated-soft: #d5efeb;
   --cg-cx-petrified: #4f6069;
   --cg-cx-petrified-soft: #dde4e8;
+}
+
+/*
+ * Parchment: an old book. Aged paper and sepia ink, oxblood for action, sharp
+ * corners, soft warm shadows, Literata for reading and Alegreya, a
+ * calligraphic book face, for names and titles. Literata's figures go tabular
+ * with `tabular-nums`, so the sheet's numbers hold still as they tick.
+ */
+[data-theme="parchment"] {
+  color-scheme: light;
+  --cg-bg: #e9dfc6;
+  --cg-surface: #f5efdf;
+  --cg-surface-raised: #e8dcc2;
+  --cg-surface-hover: #ddcfb0;
+  --cg-line: #d5c6a4;
+  --cg-line-strong: #7f6c4e;
+  --cg-track: #dccdac;
+  --cg-edge: var(--cg-line);
+  --cg-ink: #201810;
+  --cg-ink-muted: #5c4a35;
+  --cg-ink-faint: #8c785c;
+  --cg-brand: #7b2d1f;
+  --cg-brand-hover: #64241a;
+  --cg-on-brand: #f5efdf;
+  --cg-guide: #7a4800;
+  --cg-guide-soft: #f1ddb3;
+  --cg-danger: #a11f17;
+  --cg-danger-fill: #a11f17;
+  --cg-on-danger: #ffffff;
+  --cg-danger-soft: #f4dccf;
+  --cg-heal: #2e5f2f;
+  --cg-heal-soft: #dfe8cd;
+  --cg-ward: #1d566a;
+  --cg-ward-soft: #d6e5e2;
+  --cg-roll-soft: #f1dccf;
+  --cg-arcane: #5a3888;
+  --cg-arcane-soft: #e8dcea;
+  --cg-scrim: #2a201666;
+  --cg-shadow-card: 0 1px 2px #3b2a1414, 0 0 0 1px #3b2a140a;
+  --cg-shadow-float: 0 6px 16px #3b2a1429, 0 2px 4px #3b2a141a;
+  --cg-shadow-overlay: 0 16px 40px #3b2a1433, 0 2px 6px #3b2a141a;
+  --cg-focus: var(--cg-guide);
+  --cg-roll: var(--cg-brand);
+  --cg-meter-mid: var(--cg-guide);
+  --cg-cx-edge-hover: var(--cg-line-strong);
+  --cg-font-sans: "Literata", Georgia, "Times New Roman", serif;
+  --cg-font-display: "Alegreya", "Literata", Georgia, serif;
+  --cg-weight-normal: 400;
+  --cg-weight-semibold: 600;
+  --cg-weight-bold: 700;
+  --cg-radius-chip: 0.125rem;
+  --cg-radius-control: 0.25rem;
+  --cg-radius-card: 0.375rem;
+  --cg-radius-sheet: 0.625rem;
+  --cg-radius-pill: 0.25rem;
+  --cg-border: 1px;
+  --cg-border-strong: 2px;
+  --cg-icon-stroke: 1.75;
+}
+
+/*
+ * Modern: cool greys on white, one blue for action, generous corners, almost
+ * no shadow, Inter throughout (tabular figures with `tabular-nums`).
+ */
+[data-theme="modern"] {
+  color-scheme: light;
+  --cg-bg: #f2f4f7;
+  --cg-surface: #ffffff;
+  --cg-surface-raised: #eef1f5;
+  --cg-surface-hover: #e2e7ee;
+  --cg-line: #dde2e9;
+  --cg-line-strong: #7a8494;
+  --cg-track: #e0e5ec;
+  --cg-edge: var(--cg-line);
+  --cg-ink: #101828;
+  --cg-ink-muted: #475467;
+  --cg-ink-faint: #98a2b3;
+  --cg-brand: #1f55d6;
+  --cg-brand-hover: #1a46b0;
+  --cg-on-brand: #ffffff;
+  --cg-guide: #93400d;
+  --cg-guide-soft: #fdefdc;
+  --cg-danger: #c0201c;
+  --cg-danger-fill: #c0201c;
+  --cg-on-danger: #ffffff;
+  --cg-danger-soft: #fde7e6;
+  --cg-heal: #137a3c;
+  --cg-heal-soft: #e2f5e8;
+  --cg-ward: #0b6f88;
+  --cg-ward-soft: #ddf2f7;
+  --cg-roll-soft: #e5ecfc;
+  --cg-arcane: #6a2bd0;
+  --cg-arcane-soft: #efe7fd;
+  --cg-scrim: #10182866;
+  --cg-shadow-card: 0 1px 2px #1018280d;
+  --cg-shadow-float: 0 4px 12px #1018281a, 0 1px 2px #10182814;
+  --cg-shadow-overlay: 0 12px 32px #10182824, 0 2px 6px #10182814;
+  --cg-focus: var(--cg-guide);
+  --cg-roll: var(--cg-brand);
+  --cg-meter-mid: var(--cg-guide);
+  --cg-cx-edge-hover: var(--cg-line-strong);
+  --cg-font-sans: "Inter Variable", "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --cg-font-display: "Inter Variable", "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --cg-weight-normal: 400;
+  --cg-weight-semibold: 600;
+  --cg-weight-bold: 700;
+  --cg-radius-chip: 0.5rem;
+  --cg-radius-control: 0.75rem;
+  --cg-radius-card: 1.25rem;
+  --cg-radius-sheet: 1.75rem;
+  --cg-radius-pill: calc(infinity * 1px);
+  --cg-border: 1px;
+  --cg-border-strong: 2px;
+  --cg-icon-stroke: 1.5;
+}
+
+/*
+ * High contrast: white on black, every role at its brightest, heavier edges
+ * and weights, a thicker icon stroke, and outlines where the other themes
+ * cast shadows, so cards, sheets and dialogs stand off the page by an edge
+ * rather than a shade. Atkinson Hyperlegible Next throughout.
+ */
+[data-theme="contrast"] {
+  color-scheme: dark;
+  --cg-bg: #000000;
+  --cg-surface: #0c0c0c;
+  --cg-surface-raised: #1a1a1a;
+  --cg-surface-hover: #2a2a2a;
+  --cg-line: #6b6b6b;
+  --cg-line-strong: #d0d0d0;
+  --cg-track: #3a3a3a;
+  --cg-edge: #8f8f8f;
+  --cg-ink: #ffffff;
+  --cg-ink-muted: #dadada;
+  --cg-ink-faint: #a6a6a6;
+  --cg-brand: #86b6ff;
+  --cg-brand-hover: #adcdff;
+  --cg-on-brand: #000000;
+  --cg-guide: #ffd34d;
+  --cg-guide-soft: #3b2f00;
+  --cg-danger: #ff8f85;
+  --cg-danger-fill: #c62828;
+  --cg-on-danger: #ffffff;
+  --cg-danger-soft: #420d09;
+  --cg-heal: #6eeaa2;
+  --cg-heal-soft: #082e18;
+  --cg-ward: #72e2ff;
+  --cg-ward-soft: #052c37;
+  --cg-roll-soft: #0d1f44;
+  --cg-arcane: #d4bcff;
+  --cg-arcane-soft: #25134d;
+  --cg-scrim: #000000cc;
+  --cg-shadow-card: 0 0 0 1px #8f8f8f;
+  --cg-shadow-float: 0 0 0 2px #ffffff;
+  --cg-shadow-overlay: 0 0 0 2px #ffffff;
+  --cg-focus: var(--cg-guide);
+  --cg-roll: var(--cg-brand);
+  --cg-meter-mid: var(--cg-guide);
+  --cg-cx-edge-hover: var(--cg-ink);
+  --cg-font-sans: "Atkinson Hyperlegible Next", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --cg-font-display: "Atkinson Hyperlegible Next", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --cg-weight-normal: 400;
+  --cg-weight-semibold: 700;
+  --cg-weight-bold: 700;
+  --cg-radius-chip: 0.25rem;
+  --cg-radius-control: 0.375rem;
+  --cg-radius-card: 0.5rem;
+  --cg-radius-sheet: 0.75rem;
+  --cg-radius-pill: 0.375rem;
+  --cg-border: 2px;
+  --cg-border-strong: 3px;
+  --cg-icon-stroke: 2.5;
 }

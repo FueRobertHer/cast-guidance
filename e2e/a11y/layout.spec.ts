@@ -600,12 +600,13 @@ const WORKSHOP: readonly Route[] = [
   },
 ];
 
-test.describe('the Workshop with content, in both themes', () => {
+test.describe('the Workshop with content, in every built-in theme', () => {
   test.use({ viewport: { width: 320, height: 640 } });
 
-  // One test per theme, so neither runs near the timeout under load: each is
-  // a setup and ten route states, where both themes in one came to 20.
-  for (const theme of ['dark', 'light']) {
+  // One test per theme, so none runs near the timeout under load: each is a
+  // setup and ten route states, where two themes in one came to 20. The
+  // reskins draw in fonts of their own, whose widths are what this guards.
+  for (const theme of ['dark', 'light', 'parchment', 'modern', 'contrast']) {
     test(`in the ${theme} theme, does not scroll sideways at 320 px, and keeps its controls whole with text at 200%`, async ({
       page,
     }) => {

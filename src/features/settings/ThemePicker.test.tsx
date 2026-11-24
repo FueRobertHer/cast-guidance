@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { computeAccessibleName } from 'dom-accessibility-api';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { THEME_KEY } from '@/lib/theme';
 import { ThemePicker } from './ThemePicker';
@@ -18,11 +19,18 @@ afterEach(() => {
 });
 
 describe('ThemePicker (DS-001)', () => {
-  it('offers System, Light and Dark as one radio group, Dark chosen by default', () => {
+  it('offers System and every built-in theme as one radio group, Dark chosen by default', () => {
     render(<ThemePicker />);
     const group = screen.getByRole('group', { name: 'Theme' });
     const radios = screen.getAllByRole('radio');
-    expect(radios.map((r) => r.closest('label')?.textContent)).toEqual(['System', 'Light', 'Dark']);
+    expect(radios.map((r) => computeAccessibleName(r))).toEqual([
+      'System',
+      'Light',
+      'Dark',
+      'Parchment',
+      'Modern',
+      'High contrast',
+    ]);
     expect(group.contains(radios[0] ?? null)).toBe(true);
     expect(screen.getByRole('radio', { name: 'Dark' })).toHaveProperty('checked', true);
   });
@@ -46,5 +54,14 @@ describe('ThemePicker (DS-001)', () => {
     expect(themes('System')).toEqual(['dark', 'light']);
     expect(themes('Light')).toEqual(['light']);
     expect(themes('Dark')).toEqual(['dark']);
+    expect(themes('Parchment')).toEqual(['parchment']);
+    expect(themes('High contrast')).toEqual(['contrast']);
+  });
+
+  it('picks a reskin and draws the page in it', () => {
+    render(<ThemePicker />);
+    fireEvent.click(screen.getByRole('radio', { name: 'Parchment' }));
+    expect(document.documentElement.dataset.theme).toBe('parchment');
+    expect(localStorage.getItem(THEME_KEY)).toBe('parchment');
   });
 });

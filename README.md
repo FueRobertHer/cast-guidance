@@ -176,7 +176,8 @@ license is outside the allowlist in `scripts/thirdPartyNotices.ts`.
   shadows, icon stroke); `src/styles/app.css` maps them to utilities and holds what no
   theme changes (type sizes, spacing, motion). `docs/theming-plan.md` has the plan for
   more themes and theme files. `src/ui/` holds the shared controls built on them (Button, Chip, Badge, TextField, SegmentedControl, ToggleChip,
-  Banner, Snackbar, sheet). `src/lib/theme.ts` owns the System/Light/Dark choice.
+  Banner, Snackbar, sheet). `src/lib/theme.ts` owns the theme choice (System or a built-in
+  theme from `src/theme/builtins.ts`).
 
 Characters store **choices + play state, never derived results**; every derived number is
 recomputed on read and individually overridable.

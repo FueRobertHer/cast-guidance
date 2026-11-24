@@ -5,6 +5,7 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { BUILT_IN_THEMES } from '@/theme/builtins';
 import { themeTokens } from '../../tests-fixtures/themeCss';
 import {
   installThemeSync,
@@ -59,7 +60,7 @@ afterEach(() => {
 });
 
 describe('theme boot script (DS-001)', () => {
-  for (const stored of [null, 'system', 'light', 'dark', 'sepia']) {
+  for (const stored of [null, 'system', ...BUILT_IN_THEMES.map((t) => t.id), 'sepia', 'toString']) {
     for (const light of [false, true]) {
       it(`draws what the app would for ${stored ?? 'nothing stored'} on a ${light ? 'light' : 'dark'} device`, () => {
         device(light);
@@ -82,9 +83,11 @@ describe('theme boot script (DS-001)', () => {
     expect(readThemeChoice()).toBe('dark');
   });
 
-  it("colours the bars with each theme's page colour from themes.css", () => {
-    expect(THEME_COLOR.dark).toBe(themeTokens('dark').bg);
-    expect(THEME_COLOR.light).toBe(themeTokens('light').bg);
+  it.each(
+    BUILT_IN_THEMES.map((t) => t.id),
+  )("colours the bars with %s's page colour from themes.css", (id) => {
+    expect(THEME_COLOR[id]).toBe(themeTokens(id).bg);
+    expect(BOOT).toContain(`${id}: '${themeTokens(id).bg}'`);
   });
 });
 
