@@ -8,6 +8,7 @@ import {
   type ThemeFile,
   type TokenValue,
 } from './file';
+import { rawTokens, themeRules } from './themeCss';
 import { TOKEN_NAMES } from './vocabulary';
 
 /**
@@ -25,16 +26,30 @@ export interface Draft {
   own: Readonly<Record<string, TokenValue>>;
 }
 
-/** Every built-in's tokens, read once from themes.css (builtInFile). */
+/** Every built-in's tokens, read once from themes.css (builtInFile), and its aliases. */
 export interface Tables {
   readonly byId: Readonly<Record<BuiltInThemeId, Tokens>>;
+  /** Each built-in's `var()` aliases (`edge` is `line` in Light), by token. */
+  readonly aliases: Readonly<Record<BuiltInThemeId, Readonly<Record<string, string>>>>;
 }
 
 export function tablesFrom(css: string): Tables {
+  const rules = themeRules(css);
+  const aliasesOf = (id: BuiltInThemeId) =>
+    Object.fromEntries(
+      Object.entries(rawTokens(id, rules)).flatMap(([name, v]) => {
+        const to = /^var\(--cg-([\w-]+)\)$/.exec(v)?.[1];
+        return to === undefined ? [] : [[name, to]];
+      }),
+    );
   return {
     byId: Object.fromEntries(
       BUILT_IN_THEMES.map((t) => [t.id, builtInFile(t.id, css).tokens]),
     ) as Record<BuiltInThemeId, Tokens>,
+    aliases: Object.fromEntries(BUILT_IN_THEMES.map((t) => [t.id, aliasesOf(t.id)])) as Record<
+      BuiltInThemeId,
+      Record<string, string>
+    >,
   };
 }
 
@@ -44,7 +59,24 @@ function deriveFor(draft: Draft, tables: Tables, own: Tokens = draft.own) {
     base: tables.byId[draft.base],
     light: tables.byId.light,
     dark: tables.byId.dark,
+    baseAliases: tables.aliases[draft.base],
   });
+}
+
+/**
+ * The selected edge kept wider than the resting one, as a file's reader
+ * holds it (file.ts): the hand-set selected edge goes first, then the resting
+ * one, so a new base or a reset never leaves a draft that would not read back.
+ */
+function keepEdges(draft: Draft, tables: Tables): Draft {
+  let d = draft;
+  for (const name of ['border-strong', 'border'] as const) {
+    const px = (n: string) => Number.parseFloat(String(shown(d, tables, n).value));
+    if (px('border-strong') > px('border') || !(name in d.own)) continue;
+    const { [name]: _gone, ...own } = d.own;
+    d = { ...d, own };
+  }
+  return d;
 }
 
 /** The tokens the draft writes: those set by hand and those following them. */
@@ -53,7 +85,8 @@ export function draftTokens(draft: Draft, tables: Tables): Record<string, TokenV
 }
 
 /** The draft as a theme file. */
-export function draftFile(draft: Draft, tables: Tables): ThemeFile {
+export function draftFile(given: Draft, tables: Tables): ThemeFile {
+  const draft = keepEdges(given, tables);
   const author = cleanText(draft.author);
   return {
     castGuidanceTheme: THEME_SCHEMA,
@@ -76,11 +109,13 @@ export interface Shown {
 export function shown(draft: Draft, tables: Tables, name: string): Shown {
   const own = draft.own[name];
   if (own !== undefined) return { value: own, how: 'own' };
-  const alias = ALIASES[name];
-  if (alias !== undefined)
-    return { ...shown(draft, tables, alias), how: 'follows', follows: alias };
   const derived = deriveFor(draft, tables)[name];
   if (derived !== undefined) return { value: derived, how: 'follows', follows: FOLLOWS[name]?.[0] };
+  // An alias in the base (or `roll` everywhere) follows at runtime: show what it follows.
+  const alias = tables.aliases[draft.base][name] ?? ALIASES[name];
+  if (alias !== undefined) {
+    return { ...shown(draft, tables, alias), how: 'follows', follows: alias };
+  }
   return { value: tables.byId[draft.base][name] ?? '', how: 'base' };
 }
 
@@ -104,15 +139,15 @@ export function setToken(draft: Draft, tables: Tables, name: string, raw: unknow
   return { draft: { ...draft, own } };
 }
 
-/** Hands a token back to its base, or to what it follows. */
-export function resetToken(draft: Draft, name: string): Draft {
+/** Hands a token back to its base, or to what it follows (edges kept apart). */
+export function resetToken(draft: Draft, name: string, tables: Tables): Draft {
   const { [name]: _gone, ...own } = draft.own;
-  return { ...draft, own };
+  return keepEdges({ ...draft, own }, tables);
 }
 
-/** Starts from another built-in, keeping every token set by hand. */
-export function setBase(draft: Draft, base: BuiltInThemeId): Draft {
-  return { ...draft, base };
+/** Starts from another built-in, keeping every token set by hand (edges kept apart). */
+export function setBase(draft: Draft, base: BuiltInThemeId, tables: Tables): Draft {
+  return keepEdges({ ...draft, base }, tables);
 }
 
 /**
@@ -125,19 +160,38 @@ export function draftFromTheme(
   tables: Tables,
   ownNames?: readonly string[],
 ): Draft {
-  const names =
-    ownNames?.filter((n) => n in file.tokens) ??
-    inferOwn(file.tokens, {
-      base: tables.byId[file.base],
-      light: tables.byId.light,
-      dark: tables.byId.dark,
-    });
-  return {
-    name: file.name,
-    author: file.author ?? '',
-    base: file.base,
-    own: Object.fromEntries(names.map((n) => [n, file.tokens[n] as TokenValue])),
+  const input = {
+    base: tables.byId[file.base],
+    light: tables.byId.light,
+    dark: tables.byId.dark,
+    baseAliases: tables.aliases[file.base],
   };
+  const names = ownNames?.filter((n) => n in file.tokens) ?? inferOwn(file.tokens, input);
+  const own: Record<string, TokenValue> = Object.fromEntries(
+    names.map((n) => [n, file.tokens[n] as TokenValue]),
+  );
+  // Opened, it has to draw as it did: a token the file leaves out stays the
+  // base's rather than start following, and a token the file sets keeps its
+  // value. Pinning one can move another, so until nothing changes.
+  // What the file draws for a token: its own value, else the base's, else
+  // what a base alias of it names.
+  const drawn = (name: string, depth = 0): TokenValue | undefined => {
+    const v = file.tokens[name] ?? input.base[name];
+    if (v !== undefined || depth > 8) return v;
+    const to = input.baseAliases[name];
+    return to === undefined ? undefined : drawn(to, depth + 1);
+  };
+  for (let i = 0; i < 8; i++) {
+    let pinned = false;
+    for (const [name, value] of Object.entries(derive({ ...input, own }))) {
+      const want = drawn(name);
+      if (want === undefined || want === value) continue;
+      own[name] = want;
+      pinned = true;
+    }
+    if (!pinned) break;
+  }
+  return { name: file.name, author: file.author ?? '', base: file.base, own };
 }
 
 /** A new theme from a built-in: its name, a copy, nothing set yet. */
@@ -164,8 +218,9 @@ export function sameDraft(a: Draft, b: Draft): boolean {
 export interface History {
   past: readonly Draft[];
   present: Draft;
-  /** What the last change edited, so a slider's drag is one change to take back. */
+  /** What the last change edited, and when, so a slider's drag is one change to take back. */
   lastKey?: string;
+  lastAt?: number;
 }
 
 /** How many changes Undo keeps. */
@@ -175,17 +230,31 @@ export function startHistory(draft: Draft): History {
   return { past: [], present: draft };
 }
 
+/** How long a pause ends a run of changes to one control. */
+const PAUSE_MS = 1000;
+
 /**
- * Makes `next` the draft. Changes in a row to the same `key` (a colour being
- * dragged, a slider) are one change to take back.
+ * Makes `next` the draft. Changes to the same `key` with no pause between
+ * them (a colour being dragged, a slider, a name being typed) are one change
+ * to take back; a pause, or another control, starts the next.
  */
-export function commit(history: History, next: Draft, key?: string): History {
+export function commit(
+  history: History,
+  next: Draft,
+  key?: string,
+  at: number = Date.now(),
+): History {
   if (sameDraft(history.present, next)) return { ...history, present: next };
-  if (key !== undefined && key === history.lastKey) return { ...history, present: next };
+  const run =
+    key !== undefined &&
+    key === history.lastKey &&
+    history.lastAt !== undefined &&
+    at - history.lastAt < PAUSE_MS;
+  if (run) return { ...history, present: next, lastAt: at };
   return {
     past: [...history.past, history.present].slice(-UNDO_DEPTH),
     present: next,
-    ...(key === undefined ? {} : { lastKey: key }),
+    ...(key === undefined ? {} : { lastKey: key, lastAt: at }),
   };
 }
 

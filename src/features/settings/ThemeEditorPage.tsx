@@ -1,8 +1,9 @@
 import { ArrowLeft, ChevronDown, Undo2 } from 'lucide-react';
-import { useEffect, useId, useMemo, useState } from 'react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router';
 import {
   customChoice,
+  readPreview,
   readThemeChoice,
   resolveTheme,
   type SavedTheme,
@@ -60,9 +61,10 @@ const ICON = 'tap shrink-0 rounded-control text-ink-muted hover:bg-surface-raise
 /** The draft a visit starts from: the saved theme, or a copy of the theme in use. */
 function startingDraft(tables: Tables, target: SavedTheme | undefined): Draft {
   if (target !== undefined) return draftFromTheme(target.file, tables, target.own);
+  // The theme on screen: one being tried, else the stored choice.
   const choice = readThemeChoice();
   const id = choice.startsWith('custom:') ? choice.slice('custom:'.length) : null;
-  const inUse = id === null ? undefined : savedTheme(id);
+  const inUse = readPreview() ?? (id === null ? undefined : savedTheme(id));
   if (inUse === undefined) return draftFromBuiltIn(resolveTheme(choice));
   const copy = draftFromTheme(inUse.file, tables, inUse.own);
   return { ...copy, name: `${copy.name} copy` };
@@ -84,26 +86,54 @@ function TokenRow({
   onReset: (name: string) => void;
 }) {
   const labelId = useId();
+  const row = useRef<HTMLDivElement>(null);
+  // Reset and Set its own take their own button away: focus goes to the
+  // row's other action, or its control, rather than falling to the page.
+  const refocus = useRef(false);
+  const s = shown(draft, tables, name);
+  useEffect(() => {
+    if (!refocus.current) return;
+    refocus.current = false;
+    row.current?.querySelector<HTMLElement>('[data-row-action], input, select, button')?.focus();
+  });
   const kind = KIND.get(name);
   if (kind === undefined) return null;
   const Control = CONTROLS[kind];
-  const s = shown(draft, tables, name);
+  const label = TOKEN_LABELS[name] ?? name;
   return (
-    <div data-token-row={name} className="flex flex-col gap-1.5 py-3">
+    <div ref={row} data-token-row={name} className="flex flex-col gap-1.5 py-3">
       <div className="flex min-h-tap flex-wrap items-center gap-x-2">
         <span id={labelId} className="text-body-strong">
-          {TOKEN_LABELS[name] ?? name}
+          {label}
         </span>
         {s.how === 'follows' && s.follows !== undefined && (
           <span className="text-caption text-ink-muted">Follows {followsLabel(s.follows)}</span>
         )}
         <span className="ml-auto">
           {s.how === 'own' ? (
-            <Button variant="ghost" size="sm" onClick={() => onReset(name)}>
+            <Button
+              variant="ghost"
+              size="sm"
+              data-row-action=""
+              aria-label={`Reset ${label}`}
+              onClick={() => {
+                refocus.current = true;
+                onReset(name);
+              }}
+            >
               Reset
             </Button>
           ) : s.how === 'follows' ? (
-            <Button variant="ghost" size="sm" onClick={() => onEdit(name, s.value)}>
+            <Button
+              variant="ghost"
+              size="sm"
+              data-row-action=""
+              aria-label={`Set its own ${label}`}
+              onClick={() => {
+                refocus.current = true;
+                onEdit(name, s.value);
+              }}
+            >
               Set its own
             </Button>
           ) : null}
@@ -111,10 +141,12 @@ function TokenRow({
       </div>
       <Control
         name={name}
+        label={label}
         labelId={labelId}
         value={s.value}
         context={context}
         onChange={(raw, key) => onEdit(name, raw, key)}
+        onReset={() => onReset(name)}
       />
     </div>
   );
@@ -143,19 +175,33 @@ function Editor({
   // Kept as it changes, once there is anything to keep; dropped when undone
   // back to where it started. A draft offered for resuming is left alone
   // until the person answers.
+  // Whether this visit kept a draft, so undoing back to the start drops it.
+  const keptHere = useRef(false);
   useEffect(() => {
     if (kept !== null) return;
-    if (dirty) keepDraft(target?.id ?? null, draft);
-    else if (history.past.length > 0) dropKeptDraft();
-  }, [draft, dirty, kept, target, history.past.length]);
+    if (dirty) {
+      keepDraft(target?.id ?? null, draft);
+      keptHere.current = true;
+    } else if (keptHere.current) {
+      dropKeptDraft();
+      keptHere.current = false;
+    }
+  }, [draft, dirty, kept, target]);
 
+  // Each change applies to the latest draft, not the one last drawn, so two
+  // edits between renders both land. The check against the drawn draft is
+  // only for saying at once why an entry is refused.
   const onEdit = (name: string, raw: unknown, key?: string): string | null => {
-    const result = setToken(draft, tables, name, raw);
-    if ('error' in result) return result.error;
-    setHistory((h) => commit(h, result.draft, key));
+    const probe = setToken(draft, tables, name, raw);
+    if ('error' in probe) return probe.error;
+    setHistory((h) => {
+      const result = setToken(h.present, tables, name, raw);
+      return 'error' in result ? h : commit(h, result.draft, key);
+    });
     return null;
   };
-  const change = (next: Draft) => setHistory((h) => commit(h, next));
+  const change = (next: (d: Draft) => Draft, key?: string) =>
+    setHistory((h) => commit(h, next(h.present), key));
 
   const context: ControlContext = {
     bodyFont: String(shown(draft, tables, 'font-sans').value),
@@ -180,35 +226,37 @@ function Editor({
 
   const save = (asCopy: boolean) => {
     const own = Object.keys(draft.own);
-    if (target !== undefined && !asCopy) {
-      const stored = updateTheme(target.id, file, own);
+    const unsaved = {
+      title: 'This theme could not be saved on this device',
+      detail: 'It lasts until this tab closes.',
+      tone: 'warn' as const,
+    };
+    // In place, unless the theme went meanwhile (deleted in another tab):
+    // then it is saved as a new one, not lost.
+    const inPlace = target !== undefined && !asCopy ? updateTheme(target.id, file, own) : null;
+    if (target !== undefined && inPlace !== null) {
       setThemeChoice(customChoice(target.id));
-      if (stored === false) {
-        notify({
-          title: 'This theme could not be saved on this device',
-          detail: 'It lasts until this tab closes.',
-          tone: 'warn',
-        });
-      }
+      notify(
+        inPlace
+          ? { title: `Saved ${file.name}`, detail: 'The app is drawn in it now.', tone: 'good' }
+          : unsaved,
+      );
     } else {
-      const { theme, stored, existing } = saveTheme(file, own);
+      const { theme, stored, existing } = saveTheme(file, own, { copy: asCopy });
       setThemeChoice(customChoice(theme.id));
-      if (!stored) {
-        notify({
-          title: 'This theme could not be saved on this device',
-          detail: 'It lasts until this tab closes.',
-          tone: 'warn',
-        });
-      } else if (existing) {
-        notify({
-          title: `${theme.file.name} was already in your themes`,
-          detail: 'It is the one in use now.',
-          tone: 'info',
-        });
-      }
+      notify(
+        !stored
+          ? unsaved
+          : existing
+            ? {
+                title: `${theme.file.name} was already in your themes`,
+                detail: 'It is the one in use now.',
+                tone: 'info',
+              }
+            : { title: `Saved ${file.name}`, detail: 'The app is drawn in it now.', tone: 'good' },
+      );
     }
     dropKeptDraft();
-    notify({ title: `Saved ${file.name}`, detail: 'The app is drawn in it now.', tone: 'good' });
     navigate('/settings');
   };
 
@@ -280,21 +328,29 @@ function Editor({
             label="Name"
             value={draft.name}
             maxLength={60}
-            onChange={(e) => change({ ...draft, name: e.target.value })}
+            onChange={(e) => {
+              const name = e.target.value;
+              change((d) => ({ ...d, name }), 'name');
+            }}
           />
           <TextField
             label="Made by (optional)"
             value={draft.author}
             maxLength={60}
-            onChange={(e) => change({ ...draft, author: e.target.value })}
+            onChange={(e) => {
+              const author = e.target.value;
+              change((d) => ({ ...d, author }), 'author');
+            }}
           />
           <label className="flex flex-col gap-1.5">
             <span className="text-label text-ink">Start from</span>
             <select
               value={draft.base}
               onChange={(e) => {
-                if (isBuiltInTheme(e.target.value))
-                  change(setBase(draft, e.target.value as BuiltInThemeId));
+                if (isBuiltInTheme(e.target.value)) {
+                  const base = e.target.value as BuiltInThemeId;
+                  change((d) => setBase(d, base, tables));
+                }
               }}
               className={fieldClass}
             >
@@ -336,7 +392,7 @@ function Editor({
                   tables={tables}
                   context={context}
                   onEdit={onEdit}
-                  onReset={(n) => change(resetToken(draft, n))}
+                  onReset={(n) => change((d) => resetToken(d, n, tables))}
                 />
               ))}
               {group.more !== undefined && (
@@ -358,7 +414,7 @@ function Editor({
                         tables={tables}
                         context={context}
                         onEdit={onEdit}
-                        onReset={(n) => change(resetToken(draft, n))}
+                        onReset={(n) => change((d) => resetToken(d, n, tables))}
                       />
                     ))}
                   </div>

@@ -186,6 +186,14 @@ function clearPage(): void {
 }
 
 describe("themes of one's own", () => {
+  it('saves a copy when asked, even of a theme with the same content', () => {
+    const first = saveTheme(MIDNIGHT).theme;
+    const copy = saveTheme({ ...MIDNIGHT, name: 'Midnight 2' }, undefined, { copy: true });
+    expect(copy).toMatchObject({ existing: false, stored: true });
+    expect(copy.theme.id).not.toBe(first.id);
+    expect(readSavedThemes()).toHaveLength(2);
+  });
+
   it('saves a theme once, however often it is imported', () => {
     const first = saveTheme(MIDNIGHT);
     expect(first).toMatchObject({ stored: true, existing: false });

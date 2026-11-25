@@ -28,6 +28,11 @@ export interface DeriveInput {
   /** Light's and Dark's tokens: the condition hues and glint for a page of either lightness. */
   light: Tokens;
   dark: Tokens;
+  /**
+   * The base's own aliases (`edge` is `line` in Light), which a file leaves
+   * out: read through to the token they name.
+   */
+  baseAliases?: Readonly<Record<string, string>>;
 }
 
 /**
@@ -105,10 +110,17 @@ function fillFor(danger: string): string {
  * for every following token at least one of whose sources has moved. Tokens
  * set by hand are never in it.
  */
-export function derive({ own, base, light, dark }: DeriveInput): Record<string, TokenValue> {
+export function derive(input: DeriveInput): Record<string, TokenValue> {
+  const { own, base, light, dark } = input;
   const out: Record<string, TokenValue> = {};
   const moved = new Set(Object.keys(own));
-  const value = (name: string): string => String(own[name] ?? out[name] ?? base[name] ?? '');
+  const aliases = input.baseAliases ?? {};
+  const value = (name: string, seen = 0): string => {
+    const v = own[name] ?? out[name] ?? base[name];
+    if (v !== undefined) return String(v);
+    const to = aliases[name];
+    return to !== undefined && seen < 8 ? value(to, seen + 1) : '';
+  };
   const lightPage = isLight(value('bg'));
   /** The page turned from light to dark or back: what is tuned for its lightness moves. */
   const flipped = isLight(String(base.bg ?? '')) !== lightPage;
@@ -138,13 +150,13 @@ export function derive({ own, base, light, dark }: DeriveInput): Record<string, 
   set('line', towards('bg', 'ink', 0.11));
   set('track', towards('surface', 'ink', 0.11));
   set('line-strong', towards('bg', 'ink', 0.47));
-  if (flipped || moved.has('line')) set('edge', () => (lightPage ? value('line') : 'transparent'));
+  // Field edges and a roll chip's hovered edge are tuned per theme (High
+  // contrast draws both): they change only when the page turns over.
+  set('edge', () => (lightPage ? value('line') : 'transparent'), true);
   set('ink-muted', towards('ink', 'bg', 0.31));
   set('ink-faint', towards('ink', 'bg', 0.52));
   // A roll chip's edge on hover: the outline on a light page, none on a dark one.
-  if (flipped || moved.has('line-strong')) {
-    set('cx-edge-hover', () => (lightPage ? value('line-strong') : 'transparent'));
-  }
+  set('cx-edge-hover', () => (lightPage ? value('line-strong') : 'transparent'), true);
 
   // Action, and the labels on the filled grounds.
   set('brand-hover', towards('brand', 'ink', 0.2));

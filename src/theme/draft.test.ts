@@ -89,10 +89,10 @@ describe('a theme being made', () => {
 
   it('hands a token back, and keeps what was set by hand across a new base', () => {
     let d = edit(draftFromBuiltIn('dark'), 'brand', '#5ee0c8');
-    d = setBase(d, 'contrast');
+    d = setBase(d, 'contrast', tables);
     expect(d.own).toEqual({ brand: '#5ee0c8' });
     expect(shown(d, tables, 'bg')).toEqual({ value: '#000000', how: 'base' });
-    d = resetToken(d, 'brand');
+    d = resetToken(d, 'brand', tables);
     expect(d.own).toEqual({});
     expect(shown(d, tables, 'brand-hover').how).toBe('base');
   });
@@ -106,6 +106,62 @@ describe('a theme being made', () => {
     // And following goes on from there: a new brand moves its hover again.
     const reopened = edit(draftFromTheme(file, tables), 'brand', '#ff00aa');
     expect(shown(reopened, tables, 'brand-hover').how).toBe('follows');
+  });
+
+  it('opens an imported theme exactly as it draws, and saves it unchanged', () => {
+    // A Parchment theme made dark by hand, with no hand-set list: its roles
+    // stay Parchment's, as the file draws them, rather than start following.
+    const file = parseThemeFile({
+      castGuidanceTheme: 1,
+      name: 'Dark paper',
+      base: 'parchment',
+      tokens: { bg: '#1d2b3a', ink: '#f2efe6' },
+    });
+    if (!file.ok) throw new Error(file.reason);
+    const d = draftFromTheme(file.theme.file, tables);
+    const base = tables.byId.parchment;
+    const aliases = tables.aliases.parchment;
+    const drawn = (name: string): unknown =>
+      file.theme.file.tokens[name] ??
+      base[name] ??
+      (aliases[name] === undefined ? undefined : drawn(aliases[name]));
+    for (const name of [...Object.keys(base), ...Object.keys(aliases)]) {
+      expect(shown(d, tables, name).value, name).toBe(drawn(name));
+    }
+    const saved = draftFile(d, tables).tokens;
+    for (const [name, value] of Object.entries(saved)) expect(value, name).toBe(drawn(name));
+  });
+
+  it('keeps High contrast’s edges when its page or ink change', () => {
+    const d = edit(edit(draftFromBuiltIn('contrast'), 'bg', '#101010'), 'ink', '#f0f0f0');
+    expect(shown(d, tables, 'edge').value).toBe(tables.byId.contrast.edge);
+    expect(draftTokens(d, tables)).not.toHaveProperty('edge');
+    expect(draftTokens(d, tables)).not.toHaveProperty('cx-edge-hover');
+  });
+
+  it('shows what a base alias follows, not an empty value', () => {
+    const d = draftFromBuiltIn('light');
+    expect(shown(d, tables, 'edge')).toEqual({
+      value: tables.byId.light.line,
+      how: 'follows',
+      follows: 'line',
+    });
+    expect(shown(draftFromBuiltIn('contrast'), tables, 'cx-edge-hover').follows).toBe('ink');
+  });
+
+  it('keeps the edge rule through a new base and a reset', () => {
+    // On Dark (1px resting), a selected edge of 1.5px is fine; High contrast rests at 2px.
+    const thin = edit(draftFromBuiltIn('dark'), 'border-strong', '1.5px');
+    expect(setBase(thin, 'contrast', tables).own).toEqual({});
+    // Edges of 0.5px and 1px; resetting the resting edge brings back Dark's 1px.
+    const both = edit(edit(draftFromBuiltIn('dark'), 'border', '0.5px'), 'border-strong', '1px');
+    expect(resetToken(both, 'border', tables).own).toEqual({});
+    // And a file never holds a pair it would not read back.
+    const file = draftFile(
+      { ...draftFromBuiltIn('contrast'), own: { 'border-strong': '1.5px' } },
+      tables,
+    );
+    expect(file.tokens).not.toHaveProperty('border-strong');
   });
 
   it('takes back changes one at a time', () => {

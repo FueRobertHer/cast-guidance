@@ -283,7 +283,9 @@ test.describe("themes of one's own", () => {
 // Phase 4 (docs/theming-plan.md): the theme editor.
 
 async function setHex(page: Page, token: string, hex: string): Promise<void> {
-  const field = page.locator(`[data-token-row="${token}"]`).getByRole('textbox', { name: 'Hex' });
+  const field = page
+    .locator(`[data-token-row="${token}"]`)
+    .getByRole('textbox', { name: /hex code/ });
   await field.fill(hex);
   await field.press('Enter');
 }
@@ -324,9 +326,10 @@ test.describe('the theme editor', () => {
       /^"?Inter/,
     );
 
-    // Edited again, in place.
+    // Edited again, in place: what followed the page still follows it.
     await page.getByRole('button', { name: 'Edit this theme' }).click();
     await expect(page.getByRole('heading', { level: 1, name: 'Edit theme' })).toBeVisible();
+    await expect(page.locator('[data-token-row="danger"]')).toContainText('Follows the page');
     await setHex(page, 'brand', '#f0b44c');
     await page.getByRole('button', { name: 'Save', exact: true }).click();
     await expect(page.getByRole('heading', { level: 1, name: 'Settings' })).toBeVisible();

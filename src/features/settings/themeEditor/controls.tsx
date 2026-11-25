@@ -1,5 +1,6 @@
 import { Minus, Plus } from 'lucide-react';
 import { type ReactNode, useEffect, useId, useState } from 'react';
+import { announce } from '@/stores/announcer';
 import { isLight, parseHex, toHex } from '@/theme/colour';
 import type { TokenValue } from '@/theme/file';
 import { THEME_FONTS } from '@/theme/fonts';
@@ -16,6 +17,8 @@ import { fieldClass } from '@/ui/TextField';
 
 export interface ControlProps {
   name: string;
+  /** The token's name as the row shows it, for the names of the parts. */
+  label: string;
   /** The row's label element, for `aria-labelledby`. */
   labelId: string;
   value: TokenValue;
@@ -23,6 +26,8 @@ export interface ControlProps {
   onChange: (raw: unknown, key?: string) => string | null;
   /** What the controls need of the rest of the draft. */
   context: ControlContext;
+  /** Hands the token back to the base (or what it follows). */
+  onReset: () => void;
 }
 
 export interface ControlContext {
@@ -38,6 +43,7 @@ const STEPPER = `${buttonClass({ variant: 'outline', size: 'icon' })} shrink-0`;
 
 /** A number with − and + beside it, and an optional slider: sliders get nudged while scrolling. */
 function Stepped({
+  label,
   labelId,
   value,
   min,
@@ -48,6 +54,7 @@ function Stepped({
   onChange,
   name,
 }: {
+  label: string;
   labelId: string;
   value: number;
   min: number;
@@ -55,19 +62,25 @@ function Stepped({
   step: number;
   unit: string;
   slider: boolean;
-  onChange: (n: number) => void;
+  /** `dragged` for the slider, whose run of changes is one undo step; each tap is its own. */
+  onChange: (n: number, dragged: boolean) => void;
   name: string;
 }) {
   const clamp = (n: number) => Math.min(max, Math.max(min, Math.round(n / step) * step));
+  // Said once per tap, by the announcer: a live region on every row would
+  // read every value out when a new base changed them all at once.
+  const tap = (n: number) => {
+    onChange(n, false);
+    announce(`${label} ${n} ${unit}`, { key: 'theme-stepper' });
+  };
   return (
     <div className="flex items-center gap-2">
       <button
         type="button"
         className={STEPPER}
-        aria-label="Less"
-        aria-describedby={labelId}
+        aria-label={`Less ${label}`}
         disabled={value <= min}
-        onClick={() => onChange(clamp(value - step))}
+        onClick={() => tap(clamp(value - step))}
       >
         <Minus size={18} aria-hidden="true" />
       </button>
@@ -81,20 +94,19 @@ function Stepped({
           aria-labelledby={labelId}
           aria-valuetext={`${value} ${unit}`}
           data-token={name}
-          onChange={(e) => onChange(Number(e.target.value))}
+          onChange={(e) => onChange(Number(e.target.value), true)}
           className="h-tap min-w-0 flex-1 accent-brand"
         />
       )}
-      <output aria-live="polite" className="min-w-14 text-center text-body-strong tabular-nums">
+      <span aria-hidden="true" className="min-w-14 text-center text-body-strong tabular-nums">
         {value} {unit}
-      </output>
+      </span>
       <button
         type="button"
         className={STEPPER}
-        aria-label="More"
-        aria-describedby={labelId}
+        aria-label={`More ${label}`}
         disabled={value >= max}
-        onClick={() => onChange(clamp(value + step))}
+        onClick={() => tap(clamp(value + step))}
       >
         <Plus size={18} aria-hidden="true" />
       </button>
@@ -105,7 +117,7 @@ function Stepped({
 /** The tokens that take an opacity: the scrim behind a sheet and the glint. */
 const WITH_ALPHA = new Set(['scrim', 'hp-sheen']);
 
-function ColourControl({ name, labelId, value, onChange }: ControlProps) {
+function ColourControl({ name, label, labelId, value, onChange }: ControlProps) {
   const text = String(value);
   const rgb = parseHex(text);
   const [typed, setTyped] = useState(text);
@@ -121,6 +133,7 @@ function ColourControl({ name, labelId, value, onChange }: ControlProps) {
     setError(onChange(typed.trim()));
   };
   const hexId = useId();
+  const errorId = useId();
   return (
     <div className="flex flex-col gap-2">
       <div className="flex items-center gap-2">
@@ -131,10 +144,13 @@ function ColourControl({ name, labelId, value, onChange }: ControlProps) {
           aria-describedby={hexId}
           data-token={name}
           onChange={(e) => {
+            // A new hue keeps the opacity it had, a clear one included.
             const picked = parseHex(e.target.value);
             setError(
               onChange(
-                picked === null ? e.target.value : toHex({ ...picked, a: alpha || 1 }),
+                picked === null
+                  ? e.target.value
+                  : toHex({ ...picked, a: rgb === null ? 1 : alpha }),
                 name,
               ),
             );
@@ -145,8 +161,9 @@ function ColourControl({ name, labelId, value, onChange }: ControlProps) {
           id={hexId}
           type="text"
           value={typed}
-          aria-label="Hex"
+          aria-label={`${label}, hex code`}
           aria-invalid={error !== null || undefined}
+          aria-describedby={error === null ? undefined : errorId}
           autoCapitalize="off"
           autoCorrect="off"
           autoComplete="off"
@@ -164,6 +181,7 @@ function ColourControl({ name, labelId, value, onChange }: ControlProps) {
           Opacity
           <input
             type="range"
+            aria-label={`${label}, opacity`}
             min={0}
             max={100}
             value={Math.round(alpha * 100)}
@@ -177,7 +195,7 @@ function ColourControl({ name, labelId, value, onChange }: ControlProps) {
         </label>
       )}
       {error !== null && (
-        <p className="text-caption text-danger">
+        <p id={errorId} role="alert" className="text-caption text-danger">
           That is not a colour the theme can use ({error}).
         </p>
       )}
@@ -224,7 +242,7 @@ function WeightControl({ name, labelId, value, onChange, context }: ControlProps
   );
 }
 
-function RadiusControl({ name, labelId, value, onChange }: ControlProps) {
+function RadiusControl({ name, label, labelId, value, onChange }: ControlProps) {
   const round = value === 'full';
   const px = round ? 24 : Number.parseFloat(String(value));
   return (
@@ -240,7 +258,10 @@ function RadiusControl({ name, labelId, value, onChange }: ControlProps) {
           Round ends
         </label>
       )}
-      {!round && (
+      {round && name !== 'radius-pill' && (
+        <p className="text-caption text-ink-muted">Fully round now. Set a size to change it.</p>
+      )}
+      {(!round || name !== 'radius-pill') && (
         <Stepped
           name={name}
           labelId={labelId}
@@ -250,15 +271,17 @@ function RadiusControl({ name, labelId, value, onChange }: ControlProps) {
           step={1}
           unit="px"
           slider
-          onChange={(n) => onChange(`${n}px`, name)}
+          label={label}
+          onChange={(n, dragged) => onChange(`${n}px`, dragged ? name : undefined)}
         />
       )}
     </div>
   );
 }
 
-function EdgeControl({ name, labelId, value, onChange }: ControlProps) {
+function EdgeControl({ name, label, labelId, value, onChange }: ControlProps) {
   const [error, setError] = useState<string | null>(null);
+  const errorId = useId();
   const strong = name === 'border-strong';
   return (
     <div className="flex flex-col gap-1">
@@ -271,14 +294,19 @@ function EdgeControl({ name, labelId, value, onChange }: ControlProps) {
         step={0.5}
         unit="px"
         slider={false}
+        label={label}
         onChange={(n) => setError(onChange(`${n}px`))}
       />
-      {error !== null && <p className="text-caption text-danger">{error}</p>}
+      {error !== null && (
+        <p id={errorId} role="alert" className="text-caption text-danger">
+          {error}
+        </p>
+      )}
     </div>
   );
 }
 
-function StrokeControl({ name, labelId, value, onChange }: ControlProps) {
+function StrokeControl({ name, label, labelId, value, onChange }: ControlProps) {
   return (
     <Stepped
       name={name}
@@ -289,7 +317,8 @@ function StrokeControl({ name, labelId, value, onChange }: ControlProps) {
       step={0.25}
       unit="px"
       slider
-      onChange={(n) => onChange(n, name)}
+      label={label}
+      onChange={(n, dragged) => onChange(n, dragged ? name : undefined)}
     />
   );
 }
@@ -323,7 +352,7 @@ export function shadowPresets(
 
 const SHADOW_NAMES = { none: 'None', soft: 'Soft', deep: 'Deep', outline: 'Outline' } as const;
 
-function ShadowControl({ name, labelId, value, onChange, context }: ControlProps) {
+function ShadowControl({ name, labelId, value, onChange, onReset, context }: ControlProps) {
   const presets = shadowPresets(name, context);
   const current = (Object.keys(presets) as (keyof typeof presets)[]).find(
     (k) => presets[k] === value,
@@ -334,12 +363,17 @@ function ShadowControl({ name, labelId, value, onChange, context }: ControlProps
       aria-labelledby={labelId}
       data-token={name}
       onChange={(e) => {
+        if (e.target.value === 'base') {
+          onReset();
+          return;
+        }
         const key = e.target.value as keyof typeof presets;
         if (key in presets) onChange(presets[key]);
       }}
       className={fieldClass}
     >
       {current === undefined && <option value="as-is">As it is now</option>}
+      <option value="base">The theme it starts from</option>
       {(Object.keys(presets) as (keyof typeof presets)[]).map((k) => (
         <option key={k} value={k}>
           {SHADOW_NAMES[k]}

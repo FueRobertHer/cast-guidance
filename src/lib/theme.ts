@@ -168,6 +168,7 @@ function newId(): string {
 export function saveTheme(
   file: ThemeFile,
   own?: readonly string[],
+  { copy = false }: { copy?: boolean } = {},
 ): {
   theme: SavedTheme;
   stored: boolean;
@@ -175,7 +176,8 @@ export function saveTheme(
 } {
   const list = readSavedThemes();
   const key = themeKey(file);
-  const same = list.find((t) => themeKey(t.file) === key);
+  // Asked for a copy, it is one, even of a theme with the same content.
+  const same = copy ? undefined : list.find((t) => themeKey(t.file) === key);
   if (same !== undefined) return { theme: same, stored: unstoredThemes === null, existing: true };
   const theme: SavedTheme = own === undefined ? { id: newId(), file } : { id: newId(), file, own };
   const stored = writeSavedThemes([...list, theme]);

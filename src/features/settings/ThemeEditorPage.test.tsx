@@ -37,7 +37,7 @@ const sample = () => document.querySelector('[data-theme-sample]') as HTMLElemen
 const row = (token: string) => document.querySelector(`[data-token-row="${token}"]`) as HTMLElement;
 
 function typeHex(token: string, hex: string) {
-  const field = within(row(token)).getByRole('textbox', { name: 'Hex' });
+  const field = within(row(token)).getByRole('textbox', { name: /hex code/ });
   fireEvent.change(field, { target: { value: hex } });
   fireEvent.keyDown(field, { key: 'Enter' });
 }
@@ -75,13 +75,13 @@ describe('the theme editor', () => {
     open();
     await screen.findByRole('heading', { level: 1, name: 'Make a theme' });
     typeHex('brand', '#5ee0c8');
-    expect(within(row('brand')).getByRole('button', { name: 'Reset' })).toBeTruthy();
+    expect(within(row('brand')).getByRole('button', { name: /^Reset/ })).toBeTruthy();
     const hover = row('brand-hover');
     expect(hover.textContent).toContain('Follows Action');
-    fireEvent.click(within(hover).getByRole('button', { name: 'Set its own' }));
+    fireEvent.click(within(hover).getByRole('button', { name: /^Set its own/ }));
     expect(row('brand-hover').textContent).not.toContain('Follows');
-    fireEvent.click(within(row('brand')).getByRole('button', { name: 'Reset' }));
-    expect(within(row('brand')).queryByRole('button', { name: 'Reset' })).toBeNull();
+    fireEvent.click(within(row('brand')).getByRole('button', { name: /^Reset/ }));
+    expect(within(row('brand')).queryByRole('button', { name: /^Reset/ })).toBeNull();
   });
 
   it('says why an entry is refused, and keeps the draft as it was', async () => {
@@ -181,6 +181,99 @@ describe('the theme editor', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Start over' }));
     expect(localStorage.getItem(DRAFT_KEY)).toBeNull();
     expect(sample().style.getPropertyValue('--cg-bg')).toBe('');
+  });
+
+  it('saves a theme deleted meanwhile as a new one, rather than lose it', async () => {
+    const file: ThemeFile = {
+      castGuidanceTheme: 1,
+      name: 'Tide',
+      base: 'dark',
+      tokens: { bg: '#0b1d2a' },
+    };
+    const { theme } = saveTheme(file, ['bg']);
+    open(`/settings/theme/${theme.id}`);
+    await screen.findByRole('heading', { level: 1, name: 'Edit theme' });
+    typeHex('bg', '#102030');
+    // Another tab deletes it.
+    localStorage.setItem('cast-guidance:themes', '[]');
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await screen.findByRole('heading', { level: 1, name: 'Settings' });
+    const [saved] = readSavedThemes();
+    expect(saved?.file.tokens.bg).toBe('#102030');
+    expect(saved?.id).not.toBe(theme.id);
+    expect(readThemeChoice()).toBe(customChoice(saved?.id ?? ''));
+  });
+
+  it('saves a copy when asked, even renamed and otherwise the same', async () => {
+    const file: ThemeFile = {
+      castGuidanceTheme: 1,
+      name: 'Tide',
+      base: 'dark',
+      tokens: { bg: '#0b1d2a' },
+    };
+    const { theme } = saveTheme(file, ['bg']);
+    open(`/settings/theme/${theme.id}`);
+    await screen.findByRole('heading', { level: 1, name: 'Edit theme' });
+    fireEvent.change(screen.getByRole('textbox', { name: 'Name' }), {
+      target: { value: 'Tide II' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Save as a copy' }));
+    await screen.findByRole('heading', { level: 1, name: 'Settings' });
+    expect(readSavedThemes().map((t) => t.file.name)).toEqual(['Tide', 'Tide II']);
+  });
+
+  it('drops the kept draft once every change is taken back', async () => {
+    open();
+    await screen.findByRole('heading', { level: 1, name: 'Make a theme' });
+    typeHex('bg', '#1d2b3a');
+    expect(localStorage.getItem(DRAFT_KEY)).not.toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
+    await waitFor(() => expect(localStorage.getItem(DRAFT_KEY)).toBeNull());
+  });
+
+  it('steps corners, rounds pills, and picks shadows and weights', async () => {
+    setThemeChoice('dark');
+    open();
+    await screen.findByRole('heading', { level: 1, name: 'Make a theme' });
+    // Each tap is its own change to take back.
+    fireEvent.click(within(row('radius-card')).getByRole('button', { name: 'More Cards' }));
+    fireEvent.click(within(row('radius-card')).getByRole('button', { name: 'More Cards' }));
+    expect(sample().style.getPropertyValue('--cg-radius-card')).toBe('18px');
+    fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
+    expect(sample().style.getPropertyValue('--cg-radius-card')).toBe('17px');
+
+    const roundEnds = within(row('radius-pill')).getByRole('checkbox', { name: 'Round ends' });
+    expect(roundEnds).toHaveProperty('checked', true);
+    fireEvent.click(roundEnds);
+    expect(sample().style.getPropertyValue('--cg-radius-pill')).toBe('6px');
+
+    const shadow = within(row('shadow-card')).getByRole('combobox');
+    fireEvent.change(shadow, { target: { value: 'outline' } });
+    expect(sample().style.getPropertyValue('--cg-shadow-card')).toMatch(/^0px 0px 0px 1px #/);
+    fireEvent.change(shadow, { target: { value: 'base' } });
+    expect(sample().style.getPropertyValue('--cg-shadow-card')).toBe('');
+
+    // Atkinson has 400, 600 and 700; Inter more.
+    const weights = () =>
+      within(row('weight-bold'))
+        .getAllByRole('option')
+        .map((o) => o.textContent);
+    expect(weights()).toEqual(['400', '600', '700']);
+    fireEvent.change(within(row('font-sans')).getByRole('combobox'), {
+      target: { value: 'inter' },
+    });
+    expect(weights()).toEqual(['300', '400', '500', '600', '700', '800']);
+  });
+
+  it('keeps a clear scrim clear when its hue changes', async () => {
+    setThemeChoice('dark');
+    open();
+    await screen.findByRole('heading', { level: 1, name: 'Make a theme' });
+    typeHex('scrim', '#00000000');
+    fireEvent.change(row('scrim').querySelector('input[type="color"]') as HTMLInputElement, {
+      target: { value: '#ff0000' },
+    });
+    expect(sample().style.getPropertyValue('--cg-scrim')).toBe('#ff000000');
   });
 
   it('says so for a theme not on this device', async () => {

@@ -286,7 +286,7 @@ not set them by hand, and only once something they follow has been set:
 - the condition hues by the page's lightness (Dark's on a dark page, Light's
   on a light one), each `-soft` a tint once its hue is set by hand.
 
-A following row says "Follows Brand" (or the page), with **Set its own**. The
+A following row says what it follows ("Follows Action", "Follows the page"), with **Set its own**. The
 derived values are written into the file as plain values, so a file never
 depends on the editor; the list of tokens set by hand is kept beside the saved
 theme (not in the file), so following survives saving. A theme with no such
