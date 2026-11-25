@@ -1,6 +1,7 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { BUILT_IN_THEMES } from '@/theme/builtins';
 import { CONDITION_HUES } from '@/theme/vocabulary';
 import { themeIds, themeTokens } from '../../tests-fixtures/themeCss';
 
@@ -295,5 +296,59 @@ describe('the colour names DS-001 retired stay retired', () => {
     const roles =
       'bg-surface-raised hover:bg-surface-hover text-on-brand text-ink-muted accent-ink';
     expect(RETIRED.test(roles)).toBe(false);
+  });
+});
+
+// The page textures (styles/decor.css) lay grey noise over `bg`, blended
+// `soft-light` at a strength each texture sets. Text on the page has to read
+// over the darkest and the lightest the noise can make it.
+
+const DECOR_CSS = readFileSync(path.join(SRC, 'styles/decor.css'), 'utf8');
+
+/** A texture's strength: the alpha at the end of its noise's colour matrix. */
+function textureStrength(texture: string): number {
+  const url = new RegExp(`--cg-texture-${texture}: url\\("([^"]+)"\\)`).exec(DECOR_CSS)?.[1];
+  if (url === undefined) throw new Error(`no texture ${texture} in decor.css`);
+  const matrix = [...decodeURIComponent(url).matchAll(/feColorMatrix values='([^']+)'/g)].at(
+    -1,
+  )?.[1];
+  const alpha = Number(matrix?.trim().split(/\s+/).at(-1));
+  if (!Number.isFinite(alpha)) throw new Error(`no strength for ${texture}`);
+  return alpha;
+}
+
+/** `ground` under noise of grey `g` (0 to 1) at `alpha`, blended soft-light (W3C). */
+function softLight(ground: string, g: number, alpha: number): string {
+  const channel = (i: number) => {
+    const b = Number.parseInt(ground.slice(i, i + 2), 16) / 255;
+    const d = b <= 0.25 ? ((16 * b - 12) * b + 4) * b : Math.sqrt(b);
+    const blended = g <= 0.5 ? b - (1 - 2 * g) * b * (1 - b) : b + (2 * g - 1) * (d - b);
+    return Math.round(((1 - alpha) * b + alpha * blended) * 255)
+      .toString(16)
+      .padStart(2, '0');
+  };
+  return `#${channel(1)}${channel(3)}${channel(5)}`;
+}
+
+describe('text on a textured page, every built-in with a texture', () => {
+  const textured = BUILT_IN_THEMES.filter((t) => t.decor.texture !== 'none');
+
+  it('has one to check (Parchment)', () => {
+    expect(textured.map((t) => t.id)).toContain('parchment');
+  });
+
+  it.each(
+    textured,
+  )('holds $label’s text to 4.5:1 over its texture at its darkest and lightest', (theme) => {
+    const alpha = textureStrength(theme.decor.texture);
+    const bg = colour(theme.id, 'bg');
+    const failing = [0, 1].flatMap((g) => {
+      const ground = softLight(bg, g, alpha);
+      return ['ink', 'ink-muted', 'brand', 'guide', 'danger', 'heal', 'ward', 'roll', 'arcane']
+        .map((t) => [t, contrast(colour(theme.id, t), ground)] as const)
+        .filter(([, ratio]) => ratio < 4.5)
+        .map(([t, ratio]) => `${t} on ${ground} (${ratio.toFixed(2)})`);
+    });
+    expect(failing).toEqual([]);
   });
 });

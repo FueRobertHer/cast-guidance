@@ -46,7 +46,7 @@ const SECONDARY = `${buttonClass({ size: 'sm' })} -ml-1 self-start`;
 const STEP = 'tap rounded-full';
 const STEP_DOT = 'flex size-8 items-center justify-center rounded-full bg-surface-raised';
 /** A score's card: the scores sit on the page, each a card of its own. */
-const SCORE_CARD = 'rounded-card bg-surface p-3 shadow-card ring ring-line ring-inset';
+const SCORE_CARD = 'cg-card rounded-card bg-surface p-3 shadow-card ring ring-line ring-inset';
 
 /** The point-buy status in words, for the summary line and the live region. */
 export function pointBuyText(status: PointBuyStatus): string {

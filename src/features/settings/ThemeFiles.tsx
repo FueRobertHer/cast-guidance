@@ -19,7 +19,7 @@ import {
 import { useUndoOffer } from '@/lib/useUndoOffer';
 import { notify, notifyFailure } from '@/stores/notices';
 import { builtInTheme } from '@/theme/builtins';
-import { type ParsedTheme, type ParseResult, themeVars } from '@/theme/file';
+import { type ParsedTheme, type ParseResult, themeAttrs, themeVars } from '@/theme/file';
 import { hasThemeHash } from '@/theme/link';
 import { Button } from '@/ui/Button';
 import { askText } from '@/ui/dialogs';
@@ -92,7 +92,7 @@ function ThemeImportSheet({
             <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto">
               <div className="flex items-start gap-3">
                 <div className="w-28 shrink-0">
-                  <ThemeMini theme={file.base} vars={themeVars(file)} />
+                  <ThemeMini theme={file.base} vars={themeVars(file)} attrs={themeAttrs(file)} />
                 </div>
                 <div className="flex min-w-0 flex-col gap-1 text-caption text-ink-muted">
                   {file.author !== undefined && <p className="text-ink">By {file.author}</p>}

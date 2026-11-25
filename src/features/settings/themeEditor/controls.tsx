@@ -4,7 +4,7 @@ import { announce } from '@/stores/announcer';
 import { isLight, parseHex, toHex } from '@/theme/colour';
 import type { TokenValue } from '@/theme/file';
 import { THEME_FONTS } from '@/theme/fonts';
-import type { TokenKind } from '@/theme/vocabulary';
+import { CHOICES, type TokenKind } from '@/theme/vocabulary';
 import { buttonClass } from '@/ui/Button';
 import { fieldClass } from '@/ui/TextField';
 
@@ -383,6 +383,42 @@ function ShadowControl({ name, labelId, value, onChange, onReset, context }: Con
   );
 }
 
+/** What each look is called in the editor. */
+const LOOK_NAMES: Readonly<Record<string, string>> = {
+  none: 'None',
+  paper: 'Paper',
+  grain: 'Grain',
+  plain: 'Plain',
+  double: 'Double',
+  stitched: 'Stitched',
+};
+
+/** A few named looks (decor.css): native radios, so arrow keys move between them. */
+function ChoiceControl({ name, labelId, value, onChange }: ControlProps) {
+  const group = useId();
+  return (
+    <div role="radiogroup" aria-labelledby={labelId} className="flex flex-wrap gap-2">
+      {(CHOICES[name] ?? []).map((look) => (
+        <label
+          key={look}
+          className="relative inline-flex min-h-tap min-w-tap cursor-pointer items-center justify-center rounded-control px-4 text-body-strong text-ink ring ring-line-strong ring-inset has-checked:bg-ink has-checked:text-bg has-focus-visible:outline-2 has-focus-visible:outline-focus has-focus-visible:outline-offset-2"
+        >
+          <input
+            type="radio"
+            name={group}
+            value={look}
+            checked={value === look}
+            data-token={name}
+            onChange={() => onChange(look)}
+            className="absolute inset-0 size-full cursor-pointer appearance-none rounded-control opacity-0"
+          />
+          {LOOK_NAMES[look] ?? look}
+        </label>
+      ))}
+    </div>
+  );
+}
+
 export const CONTROLS: Readonly<Record<TokenKind, (props: ControlProps) => ReactNode>> = {
   colour: ColourControl,
   font: FontControl,
@@ -391,4 +427,5 @@ export const CONTROLS: Readonly<Record<TokenKind, (props: ControlProps) => React
   border: EdgeControl,
   stroke: StrokeControl,
   shadow: ShadowControl,
+  choice: ChoiceControl,
 };

@@ -13,9 +13,9 @@
 
 export interface ThemeRule {
   selectors: readonly string[];
-  /** The `--cg-*` declarations, by name without the prefix, as written. */
+  /** The `--cg-*` declarations (decor's aside), by name without the prefix, as written. */
   tokens: Readonly<Record<string, string>>;
-  /** Every other declaration, by property. */
+  /** Every other declaration, by property: `color-scheme`, the decor variables. */
   other: Readonly<Record<string, string>>;
 }
 
@@ -32,8 +32,10 @@ export function themeRules(css: string): ThemeRule[] {
     const other: Record<string, string> = {};
     for (const d of (m[2] ?? '').matchAll(/([\w-]+)\s*:\s*([^;]+);/g)) {
       const [prop, value] = [d[1] ?? '', (d[2] ?? '').trim()];
-      if (prop.startsWith('--cg-')) tokens[prop.slice(5)] = value;
-      else other[prop] = value;
+      // Decor variables (decor.css) are not tokens: the choices behind them are.
+      if (prop.startsWith('--cg-') && !prop.startsWith('--cg-decor-')) {
+        tokens[prop.slice(5)] = value;
+      } else other[prop] = value;
     }
     rules.push({ selectors, tokens, other });
   }

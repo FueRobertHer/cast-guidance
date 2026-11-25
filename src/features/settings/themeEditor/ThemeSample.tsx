@@ -1,6 +1,6 @@
 import { ChevronDown, Heart, HeartCrack, Pencil, Shield, Skull, Sparkles } from 'lucide-react';
 import type { CSSProperties } from 'react';
-import { type ThemeFile, themeScheme, themeVars } from '@/theme/file';
+import { type ThemeFile, themeAttrs, themeScheme, themeVars } from '@/theme/file';
 import { D20Icon } from '@/ui/D20Icon';
 
 /**
@@ -28,6 +28,7 @@ export function ThemeSample({
       aria-label="Preview"
       data-theme={file.base}
       data-theme-sample=""
+      {...themeAttrs(file)}
       style={style}
       className="overflow-hidden rounded-card bg-bg font-sans text-ink shadow-overlay ring ring-line ring-inset"
     >
@@ -51,7 +52,7 @@ export function ThemeSample({
         </div>
       ) : (
         <div className="flex flex-col gap-2 p-3">
-          <div className="flex flex-col gap-2 rounded-card bg-surface p-3 shadow-card ring ring-line ring-inset">
+          <div className="cg-card flex flex-col gap-2 rounded-card bg-surface p-3 shadow-card ring ring-line ring-inset">
             <div className="flex items-center justify-between">
               <span className="text-overline text-ink-muted uppercase">Hit points</span>
               <span className="inline-flex items-center gap-1 rounded-pill bg-ward-soft px-2 text-label text-ward">

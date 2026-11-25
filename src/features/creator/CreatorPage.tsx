@@ -1020,7 +1020,7 @@ export function Component() {
                 {/* Not a <label>: that handed the steppers' "Level" name to the
                     minus alone (and a tap on the word to it), leaving plus nameless.
                     The value says "Level N" itself, and announces each change. */}
-                <div className="flex items-center justify-between rounded-card bg-surface py-1 pr-1 pl-4 shadow-card ring ring-line ring-inset">
+                <div className="cg-card flex items-center justify-between rounded-card bg-surface py-1 pr-1 pl-4 shadow-card ring ring-line ring-inset">
                   <span aria-hidden="true" className="text-body-strong">
                     Level
                   </span>
@@ -1528,7 +1528,7 @@ export function Component() {
                 ).map(([label, v]) => (
                   <div
                     key={label}
-                    className="rounded-card bg-surface p-3 shadow-card ring ring-line ring-inset"
+                    className="cg-card rounded-card bg-surface p-3 shadow-card ring ring-line ring-inset"
                   >
                     <div className="text-stat tabular-nums">{v}</div>
                     <div className="text-caption text-ink-muted">{label}</div>

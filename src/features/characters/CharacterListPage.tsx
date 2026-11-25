@@ -193,7 +193,7 @@ function CharacterCard({
         to={`/c/${c.id}`}
         draggable={false}
         {...hold}
-        className="flex items-center gap-3 rounded-card bg-surface py-3 pr-3 pl-4 shadow-card ring ring-line ring-inset transition-colors select-none [-webkit-touch-callout:none] group-hover:bg-surface-raised"
+        className="cg-card flex items-center gap-3 rounded-card bg-surface py-3 pr-3 pl-4 shadow-card ring ring-line ring-inset transition-colors select-none [-webkit-touch-callout:none] group-hover:bg-surface-raised"
       >
         {/* Decoration, so it is the first thing to go when a large text size
             leaves the card narrow (under 15rem, so measured in text): the

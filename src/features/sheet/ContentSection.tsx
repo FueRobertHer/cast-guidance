@@ -67,7 +67,7 @@ export function ContentSection({
     <details
       open={open}
       onToggle={(e) => setOpen(e.currentTarget.open)}
-      className="group scroll-mt-4 rounded-card bg-surface shadow-card ring ring-line ring-inset"
+      className="cg-card group scroll-mt-4 rounded-card bg-surface shadow-card ring ring-line ring-inset"
     >
       <summary className="flex min-h-tap cursor-pointer flex-wrap items-center justify-between gap-x-2 px-4 py-2.5">
         <span className="text-heading">Content</span>

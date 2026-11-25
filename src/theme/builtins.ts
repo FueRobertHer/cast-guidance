@@ -28,18 +28,35 @@ export interface BuiltInTheme {
    * against themes.css.
    */
   readonly edges: readonly [resting: number, selected: number];
+  /**
+   * Its decor (vocabulary.ts `CHOICES`): the look of its page and cards. Its
+   * rule in themes.css sets the same through decor.css's variables, so a
+   * subtree drawn in it needs no attribute; vocabulary.test.ts holds the two
+   * to the same.
+   */
+  readonly decor: Readonly<Record<'texture' | 'frame', string>>;
 }
+
+const PLAIN = { texture: 'none', frame: 'plain' } as const;
 
 /** Settings' order, after System: the device's pair first, then the reskins. */
 export const BUILT_IN_THEMES: readonly BuiltInTheme[] = [
-  { id: 'light', label: 'Light', scheme: 'light', pageColour: '#eee6d5', edges: [1, 2] },
-  { id: 'dark', label: 'Dark', scheme: 'dark', pageColour: '#121110', edges: [1, 2] },
+  {
+    id: 'light',
+    label: 'Light',
+    scheme: 'light',
+    pageColour: '#eee6d5',
+    edges: [1, 2],
+    decor: PLAIN,
+  },
+  { id: 'dark', label: 'Dark', scheme: 'dark', pageColour: '#121110', edges: [1, 2], decor: PLAIN },
   {
     id: 'parchment',
     label: 'Parchment',
     scheme: 'light',
     pageColour: '#e9dfc6',
     edges: [1, 2],
+    decor: { texture: 'paper', frame: 'double' },
   },
   {
     id: 'modern',
@@ -47,6 +64,7 @@ export const BUILT_IN_THEMES: readonly BuiltInTheme[] = [
     scheme: 'light',
     pageColour: '#f2f4f7',
     edges: [1, 2],
+    decor: PLAIN,
   },
   {
     id: 'contrast',
@@ -54,6 +72,7 @@ export const BUILT_IN_THEMES: readonly BuiltInTheme[] = [
     scheme: 'dark',
     pageColour: '#000000',
     edges: [2, 3],
+    decor: PLAIN,
   },
 ];
 

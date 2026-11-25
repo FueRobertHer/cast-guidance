@@ -28,7 +28,7 @@ function FeatureDetails({ f, open }: { f: FeatureCard; open: boolean }) {
   }`;
   return (
     <details
-      className="group rounded-card bg-surface shadow-card ring ring-line ring-inset"
+      className="cg-card group rounded-card bg-surface shadow-card ring ring-line ring-inset"
       open={open}
     >
       <summary className="flex min-h-tap cursor-pointer list-none items-baseline gap-2 px-4 py-3 text-body-strong">

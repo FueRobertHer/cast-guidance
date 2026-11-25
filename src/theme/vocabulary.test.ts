@@ -30,7 +30,11 @@ const SHAPE: Readonly<Record<TokenKind, RegExp>> = {
   radius: /^(\d+(\.\d+)?(rem|px)|calc\(infinity \* 1px\))$/,
   border: /^\d+(\.\d+)?px$/,
   stroke: /^\d+(\.\d+)?$/,
+  choice: /^[a-z]+$/,
 };
+
+/** Tokens a built-in sets in themes.css: every one but the choices (builtins.ts). */
+const CSS_TOKENS = VOCABULARY.filter((t) => t.kind !== 'choice');
 
 describe('the theme vocabulary (DS-001)', () => {
   it('names each token once', () => {
@@ -50,13 +54,30 @@ describe('the theme vocabulary (DS-001)', () => {
 
   it.each(IDS)('has %s set every token, and no others', (id) => {
     const names = Object.keys(rawTokens(id, RULES));
-    expect(VOCABULARY.map((t) => t.name).filter((n) => !names.includes(n))).toEqual([]);
+    expect(CSS_TOKENS.map((t) => t.name).filter((n) => !names.includes(n))).toEqual([]);
     expect(names.filter((n) => !TOKEN_NAMES.has(n))).toEqual([]);
+  });
+
+  it.each(BUILT_IN_THEMES)('draws $label’s decor as builtins.ts chooses it', (theme) => {
+    // The variables its rule sets are those its choices' attributes set in decor.css.
+    const decor = themeRules(
+      readFileSync(path.resolve(import.meta.dirname, '../styles/decor.css'), 'utf8'),
+    );
+    const forChoice = (token: string, look: string) =>
+      decor.find((r) => r.selectors.includes(`[data-cg-${token}="${look}"]`))?.other ?? {};
+    const want = {
+      ...forChoice('texture', theme.decor.texture),
+      ...forChoice('frame', theme.decor.frame),
+    };
+    const own = Object.fromEntries(
+      Object.entries(themeProperties(theme.id, RULES)).filter(([n]) => n.startsWith('--cg-decor-')),
+    );
+    expect(own).toEqual(want);
   });
 
   it.each(IDS)('has every %s value in the shape its kind takes', (id) => {
     const tokens = themeTokens(id, RULES);
-    const wrong = VOCABULARY.filter((t) => !SHAPE[t.kind].test(tokens[t.name] ?? '')).map(
+    const wrong = CSS_TOKENS.filter((t) => !SHAPE[t.kind].test(tokens[t.name] ?? '')).map(
       (t) => `${t.name}: ${tokens[t.name]}`,
     );
     expect(wrong).toEqual([]);

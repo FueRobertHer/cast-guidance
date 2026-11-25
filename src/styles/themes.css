@@ -116,6 +116,11 @@
   --cg-border: 1px;
   --cg-border-strong: 2px; /* a selected card or row, a crit's edge */
   --cg-icon-stroke: 2;
+  /* Decor (decor.css): no texture, no frame. */
+  --cg-decor-texture: none;
+  --cg-decor-blend: normal;
+  --cg-decor-frame: none;
+  --cg-decor-frame-offset: 0px;
 }
 
 /*
@@ -292,6 +297,11 @@
   --cg-border: 1px;
   --cg-border-strong: 2px;
   --cg-icon-stroke: 1.75;
+  /* Decor (decor.css): paper behind the page, a double frame on cards. */
+  --cg-decor-texture: var(--cg-texture-paper);
+  --cg-decor-blend: soft-light;
+  --cg-decor-frame: var(--cg-border) solid var(--cg-line-strong);
+  --cg-decor-frame-offset: calc(-1 * var(--cg-border) - 3px);
 }
 
 /*
@@ -351,6 +361,11 @@
   --cg-border: 1px;
   --cg-border-strong: 2px;
   --cg-icon-stroke: 1.5;
+  /* Decor (decor.css): no texture, no frame. */
+  --cg-decor-texture: none;
+  --cg-decor-blend: normal;
+  --cg-decor-frame: none;
+  --cg-decor-frame-offset: 0px;
 }
 
 /*
@@ -412,4 +427,9 @@
   --cg-border: 2px;
   --cg-border-strong: 3px;
   --cg-icon-stroke: 2.5;
+  /* Decor (decor.css): no texture, no frame. */
+  --cg-decor-texture: none;
+  --cg-decor-blend: normal;
+  --cg-decor-frame: none;
+  --cg-decor-frame-offset: 0px;
 }

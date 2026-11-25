@@ -10,7 +10,7 @@ import {
   useThemeChoice,
 } from '@/lib/theme';
 import { builtInTheme } from '@/theme/builtins';
-import { themeVars } from '@/theme/file';
+import { themeAttrs, themeVars } from '@/theme/file';
 
 /** A bar in a miniature: a card, or the action blue when `brand`. */
 function Bar({ brand = false }: { brand?: boolean }) {
@@ -28,10 +28,20 @@ function Bar({ brand = false }: { brand?: boolean }) {
  * variables where they are used (`@theme inline` in app.css); a saved theme
  * is its base with its own values set on the same element.
  */
-export function ThemeMini({ theme, vars }: { theme: Theme; vars?: Record<string, string> }) {
+export function ThemeMini({
+  theme,
+  vars,
+  attrs,
+}: {
+  theme: Theme;
+  vars?: Record<string, string>;
+  /** Its decor (decor.css), as `data-cg-*` attributes. */
+  attrs?: Record<string, string>;
+}) {
   return (
     <span
       data-theme={theme}
+      {...attrs}
       style={vars as CSSProperties | undefined}
       className="flex h-18 w-full flex-col justify-between overflow-hidden rounded-thumb bg-bg p-2 ring ring-line ring-inset"
     >
@@ -134,7 +144,11 @@ export function ThemePicker() {
             checked={choice === customChoice(theme.id)}
             label={theme.file.name}
           >
-            <ThemeMini theme={theme.file.base} vars={themeVars(theme.file)} />
+            <ThemeMini
+              theme={theme.file.base}
+              vars={themeVars(theme.file)}
+              attrs={themeAttrs(theme.file)}
+            />
           </Option>
         ))}
       </div>

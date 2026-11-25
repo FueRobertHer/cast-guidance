@@ -172,17 +172,24 @@ function drawn() {
       .filter((n) => n.startsWith('--cg-'))
       .map((n) => [n, root.style.getPropertyValue(n)]),
   );
+  const decor = Object.fromEntries(
+    [...root.attributes].filter((a) => a.name.startsWith('data-cg-')).map((a) => [a.name, a.value]),
+  );
   return {
     theme: root.dataset.theme,
     vars,
     scheme: root.style.getPropertyValue('color-scheme'),
     bar: meta(),
+    ...(Object.keys(decor).length === 0 ? {} : { decor }),
   };
 }
 
 function clearPage(): void {
-  delete document.documentElement.dataset.theme;
-  document.documentElement.removeAttribute('style');
+  const root = document.documentElement;
+  delete root.dataset.theme;
+  root.removeAttribute('style');
+  for (const { name } of [...root.attributes])
+    if (name.startsWith('data-cg-')) root.removeAttribute(name);
 }
 
 describe("themes of one's own", () => {
@@ -360,6 +367,52 @@ describe('deleting the theme being tried', () => {
     deleteTheme(theme.id);
     expect(drawn()).toEqual({ theme: 'dark', vars: {}, scheme: '', bar: THEME_COLOR.dark });
     expect(readThemeChoice()).toBe('dark');
+  });
+});
+
+describe('decor', () => {
+  const DECORATED: ThemeFile = {
+    ...MIDNIGHT,
+    tokens: { ...MIDNIGHT.tokens, texture: 'grain', frame: 'stitched' },
+  };
+
+  it('draws a theme’s choices as attributes, never as values, the boot script as the app does', () => {
+    device(false);
+    const { theme } = saveTheme(DECORATED);
+    setThemeChoice(customChoice(theme.id));
+    const app = drawn();
+    expect(app.decor).toEqual({ 'data-cg-texture': 'grain', 'data-cg-frame': 'stitched' });
+    expect(Object.keys(app.vars).some((n) => n.includes('texture') || n.includes('frame'))).toBe(
+      false,
+    );
+    clearPage();
+    runBoot();
+    expect(drawn()).toEqual(app);
+    // Back to a built-in, they go.
+    setThemeChoice('parchment');
+    expect(drawn().decor).toBeUndefined();
+  });
+
+  it('refuses a copy whose decor could be anything but a named look', () => {
+    device(false);
+    const { theme } = saveTheme(DECORATED);
+    setThemeChoice(customChoice(theme.id));
+    const applied = JSON.parse(localStorage.getItem(APPLIED_KEY) ?? '{}');
+    for (const attrs of [
+      { onclick: 'x' },
+      { 'data-cg-texture': 'url(x)' },
+      { 'data-cg-frame': 7 },
+    ]) {
+      localStorage.setItem(APPLIED_KEY, JSON.stringify({ ...applied, attrs }));
+      clearPage();
+      runBoot();
+      expect(drawn(), JSON.stringify(attrs)).toEqual({
+        theme: 'dark',
+        vars: {},
+        scheme: '',
+        bar: THEME_COLOR.dark,
+      });
+    }
   });
 });
 

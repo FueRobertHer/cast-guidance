@@ -3,6 +3,7 @@ import { BUILT_IN_THEMES, type BuiltInThemeId, isBuiltInTheme } from '@/theme/bu
 import {
   parseThemeFile,
   type ThemeFile,
+  themeAttrs,
   themeKey,
   themePageColour,
   themeScheme,
@@ -300,16 +301,19 @@ export function appliedTheme(theme: SavedTheme): AppliedTheme {
     scheme: themeScheme(theme.file),
     pageColour: themePageColour(theme.file),
     vars: themeVars(theme.file),
-    attrs: {},
+    attrs: themeAttrs(theme.file),
   };
 }
 
-/** Takes every inline `--cg-*` and colour scheme off <html>. */
+/** Takes every inline `--cg-*`, colour scheme and decor attribute off <html>. */
 function clearInline(root: HTMLElement): void {
   for (const name of [...root.style]) {
     if (name.startsWith('--cg-')) root.style.removeProperty(name);
   }
   root.style.removeProperty('color-scheme');
+  for (const { name } of [...root.attributes]) {
+    if (name.startsWith('data-cg-')) root.removeAttribute(name);
+  }
 }
 
 /** Draws the page in a built-in theme and colours the browser's bars to match. */
@@ -327,6 +331,7 @@ function applySaved(theme: SavedTheme): AppliedTheme {
   clearInline(root);
   root.dataset.theme = applied.base;
   for (const [name, value] of Object.entries(applied.vars)) root.style.setProperty(name, value);
+  for (const [name, value] of Object.entries(applied.attrs)) root.setAttribute(name, value);
   root.style.setProperty('color-scheme', applied.scheme);
   document.querySelector('meta[name="theme-color"]')?.setAttribute('content', applied.pageColour);
   return applied;

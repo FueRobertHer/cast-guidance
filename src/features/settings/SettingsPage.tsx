@@ -636,7 +636,7 @@ export function Component() {
           id={STORAGE_DETAILS_ID}
           open={detailsOpen}
           onToggle={(e) => setDetailsOpen(e.currentTarget.open)}
-          className="group scroll-mt-4 rounded-card bg-surface shadow-card ring ring-line ring-inset"
+          className="cg-card group scroll-mt-4 rounded-card bg-surface shadow-card ring ring-line ring-inset"
         >
           <summary
             ref={detailsSummary}

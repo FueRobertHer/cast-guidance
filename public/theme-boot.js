@@ -29,6 +29,7 @@
   var page = null;
   var scheme = null;
   var vars = null;
+  var decor = null;
 
   // `?theme=reset` on any address: back to Dark, whatever a theme of one's
   // own did to the page, then off the address so a reload does not reset
@@ -78,9 +79,19 @@
             typeof value === 'string' &&
             /^[#a-zA-Z0-9 .,%()"'*+-]{1,200}$/.test(value);
         }
+        // Decor is attributes (src/styles/decor.css): short names, short words.
+        var attrs = applied.attrs && typeof applied.attrs === 'object' ? applied.attrs : {};
+        var attrNames = Object.keys(attrs);
+        for (var j = 0; ok && j < attrNames.length; j++) {
+          ok =
+            /^data-cg-[a-z]+$/.test(attrNames[j]) &&
+            typeof attrs[attrNames[j]] === 'string' &&
+            /^[a-z0-9-]{1,32}$/.test(attrs[attrNames[j]]);
+        }
         if (ok) {
           theme = applied.base;
           vars = applied.vars;
+          decor = attrs;
           scheme = applied.scheme === 'light' ? 'light' : 'dark';
           if (/^#[0-9a-f]{6}$/.test(applied.pageColour)) page = applied.pageColour;
         }
@@ -94,6 +105,7 @@
   root.setAttribute('data-theme', theme);
   if (vars !== null) {
     for (var name in vars) if (has(vars, name)) root.style.setProperty(name, vars[name]);
+    for (var attr in decor) if (has(decor, attr)) root.setAttribute(attr, decor[attr]);
     root.style.setProperty('color-scheme', scheme);
   }
   var meta = document.querySelector('meta[name="theme-color"]');

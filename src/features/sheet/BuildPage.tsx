@@ -240,7 +240,7 @@ function Section({
     <details
       id={id}
       open={defaultOpen}
-      className="group scroll-mt-4 rounded-card bg-surface shadow-card ring ring-line ring-inset"
+      className="cg-card group scroll-mt-4 rounded-card bg-surface shadow-card ring ring-line ring-inset"
     >
       {/* Wraps so a long summary (six ability scores, no spaces) moves
           under the title at large text instead of widening the page, and
@@ -1310,7 +1310,7 @@ export function Component() {
       </Section>
 
       {sheet.warnings.length > 0 && (
-        <details className="rounded-card bg-surface p-4 text-caption text-ink-muted shadow-card ring ring-line ring-inset">
+        <details className="cg-card rounded-card bg-surface p-4 text-caption text-ink-muted shadow-card ring ring-line ring-inset">
           <summary className="cursor-pointer text-body">
             {sheet.warnings.length} note{sheet.warnings.length > 1 ? 's' : ''}
           </summary>

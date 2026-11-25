@@ -124,7 +124,7 @@ export function CharacterSourcesSection({
     <details
       open={open}
       onToggle={(e) => setOpen(e.currentTarget.open)}
-      className="group scroll-mt-4 rounded-card bg-surface shadow-card ring ring-line ring-inset"
+      className="cg-card group scroll-mt-4 rounded-card bg-surface shadow-card ring ring-line ring-inset"
     >
       {/* As the Build page's other sections: the summary wraps under the
           title where both do not fit (large text). */}

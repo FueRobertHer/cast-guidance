@@ -1703,7 +1703,7 @@ function Preview({ draft }: EditorProps) {
   const hasSave = spellSaves(draft).length > 0;
   return (
     <Section title="On the Spells tab">
-      <div className="rounded-card bg-surface ring ring-line ring-inset">
+      <div className="cg-card rounded-card bg-surface ring ring-line ring-inset">
         <div className="flex min-h-15 flex-wrap items-center gap-x-2 gap-y-1 py-2 pr-3 pl-4">
           <div className="min-w-0 flex-1 basis-26">
             <div className="flex flex-wrap items-center gap-x-1.5">

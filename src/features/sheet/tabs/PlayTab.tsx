@@ -261,7 +261,7 @@ const BAND_FILL = { high: 'bg-heal', mid: 'bg-meter-mid', low: 'bg-danger' } as 
 const FIVE =
   'tap rounded-full text-label tabular-nums transition-[filter] duration-120 hover:brightness-112';
 /** A card without its padding (surfaces' `cardClass`), for one whose rows pad themselves. */
-const FLUSH = 'rounded-card bg-surface shadow-card ring ring-line ring-inset';
+const FLUSH = 'cg-card rounded-card bg-surface shadow-card ring ring-line ring-inset';
 /**
  * A cell of the Armor Class / Initiative / Speed / Proficiency strip (DS-001
  * StatStrip), and the small label under its number. Four across, two by two

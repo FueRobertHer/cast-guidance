@@ -85,3 +85,38 @@ describe('classes leave the look to the theme (DS-001)', () => {
     expect(fine.filter(hardCoded)).toEqual([]);
   });
 });
+
+/**
+ * A card-shaped class list: card corners on the card ground with a hairline
+ * edge, not an overlay (a menu, a popover), which floats rather than sits.
+ */
+function unhookedCards(text: string): string[] {
+  return [...text.matchAll(/(["'\x60])((?:(?!\1)[^\n])*\brounded-card\b(?:(?!\1)[^\n])*)\1/g)]
+    .map((m) => m[2] ?? '')
+    .filter(
+      (cls) =>
+        /\bbg-surface\b/.test(cls) &&
+        /\bring-line\b/.test(cls) &&
+        !/\bshadow-overlay\b/.test(cls) &&
+        !/\bcg-card\b/.test(cls),
+    );
+}
+
+describe('every card carries the hook its frame draws on (styles/decor.css)', () => {
+  it('finds no card without `cg-card`', () => {
+    const missing = sources(SRC).flatMap((file) => {
+      const rel = path.relative(SRC, file).split(path.sep).join('/');
+      return unhookedCards(readFileSync(file, 'utf8')).map((cls) => `${rel}: ${cls}`);
+    });
+    expect(missing).toEqual([]);
+  });
+
+  it('sees a card in any quotes, and lets overlays and other grounds be', () => {
+    const card = ['rounded-', 'card bg-surface p-4 ring ring-line ring-inset'].join('');
+    expect(unhookedCards(`className="${card}"`)).toHaveLength(1);
+    expect(unhookedCards(`const c = \`flex ${card}\`;`)).toHaveLength(1);
+    expect(unhookedCards(`'cg-card ${card}'`)).toEqual([]);
+    expect(unhookedCards(`"${card} shadow-overlay"`)).toEqual([]);
+    expect(unhookedCards(`"rounded-card bg-bg ring ring-line"`)).toEqual([]);
+  });
+});

@@ -78,4 +78,10 @@ export const EDITOR_GROUPS: readonly EditorGroup[] = [
   },
   { id: 'shadows', title: 'Shadows', tokens: ['shadow-card', 'shadow-float', 'shadow-overlay'] },
   { id: 'icons', title: 'Icons', tokens: ['icon-stroke'] },
+  {
+    id: 'decor',
+    title: 'Decor',
+    hint: 'A texture behind the page, and a frame around cards.',
+    tokens: ['texture', 'frame'],
+  },
 ];

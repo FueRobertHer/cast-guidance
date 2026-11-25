@@ -324,52 +324,64 @@ edit it again.
 
 ### Phase 5: decor and more fonts
 
-**Decor as choices, drawn by attribute.** Two new tokens of a new kind,
-`choice`, each a short list of named looks rather than a value:
+**Decor as choices.** Two tokens of a new kind, `choice`, each a short list of
+named looks rather than a value:
 
-- `texture`, behind the page: `none`, `paper`, `linen`, `grain`. Each is a
-  small tiling SVG noise in app CSS (`decor.css`), a data URI (the CSP allows
-  `data:` images), grey and blended with `soft-light` over `bg`, so one tile
-  suits any page colour, light or dark.
+- `texture`, behind the page: `none`, `paper`, `grain`. A small tiling SVG
+  noise (a data URI; the CSP allows `data:` images), grey, blended
+  `soft-light` over `bg` with `background-blend-mode`, fixed to the viewport
+  so the page and the bars that paint `bg` over it line up (iOS ignores
+  `fixed`, so there it can show a seam under a sticky bar). Subtle by design:
+  barely there on a dark page.
 - `frame`, around cards: `plain`, `double` (a hairline inside the edge),
-  `stitched` (a dashed line inside it), `inked` (a heavy outline outside it).
-  Drawn with `outline` and `outline-offset`, which take no room and leave the
-  layout alone.
+  `stitched` (a dashed line inside it). An `outline` with a negative offset:
+  it takes no room, cannot be clipped, and leaves the layout alone.
 
-A choice is never set as a custom property (the boot script would have to
-trust a data URI): it is an attribute, `data-cg-texture="paper"`, on the
-element the theme is drawn on (<html>, the editor's sample, a picker card),
-and decor.css keys on it, so a subtree draws its own. `appliedTheme` already
-carries `attrs` for the boot script, which checks names (`data-cg-*`) and
-values (`[a-z0-9-]`) before setting them. A built-in's choices live in
-builtins.ts (Parchment: paper, double; the rest none, plain), set the same
-way, and the boot script repeats them, held to builtins.ts by its test as the
-page colours are.
+**Drawn through inherited variables.** A choice is an attribute on the
+element a theme is drawn on (`data-cg-texture="paper"` on <html>, the
+editor's sample, a picker card), and decor.css turns it into variables
+(`--cg-texture`, `--cg-frame`, `--cg-frame-offset`) that the page and
+`.cg-card` read. Each built-in's rule in themes.css sets its own defaults
+for the same variables, so a nested built-in subtree (Settings' Appearance
+while a theme of one's own is in use) resets them, as it does every token,
+and the boot script needs attributes only for a theme of one's own: it
+checks names (`data-cg-*`) and values (`[a-z0-9-]`) before setting them. A
+built-in's choices are also listed in builtins.ts, for the editor and for
+export; a test holds the two to the same variables. The decor rules sit in
+a layer below Tailwind's utilities, so a frame never hides a focus ring.
 
-**One hook on every card.** `cardClass` gains `cg-card`, and the 23 cards
-that build their own classes move to it or take the hook; a scan test fails
-on a card-shaped class list (`rounded-card` with a `bg-surface`) without it.
+**One hook on every card.** `cardClass` gains `cg-card`, and the cards that
+build their own classes take it too; a scan test fails on a card-shaped
+class list (`rounded-card` with `bg-surface` and a `ring-line` edge, not an
+overlay) without it.
 
 **Title tracking.** `tracking-display` (em, -0.05 to 0.2): added to each
-title size's own letter-spacing, 0 in every built-in, so they draw as now,
-and a capitals face like Cinzel can open up.
+title size's own letter-spacing in `@theme inline`, 0 in every built-in, so
+they draw as now, and a capitals face like Cinzel can open up.
 
-**More fonts.** EB Garamond, Fraunces, Cinzel and IM Fell English (book and
-display), Lexend (a readable sans), OpenDyslexic, and JetBrains Mono, all
-OFL-1.1, 400 and 700 (Cinzel and Fell what they have). Not precached (the
-precache has about 140 KB left): the cache-first route keeps each face on
-first use, and drawing a theme asks for its faces while online, so a theme in
-use stays whole offline. The editor's font control becomes a list, each font
-named in itself and loaded as its row scrolls into view, with Loading and
-"Not saved for offline yet" states, and a search box.
+**More fonts.** EB Garamond, Fraunces, Lexend, OpenDyslexic and JetBrains
+Mono for text or titles; Cinzel (capitals) and IM Fell English (no bold,
+old-style figures) for titles only, which `fonts.ts` marks and the editor
+honours. All OFL-1.1. Not precached (the precache has about 140 KB left): the
+cache-first route keeps each face on first use, and drawing a theme of one's
+own asks for its faces while online, so it stays whole offline after. The
+editor's font control shows a line in the chosen font and says when it is not
+on this device yet; a picker card says the same offline. A library font
+swaps in after first paint on each launch (from the cache, so quickly).
 
-**Tests**: choices read and checked as a file's other values (an unknown
-look dropped), drawn as attributes on <html> before first paint and on
-subtrees, never as custom properties; the boot script's choices for the
-built-ins against builtins.ts; every card with the hook; built-ins pixel for
-pixel unchanged apart from Parchment's decor; the editor's choice and font
-controls; a theme using a library font draws in it after a reload while
-online, and falls back cleanly offline before first use.
+**Guarantees kept.** The axe gate scans with textures off (`--cg-texture:
+none`), since it cannot measure text over an image, and contrast.test.ts
+holds text on a textured page to 4.5:1 against the darkest and lightest the
+texture can make it. Dark and Light draw pixel for pixel as before. Theme
+files need no schema change (an older build drops the choices). A test
+fails if a library face reaches the precache.
+
+**Tests**: choices read, checked and exported as values are, drawn as
+attributes (never custom properties) on <html> before first paint and on
+subtrees; built-ins' choices against their variables; every card hooked;
+built-ins unchanged apart from Parchment's decor; focus on a framed card;
+the editor's choice and font controls; a theme with a library font after a
+reload; the widest font with the widest title tracking at 320 px.
 
 ### Phase 6: uploaded fonts (only on demand)
 

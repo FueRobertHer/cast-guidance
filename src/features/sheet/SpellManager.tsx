@@ -617,7 +617,7 @@ function ClassSpells({
             <details
               key={lvl}
               open={open}
-              className="group overflow-hidden rounded-card bg-surface shadow-card ring ring-line ring-inset"
+              className="cg-card group overflow-hidden rounded-card bg-surface shadow-card ring ring-line ring-inset"
             >
               <summary className="flex min-h-tap cursor-pointer list-none items-center gap-2 px-4 py-2 text-body-strong">
                 <ChevronRight

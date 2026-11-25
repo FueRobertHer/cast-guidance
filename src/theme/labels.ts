@@ -80,6 +80,8 @@ export const TOKEN_LABELS: Readonly<Record<string, string>> = {
   border: 'Edges',
   'border-strong': 'Selected edges',
   'icon-stroke': 'Icon lines',
+  texture: 'Page texture',
+  frame: 'Card frames',
 };
 
 /** What a following token follows, as the editor says it: "the page", "Action". */

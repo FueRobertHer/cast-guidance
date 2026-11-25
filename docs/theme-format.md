@@ -56,6 +56,7 @@ that is every value it sets, a complete file to start from.
 | radius | `6px`, `0.5rem`, a bare number (px), or `full` | 0 to 48px |
 | border | `1px`, `0.0625rem` or a bare number (px) | `border` 0 to 3px, `border-strong` 1 to 4px and wider than `border` (if not, `border-strong` is left out, then `border` too if it still is not narrower) |
 | stroke | a number | 1 to 3 |
+| choice | one of the token's named looks (below) | |
 | shadow | `none`, or up to three layers `[inset] x y [blur [spread]] colour`, lengths in px, rem or bare numbers (px) | offsets within 32px, blur 0 to 64px, spread within 16px |
 
 Fonts are the ones the app bundles (the security policy allows no other font
@@ -125,6 +126,13 @@ row (border).
 
 **Icons**: `icon-stroke`, the line width of icons drawn at their default
 (stroke).
+
+**Decor** (choice): `texture`, behind the page: `none`, `paper` (mottled, as
+old paper) or `grain` (fine, as film); subtle by design, and strongest on a
+light page. `frame`, around cards: `plain`, `double` (a hairline inside the
+edge) or `stitched` (a dashed line inside it). A choice is drawn by the app's
+own styles: a file names the look, never an image. Parchment has paper and a
+double frame; the other built-ins neither.
 
 ## Making one in the app
 

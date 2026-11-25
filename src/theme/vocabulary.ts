@@ -22,7 +22,9 @@ export type TokenKind =
   /** An edge width, in px. */
   | 'border'
   /** An SVG stroke width on Lucide's 24px grid. */
-  | 'stroke';
+  | 'stroke'
+  /** One of a short list of named looks (`CHOICES`), drawn as an attribute, not a value. */
+  | 'choice';
 
 /** Where a token sits in an editor, and what a person would call the group. */
 export type TokenGroup =
@@ -33,7 +35,8 @@ export type TokenGroup =
   | 'shadows'
   | 'type'
   | 'shape'
-  | 'icons';
+  | 'icons'
+  | 'decor';
 
 export interface Token {
   readonly name: string;
@@ -45,6 +48,16 @@ const group =
   (g: TokenGroup, kind: TokenKind) =>
   (...names: string[]): Token[] =>
     names.map((name) => ({ name, kind, group: g }));
+
+/**
+ * The looks each `choice` token offers (src/styles/decor.css). A theme sets
+ * one by name; it is drawn as `data-cg-<token>` on the element the theme is
+ * drawn on, never as a custom property, so a file never names an image.
+ */
+export const CHOICES: Readonly<Record<string, readonly string[]>> = {
+  texture: ['none', 'paper', 'grain'],
+  frame: ['plain', 'double', 'stitched'],
+};
 
 /** The conditions that draw in their own hue (ui/chipFace.css). */
 export const CONDITION_HUES = [
@@ -116,6 +129,7 @@ export const VOCABULARY: readonly Token[] = [
   ),
   ...group('shape', 'border')('border', 'border-strong'),
   ...group('icons', 'stroke')('icon-stroke'),
+  ...group('decor', 'choice')('texture', 'frame'),
 ];
 
 export const TOKEN_NAMES: ReadonlySet<string> = new Set(VOCABULARY.map((t) => t.name));

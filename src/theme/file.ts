@@ -3,7 +3,7 @@ import { isLight } from './colour';
 import { fontId, fontStack } from './fonts';
 import { MAX_THEME_BYTES } from './link';
 import { rawTokens, themeRules } from './themeCss';
-import { TOKEN_NAMES, type TokenKind, VOCABULARY } from './vocabulary';
+import { CHOICES, TOKEN_NAMES, type TokenKind, VOCABULARY } from './vocabulary';
 
 /**
  * A theme file (docs/theme-format.md): a built-in base and the tokens it
@@ -166,6 +166,12 @@ export function checkToken(name: string, raw: unknown): Check {
       return stroke(raw);
     case 'shadow':
       return shadow(raw);
+    case 'choice': {
+      const look = typeof raw === 'string' ? raw.trim().toLowerCase() : '';
+      return CHOICES[name]?.includes(look)
+        ? { value: look }
+        : { error: `not one of ${(CHOICES[name] ?? []).join(', ')}` };
+    }
     default:
       return { error: 'not a theme token' };
   }
@@ -271,10 +277,21 @@ function cssValue(name: string, value: TokenValue): string {
   return String(value);
 }
 
-/** The custom properties a file sets over its base, by full name. */
+/** The custom properties a file sets over its base, by full name (its choices aside). */
 export function themeVars(file: ThemeFile): Record<string, string> {
   return Object.fromEntries(
-    Object.entries(file.tokens).map(([name, value]) => [`--cg-${name}`, cssValue(name, value)]),
+    Object.entries(file.tokens)
+      .filter(([name]) => KIND.get(name) !== 'choice')
+      .map(([name, value]) => [`--cg-${name}`, cssValue(name, value)]),
+  );
+}
+
+/** The attributes a file's choices are drawn with (decor.css): `data-cg-texture`. */
+export function themeAttrs(file: ThemeFile): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(file.tokens)
+      .filter(([name]) => KIND.get(name) === 'choice')
+      .map(([name, value]) => [`data-cg-${name}`, String(value)]),
   );
 }
 
@@ -328,6 +345,8 @@ export function builtInFile(id: BuiltInThemeId, css: string): ThemeFile {
     const checked = checkToken(t.name, asFile);
     tokens[t.name] = 'value' in checked ? checked.value : asFile;
   }
+  // Choices are not in its CSS as values (decor.css): builtins.ts lists them.
+  Object.assign(tokens, builtInTheme(id).decor);
   const label = BUILT_IN_THEMES.find((t) => t.id === id)?.label ?? id;
   return { castGuidanceTheme: THEME_SCHEMA, name: label, base: id, tokens };
 }

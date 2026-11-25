@@ -370,7 +370,7 @@ function Editor({
           <details
             key={group.id}
             open={group.id === 'start'}
-            className="group rounded-card bg-surface shadow-card ring ring-line ring-inset"
+            className="cg-card group rounded-card bg-surface shadow-card ring ring-line ring-inset"
           >
             <summary className="flex min-h-tap cursor-pointer list-none items-center gap-2 px-4 py-3">
               <span className="flex-1 text-heading">{group.title}</span>

@@ -1,5 +1,6 @@
 @import "tailwindcss";
 @import "./themes.css";
+@import "./decor.css";
 
 /*
  * The themes' values live in themes.css, one rule per theme, as `--cg-*`
