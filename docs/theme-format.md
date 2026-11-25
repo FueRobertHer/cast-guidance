@@ -95,7 +95,9 @@ on it; `guide` guidance and `guide-soft` its tint; `focus` the focus ring;
 `danger`, `danger-fill` (destructive buttons), `on-danger` (words on them) and
 `danger-soft`; `heal` and `heal-soft`; `ward` (temporary hit points) and
 `ward-soft`; `roll` and `roll-soft` (rolls); `arcane` and `arcane-soft`
-(spellcasting); `meter-mid` a meter half spent. In the built-ins `focus` and
+(spellcasting); `meter-mid` a meter half spent; and the HP card's cues:
+`hp-trail` the pale piece of the bar a hit took, `hp-bloom` the bright piece
+healing gave, `hp-sheen` the glint across temp HP. In the built-ins `focus` and
 `meter-mid` follow `guide`, and `roll` follows `brand`, unless a theme sets
 them.
 

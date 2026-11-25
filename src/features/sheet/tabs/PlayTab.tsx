@@ -10,7 +10,6 @@ import {
   Moon,
   Plus,
   RefreshCw,
-  Shield,
   ShieldCheck,
   Star,
 } from 'lucide-react';
@@ -150,7 +149,19 @@ import {
   withMoments,
 } from '../effectsInPlay';
 import { ForetoldNumbers } from '../ForetoldNumbers';
+import {
+  BloomCue,
+  CapCues,
+  ChipCues,
+  CueShield,
+  cuePart,
+  GlowCue,
+  NumberCues,
+  TrailCue,
+  useHpCues,
+} from '../HpCues';
 import { type HpMode, HpSheet } from '../HpSheet';
+import { hpBand } from '../hpChange';
 import { answersTo, namedStart, recklessStart } from '../namedStarts';
 import { clampPlayStateToMax, detectPlayStateOverages } from '../playStateLimits';
 import { type RecoveryPicks, RestSheet } from '../RestSheet';
@@ -244,6 +255,8 @@ const TOGGLE_OFF = 'text-ink-muted ring ring-line-strong ring-inset hover:text-i
 /** The HP card's ±1: round `surface-raised` steppers, the icon in `danger` or `heal`. */
 const STEP =
   'flex h-12 w-12 items-center justify-center rounded-full bg-surface-raised transition-[background-color,scale] duration-120 hover:bg-surface-hover active:scale-92';
+/** The HP bar's fill in each band (hpChange.ts): green, then amber, then red as it drops. */
+const BAND_FILL = { high: 'bg-heal', mid: 'bg-meter-mid', low: 'bg-danger' } as const;
 /** Its ±5: a 36px tint of the same role inside a 44px target (A11Y-002). */
 const FIVE =
   'tap rounded-full text-label tabular-nums transition-[filter] duration-120 hover:brightness-112';
@@ -458,6 +471,15 @@ export function Component() {
     mode: 'damage',
   });
   const hpSheetFrom = useRef<HTMLElement>(null);
+  // The HP card's cues for damage, healing and temp HP. A change made while
+  // the HP sheet or the rest sheet covers the card plays as the sheet goes.
+  const hpCues = useHpCues({
+    id: doc?.id ?? '',
+    currentHp: doc?.play.currentHp ?? 0,
+    tempHp: doc?.play.tempHp ?? 0,
+    follows: doc?.play.hpInitialized === false,
+    hold: hpSheet.open || restAsked.open,
+  });
   // When a Use that starts an effect last turned into End, or back: the
   // button changes under the finger, so a second tap within a second is the
   // same tap, not an undo.
@@ -1742,8 +1764,8 @@ export function Component() {
           </BannerAction>
         </section>
       )}
-      {/* HP: the hero card (DS-001 HitPoints). */}
-      <section className={cardClass}>
+      {/* HP: the hero card (DS-001 HitPoints), and what its cues move (HpCues.tsx). */}
+      <section ref={hpCues} className={`relative ${cardClass}`}>
         {/* Its name, and temp HP on a chip of its own: on the number's caption
             "+5 temp" had no room and wrapped at 375px. */}
         <div className="mb-2 flex min-h-7 flex-wrap items-center justify-between gap-2">
@@ -1753,18 +1775,23 @@ export function Component() {
             <DefensesChip view={defenseView(sheet, defenses)} raisedBy={defensesUp} />
             <button
               type="button"
+              {...cuePart('chip')}
               aria-label={play.tempHp > 0 ? `+${play.tempHp} temporary hit points` : undefined}
               aria-haspopup="dialog"
               title="Temporary hit points"
-              className={`-my-2 inline-flex min-h-tap items-center gap-1 whitespace-nowrap rounded-pill-tap border-8 border-transparent bg-clip-padding [--tap-inset:0.5rem] px-2 text-caption tabular-nums transition-colors duration-120 ${
+              className={`relative -my-2 inline-flex min-h-tap items-center gap-1 whitespace-nowrap rounded-pill-tap border-8 border-transparent bg-clip-padding [--tap-inset:0.5rem] px-2 text-caption tabular-nums transition-colors duration-120 ${
                 play.tempHp > 0
                   ? 'bg-ward-soft font-bold text-ward'
                   : 'font-semibold text-ink-muted ring ring-line-strong ring-inset hover:text-ink'
               }`}
               onClick={(event) => openHpSheet('temp', event.currentTarget)}
             >
-              <Shield size={14} aria-hidden="true" />
-              {play.tempHp > 0 ? `+${play.tempHp} temp` : 'Temp HP'}
+              {/* The cues' flash and glint on the pill, under its words. */}
+              <ChipCues />
+              <CueShield />
+              <span className="relative">
+                {play.tempHp > 0 ? `+${play.tempHp} temp` : 'Temp HP'}
+              </span>
             </button>
           </span>
         </div>
@@ -1824,8 +1851,18 @@ export function Component() {
                 (A11Y-002). The total may break before "/ max" and nowhere
                 else: kept on one line whole, even a two-digit total would
                 push the heal pair onto a line of its own at 320px. */}
-            <div className="text-stat tabular-nums min-[360px]:text-stat-hero">
-              {play.currentHp}{' '}
+            <div
+              {...cuePart('readout')}
+              className="text-stat tabular-nums min-[360px]:text-stat-hero"
+            >
+              {/* Red while dying. The cues' tallies sit beside its digits. */}
+              <span
+                {...cuePart('number')}
+                className={`relative inline-block origin-[50%_85%] ${dying ? 'text-danger' : ''}`}
+              >
+                {play.currentHp}
+                <NumberCues />
+              </span>{' '}
               <Lift
                 on={maxHpUp.length + maxHpDown.length > 0}
                 down={maxHpDown.length > 0}
@@ -1877,7 +1914,7 @@ export function Component() {
           (() => {
             const max = maxHp.value;
             const ratio = Math.max(0, Math.min(1, play.currentHp / max));
-            const color = ratio > 0.5 ? 'bg-heal' : ratio > 0.25 ? 'bg-meter-mid' : 'bg-danger';
+            const color = BAND_FILL[hpBand(play.currentHp, max)];
             const tempPct = play.tempHp > 0 ? Math.min(100, (play.tempHp / max) * 100) : 0;
             // valuenow has to sit inside the range, but the text says what the
             // screen says: a house rule can leave HP above max (140 / 136).
@@ -1893,19 +1930,26 @@ export function Component() {
                 aria-valuetext={`${play.currentHp} of ${max}${
                   play.tempHp > 0 ? `, plus ${play.tempHp} temporary` : ''
                 }`}
-                className="mt-3 flex h-2.5 overflow-hidden rounded-pill bg-track"
+                {...cuePart('meter')}
+                className="relative mt-3 flex h-2.5 overflow-hidden rounded-pill bg-track"
               >
+                {/* The fill keeps up in 120ms: the trail under it and the
+                    bloom over it show what moved. */}
+                <TrailCue />
                 <div
-                  className={`h-full ${color} transition-[width,background-color] duration-200 ease-arrive`}
+                  className={`relative h-full ${color} transition-[width,background-color] duration-120 ease-arrive`}
                   style={{ width: `${ratio * 100}%` }}
                 />
+                <BloomCue />
                 {/* Striped `ward`, so temp HP differs from the fill in
                     pattern as well as hue. */}
                 {tempPct > 0 && (
                   <div
-                    className="h-full rounded-r-full bg-[repeating-linear-gradient(135deg,var(--cg-ward)_0_4px,transparent_4px_7px)] shadow-[inset_0_0_0_1.5px_var(--cg-ward)]"
+                    className="relative h-full overflow-hidden rounded-r-pill bg-[repeating-linear-gradient(135deg,var(--cg-ward)_0_4px,transparent_4px_7px)] shadow-[inset_0_0_0_1.5px_var(--cg-ward)]"
                     style={{ width: `${tempPct}%` }}
-                  />
+                  >
+                    <CapCues />
+                  </div>
                 )}
               </div>
             );
@@ -2001,6 +2045,7 @@ export function Component() {
             ) : undefined}
           </BreakdownSheet>
         </div>
+        <GlowCue />
       </section>
 
       {/* Death saves */}

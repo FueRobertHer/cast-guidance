@@ -96,6 +96,9 @@ export const VOCABULARY: readonly Token[] = [
     'arcane',
     'arcane-soft',
     'meter-mid',
+    'hp-trail',
+    'hp-bloom',
+    'hp-sheen',
   ),
   ...group('conditions', 'colour')(
     ...CONDITION_HUES.flatMap((c) => [`cx-${c}`, `cx-${c}-soft`]),
