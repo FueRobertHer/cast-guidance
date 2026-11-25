@@ -22,29 +22,38 @@ export interface BuiltInTheme {
    * variable, so the value is repeated here.
    */
   readonly pageColour: string;
+  /**
+   * Its resting and selected edge widths in px, so a theme file that sets one
+   * can be held to the other (file.ts). vocabulary.test.ts checks them
+   * against themes.css.
+   */
+  readonly edges: readonly [resting: number, selected: number];
 }
 
 /** Settings' order, after System: the device's pair first, then the reskins. */
 export const BUILT_IN_THEMES: readonly BuiltInTheme[] = [
-  { id: 'light', label: 'Light', scheme: 'light', pageColour: '#eee6d5' },
-  { id: 'dark', label: 'Dark', scheme: 'dark', pageColour: '#121110' },
+  { id: 'light', label: 'Light', scheme: 'light', pageColour: '#eee6d5', edges: [1, 2] },
+  { id: 'dark', label: 'Dark', scheme: 'dark', pageColour: '#121110', edges: [1, 2] },
   {
     id: 'parchment',
     label: 'Parchment',
     scheme: 'light',
     pageColour: '#e9dfc6',
+    edges: [1, 2],
   },
   {
     id: 'modern',
     label: 'Modern',
     scheme: 'light',
     pageColour: '#f2f4f7',
+    edges: [1, 2],
   },
   {
     id: 'contrast',
     label: 'High contrast',
     scheme: 'dark',
     pageColour: '#000000',
+    edges: [2, 3],
   },
 ];
 

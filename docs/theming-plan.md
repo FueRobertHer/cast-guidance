@@ -48,15 +48,14 @@ for looks.
   (light or dark, for `color-scheme`) and page colour (for
   `<meta name="theme-color">`). `public/theme-boot.js` repeats the id to page
   colour map; `theme.test.ts` keeps the two in step, as it does today.
-- **Theme files** (phase 3): JSON, `{ schema, name, author, base, colors,
-  fonts, weights, shape, shadows, icons }`. `base` is a built-in id that fills
-  every token the file leaves out, so files stay small and survive new tokens.
+- **Theme files** (phase 3): JSON, `{ castGuidanceTheme, name, author, base,
+  tokens }`, with `tokens` flat and keyed by the vocabulary's names. `base` is
+  a built-in id that fills every token the file leaves out, so files stay
+  small and survive new tokens (and follow their base when it is retuned).
   Applied by setting `data-theme` to the base and each override with
   `documentElement.style.setProperty`, which `style-src` does not gate.
-- **Storage**: device preferences in localStorage, as the theme is today. The
-  choice key holds `system`, a built-in id, or `custom:<id>`; the active custom
-  theme's resolved overrides are cached so the boot script can apply them
-  before first paint without parsing theme files.
+- **Storage**: device preferences in localStorage, as the theme is today
+  (details under phase 3).
 - **Fonts**: each theme's stacks are in its rule; the faces are imported once
   in `src/main.tsx`. Every built-in theme's Latin faces are precached (about
   137 KB beyond the default themes'), so a theme, and every preview in
@@ -147,21 +146,114 @@ green.
 
 ### Phase 3: theme files
 
-Schema and validator (`src/theme/file.ts`): colours as hex, lengths bounded,
-fonts from the bundled list, shadows as structured layers, the selected
-border wider than the resting one (or selection vanishes), unknown keys
-dropped, a migration per schema version. Export the current theme as `.json`;
-import a file; a share link that carries the whole theme compressed in the URL.
-Opening a link or file shows a preview and asks before applying, then offers a
-timed "Keep this theme?" revert. `?theme=reset` in any URL returns to the
-default, handled by the boot script. "Your themes" in Settings.
-`docs/theme-format.md` documents the file.
+**The file** (`src/theme/file.ts`, documented in `docs/theme-format.md`):
+
+```json
+{
+  "castGuidanceTheme": 1,
+  "name": "Midnight",
+  "author": "optional",
+  "base": "dark",
+  "tokens": { "bg": "#101418", "font-display": "alegreya", "radius-card": "6px" }
+}
+```
+
+- `castGuidanceTheme` is the schema version and says what the file is. It
+  moves only for a breaking change (unknown tokens are dropped, so a new
+  token needs none). A higher version than the app knows is refused ("made
+  by a newer version"); each older version gets a migration step.
+- `base` is a built-in id. It fills every token the file leaves out, so a
+  file can be three lines or all 74, and a token added later takes the
+  base's value.
+- `tokens` is flat, keyed by the vocabulary's names (as VS Code's `colors`).
+  Each value is checked by its kind: colours `#rgb`, `#rrggbb`, `#rrggbbaa`
+  or `transparent` (stored lowercase `#rrggbb[aa]`), except `bg`, which must
+  be opaque (the page shows through otherwise, and the browser's bars take
+  no alpha); fonts an id from the
+  bundled list (`atkinson`, `literata`, `alegreya`, `inter`, `system`,
+  `serif`), turned into a stack by `src/theme/fonts.ts`; weights 300 to 800
+  in hundreds (the browser picks the nearest face a font has); radii 0 to 48px (px or rem) or `full`; edges 0 to 3px and the
+  selected edge 1 to 4px and wider than the resting one; the icon stroke 1
+  to 3; shadows `none` or up to three layers of
+  `[inset] x y [blur [spread]] colour`, in px, offsets within 32px, blur
+  within 64px, spread within 16px. A value that fails is dropped and named
+  in the preview; unknown keys likewise. Name and author: plain text, 60
+  characters at most, control and bidirectional characters removed. A file
+  over 64 KB is refused.
+
+**Applying one**: `data-theme` is the base, and each override is set on
+<html> with `style.setProperty('--cg-<name>', value)` (not gated by
+`style-src`). Switching away removes every inline `--cg-*`. `color-scheme`
+follows the theme's own `bg` (light or dark by luminance), not its base's,
+so a light theme on a dark base still gets light native controls. The page
+colour for the browser's bars is the theme's `bg`.
+
+**Storage** (localStorage, as the theme choice is today):
+- `cast-guidance:theme` holds `system`, a built-in id, or `custom:<id>`.
+- `cast-guidance:themes` holds the saved themes: `[{ id, file }]`, each file
+  already validated. Ids are random and never change (the editor will edit
+  in place); importing a theme already saved picks the saved one instead.
+- `cast-guidance:theme-applied` caches the active custom theme as the boot
+  script needs it: `{ v, id, base, scheme, pageColour, vars, attrs }`, the
+  resolved `--cg-*` values (`attrs` waits for phase 5's decor). The boot
+  script applies it only when its `id` matches the stored choice, so the two
+  keys can never draw a stale theme, and checks it loosely again (names
+  `--cg-[a-z0-9-]+`, values from a small character set, at most 100). The
+  app rebuilds it from the saved file at every start, so a migration or a
+  retuned base reaches it. Missing, stale or unreadable: the base, else Dark.
+- A write storage refuses keeps the theme for this tab, as a built-in
+  choice does today, and says it could not be saved.
+
+**Getting one in and out** (Settings, Appearance, under the picker):
+- Saved themes are cards in the picker after the built-ins, each drawn in
+  its own values (inline variables on its preview).
+- **Import a theme**: a `.json` file. **Paste a theme link**: for a link
+  opened in Safari on iOS, whose storage is not the installed app's.
+  **Export this theme**: the current theme as a file. A built-in exports
+  every token from its own rules in themes.css (read through a `?raw`
+  import, loaded only then), fonts as ids, leaving out the aliases
+  (`roll`, `focus`, `meter-mid`) so they keep following the role they name; a
+  complete file to start from by hand. A saved theme exports its own file.
+- **Share this theme** (saved themes): a link,
+  `<origin>/settings#theme=1.<payload>`, the file as JSON, deflated
+  (`CompressionStream('deflate-raw')`) and base64url, after an encoding
+  version. In the hash, so it never reaches a server, and the app removes it
+  from the address once read. Copied to the clipboard, or the share sheet where
+  there is one. Decoding stops past 64 KB inflated.
+- **Delete this theme** (saved themes, with Undo): the choice falls back to
+  the theme's base.
+- Opening a link or a file shows a preview sheet: the name and author, a
+  preview drawn in the theme, anything dropped, and Use this theme or Cancel.
+  Use saves it to Your themes and draws the page in it, in this tab only,
+  and a bar asks "Keep this theme?". It reverts by itself after 30 seconds
+  unless Keep is pressed, and only Keep stores the choice, so a reload
+  meanwhile also reverts. The bar is drawn in the previous built-in theme
+  (a subtree with its `data-theme`), so a theme too unreadable to read the
+  bar in still lets it be read.
+- Settings' Appearance section is always drawn in a built-in theme (the
+  custom theme's base), so whatever a theme does, the way back to a
+  built-in stays readable.
+- `?theme=reset` on any address: the boot script stores Dark and drops the
+  cached custom theme before first paint, then takes the parameter off the
+  address (`history.replaceState`), so a reload does not reset again. The
+  installed app has no address bar, so its icon gets a Reset theme shortcut
+  (manifest `shortcuts`) to the same address.
+
+**Tests**: the validator (every kind, its bounds, normalising, unknown keys,
+the edge rule, versions), link encode and decode (round trip, the size
+limit, junk), storage and apply (save, choose, delete, a refused write), the
+boot script against the module for custom choices and the reset address, the
+picker with saved themes, the preview sheet. E2E: import a file, keep it,
+reload into it from the first frame; open a share link in a fresh page;
+let the revert run out; `?theme=reset`.
 
 ### Phase 4: theme editor
 
 Settings, Themes, Create: start from any theme, edit by group (colours, fonts,
 weights, shape, shadows, icons) with the app itself as the live preview; save
-to Your themes. No contrast rules.
+to Your themes. No contrast rules. Related tokens move together: changing
+`brand` offers to set `brand-hover` and `roll-soft` from it, or a file sparse
+in one of a pair is drawn half in its base.
 
 ### Phase 5: decor and more fonts
 

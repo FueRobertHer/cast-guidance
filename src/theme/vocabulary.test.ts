@@ -39,8 +39,10 @@ describe('the theme vocabulary (DS-001)', () => {
     expect([...IDS].sort()).toEqual(BUILT_IN_THEMES.map((t) => t.id).sort());
   });
 
-  it.each(BUILT_IN_THEMES)('gives $label the colour scheme builtins.ts says', (theme) => {
+  it.each(BUILT_IN_THEMES)('gives $label the colour scheme and edges builtins.ts says', (theme) => {
     expect(themeProperties(theme.id, RULES)['color-scheme']).toBe(theme.scheme);
+    const tokens = themeTokens(theme.id, RULES);
+    expect([tokens.border, tokens['border-strong']]).toEqual(theme.edges.map((px) => `${px}px`));
   });
 
   it.each(IDS)('has %s set every token, and no others', (id) => {

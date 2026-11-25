@@ -6,14 +6,25 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { BUILT_IN_THEMES } from '@/theme/builtins';
+import type { ThemeFile } from '@/theme/file';
 import { themeTokens } from '../../tests-fixtures/themeCss';
 import {
+  APPLIED_KEY,
+  customChoice,
+  deleteTheme,
+  endPreview,
   installThemeSync,
+  keepPreview,
+  previewTheme,
+  readSavedThemes,
   readThemeChoice,
   resolveTheme,
+  restoreTheme,
+  saveTheme,
   setThemeChoice,
   THEME_COLOR,
   THEME_KEY,
+  THEMES_KEY,
 } from './theme';
 
 const ROOT = path.resolve(import.meta.dirname, '../..');
@@ -51,7 +62,9 @@ const meta = () => document.querySelector('meta[name="theme-color"]')?.getAttrib
 beforeEach(() => {
   document.head.innerHTML = '<meta name="theme-color" content="#000000">';
   delete document.documentElement.dataset.theme;
+  document.documentElement.removeAttribute('style');
   localStorage.clear();
+  history.replaceState(null, '', '/');
 });
 
 afterEach(() => {
@@ -140,5 +153,185 @@ describe('theme choice (DS-001)', () => {
     expect(readThemeChoice()).toBe('dark');
     expect(document.documentElement.dataset.theme).toBe('dark');
     stop();
+  });
+});
+
+const MIDNIGHT: ThemeFile = {
+  castGuidanceTheme: 1,
+  name: 'Midnight',
+  base: 'dark',
+  tokens: { bg: '#f4f0e8', ink: '#101418', 'font-display': 'alegreya', 'radius-pill': 'full' },
+};
+
+/** The page as drawn: its theme, its inline values, its scheme and its bar colour. */
+function drawn() {
+  const root = document.documentElement;
+  const vars = Object.fromEntries(
+    [...root.style]
+      .filter((n) => n.startsWith('--cg-'))
+      .map((n) => [n, root.style.getPropertyValue(n)]),
+  );
+  return {
+    theme: root.dataset.theme,
+    vars,
+    scheme: root.style.getPropertyValue('color-scheme'),
+    bar: meta(),
+  };
+}
+
+function clearPage(): void {
+  delete document.documentElement.dataset.theme;
+  document.documentElement.removeAttribute('style');
+}
+
+describe("themes of one's own", () => {
+  it('saves a theme once, however often it is imported', () => {
+    const first = saveTheme(MIDNIGHT);
+    expect(first).toMatchObject({ stored: true, existing: false });
+    const again = saveTheme({ ...MIDNIGHT, name: 'Midnight (copy)' });
+    expect(again).toMatchObject({ stored: true, existing: true, theme: first.theme });
+    expect(readSavedThemes()).toEqual([first.theme]);
+  });
+
+  it('draws a chosen theme as its base with its values on top, scheme and bar from its own page', () => {
+    device(false);
+    const { theme } = saveTheme(MIDNIGHT);
+    setThemeChoice(customChoice(theme.id));
+    expect(drawn()).toEqual({
+      theme: 'dark',
+      vars: {
+        '--cg-bg': '#f4f0e8',
+        '--cg-ink': '#101418',
+        '--cg-font-display': '"Alegreya", "Literata", Georgia, serif',
+        '--cg-radius-pill': 'calc(infinity * 1px)',
+      },
+      scheme: 'light',
+      bar: '#f4f0e8',
+    });
+    // Back to a built-in, nothing of it is left on the page.
+    setThemeChoice('light');
+    expect(drawn()).toEqual({ theme: 'light', vars: {}, scheme: '', bar: THEME_COLOR.light });
+    expect(localStorage.getItem(APPLIED_KEY)).toBeNull();
+  });
+
+  it('is drawn by the boot script before first paint, exactly as the app draws it', () => {
+    device(false);
+    const { theme } = saveTheme(MIDNIGHT);
+    setThemeChoice(customChoice(theme.id));
+    const app = drawn();
+    clearPage();
+    runBoot();
+    expect(drawn()).toEqual(app);
+  });
+
+  it('draws Dark at first paint rather than a stale copy of another theme', () => {
+    device(false);
+    const a = saveTheme(MIDNIGHT).theme;
+    const b = saveTheme({ ...MIDNIGHT, tokens: { bg: '#203040' } }).theme;
+    setThemeChoice(customChoice(a.id));
+    // Another tab, or a write storage refused, left the choice on B with A's copy.
+    localStorage.setItem(THEME_KEY, customChoice(b.id));
+    clearPage();
+    runBoot();
+    expect(drawn()).toEqual({ theme: 'dark', vars: {}, scheme: '', bar: THEME_COLOR.dark });
+    // The app then draws B, and leaves the boot script B's copy.
+    installThemeSync()();
+    expect(drawn().vars['--cg-bg']).toBe('#203040');
+    expect(JSON.parse(localStorage.getItem(APPLIED_KEY) ?? 'null')).toMatchObject({ id: b.id });
+  });
+
+  it('refuses a copy whose values could be anything but theme values', () => {
+    device(false);
+    const { theme } = saveTheme(MIDNIGHT);
+    setThemeChoice(customChoice(theme.id));
+    const applied = JSON.parse(localStorage.getItem(APPLIED_KEY) ?? '{}');
+    for (const vars of [
+      { '--cg-bg': 'red;}body{display:none' },
+      { color: 'red' },
+      { '--cg-bg': 7 },
+    ]) {
+      localStorage.setItem(APPLIED_KEY, JSON.stringify({ ...applied, vars }));
+      clearPage();
+      runBoot();
+      expect(drawn(), JSON.stringify(vars)).toEqual({
+        theme: 'dark',
+        vars: {},
+        scheme: '',
+        bar: THEME_COLOR.dark,
+      });
+    }
+  });
+
+  it('falls back to Dark when the chosen theme is gone, and to its base when deleted here', () => {
+    device(false);
+    const { theme } = saveTheme(MIDNIGHT);
+    setThemeChoice(customChoice(theme.id));
+    const removed = deleteTheme(theme.id);
+    expect(removed).toMatchObject({ wasChosen: true, index: 0 });
+    expect(readThemeChoice()).toBe('dark');
+    expect(drawn().vars).toEqual({});
+    // Undo puts it back, chosen again.
+    if (removed !== null) restoreTheme(removed);
+    expect(readThemeChoice()).toBe(customChoice(theme.id));
+    expect(drawn().vars['--cg-bg']).toBe('#f4f0e8');
+    // Gone from storage by other means: the default.
+    localStorage.setItem(THEMES_KEY, '[]');
+    expect(readThemeChoice()).toBe('dark');
+    expect(resolveTheme(customChoice(theme.id))).toBe('dark');
+  });
+
+  it('reads each saved theme again, dropping what this build does not accept', () => {
+    localStorage.setItem(
+      THEMES_KEY,
+      JSON.stringify([
+        { id: 'a', file: { ...MIDNIGHT, tokens: { bg: '#123456', 'radius-card': '99px' } } },
+        { id: 'a', file: MIDNIGHT },
+        { id: '../x', file: MIDNIGHT },
+        { id: 'b', file: { castGuidanceTheme: 9 } },
+        'junk',
+      ]),
+    );
+    expect(readSavedThemes()).toEqual([
+      { id: 'a', file: { ...MIDNIGHT, tokens: { bg: '#123456' } } },
+    ]);
+    localStorage.setItem(THEMES_KEY, '{not json');
+    expect(readSavedThemes()).toEqual([]);
+  });
+
+  it('tries a theme in this tab only, until Keep stores it', () => {
+    device(false);
+    setThemeChoice('light');
+    const { theme } = saveTheme(MIDNIGHT);
+    previewTheme(theme);
+    expect(drawn().vars['--cg-bg']).toBe('#f4f0e8');
+    expect(localStorage.getItem(THEME_KEY)).toBe('light');
+    // A reload meanwhile draws the stored choice.
+    clearPage();
+    runBoot();
+    expect(drawn().theme).toBe('light');
+    previewTheme(theme);
+    endPreview();
+    expect(drawn()).toEqual({ theme: 'light', vars: {}, scheme: '', bar: THEME_COLOR.light });
+    previewTheme(theme);
+    keepPreview();
+    expect(localStorage.getItem(THEME_KEY)).toBe(customChoice(theme.id));
+    expect(drawn().vars['--cg-bg']).toBe('#f4f0e8');
+  });
+});
+
+describe('?theme=reset', () => {
+  it('goes back to Dark before first paint, and comes off the address', () => {
+    device(true);
+    const { theme } = saveTheme(MIDNIGHT);
+    setThemeChoice(customChoice(theme.id));
+    history.replaceState(null, '', '/c/abc/spells?theme=reset&x=1#top');
+    clearPage();
+    runBoot();
+    expect(drawn()).toEqual({ theme: 'dark', vars: {}, scheme: '', bar: THEME_COLOR.dark });
+    expect(localStorage.getItem(THEME_KEY)).toBe('dark');
+    expect(localStorage.getItem(APPLIED_KEY)).toBeNull();
+    expect(`${location.pathname}${location.search}${location.hash}`).toBe('/c/abc/spells?x=1#top');
+    // The saved theme itself is kept, to pick again.
+    expect(readSavedThemes()).toHaveLength(1);
   });
 });

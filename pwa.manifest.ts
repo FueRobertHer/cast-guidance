@@ -28,6 +28,16 @@ export const pwaManifest: Partial<ManifestOptions> = {
     { src: 'icons/maskable-192.png', sizes: '192x192', type: 'image/png', purpose: 'maskable' },
     { src: 'icons/maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
   ],
+  // The installed app has no address bar for `?theme=reset` (public/theme-boot.js),
+  // so its icon carries the way back from a theme too unreadable to undo.
+  shortcuts: [
+    {
+      name: 'Reset theme',
+      short_name: 'Reset theme',
+      description: 'Draw the app in the Dark theme again',
+      url: '/settings?theme=reset',
+    },
+  ],
 };
 
 /**
