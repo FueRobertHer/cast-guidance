@@ -164,6 +164,58 @@ export function rollAnnouncement(result: RollResult): string {
   return `${result.label ?? result.expr}${flag}: ${result.total}${rolled}${cue}`;
 }
 
+/**
+ * Damage that rolled apart by type (a Divine Smite's radiant, a coating's
+ * poison), with the weapon's own or under the attack it went with: its parts,
+ * and what the target takes before it resists each. Undefined when one roll or
+ * none is damage, since that roll's own total says it all.
+ */
+export function damageSum(
+  lead: RollResult,
+  joined: readonly RollResult[],
+): { parts: RollResult[]; total: number } | undefined {
+  const parts = [lead, ...joined].filter((r) => r.kind === 'damage');
+  if (parts.length < 2) return undefined;
+  return { parts, total: parts.reduce((n, r) => n + r.total, 0) };
+}
+
+/** "Longsword slashing damage" as the damage it leads: "Longsword damage". */
+export function damageHeadline(lead: RollResult): string {
+  const label = lead.label ?? lead.expr;
+  const typed = label.match(new RegExp(`^(.+) (?:${DAMAGE_TYPES.join('|')}) damage$`, 'i'));
+  return typed?.[1] === undefined ? label : `${typed[1]} damage`;
+}
+
+/** The damage total in words, said before its parts: "Longsword damage: 24 before resistances". */
+function damageSpeech(sum: { parts: RollResult[]; total: number }): string {
+  const lead = sum.parts[0];
+  return `${lead === undefined ? 'Damage' : damageHeadline(lead)}: ${sum.total} before resistances`;
+}
+
+/**
+ * The toast's rolls as a screen reader hears them, in the order shown. Damage
+ * in parts says its total first, then each part: after the attack it went
+ * with, or ahead of all of it when the damage rolled alone.
+ */
+export function toastAnnouncement(lead: RollResult, joined: readonly RollResult[]): string {
+  const sum = damageSum(lead, joined);
+  const said = [lead, ...joined].map(rollAnnouncement);
+  if (sum === undefined) return said.join('. ');
+  const at = lead.kind === 'damage' ? 0 : 1;
+  return [...said.slice(0, at), damageSpeech(sum), ...said.slice(at)].join('. ');
+}
+
+/** A roll that changed in words, after the damage total it changed when the damage is in parts. */
+function changedAnnouncement(
+  changed: RollResult,
+  lead: RollResult,
+  joined: readonly RollResult[],
+): string {
+  const sum = damageSum(lead, joined);
+  const said = rollAnnouncement(changed);
+  return sum === undefined || changed.kind !== 'damage' ? said : `${damageSpeech(sum)}. ${said}`;
+}
+
 /** "Bless", "Bless and Heroism", "Bless, Heroism and Enlarge". */
 function andWords(names: readonly string[]): string {
   return names.length < 2 ? names.join('') : `${names.slice(0, -1).join(', ')} and ${names.at(-1)}`;
@@ -437,10 +489,7 @@ function RollResultToast({
     const fromKeys = offering && active instanceof HTMLElement && keyboardFocus(active);
     focusOffer.current = fromKeys;
     returnTo.current = fromKeys ? (active as HTMLElement) : null;
-    announce([shownRoll, ...damage].map(rollAnnouncement).join('. '), {
-      key: 'roll',
-      repeat: true,
-    });
+    announce(toastAnnouncement(shownRoll, damage), { key: 'roll', repeat: true });
   }, [seq]);
 
   // A roll starts waiting: the last toast gives way to it, focus goes to Roll.
@@ -564,6 +613,15 @@ function RollResultToast({
   const flag = (word: string, ink: string) => (
     <span className={`shrink-0 font-bold text-dice-small ${ink}`}>{word}</span>
   );
+  // Damage that rolled apart by type: the total is the number to say. Rolled
+  // alone (`split`), it heads the toast, and every part, the weapon's first, is
+  // a row under it; under its attack, it heads the damage rows.
+  const sum = damageSum(current, joined);
+  const split = sum !== undefined && current.kind === 'damage';
+  // A crit is said once, at the total, and on a part only when some part did not double.
+  const sumCrit = sum?.parts.some((r) => r.meta?.critical === true) === true;
+  const allCrit = sum?.parts.every((r) => r.meta?.critical === true) === true;
+  const total = split ? sum.total : current.total;
 
   // Where it floats and its edge, then how its row is laid out.
   const frame = `${FRAME} ${TONE[tone].edge}`;
@@ -579,30 +637,39 @@ function RollResultToast({
         {/* The label gives way to the words: a long one is cut, never
             "Natural 20!". */}
         <span className="flex items-baseline gap-1.5">
-          <span className="min-w-0 truncate text-body-strong">{current.label ?? current.expr}</span>
+          <span className="min-w-0 truncate text-body-strong">
+            {split ? damageHeadline(current) : (current.label ?? current.expr)}
+          </span>
           {nat === 20 && flag('Natural 20!', 'text-heal')}
           {critWithoutNatural20(current) && flag('Critical hit!', 'text-heal')}
           {nat === 1 && flag('Natural 1', 'text-danger')}
           {/* Damage a crit doubled: why the dice show twice what the chip says. */}
-          {current.meta?.critical === true && flag('Critical', 'text-danger')}
+          {(split ? sumCrit : current.meta?.critical === true) && flag('Critical', 'text-danger')}
           {autoFail && flag('Fails', 'text-danger')}
         </span>
-        {/* Whole, wrapping: a cut line hid the last die (Bless's d4). */}
-        <span className="block break-words text-dice-small text-ink-muted tabular-nums">
-          <RollDetail roll={current} />
-        </span>
-        {/* What the character's conditions did to the roll, whole, since a
-            cut line could hide why the total is what it is. */}
-        {current.meta?.cue !== undefined && (
-          <span className="block text-caption text-guide">{current.meta.cue}</span>
+        {split ? (
+          // Its dice are in the weapon's row, under it.
+          <span className="block text-dice-small text-ink-muted">Before resistances</span>
+        ) : (
+          <>
+            {/* Whole, wrapping: a cut line hid the last die (Bless's d4). */}
+            <span className="block break-words text-dice-small text-ink-muted tabular-nums">
+              <RollDetail roll={current} />
+            </span>
+            {/* What the character's conditions did to the roll, whole, since a
+                cut line could hide why the total is what it is. */}
+            {current.meta?.cue !== undefined && (
+              <span className="block text-caption text-guide">{current.meta.cue}</span>
+            )}
+          </>
         )}
       </span>
-      {/* Keyed on the total, so a die added lands it again. */}
+      {/* Keyed on the total, so a die added or a part rerolled lands it again. */}
       <span
-        key={current.total}
+        key={total}
         className={`shrink-0 text-stat tabular-nums motion-safe:animate-total-in ${ROLL_INK[tone]}`}
       >
-        {current.total}
+        {total}
       </span>
     </>
   );
@@ -649,7 +716,8 @@ function RollResultToast({
     if (o.once && o.effectId !== undefined) rollOffersStore.getState().spend?.(o.effectId, on);
     // Taken off, a feature's own die gives back what it paid.
     if (!on && o.pay !== undefined) rollOffersStore.getState().pay?.(o, false);
-    announce(`${o.source} ${on ? `added, ${r.value}` : 'taken off'}. ${rollAnnouncement(next)}`, {
+    const said = changedAnnouncement(next, next, joined);
+    announce(`${o.source} ${on ? `added, ${r.value}` : 'taken off'}. ${said}`, {
       key: 'roll',
       repeat: true,
     });
@@ -718,10 +786,17 @@ function RollResultToast({
           meta: { ...base.meta, from, cue },
         }
       : { ...base, meta: { ...base.meta, cue } };
+    const nextJoined = own ? joined : joined.map((r) => (r.id === next.id ? next : r));
     if (own) setVisible(next);
-    else setJoined(joined.map((r) => (r.id === next.id ? next : r)));
+    else setJoined(nextJoined);
     rollLogStore.getState().replace(next);
-    announce(`${cue}. ${rollAnnouncement(next)}`, { key: 'roll', repeat: true });
+    // The total it changed is said first, as the toast shows it.
+    const said = changedAnnouncement(
+      next,
+      own ? withAdded(next, rolled, added) : current,
+      nextJoined,
+    );
+    announce(`${cue}. ${said}`, { key: 'roll', repeat: true });
   };
 
   // The dice an effect offers, after the roll: tap to add, tap again to take
@@ -893,14 +968,34 @@ function RollResultToast({
     </div>
   );
 
-  // Damage that went with the attack, under it: what each rolled and its total.
-  // Two damage rolls or more add up, before the target's resistances (each type
-  // takes its own, which is why they roll apart).
-  const damageRolls = [current, ...joined].filter((r) => r.kind === 'damage');
-  const damageTotal = damageRolls.reduce((n, r) => n + r.total, 0);
-  const damageRows = joined.length > 0 && (
+  // What each roll under the headline rolled and its total: the damage that
+  // went with the attack, or every part of damage rolled alone, the weapon's
+  // first. Each type rolls apart since the target resists each on its own, so
+  // every part keeps its type and its number. Under an attack, damage in parts
+  // heads its rows with what it comes to, as large as the attack's total.
+  const rows = split ? [current, ...joined] : joined;
+  const damageRows = rows.length > 0 && (
     <div className="mt-2 flex flex-col gap-1 border-line border-t pt-2 pl-14">
-      {joined.map((d, i) => (
+      {sum !== undefined && !split && (
+        <div className="flex items-center justify-between gap-3">
+          <span className="block min-w-0">
+            <span className="flex items-baseline gap-1.5">
+              <span className="min-w-0 truncate text-body-strong">
+                {damageHeadline(sum.parts[0] ?? current)}
+              </span>
+              {sumCrit && flag('Critical', 'text-danger')}
+            </span>
+            <span className="block text-dice-small text-ink-muted">Before resistances</span>
+          </span>
+          <span
+            key={sum.total}
+            className={`shrink-0 text-stat tabular-nums motion-safe:animate-total-in ${ROLL_INK.damage}`}
+          >
+            {sum.total}
+          </span>
+        </div>
+      )}
+      {rows.map((d, i) => (
         <div
           // biome-ignore lint/suspicious/noArrayIndexKey: the damage rolls' order is fixed once landed
           key={i}
@@ -908,7 +1003,8 @@ function RollResultToast({
         >
           <span className="min-w-0 break-words text-dice-small text-ink-muted tabular-nums">
             {d.label ?? d.expr}
-            {d.meta?.critical === true ? ', critical' : ''}: <RollDetail roll={d} />
+            {d.meta?.critical === true && (sum === undefined || !allCrit) ? ', critical' : ''}:{' '}
+            <RollDetail roll={d} />
             {/* What changed it once it landed (a Savage Attacker reroll). */}
             {d.meta?.cue !== undefined && (
               <span className="block text-caption text-guide">{d.meta.cue}</span>
@@ -919,14 +1015,6 @@ function RollResultToast({
           </span>
         </div>
       ))}
-      {damageRolls.length > 1 && (
-        <div className="flex items-baseline justify-between gap-3 border-line border-t pt-1">
-          <span className="min-w-0 text-caption text-ink-muted">Total before resistances</span>
-          <span className={`shrink-0 text-title-sheet tabular-nums ${ROLL_INK.damage}`}>
-            {damageTotal}
-          </span>
-        </div>
-      )}
     </div>
   );
 
@@ -979,7 +1067,7 @@ function RollResultToast({
     <button
       type="button"
       // Named as it is said, not by its brackets, and for where it leads.
-      aria-label={`${[current, ...joined].map(rollAnnouncement).join('. ')}. Open roll history`}
+      aria-label={`${toastAnnouncement(current, joined)}. Open roll history`}
       className={grouped ? `${ROW} w-full` : `${frame} ${ROW}`}
       {...(grouped ? {} : { key: seq, ref: setToast, ...hold })}
       // A pressed button takes focus before its click, or never (Safari), so
