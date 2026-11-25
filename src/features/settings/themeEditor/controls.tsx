@@ -1,5 +1,5 @@
 import { Minus, Plus } from 'lucide-react';
-import { type ReactNode, useEffect, useId, useState } from 'react';
+import { type ReactNode, useId, useState } from 'react';
 import { useThemeFonts } from '@/lib/useThemeFonts';
 import { announce } from '@/stores/announcer';
 import { isLight, parseHex, toHex } from '@/theme/colour';
@@ -123,10 +123,15 @@ function ColourControl({ name, label, labelId, value, onChange }: ControlProps) 
   const rgb = parseHex(text);
   const [typed, setTyped] = useState(text);
   const [error, setError] = useState<string | null>(null);
-  useEffect(() => {
+  // A new value from outside (the swatch, undo, a new base) replaces what is
+  // typed. Set while rendering, not from an effect: a mount effect that ran
+  // late, after a first keystroke, would put the old value back over it.
+  const [from, setFrom] = useState(text);
+  if (from !== text) {
+    setFrom(text);
     setTyped(text);
     setError(null);
-  }, [text]);
+  }
   const alpha = rgb?.a ?? 0;
   const swatch = rgb === null ? '#000000' : toHex({ ...rgb, a: 1 });
   const take = () => {

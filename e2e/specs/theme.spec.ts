@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test';
-import { THEME_FONTS } from '../../src/theme/fonts.ts';
+import { FONT_CACHE, THEME_FONTS } from '../../src/theme/fonts.ts';
 import { createBlankCharacter, gotoRoster, gotoSheetTab, SHEET_TABS } from '../support/app.ts';
 import { waitForSwControl } from '../support/sw.ts';
 import { expect, test } from '../support/test.ts';
@@ -433,6 +433,21 @@ test.describe('decor and the font library', () => {
     // theme does.
     await page.evaluate(() => navigator.serviceWorker.ready);
     expect(await page.evaluate(() => navigator.serviceWorker.controller)).toBeNull();
+    const kept = () =>
+      page.evaluate(async (name) => {
+        const cache = await caches.open(name);
+        return (await cache.keys()).map((r) => /\/assets\/([a-z-]+-latin-\d+)/.exec(r.url)?.[1]);
+      }, FONT_CACHE);
+    await expect
+      .poll(async () => (await kept()).sort())
+      .toEqual([
+        'cinzel-latin-400',
+        'cinzel-latin-600',
+        'cinzel-latin-700',
+        'eb-garamond-latin-400',
+        'eb-garamond-latin-600',
+        'eb-garamond-latin-700',
+      ]);
     await network.goOffline();
     await gotoRoster(page);
     expect(await page.evaluate(() => (window as unknown as { decor: unknown }).decor)).toEqual({
