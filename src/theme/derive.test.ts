@@ -37,6 +37,8 @@ describe('tokens that follow others', () => {
   it('moves the hover, the label and the tint with the action colour, and nothing else', () => {
     const out = derive(input({ brand: '#5ee0c8' }));
     expect(Object.keys(out).sort()).toEqual(['brand-hover', 'on-brand', 'roll-soft']);
+    // The page keeping its lightness, the roles keep the base's tuning.
+    expect(derive(input({ bg: '#000000' }))).not.toHaveProperty('danger');
     // A light action on a dark card takes the card's colour for its label.
     expect(out['on-brand']).toBe(DARK.surface);
   });
@@ -78,6 +80,12 @@ describe('tokens that follow others', () => {
     expect(apart(out['ink-muted'], '#101418')).toBeGreaterThan(60);
     expect(out.edge).toBe(out.line);
     expect(out['hp-sheen']).toBe(LIGHT['hp-sheen']);
+    // The roles tuned for a dark page give way to Light's, and their tints follow.
+    for (const role of ['brand', 'guide', 'danger', 'heal', 'ward', 'arcane', 'scrim']) {
+      expect(out[role], role).toBe(LIGHT[role]);
+    }
+    expect(out['danger-soft']).toMatch(/^#[0-9a-f]{6}$/);
+    expect(out['cx-edge-hover']).toBe(out['line-strong']);
     for (const c of CONDITION_HUES) {
       expect(out[`cx-${c}`], c).toBe(LIGHT[`cx-${c}`]);
       expect(out[`cx-${c}-soft`], c).toBe(LIGHT[`cx-${c}-soft`]);
@@ -86,6 +94,9 @@ describe('tokens that follow others', () => {
     const back = derive(input({ bg: '#0b1d2a' }, LIGHT));
     expect(back['cx-poisoned']).toBe(DARK['cx-poisoned']);
     expect(back.edge).toBe('transparent');
+    expect(back.danger).toBe(DARK.danger);
+    // A role set by hand stays as it was set.
+    expect(derive(input({ bg: '#0b1d2a', danger: '#ff0000' }, LIGHT))).not.toHaveProperty('danger');
   });
 
   it('gives a condition hue set by hand its own tint, and keeps Invisible clear', () => {

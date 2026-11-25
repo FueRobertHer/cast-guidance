@@ -13,6 +13,14 @@ describe('the fonts a theme may name', () => {
     expect(fontId(tokens['font-display'] ?? '')).toBeDefined();
   });
 
+  it('offers only weights in hundreds a file accepts', () => {
+    for (const f of THEME_FONTS) {
+      expect(f.weights.length, f.id).toBeGreaterThan(0);
+      for (const w of f.weights)
+        expect(w >= 300 && w <= 800 && w % 100 === 0, `${f.id} ${w}`).toBe(true);
+    }
+  });
+
   it('reads a stack back to its id whatever its quotes and spacing', () => {
     expect(fontId("'Alegreya','Literata' , Georgia,serif")).toBe('alegreya');
     expect(fontId('"Comic Sans MS", cursive')).toBeUndefined();

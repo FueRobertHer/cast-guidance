@@ -164,6 +164,8 @@ export function sameDraft(a: Draft, b: Draft): boolean {
 export interface History {
   past: readonly Draft[];
   present: Draft;
+  /** What the last change edited, so a slider's drag is one change to take back. */
+  lastKey?: string;
 }
 
 /** How many changes Undo keeps. */
@@ -173,9 +175,18 @@ export function startHistory(draft: Draft): History {
   return { past: [], present: draft };
 }
 
-export function commit(history: History, next: Draft): History {
+/**
+ * Makes `next` the draft. Changes in a row to the same `key` (a colour being
+ * dragged, a slider) are one change to take back.
+ */
+export function commit(history: History, next: Draft, key?: string): History {
   if (sameDraft(history.present, next)) return { ...history, present: next };
-  return { past: [...history.past, history.present].slice(-UNDO_DEPTH), present: next };
+  if (key !== undefined && key === history.lastKey) return { ...history, present: next };
+  return {
+    past: [...history.past, history.present].slice(-UNDO_DEPTH),
+    present: next,
+    ...(key === undefined ? {} : { lastKey: key }),
+  };
 }
 
 export function undo(history: History): History {

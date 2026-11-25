@@ -122,6 +122,15 @@ describe('a theme being made', () => {
     expect(sameDraft(h.present, start)).toBe(true);
   });
 
+  it('counts a drag of one control as one change, and a new control as the next', () => {
+    let h = startHistory(draftFromBuiltIn('dark'));
+    for (const v of ['#101010', '#202020', '#303030'])
+      h = commit(h, edit(h.present, 'bg', v), 'bg');
+    h = commit(h, edit(h.present, 'ink', '#eeeeee'), 'ink');
+    expect(h.past).toHaveLength(2);
+    expect(undo(h).present.own).toEqual({ bg: '#303030' });
+  });
+
   it('is kept on the device for the theme it edits, and read back checked', () => {
     const d = edit(draftFromBuiltIn('modern'), 'brand', '#5ee0c8');
     keepDraft('abc', d);

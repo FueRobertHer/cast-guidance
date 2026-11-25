@@ -1,4 +1,4 @@
-import { Download, FileUp, Link2, Share2, Trash2 } from 'lucide-react';
+import { Download, FileUp, Link2, Palette, Pencil, Share2, Trash2 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router';
 import {
@@ -144,9 +144,9 @@ interface ThemesState {
 }
 
 /**
- * Theme files in and out (docs/theme-format.md), under the picker: import a
- * file, paste a link, export the theme in use, and share or delete one of the
- * player's own. A theme link opened on this page (`#theme=…`) lands here too,
+ * Themes in and out (docs/theme-format.md), under the picker: make one in the
+ * editor (ThemeEditorPage), import a file, paste a link, export the theme in
+ * use, and edit, share or delete one of the player's own. A theme link opened on this page (`#theme=…`) lands here too,
  * and comes off the address once read.
  */
 export function ThemeFiles() {
@@ -236,6 +236,10 @@ export function ThemeFiles() {
   return (
     <div className="flex flex-col gap-3">
       <div className="flex flex-wrap gap-2">
+        <Button variant="outline" size="sm" onClick={() => navigate('/settings/theme')}>
+          <Palette size={18} aria-hidden="true" />
+          Make a theme
+        </Button>
         <Button variant="outline" size="sm" onClick={() => fileInput.current?.click()}>
           <FileUp size={18} aria-hidden="true" />
           Import a theme
@@ -250,6 +254,14 @@ export function ThemeFiles() {
         </Button>
         {current !== undefined && (
           <>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => navigate(`/settings/theme/${current.id}`)}
+            >
+              <Pencil size={18} aria-hidden="true" />
+              Edit this theme
+            </Button>
             <Button variant="outline" size="sm" onClick={() => void share(current)}>
               <Share2 size={18} aria-hidden="true" />
               Share this theme

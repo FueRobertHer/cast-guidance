@@ -30,8 +30,28 @@ export interface DeriveInput {
   dark: Tokens;
 }
 
+/**
+ * The tokens tuned for a page's lightness: the roles, the scrim, the shadows.
+ * When the page turns from light to dark or back, they take the built-in
+ * pair's (Dark's or Light's), or a dark red would be left on a dark card.
+ */
+const BY_LIGHTNESS = [
+  'brand',
+  'guide',
+  'danger',
+  'heal',
+  'ward',
+  'arcane',
+  'scrim',
+  'shadow-card',
+  'shadow-float',
+  'shadow-overlay',
+] as const;
+
 /** What each following token follows, first the one a person would name. */
 export const FOLLOWS: Readonly<Record<string, readonly string[]>> = {
+  ...Object.fromEntries(BY_LIGHTNESS.map((t) => [t, ['bg']])),
+  'cx-edge-hover': ['bg', 'line-strong'],
   'surface-raised': ['surface', 'ink'],
   'surface-hover': ['surface', 'ink'],
   line: ['bg', 'ink'],
@@ -90,12 +110,15 @@ export function derive({ own, base, light, dark }: DeriveInput): Record<string, 
   const moved = new Set(Object.keys(own));
   const value = (name: string): string => String(own[name] ?? out[name] ?? base[name] ?? '');
   const lightPage = isLight(value('bg'));
-  // A page that changed lightness moves everything that follows it.
-  if (isLight(String(base.bg ?? '')) !== lightPage) moved.add('bg');
+  /** The page turned from light to dark or back: what is tuned for its lightness moves. */
+  const flipped = isLight(String(base.bg ?? '')) !== lightPage;
 
-  const set = (name: string, compute: () => TokenValue | null) => {
+  /** Works `name` out when something it follows moved (or the page flipped, for `onFlip`). */
+  const set = (name: string, compute: () => TokenValue | null, onFlip = false) => {
     if (name in own) return;
-    if (!(FOLLOWS[name] ?? []).some((s) => moved.has(s))) return;
+    const sources = FOLLOWS[name] ?? [];
+    const go = onFlip ? flipped : sources.some((s) => moved.has(s));
+    if (!go) return;
     const v = compute();
     if (v === null) return;
     out[name] = v;
@@ -105,15 +128,23 @@ export function derive({ own, base, light, dark }: DeriveInput): Record<string, 
   const tint = (role: string) => () => mix(value('surface'), value(role), TINT);
   const pair = lightPage ? light : dark;
 
+  // What a page of the other lightness needs: the roles first, as their
+  // labels and tints follow them.
+  for (const t of BY_LIGHTNESS) set(t, () => pair[t] ?? null, true);
+
   // Grounds and text, from the page, the cards and the ink.
   set('surface-raised', towards('surface', 'ink', 0.06));
   set('surface-hover', towards('surface', 'ink', 0.11));
   set('line', towards('bg', 'ink', 0.11));
   set('track', towards('surface', 'ink', 0.11));
   set('line-strong', towards('bg', 'ink', 0.47));
-  set('edge', () => (lightPage ? value('line') : 'transparent'));
+  if (flipped || moved.has('line')) set('edge', () => (lightPage ? value('line') : 'transparent'));
   set('ink-muted', towards('ink', 'bg', 0.31));
   set('ink-faint', towards('ink', 'bg', 0.52));
+  // A roll chip's edge on hover: the outline on a light page, none on a dark one.
+  if (flipped || moved.has('line-strong')) {
+    set('cx-edge-hover', () => (lightPage ? value('line-strong') : 'transparent'));
+  }
 
   // Action, and the labels on the filled grounds.
   set('brand-hover', towards('brand', 'ink', 0.2));
@@ -135,21 +166,21 @@ export function derive({ own, base, light, dark }: DeriveInput): Record<string, 
   // The HP card's cues.
   set('hp-trail', () => mix(value('danger'), '#ffffff', 0.5));
   set('hp-bloom', () => mix(value('heal'), '#ffffff', 0.5));
-  set('hp-sheen', () => pair['hp-sheen'] ?? null);
+  set('hp-sheen', () => pair['hp-sheen'] ?? null, true);
 
   // The condition hues: the built-in pair for the page's lightness, and a
   // hue set by hand gets its own tint.
   for (const c of CONDITION_HUES) {
     const hue = `cx-${c}`;
     const soft = `cx-${c}-soft`;
-    set(hue, () => pair[hue] ?? null);
+    set(hue, () => pair[hue] ?? null, true);
     if (hue in own) {
       if (!(soft in own) && pair[soft] !== 'transparent') {
         const v = mix(value('surface'), value(hue), TINT);
         if (v !== null) out[soft] = v;
       }
     } else {
-      set(soft, () => pair[soft] ?? null);
+      set(soft, () => pair[soft] ?? null, true);
     }
   }
   return out;

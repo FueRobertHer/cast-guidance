@@ -13,6 +13,11 @@ export interface ThemeFont {
   /** Its name in an editor's list. */
   readonly label: string;
   readonly stack: string;
+  /**
+   * The weights it has a face for (src/main.tsx): what the editor offers. The
+   * device's own fonts may have more or fewer; those offer the usual range.
+   */
+  readonly weights: readonly number[];
 }
 
 export const THEME_FONTS: readonly ThemeFont[] = [
@@ -20,20 +25,38 @@ export const THEME_FONTS: readonly ThemeFont[] = [
     id: 'atkinson',
     label: 'Atkinson Hyperlegible Next',
     stack: '"Atkinson Hyperlegible Next", system-ui, -apple-system, "Segoe UI", sans-serif',
+    weights: [400, 600, 700],
   },
-  { id: 'literata', label: 'Literata', stack: '"Literata", Georgia, "Times New Roman", serif' },
-  { id: 'alegreya', label: 'Alegreya', stack: '"Alegreya", "Literata", Georgia, serif' },
+  {
+    id: 'literata',
+    label: 'Literata',
+    stack: '"Literata", Georgia, "Times New Roman", serif',
+    weights: [400, 600, 700],
+  },
+  {
+    id: 'alegreya',
+    label: 'Alegreya',
+    stack: '"Alegreya", "Literata", Georgia, serif',
+    weights: [600, 700],
+  },
   {
     id: 'inter',
     label: 'Inter',
     stack: '"Inter Variable", "Inter", system-ui, -apple-system, "Segoe UI", sans-serif',
+    weights: [300, 400, 500, 600, 700, 800],
   },
   {
     id: 'system',
     label: "This device's sans serif",
     stack: 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif',
+    weights: [300, 400, 500, 600, 700, 800],
   },
-  { id: 'serif', label: "This device's serif", stack: 'Georgia, "Times New Roman", serif' },
+  {
+    id: 'serif',
+    label: "This device's serif",
+    stack: 'Georgia, "Times New Roman", serif',
+    weights: [400, 700],
+  },
 ];
 
 export function fontStack(id: string): string | undefined {
