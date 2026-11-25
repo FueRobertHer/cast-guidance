@@ -914,7 +914,9 @@ function RollResultToast({
               <span className="block text-caption text-guide">{d.meta.cue}</span>
             )}
           </span>
-          <span className={`shrink-0 text-title-sheet tabular-nums ${ROLL_INK[rollTone(d)]}`}>
+          <span
+            className={`shrink-0 text-title-sheet tracking-[inherit] tabular-nums ${ROLL_INK[rollTone(d)]}`}
+          >
             {d.total}
           </span>
         </div>
@@ -922,7 +924,9 @@ function RollResultToast({
       {damageRolls.length > 1 && (
         <div className="flex items-baseline justify-between gap-3 border-line border-t pt-1">
           <span className="min-w-0 text-caption text-ink-muted">Total before resistances</span>
-          <span className={`shrink-0 text-title-sheet tabular-nums ${ROLL_INK.damage}`}>
+          <span
+            className={`shrink-0 text-title-sheet tracking-[inherit] tabular-nums ${ROLL_INK.damage}`}
+          >
             {damageTotal}
           </span>
         </div>

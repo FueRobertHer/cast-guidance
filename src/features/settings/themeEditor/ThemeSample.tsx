@@ -1,6 +1,7 @@
 import { ChevronDown, Heart, HeartCrack, Pencil, Shield, Skull, Sparkles } from 'lucide-react';
 import type { CSSProperties } from 'react';
-import { type ThemeFile, themeAttrs, themeScheme, themeVars } from '@/theme/file';
+import { useThemeFonts } from '@/lib/useThemeFonts';
+import { type ThemeFile, themeAttrs, themeFontIds, themeScheme, themeVars } from '@/theme/file';
 import { D20Icon } from '@/ui/D20Icon';
 
 /**
@@ -22,6 +23,7 @@ export function ThemeSample({
   folded: boolean;
   onFold: () => void;
 }) {
+  useThemeFonts(themeFontIds(file));
   const style = { ...themeVars(file), colorScheme: themeScheme(file) } as CSSProperties;
   return (
     <section

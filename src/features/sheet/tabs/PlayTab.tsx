@@ -1868,7 +1868,7 @@ export function Component() {
                 down={maxHpDown.length > 0}
                 className={`rounded-chip ${maxHpUp.length + maxHpDown.length > 0 ? 'px-1' : ''}`}
               >
-                <span className="whitespace-nowrap text-title-sheet text-ink-muted">
+                <span className="whitespace-nowrap text-title-sheet tracking-[inherit] text-ink-muted">
                   / {maxHp.value}
                   {sheet.maxHp.overridden ? ' •' : ''}
                 </span>

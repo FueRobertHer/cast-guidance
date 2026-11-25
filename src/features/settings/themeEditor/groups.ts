@@ -63,7 +63,11 @@ export const EDITOR_GROUPS: readonly EditorGroup[] = [
     tokens: [...CONDITION_HUES.map((c) => `cx-${c}`), 'cx-edge-hover'],
     more: { title: 'Their tints', tokens: CONDITION_HUES.map((c) => `cx-${c}-soft`) },
   },
-  { id: 'type', title: 'Type', tokens: ['weight-normal', 'weight-semibold', 'weight-bold'] },
+  {
+    id: 'type',
+    title: 'Type',
+    tokens: ['weight-normal', 'weight-semibold', 'weight-bold', 'tracking-display'],
+  },
   {
     id: 'shape',
     title: 'Shape',

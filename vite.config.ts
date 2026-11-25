@@ -8,6 +8,7 @@ import { VitePWA } from 'vite-plugin-pwa';
 import { pwaManifest } from './pwa.manifest.ts';
 import { shippedModulesCollector } from './scripts/shippedModules.ts';
 import { headersMetaPlugin } from './src/app/headersMeta.ts';
+import { LIBRARY_FONT_GLOBS } from './src/theme/fonts.ts';
 
 // vercel.json is the source of truth for the response headers. Their digest
 // goes into index.html so a header change also changes the precached shell's
@@ -75,6 +76,9 @@ export default defineConfig({
           'assets/inter-greek*',
           'assets/inter-latin-ext-*',
           'assets/inter-vietnamese-*',
+          // The font library's faces (src/theme/fonts.ts): fetched the first
+          // time a theme uses one, and kept by the route below from then on.
+          ...LIBRARY_FONT_GLOBS,
         ],
         // Fonts outside the precache, cache first: a face's file name carries
         // its content hash, so a stored copy is never stale. The precache's

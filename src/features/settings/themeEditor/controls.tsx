@@ -1,9 +1,10 @@
 import { Minus, Plus } from 'lucide-react';
 import { type ReactNode, useEffect, useId, useState } from 'react';
+import { useThemeFonts } from '@/lib/useThemeFonts';
 import { announce } from '@/stores/announcer';
 import { isLight, parseHex, toHex } from '@/theme/colour';
 import type { TokenValue } from '@/theme/file';
-import { THEME_FONTS } from '@/theme/fonts';
+import { THEME_FONTS, themeFont } from '@/theme/fonts';
 import { CHOICES, type TokenKind } from '@/theme/vocabulary';
 import { buttonClass } from '@/ui/Button';
 import { fieldClass } from '@/ui/TextField';
@@ -203,21 +204,66 @@ function ColourControl({ name, label, labelId, value, onChange }: ControlProps) 
   );
 }
 
+/** The font list's groups, by where a font's faces come from (fonts.ts). */
+const FONT_SOURCES = [
+  { source: 'app', label: 'With the app' },
+  { source: 'library', label: 'Downloaded when first used' },
+  { source: 'device', label: 'This device’s own' },
+] as const;
+
+/**
+ * A font, with a line drawn in it below. Titles-only faces are offered for
+ * titles only. A library font is fetched as soon as it is chosen; offline,
+ * before its first use, the control says so. Its options draw no font of
+ * their own, so opening the list fetches nothing.
+ */
 function FontControl({ name, labelId, value, onChange }: ControlProps) {
+  const id = String(value);
+  const font = themeFont(id);
+  const missing = useThemeFonts([id]) === 'missing';
+  const noteId = useId();
+  const forTitles = name === 'font-display';
   return (
-    <select
-      value={String(value)}
-      aria-labelledby={labelId}
-      data-token={name}
-      onChange={(e) => onChange(e.target.value)}
-      className={fieldClass}
-    >
-      {THEME_FONTS.map((f) => (
-        <option key={f.id} value={f.id} style={{ fontFamily: f.stack }}>
-          {f.label}
-        </option>
-      ))}
-    </select>
+    <div className="flex flex-col gap-2">
+      <select
+        value={id}
+        aria-labelledby={labelId}
+        aria-describedby={missing ? noteId : undefined}
+        data-token={name}
+        onChange={(e) => onChange(e.target.value)}
+        className={fieldClass}
+      >
+        {FONT_SOURCES.map(({ source, label }) => (
+          <optgroup key={source} label={label}>
+            {THEME_FONTS.filter((f) => f.source === source && (forTitles || !f.titlesOnly)).map(
+              (f) => (
+                <option
+                  key={f.id}
+                  value={f.id}
+                  style={f.source === 'library' ? undefined : { fontFamily: f.stack }}
+                >
+                  {f.label}
+                </option>
+              ),
+            )}
+          </optgroup>
+        ))}
+      </select>
+      {font !== undefined && (
+        <p
+          aria-hidden="true"
+          style={{ fontFamily: font.stack }}
+          className={`truncate text-ink ${forTitles ? 'font-display text-title-card' : 'text-body'}`}
+        >
+          Sphinx of black quartz, judge my vow
+        </p>
+      )}
+      {missing && (
+        <p id={noteId} className="text-caption text-ink-muted">
+          Not on this device yet: it downloads the next time you’re online.
+        </p>
+      )}
+    </div>
   );
 }
 
@@ -303,6 +349,23 @@ function EdgeControl({ name, label, labelId, value, onChange }: ControlProps) {
         </p>
       )}
     </div>
+  );
+}
+
+function TrackingControl({ name, label, labelId, value, onChange }: ControlProps) {
+  return (
+    <Stepped
+      name={name}
+      labelId={labelId}
+      value={Number.parseFloat(String(value))}
+      min={-0.05}
+      max={0.2}
+      step={0.01}
+      unit="em"
+      slider
+      label={label}
+      onChange={(n, dragged) => onChange(`${n}em`, dragged ? name : undefined)}
+    />
   );
 }
 
@@ -425,6 +488,7 @@ export const CONTROLS: Readonly<Record<TokenKind, (props: ControlProps) => React
   weight: WeightControl,
   radius: RadiusControl,
   border: EdgeControl,
+  tracking: TrackingControl,
   stroke: StrokeControl,
   shadow: ShadowControl,
   choice: ChoiceControl,

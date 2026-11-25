@@ -120,3 +120,37 @@ describe('every card carries the hook its frame draws on (styles/decor.css)', ()
     expect(unhookedCards(`"rounded-card bg-bg ring ring-line"`)).toEqual([]);
   });
 });
+
+/**
+ * Title-sized class lists that are not titles: a title size carries the
+ * theme's title tracking (`tracking-display`), so text at a title size is in
+ * the title font, or says its own tracking (a number sized as a title keeps
+ * the spacing around it with `tracking-[inherit]`).
+ */
+function untrackedTitles(text: string): string[] {
+  return [
+    ...text.matchAll(
+      /(["'\x60])((?:(?!\1)[^\n])*\btext-title-(?:page|sheet|card)\b(?:(?!\1)[^\n])*)\1/g,
+    ),
+  ]
+    .map((m) => m[2] ?? '')
+    .filter((cls) => !/\bfont-display\b/.test(cls) && !/(?:^|\s)tracking-/.test(cls));
+}
+
+describe('text at a title size is a title, or keeps its own tracking', () => {
+  it('finds none that would take the title tracking unasked', () => {
+    const loose = sources(SRC).flatMap((file) => {
+      const rel = path.relative(SRC, file).split(path.sep).join('/');
+      return untrackedTitles(readFileSync(file, 'utf8')).map((cls) => `${rel}: ${cls}`);
+    });
+    expect(loose).toEqual([]);
+  });
+
+  it('sees one in any quotes, and lets titles and set tracking be', () => {
+    const size = ['text-title-', 'sheet'].join('');
+    expect(untrackedTitles(`className="shrink-0 ${size} tabular-nums"`)).toHaveLength(1);
+    expect(untrackedTitles(`\`flex ${size}\``)).toHaveLength(1);
+    expect(untrackedTitles(`"font-display ${size}"`)).toEqual([]);
+    expect(untrackedTitles(`'${size} tracking-[inherit]'`)).toEqual([]);
+  });
+});

@@ -27,6 +27,7 @@ const SHAPE: Readonly<Record<TokenKind, RegExp>> = {
   shadow: /^(\d|-|inset)[^;{}]*$/,
   font: /^("[^"]+"|[a-z-]+)(\s*,\s*("[^"]+"|[a-z-]+))*$/i,
   weight: /^[1-9]00$/,
+  tracking: /^-?\d+(\.\d+)?em$/,
   radius: /^(\d+(\.\d+)?(rem|px)|calc\(infinity \* 1px\))$/,
   border: /^\d+(\.\d+)?px$/,
   stroke: /^\d+(\.\d+)?$/,

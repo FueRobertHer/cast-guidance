@@ -1,6 +1,6 @@
 import { BUILT_IN_THEMES, type BuiltInThemeId, builtInTheme, isBuiltInTheme } from './builtins';
 import { isLight } from './colour';
-import { fontId, fontStack } from './fonts';
+import { fontId, fontStack, themeFont } from './fonts';
 import { MAX_THEME_BYTES } from './link';
 import { rawTokens, themeRules } from './themeCss';
 import { CHOICES, TOKEN_NAMES, type TokenKind, VOCABULARY } from './vocabulary';
@@ -100,6 +100,15 @@ function weight(raw: unknown): Check {
   return { value: n };
 }
 
+function tracking(raw: unknown): Check {
+  const text = typeof raw === 'string' ? raw.trim().toLowerCase().replace(/em$/, '') : raw;
+  const n = typeof text === 'string' && text !== '' ? Number(text) : text;
+  if (typeof n !== 'number' || !Number.isFinite(n) || n < -0.05 || n > 0.2) {
+    return { error: 'outside -0.05 to 0.2em' };
+  }
+  return { value: `${round(n)}em` };
+}
+
 function stroke(raw: unknown): Check {
   const n = typeof raw === 'string' && raw.trim() !== '' ? Number(raw) : raw;
   if (typeof n !== 'number' || !Number.isFinite(n) || n < 1 || n > 3) {
@@ -108,10 +117,13 @@ function stroke(raw: unknown): Check {
   return { value: round(n) };
 }
 
-function font(raw: unknown): Check {
+function font(raw: unknown, text: boolean): Check {
   if (typeof raw !== 'string') return { error: 'not a font' };
   const id = raw.trim().toLowerCase();
-  return fontStack(id) === undefined ? { error: 'not a bundled font' } : { value: id };
+  const known = themeFont(id);
+  if (known === undefined) return { error: 'not a bundled font' };
+  if (text && known.titlesOnly) return { error: 'a font for titles only' };
+  return { value: id };
 }
 
 /**
@@ -155,13 +167,15 @@ export function checkToken(name: string, raw: unknown): Check {
     case 'colour':
       return colour(raw, name === 'bg');
     case 'font':
-      return font(raw);
+      return font(raw, name === 'font-sans');
     case 'weight':
       return weight(raw);
     case 'radius':
       return radius(raw);
     case 'border':
       return name === 'border-strong' ? edge(raw, 1, 4) : edge(raw, 0, 3);
+    case 'tracking':
+      return tracking(raw);
     case 'stroke':
       return stroke(raw);
     case 'shadow':
@@ -284,6 +298,11 @@ export function themeVars(file: ThemeFile): Record<string, string> {
       .filter(([name]) => KIND.get(name) !== 'choice')
       .map(([name, value]) => [`--cg-${name}`, cssValue(name, value)]),
   );
+}
+
+/** The fonts a file names, as ids (some may be library fonts, libraryFonts.ts). */
+export function themeFontIds(file: ThemeFile): unknown[] {
+  return [file.tokens['font-sans'], file.tokens['font-display']];
 }
 
 /** The attributes a file's choices are drawn with (decor.css): `data-cg-texture`. */

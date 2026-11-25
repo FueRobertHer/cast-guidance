@@ -17,6 +17,8 @@ export type TokenKind =
   | 'font'
   /** A numeric `font-weight`. */
   | 'weight'
+  /** Letter spacing, in em, added to what a size already has. */
+  | 'tracking'
   /** A corner radius, in rem or px. */
   | 'radius'
   /** An edge width, in px. */
@@ -120,6 +122,7 @@ export const VOCABULARY: readonly Token[] = [
   ...group('shadows', 'shadow')('shadow-card', 'shadow-float', 'shadow-overlay'),
   ...group('type', 'font')('font-sans', 'font-display'),
   ...group('type', 'weight')('weight-normal', 'weight-semibold', 'weight-bold'),
+  ...group('type', 'tracking')('tracking-display'),
   ...group('shape', 'radius')(
     'radius-chip',
     'radius-control',

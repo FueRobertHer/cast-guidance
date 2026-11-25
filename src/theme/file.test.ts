@@ -89,6 +89,11 @@ describe('reading a theme file', () => {
     expect(value('font-sans', 'Inter')).toBe('inter');
     expect(value('font-display', 'alegreya')).toBe('alegreya');
     expect(value('font-sans', 'Comic Sans MS')).toBe('error: not a bundled font');
+    // A capitals face reads as a title, not as a page.
+    expect(value('font-display', 'Cinzel')).toBe('cinzel');
+    expect(value('font-sans', 'cinzel')).toBe('error: a font for titles only');
+    expect(value('font-sans', 'im-fell-english')).toBe('error: a font for titles only');
+    expect(value('font-sans', 'lexend')).toBe('lexend');
     expect(value('font-sans', '"Inter", sans-serif')).toMatch(/^error/);
   });
 
@@ -140,6 +145,16 @@ describe('reading a theme file', () => {
     expect(value('icon-stroke', '2.25')).toBe(2.25);
     for (const bad of [0.5, 3.5, 'thick', '']) {
       expect(value('icon-stroke', bad), String(bad)).toMatch(/^error/);
+    }
+  });
+
+  it('takes title tracking from -0.05 to 0.2em, written in em', () => {
+    expect(value('tracking-display', '0.12em')).toBe('0.12em');
+    expect(value('tracking-display', 0.1)).toBe('0.1em');
+    expect(value('tracking-display', ' -0.05EM ')).toBe('-0.05em');
+    expect(value('tracking-display', '0')).toBe('0em');
+    for (const bad of [0.25, '-0.06em', '2px', 'wide', '', 'em']) {
+      expect(value('tracking-display', bad), String(bad)).toMatch(/^error/);
     }
   });
 

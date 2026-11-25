@@ -72,6 +72,10 @@
   --text-overline--font-weight: var(--cg-weight-bold);
   --text-tab--font-weight: var(--cg-weight-semibold);
   --text-dice--font-weight: var(--cg-weight-semibold);
+  /* Titles' tracking: their own, opened or closed by the theme's. */
+  --text-title-page--letter-spacing: calc(-0.01em + var(--cg-tracking-display));
+  --text-title-sheet--letter-spacing: var(--cg-tracking-display);
+  --text-title-card--letter-spacing: var(--cg-tracking-display);
 
   /*
    * Corners, by what they round, named apart from Tailwind's own `rounded-lg`
@@ -108,7 +112,8 @@
 @theme {
   /*
    * The type scale, as `text-<name>` utilities carrying size, line height,
-   * weight (from the theme, in the block above) and tracking. Titles also take `font-display`, numbers
+   * weight and tracking (the weights, and the titles' tracking, are the
+   * theme's, in the block above). Titles also take `font-display`, numbers
    * `tabular-nums` so digits do not shift as values tick, overlines
    * `uppercase`. In rem, so a larger browser text size scales them (WCAG
    * 1.4.4). Tailwind's own `text-xs` and `text-sm` stay until each screen
@@ -116,7 +121,6 @@
    */
   --text-title-page: 1.75rem; /* 28px: the one title of a section screen */
   --text-title-page--line-height: 2.125rem;
-  --text-title-page--letter-spacing: -0.01em;
   --text-title-sheet: 1.25rem; /* 20px: a character's name, a sheet's title */
   --text-title-sheet--line-height: 1.625rem;
   --text-title-card: 1.0625rem; /* 17px: a card that is a person or a choice */

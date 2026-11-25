@@ -4,11 +4,13 @@ import {
   parseThemeFile,
   type ThemeFile,
   themeAttrs,
+  themeFontIds,
   themeKey,
   themePageColour,
   themeScheme,
   themeVars,
 } from '@/theme/file';
+import { loadThemeFonts } from '@/theme/libraryFonts';
 
 /**
  * The colour theme (DS-001, docs/theming-plan.md). The player picks System,
@@ -334,6 +336,8 @@ function applySaved(theme: SavedTheme): AppliedTheme {
   for (const [name, value] of Object.entries(applied.attrs)) root.setAttribute(name, value);
   root.style.setProperty('color-scheme', applied.scheme);
   document.querySelector('meta[name="theme-color"]')?.setAttribute('content', applied.pageColour);
+  // A library font's faces, fetched now while online and kept for offline.
+  void loadThemeFonts(themeFontIds(theme.file));
   return applied;
 }
 

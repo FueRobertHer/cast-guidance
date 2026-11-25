@@ -53,23 +53,34 @@ that is every value it sets, a complete file to start from.
 | colour | `#rgb`, `#rgba`, `#rrggbb`, `#rrggbbaa` or `transparent` | `bg` must be opaque |
 | font | a font id (below) | |
 | weight | a number | 300 to 800, in hundreds |
+| tracking | `0.05em` or a bare number (em) | -0.05 to 0.2em |
 | radius | `6px`, `0.5rem`, a bare number (px), or `full` | 0 to 48px |
 | border | `1px`, `0.0625rem` or a bare number (px) | `border` 0 to 3px, `border-strong` 1 to 4px and wider than `border` (if not, `border-strong` is left out, then `border` too if it still is not narrower) |
 | stroke | a number | 1 to 3 |
 | choice | one of the token's named looks (below) | |
 | shadow | `none`, or up to three layers `[inset] x y [blur [spread]] colour`, lengths in px, rem or bare numbers (px) | offsets within 32px, blur 0 to 64px, spread within 16px |
 
-Fonts are the ones the app bundles (the security policy allows no other font
-origin) or the device's own:
+Fonts are the app's own (the security policy allows no other font origin)
+or the device's. The built-in themes' fonts come with the app; the rest
+download the first time a theme uses them, and stay on the device from then
+on. Until then, and offline before that, the text draws in the stack's
+fallback.
 
-| Id | Font |
-| --- | --- |
-| `atkinson` | Atkinson Hyperlegible Next |
-| `literata` | Literata |
-| `alegreya` | Alegreya |
-| `inter` | Inter |
-| `system` | the device's sans serif |
-| `serif` | the device's serif (Georgia where it has it) |
+| Id | Font | |
+| --- | --- | --- |
+| `atkinson` | Atkinson Hyperlegible Next | with the app |
+| `literata` | Literata | with the app |
+| `alegreya` | Alegreya | with the app |
+| `inter` | Inter | with the app |
+| `eb-garamond` | EB Garamond | on first use |
+| `fraunces` | Fraunces | on first use |
+| `lexend` | Lexend | on first use |
+| `opendyslexic` | OpenDyslexic | on first use |
+| `jetbrains-mono` | JetBrains Mono | on first use |
+| `cinzel` | Cinzel, in capitals | on first use; `font-display` only |
+| `im-fell-english` | IM Fell English, one weight | on first use; `font-display` only |
+| `system` | the device's sans serif | |
+| `serif` | the device's serif (Georgia where it has it) | |
 
 A value that fails its check, or a name that is not a token, is left out,
 and the preview before a theme is used lists each one. The rest of the theme
@@ -116,7 +127,9 @@ roll: `cx-poisoned`, `cx-poisoned-soft`, `cx-paralyzed`, `cx-paralyzed-soft`,
 dice button, `shadow-overlay` under sheets, dialogs and the roll toast.
 
 **Type**: `font-sans` everything but titles, `font-display` names and
-titles (font); `weight-normal`, `weight-semibold`, `weight-bold` (weight).
+titles (font); `weight-normal`, `weight-semibold`, `weight-bold` (weight);
+`tracking-display`, letter spacing added to titles' own (tracking), 0 in
+every built-in, and room for a capitals face to breathe.
 
 **Shape**: `radius-chip` chips and badges, `radius-control` buttons, fields
 and rows, `radius-card` cards and panels, `radius-sheet` a sheet's top,

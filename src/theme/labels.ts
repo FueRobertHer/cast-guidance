@@ -72,6 +72,7 @@ export const TOKEN_LABELS: Readonly<Record<string, string>> = {
   'weight-normal': 'Regular',
   'weight-semibold': 'Semibold',
   'weight-bold': 'Bold',
+  'tracking-display': 'Title letter spacing',
   'radius-chip': 'Chips',
   'radius-control': 'Buttons and fields',
   'radius-card': 'Cards',

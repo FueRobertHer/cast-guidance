@@ -9,8 +9,9 @@ import {
   useSavedThemes,
   useThemeChoice,
 } from '@/lib/theme';
+import { useThemeFonts } from '@/lib/useThemeFonts';
 import { builtInTheme } from '@/theme/builtins';
-import { themeAttrs, themeVars } from '@/theme/file';
+import { themeAttrs, themeFontIds, themeVars } from '@/theme/file';
 
 /** A bar in a miniature: a card, or the action blue when `brand`. */
 function Bar({ brand = false }: { brand?: boolean }) {
@@ -32,12 +33,16 @@ export function ThemeMini({
   theme,
   vars,
   attrs,
+  fonts = [],
 }: {
   theme: Theme;
   vars?: Record<string, string>;
   /** Its decor (decor.css), as `data-cg-*` attributes. */
   attrs?: Record<string, string>;
+  /** The fonts it names, so a library font's faces are fetched for it. */
+  fonts?: readonly unknown[];
 }) {
+  useThemeFonts(fonts);
   return (
     <span
       data-theme={theme}
@@ -72,14 +77,18 @@ function Option({
   value,
   checked,
   label,
+  note,
   children,
 }: {
   name: string;
   value: ThemeChoice;
   checked: boolean;
   label: string;
+  /** A line under the name, read after it. */
+  note?: string;
   children: ReactNode;
 }) {
+  const noteId = useId();
   return (
     <label className="relative flex min-w-0 cursor-pointer flex-col items-center gap-2 rounded-control bg-surface px-2 pt-2 pb-3 text-center text-label text-ink ring ring-line ring-inset has-checked:ring-strong has-checked:ring-ink has-focus-visible:outline-2 has-focus-visible:outline-focus has-focus-visible:outline-offset-2">
       <input
@@ -88,11 +97,47 @@ function Option({
         value={value}
         checked={checked}
         onChange={() => setThemeChoice(value)}
+        aria-describedby={note === undefined ? undefined : noteId}
         className="absolute inset-0 size-full cursor-pointer appearance-none rounded-control opacity-0"
       />
       {children}
       <span className="w-full break-words">{label}</span>
+      {note !== undefined && (
+        <span id={noteId} className="w-full text-caption text-ink-muted">
+          {note}
+        </span>
+      )}
     </label>
+  );
+}
+
+/** One of the player's own themes, which says so when its fonts are not on this device yet. */
+function SavedOption({
+  name,
+  theme,
+  checked,
+}: {
+  name: string;
+  theme: SavedTheme;
+  checked: boolean;
+}) {
+  const fonts = themeFontIds(theme.file);
+  const missing = useThemeFonts(fonts) === 'missing';
+  return (
+    <Option
+      name={name}
+      value={customChoice(theme.id)}
+      checked={checked}
+      label={theme.file.name}
+      note={missing ? 'Its fonts download when you’re online' : undefined}
+    >
+      <ThemeMini
+        theme={theme.file.base}
+        vars={themeVars(theme.file)}
+        attrs={themeAttrs(theme.file)}
+        fonts={fonts}
+      />
+    </Option>
   );
 }
 
@@ -137,19 +182,12 @@ export function ThemePicker() {
           </Option>
         ))}
         {saved.map((theme) => (
-          <Option
+          <SavedOption
             key={theme.id}
             name={name}
-            value={customChoice(theme.id)}
+            theme={theme}
             checked={choice === customChoice(theme.id)}
-            label={theme.file.name}
-          >
-            <ThemeMini
-              theme={theme.file.base}
-              vars={themeVars(theme.file)}
-              attrs={themeAttrs(theme.file)}
-            />
-          </Option>
+          />
         ))}
       </div>
       <p className="text-caption text-ink-muted">
