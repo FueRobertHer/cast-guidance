@@ -52,6 +52,10 @@ describe('a theme as a link', () => {
     expect(await readThemeHash(`#theme=2.${await deflated('{}')}`)).toBeNull();
   });
 
+  it('refuses a payload longer than any theme could deflate to, before decoding it', async () => {
+    expect(await readThemeHash(`#theme=1.${'A'.repeat(90_004)}`)).toBeNull();
+  });
+
   it('stops inflating past the size limit, however small the link', async () => {
     const bomb = `#theme=1.${await deflated(' '.repeat(MAX_THEME_BYTES + 1))}`;
     expect(bomb.length).toBeLessThan(400);

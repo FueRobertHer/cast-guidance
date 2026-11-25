@@ -319,6 +319,19 @@ describe("themes of one's own", () => {
   });
 });
 
+describe('deleting the theme being tried', () => {
+  it('goes back to the stored choice, not stuck in a theme nothing names', () => {
+    device(false);
+    setThemeChoice('dark');
+    const { theme } = saveTheme(MIDNIGHT);
+    previewTheme(theme);
+    expect(drawn().vars['--cg-bg']).toBe('#f4f0e8');
+    deleteTheme(theme.id);
+    expect(drawn()).toEqual({ theme: 'dark', vars: {}, scheme: '', bar: THEME_COLOR.dark });
+    expect(readThemeChoice()).toBe('dark');
+  });
+});
+
 describe('?theme=reset', () => {
   it('goes back to Dark before first paint, and comes off the address', () => {
     device(true);

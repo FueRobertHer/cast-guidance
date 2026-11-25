@@ -94,6 +94,15 @@ describe('theme files in Settings', () => {
     expect(readSavedThemes()).toEqual([]);
   });
 
+  it('draws the preview in a built-in while a theme of one’s own is in use', async () => {
+    const { theme } = saveTheme(MIDNIGHT);
+    setThemeChoice(customChoice(theme.id));
+    renderAt();
+    pickFile(JSON.stringify({ ...MIDNIGHT, name: 'Dawn', tokens: { bg: '#ffffff' } }));
+    const sheet = await screen.findByRole('dialog', { name: 'Try “Dawn”?' });
+    expect(sheet.getAttribute('data-theme')).toBe('dark');
+  });
+
   it('says why a file is refused', async () => {
     renderAt();
     pickFile('{"castGuidanceTheme": 7}');
@@ -195,6 +204,8 @@ describe('theme files in Settings', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Undo: Theme deleted' }));
     expect(readSavedThemes()).toEqual([theme]);
     expect(readThemeChoice()).toBe(customChoice(theme.id));
+    // And the bar says what it undid, rather than going blank.
+    expect(screen.getByRole('status').textContent).toBe('Undone: Theme deleted');
   });
 
   it('copies a share link where there is no share sheet', async () => {

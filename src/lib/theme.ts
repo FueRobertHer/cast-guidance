@@ -175,10 +175,18 @@ export function deleteTheme(
   const theme = list[index];
   if (theme === undefined) return null;
   const wasChosen = readThemeChoice() === customChoice(id);
+  const wasTried = preview?.id === id;
   writeSavedThemes(list.filter((t) => t.id !== id));
-  if (preview?.id === id) preview = null;
   if (wasChosen) setThemeChoice(theme.file.base);
-  else notify();
+  else {
+    // Deleting the theme being tried ends the try: the page goes back to the
+    // stored choice, or it would stay drawn in a theme nothing names.
+    if (wasTried) {
+      preview = null;
+      applyChoice(readThemeChoice());
+    }
+    notify();
+  }
   return { theme, index, wasChosen };
 }
 

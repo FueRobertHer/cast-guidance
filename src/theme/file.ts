@@ -170,9 +170,15 @@ export function checkToken(name: string, raw: unknown): Check {
   }
 }
 
-/** A value as the preview quotes it: plain, and short. */
+/**
+ * A value as the preview quotes it: plain, and short. A list or an object is
+ * named by its kind, never written out, since one nested deep enough would
+ * not stringify at all.
+ */
 function brief(raw: unknown): string {
-  const text = cleanText(typeof raw === 'string' ? raw : (JSON.stringify(raw) ?? String(raw)));
+  if (Array.isArray(raw)) return 'a list';
+  if (typeof raw === 'object' && raw !== null) return 'an object';
+  const text = cleanText(String(raw));
   return text.length > 24 ? `${text.slice(0, 24)}…` : text;
 }
 
@@ -214,12 +220,14 @@ export function parseThemeFile(input: unknown): ParseResult {
     else tokens[name] = result.value;
   }
 
-  // The selected edge has to be wider than the resting one, or selection vanishes.
+  // The selected edge has to be wider than the resting one, or selection
+  // vanishes: the file's selected edge goes first, then its resting one, each
+  // held to the base's in its place.
   const [restingBase, selectedBase] = builtInTheme(base).edges;
-  const resting = px(tokens.border) ?? restingBase;
-  const selected = px(tokens['border-strong']) ?? selectedBase;
-  if (selected <= resting) {
-    const name = tokens['border-strong'] !== undefined ? 'border-strong' : 'border';
+  for (const name of ['border-strong', 'border'] as const) {
+    const resting = px(tokens.border) ?? restingBase;
+    const selected = px(tokens['border-strong']) ?? selectedBase;
+    if (selected > resting || tokens[name] === undefined) continue;
     dropped.push(`${name}: ${tokens[name]} (the selected edge must be wider than the resting one)`);
     delete tokens[name];
   }

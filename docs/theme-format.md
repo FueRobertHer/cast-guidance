@@ -33,7 +33,7 @@ is `src/theme/` (the vocabulary, the reader, the link) and `src/lib/theme.ts`
   token does not move it: a reader drops tokens it does not know. A file with
   a higher version than the app knows is refused ("made by a newer version").
 - **`name`**, **`author`**: one line of plain text each, at most 60
-  characters. Control and bidirectional characters are removed. A theme with
+  characters. Control and bidirectional characters become spaces. A theme with
   no name is called "Untitled theme".
 - **`base`**: a built-in theme, `light`, `dark`, `parchment`, `modern` or
   `contrast`. It fills every token the file leaves out, so a file can set
@@ -54,9 +54,9 @@ that is every value it sets, a complete file to start from.
 | font | a font id (below) | |
 | weight | a number | 300 to 800, in hundreds |
 | radius | `6px`, `0.5rem`, a bare number (px), or `full` | 0 to 48px |
-| border | `1px` or a bare number | `border` 0 to 3px, `border-strong` 1 to 4px and wider than `border` |
+| border | `1px`, `0.0625rem` or a bare number (px) | `border` 0 to 3px, `border-strong` 1 to 4px and wider than `border` (if not, `border-strong` is left out, then `border` too if it still is not narrower) |
 | stroke | a number | 1 to 3 |
-| shadow | `none`, or up to three layers `[inset] x y [blur [spread]] colour` | offsets within 32px, blur 0 to 64px, spread within 16px, lengths in px |
+| shadow | `none`, or up to three layers `[inset] x y [blur [spread]] colour`, lengths in px, rem or bare numbers (px) | offsets within 32px, blur 0 to 64px, spread within 16px |
 
 Fonts are the ones the app bundles (the security policy allows no other font
 origin) or the device's own:
@@ -148,8 +148,9 @@ meanwhile goes back too. Importing a theme already saved picks the saved one.
 
 A link is `https://<app>/settings#theme=1.<payload>`: the file's JSON,
 deflated (`deflate-raw`) and written base64url, after the encoding version
-`1.`. It is in the hash, so it never reaches a server. A reader stops inflating
-past 64 KB.
+`1.`. It is in the hash, so it never reaches a server. A reader refuses a
+payload longer than a 64 KB theme could deflate to, and stops inflating past
+64 KB.
 
 ## Getting back
 

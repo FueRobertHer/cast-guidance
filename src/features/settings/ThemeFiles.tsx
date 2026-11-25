@@ -6,9 +6,11 @@ import {
   previewTheme,
   readSavedThemes,
   readThemeChoice,
+  resolveTheme,
   restoreTheme,
   type SavedTheme,
   saveTheme,
+  type Theme,
   type ThemeChoice,
   TRY_SECONDS,
   useSavedThemes,
@@ -45,9 +47,12 @@ function refuse(reason: string): void {
 function ThemeImportSheet({
   incoming,
   onClose,
+  builtIn,
 }: {
   incoming: ParsedTheme | null;
   onClose: () => void;
+  /** While a theme of one's own is in use, the built-in to draw in, as Appearance is. */
+  builtIn: Theme | undefined;
 }) {
   // Kept while the sheet closes, so it does not empty under its own animation.
   const [shown, setShown] = useState(incoming);
@@ -72,7 +77,14 @@ function ThemeImportSheet({
     <Sheet.Root open={incoming !== null} onOpenChange={(open) => !open && onClose()}>
       <Sheet.Portal>
         <Sheet.Scrim />
-        <Sheet.Panel className="flex max-h-[85dvh] flex-col">
+        <Sheet.Panel
+          data-theme={builtIn}
+          className={
+            builtIn === undefined
+              ? 'flex max-h-[85dvh] flex-col'
+              : 'flex max-h-[85dvh] flex-col font-sans text-ink'
+          }
+        >
           <Sheet.Heading close>
             {file === undefined ? 'Theme' : `Try “${file.name}”?`}
           </Sheet.Heading>
@@ -166,7 +178,11 @@ export function ThemeFiles() {
   const removedRef = useRef<ReturnType<typeof deleteTheme>>(null);
   const undo = useUndoOffer<ThemesState>({
     current: { themes: saved, choice },
-    same: (a, b) => a.themes === b.themes && a.choice === b.choice,
+    // By content, not identity: Undo writes a new list with the same themes,
+    // and the bar must still say what it undid.
+    same: (a, b) =>
+      a.choice === b.choice &&
+      a.themes.map((t) => t.id).join() === b.themes.map((t) => t.id).join(),
     restore: () => {
       if (removedRef.current !== null) restoreTheme(removedRef.current);
       removedRef.current = null;
@@ -257,7 +273,11 @@ export function ThemeFiles() {
         }}
       />
       <UndoBar pending={undo.pending} undone={undo.undone} onUndo={() => undo.run()} />
-      <ThemeImportSheet incoming={incoming} onClose={() => setIncoming(null)} />
+      <ThemeImportSheet
+        incoming={incoming}
+        onClose={() => setIncoming(null)}
+        builtIn={choice.startsWith('custom:') ? resolveTheme(choice) : undefined}
+      />
     </div>
   );
 }

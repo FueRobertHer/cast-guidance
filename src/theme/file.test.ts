@@ -115,11 +115,17 @@ describe('reading a theme file', () => {
     expect(value('border', '3px')).toBe('3px');
     expect(value('border', '4px')).toMatch(/^error/);
     expect(value('border-strong', '0.5px')).toMatch(/^error/);
+    // The selected edge goes first; the resting one too if it still is not narrower.
     const both = parsed(file({ border: '3px', 'border-strong': '2px' }));
-    expect(both.file.tokens).toEqual({ border: '3px' });
+    expect(both.file.tokens).toEqual({});
     expect(both.dropped).toEqual([
       expect.stringMatching(/^border-strong: 2px \(the selected edge/),
+      expect.stringMatching(/^border: 3px \(the selected edge/),
     ]);
+    expect(parsed(file({ border: '2px', 'border-strong': '2px' })).file.tokens).toEqual({});
+    expect(parsed(file({ border: '1px', 'border-strong': '1px' })).file.tokens).toEqual({
+      border: '1px',
+    });
     // Against the base's own: Dark's selected edge is 2px, High contrast's resting 2px.
     expect(parsed(file({ border: '2px' })).file.tokens).toEqual({});
     expect(parsed(file({ 'border-strong': '2px' }, { base: 'contrast' })).file.tokens).toEqual({});
@@ -158,6 +164,13 @@ describe('reading a theme file', () => {
     ]) {
       expect(value('shadow-float', bad), bad).toMatch(/^error/);
     }
+  });
+
+  it('names a list or an object in what it left out, however deep', () => {
+    let deep: unknown = 1;
+    for (let i = 0; i < 50_000; i++) deep = [deep];
+    const { dropped } = parsed(file({ bg: deep, ink: { a: 1 } }));
+    expect(dropped).toEqual(['bg: a list (not a colour)', 'ink: an object (not a colour)']);
   });
 
   it('keeps names and authors to one plain line of 60 characters', () => {

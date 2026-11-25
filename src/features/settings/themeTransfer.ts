@@ -16,12 +16,18 @@ import { MAX_THEME_BYTES, readThemeHash, themeLink } from '@/theme/link';
  * in and asks before using it.
  */
 
-/** A file someone picked. */
+const UNREADABLE: ParseResult = { ok: false, reason: 'This is not a Cast Guidance theme.' };
+
+/** A file someone picked. Never rejects: anything that goes wrong is a reason. */
 export async function readThemeFile(file: Blob): Promise<ParseResult> {
   if (file.size > MAX_THEME_BYTES) {
     return { ok: false, reason: 'This file is too large to be a theme.' };
   }
-  return parseThemeText(await file.text());
+  try {
+    return parseThemeText(await file.text());
+  } catch {
+    return UNREADABLE;
+  }
 }
 
 /**
@@ -32,10 +38,17 @@ export async function readThemeFile(file: Blob): Promise<ParseResult> {
 export async function readThemeLink(text: string): Promise<ParseResult> {
   const at = text.indexOf('#');
   const hash = at < 0 ? text.trim() : text.slice(at + 1).trim();
-  const json = await readThemeHash(hash);
-  return json === null
-    ? { ok: false, reason: 'This link does not carry a theme. Copy the whole link and try again.' }
-    : parseThemeFile(json);
+  try {
+    const json = await readThemeHash(hash);
+    return json === null
+      ? {
+          ok: false,
+          reason: 'This link does not carry a theme. Copy the whole link and try again.',
+        }
+      : parseThemeFile(json);
+  } catch {
+    return UNREADABLE;
+  }
 }
 
 /**

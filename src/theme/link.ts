@@ -4,12 +4,21 @@
  * encoding, apart from the file's own schema version). It lives in the hash,
  * so it never reaches a server, and needs none: the link is the theme.
  *
- * Decoding is for text from anywhere, so it stops as soon as the inflated
- * bytes pass `MAX_THEME_BYTES` rather than trusting the stream to end.
+ * Decoding is for text from anywhere. A payload longer than a 64 KB theme
+ * could deflate to is refused before it is decoded, the decompressor is fed
+ * 1 KB at a time (browsers inflate a whole input chunk at once, and deflate
+ * can expand about a thousandfold), and reading stops as soon as the
+ * inflated bytes pass `MAX_THEME_BYTES`.
  */
 
 /** The largest theme file the app reads, as a file or from a link. */
 export const MAX_THEME_BYTES = 64 * 1024;
+
+/**
+ * The longest payload read: `MAX_THEME_BYTES` that deflate could not shrink,
+ * in base64 (4 characters per 3 bytes), and a little over.
+ */
+const MAX_PAYLOAD_CHARS = 90_000;
 
 const PREFIX = 'theme=';
 /** The one encoding so far: deflate-raw, then base64url. */
@@ -31,12 +40,20 @@ function fromBase64Url(text: string): Uint8Array | null {
   }
 }
 
-/** One chunk as a stream, without Blob, whose `stream()` not every runtime has. */
-function streamOf(bytes: Uint8Array): ReadableStream<Uint8Array> {
+/**
+ * `bytes` as a stream of `size`-byte chunks, handed over only as the reader
+ * pulls, without Blob, whose `stream()` not every runtime has.
+ */
+function streamOf(bytes: Uint8Array, size = 1024): ReadableStream<Uint8Array> {
+  let at = 0;
   return new ReadableStream({
-    start(controller) {
-      controller.enqueue(bytes);
-      controller.close();
+    pull(controller) {
+      if (at >= bytes.byteLength) {
+        controller.close();
+        return;
+      }
+      controller.enqueue(bytes.subarray(at, at + size));
+      at += size;
     },
   });
 }
@@ -86,8 +103,12 @@ async function deflate(text: string): Promise<Uint8Array> {
   return out;
 }
 
-/** Inflates `bytes`, or null past `limit` inflated bytes or on a corrupt stream. */
+/**
+ * Inflates `bytes`, or null past `limit` inflated bytes, on a corrupt
+ * stream, or where the browser has no `DecompressionStream`.
+ */
 async function inflate(bytes: Uint8Array, limit: number): Promise<string | null> {
+  if (typeof DecompressionStream !== 'function') return null;
   const all = await readAll(
     streamOf(bytes).pipeThrough(
       new DecompressionStream('deflate-raw') as unknown as ReadableWritablePair<
@@ -129,10 +150,15 @@ export async function readThemeHash(hash: string): Promise<unknown> {
   const body = hash.replace(/^#/, '');
   if (!body.startsWith(PREFIX)) return null;
   const payload = body.slice(PREFIX.length);
-  if (!payload.startsWith(ENCODING)) return null;
+  if (!payload.startsWith(ENCODING) || payload.length > MAX_PAYLOAD_CHARS) return null;
   const bytes = fromBase64Url(payload.slice(ENCODING.length));
   if (bytes === null || bytes.byteLength === 0) return null;
-  const text = await inflate(bytes, MAX_THEME_BYTES);
+  let text: string | null;
+  try {
+    text = await inflate(bytes, MAX_THEME_BYTES);
+  } catch {
+    return null;
+  }
   if (text === null) return null;
   try {
     return JSON.parse(text);
