@@ -185,6 +185,7 @@ recomputed on read and individually overridable.
 ## Docs
 
 - [`docs/export-format.md`](docs/export-format.md): the character export envelope, homebrew DTO, and import/migration guarantees.
+- [`docs/theme-format.md`](docs/theme-format.md): theme files and links: the format, every token, and the ways back to a built-in theme.
 - [`docs/security-headers.md`](docs/security-headers.md): deployment security headers, the enforced CSP, and how to add a host.
 - [`docs/content-notice.md`](docs/content-notice.md): DRAFT content and attribution notice for the owner's legal review: where game data comes from, what ships, and the options.
 - [`docs/adr/`](docs/adr): ADR-001 (the homebrew Workshop, table rules and rule packs) and ADR-002 (One Workshop), as summaries with links to the full records.

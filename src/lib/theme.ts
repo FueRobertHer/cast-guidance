@@ -326,6 +326,9 @@ export function setThemeChoice(choice: ThemeChoice): void {
 
 // --- Trying a theme before keeping it -------------------------------------
 
+/** How long a theme being tried lasts before it goes back by itself (ThemeKeepBanner). */
+export const TRY_SECONDS = 30;
+
 /** A saved theme drawn in this tab only, until Keep stores it or it reverts. */
 let preview: SavedTheme | null = null;
 

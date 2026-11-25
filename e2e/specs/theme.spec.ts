@@ -132,3 +132,150 @@ test.describe('colour theme', () => {
     await expectTheme(page, 'light');
   });
 });
+
+// Phase 3 (docs/theme-format.md): themes of one's own, from a file or a link.
+
+const MIDNIGHT = {
+  castGuidanceTheme: 1,
+  name: 'Midnight',
+  author: 'Vela',
+  base: 'light',
+  tokens: { bg: '#101418', surface: '#1a2028', ink: '#f4f0e8', 'radius-card': '4px' },
+};
+
+/** The page's inline `--cg-bg` and colour scheme, at the first frame of each load. */
+async function watchFirstFrame(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    requestAnimationFrame(() => {
+      const root = document.documentElement;
+      (window as unknown as { firstFrame: unknown }).firstFrame = {
+        theme: root.getAttribute('data-theme'),
+        bg: root.style.getPropertyValue('--cg-bg'),
+        scheme: root.style.getPropertyValue('color-scheme'),
+      };
+    });
+  });
+}
+
+const firstFrame = (page: Page) =>
+  page.evaluate(() => (window as unknown as { firstFrame: unknown }).firstFrame);
+
+async function openSettings(page: Page, hash = ''): Promise<void> {
+  await page.goto(`/settings${hash}`);
+  await expect(page.getByRole('heading', { level: 1, name: 'Settings' })).toBeVisible();
+}
+
+async function importTheme(page: Page, theme: unknown): Promise<void> {
+  const choosing = page.waitForEvent('filechooser');
+  await page.getByRole('button', { name: 'Import a theme' }).click();
+  await (await choosing).setFiles({
+    name: 'midnight.json',
+    mimeType: 'application/json',
+    buffer: Buffer.from(JSON.stringify(theme)),
+  });
+}
+
+test.describe("themes of one's own", () => {
+  test('imports a file, tries it, keeps it, and draws it from the first frame after a reload', async ({
+    page,
+  }) => {
+    await watchFirstFrame(page);
+    await openSettings(page);
+    await importTheme(page, MIDNIGHT);
+    const sheet = page.getByRole('dialog', { name: 'Try “Midnight”?' });
+    await expect(sheet).toContainText('By Vela');
+    await sheet.getByRole('button', { name: 'Try this theme' }).click();
+    await expect(sheet).toBeHidden();
+
+    const root = page.locator('html');
+    await expect(root).toHaveAttribute('data-theme', 'light');
+    await expect
+      .poll(() => root.evaluate((r) => r.style.getPropertyValue('--cg-bg')))
+      .toBe('#101418');
+    // A dark page on a light base: native controls follow the page.
+    expect(await root.evaluate((r) => getComputedStyle(r).colorScheme)).toBe('dark');
+    await expect(page.locator('meta[name="theme-color"]')).toHaveAttribute('content', '#101418');
+
+    const banner = page.locator('[data-theme-keep]');
+    await expect(banner).toContainText('Keep the theme Midnight?');
+    await banner.getByRole('button', { name: 'Keep' }).click();
+    await expect(banner).toBeHidden();
+    await expect(page.getByRole('radio', { name: 'Midnight' })).toBeChecked();
+
+    await page.reload();
+    await expect(page.getByRole('heading', { level: 1, name: 'Settings' })).toBeVisible();
+    expect(await firstFrame(page)).toEqual({ theme: 'light', bg: '#101418', scheme: 'dark' });
+    // Settings' Appearance section stays in the built-in base, the way back.
+    const appearance = page.locator('section', {
+      has: page.getByRole('heading', { level: 2, name: 'Appearance' }),
+    });
+    await expect(appearance).toHaveAttribute('data-theme', 'light');
+  });
+
+  test('goes back by itself if nobody keeps it, and a reload meanwhile goes back too', async ({
+    page,
+  }) => {
+    await page.clock.install();
+    await openSettings(page);
+    await importTheme(page, MIDNIGHT);
+    await page.getByRole('button', { name: 'Try this theme' }).click();
+    const root = page.locator('html');
+    await expect
+      .poll(() => root.evaluate((r) => r.style.getPropertyValue('--cg-bg')))
+      .toBe('#101418');
+    await page.clock.fastForward(31_000);
+    await expect(page.locator('[data-theme-keep]')).toBeHidden();
+    expect(await root.evaluate((r) => r.style.getPropertyValue('--cg-bg'))).toBe('');
+    await expect(root).toHaveAttribute('data-theme', 'dark');
+    // Kept in Your themes, though, to pick again.
+    await expect(page.getByRole('radio', { name: 'Midnight' })).not.toBeChecked();
+
+    await page.getByRole('radio', { name: 'Midnight' }).click();
+    await expect(root).toHaveAttribute('data-theme', 'light');
+    await page.getByRole('radio', { name: 'Dark' }).click();
+    // Trying it again and reloading instead of keeping it: back to Dark.
+    await importTheme(page, MIDNIGHT);
+    await page.getByRole('button', { name: 'Try this theme' }).click();
+    await expect(page.locator('[data-theme-keep]')).toBeVisible();
+    await page.reload();
+    await expect(page.getByRole('heading', { level: 1, name: 'Settings' })).toBeVisible();
+    await expect(root).toHaveAttribute('data-theme', 'dark');
+    expect(await root.evaluate((r) => r.style.getPropertyValue('--cg-bg'))).toBe('');
+  });
+
+  test('shares a theme as a link that another page opens, and takes off the address', async ({
+    page,
+    context,
+  }) => {
+    await openSettings(page);
+    await importTheme(page, MIDNIGHT);
+    await page.getByRole('button', { name: 'Try this theme' }).click();
+    await page.locator('[data-theme-keep]').getByRole('button', { name: 'Keep' }).click();
+    await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+    // No share sheet here, so the link goes to the clipboard.
+    await page.evaluate(() => {
+      (navigator as { share?: unknown }).share = undefined;
+    });
+    await page.getByRole('button', { name: 'Share this theme' }).click();
+    const link = await page.evaluate(() => navigator.clipboard.readText());
+    expect(link).toMatch(/\/settings#theme=1\.[\w-]+$/);
+
+    const other = await context.newPage();
+    await other.goto(link.replace(/^https?:\/\/[^/]+/, ''));
+    const sheet = other.getByRole('dialog', { name: 'Try “Midnight”?' });
+    await expect(sheet).toBeVisible();
+    await expect.poll(() => other.evaluate(() => location.hash)).toBe('');
+  });
+
+  test('?theme=reset goes back to Dark from any address, and comes off it', async ({ page }) => {
+    await openSettings(page);
+    await importTheme(page, MIDNIGHT);
+    await page.getByRole('button', { name: 'Try this theme' }).click();
+    await page.locator('[data-theme-keep]').getByRole('button', { name: 'Keep' }).click();
+    await watchFirstFrame(page);
+    await page.goto('/library?theme=reset');
+    expect(await firstFrame(page)).toEqual({ theme: 'dark', bg: '', scheme: '' });
+    await expect.poll(() => page.evaluate(() => location.search)).toBe('');
+    await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+  });
+});

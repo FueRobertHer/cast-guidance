@@ -1,7 +1,7 @@
 # Themes: build plan
 
-Status: phases 1 and 2 built (2026-11-24); phase 3 waits on the owner's look
-at the three reskins. Owner decisions, 2026-11-24: full reskins in the VS Code
+Status: phases 1 to 3 built (2026-11-25); the owner approved the three reskins
+before phase 3. Phase 4 (the editor) is next. Owner decisions, 2026-11-24: full reskins in the VS Code
 sense (layout fixed, look free), theme files with a closed vocabulary rather
 than CSS themes, no contrast rules on themes people make for themselves, no
 in-app gallery and no server storage, and three showcase reskins: Parchment,
@@ -144,7 +144,7 @@ green.
 6. **Checkpoint:** screenshots of each theme go to the owner before phase 3.
    If the three do not feel different enough, the vocabulary grows first.
 
-### Phase 3: theme files
+### Phase 3: theme files (built)
 
 **The file** (`src/theme/file.ts`, documented in `docs/theme-format.md`):
 

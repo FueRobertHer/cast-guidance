@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   pageTokens,
@@ -8,6 +10,7 @@ import {
   themeTokens,
 } from '../../tests-fixtures/themeCss';
 import { BUILT_IN_THEMES } from './builtins';
+import { THEME_FONTS } from './fonts';
 import { TOKEN_NAMES, type TokenKind, VOCABULARY } from './vocabulary';
 
 // Every built-in theme in src/styles/themes.css sets every token in the
@@ -74,5 +77,16 @@ describe('the theme vocabulary (DS-001)', () => {
       (r) => r.selectors.includes(':root') !== r.selectors.includes('[data-theme="dark"]'),
     ).map((r) => r.selectors.join(', '));
     expect(mismatched).toEqual([]);
+  });
+});
+
+describe('docs/theme-format.md', () => {
+  const doc = readFileSync(path.resolve(import.meta.dirname, '../../docs/theme-format.md'), 'utf8');
+
+  it('names every token, every font and every built-in a file may use', () => {
+    const named = (word: string) => doc.includes(`\`${word}\``);
+    expect(VOCABULARY.map((t) => t.name).filter((n) => !named(n))).toEqual([]);
+    expect(THEME_FONTS.map((f) => f.id).filter((id) => !named(id))).toEqual([]);
+    expect(BUILT_IN_THEMES.map((t) => t.id).filter((id) => !named(id))).toEqual([]);
   });
 });

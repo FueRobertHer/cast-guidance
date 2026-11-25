@@ -638,3 +638,24 @@ describe('SettingsPage about', () => {
     }
   });
 });
+
+describe('SettingsPage appearance', () => {
+  it("draws itself in a built-in theme while one of the player's own is in use", async () => {
+    const theme = await import('@/lib/theme');
+    const saved = theme.saveTheme({
+      castGuidanceTheme: 1,
+      name: 'Unreadable',
+      base: 'light',
+      tokens: { bg: '#777777', ink: '#787878' },
+    }).theme;
+    theme.setThemeChoice(theme.customChoice(saved.id));
+    render(<SettingsPage />);
+    const section = screen
+      .getByRole('heading', { level: 2, name: 'Appearance' })
+      .closest('section');
+    expect(section?.getAttribute('data-theme')).toBe('light');
+    theme.setThemeChoice('dark');
+    await waitFor(() => expect(section?.hasAttribute('data-theme')).toBe(false));
+    localStorage.clear();
+  });
+});

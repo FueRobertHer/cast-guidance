@@ -31,17 +31,22 @@ function fromBase64Url(text: string): Uint8Array | null {
   }
 }
 
-async function deflate(text: string): Promise<Uint8Array> {
-  const stream = new Blob([text]).stream().pipeThrough(new CompressionStream('deflate-raw'));
-  return new Uint8Array(await new Response(stream).arrayBuffer());
+/** One chunk as a stream, without Blob, whose `stream()` not every runtime has. */
+function streamOf(bytes: Uint8Array): ReadableStream<Uint8Array> {
+  return new ReadableStream({
+    start(controller) {
+      controller.enqueue(bytes);
+      controller.close();
+    },
+  });
 }
 
-/** Inflates `bytes`, or null past `limit` inflated bytes or on a corrupt stream. */
-async function inflate(bytes: Uint8Array, limit: number): Promise<string | null> {
-  const reader = new Blob([bytes as BlobPart])
-    .stream()
-    .pipeThrough(new DecompressionStream('deflate-raw'))
-    .getReader();
+/** Every byte a stream gives, or null past `limit` bytes or on an error. */
+async function readAll(
+  stream: ReadableStream<Uint8Array>,
+  limit: number,
+): Promise<Uint8Array | null> {
+  const reader = stream.getReader();
   const chunks: Uint8Array[] = [];
   let size = 0;
   try {
@@ -64,6 +69,35 @@ async function inflate(bytes: Uint8Array, limit: number): Promise<string | null>
     all.set(c, at);
     at += c.byteLength;
   }
+  return all;
+}
+
+async function deflate(text: string): Promise<Uint8Array> {
+  const out = await readAll(
+    streamOf(new TextEncoder().encode(text)).pipeThrough(
+      new CompressionStream('deflate-raw') as unknown as ReadableWritablePair<
+        Uint8Array,
+        Uint8Array
+      >,
+    ),
+    Number.POSITIVE_INFINITY,
+  );
+  if (out === null) throw new Error('Could not compress the theme.');
+  return out;
+}
+
+/** Inflates `bytes`, or null past `limit` inflated bytes or on a corrupt stream. */
+async function inflate(bytes: Uint8Array, limit: number): Promise<string | null> {
+  const all = await readAll(
+    streamOf(bytes).pipeThrough(
+      new DecompressionStream('deflate-raw') as unknown as ReadableWritablePair<
+        Uint8Array,
+        Uint8Array
+      >,
+    ),
+    limit,
+  );
+  if (all === null) return null;
   try {
     return new TextDecoder('utf-8', { fatal: true }).decode(all);
   } catch {
