@@ -104,7 +104,7 @@ export function ThemeSample({
               <span className="block text-body-strong">Fireball</span>
               <span className="block text-caption text-ink-muted">3rd level · 8d6 fire</span>
             </span>
-            <span className="text-caption text-ink-faint">Chosen</span>
+            <span className="text-caption text-ink-muted">Chosen</span>
           </div>
         </div>
       )}

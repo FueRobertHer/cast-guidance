@@ -279,3 +279,74 @@ test.describe("themes of one's own", () => {
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
   });
 });
+
+// Phase 4 (docs/theming-plan.md): the theme editor.
+
+async function setHex(page: Page, token: string, hex: string): Promise<void> {
+  const field = page.locator(`[data-token-row="${token}"]`).getByRole('textbox', { name: 'Hex' });
+  await field.fill(hex);
+  await field.press('Enter');
+}
+
+test.describe('the theme editor', () => {
+  test('makes a theme from Parchment, saves it, and draws it from the first frame after a reload', async ({
+    page,
+  }) => {
+    await watchFirstFrame(page);
+    await openSettings(page);
+    await page.getByRole('radio', { name: 'Parchment' }).click();
+    await page.getByRole('button', { name: 'Make a theme' }).click();
+    await expect(page.getByRole('heading', { level: 1, name: 'Make a theme' })).toBeVisible();
+    await expect(page.getByRole('textbox', { name: 'Name' })).toHaveValue('Parchment copy');
+
+    await setHex(page, 'bg', '#1d2b3a');
+    await setHex(page, 'surface', '#24364a');
+    await page.locator('[data-token-row="font-sans"] select').selectOption('inter');
+    const sample = page.locator('[data-theme-sample]');
+    await expect(sample).toHaveAttribute('data-theme', 'parchment');
+    expect(await sample.evaluate((s) => s.style.getPropertyValue('--cg-bg'))).toBe('#1d2b3a');
+    // The page itself stays in Parchment while the draft is made.
+    expect(await page.locator('html').evaluate((r) => r.style.getPropertyValue('--cg-bg'))).toBe(
+      '',
+    );
+    // A dark page on a light base: the roles turned with it.
+    await expect(page.locator('[data-token-row="danger"]')).toContainText('Follows the page');
+
+    await page.getByRole('textbox', { name: 'Name' }).fill('Night Tide');
+    await page.getByRole('button', { name: 'Save', exact: true }).click();
+    await expect(page.getByRole('heading', { level: 1, name: 'Settings' })).toBeVisible();
+    await expect(page.getByRole('radio', { name: 'Night Tide' })).toBeChecked();
+
+    await page.reload();
+    await expect(page.getByRole('heading', { level: 1, name: 'Settings' })).toBeVisible();
+    expect(await firstFrame(page)).toEqual({ theme: 'parchment', bg: '#1d2b3a', scheme: 'dark' });
+    expect(await page.evaluate(() => getComputedStyle(document.body).fontFamily)).toMatch(
+      /^"?Inter/,
+    );
+
+    // Edited again, in place.
+    await page.getByRole('button', { name: 'Edit this theme' }).click();
+    await expect(page.getByRole('heading', { level: 1, name: 'Edit theme' })).toBeVisible();
+    await setHex(page, 'brand', '#f0b44c');
+    await page.getByRole('button', { name: 'Save', exact: true }).click();
+    await expect(page.getByRole('heading', { level: 1, name: 'Settings' })).toBeVisible();
+    await expect(page.getByRole('radio', { name: 'Night Tide' })).toBeChecked();
+    expect(await page.locator('html').evaluate((r) => r.style.getPropertyValue('--cg-brand'))).toBe(
+      '#f0b44c',
+    );
+    await expect(page.getByRole('radio')).toHaveCount(7);
+  });
+
+  test('fits a 320 px phone without scrolling sideways', async ({ page }) => {
+    await page.setViewportSize({ width: 320, height: 640 });
+    await page.goto('/settings/theme');
+    await expect(page.getByRole('heading', { level: 1, name: 'Make a theme' })).toBeVisible();
+    for (const group of ['Page and surfaces', 'Conditions', 'Shape', 'Shadows']) {
+      await page.locator('summary').getByText(group, { exact: true }).click();
+    }
+    const overflow = await page.evaluate(
+      () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+    );
+    expect(overflow).toBeLessThanOrEqual(0);
+  });
+});

@@ -126,6 +126,27 @@ row (border).
 **Icons**: `icon-stroke`, the line width of icons drawn at their default
 (stroke).
 
+## Making one in the app
+
+Settings, under the theme picker: **Make a theme** starts a copy of the theme
+in use, and **Edit this theme** opens one of your own. The editor draws the
+theme being made in a small sheet at the top (the page around it stays in the
+theme in use, so its controls stay readable), and groups every value above by
+what it is, the few most themes change first.
+
+Many values follow others until set by hand: change the page, the cards, the
+ink or the action, and the borders, muted text, tints, labels and hover colours
+move with them; turn the page from light to dark or back, and the roles,
+shadows and condition colours take the matching built-in's. A row says what it
+follows, with **Set its own**; a value set by hand has **Reset**. The editor
+remembers which values were set by hand beside the saved theme (not in the
+file), so they keep following when it is edited again. What it saves is an
+ordinary theme file: following values are written out as plain values.
+
+The draft is kept on the device as it changes, so a tab the phone closed can
+pick up where it was. **Undo** takes back the last change. **Save** chooses
+the theme; editing a theme saves it in place, or **Save as a copy**.
+
 ## Getting a theme in
 
 In Settings, under the theme picker:

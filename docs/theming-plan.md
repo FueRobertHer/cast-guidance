@@ -1,7 +1,7 @@
 # Themes: build plan
 
-Status: phases 1 to 3 built (2026-11-25); the owner approved the three reskins
-before phase 3. Phase 4 (the editor) is next. Owner decisions, 2026-11-24: full reskins in the VS Code
+Status: phases 1 to 4 built (2026-11-25); the owner approved the three reskins
+before phase 3. Phase 5 (decor and more fonts) is next. Owner decisions, 2026-11-24: full reskins in the VS Code
 sense (layout fixed, look free), theme files with a closed vocabulary rather
 than CSS themes, no contrast rules on themes people make for themselves, no
 in-app gallery and no server storage, and three showcase reskins: Parchment,
@@ -247,7 +247,7 @@ picker with saved themes, the preview sheet. E2E: import a file, keep it,
 reload into it from the first frame; open a share link in a fresh page;
 let the revert run out; `?theme=reset`.
 
-### Phase 4: theme editor
+### Phase 4: theme editor (built)
 
 **Where**: a focused, full-screen flow like the Workshop's editors (its own
 header, no tab bar): `/settings/theme` makes a new theme from the one in use,
