@@ -25,6 +25,7 @@ import {
   THEME_COLOR,
   THEME_KEY,
   THEMES_KEY,
+  updateTheme,
 } from './theme';
 
 const ROOT = path.resolve(import.meta.dirname, '../..');
@@ -316,6 +317,28 @@ describe("themes of one's own", () => {
     keepPreview();
     expect(localStorage.getItem(THEME_KEY)).toBe(customChoice(theme.id));
     expect(drawn().vars['--cg-bg']).toBe('#f4f0e8');
+  });
+});
+
+describe('a theme edited in place', () => {
+  it('keeps its id, its place and its hand-set list, and draws again if in use', () => {
+    device(false);
+    const first = saveTheme(MIDNIGHT, ['bg']).theme;
+    const second = saveTheme({ ...MIDNIGHT, tokens: { bg: '#203040' } }).theme;
+    setThemeChoice(customChoice(first.id));
+    const edited = { ...MIDNIGHT, name: 'Midnight II', tokens: { bg: '#334455' } };
+    expect(updateTheme(first.id, edited, ['bg'])).toBe(true);
+    expect(readSavedThemes()).toEqual([{ id: first.id, file: edited, own: ['bg'] }, second]);
+    expect(drawn().vars['--cg-bg']).toBe('#334455');
+    expect(updateTheme('nope', edited)).toBeNull();
+  });
+
+  it('reads a hand-set list back, keeping only names the file sets', () => {
+    localStorage.setItem(
+      THEMES_KEY,
+      JSON.stringify([{ id: 'a', file: MIDNIGHT, own: ['bg', 'glow', 7] }]),
+    );
+    expect(readSavedThemes()[0]?.own).toEqual(['bg']);
   });
 });
 

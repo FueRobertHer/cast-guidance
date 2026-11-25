@@ -249,16 +249,87 @@ let the revert run out; `?theme=reset`.
 
 ### Phase 4: theme editor
 
-Settings, Themes, Create: start from any theme, edit by group (colours, fonts,
-weights, shape, shadows, icons) with the app itself as the live preview; save
-to Your themes. No contrast rules. Related tokens move together: changing
-`brand` offers to set `brand-hover` and `roll-soft` from it, or a file sparse
-in one of a pair is drawn half in its base.
+**Where**: a focused, full-screen flow like the Workshop's editors (its own
+header, no tab bar): `/settings/theme` makes a new theme from the one in use,
+`/settings/theme/<id>` edits a saved one. Settings, under the picker: **Make a
+theme** (always) and **Edit this theme** (a theme of one's own). Back asks
+"Leave without saving?" when there are changes, as the Workshop does.
+
+**Preview**: the editor page stays in the theme in use; a sticky sample at the
+top draws the draft (its base's `data-theme` with the draft's values on it,
+built as a saved theme's are, through `appliedTheme`): a small sheet with a
+header, an HP card and bar, damage and heal, the action and outline buttons,
+chips and a selected card, a condition chip, body and muted text, icons. The
+draft never touches <html>, so nothing (a dialog, a toast, another tab's
+change) can be drawn in a half-made theme. Saving draws the app in it.
+
+**The draft** (`src/theme/draft.ts`): a theme file, the tokens the person set
+themselves, and an undo history. Every control shows the token's value in the
+draft: its own if set, else derived (below), else the base's (from themes.css,
+loaded with the editor), with **Reset** on a token set by hand. Every edit goes
+through `checkToken`, so the draft is always a valid file; an invalid entry
+says why next to the field and changes nothing. The draft is kept in
+localStorage as it changes, so a tab the phone closed can pick up where it was.
+
+**Related tokens move together** (`src/theme/derive.ts`), while the person has
+not set them by hand, and only once something they follow has been set:
+- grounds from `surface` toward `ink` (`surface-raised`, `surface-hover`,
+  `line`, `track`), `line-strong` from `bg` toward `ink`, `edge` (none on a
+  dark page, `line` on a light one);
+- text from `ink` toward `bg` (`ink-muted`, `ink-faint`);
+- `brand-hover` (`brand` toward `ink`), `on-brand` (`surface` or `ink`,
+  whichever reads better on it), `danger-fill` (`danger` darkened until white
+  reads on it), `on-danger` (white or black);
+- each role's `-soft` and `roll-soft`, a tint of it over `surface`;
+- `hp-trail` and `hp-bloom` (`danger` and `heal` halfway to white),
+  `hp-sheen` by the page's lightness;
+- the condition hues by the page's lightness (Dark's on a dark page, Light's
+  on a light one), each `-soft` a tint once its hue is set by hand.
+
+A following row says "Follows Brand" (or the page), with **Set its own**. The
+derived values are written into the file as plain values, so a file never
+depends on the editor; the list of tokens set by hand is kept beside the saved
+theme (not in the file), so following survives saving. A theme with no such
+list (imported) counts a token as following when its value is what derivation
+gives.
+
+**Groups**, in order, the first open: **Start here** (`bg`, `surface`, `ink`,
+`brand`, `font-sans`, `font-display`, `radius-card`), **Page and surfaces**,
+**Text**, **Actions and roles**, **Conditions** (13 hues; their tints tucked
+away), **Type**, **Shape**, **Shadows**, **Icons**. The name (prefilled, "<the
+theme it starts from> copy") and author sit above them; **Start from** (the
+base) below the sample, keeping every token set by hand when it changes.
+
+**Controls**, one per kind (a map, so phase 5's enumerated kinds slot in):
+colour, a swatch (the native picker) and a hex field for pasting, with an
+opacity slider for the tokens that take it (`scrim`, `hp-sheen`); font, the
+bundled fonts; weight, the weights the body font has; radius, a slider with
+steppers, 0 to 48px, and **Round ends** for `radius-pill`; edges, steppers in
+halves; icon stroke, a slider with steppers; shadows, presets (None, Soft,
+Deep, Outline, the base's). **Undo** in the header takes back the last change.
+
+**Saving**: a new theme is saved to Your themes (one already saved with the
+same content is picked instead); an edited one is replaced in place, keeping
+its id and its place, or **Save as a copy** saves it alongside. Either is then
+chosen, as Keep would.
+
+**Tests**: derivation (each relation, following only after a source is set,
+and stopping once a token is set by hand; following worked out again for a
+theme with no hand-set list), the draft (set, reset, base change, invalid
+entries, the edge rule, undo, keeping and resuming), saving new, in place and
+as a copy, the editor page (a change draws at once in the sample and never on
+<html>, leaving asks only when changed), and E2E: make a theme from Parchment,
+change its page colour and font, save, reload into it from the first frame;
+edit it again.
 
 ### Phase 5: decor and more fonts
 
 Two or three enumerated decor choices (a paper texture behind the page, card
-frame styles), then more bundled fonts. Card frames need one shared hook on
+frame styles), then more bundled fonts. Decor goes through `appliedTheme`'s
+`attrs`, keyed on an ancestor attribute rather than `:root`, so it works on a
+subtree (the editor's sample, the picker's cards). A larger font library loads
+each face as its row scrolls into view in the editor's list, with pending and
+offline states, and the list gains search. Card frames need one shared hook on
 every card, which today are ad hoc; that refactor comes with this phase.
 Themeable letter-spacing for titles also waits for here, unless a phase 2
 font needs it sooner.

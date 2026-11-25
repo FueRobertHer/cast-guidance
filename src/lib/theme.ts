@@ -64,6 +64,12 @@ const LIGHT_QUERY = '(prefers-color-scheme: light)';
 export interface SavedTheme {
   readonly id: string;
   readonly file: ThemeFile;
+  /**
+   * The tokens the person set by hand in the theme editor, so the rest keep
+   * following them when it is opened again (src/theme/derive.ts). Absent for
+   * a theme that came in as a file.
+   */
+  readonly own?: readonly string[];
 }
 
 /**
@@ -117,7 +123,18 @@ export function readSavedThemes(): readonly SavedTheme[] {
         continue;
       }
       const result = parseThemeFile((entry as { file?: unknown }).file);
-      if (result.ok) list.push({ id, file: result.theme.file });
+      if (!result.ok) continue;
+      const file = result.theme.file;
+      const own = (entry as { own?: unknown }).own;
+      list.push(
+        Array.isArray(own)
+          ? {
+              id,
+              file,
+              own: own.filter((n): n is string => typeof n === 'string' && n in file.tokens),
+            }
+          : { id, file },
+      );
     }
   } catch {
     // Unreadable: as if none were saved.
@@ -148,7 +165,10 @@ function newId(): string {
  * the same content (a file imported twice is one theme). `stored` is false
  * when storage refused it: it lasts until this tab closes.
  */
-export function saveTheme(file: ThemeFile): {
+export function saveTheme(
+  file: ThemeFile,
+  own?: readonly string[],
+): {
   theme: SavedTheme;
   stored: boolean;
   existing: boolean;
@@ -157,10 +177,28 @@ export function saveTheme(file: ThemeFile): {
   const key = themeKey(file);
   const same = list.find((t) => themeKey(t.file) === key);
   if (same !== undefined) return { theme: same, stored: unstoredThemes === null, existing: true };
-  const theme: SavedTheme = { id: newId(), file };
+  const theme: SavedTheme = own === undefined ? { id: newId(), file } : { id: newId(), file, own };
   const stored = writeSavedThemes([...list, theme]);
   notify();
   return { theme, stored, existing: false };
+}
+
+/**
+ * Replaces a saved theme's file in place, keeping its id and its place in the
+ * list, and draws it again if it is in use. Returns whether storage kept it
+ * (false: it lasts until this tab closes), or null when there is no such theme.
+ */
+export function updateTheme(id: string, file: ThemeFile, own?: readonly string[]): boolean | null {
+  const list = readSavedThemes();
+  const index = list.findIndex((t) => t.id === id);
+  if (index < 0) return null;
+  const theme: SavedTheme = own === undefined ? { id, file } : { id, file, own };
+  const stored = writeSavedThemes(list.map((t, i) => (i === index ? theme : t)));
+  if (preview?.id === id) preview = theme;
+  if (preview !== null) applySaved(preview);
+  else applyChoice(readThemeChoice());
+  notify();
+  return stored;
 }
 
 /**

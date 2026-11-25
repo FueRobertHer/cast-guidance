@@ -1,4 +1,5 @@
 import { BUILT_IN_THEMES, type BuiltInThemeId, builtInTheme, isBuiltInTheme } from './builtins';
+import { isLight } from './colour';
 import { fontId, fontStack } from './fonts';
 import { MAX_THEME_BYTES } from './link';
 import { rawTokens, themeRules } from './themeCss';
@@ -277,14 +278,6 @@ export function themeVars(file: ThemeFile): Record<string, string> {
   );
 }
 
-function luminance(hex: string): number {
-  const [r, g, b] = [1, 3, 5].map((i) => {
-    const c = Number.parseInt(hex.slice(i, i + 2), 16) / 255;
-    return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
-  }) as [number, number, number];
-  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
-}
-
 /**
  * Light or dark ground, from the file's own `bg` when it sets one (black text
  * would read better on it than white), else the base's: native controls and
@@ -293,7 +286,7 @@ function luminance(hex: string): number {
 export function themeScheme(file: ThemeFile): 'light' | 'dark' {
   const bg = file.tokens.bg;
   if (typeof bg !== 'string') return builtInTheme(file.base).scheme;
-  return (luminance(bg) + 0.05) / 0.05 > 1.05 / (luminance(bg) + 0.05) ? 'light' : 'dark';
+  return isLight(bg) ? 'light' : 'dark';
 }
 
 /** The colour of the browser's bars: the file's `bg`, else the base's. */
