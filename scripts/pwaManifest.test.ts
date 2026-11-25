@@ -82,6 +82,16 @@ describe('pwa manifest icons', () => {
   });
 });
 
+describe('pwa manifest shortcuts', () => {
+  it("offers the way back from a theme too unreadable to undo, at the boot script's reset address", () => {
+    expect(pwaManifest.shortcuts).toEqual([
+      expect.objectContaining({ name: 'Reset theme', url: '/settings?theme=reset' }),
+    ]);
+    const boot = readFileSync(path.join(import.meta.dirname, '../public/theme-boot.js'), 'utf8');
+    expect(boot).toContain("params.get('theme') === 'reset'");
+  });
+});
+
 describe('apple touch icon', () => {
   const file = path.join(PUBLIC, APPLE_TOUCH_ICON.src);
 

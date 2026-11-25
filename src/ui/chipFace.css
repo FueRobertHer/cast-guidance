@@ -20,113 +20,62 @@
  * - A piece's strength is its `opacity` over `--c`, not a mixed colour, so each
  *   hue needs two values per theme and no `color-mix`.
  *
- * Each hue is a colour (`--c`) and a tint (`--cs`), in both themes. The number
+ * Each hue is a colour (`--c`) and a tint (`--cs`), from the theme
+ * (`--cg-cx-<condition>` and its `-soft`, in styles/themes.css). The number
  * is `ink` in both; contrast.test.ts holds it to 4.5:1 over the strongest layer
  * behind it.
  */
 .cx-poisoned {
-  --c: #b7d94c;
-  --cs: #27301a;
+  --c: var(--cg-cx-poisoned);
+  --cs: var(--cg-cx-poisoned-soft);
 }
 .cx-paralyzed {
-  --c: #ffe94a;
-  --cs: #2f2c10;
+  --c: var(--cg-cx-paralyzed);
+  --cs: var(--cg-cx-paralyzed-soft);
 }
 .cx-frightened {
-  --c: #a67dff;
-  --cs: #241538;
+  --c: var(--cg-cx-frightened);
+  --cs: var(--cg-cx-frightened-soft);
 }
 .cx-blinded {
-  --c: #b9b4a8;
-  --cs: #2b2a27;
+  --c: var(--cg-cx-blinded);
+  --cs: var(--cg-cx-blinded-soft);
 }
 .cx-prone {
-  --c: #d0a878;
-  --cs: #2f2517;
+  --c: var(--cg-cx-prone);
+  --cs: var(--cg-cx-prone-soft);
 }
 .cx-restrained {
-  --c: #e5894d;
-  --cs: #38200f;
+  --c: var(--cg-cx-restrained);
+  --cs: var(--cg-cx-restrained-soft);
 }
 .cx-grappled {
-  --c: #c98fa6;
-  --cs: #321c26;
+  --c: var(--cg-cx-grappled);
+  --cs: var(--cg-cx-grappled-soft);
 }
 .cx-exhaustion {
-  --c: #9fd6ff;
-  --cs: #18283a;
+  --c: var(--cg-cx-exhaustion);
+  --cs: var(--cg-cx-exhaustion-soft);
 }
 .cx-invisible {
-  --c: #efeaff;
-  --cs: transparent;
+  --c: var(--cg-cx-invisible);
+  --cs: var(--cg-cx-invisible-soft);
 }
 .cx-stunned {
-  --c: #ff86d8;
-  --cs: #3a1730;
+  --c: var(--cg-cx-stunned);
+  --cs: var(--cg-cx-stunned-soft);
 }
 .cx-unconscious {
-  --c: #8f9bf5;
-  --cs: #191c3a;
+  --c: var(--cg-cx-unconscious);
+  --cs: var(--cg-cx-unconscious-soft);
 }
 .cx-incapacitated {
-  --c: #6fd3c4;
-  --cs: #14302c;
+  --c: var(--cg-cx-incapacitated);
+  --cs: var(--cg-cx-incapacitated-soft);
 }
 .cx-petrified {
-  --c: #93a4ad;
-  --cs: #232a2e;
-}
-[data-theme="light"] .cx-poisoned {
-  --c: #5b7a0e;
-  --cs: #e9f0cf;
-}
-[data-theme="light"] .cx-paralyzed {
-  --c: #a88c00;
-  --cs: #f7f0bf;
-}
-[data-theme="light"] .cx-frightened {
-  --c: #5a2db0;
-  --cs: #e9dffa;
-}
-[data-theme="light"] .cx-blinded {
-  --c: #6b665c;
-  --cs: #e4dfd3;
-}
-[data-theme="light"] .cx-prone {
-  --c: #8a5f2c;
-  --cs: #f1e3cd;
-}
-[data-theme="light"] .cx-restrained {
-  --c: #a94e12;
-  --cs: #f8e1cf;
-}
-[data-theme="light"] .cx-grappled {
-  --c: #8f3f5f;
-  --cs: #f5e0e8;
-}
-[data-theme="light"] .cx-exhaustion {
-  --c: #2a6fa8;
-  --cs: #dcebf7;
-}
-[data-theme="light"] .cx-invisible {
-  --c: #4a4a7a;
-  --cs: transparent;
-}
-[data-theme="light"] .cx-stunned {
-  --c: #b0237f;
-  --cs: #f9dcef;
-}
-[data-theme="light"] .cx-unconscious {
-  --c: #3a46b0;
-  --cs: #e2e4f9;
-}
-[data-theme="light"] .cx-incapacitated {
-  --c: #11756a;
-  --cs: #d5efeb;
-}
-[data-theme="light"] .cx-petrified {
-  --c: #4f6069;
-  --cs: #dde4e8;
+  --c: var(--cg-cx-petrified);
+  --cs: var(--cg-cx-petrified-soft);
 }
 
 /*
@@ -168,20 +117,14 @@
    which hover lifts to near white, stays a button in light (nothing in dark).
    Chips alone: the other surfaces are not roll pills. Hover's brightness
    filter lifts the edge too, so a hovered chip takes the strong line, as a
-   hovered field does (`RollChip` uses `--cx-edge-hover` on its own ring).
+   hovered field does (`RollChip` uses `--cg-cx-edge-hover` on its own ring).
    Ignore once draws a dashed ring of its own, so it drops the edge. */
-[data-theme="dark"] {
-  --cx-edge-hover: transparent;
-}
-[data-theme="light"] {
-  --cx-edge-hover: var(--cg-line-strong);
-}
 .cx:not([class*="cx-at-"], .cx-ig) > .cx-face {
-  box-shadow: inset 0 0 0 1px var(--cg-edge);
+  box-shadow: inset 0 0 0 var(--cg-border) var(--cg-edge);
 }
 @media (hover: hover) {
   button:hover > .cx:not([class*="cx-at-"], .cx-ig) > .cx-face {
-    box-shadow: inset 0 0 0 1px var(--cx-edge-hover, transparent);
+    box-shadow: inset 0 0 0 var(--cg-border) var(--cg-cx-edge-hover);
   }
 }
 .cx-num {
@@ -199,7 +142,7 @@
   flex: none;
   box-sizing: border-box;
   height: 1.75rem;
-  border-bottom: 1px solid var(--cg-line);
+  border-bottom: var(--cg-border) solid var(--cg-line);
   border-radius: 0;
   pointer-events: none;
 }
@@ -1155,10 +1098,11 @@
   min-width: 0;
 }
 
-/* A small outline button: the 36px fill inside its 44px target. */
+/* A small outline button: the 36px fill inside its 44px target, at the
+   theme's control corner (src/theme/vocabulary.ts), as its outline is. */
 .cx-at-cast .cx-face {
   padding: 0.25rem 0.5rem;
-  border-radius: 0.625rem;
+  border-radius: var(--cg-radius-control);
 }
 
 /* A save: its label at one end, its number at the other. */

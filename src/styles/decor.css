@@ -1,0 +1,74 @@
+/*
+ * Decor (docs/theming-plan.md, phase 5): a page texture and a card frame,
+ * each a short list of named looks a theme chooses (`texture`, `frame` in the
+ * vocabulary, kind `choice`).
+ *
+ * A choice is an attribute on the element a theme is drawn on
+ * (`data-cg-texture="paper"` on <html>, the theme editor's sample, a picker
+ * card), turned here into inherited variables, never set from a theme file
+ * itself, so no file can name an image. Each built-in sets its own defaults
+ * for the same variables in themes.css, so a subtree with its own
+ * `data-theme` draws its own decor, as it does every token. These rules come
+ * after themes.css and are unlayered, so on one element the attribute wins.
+ *
+ * The rules that draw with the variables sit in the components layer, below
+ * Tailwind's utilities and the app's focus ring, so a frame never hides one.
+ */
+
+/* The texture images, once each: a built-in's default (themes.css) and a
+   theme's choice below both name them. Each filter's region is its tile, so
+   `stitchTiles` makes the noise meet itself at the tile's edges (the default
+   region is 20% larger, and the repeat shows as a seam). */
+:root {
+  --cg-texture-paper: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300'%3E%3Cfilter id='n' x='0' y='0' width='100%25' height='100%25'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='3' stitchTiles='stitch' result='f'/%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.012' numOctaves='3' stitchTiles='stitch' result='m'/%3E%3CfeComposite in='f' in2='m' operator='arithmetic' k2='0.6' k3='0.6' k4='-0.1'/%3E%3CfeColorMatrix values='2.6 0 0 0 -0.80 2.6 0 0 0 -0.80 2.6 0 0 0 -0.80 0 0 0 0 0.45'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  --cg-texture-grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n' x='0' y='0' width='100%25' height='100%25'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='1.1' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='3 0 0 0 -1.00 3 0 0 0 -1.00 3 0 0 0 -1.00 0 0 0 0 0.6'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/* Textures: grey tiling noise, blended `soft-light` over the page colour, so
+   one tile suits any page; strongest on a light one. contrast.test.ts reads
+   each one's strength (the last value of its colour matrix) to hold text on
+   it to 4.5:1 at its darkest and lightest. The blend comes with the
+   texture: on a page with none it would still nudge a few pixels a shade. */
+[data-cg-texture="none"] {
+  --cg-decor-texture: none;
+  --cg-decor-blend: normal;
+}
+[data-cg-texture="paper"] {
+  --cg-decor-texture: var(--cg-texture-paper);
+  --cg-decor-blend: soft-light;
+}
+[data-cg-texture="grain"] {
+  --cg-decor-texture: var(--cg-texture-grain);
+  --cg-decor-blend: soft-light;
+}
+
+/* Frames: an outline inside the card's edge, which takes no room and cannot
+   be clipped by a scrolling parent. */
+[data-cg-frame="plain"] {
+  --cg-decor-frame: none;
+  --cg-decor-frame-offset: 0px;
+}
+[data-cg-frame="double"] {
+  --cg-decor-frame: var(--cg-border) solid var(--cg-line-strong);
+  --cg-decor-frame-offset: calc(-1 * var(--cg-border) - 3px);
+}
+[data-cg-frame="stitched"] {
+  --cg-decor-frame: var(--cg-border) dashed var(--cg-line-strong);
+  --cg-decor-frame-offset: calc(-1 * var(--cg-border) - 4px);
+}
+
+@layer components {
+  /* Fixed to the viewport, so the bars that paint the page colour over it
+     line up with it (iOS ignores `fixed`: there it can seam under a bar). */
+  body,
+  .bg-bg {
+    background-image: var(--cg-decor-texture);
+    background-blend-mode: var(--cg-decor-blend);
+    background-attachment: fixed;
+  }
+  /* Not while focused: the focus ring is the outline then. */
+  .cg-card:not(:focus-visible) {
+    outline: var(--cg-decor-frame);
+    outline-offset: var(--cg-decor-frame-offset);
+  }
+}

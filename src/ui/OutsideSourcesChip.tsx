@@ -14,7 +14,7 @@ export function OutsideSourcesChip({ id }: { id?: string }) {
   return (
     <span
       id={id}
-      className="inline-block self-start rounded-chip px-1.75 py-0.5 text-ink-muted text-overline tracking-[0.04em] ring-1 ring-line-strong ring-inset"
+      className="inline-block self-start rounded-chip px-1.75 py-0.5 text-ink-muted text-overline tracking-[0.04em] ring ring-line-strong ring-inset"
     >
       {OUTSIDE_CHARACTER_SOURCES}
     </span>

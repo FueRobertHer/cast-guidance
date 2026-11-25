@@ -107,12 +107,12 @@ export function DefensesChip({
   return (
     <Sheet.Root>
       {/* The ring follows the 28px pill, inside its 44px target. */}
-      <Lift on={lifted} className="-my-2 rounded-full [--lift-inset:5px]">
+      <Lift on={lifted} className="-my-2 rounded-pill [--lift-inset:5px]">
         <Sheet.Trigger asChild>
           <button
             type="button"
             aria-label={`${chip.say}${lifted ? `, raised by ${raisedBy.join(', ')}` : ''}`}
-            className="inline-flex min-h-tap items-center gap-1 whitespace-nowrap rounded-full border-8 border-transparent bg-clip-padding px-2 text-caption font-semibold text-ink tabular-nums ring-1 ring-line-strong ring-inset [--tap-inset:0.5rem] hover:bg-surface-raised"
+            className="inline-flex min-h-tap items-center gap-1 whitespace-nowrap rounded-pill-tap border-8 border-transparent bg-clip-padding px-2 text-caption font-semibold text-ink tabular-nums ring ring-line-strong ring-inset [--tap-inset:0.5rem] hover:bg-surface-raised"
           >
             <Icon
               size={14}

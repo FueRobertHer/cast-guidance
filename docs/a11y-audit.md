@@ -133,7 +133,7 @@ creator's other steps. axe's `target-size` still runs on every scanned state.
 
 - `src/styles/contrast.test.ts`: every pairing the design system promises
   (text on each ground, labels on the fills, edges, marks and the focus ring)
-  holds its ratio in both themes, and no source line uses a colour name
+  holds its ratio in every built-in theme, and no source line uses a colour name
   DS-001 retired (`accent`, `surface-2`, `white`, `amber-300` and the like),
   which would now draw Tailwind's own palette or nothing. A name in a
   conditional, under a variant, with an opacity or as a `--color-` variable

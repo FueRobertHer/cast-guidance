@@ -1,50 +1,30 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { BUILT_IN_THEMES } from '@/theme/builtins';
+import { CONDITION_HUES } from '@/theme/vocabulary';
+import { themeIds, themeTokens } from '../../tests-fixtures/themeCss';
 
-// DS-001: every pair the design system promises, held in both themes. Text
-// clears 4.5:1 (WCAG 1.4.3), edges, marks and the focus ring 3:1 (WCAG
-// 1.4.11). The values come from the two `--cg-*` blocks in app.css, which the
+// DS-001: every pair the design system promises, held in every built-in
+// theme. Text clears 4.5:1 (WCAG 1.4.3), edges, marks and the focus ring 3:1
+// (WCAG 1.4.11). The values come from the theme rules in themes.css, which the
 // colour utilities of the same name read, so a token that moves is measured
-// where it lands. The axe gate (e2e/a11y) measures the rendered pages in both
-// themes.
+// where it lands. The axe gate (e2e/a11y) measures the rendered pages in each.
+// Themes people make for themselves are theirs, and held to none of this.
 
 const SRC = path.resolve(import.meta.dirname, '..');
-const CSS = readFileSync(path.join(SRC, 'styles/app.css'), 'utf8');
 
-type Theme = 'dark' | 'light';
-const THEMES: readonly Theme[] = ['dark', 'light'];
+type Theme = string;
+const THEMES: readonly Theme[] = themeIds();
 
-/** One theme's `--cg-*` values, with `var(--cg-…)` references followed. */
-function themeTokens(theme: Theme): Record<string, string> {
-  const selector = theme === 'dark' ? ':root,\n[data-theme="dark"] {' : '[data-theme="light"] {';
-  const start = CSS.indexOf(selector);
-  if (start < 0) throw new Error(`no ${theme} block in app.css`);
-  const body = CSS.slice(start, CSS.indexOf('\n}', start));
-  const raw: Record<string, string> = {};
-  for (const m of body.matchAll(/--cg-([\w-]+):\s*([^;]+);/g)) {
-    if (m[1] !== undefined && m[2] !== undefined) raw[m[1]] = m[2].trim();
-  }
-  const resolve = (name: string, seen = new Set<string>()): string => {
-    const value = raw[name];
-    if (value === undefined) throw new Error(`no --cg-${name} in the ${theme} block`);
-    const ref = /^var\(--cg-([\w-]+)\)$/.exec(value)?.[1];
-    if (ref === undefined) return value;
-    if (seen.has(ref)) throw new Error(`--cg-${name} refers to itself`);
-    return resolve(ref, seen.add(name));
-  };
-  return Object.fromEntries(Object.keys(raw).map((k) => [k, resolve(k)]));
-}
-
-const TOKENS: Record<Theme, Record<string, string>> = {
-  dark: themeTokens('dark'),
-  light: themeTokens('light'),
-};
+const TOKENS: Readonly<Record<Theme, Record<string, string>>> = Object.fromEntries(
+  THEMES.map((theme) => [theme, themeTokens(theme)]),
+);
 
 /** A colour in one theme: a token name, or a hex value as written. */
 function colour(theme: Theme, name: string): string {
   if (name.startsWith('#')) return name;
-  const value = TOKENS[theme][name];
+  const value = TOKENS[theme]?.[name];
   if (value === undefined || !/^#[0-9a-f]{6}$/i.test(value)) {
     throw new Error(`${name} is not an opaque #rrggbb colour in ${theme}: ${value}`);
   }
@@ -93,11 +73,7 @@ const cross = (fgs: readonly string[], grounds: readonly string[]) =>
 /** The grounds text sits on: the page, a card, a raised control. */
 const GROUNDS = ['bg', 'surface', 'surface-raised'] as const;
 
-describe('design token contrast, both themes (DS-001)', () => {
-  it('reads the same token names in both themes', () => {
-    expect(Object.keys(TOKENS.light).sort()).toEqual(Object.keys(TOKENS.dark).sort());
-  });
-
+describe('design token contrast, every built-in theme (DS-001)', () => {
   it('holds every text colour to 4.5:1 on the page, a card and a raised control', () => {
     const text = ['ink', 'ink-muted', 'brand', 'guide', 'danger', 'heal', 'ward', 'roll', 'arcane'];
     expect(below(4.5, cross(text, GROUNDS))).toEqual([]);
@@ -172,7 +148,7 @@ describe('design token contrast, both themes (DS-001)', () => {
 });
 
 // The condition hues on rolls (ui/chipFace.css) are a named exception to the
-// design's roles, so they are not tokens, but the number on them is text.
+// design's roles, but the number on them is text.
 
 const CHIP_CSS = readFileSync(path.join(SRC, 'ui/chipFace.css'), 'utf8');
 
@@ -202,13 +178,9 @@ const FILLS: Readonly<Record<string, string | null>> = {
 
 /** A condition's colour (`c`) and tint (`cs`) in one theme. */
 function hue(theme: Theme, look: string): { c: string; cs: string } {
-  const selector = theme === 'dark' ? `.cx-${look}` : `[data-theme="light"] .cx-${look}`;
-  const at = CHIP_CSS.split('\n').indexOf(`${selector} {`);
-  if (at < 0) throw new Error(`no ${theme} hue for ${look} in chipFace.css`);
-  const [c, cs] = CHIP_CSS.split('\n')
-    .slice(at + 1, at + 3)
-    .map((line) => /:\s*([^;]+);/.exec(line)?.[1]);
-  if (c === undefined || cs === undefined) throw new Error(`unreadable hue for ${look}`);
+  const c = TOKENS[theme]?.[`cx-${look}`];
+  const cs = TOKENS[theme]?.[`cx-${look}-soft`];
+  if (c === undefined || cs === undefined) throw new Error(`no ${theme} hue for ${look}`);
   return { c, cs };
 }
 
@@ -223,7 +195,7 @@ function strength(piece: string): number {
   return Math.max(Number(rule[1]), ...raised);
 }
 
-describe('the number on a condition’s chip, both themes', () => {
+describe('the number on a condition’s chip, every built-in theme', () => {
   it('holds ink to 4.5:1 over each condition’s strongest layer on its tint', () => {
     const failing = THEMES.flatMap((theme) =>
       Object.entries(FILLS).flatMap(([look, piece]) => {
@@ -234,6 +206,18 @@ describe('the number on a condition’s chip, both themes', () => {
       }),
     );
     expect(failing).toEqual([]);
+  });
+
+  it('draws each condition in its own hue tokens, so the pairs above are the ones on screen', () => {
+    const wrong = CONDITION_HUES.filter(
+      (look) =>
+        !CHIP_CSS.includes(
+          `.cx-${look} {\n  --c: var(--cg-cx-${look});\n  --cs: var(--cg-cx-${look}-soft);\n}`,
+        ),
+    );
+    expect(wrong).toEqual([]);
+    // And nowhere else sets them: no theme-keyed override, no stray hue.
+    expect(CHIP_CSS.match(/^\s*--cs?:/gm)?.length).toBe(CONDITION_HUES.length * 2);
   });
 
   it('reads Paralyzed’s glow at its peak, not its still pose', () => {
@@ -312,5 +296,59 @@ describe('the colour names DS-001 retired stay retired', () => {
     const roles =
       'bg-surface-raised hover:bg-surface-hover text-on-brand text-ink-muted accent-ink';
     expect(RETIRED.test(roles)).toBe(false);
+  });
+});
+
+// The page textures (styles/decor.css) lay grey noise over `bg`, blended
+// `soft-light` at a strength each texture sets. Text on the page has to read
+// over the darkest and the lightest the noise can make it.
+
+const DECOR_CSS = readFileSync(path.join(SRC, 'styles/decor.css'), 'utf8');
+
+/** A texture's strength: the alpha at the end of its noise's colour matrix. */
+function textureStrength(texture: string): number {
+  const url = new RegExp(`--cg-texture-${texture}: url\\("([^"]+)"\\)`).exec(DECOR_CSS)?.[1];
+  if (url === undefined) throw new Error(`no texture ${texture} in decor.css`);
+  const matrix = [...decodeURIComponent(url).matchAll(/feColorMatrix values='([^']+)'/g)].at(
+    -1,
+  )?.[1];
+  const alpha = Number(matrix?.trim().split(/\s+/).at(-1));
+  if (!Number.isFinite(alpha)) throw new Error(`no strength for ${texture}`);
+  return alpha;
+}
+
+/** `ground` under noise of grey `g` (0 to 1) at `alpha`, blended soft-light (W3C). */
+function softLight(ground: string, g: number, alpha: number): string {
+  const channel = (i: number) => {
+    const b = Number.parseInt(ground.slice(i, i + 2), 16) / 255;
+    const d = b <= 0.25 ? ((16 * b - 12) * b + 4) * b : Math.sqrt(b);
+    const blended = g <= 0.5 ? b - (1 - 2 * g) * b * (1 - b) : b + (2 * g - 1) * (d - b);
+    return Math.round(((1 - alpha) * b + alpha * blended) * 255)
+      .toString(16)
+      .padStart(2, '0');
+  };
+  return `#${channel(1)}${channel(3)}${channel(5)}`;
+}
+
+describe('text on a textured page, every built-in with a texture', () => {
+  const textured = BUILT_IN_THEMES.filter((t) => t.decor.texture !== 'none');
+
+  it('has one to check (Parchment)', () => {
+    expect(textured.map((t) => t.id)).toContain('parchment');
+  });
+
+  it.each(
+    textured,
+  )('holds $label’s text to 4.5:1 over its texture at its darkest and lightest', (theme) => {
+    const alpha = textureStrength(theme.decor.texture);
+    const bg = colour(theme.id, 'bg');
+    const failing = [0, 1].flatMap((g) => {
+      const ground = softLight(bg, g, alpha);
+      return ['ink', 'ink-muted', 'brand', 'guide', 'danger', 'heal', 'ward', 'roll', 'arcane']
+        .map((t) => [t, contrast(colour(theme.id, t), ground)] as const)
+        .filter(([, ratio]) => ratio < 4.5)
+        .map(([t, ratio]) => `${t} on ${ground} (${ratio.toFixed(2)})`);
+    });
+    expect(failing).toEqual([]);
   });
 });

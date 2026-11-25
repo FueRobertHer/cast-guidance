@@ -57,6 +57,8 @@ export const routes: RouteObject[] = [
           { path: 'build', lazy: () => import('@/features/sheet/BuildPage') },
         ],
       },
+      // Making and editing a theme (docs/theming-plan.md, phase 4).
+      { path: 'settings/theme/:id?', lazy: () => import('@/features/settings/ThemeEditorPage') },
       // Making and editing an entry: `/workshop/new` and an editor's address.
       // The static Workshop paths above outrank this one.
       {

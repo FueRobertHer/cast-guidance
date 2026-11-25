@@ -14,7 +14,7 @@ export type BadgeTone = 'neutral' | 'outline' | 'arcane' | 'guide' | 'heal' | 'd
 
 const TONE: Record<BadgeTone, string> = {
   neutral: 'bg-surface-raised text-ink-muted',
-  outline: 'text-ink-muted ring-1 ring-line-strong ring-inset',
+  outline: 'text-ink-muted ring ring-line-strong ring-inset',
   arcane: 'bg-arcane-soft text-arcane',
   guide: 'bg-guide-soft text-guide',
   heal: 'bg-heal-soft text-heal',

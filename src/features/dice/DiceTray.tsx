@@ -302,7 +302,7 @@ function RollRows({
             )}
           </div>
           <span
-            className={`shrink-0 font-bold text-title-sheet tabular-nums ${ROLL_INK[rollTone(r)]}`}
+            className={`shrink-0 font-bold text-title-sheet tracking-[inherit] tabular-nums ${ROLL_INK[rollTone(r)]}`}
           >
             {r.total}
           </span>

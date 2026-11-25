@@ -77,7 +77,7 @@ export function ExhaustionStepper({
         <button
           type="button"
           onClick={onDeath}
-          className="min-h-8 self-start rounded-control px-3 py-1 text-danger text-label ring-1 ring-line-strong ring-inset transition-colors duration-120 hover:bg-danger-soft"
+          className="min-h-8 self-start rounded-control px-3 py-1 text-danger text-label ring ring-line-strong ring-inset transition-colors duration-120 hover:bg-danger-soft"
         >
           Apply death: drop to 0 HP
         </button>

@@ -36,11 +36,12 @@
   opacity: 0;
   pointer-events: none;
 }
-/* The Temp chip's pill: its padding box, inside the transparent border that makes its target. */
+/* The Temp chip's pill: its padding box, inside the transparent border that
+   makes its target, so the theme's pill corner, not the chip's outer one. */
 .hp-clip {
   position: absolute;
   inset: 0;
-  border-radius: inherit;
+  border-radius: var(--cg-radius-pill);
   overflow: hidden;
   pointer-events: none;
 }
@@ -56,10 +57,10 @@
   top: -0.125rem;
   margin-left: 0.125rem;
   padding: 0 0.375rem;
-  border-radius: 9999px;
+  border-radius: var(--cg-radius-pill);
   font-size: 0.8125rem;
   line-height: 1.25rem;
-  font-weight: 700;
+  font-weight: var(--cg-weight-bold);
   letter-spacing: 0;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;

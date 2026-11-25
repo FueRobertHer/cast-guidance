@@ -600,12 +600,15 @@ const WORKSHOP: readonly Route[] = [
   },
 ];
 
-test.describe('the Workshop with content, in both themes', () => {
+test.describe('the Workshop with content, in every built-in theme', () => {
   test.use({ viewport: { width: 320, height: 640 } });
 
-  // One test per theme, so neither runs near the timeout under load: each is
-  // a setup and ten route states, where both themes in one came to 20.
-  for (const theme of ['dark', 'light']) {
+  // One test per theme, so none runs near the timeout under load: each is a
+  // setup and ten route states, where two themes in one came to 20. Body
+  // text is measured in DejaVu Sans whatever the theme (MEASURED_FONT, the
+  // strict case); what the reskins change here is their titles' font, their
+  // corners and their edge widths (High contrast's are 2px).
+  for (const theme of ['dark', 'light', 'parchment', 'modern', 'contrast']) {
     test(`in the ${theme} theme, does not scroll sideways at 320 px, and keeps its controls whole with text at 200%`, async ({
       page,
     }) => {
@@ -615,6 +618,8 @@ test.describe('the Workshop with content, in both themes', () => {
           await route.open(page, '');
           await page.evaluate((t) => document.documentElement.setAttribute('data-theme', t), theme);
           await applyMeasuredFont(page, extra);
+          // The theme's own title faces, not their fallbacks.
+          await page.evaluate(() => document.fonts.ready);
           await animationsSettled(page);
           const at = { ...route, name: `${route.name} (${theme}${extra === '' ? '' : ', 200%'})` };
           await expectNoSidewaysScroll(page, at);

@@ -173,7 +173,7 @@ function TabPill({ active, children }: { active: boolean; children: ReactNode })
   return (
     <span
       {...(active ? { 'data-indicator': '' } : {})}
-      className={`flex h-[30px] w-[56px] items-center justify-center rounded-full transition-colors duration-200 ease-out lg:size-auto lg:bg-transparent ${active ? 'bg-surface-raised' : ''}`}
+      className={`flex h-[30px] w-[56px] items-center justify-center rounded-pill transition-colors duration-200 ease-out lg:size-auto lg:bg-transparent ${active ? 'bg-surface-raised' : ''}`}
     >
       {children}
     </span>
@@ -337,7 +337,7 @@ function Sheet({ id }: { id: string | undefined }) {
         // the hairline is a border image outset to the screen's edges, as a
         // banner's fill is (see Banner): the page is centred, and the line
         // stopped short of the right edge on a wide screen.
-        className="sticky top-0 z-20 flex min-h-header flex-wrap items-center gap-1 border-line border-b bg-bg py-1 pr-1 pl-1 lg:pl-40 lg:[border-image:conic-gradient(var(--cg-line)_0_0)_0_0_1_0/0_0_1px_0/0_100vmax]"
+        className="sticky top-0 z-20 flex min-h-header flex-wrap items-center gap-1 border-line border-b bg-bg py-1 pr-1 pl-1 lg:pl-40 lg:[border-image:conic-gradient(var(--cg-line)_0_0)_0_0_1_0/0_0_var(--cg-border)_0/0_100vmax]"
       >
         <Link
           to={from?.to ?? '/'}

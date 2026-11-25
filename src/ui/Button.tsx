@@ -39,7 +39,7 @@ const BASE =
 const VARIANT: Record<ButtonVariant, string> = {
   brand: 'bg-brand text-on-brand hover:bg-brand-hover',
   secondary: 'bg-surface-raised text-ink hover:bg-surface-hover',
-  outline: 'text-ink ring-1 ring-line-strong ring-inset hover:bg-surface-raised',
+  outline: 'text-ink ring ring-line-strong ring-inset hover:bg-surface-raised',
   ghost: 'text-ink-muted hover:bg-surface-raised hover:text-ink',
   danger: 'bg-danger-fill text-on-danger hover:brightness-108',
   damage: 'bg-danger-soft text-danger hover:brightness-112',
@@ -49,8 +49,8 @@ const VARIANT: Record<ButtonVariant, string> = {
 const SIZE: Record<ButtonSize, string> = {
   md: 'min-h-tap min-w-tap rounded-control px-4 py-2 text-body-strong',
   // 10px corners on the visible fill: 4px of border plus the fill's own 10.
-  sm: 'min-h-tap min-w-tap rounded-[0.875rem] border-4 border-transparent bg-clip-padding [--tap-inset:0.25rem] px-2 py-1 text-label',
-  lg: 'min-h-13 min-w-tap rounded-[0.75rem] px-5 py-2.5 text-body-strong',
+  sm: 'min-h-tap min-w-tap rounded-tile border-4 border-transparent bg-clip-padding [--tap-inset:0.25rem] px-2 py-1 text-label',
+  lg: 'min-h-13 min-w-tap rounded-control-lg px-5 py-2.5 text-body-strong',
   icon: 'size-tap rounded-control',
 };
 
@@ -98,7 +98,7 @@ export function Button({
  */
 export function ButtonCount({ children }: { children: ReactNode }) {
   return (
-    <span className="h-5 min-w-5 rounded-full bg-guide-soft px-1.5 text-center font-bold text-[0.75rem] text-guide leading-5 tabular-nums">
+    <span className="h-5 min-w-5 rounded-pill bg-guide-soft px-1.5 text-center font-bold text-[0.75rem] text-guide leading-5 tabular-nums">
       {children}
     </span>
   );

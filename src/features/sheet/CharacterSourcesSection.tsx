@@ -124,7 +124,7 @@ export function CharacterSourcesSection({
     <details
       open={open}
       onToggle={(e) => setOpen(e.currentTarget.open)}
-      className="group scroll-mt-4 rounded-card bg-surface shadow-card ring-1 ring-line ring-inset"
+      className="cg-card group scroll-mt-4 rounded-card bg-surface shadow-card ring ring-line ring-inset"
     >
       {/* As the Build page's other sections: the summary wraps under the
           title where both do not fit (large text). */}
@@ -166,7 +166,7 @@ export function CharacterSourcesSection({
           </p>
         )}
         {outside.length > 0 && (
-          <div className="flex flex-col gap-1 rounded-control p-3 text-caption ring-1 ring-line ring-inset">
+          <div className="flex flex-col gap-1 rounded-control p-3 text-caption ring ring-line ring-inset">
             <span className="font-semibold text-ink-muted">
               Already on this character from books outside its sources ({outside.length})
             </span>
@@ -317,7 +317,7 @@ function SourceChecklist({
         <p className="text-body text-ink-muted">Waiting for game data to download.</p>
       )}
       {missing.length > 0 && (
-        <div className="flex flex-col overflow-hidden rounded-control ring-1 ring-line ring-inset">
+        <div className="flex flex-col overflow-hidden rounded-control ring ring-line ring-inset">
           {missing.map(checkbox)}
         </div>
       )}

@@ -614,7 +614,7 @@ const TAG_FIELDS: ReadonlyArray<readonly [string, string, Options]> = [
 function Tags({ draft, change, readOnly }: EditorProps) {
   const set = TAG_FIELDS.reduce((n, [key]) => n + strings(draft[key]).length, 0);
   return (
-    <details className="group rounded-control ring-1 ring-line ring-inset">
+    <details className="group rounded-control ring ring-line ring-inset">
       <summary className="flex min-h-tap cursor-pointer list-none items-center gap-2 px-3 text-body-strong">
         <ChevronRight
           aria-hidden
@@ -1252,7 +1252,7 @@ function Card({
   children?: ReactNode;
 }) {
   return (
-    <div className="flex flex-col gap-2 rounded-control bg-surface py-2.5 pr-1 pl-3 ring-1 ring-line ring-inset">
+    <div className="flex flex-col gap-2 rounded-control bg-surface py-2.5 pr-1 pl-3 ring ring-line ring-inset">
       <div className="flex items-center gap-2">
         <b className="flex-1 text-caption text-ink-muted">{title}</b>
         {!readOnly && onRemove !== undefined && (
@@ -1703,7 +1703,7 @@ function Preview({ draft }: EditorProps) {
   const hasSave = spellSaves(draft).length > 0;
   return (
     <Section title="On the Spells tab">
-      <div className="rounded-card bg-surface ring-1 ring-line ring-inset">
+      <div className="cg-card rounded-card bg-surface ring ring-line ring-inset">
         <div className="flex min-h-15 flex-wrap items-center gap-x-2 gap-y-1 py-2 pr-3 pl-4">
           <div className="min-w-0 flex-1 basis-26">
             <div className="flex flex-wrap items-center gap-x-1.5">
@@ -1711,7 +1711,7 @@ function Preview({ draft }: EditorProps) {
               {concentrates && (
                 <span
                   title="Concentration"
-                  className="inline-flex size-4.5 items-center justify-center rounded-[0.25rem] bg-arcane-soft font-bold text-[0.6875rem] text-arcane"
+                  className="inline-flex size-4.5 items-center justify-center rounded-tick bg-arcane-soft font-bold text-[0.6875rem] text-arcane"
                 >
                   <span aria-hidden="true">C</span>
                   <span className="sr-only">Concentration</span>

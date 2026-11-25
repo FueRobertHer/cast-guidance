@@ -30,7 +30,7 @@ function TabPill({ active, children }: { active: boolean; children: ReactNode })
   return (
     <span
       {...(active ? { 'data-indicator': '' } : {})}
-      className={`flex h-[30px] w-[56px] items-center justify-center rounded-full transition-colors duration-200 ease-out lg:size-auto lg:bg-transparent ${active ? 'bg-surface-raised' : ''}`}
+      className={`flex h-[30px] w-[56px] items-center justify-center rounded-pill transition-colors duration-200 ease-out lg:size-auto lg:bg-transparent ${active ? 'bg-surface-raised' : ''}`}
     >
       {children}
     </span>
@@ -81,7 +81,7 @@ export function AppNavLayout() {
         })}
       </nav>
       {/* Clears the tab bar: `tabbar` and its hairline, plus the inset. */}
-      <div className="flex flex-1 flex-col pb-[calc(var(--spacing-tabbar)+1px+env(safe-area-inset-bottom))] lg:pb-0 lg:pl-40">
+      <div className="flex flex-1 flex-col pb-[calc(var(--spacing-tabbar)+var(--cg-border)+env(safe-area-inset-bottom))] lg:pb-0 lg:pl-40">
         <Outlet />
       </div>
     </>

@@ -264,7 +264,7 @@ export function SourcesSection() {
           const on = group.filter((r) => r.enabled).length;
           return (
             <details key={section} open={section === 'core'} className="group">
-              <summary className="flex min-h-tap cursor-pointer list-none items-center gap-2 rounded-control bg-surface px-3 py-2 text-body-strong ring-1 ring-line ring-inset">
+              <summary className="flex min-h-tap cursor-pointer list-none items-center gap-2 rounded-control bg-surface px-3 py-2 text-body-strong ring ring-line ring-inset">
                 <ChevronRight
                   aria-hidden
                   size={14}
@@ -275,7 +275,7 @@ export function SourcesSection() {
                   {on}/{group.length}
                 </span>
               </summary>
-              <div className="mt-1 flex flex-col overflow-hidden rounded-control bg-surface ring-1 ring-line ring-inset">
+              <div className="mt-1 flex flex-col overflow-hidden rounded-control bg-surface ring ring-line ring-inset">
                 {/* Full tap height (A11Y-002), with room for the focus ring inside the clipped box. */}
                 <div className="flex gap-1 border-line border-b px-2 py-1 text-caption">
                   <button

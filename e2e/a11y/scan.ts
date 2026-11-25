@@ -42,6 +42,9 @@ export interface ScanOptions {
 export const SCAN_THEMES = [
   { theme: 'dark', suffix: '' },
   { theme: 'light', suffix: '@light' },
+  { theme: 'parchment', suffix: '@parchment' },
+  { theme: 'modern', suffix: '@modern' },
+  { theme: 'contrast', suffix: '@contrast' },
 ] as const;
 
 /**
@@ -55,7 +58,12 @@ async function inTheme<T>(page: Page, theme: string, run: () => Promise<T>): Pro
     const was = root.getAttribute('data-theme');
     const still = document.createElement('style');
     still.id = 'axe-theme-still';
-    still.textContent = '*, *::before, *::after { transition: none !important; }';
+    // No page texture either (styles/decor.css): axe cannot measure text over
+    // an image and calls it incomplete, which would quietly drop the page's
+    // text from the gate. contrast.test.ts holds it to its ratio over the
+    // texture's darkest and lightest instead.
+    still.textContent =
+      '*, *::before, *::after { transition: none !important; --cg-decor-texture: none !important; }';
     document.head.append(still);
     root.setAttribute('data-theme', next);
     // Reading a computed style applies the new tokens now, not next frame.

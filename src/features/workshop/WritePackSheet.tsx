@@ -233,7 +233,7 @@ function PickRow({
   );
 }
 
-const LIST = 'flex flex-col divide-y divide-line rounded-control ring-1 ring-line ring-inset';
+const LIST = 'flex flex-col divide-y divide-line rounded-control ring ring-line ring-inset';
 
 /**
  * The sheet itself. `onSaved` hears what was saved, as the page says it,

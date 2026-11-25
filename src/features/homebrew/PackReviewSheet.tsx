@@ -178,7 +178,7 @@ function Rows({ heading, rows }: { heading: string; rows: readonly PackReviewRow
   if (rows.length === 0) return null;
   return (
     <PreviewSection heading={heading}>
-      <dl className="flex flex-col divide-y divide-line overflow-hidden rounded-control bg-surface ring-1 ring-line ring-inset">
+      <dl className="flex flex-col divide-y divide-line overflow-hidden rounded-control bg-surface ring ring-line ring-inset">
         {rows.map((r, i) => (
           // Two rows can say the same: a pack may hold a moment twice.
           // biome-ignore lint/suspicious/noArrayIndexKey: the list is fixed while shown
@@ -433,7 +433,7 @@ export function PackReviewSheet({
           <Link
             to={file}
             onClick={() => close()}
-            className="flex min-h-tap items-center justify-between gap-2 rounded-control px-3 py-2 ring-1 ring-line ring-inset hover:bg-surface-hover"
+            className="flex min-h-tap items-center justify-between gap-2 rounded-control px-3 py-2 ring ring-line ring-inset hover:bg-surface-hover"
           >
             <span className="min-w-0">Export, update or delete it</span>
             <ChevronRight size={18} aria-hidden="true" className="shrink-0 text-ink-faint" />
@@ -498,7 +498,7 @@ export function PackOrderSheet({
         { label: 'Save', onClick: () => void save(), primary: true },
       ]}
     >
-      <ol className="flex flex-col divide-y divide-line overflow-hidden rounded-control bg-surface ring-1 ring-line ring-inset">
+      <ol className="flex flex-col divide-y divide-line overflow-hidden rounded-control bg-surface ring ring-line ring-inset">
         {order.map((id, i) => {
           const p = byId.get(id);
           if (p === undefined) return null;

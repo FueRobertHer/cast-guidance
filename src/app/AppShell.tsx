@@ -24,6 +24,7 @@ import { PwaUpdateToast } from '@/ui/PwaUpdateToast';
 import { RollToast } from '@/ui/RollToast';
 import { SaveConflictBanner } from '@/ui/SaveConflictBanner';
 import { SkipLink } from '@/ui/SkipLink';
+import { ThemeKeepBanner } from '@/ui/ThemeKeepBanner';
 
 /** What a screen reader hears when saving works again after a failure. */
 export const SAVE_RECOVERED_TEXT = 'Changes saved';
@@ -154,6 +155,7 @@ export function AppShell() {
           the app update offer is one, after the storage banners. */}
       <StorageBanners />
       <PwaUpdateToast />
+      <ThemeKeepBanner />
       <Outlet />
       <DialogHost />
       <NoticeToast />

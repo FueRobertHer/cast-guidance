@@ -15,7 +15,7 @@ import { type InputHTMLAttributes, type ReactNode, useId } from 'react';
  * `fieldClass` is the same field for a `select` or `textarea`.
  */
 export const fieldClass =
-  'h-12 w-full rounded-control bg-surface-raised px-4 text-input text-ink ring-1 ring-edge ring-inset transition-shadow duration-120 placeholder:text-ink-faint hover:ring-line-strong aria-invalid:ring-danger unavailable:cursor-default unavailable:text-ink-faint unavailable:ring-edge';
+  'h-12 w-full rounded-control bg-surface-raised px-4 text-input text-ink ring ring-edge ring-inset transition-shadow duration-120 placeholder:text-ink-faint hover:ring-line-strong aria-invalid:ring-danger unavailable:cursor-default unavailable:text-ink-faint unavailable:ring-edge';
 
 export interface TextFieldProps extends Omit<InputHTMLAttributes<HTMLInputElement>, 'id'> {
   label: ReactNode;

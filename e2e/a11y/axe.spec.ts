@@ -605,6 +605,26 @@ test.describe('axe: pages and overlays', () => {
     await expect(page.getByText(/Safari can clear a site’s data/)).toBeVisible();
     await scanState(page, 'settings-storage-details');
 
+    // The theme editor, every group open, with a token set by hand and one following it.
+    await gotoHeading(page, '/settings/theme', 'Make a theme');
+    for (const group of [
+      'Page and surfaces',
+      'Text',
+      'Actions and roles',
+      'Conditions',
+      'Type',
+      'Shape',
+      'Shadows',
+      'Icons',
+    ]) {
+      await page.locator('summary').getByText(group, { exact: true }).click();
+    }
+    const hex = page.locator('[data-token-row="brand"]').getByRole('textbox', { name: /hex code/ });
+    await hex.fill('#5ee0c8');
+    await hex.press('Enter');
+    await expect(page.locator('[data-token-row="brand-hover"]')).toContainText('Follows Action');
+    await scanState(page, 'theme-editor');
+
     await gotoHeading(page, '/create', /.+/);
     await scanState(page, 'creator');
 

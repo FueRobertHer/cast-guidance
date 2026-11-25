@@ -132,7 +132,7 @@ const sheetTitle = () => document.getElementById('sheet-title');
 const SHEET_CLEARS_MS = 300;
 
 /** A chip in the strip: its name opens its sheet, its x takes it away. */
-const CHIP = 'flex h-8 shrink-0 items-center rounded-full bg-surface-raised';
+const CHIP = 'flex h-8 shrink-0 items-center rounded-pill bg-surface-raised';
 /**
  * A debuff's chip while it counts: a homebrew condition, unless it only helps,
  * or an effect in play that only hinders. The red edge of the numbers it
@@ -802,7 +802,7 @@ export function ConditionStrip({
               className="pointer-events-none absolute inset-y-0 right-full w-5 bg-gradient-to-r from-transparent to-bg"
             />
           )}
-          <span className="flex h-8 items-center gap-1.5 whitespace-nowrap rounded-full px-3 ring-1 ring-line-strong ring-inset">
+          <span className="flex h-8 items-center gap-1.5 whitespace-nowrap rounded-pill px-3 ring ring-line-strong ring-inset">
             {hidden > 0 ? (
               `${hidden} more`
             ) : (

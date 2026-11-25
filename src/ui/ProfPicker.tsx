@@ -54,7 +54,7 @@ export function ProfPicker({
             type="button"
             aria-pressed={value === level}
             onClick={() => onChange(level)}
-            className="flex min-h-tap flex-1 items-center justify-center gap-1.5 rounded-control bg-surface-raised px-2 py-2 text-sm ring-inset transition-colors duration-120 not-aria-pressed:text-ink-muted not-aria-pressed:hover:text-ink aria-pressed:font-semibold aria-pressed:ring-2 aria-pressed:ring-ink"
+            className="flex min-h-tap flex-1 items-center justify-center gap-1.5 rounded-control bg-surface-raised px-2 py-2 text-sm ring-inset transition-colors duration-120 not-aria-pressed:text-ink-muted not-aria-pressed:hover:text-ink aria-pressed:font-semibold aria-pressed:ring-strong aria-pressed:ring-ink"
           >
             <ProfDot level={level} decorative />
             {label}

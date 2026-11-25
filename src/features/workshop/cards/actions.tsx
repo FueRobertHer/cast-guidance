@@ -474,7 +474,7 @@ export function AmendCards({
           // Prices have no id of their own; a card is its place in the list.
           // biome-ignore lint/suspicious/noArrayIndexKey: see above
           key={i}
-          className="flex flex-col gap-2 rounded-control bg-surface py-2.5 pr-1 pl-3 ring-1 ring-line ring-inset"
+          className="flex flex-col gap-2 rounded-control bg-surface py-2.5 pr-1 pl-3 ring ring-line ring-inset"
         >
           <div className="flex items-center gap-2">
             <b className="flex-1 text-caption text-ink-muted">Price of what {inherits} gives</b>

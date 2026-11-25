@@ -77,7 +77,7 @@ export function SpellRow({
           {concentrates && (
             <span
               title="Concentration"
-              className={`inline-flex size-4.5 shrink-0 items-center justify-center rounded-[0.25rem] font-bold text-[0.6875rem] ${
+              className={`inline-flex size-4.5 shrink-0 items-center justify-center rounded-tick font-bold text-[0.6875rem] ${
                 concentrating ? 'bg-arcane text-surface' : 'bg-arcane-soft text-arcane'
               }`}
             >

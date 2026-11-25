@@ -126,8 +126,8 @@ const KIT_CLEARED = 'starting equipment cleared, pick it again on the Equipment 
  * card, a raised step above it.
  */
 const OPTION =
-  'flex w-full items-center gap-3 rounded-control px-4 py-3 text-left ring-inset transition-colors duration-120 aria-pressed:ring-2 aria-pressed:ring-ink';
-const OPTION_ON_PAGE = `${OPTION} bg-surface shadow-card ring-1 ring-line hover:bg-surface-raised`;
+  'flex w-full items-center gap-3 rounded-control px-4 py-3 text-left ring-inset transition-colors duration-120 aria-pressed:ring-strong aria-pressed:ring-ink';
+const OPTION_ON_PAGE = `${OPTION} bg-surface shadow-card ring ring-line hover:bg-surface-raised`;
 const OPTION_IN_CARD = `${OPTION} bg-surface-raised hover:bg-surface-hover`;
 
 /** The picked option's check: an `ink` circle, so the pick is not told by the edge alone. */
@@ -536,7 +536,7 @@ export function Component() {
         {order.map((s, i) => (
           <span
             key={s}
-            className={`h-1 flex-1 rounded-full ${
+            className={`h-1 flex-1 rounded-pill ${
               i < stepIdx ? 'bg-ink' : i === stepIdx ? 'bg-brand' : 'bg-track'
             }`}
           />
@@ -1020,7 +1020,7 @@ export function Component() {
                 {/* Not a <label>: that handed the steppers' "Level" name to the
                     minus alone (and a tap on the word to it), leaving plus nameless.
                     The value says "Level N" itself, and announces each change. */}
-                <div className="flex items-center justify-between rounded-card bg-surface py-1 pr-1 pl-4 shadow-card ring-1 ring-line ring-inset">
+                <div className="cg-card flex items-center justify-between rounded-card bg-surface py-1 pr-1 pl-4 shadow-card ring ring-line ring-inset">
                   <span aria-hidden="true" className="text-body-strong">
                     Level
                   </span>
@@ -1480,7 +1480,7 @@ export function Component() {
               value={doc.name}
               onChange={(e) => update((d) => void (d.name = e.target.value))}
               placeholder="For example, Thorin"
-              className={doc.name.trim() === '' ? 'ring-1 ring-guide' : undefined}
+              className={doc.name.trim() === '' ? 'ring ring-guide' : undefined}
             />
 
             {/* Who you built */}
@@ -1528,7 +1528,7 @@ export function Component() {
                 ).map(([label, v]) => (
                   <div
                     key={label}
-                    className="rounded-card bg-surface p-3 shadow-card ring-1 ring-line ring-inset"
+                    className="cg-card rounded-card bg-surface p-3 shadow-card ring ring-line ring-inset"
                   >
                     <div className="text-stat tabular-nums">{v}</div>
                     <div className="text-caption text-ink-muted">{label}</div>
@@ -1609,7 +1609,7 @@ export function Component() {
       {/* Live summary bar: the "like a game" feedback loop. Choices still to
           make are the guide's gold (DS-001), and jump to where they wait. */}
       {sheet !== null && doc.classes.length > 0 && (
-        <div className="flex min-h-10 flex-wrap items-center gap-x-4 gap-y-1 rounded-control bg-surface px-3 py-2 text-caption text-ink-muted shadow-card tabular-nums ring-1 ring-line ring-inset">
+        <div className="flex min-h-10 flex-wrap items-center gap-x-4 gap-y-1 rounded-control bg-surface px-3 py-2 text-caption text-ink-muted shadow-card tabular-nums ring ring-line ring-inset">
           <span>
             HP <strong className="text-ink">{sheet.maxHp.value}</strong>
           </span>

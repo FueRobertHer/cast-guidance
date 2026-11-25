@@ -52,7 +52,7 @@ const CONFIRM: Record<HpMode, { variant: ButtonVariant; Icon: typeof Shield }> =
  * the tap that got there would otherwise drop focus out of the sheet.
  */
 const QUICK_KEY =
-  'min-h-tap min-w-16 rounded-full border-4 border-transparent bg-clip-padding text-label tabular-nums ring-1 ring-line-strong ring-inset transition-colors duration-120 [--tap-inset:0.25rem] hover:bg-surface-raised aria-disabled:text-ink-faint aria-disabled:hover:bg-transparent';
+  'min-h-tap min-w-16 rounded-pill-tap border-4 border-transparent bg-clip-padding text-label tabular-nums ring ring-line-strong ring-inset transition-colors duration-120 [--tap-inset:0.25rem] hover:bg-surface-raised aria-disabled:text-ink-faint aria-disabled:hover:bg-transparent';
 const KEY =
   'flex min-h-13 items-center justify-center rounded-control bg-surface-raised px-1 transition-colors duration-120 hover:bg-surface-hover active:bg-surface-hover';
 /** A key's digit: the keypad's own size, between `body` and `stat`. */

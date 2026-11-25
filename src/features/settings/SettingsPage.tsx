@@ -16,6 +16,7 @@ import { dataCacheRepo } from '@/db/dataCacheRepo';
 import { resetAppData } from '@/db/reset';
 import { usePersistentStorage } from '@/lib/persistentStorage';
 import { storageErrorText } from '@/lib/storageErrors';
+import { resolveTheme, useThemeChoice } from '@/lib/theme';
 import { usePageTitle } from '@/lib/usePageTitle';
 import { announce } from '@/stores/announcer';
 import { dataStatusStore, useDataStatus } from '@/stores/dataStatus';
@@ -33,6 +34,7 @@ import { analyticsEnabled } from './analytics';
 import { ConditionMotionSwitch } from './ConditionMotionSwitch';
 import { houseRulesWords, useAppRules } from './HouseRulesSection';
 import { booksShownWords, useBooksShown } from './SourcesSection';
+import { ThemeFiles } from './ThemeFiles';
 import { ThemePicker } from './ThemePicker';
 
 /** Where the table rules and rule packs are set (ADR-002, D1; board 10, B). */
@@ -60,6 +62,33 @@ export const OFFLINE_DOWNLOADED_TEXT = 'Game data downloaded. The offline compen
  * Re-measured whenever the download queue changes phase, so the numbers are
  * not a stale snapshot from first mount.
  */
+
+/**
+ * The theme and the motion switch. While a theme of the player's own is in
+ * use, the section is drawn in that theme's built-in base (a subtree with its
+ * own `data-theme`, which every built-in fills completely): a theme can make
+ * anything unreadable, and this is where the way back is.
+ */
+function Appearance() {
+  const choice = useThemeChoice();
+  const own = choice.startsWith('custom:');
+  return (
+    <section
+      data-theme={own ? resolveTheme(choice) : undefined}
+      className={`flex flex-col gap-2 ${own ? '-mx-2 rounded-card bg-bg px-2 py-3 font-sans text-ink' : ''}`}
+    >
+      <h2 className={H2}>Appearance</h2>
+      <div className={`${cardClass} flex flex-col gap-4`}>
+        <ThemePicker />
+        <ThemeFiles />
+      </div>
+      <div className={cardClass}>
+        <ConditionMotionSwitch />
+      </div>
+    </section>
+  );
+}
+
 function useStorageUsage(phase: string) {
   const [estimate, setEstimate] = useState<{ usage?: number; quota?: number }>();
   const [cachedBytes, setCachedBytes] = useState<number>();
@@ -391,15 +420,7 @@ export function Component() {
       </header>
 
       {/* First (DS-001): the one setting that changes every screen. */}
-      <section className="flex flex-col gap-2">
-        <h2 className={H2}>Appearance</h2>
-        <div className={cardClass}>
-          <ThemePicker />
-        </div>
-        <div className={cardClass}>
-          <ConditionMotionSwitch />
-        </div>
-      </section>
+      <Appearance />
 
       <TableRulesRow />
 
@@ -615,7 +636,7 @@ export function Component() {
           id={STORAGE_DETAILS_ID}
           open={detailsOpen}
           onToggle={(e) => setDetailsOpen(e.currentTarget.open)}
-          className="group scroll-mt-4 rounded-card bg-surface shadow-card ring-1 ring-line ring-inset"
+          className="cg-card group scroll-mt-4 rounded-card bg-surface shadow-card ring ring-line ring-inset"
         >
           <summary
             ref={detailsSummary}

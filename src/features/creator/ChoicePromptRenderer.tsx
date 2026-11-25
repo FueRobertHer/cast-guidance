@@ -312,7 +312,7 @@ export function ChoicePromptRenderer({
               <div
                 key={o.id}
                 className={`@container rounded-control bg-surface-raised ring-inset ${
-                  times > 0 ? 'ring-2 ring-ink' : ''
+                  times > 0 ? 'ring-strong ring-ink' : ''
                 }`}
               >
                 <div className="flex flex-wrap items-center justify-between @min-[9rem]:flex-nowrap">
@@ -359,7 +359,7 @@ export function ChoicePromptRenderer({
                 key={o.id}
                 className={`flex items-start rounded-control bg-surface-raised ring-inset transition-colors duration-120 ${
                   active
-                    ? 'ring-2 ring-ink'
+                    ? 'ring-strong ring-ink'
                     : o.disabled === undefined
                       ? 'hover:bg-surface-hover'
                       : ''
