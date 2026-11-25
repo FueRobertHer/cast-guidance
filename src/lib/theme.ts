@@ -99,8 +99,27 @@ function customId(choice: ThemeChoice): string | null {
 
 // --- The saved themes -------------------------------------------------------
 
+/**
+ * An entry this build cannot read (a newer build's theme, say), and the
+ * readable one it came after, so a write puts it back where it was.
+ */
+interface ForeignEntry {
+  readonly entry: unknown;
+  readonly after: string | null;
+}
+
 /** The list as last read, kept while storage holds the same text. */
-let saved: { raw: string | null; list: readonly SavedTheme[] } = { raw: null, list: [] };
+let saved: {
+  raw: string | null;
+  list: readonly SavedTheme[];
+  foreign: readonly ForeignEntry[];
+} = { raw: null, list: [], foreign: [] };
+/**
+ * The stored entry each theme was read from. A theme this build did not
+ * change is written back as it was stored, so what a newer build saved in it
+ * (a token, a font, a base this one does not know) is not stripped away.
+ */
+const storedEntry = new WeakMap<SavedTheme, unknown>();
 /** A list this tab saved that storage refused; it lasts until the tab closes. */
 let unstoredThemes: readonly SavedTheme[] | null = null;
 
@@ -118,37 +137,61 @@ export function readSavedThemes(): readonly SavedTheme[] {
   }
   if (raw === saved.raw) return saved.list;
   const list: SavedTheme[] = [];
+  const foreign: ForeignEntry[] = [];
   try {
     const entries: unknown = raw === null ? [] : JSON.parse(raw);
+    const seen = new Set<string>();
+    let after: string | null = null;
     for (const entry of Array.isArray(entries) ? entries : []) {
       const id = (entry as { id?: unknown })?.id;
-      if (typeof id !== 'string' || !/^[\w-]{1,64}$/.test(id) || list.some((t) => t.id === id)) {
+      if (typeof id !== 'string' || !/^[\w-]{1,64}$/.test(id) || seen.has(id)) continue;
+      seen.add(id);
+      const result = parseThemeFile((entry as { file?: unknown }).file);
+      if (!result.ok) {
+        foreign.push({ entry, after });
         continue;
       }
-      const result = parseThemeFile((entry as { file?: unknown }).file);
-      if (!result.ok) continue;
       const file = result.theme.file;
       const own = (entry as { own?: unknown }).own;
-      list.push(
-        Array.isArray(own)
-          ? {
-              id,
-              file,
-              own: own.filter((n): n is string => typeof n === 'string' && n in file.tokens),
-            }
-          : { id, file },
-      );
+      const theme: SavedTheme = Array.isArray(own)
+        ? {
+            id,
+            file,
+            own: own.filter(
+              (n): n is string => typeof n === 'string' && Object.hasOwn(file.tokens, n),
+            ),
+          }
+        : { id, file };
+      storedEntry.set(theme, entry);
+      list.push(theme);
+      after = id;
     }
   } catch {
     // Unreadable: as if none were saved.
   }
-  saved = { raw, list };
+  saved = { raw, list, foreign };
   return list;
+}
+
+/**
+ * The list as storage holds it: each theme this build did not change as it
+ * was stored, and the entries it cannot read where they were.
+ */
+function storedList(list: readonly SavedTheme[]): unknown[] {
+  const ids = new Set(list.map((t) => t.id));
+  const foreignAfter = (id: string | null) =>
+    saved.foreign.filter((f) => f.after === id).map((f) => f.entry);
+  return [
+    ...foreignAfter(null),
+    ...list.flatMap((t) => [storedEntry.get(t) ?? t, ...foreignAfter(t.id)]),
+    // Those after a theme since deleted.
+    ...saved.foreign.filter((f) => f.after !== null && !ids.has(f.after)).map((f) => f.entry),
+  ];
 }
 
 function writeSavedThemes(list: readonly SavedTheme[]): boolean {
   try {
-    localStorage.setItem(THEMES_KEY, JSON.stringify(list));
+    localStorage.setItem(THEMES_KEY, JSON.stringify(storedList(list)));
     unstoredThemes = null;
     return true;
   } catch {

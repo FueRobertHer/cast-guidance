@@ -1098,10 +1098,11 @@
   min-width: 0;
 }
 
-/* A small outline button: the 36px fill inside its 44px target. */
+/* A small outline button: the 36px fill inside its 44px target, at the
+   theme's control corner (src/theme/vocabulary.ts), as its outline is. */
 .cx-at-cast .cx-face {
   padding: 0.25rem 0.5rem;
-  border-radius: 0.625rem;
+  border-radius: var(--cg-radius-control);
 }
 
 /* A save: its label at one end, its number at the other. */

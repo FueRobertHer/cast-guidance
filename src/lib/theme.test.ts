@@ -351,9 +351,43 @@ describe('a theme edited in place', () => {
   it('reads a hand-set list back, keeping only names the file sets', () => {
     localStorage.setItem(
       THEMES_KEY,
-      JSON.stringify([{ id: 'a', file: MIDNIGHT, own: ['bg', 'glow', 7] }]),
+      JSON.stringify([{ id: 'a', file: MIDNIGHT, own: ['bg', 'glow', 7, 'constructor'] }]),
     );
+    // `constructor` is `in` any object, and is not a name the file sets.
     expect(readSavedThemes()[0]?.own).toEqual(['bg']);
+  });
+});
+
+describe('themes this build cannot read in full', () => {
+  // A newer build's: a version this one does not know, and a token and a font it does not.
+  const newer = { id: 'n', file: { castGuidanceTheme: 9, name: 'From a newer build' } };
+  const richer = {
+    id: 'r',
+    file: { ...MIDNIGHT, tokens: { ...MIDNIGHT.tokens, glow: '#ffffff', 'font-sans': 'futura' } },
+    own: ['bg', 'glow'],
+  };
+  const stored = () => JSON.parse(localStorage.getItem(THEMES_KEY) ?? '[]') as unknown[];
+
+  it('keeps them as they were stored while it saves, edits and deletes another', () => {
+    localStorage.setItem(THEMES_KEY, JSON.stringify([newer, richer]));
+    expect(readSavedThemes().map((t) => t.id)).toEqual(['r']);
+    const { theme } = saveTheme({ ...MIDNIGHT, name: 'Other', tokens: { bg: '#203040' } });
+    expect(stored()).toEqual([newer, richer, expect.objectContaining({ id: theme.id })]);
+    updateTheme(theme.id, { ...MIDNIGHT, name: 'Other', tokens: { bg: '#304050' } });
+    expect(stored().slice(0, 2)).toEqual([newer, richer]);
+    deleteTheme(theme.id);
+    expect(stored()).toEqual([newer, richer]);
+  });
+
+  it('writes one afresh only once this build changes it, and loses none deleting it', () => {
+    localStorage.setItem(THEMES_KEY, JSON.stringify([richer, newer]));
+    const edited = { ...MIDNIGHT, tokens: { bg: '#334455' } };
+    updateTheme('r', edited, ['bg']);
+    expect(stored()).toEqual([{ id: 'r', file: edited, own: ['bg'] }, newer]);
+    const removed = deleteTheme('r');
+    expect(stored()).toEqual([newer]);
+    if (removed !== null) restoreTheme(removed);
+    expect(stored()).toEqual([newer, { id: 'r', file: edited, own: ['bg'] }]);
   });
 });
 

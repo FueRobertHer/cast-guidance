@@ -166,7 +166,9 @@ export function draftFromTheme(
     dark: tables.byId.dark,
     baseAliases: tables.aliases[file.base],
   };
-  const names = ownNames?.filter((n) => n in file.tokens) ?? inferOwn(file.tokens, input);
+  // Its own keys only: `constructor` is `in` any object.
+  const names =
+    ownNames?.filter((n) => Object.hasOwn(file.tokens, n)) ?? inferOwn(file.tokens, input);
   const own: Record<string, TokenValue> = Object.fromEntries(
     names.map((n) => [n, file.tokens[n] as TokenValue]),
   );

@@ -74,12 +74,16 @@ function Stepped({
     onChange(n, false);
     announce(`${label} ${n} ${unit}`, { key: 'theme-stepper' });
   };
+  // The buttons are described by the value, so a screen reader hears it
+  // before a tap too: the edges have no slider to say it.
+  const valueId = useId();
   return (
     <div className="flex items-center gap-2">
       <button
         type="button"
         className={STEPPER}
         aria-label={`Less ${label}`}
+        aria-describedby={valueId}
         disabled={value <= min}
         onClick={() => tap(clamp(value - step))}
       >
@@ -99,13 +103,18 @@ function Stepped({
           className="h-tap min-w-0 flex-1 accent-brand"
         />
       )}
-      <span aria-hidden="true" className="min-w-14 text-center text-body-strong tabular-nums">
+      <span
+        id={valueId}
+        aria-hidden="true"
+        className="min-w-14 text-center text-body-strong tabular-nums"
+      >
         {value} {unit}
       </span>
       <button
         type="button"
         className={STEPPER}
         aria-label={`More ${label}`}
+        aria-describedby={valueId}
         disabled={value >= max}
         onClick={() => tap(clamp(value + step))}
       >

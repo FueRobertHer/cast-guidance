@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { computeAccessibleDescription } from 'dom-accessibility-api';
 import { MemoryRouter, Route, Routes } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
@@ -229,6 +230,18 @@ describe('the theme editor', () => {
     expect(localStorage.getItem(DRAFT_KEY)).not.toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
     await waitFor(() => expect(localStorage.getItem(DRAFT_KEY)).toBeNull());
+  });
+
+  it('says a stepped value before it is changed, as an edge has no slider to say it', async () => {
+    setThemeChoice('dark');
+    open();
+    await screen.findByRole('heading', { level: 1, name: 'Make a theme' });
+    const more = within(row('border')).getByRole('button', { name: 'More Edges' });
+    expect(computeAccessibleDescription(more)).toBe('1 px');
+    fireEvent.click(more);
+    expect(computeAccessibleDescription(more)).toBe('1.5 px');
+    const less = within(row('border')).getByRole('button', { name: 'Less Edges' });
+    expect(computeAccessibleDescription(less)).toBe('1.5 px');
   });
 
   it('steps corners, rounds pills, and picks shadows and weights', async () => {
