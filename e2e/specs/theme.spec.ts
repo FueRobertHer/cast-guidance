@@ -1,4 +1,6 @@
 import type { Page } from '@playwright/test';
+import { THEME_FONTS } from '../../src/theme/fonts.ts';
+import { createBlankCharacter, gotoRoster, gotoSheetTab, SHEET_TABS } from '../support/app.ts';
 import { waitForSwControl } from '../support/sw.ts';
 import { expect, test } from '../support/test.ts';
 
@@ -351,5 +353,183 @@ test.describe('the theme editor', () => {
       () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
     );
     expect(overflow).toBeLessThanOrEqual(0);
+  });
+});
+
+// Phase 5 (docs/theming-plan.md): decor, title tracking and the font library.
+
+const LIBRARY = THEME_FONTS.filter((f) => f.source === 'library').map((f) => f.id);
+
+/** Takes a theme from a file and keeps it, the way a person does. */
+async function keepTheme(
+  page: Page,
+  theme: { name: string; [key: string]: unknown },
+): Promise<void> {
+  await openSettings(page);
+  await importTheme(page, theme);
+  await page.getByRole('dialog').getByRole('button', { name: 'Try this theme' }).click();
+  await page.locator('[data-theme-keep]').getByRole('button', { name: 'Keep' }).click();
+  await expect(page.getByRole('radio', { name: theme.name })).toBeChecked();
+}
+
+/** Whether every face named is loaded, once the fonts have settled. */
+const facesLoaded = (page: Page, faces: string[]) =>
+  page.evaluate(async (all) => {
+    await document.fonts.ready;
+    return all.filter((face) => !document.fonts.check(face));
+  }, faces);
+
+const sidewaysScroll = (page: Page) =>
+  page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+
+test.describe('decor and the font library', () => {
+  test('keeps the font library out of the precache', async ({ page }) => {
+    await page.goto('/');
+    const sw = await page.evaluate(() => fetch('/sw.js').then((r) => r.text()));
+    // The app's own faces are in it, so the check reads the right list.
+    expect(sw).toContain('literata-latin-400-normal');
+    expect(LIBRARY.filter((id) => sw.includes(`${id}-latin-`))).toEqual([]);
+  });
+
+  test('draws a theme in library fonts, spaced titles and its decor from the first frame, online and off', async ({
+    page,
+    network,
+  }) => {
+    await page.addInitScript(() => {
+      requestAnimationFrame(() => {
+        const root = document.documentElement;
+        (window as unknown as { decor: unknown }).decor = {
+          texture: root.getAttribute('data-cg-texture'),
+          frame: root.getAttribute('data-cg-frame'),
+        };
+      });
+    });
+    await keepTheme(page, {
+      castGuidanceTheme: 1,
+      name: 'Old Map',
+      base: 'dark',
+      tokens: {
+        'font-sans': 'eb-garamond',
+        'font-display': 'cinzel',
+        'tracking-display': '0.12em',
+        texture: 'grain',
+        frame: 'stitched',
+      },
+    });
+    const faces = ['400 1em "EB Garamond"', '700 1em "EB Garamond"', '600 1em "Cinzel"'];
+    await expect.poll(() => facesLoaded(page, faces)).toEqual([]);
+
+    await page.reload();
+    await expect(page.getByRole('heading', { level: 1, name: 'Settings' })).toBeVisible();
+    expect(await page.evaluate(() => (window as unknown as { decor: unknown }).decor)).toEqual({
+      texture: 'grain',
+      frame: 'stitched',
+    });
+    expect(await facesLoaded(page, faces)).toEqual([]);
+    const h1 = page.getByRole('heading', { level: 1 });
+    // 28px titles at the theme's 0.12em, over their own -0.01em.
+    expect(await h1.evaluate((e) => getComputedStyle(e).letterSpacing)).toBe('3.08px');
+    expect(await page.evaluate(() => getComputedStyle(document.body).backgroundImage)).toMatch(
+      /^url\("data:image\/svg\+xml/,
+    );
+
+    // Its faces were kept the first time, so it is whole offline.
+    await waitForSwControl(page);
+    await network.goOffline();
+    await page.reload();
+    await expect(page.getByRole('heading', { level: 1, name: 'Settings' })).toBeVisible();
+    await expect.poll(() => facesLoaded(page, faces)).toEqual([]);
+    expect(await page.evaluate(() => getComputedStyle(document.body).fontFamily)).toMatch(
+      /^"?EB Garamond/,
+    );
+    await expect(page.getByRole('radio', { name: 'Old Map' })).not.toHaveAccessibleDescription(
+      /download/,
+    );
+    network.assertNothingServedOffline();
+  });
+
+  test('fits a 320 px phone in the widest fonts with the widest titles', async ({ page }) => {
+    await page.goto('/');
+    const id = await createBlankCharacter(page);
+    await keepTheme(page, {
+      castGuidanceTheme: 1,
+      name: 'Wide',
+      base: 'light',
+      tokens: { 'font-sans': 'opendyslexic', 'font-display': 'cinzel', 'tracking-display': 0.2 },
+    });
+    await expect
+      .poll(() => facesLoaded(page, ['400 1em "OpenDyslexic"', '600 1em "Cinzel"']))
+      .toEqual([]);
+    await page.setViewportSize({ width: 320, height: 640 });
+    const wide: string[] = [];
+    const check = async (where: string) => {
+      await page.evaluate(() => document.fonts.ready);
+      if ((await sidewaysScroll(page)) > 0) wide.push(where);
+    };
+    await gotoRoster(page);
+    await check('roster');
+    for (const tab of Object.keys(SHEET_TABS) as (keyof typeof SHEET_TABS)[]) {
+      await gotoSheetTab(page, id, tab);
+      await check(tab);
+    }
+    await openSettings(page);
+    await check('settings');
+    expect(wide).toEqual([]);
+  });
+
+  test('frames Parchment’s cards on paper, and a focused card shows the focus ring instead', async ({
+    page,
+  }) => {
+    await page.goto('/');
+    await createBlankCharacter(page);
+    await openSettings(page);
+    await pick(page, 'Parchment');
+    await gotoRoster(page);
+    const card = page.locator('a.cg-card').first();
+    const look = () =>
+      card.evaluate((c) => {
+        const s = getComputedStyle(c);
+        return { style: s.outlineStyle, offset: Number.parseFloat(s.outlineOffset) };
+      });
+    expect(await page.evaluate(() => getComputedStyle(document.body).backgroundImage)).toMatch(
+      /^url\("data:image\/svg\+xml/,
+    );
+    expect(await look()).toEqual({ style: 'solid', offset: -4 });
+
+    // By keyboard, as focus rings are for.
+    for (let i = 0; i < 12; i++) {
+      await page.keyboard.press('Tab');
+      if (await card.evaluate((c) => c === document.activeElement)) break;
+    }
+    await expect(card).toBeFocused();
+    const focused = await look();
+    expect(focused.style).toBe('solid');
+    expect(focused.offset).toBeGreaterThanOrEqual(0);
+  });
+
+  test('offers title faces for titles only, and says when a font is not on this device yet', async ({
+    page,
+    network,
+    consoleGuard,
+  }) => {
+    await page.goto('/settings/theme');
+    await expect(page.getByRole('heading', { level: 1, name: 'Make a theme' })).toBeVisible();
+    const text = page.locator('[data-token-row="font-sans"] select');
+    const titles = page.locator('[data-token-row="font-display"] select');
+    await expect(text.locator('option[value="cinzel"]')).toHaveCount(0);
+    await expect(titles.locator('option[value="cinzel"]')).toHaveCount(1);
+
+    // A face fetched for the first time, offline: the fetch fails, as it should.
+    consoleGuard.allowResource((url) => /\/assets\/lexend-latin-/.test(url));
+    await waitForSwControl(page);
+    await network.goOffline();
+    await text.selectOption('lexend');
+    const note = page.locator('[data-token-row="font-sans"]').getByText('Not on this device yet');
+    await expect(note).toBeVisible();
+    await expect(text).toHaveAccessibleDescription(/Not on this device yet/);
+
+    await network.goOnline();
+    await expect(note).toBeHidden();
+    await expect.poll(() => facesLoaded(page, ['400 1em "Lexend"'])).toEqual([]);
   });
 });

@@ -322,7 +322,7 @@ as a copy, the editor page (a change draws at once in the sample and never on
 change its page colour and font, save, reload into it from the first frame;
 edit it again.
 
-### Phase 5: decor and more fonts
+### Phase 5: decor and more fonts (built)
 
 **Decor as choices.** Two tokens of a new kind, `choice`, each a short list of
 named looks rather than a value:
@@ -332,7 +332,11 @@ named looks rather than a value:
   `soft-light` over `bg` with `background-blend-mode`, fixed to the viewport
   so the page and the bars that paint `bg` over it line up (iOS ignores
   `fixed`, so there it can show a seam under a sticky bar). Subtle by design:
-  barely there on a dark page.
+  barely there on a dark page. The blend travels with the texture (`normal`
+  with none), since a blend mode with nothing to blend still nudged a few of
+  Dark's pixels a shade. Each noise filter's region is its tile, so
+  `stitchTiles` meets itself at the edges; the default region is 20% larger
+  and showed a seam every tile.
 - `frame`, around cards: `plain`, `double` (a hairline inside the edge),
   `stitched` (a dashed line inside it). An `outline` with a negative offset:
   it takes no room, cannot be clipped, and leaves the layout alone.
@@ -340,8 +344,8 @@ named looks rather than a value:
 **Drawn through inherited variables.** A choice is an attribute on the
 element a theme is drawn on (`data-cg-texture="paper"` on <html>, the
 editor's sample, a picker card), and decor.css turns it into variables
-(`--cg-texture`, `--cg-frame`, `--cg-frame-offset`) that the page and
-`.cg-card` read. Each built-in's rule in themes.css sets its own defaults
+(`--cg-decor-texture`, `--cg-decor-blend`, `--cg-decor-frame`,
+`--cg-decor-frame-offset`) that the page and `.cg-card` read. Each built-in's rule in themes.css sets its own defaults
 for the same variables, so a nested built-in subtree (Settings' Appearance
 while a theme of one's own is in use) resets them, as it does every token,
 and the boot script needs attributes only for a theme of one's own: it
@@ -357,20 +361,30 @@ overlay) without it.
 
 **Title tracking.** `tracking-display` (em, -0.05 to 0.2): added to each
 title size's own letter-spacing in `@theme inline`, 0 in every built-in, so
-they draw as now, and a capitals face like Cinzel can open up.
+they draw as now, and a capitals face like Cinzel can open up. A title size
+now sets its letter-spacing rather than inheriting it, so the few numbers
+sized as titles (HP's "/ max", roll totals) keep the spacing around them
+with `tracking-[inherit]`; a source scan holds title-sized text to the title
+font or a tracking of its own.
 
 **More fonts.** EB Garamond, Fraunces, Lexend, OpenDyslexic and JetBrains
 Mono for text or titles; Cinzel (capitals) and IM Fell English (no bold,
 old-style figures) for titles only, which `fonts.ts` marks and the editor
-honours. All OFL-1.1. Not precached (the precache has about 140 KB left): the
+honours. All OFL-1.1, Latin only, 400/600/700 where the font has them (IM
+Fell English's one weight is declared for every weight, so the browser never
+thickens it). Not precached (the precache has about 140 KB left): the
 cache-first route keeps each face on first use, and drawing a theme of one's
-own asks for its faces while online, so it stays whole offline after. The
+own asks for its faces while online, so it stays whole offline after. Not in
+the stylesheet either (the CSS budget had 4 KB left): libraryFaces.ts imports
+each file `?url` in a chunk of its own, and libraryFonts.ts adds the faces
+with the FontFace API only when a theme names one, retrying a face that
+failed. The
 editor's font control shows a line in the chosen font and says when it is not
 on this device yet; a picker card says the same offline. A library font
 swaps in after first paint on each launch (from the cache, so quickly).
 
-**Guarantees kept.** The axe gate scans with textures off (`--cg-texture:
-none`), since it cannot measure text over an image, and contrast.test.ts
+**Guarantees kept.** The axe gate scans with textures off
+(`--cg-decor-texture: none`), since it cannot measure text over an image, and contrast.test.ts
 holds text on a textured page to 4.5:1 against the darkest and lightest the
 texture can make it. Dark and Light draw pixel for pixel as before. Theme
 files need no schema change (an older build drops the choices). A test
