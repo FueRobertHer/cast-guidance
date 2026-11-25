@@ -369,14 +369,22 @@ async function keepTheme(
   await importTheme(page, theme);
   await page.getByRole('dialog').getByRole('button', { name: 'Try this theme' }).click();
   await page.locator('[data-theme-keep]').getByRole('button', { name: 'Keep' }).click();
-  await expect(page.getByRole('radio', { name: theme.name })).toBeChecked();
+  // Its whole name: nothing else in its card is read as part of it.
+  await expect(page.getByRole('radio', { name: theme.name, exact: true })).toBeChecked();
 }
 
-/** Whether every face named is loaded, once the fonts have settled. */
-const facesLoaded = (page: Page, faces: string[]) =>
+/**
+ * The faces named (`400 EB Garamond`) that are not registered and loaded.
+ * `document.fonts.check` will not do: it is true for a family with no faces
+ * registered at all.
+ */
+const facesMissing = (page: Page, faces: string[]) =>
   page.evaluate(async (all) => {
     await document.fonts.ready;
-    return all.filter((face) => !document.fonts.check(face));
+    const loaded = [...document.fonts]
+      .filter((f) => f.status === 'loaded')
+      .map((f) => `${f.weight} ${f.family.replace(/["']/g, '')}`);
+    return all.filter((face) => !loaded.includes(face));
   }, faces);
 
 const sidewaysScroll = (page: Page) =>
@@ -416,34 +424,30 @@ test.describe('decor and the font library', () => {
         frame: 'stitched',
       },
     });
-    const faces = ['400 1em "EB Garamond"', '700 1em "EB Garamond"', '600 1em "Cinzel"'];
-    await expect.poll(() => facesLoaded(page, faces)).toEqual([]);
+    const faces = ['400 EB Garamond', '700 EB Garamond', '600 Cinzel'];
+    await expect.poll(() => facesMissing(page, faces)).toEqual([]);
 
-    await page.reload();
-    await expect(page.getByRole('heading', { level: 1, name: 'Settings' })).toBeVisible();
+    // A first visit: the service worker is installed but not in control yet,
+    // so the page keeps the faces for offline itself. The next launch is
+    // offline, on the roster, where no preview asks for them: drawing the
+    // theme does.
+    await page.evaluate(() => navigator.serviceWorker.ready);
+    expect(await page.evaluate(() => navigator.serviceWorker.controller)).toBeNull();
+    await network.goOffline();
+    await gotoRoster(page);
     expect(await page.evaluate(() => (window as unknown as { decor: unknown }).decor)).toEqual({
       texture: 'grain',
       frame: 'stitched',
     });
-    expect(await facesLoaded(page, faces)).toEqual([]);
-    const h1 = page.getByRole('heading', { level: 1 });
-    // 28px titles at the theme's 0.12em, over their own -0.01em.
-    expect(await h1.evaluate((e) => getComputedStyle(e).letterSpacing)).toBe('3.08px');
-    expect(await page.evaluate(() => getComputedStyle(document.body).backgroundImage)).toMatch(
-      /^url\("data:image\/svg\+xml/,
-    );
-
-    // Its faces were kept the first time, so it is whole offline.
-    await waitForSwControl(page);
-    await network.goOffline();
-    await page.reload();
-    await expect(page.getByRole('heading', { level: 1, name: 'Settings' })).toBeVisible();
-    await expect.poll(() => facesLoaded(page, faces)).toEqual([]);
+    await expect.poll(() => facesMissing(page, faces)).toEqual([]);
     expect(await page.evaluate(() => getComputedStyle(document.body).fontFamily)).toMatch(
       /^"?EB Garamond/,
     );
-    await expect(page.getByRole('radio', { name: 'Old Map' })).not.toHaveAccessibleDescription(
-      /download/,
+    // 28px titles at the theme's 0.12em, over their own -0.01em.
+    const h1 = page.getByRole('heading', { level: 1, name: 'Characters' });
+    expect(await h1.evaluate((e) => getComputedStyle(e).letterSpacing)).toBe('3.08px');
+    expect(await page.evaluate(() => getComputedStyle(document.body).backgroundImage)).toMatch(
+      /^url\("data:image\/svg\+xml/,
     );
     network.assertNothingServedOffline();
   });
@@ -458,7 +462,7 @@ test.describe('decor and the font library', () => {
       tokens: { 'font-sans': 'opendyslexic', 'font-display': 'cinzel', 'tracking-display': 0.2 },
     });
     await expect
-      .poll(() => facesLoaded(page, ['400 1em "OpenDyslexic"', '600 1em "Cinzel"']))
+      .poll(() => facesMissing(page, ['400 OpenDyslexic', '700 OpenDyslexic', '600 Cinzel']))
       .toEqual([]);
     await page.setViewportSize({ width: 320, height: 640 });
     const wide: string[] = [];
@@ -530,6 +534,6 @@ test.describe('decor and the font library', () => {
 
     await network.goOnline();
     await expect(note).toBeHidden();
-    await expect.poll(() => facesLoaded(page, ['400 1em "Lexend"'])).toEqual([]);
+    await expect.poll(() => facesMissing(page, ['400 Lexend'])).toEqual([]);
   });
 });

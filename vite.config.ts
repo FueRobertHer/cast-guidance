@@ -8,7 +8,7 @@ import { VitePWA } from 'vite-plugin-pwa';
 import { pwaManifest } from './pwa.manifest.ts';
 import { shippedModulesCollector } from './scripts/shippedModules.ts';
 import { headersMetaPlugin } from './src/app/headersMeta.ts';
-import { LIBRARY_FONT_GLOBS } from './src/theme/fonts.ts';
+import { FONT_CACHE, LIBRARY_FONT_GLOBS } from './src/theme/fonts.ts';
 
 // vercel.json is the source of truth for the response headers. Their digest
 // goes into index.html so a header change also changes the precached shell's
@@ -89,7 +89,7 @@ export default defineConfig({
               sameOrigin && url.pathname.startsWith('/assets/') && url.pathname.endsWith('.woff2'),
             handler: 'CacheFirst',
             options: {
-              cacheName: 'theme-fonts',
+              cacheName: FONT_CACHE,
               expiration: { maxEntries: 32 },
             },
           },

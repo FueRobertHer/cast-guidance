@@ -138,6 +138,12 @@ export function fontFamily(font: ThemeFont): string {
 }
 
 /**
+ * The service worker's cache for fonts outside the precache (vite.config.ts),
+ * which a page not yet under its control fills itself (libraryFonts.ts).
+ */
+export const FONT_CACHE = 'theme-fonts';
+
+/**
  * Where the build writes a library font's faces, for the precache to leave
  * out (vite.config.ts): Vite names an asset by its file, and each file is
  * named for its font (libraryFaces.ts, held to it by fonts.test.ts).

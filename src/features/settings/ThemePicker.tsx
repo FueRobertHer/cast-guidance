@@ -103,7 +103,9 @@ function Option({
       {children}
       <span className="w-full break-words">{label}</span>
       {note !== undefined && (
-        <span id={noteId} className="w-full text-caption text-ink-muted">
+        // Read as the radio's description, not as part of its name, which the
+        // label around it would otherwise make it.
+        <span id={noteId} aria-hidden="true" className="w-full text-caption text-ink-muted">
           {note}
         </span>
       )}

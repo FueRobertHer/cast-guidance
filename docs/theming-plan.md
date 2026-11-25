@@ -377,8 +377,10 @@ cache-first route keeps each face on first use, and drawing a theme of one's
 own asks for its faces while online, so it stays whole offline after. Not in
 the stylesheet either (the CSS budget had 4 KB left): libraryFaces.ts imports
 each file `?url` in a chunk of its own, and libraryFonts.ts adds the faces
-with the FontFace API only when a theme names one, retrying a face that
-failed. The
+with the FontFace API only when a theme names one, retrying each face that
+failed. A page the service worker does not control yet (a first visit, until
+a reload) would fetch past the font route, so it puts the faces in that
+route's cache itself. The
 editor's font control shows a line in the chosen font and says when it is not
 on this device yet; a picker card says the same offline. A library font
 swaps in after first paint on each launch (from the cache, so quickly).
