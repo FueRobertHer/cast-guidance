@@ -73,38 +73,20 @@ test.describe('colour theme', () => {
     expect(seen.filter((s) => !s.endsWith(':light'))).toEqual([]);
   });
 
-  test('takes a reskin, draws it from the first frame after, and keeps its fonts for offline', async ({
+  test('takes a reskin, draws it from the first frame after, and in its own fonts offline', async ({
     page,
+    network,
   }) => {
     await watchTheme(page);
     await page.goto('/settings');
     await expect(page.getByRole('heading', { level: 1, name: 'Settings' })).toBeVisible();
-    // The service worker keeps a theme's fonts as they are fetched, so it
-    // has to be in charge before the theme asks for them.
-    await waitForSwControl(page);
-
     await pick(page, 'Parchment');
     await expectTheme(page, 'parchment');
-    // Picking it asked for every face it draws in, and the worker kept each.
-    // (Settings' previews draw each theme's title font, so others come too.)
-    await expect
-      .poll(() =>
-        page.evaluate(async () => {
-          const cache = await caches.open('theme-fonts');
-          return (await cache.keys())
-            .map((r) => new URL(r.url).pathname.replace(/^\/assets\/|-[\w-]{8}\.woff2$/g, ''))
-            .sort();
-        }),
-      )
-      .toEqual(
-        expect.arrayContaining([
-          'alegreya-latin-600-normal',
-          'alegreya-latin-700-normal',
-          'literata-latin-400-normal',
-          'literata-latin-700-normal',
-        ]),
-      );
 
+    // Every built-in theme's faces are precached, so a reskin is whole at
+    // the table without a connection, Settings' previews included.
+    await waitForSwControl(page);
+    await network.goOffline();
     await page.reload();
     await expect(page.getByRole('heading', { level: 1, name: 'Settings' })).toBeVisible();
     await expectTheme(page, 'parchment');
@@ -112,14 +94,24 @@ test.describe('colour theme', () => {
     const seen = await themesSeen(page);
     expect(seen.find((s) => s.startsWith('frame:'))).toBe('frame:parchment');
     expect(seen.filter((s) => !s.endsWith(':parchment'))).toEqual([]);
-    // Drawn in its own faces, not the default themes'.
+
     await page.evaluate(() => document.fonts.ready);
-    const fonts = await page.evaluate(() => ({
+    const drawn = await page.evaluate(() => ({
       body: getComputedStyle(document.body).fontFamily,
       title: getComputedStyle(document.querySelector('h1') as Element).fontFamily,
+      loaded: ['400 1em "Literata"', '600 1em "Alegreya"', '400 1em "Inter Variable"'].filter(
+        (face) => document.fonts.check(face),
+      ),
     }));
-    expect(fonts.body).toMatch(/^"?Literata/);
-    expect(fonts.title).toMatch(/^"?Alegreya/);
+    expect(drawn.body).toMatch(/^"?Literata/);
+    expect(drawn.title).toMatch(/^"?Alegreya/);
+    // Modern's preview draws Inter: from the precache too.
+    expect(drawn.loaded).toEqual([
+      '400 1em "Literata"',
+      '600 1em "Alegreya"',
+      '400 1em "Inter Variable"',
+    ]);
+    network.assertNothingServedOffline();
   });
 
   test('System follows the device as it changes', async ({ page }) => {

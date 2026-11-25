@@ -22,38 +22,29 @@ export interface BuiltInTheme {
    * variable, so the value is repeated here.
    */
   readonly pageColour: string;
-  /**
-   * The faces it draws in that the default themes do not, as `font` shorthand
-   * for `document.fonts.load`. Picking the theme loads every one, so all of
-   * them are cached for offline play, not only those drawn so far.
-   */
-  readonly faces: readonly string[];
 }
 
 /** Settings' order, after System: the device's pair first, then the reskins. */
 export const BUILT_IN_THEMES: readonly BuiltInTheme[] = [
-  { id: 'light', label: 'Light', scheme: 'light', pageColour: '#eee6d5', faces: [] },
-  { id: 'dark', label: 'Dark', scheme: 'dark', pageColour: '#121110', faces: [] },
+  { id: 'light', label: 'Light', scheme: 'light', pageColour: '#eee6d5' },
+  { id: 'dark', label: 'Dark', scheme: 'dark', pageColour: '#121110' },
   {
     id: 'parchment',
     label: 'Parchment',
     scheme: 'light',
     pageColour: '#e9dfc6',
-    faces: ['400 1em "Literata"', '700 1em "Literata"', '600 1em "Alegreya"', '700 1em "Alegreya"'],
   },
   {
     id: 'modern',
     label: 'Modern',
     scheme: 'light',
     pageColour: '#f2f4f7',
-    faces: ['400 1em "Inter Variable"', '700 1em "Inter Variable"'],
   },
   {
     id: 'contrast',
     label: 'High contrast',
     scheme: 'dark',
     pageColour: '#000000',
-    faces: [],
   },
 ];
 

@@ -153,7 +153,7 @@ export default function SelectBar({
           page beside the rail on a wide screen. */}
       <div
         ref={bar}
-        className="fixed inset-x-0 bottom-[calc(var(--spacing-tabbar)+1px+env(safe-area-inset-bottom))] z-20 border-line border-t bg-surface lg:bottom-0 lg:left-40"
+        className="fixed inset-x-0 bottom-[calc(var(--spacing-tabbar)+var(--cg-border)+env(safe-area-inset-bottom))] z-20 border-line border-t bg-surface lg:bottom-0 lg:left-40"
       >
         <fieldset
           className="flex flex-wrap items-center gap-2 px-3 py-2"

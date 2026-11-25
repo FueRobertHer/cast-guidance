@@ -20,11 +20,9 @@ import '@fontsource/atkinson-hyperlegible-next/latin-400.css';
 import '@fontsource/atkinson-hyperlegible-next/latin-600.css';
 import '@fontsource/atkinson-hyperlegible-next/latin-700.css';
 // Faces only the other built-in themes draw in (src/theme/builtins.ts):
-// Parchment's Literata 400 and 700 and Alegreya, Modern's Inter. A
-// browser fetches a face only when a rule asks for it, so these cost nothing
-// until a theme does. They stay out of the precache (vite.config.ts); the
-// service worker keeps each on its first fetch, and picking a theme fetches
-// all of its faces (theme.ts).
+// Parchment's Literata 400 and 700 and Alegreya, Modern's Inter. Precached
+// like the rest (Inter's non-Latin subsets aside, vite.config.ts), so every
+// theme, and every preview in Settings, draws in its own faces offline.
 import '@fontsource/literata/latin-400.css';
 import '@fontsource/literata/latin-700.css';
 import '@fontsource/alegreya/latin-600.css';

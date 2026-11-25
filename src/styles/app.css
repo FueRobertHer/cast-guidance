@@ -79,7 +79,9 @@
    * `thumb` sits 2px inside a control (a segment's thumb, a framed preview),
    * `tick` 2px inside a chip (a checkbox), `control-lg` is a large button,
    * and `tile` a 44px icon tile or a button inside a 4px transparent tap
-   * border, whose visible corner is then a control's.
+   * border, whose visible corner is then a control's. `pill-tap` is a pill
+   * inside its own transparent tap border (`--tap-inset`), so a theme with
+   * small pill corners still draws them on the visible pill, not the border.
    */
   --radius-chip: var(--cg-radius-chip);
   --radius-control: var(--cg-radius-control);
@@ -90,6 +92,7 @@
   --radius-thumb: calc(var(--cg-radius-control) - 2px);
   --radius-control-lg: calc(var(--cg-radius-control) + 2px);
   --radius-tile: calc(var(--cg-radius-control) + 0.25rem);
+  --radius-pill-tap: calc(var(--cg-radius-pill) + var(--tap-inset));
 
   /*
    * Edges: bare `border`, `border-t`, `divide-y` and `ring` draw the theme's

@@ -1756,7 +1756,7 @@ export function Component() {
               aria-label={play.tempHp > 0 ? `+${play.tempHp} temporary hit points` : undefined}
               aria-haspopup="dialog"
               title="Temporary hit points"
-              className={`-my-2 inline-flex min-h-tap items-center gap-1 whitespace-nowrap rounded-pill border-8 border-transparent bg-clip-padding [--tap-inset:0.5rem] px-2 text-caption tabular-nums transition-colors duration-120 ${
+              className={`-my-2 inline-flex min-h-tap items-center gap-1 whitespace-nowrap rounded-pill-tap border-8 border-transparent bg-clip-padding [--tap-inset:0.5rem] px-2 text-caption tabular-nums transition-colors duration-120 ${
                 play.tempHp > 0
                   ? 'bg-ward-soft font-bold text-ward'
                   : 'font-semibold text-ink-muted ring ring-line-strong ring-inset hover:text-ink'

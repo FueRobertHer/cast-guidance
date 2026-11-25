@@ -57,10 +57,13 @@ for looks.
   choice key holds `system`, a built-in id, or `custom:<id>`; the active custom
   theme's resolved overrides are cached so the boot script can apply them
   before first paint without parsing theme files.
-- **Fonts**: a bundled list (`src/theme/fonts.ts`), each with a stack and a
-  note on tabular figures. Fonts a theme needs are imported once; a browser
-  downloads a face only when a rule uses it. Theme fonts are left out of the
-  service worker's precache and cached on first use instead.
+- **Fonts**: each theme's stacks are in its rule; the faces are imported once
+  in `src/main.tsx`. Every built-in theme's Latin faces are precached (about
+  137 KB beyond the default themes'), so a theme, and every preview in
+  Settings, works offline from install. A cache-first route keeps anything
+  else (Inter's non-Latin subsets) on first fetch. A larger library (phase 5)
+  may need the opposite: precache none, fetch a theme's faces when it is
+  picked.
 
 ## Phases
 
@@ -87,16 +90,20 @@ green.
    pill shapes (chips, badges, pill buttons, meter tracks: `rounded-pill`).
    The odd sizes are derived from a tier, so today's pixels hold and a theme
    moves them with it: `rounded-thumb` (control minus 2px, a segment's thumb
-   and the picker's frames), `rounded-tap` (control plus the 4px transparent
+   and the picker's frames), `rounded-tile` (control plus 4px: a 44px icon
+   tile, or a control inside a 4px transparent
    tap border), `rounded-control-lg` (control plus 2px), `rounded-tick`
-   (chip minus 2px).
+   (chip minus 2px), `rounded-pill-tap` (a pill plus its own tap border,
+   `--tap-inset`).
 6. Icons: Lucide icons drawn at the default stroke (`[stroke-width="2"]`)
    read `--cg-icon-stroke` through one CSS rule, so icons given an explicit
    stroke keep it. `D20Icon` draws three weights in JavaScript, so it gets
    its own rule for each.
 7. Borders: bare `border`, `divide-y` and `ring` read `--cg-border`. The
    explicit `border-2/4/8` stay fixed: the 4px and 8px ones are transparent
-   tap insets (layout), the 2px ones are marks.
+   tap insets (layout), the 2px ones are marks. A bordered box grows with its
+   edge, so High contrast's 2px edges add a pixel to such boxes and rows; the
+   layout checks pass with them. Rings are shadows and move nothing.
 8. Tests: every built-in defines every vocabulary token; `contrast.test.ts`
    gets a small CSS reader that merges every rule naming a theme (so shared
    selector lists work); a scan fails on hard-coded visual utilities
@@ -125,12 +132,12 @@ green.
    and Alegreya from `@fontsource` (OFL-1.1, already on the notices
    allowlist), and Literata's 400 and 700 alongside its 600. Literata's latin
    files carry `tnum`, so Parchment's stats stay tabular; no separate numbers
-   font. Theme fonts stay out of precache; a new runtime cache route stores
-   them, and picking a theme loads every face it uses, so all of them are
-   there offline, not just the ones already drawn. The plan first named
-   Cormorant Garamond; at card-title size its small x-height (0.39) made
-   titles barely larger than the subtitles under them, so Alegreya (0.45)
-   replaced it. Notices regenerated.
+   font. The plan first named Cormorant Garamond; at card-title size its small
+   x-height (0.39) made titles barely larger than the subtitles under them, so
+   Alegreya (0.45) replaced it. The plan also first kept theme fonts out of
+   the precache, cached on first use; Settings' previews draw every theme's
+   title font, so opening Settings offline asked the network for them, and
+   all of them are precached instead. Notices regenerated.
 4. Settings: the picker lists System, Dark, Light, Parchment, Modern and High
    contrast, each miniature with an "Aa" in its fonts.
 5. Gates: the axe scan and the layout checks run every built-in; the theme

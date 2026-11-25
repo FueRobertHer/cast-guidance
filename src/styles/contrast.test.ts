@@ -1,6 +1,7 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { CONDITION_HUES } from '@/theme/vocabulary';
 import { themeIds, themeTokens } from '../../tests-fixtures/themeCss';
 
 // DS-001: every pair the design system promises, held in every built-in
@@ -204,6 +205,18 @@ describe('the number on a condition’s chip, every built-in theme', () => {
       }),
     );
     expect(failing).toEqual([]);
+  });
+
+  it('draws each condition in its own hue tokens, so the pairs above are the ones on screen', () => {
+    const wrong = CONDITION_HUES.filter(
+      (look) =>
+        !CHIP_CSS.includes(
+          `.cx-${look} {\n  --c: var(--cg-cx-${look});\n  --cs: var(--cg-cx-${look}-soft);\n}`,
+        ),
+    );
+    expect(wrong).toEqual([]);
+    // And nowhere else sets them: no theme-keyed override, no stray hue.
+    expect(CHIP_CSS.match(/^\s*--cs?:/gm)?.length).toBe(CONDITION_HUES.length * 2);
   });
 
   it('reads Paralyzed’s glow at its peak, not its still pose', () => {

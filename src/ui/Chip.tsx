@@ -23,7 +23,7 @@ const TONE: Record<ChipTone, string> = {
 };
 
 export function chipClass(tone: ChipTone = 'raised'): string {
-  return `inline-flex min-h-tap min-w-tap items-center justify-center gap-1.5 text-center rounded-pill border-[0.375rem] border-transparent bg-clip-padding [--tap-inset:0.375rem] px-1.5 text-label transition-colors duration-120 aria-pressed:bg-ink aria-pressed:text-bg aria-pressed:ring-0 ${TONE[tone]}`;
+  return `inline-flex min-h-tap min-w-tap items-center justify-center gap-1.5 text-center rounded-pill-tap border-[0.375rem] border-transparent bg-clip-padding [--tap-inset:0.375rem] px-1.5 text-label transition-colors duration-120 aria-pressed:bg-ink aria-pressed:text-bg aria-pressed:ring-0 ${TONE[tone]}`;
 }
 
 export interface ChipProps extends ButtonHTMLAttributes<HTMLButtonElement> {

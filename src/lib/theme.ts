@@ -1,10 +1,5 @@
 import { useSyncExternalStore } from 'react';
-import {
-  BUILT_IN_THEMES,
-  type BuiltInThemeId,
-  builtInTheme,
-  isBuiltInTheme,
-} from '@/theme/builtins';
+import { BUILT_IN_THEMES, type BuiltInThemeId, isBuiltInTheme } from '@/theme/builtins';
 
 /**
  * The colour theme (DS-001). The player picks System or one of the built-in
@@ -77,19 +72,10 @@ export function resolveTheme(choice: ThemeChoice, deviceLight: boolean = prefers
   return choice;
 }
 
-/**
- * Draws the page in `theme`, colours the browser's bars to match, and asks
- * for every face the theme draws in, so each is cached (the service worker
- * keeps theme fonts on first fetch) before the player is offline at the table.
- */
+/** Draws the page in `theme` and colours the browser's bars to match. */
 export function applyTheme(theme: Theme): void {
   document.documentElement.dataset.theme = theme;
   document.querySelector('meta[name="theme-color"]')?.setAttribute('content', THEME_COLOR[theme]);
-  const fonts = typeof document.fonts === 'object' ? document.fonts : undefined;
-  for (const face of builtInTheme(theme).faces) {
-    // A face that fails to load leaves the stack's fallback; nothing to undo.
-    fonts?.load(face).catch(() => undefined);
-  }
 }
 
 const listeners = new Set<() => void>();

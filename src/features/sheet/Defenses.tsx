@@ -112,7 +112,7 @@ export function DefensesChip({
           <button
             type="button"
             aria-label={`${chip.say}${lifted ? `, raised by ${raisedBy.join(', ')}` : ''}`}
-            className="inline-flex min-h-tap items-center gap-1 whitespace-nowrap rounded-pill border-8 border-transparent bg-clip-padding px-2 text-caption font-semibold text-ink tabular-nums ring ring-line-strong ring-inset [--tap-inset:0.5rem] hover:bg-surface-raised"
+            className="inline-flex min-h-tap items-center gap-1 whitespace-nowrap rounded-pill-tap border-8 border-transparent bg-clip-padding px-2 text-caption font-semibold text-ink tabular-nums ring ring-line-strong ring-inset [--tap-inset:0.5rem] hover:bg-surface-raised"
           >
             <Icon
               size={14}

@@ -81,7 +81,7 @@ export function AppNavLayout() {
         })}
       </nav>
       {/* Clears the tab bar: `tabbar` and its hairline, plus the inset. */}
-      <div className="flex flex-1 flex-col pb-[calc(var(--spacing-tabbar)+1px+env(safe-area-inset-bottom))] lg:pb-0 lg:pl-40">
+      <div className="flex flex-1 flex-col pb-[calc(var(--spacing-tabbar)+var(--cg-border)+env(safe-area-inset-bottom))] lg:pb-0 lg:pl-40">
         <Outlet />
       </div>
     </>

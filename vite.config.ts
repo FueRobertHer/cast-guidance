@@ -66,16 +66,19 @@ export default defineConfig({
         // once, online, when the app is added to the Home Screen.
         globIgnores: [
           'icons/**',
-          // Faces only Parchment and Modern draw in (src/theme/builtins.ts):
-          // fetched when a theme first asks, then kept by the route below.
-          'assets/literata-latin-400-*',
-          'assets/literata-latin-700-*',
-          'assets/alegreya-*',
-          'assets/inter-*',
+          // Inter's other scripts: its stylesheet declares every subset, and
+          // a page fetches one only for text in that script, so they are kept
+          // by the route below on first use rather than shipped to everyone.
+          // Every built-in theme's Latin faces are precached, so a theme
+          // works offline from install, Settings' previews included.
+          'assets/inter-cyrillic*',
+          'assets/inter-greek*',
+          'assets/inter-latin-ext-*',
+          'assets/inter-vietnamese-*',
         ],
-        // Theme fonts, cache first: a face's file name carries its content
-        // hash, so a stored copy is never stale. The precache's route comes
-        // first, so the default themes' faces are still served from it.
+        // Fonts outside the precache, cache first: a face's file name carries
+        // its content hash, so a stored copy is never stale. The precache's
+        // route comes first, so precached faces are served from it.
         runtimeCaching: [
           {
             urlPattern: ({ url, sameOrigin }) =>
