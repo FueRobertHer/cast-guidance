@@ -196,7 +196,7 @@ test.describe('back online, each offline state recovers', () => {
     await launch.page.goto('/settings');
     await expect(offlineBanner(launch.page)).toBeVisible();
     await backOnline(launch);
-    await expect(settingsValue(launch.page, 'Download queue')).toHaveText('done');
+    await expect(settingsValue(launch.page, 'Download')).toHaveText('Complete');
     await expect(settingsValue(launch.page, 'Offline compendium')).toHaveText('Ready');
     await expect(launch.page.getByRole('alert')).toHaveCount(0);
   });

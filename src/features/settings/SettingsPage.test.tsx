@@ -11,6 +11,7 @@ import {
   render as renderInto,
   screen,
   waitFor,
+  within,
 } from '@testing-library/react';
 import type { ReactElement } from 'react';
 import { MemoryRouter } from 'react-router';
@@ -61,6 +62,8 @@ import {
   ABOUT_LINKS,
   ANALYTICS_ON_TEXT,
   OFFLINE_DOWNLOADED_TEXT,
+  PHASE_WORDS,
+  SETTINGS_SECTIONS,
   Component as SettingsPage,
   sizeText,
   updateStatusText,
@@ -442,7 +445,7 @@ describe('SettingsPage data announcements', () => {
     const button = await screen.findByRole('button', { name: 'Make available offline' });
     expect(button.getAttribute('aria-busy')).toBe('false');
     const queue = document.getElementById(button.getAttribute('aria-describedby') ?? '');
-    expect(queue?.previousElementSibling?.textContent).toBe('Download queue');
+    expect(queue?.previousElementSibling?.textContent).toBe('Download');
     fireEvent.click(button);
     expect(screen.getByRole('button', { name: 'Downloading…' }).getAttribute('aria-busy')).toBe(
       'true',
@@ -609,8 +612,8 @@ describe('SettingsPage rows into the Workshop', () => {
 describe('SettingsPage about', () => {
   it('states the license and links the license, notices and content notice on GitHub', () => {
     render(<SettingsPage />);
-    const about = screen.getByRole('heading', { name: 'About' }).closest('section');
-    if (!about) throw new Error('no About section');
+    const about = screen.getByRole('heading', { name: 'Help & about' }).closest('section');
+    if (!about) throw new Error('no Help & about section');
     expect(about.textContent).toContain('Cast Guidance is open source under the MIT License.');
     const links = Array.from(about.querySelectorAll('a'), (a) => ({
       name: a.textContent,
@@ -657,5 +660,54 @@ describe('SettingsPage appearance', () => {
     theme.setThemeChoice('dark');
     await waitFor(() => expect(section?.hasAttribute('data-theme')).toBe(false));
     localStorage.clear();
+  });
+});
+
+describe('SettingsPage layout', () => {
+  // Catches: a contents link to a section that moved, was renamed or lost its
+  // anchor, and a section left out of the list.
+  it('lists every section under On this page, in page order, each landing on its own heading', () => {
+    render(<SettingsPage />);
+    const labels = SETTINGS_SECTIONS.map((s) => s.label);
+    const nav = screen.getByRole('navigation', { name: 'On this page' });
+    const links = within(nav).getAllByRole('link');
+    expect(links.map((a) => a.textContent)).toEqual(labels);
+    const headings = screen.getAllByRole('heading', { level: 2 }).map((h) => h.textContent);
+    expect(headings).toEqual(labels);
+    for (const link of links) {
+      const target = document.getElementById((link.getAttribute('href') ?? '').slice(1));
+      expect(target?.tagName, link.textContent ?? '').toBe('SECTION');
+      expect(target?.querySelector('h2')?.textContent).toBe(link.textContent);
+    }
+  });
+
+  it('keeps Reset last, with the one destructive control', () => {
+    render(<SettingsPage />);
+    const last = screen.getAllByRole('heading', { level: 2 }).at(-1)?.closest('section');
+    expect(last?.querySelector('h2')?.textContent).toBe('Reset');
+    expect(
+      within(last as HTMLElement).getByRole('button', { name: 'Reset app data' }),
+    ).toBeTruthy();
+  });
+
+  it('says where the download is in words rather than the queue’s code names', () => {
+    dataStatusStore.setState({ phase: 'working' });
+    render(<SettingsPage />);
+    const label = screen.getByText('Download', { selector: 'dt' });
+    expect(label.nextElementSibling?.textContent).toBe(PHASE_WORDS.working);
+    expect(Object.values(PHASE_WORDS)).toEqual([
+      'Not started',
+      'In progress',
+      'Complete',
+      'Failed',
+    ]);
+  });
+
+  it('keeps the measured sizes in Storage details', () => {
+    render(<SettingsPage />);
+    const details = screen.getByText('Storage details').closest('details');
+    if (details === null) throw new Error('no Storage details disclosure');
+    const terms = Array.from(details.querySelectorAll('dt'), (dt) => dt.textContent);
+    expect(terms).toEqual(['Game data', 'Browser storage used']);
   });
 });

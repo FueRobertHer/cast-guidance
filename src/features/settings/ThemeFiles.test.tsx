@@ -197,6 +197,13 @@ describe('theme files in Settings', () => {
     renderAt();
     expect(screen.queryByRole('button', { name: 'Delete this theme' })).toBeNull();
     act(() => setThemeChoice(customChoice(theme.id)));
+    // A row of its own, under "This theme": each shows one word, and each
+    // name still says what it acts on.
+    const own = screen.getByText('This theme').nextElementSibling;
+    const names = Array.from(own?.querySelectorAll('button') ?? [], (b) =>
+      computeAccessibleName(b),
+    );
+    expect(names).toEqual(['Edit this theme', 'Share this theme', 'Delete this theme']);
     fireEvent.click(screen.getByRole('button', { name: 'Delete this theme' }));
     expect(readSavedThemes()).toEqual([]);
     expect(readThemeChoice()).toBe('dark');
