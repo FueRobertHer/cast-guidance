@@ -101,8 +101,8 @@ async function importHomebrew(page: Page): Promise<string> {
 /** Waits for the download queue to stop where the level stops it. */
 async function expectLevelSettled(page: Page, level: CacheLevel): Promise<void> {
   await page.goto('/settings');
-  await expect(settingsValue(page, 'Download queue')).toHaveText(
-    level === 'full' ? 'done' : 'error',
+  await expect(settingsValue(page, 'Download')).toHaveText(
+    level === 'full' ? 'Complete' : 'Failed',
   );
   await expect.poll(() => countDataFiles(page, PINNED_TAG)).toBe(filesAt(level));
 }

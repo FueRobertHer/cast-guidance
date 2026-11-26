@@ -91,7 +91,10 @@ export async function handleOverlays(page: Page): Promise<void> {
 
 /** A value in Settings' storage and data list, by its label. */
 export function settingsValue(page: Page, label: string): Locator {
-  return page.locator('dt', { hasText: label }).locator('xpath=following-sibling::dd[1]');
+  // Whole words, so `Download` is not also any longer label that holds it.
+  return page
+    .locator('dt', { hasText: new RegExp(`^${label}$`) })
+    .locator('xpath=following-sibling::dd[1]');
 }
 
 /**
@@ -103,7 +106,7 @@ export function settingsValue(page: Page, label: string): Locator {
  */
 export async function expectDataSettled(page: Page): Promise<void> {
   await page.goto('/settings');
-  await expect(settingsValue(page, 'Download queue')).toHaveText('done');
+  await expect(settingsValue(page, 'Download')).toHaveText('Complete');
   await expect(settingsValue(page, 'Offline compendium')).toHaveText('Ready');
 }
 

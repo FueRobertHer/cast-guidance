@@ -60,7 +60,7 @@ describe('updateToTag failure reporting', () => {
 
     const s = dataStatusStore.getState();
     // Leaving `phase` at 'working' was the old behavior: the settings page read
-    // "Download queue: working" forever and the banner showed a progress bar
+    // "Download: In progress" forever and the banner showed a progress bar
     // for an install that had already given up.
     expect(s.phase).toBe('error');
     expect(s.error).toContain('offline');

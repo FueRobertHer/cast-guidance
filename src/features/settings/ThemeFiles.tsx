@@ -246,7 +246,10 @@ export function ThemeFiles() {
 
   return (
     <div className="flex flex-col gap-3">
-      <div className="flex flex-wrap gap-2">
+      {/* Two even columns at every width: a wrapping row left a ragged pile
+          on a phone, and one button alone on a second row beside the page's
+          capped width. A label that runs long wraps inside its button. */}
+      <div className="grid grid-cols-2 gap-2">
         <Button variant="outline" size="sm" onClick={() => navigate('/settings/theme')}>
           <Palette size={18} aria-hidden="true" />
           Make a theme
@@ -263,27 +266,34 @@ export function ThemeFiles() {
           <Download size={18} aria-hidden="true" />
           Export this theme
         </Button>
-        {current !== undefined && (
-          <>
+      </div>
+      {current !== undefined && (
+        // The player's own theme in use: what can be done to it, as its own
+        // row of three under a word saying which. Each name still says "this
+        // theme" in full (WCAG 2.5.3: the visible word starts the name), with
+        // the space outside the hidden span, as the About links keep it.
+        <div className="flex flex-col gap-2">
+          <p className="text-caption text-ink-muted">This theme</p>
+          <div className="grid grid-cols-3 gap-2">
             <Button
               variant="outline"
               size="sm"
               onClick={() => navigate(`/settings/theme/${current.id}`)}
             >
               <Pencil size={18} aria-hidden="true" />
-              Edit this theme
+              Edit <span className="sr-only">this theme</span>
             </Button>
             <Button variant="outline" size="sm" onClick={() => void share(current)}>
               <Share2 size={18} aria-hidden="true" />
-              Share this theme
+              Share <span className="sr-only">this theme</span>
             </Button>
             <Button variant="outline" size="sm" onClick={() => remove(current)}>
               <Trash2 size={18} aria-hidden="true" />
-              Delete this theme
+              Delete <span className="sr-only">this theme</span>
             </Button>
-          </>
-        )}
-      </div>
+          </div>
+        </div>
+      )}
       <input
         ref={fileInput}
         type="file"

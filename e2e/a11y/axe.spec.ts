@@ -35,7 +35,7 @@ import {
 import { getCharacter, putCharacterRow, putSetting } from '../support/idb.ts';
 import { triggerSwUpdate, waitForSwControl } from '../support/sw.ts';
 import { expect, test } from '../support/test.ts';
-import { scanState } from './scan.ts';
+import { SCAN_THEMES, scanState } from './scan.ts';
 
 /**
  * The axe gate (A11Y-003): every main route, and the dialogs, drawers, banners
@@ -51,11 +51,13 @@ import { scanState } from './scan.ts';
 
 /*
  * A test here walks through up to seven states, each with a full axe pass
- * (about a second at rest), so the busiest ones take 15 s on an idle machine
- * and twice that on a loaded one: one ran past the suite's 30 s on a box busy
- * with another run. They get 60 s, which is headroom, not a retry.
+ * (about a second at rest) in every theme of `SCAN_THEMES`, so the busiest
+ * ones take 15 s a theme on an idle machine and twice that on a loaded one:
+ * one ran past the suite's 30 s on a box busy with another run. They get 30 s
+ * a theme, which is headroom, not a retry. It was a flat 60 s for two themes;
+ * at five, the drawers test took 57 s on a CI runner and then ran past it.
  */
-test.describe.configure({ timeout: 60_000 });
+test.describe.configure({ timeout: 30_000 * SCAN_THEMES.length });
 
 const NAME = 'Brin Ashdown';
 
