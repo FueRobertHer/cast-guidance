@@ -26,7 +26,7 @@
  * a table of spells was not read. The text is untrusted: every pattern here
  * is linear, with bounded runs.
  */
-import type { SpellBlock, SpellIndex } from './spellGrants';
+import { knownSpellName, type SpellBlock, type SpellIndex } from './spellGrants';
 import { type Entry, plainText } from './text';
 
 /** A feature as the class lists it: the level it is gained at, and its entries. */
@@ -375,8 +375,13 @@ const OR_NAMES = new Set(['create or destroy water']);
  */
 function cellName(raw: string, index: SpellIndex | undefined): string | undefined {
   const name = spellName(raw);
-  if (name === undefined || !/ or /.test(name) || OR_NAMES.has(name)) return name;
-  return index?.level(name) === undefined ? undefined : name;
+  if (name === undefined) return undefined;
+  // As the index has it (`acid arrow` is Melf's), else as the cell says: a
+  // table's spell may be from a book neither the file nor the data holds.
+  const known = index === undefined ? undefined : knownSpellName(name, index);
+  if (known !== undefined) return known;
+  if (!/ or /.test(name) || OR_NAMES.has(name)) return name;
+  return undefined;
 }
 
 /** A table's spells by gate, undefined when a row cannot be placed. */
@@ -550,15 +555,25 @@ export function readFeatureSpells(
     const read = readEntries(f.entries);
     if (opts.tables && read.odd > 0) unread = true;
     const feature = String(f.level);
+    // A sentence's name as the spell the index has; none for one it vouches is no spell.
+    const spell = (raw: string): string | undefined => {
+      const index = opts.index;
+      if (index === undefined) return raw;
+      const known = knownSpellName(raw, index);
+      if (known !== undefined) return known;
+      if (index.vouches?.() !== true) return raw;
+      unread = true;
+      return undefined;
+    };
     for (const s of sentencesOf(read.words)) {
       for (const m of s.matchAll(ALWAYS_PREPARED)) {
         const before = s.slice(Math.max(0, m.index - 20), m.index);
         if (m[1] === undefined && (CONDITION.test(s) || CONDITION_BEFORE.test(before))) continue;
-        for (const n of namesIn(m[2] ?? '', m[3] === 'spells'))
+        for (const n of namesIn(m[2] ?? '', m[3] === 'spells').flatMap((r) => spell(r) ?? []))
           add((common.prepared ??= {}), feature, n);
       }
       for (const m of s.matchAll(LEARNS_CANTRIP)) {
-        for (const n of namesIn(m[1] ?? '', m[2] === 'cantrips'))
+        for (const n of namesIn(m[1] ?? '', m[2] === 'cantrips').flatMap((r) => spell(r) ?? []))
           add((common.known ??= {}), feature, `${n}#c`);
       }
     }

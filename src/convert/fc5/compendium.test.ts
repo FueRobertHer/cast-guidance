@@ -1,4 +1,8 @@
 import { describe, expect, it } from 'vitest';
+import { engineContextFor } from '../../data5e/engineAdapter';
+import { mergeHomebrew, normalizeDataset } from '../../data5e/normalize';
+import { deriveSheet } from '../../engine/derive';
+import { newCharacterDoc } from '../../engine/types';
 import {
   type ConvertedKind,
   type ConvertOptions,
@@ -1399,5 +1403,113 @@ describe('installed spells on a homebrew class list', () => {
     });
     expect(json.class).toBeUndefined();
     expect(JSON.stringify(json)).not.toContain('classSpells');
+  });
+});
+
+describe('spell names checked against the file and the installed data', () => {
+  const RACE = `<race><name>Emberkin</name><size>M</size><speed>30</speed>
+    <trait><name>Ember Magic</name><text>You know the produce flames cantrip. When you reach 3rd level, you can cast the zorblax spell once with this trait and regain the ability to do so when you finish a long rest. Charisma is your spellcasting ability for these spells.</text></trait></race>`;
+  const spellsOf = (opts: ConvertOptions) => {
+    const { json, report } = convert(RACE, opts);
+    const [race] = list(json, 'race');
+    return { spells: race?.additionalSpells, notes: report.notes.map((n) => n.reasons) };
+  };
+
+  it('grants a name as the installed data has it, and none the file and the data lack', () => {
+    const { check } = recorder((kind, name) => kind === 'spell' && name === 'produce flame');
+    expect(spellsOf({ fileName: FILE, isInstalled: check })).toEqual({
+      spells: [{ ability: 'cha', known: { 1: ['produce flame#c'] } }],
+      notes: [['some of its spells are kept as text']],
+    });
+  });
+
+  it('keeps every name when the installed data is not asked', () => {
+    expect(spellsOf({ fileName: FILE }).spells).toEqual([
+      {
+        ability: 'cha',
+        known: { 1: ['produce flames#c'] },
+        innate: { 3: { daily: { 1: ['zorblax'] } } },
+      },
+    ]);
+  });
+
+  it('keeps a name the data lacks when the data lacks a book that prints spells', () => {
+    const { check } = recorder((kind, name) => kind === 'spell' && name === 'produce flame');
+    expect(
+      spellsOf({ fileName: FILE, isInstalled: check, hasBook: (code) => code !== 'xge' }),
+    ).toEqual({
+      spells: [
+        {
+          ability: 'cha',
+          known: { 1: ['produce flame#c'] },
+          innate: { 3: { daily: { 1: ['zorblax'] } } },
+        },
+      ],
+      notes: [],
+    });
+  });
+
+  it("grants the file's own spell however its quotes are written", () => {
+    const race = (quote: string) =>
+      convert(
+        `${spell(`Zed${quote}s Ward`, '<classes>Wizard</classes><text>A ward.</text>')}
+        <race><name>Emberkin</name><size>M</size><speed>30</speed>
+        <trait><name>Ward</name><text>You can cast the Zed${quote}s Ward spell once with this trait and regain the ability to do so when you finish a long rest. Charisma is your spellcasting ability for this spell.</text></trait></race>`,
+        { fileName: FILE, isInstalled: () => false },
+      );
+    for (const quote of ["'", '’']) {
+      const { json, report } = race(quote);
+      expect(list(json, 'race')[0]?.additionalSpells).toEqual([
+        { ability: 'cha', innate: { 1: { daily: { 1: ["zed's ward"] } } } },
+      ]);
+      expect(report.notes).toEqual([]);
+    }
+  });
+});
+
+describe('a race read from its words, on a sheet', () => {
+  it("offers a race's pick of two scores and its pick of three languages", () => {
+    const { json } = convert(
+      `<race><name>Erina, Spiritfarer</name><size>S</size><speed>25</speed><ability>Wis 2</ability>
+        <trait><name>Ability Score Increase</name><text>Your Wisdom score increases by 2, and you can choose to increase either your Dexterity or Charisma score by 1.</text></trait>
+        <trait><name>Languages</name><text>You can speak Erina and Umbral and either Common, Elvish, or Sylvan.</text></trait></race>`,
+    );
+    const reg = normalizeDataset(new Map());
+    mergeHomebrew(reg, new Map([['ember', json]]));
+    const [race] = list(json, 'race');
+    const doc = newCharacterDoc('e', 'E', 'v2.41.0');
+    doc.race = { name: String(race?.name), source: String(race?.source) };
+    const open = deriveSheet(doc, engineContextFor(reg));
+    const ability = open.pending.find((p) => p.kind === 'ability');
+    const language = open.pending.find((p) => p.kind === 'language');
+    expect(ability?.options.map((o) => o.id)).toEqual(['dex', 'cha']);
+    expect(language?.options.map((o) => o.id).sort()).toEqual(['common', 'elvish', 'sylvan']);
+    doc.choices = { [String(ability?.id)]: ['cha'], [String(language?.id)]: ['elvish'] };
+    const sheet = deriveSheet(doc, engineContextFor(reg));
+    // Every score starts the same: the tag's Wisdom +2 and the Charisma picked.
+    const over = (k: 'wis' | 'cha' | 'dex') => sheet.abilities[k].value - sheet.abilities.str.value;
+    expect([over('wis'), over('cha'), over('dex')]).toEqual([2, 1, 0]);
+    expect(sheet.languages.map((l) => l.toLowerCase()).sort()).toEqual([
+      'elvish',
+      'erina',
+      'umbral',
+    ]);
+  });
+  it("raises the score a race's pick names by the pick's amount", () => {
+    const { json } = convert(
+      `<race><name>Gnoll</name><size>M</size><speed>30</speed><ability>Con 1</ability>
+        <trait><name>Ability Score Increase</name><text>Your Constitution score increases by 1. In addition, either your Strength or Dexterity score increases by 2.</text></trait></race>`,
+    );
+    const reg = normalizeDataset(new Map());
+    mergeHomebrew(reg, new Map([['ember', json]]));
+    const [race] = list(json, 'race');
+    const doc = newCharacterDoc('e', 'E', 'v2.41.0');
+    doc.race = { name: String(race?.name), source: String(race?.source) };
+    const pick = deriveSheet(doc, engineContextFor(reg)).pending.find((p) => p.kind === 'ability');
+    expect(pick?.options.map((o) => o.id)).toEqual(['str', 'dex']);
+    doc.choices = { [String(pick?.id)]: ['str'] };
+    const sheet = deriveSheet(doc, engineContextFor(reg));
+    const over = (k: 'str' | 'dex' | 'con') => sheet.abilities[k].value - sheet.abilities.wis.value;
+    expect([over('str'), over('dex'), over('con')]).toEqual([2, 0, 1]);
   });
 });

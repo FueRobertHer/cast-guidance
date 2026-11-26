@@ -204,6 +204,10 @@ export function countWord(word: string): number | undefined {
   return Number.isInteger(n) && n > 0 ? n : undefined;
 }
 
+/** Where a line's pick from a list of languages starts, the rest of the line being the list. */
+const PICK_TAIL =
+  /(?:^| and )(?:your choice of )?(?:(one|two|three) of the following (?:standard )?languages: |either )/i;
+
 /**
  * A language line into a 5etools `languageProficiencies` entry: "Common,
  * Elvish", "Two of your choice", "Common and one extra language of your
@@ -216,7 +220,9 @@ export function readLanguages(raw: string): Record<string, unknown> | undefined 
     .trim()
     .replace(/\.$/, '')
     // "Two of your choice (Celestial or Gith recommended)": advice, not a list.
-    .replace(/ \([^()]{0,120}\brecommended\)$/i, '');
+    .replace(/ \([^()]{0,120}\brecommended\)$/i, '')
+    // "your choice of either Draconic or Infernal (choose when you select this race)".
+    .replace(/ \(choose when [^()]{0,80}\)$/i, '');
   // "Choose one of Elvish, Giant, or Kraul", "Choose either Abyssal or Giant",
   // "Choose one of Elvish, Dwarvish and Gnomish".
   const pick = /^(?:choose (?:one of|either)|one of your choice of) (.+)$/i.exec(text);
@@ -239,6 +245,27 @@ export function readLanguages(raw: string): Record<string, unknown> | undefined 
     if (count === undefined) return undefined;
     out.anyStandard = count;
     named = text.slice(0, choice.index);
+  }
+  // "Umbral and either Abyssal, Infernal, or Void Speech", "Common, and your
+  // choice of two of the following standard languages: Draconic, Dwarvish, …".
+  // A list that does not read whole is left to the words below.
+  const tail = PICK_TAIL.exec(named);
+  if (tail !== null) {
+    const from = named
+      .slice(tail.index + tail[0].length)
+      .split(/,? or |, /)
+      .map((s) => s.trim());
+    const count = tail[1] === undefined ? 1 : countWord(tail[1]);
+    if (
+      from.length >= 2 &&
+      count !== undefined &&
+      count <= from.length &&
+      from.every(languageName)
+    ) {
+      const lower = from.map((l) => l.toLowerCase());
+      out.choose = count === 1 ? { from: lower } : { from: lower, count };
+      named = named.slice(0, tail.index);
+    }
   }
   for (const name of splitList(named)) {
     // `Any 1 language`, `Any two languages`: the tag some files use for a choice.

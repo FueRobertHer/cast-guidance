@@ -24,6 +24,63 @@ import { ABILITIES, type AbilityKey, countWord, own } from './text';
 export interface SpellIndex {
   /** The spell's level (0 for a cantrip), `null` for a spell of unknown level, undefined for no spell. */
   level(name: string): number | null | undefined;
+  /**
+   * Whether a name it lacks is no spell at all: it holds every spell of the
+   * file and of the installed data. Without the installed data, or before the
+   * file is read whole, a name it lacks may still be a spell.
+   */
+  vouches?(): boolean;
+}
+
+/**
+ * The rules' spells by their SRD names, as the game data gives them (`srd`,
+ * `srd52`): files written from the SRD name `acid arrow`, not Melf's.
+ */
+const SRD_NAMES = new Map([
+  ['acid arrow', "melf's acid arrow"],
+  ['arcane hand', "bigby's hand"],
+  ['arcane sword', "mordenkainen's sword"],
+  ["arcanist's magic aura", "nystul's magic aura"],
+  ['black tentacles', "evard's black tentacles"],
+  ['faithful hound', "mordenkainen's faithful hound"],
+  ['floating disk', "tenser's floating disk"],
+  ['freezing sphere', "otiluke's freezing sphere"],
+  ['hideous laughter', "tasha's hideous laughter"],
+  ['instant summons', "drawmij's instant summons"],
+  ['irresistible dance', "otto's irresistible dance"],
+  ['magnificent mansion', "mordenkainen's magnificent mansion"],
+  ['private sanctum', "mordenkainen's private sanctum"],
+  ['resilient sphere', "otiluke's resilient sphere"],
+  ['secret chest', "leomund's secret chest"],
+  ['telepathic bond', "rary's telepathic bond"],
+  ['tiny hut', "leomund's tiny hut"],
+]);
+
+/** A book's tag a file writes after a spell's name: `tiny servant xge`. */
+const BOOK_TAGS = new Set(['ee', 'eepc', 'ftd', 'phb', 'scag', 'tce', 'xge', 'xgte']);
+
+/** No spell's name is one word longer than this; a longer word is not split. */
+const MAX_JOINED = 20;
+
+/**
+ * A name, lowercased, as the spell the index has: itself, or as the file
+ * likely meant it (an SRD name, a book's tag after it, an `s` too many or too
+ * few, words run together or split: `produce flames`, `dark vision`,
+ * `featherfall`). Undefined when the index has none of them.
+ */
+export function knownSpellName(name: string, index: SpellIndex): string | undefined {
+  const words = name.split(' ');
+  const last = words[words.length - 1] ?? '';
+  const tagless = words.length > 1 && BOOK_TAGS.has(last) ? words.slice(0, -1).join(' ') : name;
+  const tries = [name, SRD_NAMES.get(tagless), tagless];
+  tries.push(tagless.endsWith('s') ? tagless.slice(0, -1) : `${tagless}s`);
+  if (tagless.includes(' ')) tries.push(tagless.replace(/ /g, ''));
+  else if (tagless.length <= MAX_JOINED) {
+    for (let at = 2; at <= tagless.length - 2; at += 1) {
+      tries.push(`${tagless.slice(0, at)} ${tagless.slice(at)}`);
+    }
+  }
+  return tries.find((n) => n !== undefined && n !== '' && index.level(n) !== undefined);
 }
 
 export type SpellAbility = AbilityKey | 'inherit' | { choose: AbilityKey[] };
@@ -143,6 +200,8 @@ function sentencesOf(text: string): string[] {
 
 function isName(name: string): boolean {
   if (name === '' || name.length > 60) return false;
+  // `another spell`, `four cantrips`: a count, under any data.
+  if (name === 'another' || countWord(name) !== undefined) return false;
   const words = name.split(' ');
   if (words.length > MAX_NAME_WORDS) return false;
   return words.every((w) => w !== '' && !NOT_NAME.has(w) && !/^\d/.test(w));
@@ -439,6 +498,8 @@ interface Read {
   picks: Pick[];
   /** It offers a pick a table decides, which is not read. */
   tabled: boolean;
+  /** It names what the index vouches is no spell (`another`, `four`), which is not granted. */
+  unknown: boolean;
 }
 
 function readSentence(
@@ -456,11 +517,22 @@ function readSentence(
     whole: [],
     picks: [],
     tabled: false,
+    unknown: false,
   };
   const castAt = CAST_AT.exec(sentence)?.[1];
   if (castAt !== undefined) read.castAt = castAt;
-  const add = (name: string, cantrip: boolean) => {
-    if (seen.has(name)) return;
+  // A name as the spell the index has; none for one it vouches is no spell.
+  const spell = (raw: string): string | undefined => {
+    if (index === undefined) return raw;
+    const known = knownSpellName(raw, index);
+    if (known !== undefined) return known;
+    if (index.vouches?.() !== true) return raw;
+    read.unknown = true;
+    return undefined;
+  };
+  const add = (raw: string, cantrip: boolean) => {
+    const name = spell(raw);
+    if (name === undefined || seen.has(name)) return;
     seen.add(name);
     read.names.push({ name, cantrip: cantrip || index?.level(name) === 0 });
   };
@@ -473,8 +545,8 @@ function readSentence(
   const parts = respectively?.[3]?.split(/,? and /) ?? [];
   if (respectively !== null && parts.length === 2) {
     parts.forEach((part, at) => {
-      const name = part.trim();
-      if (!isName(name) || seen.has(name)) return;
+      const name = isName(part.trim()) ? spell(part.trim()) : undefined;
+      if (name === undefined || seen.has(name)) return;
       seen.add(name);
       const level = Number(respectively[at + 1]);
       read.whole.push({
@@ -496,7 +568,8 @@ function readSentence(
     const names = (following[3] ?? '')
       .split(/,? (?:or|and) |, /)
       .map((p) => p.trim())
-      .filter(isName);
+      .filter(isName)
+      .flatMap((p) => spell(p) ?? []);
     // `the following spells: light, mage hand` are cantrips when the index says so.
     const cantrip =
       following[2] === 'cantrips' ||
@@ -526,8 +599,9 @@ function readSentence(
     const frequency: Frequency =
       list[2] === undefined ? { kind: 'will' } : { kind: 'daily', count: list[2] };
     for (const part of (list[3] ?? '').split(', ')) {
-      const name = part.replace(/ \([^()]{0,40}\)$/, '').trim();
-      if (!isName(name) || seen.has(name)) continue;
+      const raw = part.replace(/ \([^()]{0,40}\)$/, '').trim();
+      const name = isName(raw) ? spell(raw) : undefined;
+      if (name === undefined || seen.has(name)) continue;
       seen.add(name);
       read.whole.push({ ref: name, cantrip: index?.level(name) === 0, gate: read.gate, frequency });
     }
@@ -648,6 +722,7 @@ export function readTraitSpells(
       if (!namesAny(read) && !(levelRows > 0 && /\btable\b/.test(sentence))) missed = true;
     }
     tabled ||= read.tabled;
+    missed ||= read.unknown;
     const often = (cantrip: boolean): Frequency => (cantrip ? { kind: 'none' } : frequencyAt(i));
     for (const w of read.whole) {
       grants.push({
@@ -714,8 +789,9 @@ export function readTraitSpells(
       const bad =
         name.length > 60 || words.length > MAX_NAME_WORDS || words.some((w) => /^\d/.test(w));
       if (bad || !isName(words[0] ?? '')) continue;
+      // A row of a table: the name as the index has it, or as it is.
       grants.push({
-        ref: name,
+        ref: index === undefined ? name : (knownSpellName(name, index) ?? name),
         cantrip: false,
         gate: `s${row[2] ?? '0'}`,
         prepared: false,

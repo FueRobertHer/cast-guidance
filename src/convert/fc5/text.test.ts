@@ -296,6 +296,72 @@ describe('readLanguages', () => {
     });
   });
 
+  it('reads a pick from a list after the languages it names', () => {
+    expect(readLanguages('Erina and Umbral and either Common, Elvish, or Sylvan')).toEqual({
+      erina: true,
+      umbral: true,
+      choose: { from: ['common', 'elvish', 'sylvan'] },
+    });
+    expect(readLanguages('Common, and your choice of either Druidic, Sylvan, or Elvish')).toEqual({
+      common: true,
+      choose: { from: ['druidic', 'sylvan', 'elvish'] },
+    });
+    expect(readLanguages('Gnoll, and your choice of either Common or Goblin')).toEqual({
+      gnoll: true,
+      choose: { from: ['common', 'goblin'] },
+    });
+    expect(
+      readLanguages(
+        'Common and your choice of either Draconic or Infernal (choose when you select this race)',
+      ),
+    ).toEqual({ common: true, choose: { from: ['draconic', 'infernal'] } });
+    expect(
+      readLanguages(
+        'Common, Quori, and your choice of one of the following standard languages: Draconic, Dwarvish, Elvish',
+      ),
+    ).toEqual({ common: true, quori: true, choose: { from: ['draconic', 'dwarvish', 'elvish'] } });
+    expect(
+      readLanguages(
+        'Common, and your choice of two of the following languages: Common Sign Language, Draconic, Orc',
+      ),
+    ).toEqual({
+      common: true,
+      choose: { from: ['common sign language', 'draconic', 'orc'], count: 2 },
+    });
+    expect(readLanguages('Either Abyssal, Giant, or Orc')).toEqual({
+      choose: { from: ['abyssal', 'giant', 'orc'] },
+    });
+  });
+
+  it('reads no pick from a list it cannot read whole', () => {
+    expect(
+      readLanguages(
+        'Either Common (if you hail from the mortal lands) or Umbral (if native to the Shadow Realm)',
+      ),
+    ).toBeUndefined();
+    expect(readLanguages('Common and either Elvish')).toBeUndefined();
+    // "and" ends a word here, so no pick starts inside it.
+    expect(readLanguages('Highland either Elvish or Orc')).toBeUndefined();
+    expect(
+      readLanguages('Common, and your choice of five of the following languages: Draconic, Orc'),
+    ).toBeUndefined();
+    expect(
+      readLanguages('Common and three of the following languages: Elvish, Giant'),
+    ).toBeUndefined();
+  });
+
+  it('leaves a pick with words after it to the list it is part of', () => {
+    expect(readLanguages('Either Elvish or Sylvan, and Common')).toEqual({
+      choose: { from: ['elvish', 'sylvan'] },
+      common: true,
+    });
+    expect(readLanguages('Common and either Elvish or Sylvan, and Giant')).toEqual({
+      common: true,
+      choose: { from: ['elvish', 'sylvan'] },
+      giant: true,
+    });
+  });
+
   it('reads no phrase about languages as a language', () => {
     expect(readLanguages('The Languages You Knew In Life')).toBeUndefined();
     expect(readLanguages('Common, telepathy')).toBeUndefined();

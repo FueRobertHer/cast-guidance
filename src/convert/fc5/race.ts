@@ -205,20 +205,28 @@ const ALL_ABILITIES: AbilityKey[] = Object.values(ABILITIES);
  * subrace may each have one): "Two different ability scores of your choice
  * increase by 1", "One ability score of your choice increases by 2, and two
  * other ability scores of your choice increase by 1 each", with the fixed
- * bonuses ("Your Charisma score increases by 2") they say beside them.
- * Undefined when there is no choice, or any sentence that changes a score is
- * not read.
+ * bonuses ("Your Charisma score increases by 2") they say beside them; or
+ * one of two scores ("either your Dexterity or Charisma score increases by
+ * 1"). Undefined when there is no choice, any sentence that changes a score is
+ * not read, or a pick of two scores is beside another pick: one entry holds
+ * one pick.
  */
-export function abilityChoices(
-  texts: readonly string[],
-): { fixed: Partial<Record<AbilityKey, number>>; choices: number[] } | undefined {
+export function abilityChoices(texts: readonly string[]): AbilityChoices | undefined {
   const fixed: Partial<Record<AbilityKey, number>> = {};
   const choices: number[] = [];
+  const either: EitherPick[] = [];
   const flat = texts.join(' ').replace(/\s+/g, ' ').trim();
   for (const sentence of flat.split(/(?<=\.) /)) {
     if (!/\b(?:increase|decrease)/i.test(sentence)) continue;
     const body = sentence.replace(/\.$/, '').replace(/^in addition, /i, '');
-    for (const clause of body.split(/,? and (?=(?:one|two|three|another|your)\b)/i)) {
+    for (const clause of body.split(
+      /,? and (?=(?:one|two|three|another|your|either|you can)\b)/i,
+    )) {
+      const pick = eitherPick(clause);
+      if (pick !== undefined) {
+        either.push(pick);
+        continue;
+      }
       const own =
         /^your ([a-z]{3,12})(?: and ([a-z]{3,12}))? scores? (?:each )?increases? by (\d)(?: each)?$/i.exec(
           clause,
@@ -243,7 +251,40 @@ export function abilityChoices(
       for (let i = 0; i < count; i += 1) choices.push(Number(choice[2]));
     }
   }
+  if (either.length > 1 || (either.length > 0 && choices.length > 0)) return undefined;
+  if (either[0] !== undefined) return { fixed, choices, either: either[0] };
   return choices.length > 0 ? { fixed, choices } : undefined;
+}
+
+/** A race's fixed ability bonuses and its pick ({@link abilityChoices}). */
+interface AbilityChoices {
+  fixed: Partial<Record<AbilityKey, number>>;
+  /** The amounts of scores of the player's choice, one per score. */
+  choices: number[];
+  /** One of two scores, raised by an amount. */
+  either?: EitherPick;
+}
+
+interface EitherPick {
+  from: AbilityKey[];
+  amount: number;
+}
+
+/** `either your Dexterity or Charisma score increases by 1 (your choice)`. */
+const EITHER_RAISES =
+  /^(?:and )?either your ([a-z]{3,12})(?: score)? or (?:your )?([a-z]{3,12})(?: score)? increases by ([12])(?: \(your choice\))?$/i;
+/** `increase either your Intelligence or Wisdom score by 1`, after `you can choose to`. */
+const INCREASE_EITHER =
+  /^(?:you can choose to )?increase either your ([a-z]{3,12}) or (?:your )?([a-z]{3,12}) score by ([12])$/i;
+
+/** A clause that raises one of two scores, as a pick. */
+function eitherPick(clause: string): EitherPick | undefined {
+  const m = EITHER_RAISES.exec(clause) ?? INCREASE_EITHER.exec(clause);
+  if (m === null) return undefined;
+  const a = abilityKey(m[1] ?? '');
+  const b = abilityKey(m[2] ?? '');
+  if (a === undefined || b === undefined || a === b) return undefined;
+  return { from: [a, b], amount: Number(m[3]) };
 }
 
 /** Whether two sets of fixed bonuses are the same. */
@@ -258,12 +299,26 @@ function sameBonuses(
 function abilityEntry(
   fixed: Partial<Record<AbilityKey, number>>,
   choices: number[],
+  either?: EitherPick,
 ): Record<string, unknown> {
+  if (either !== undefined) {
+    const amount = either.amount === 1 ? {} : { amount: either.amount };
+    return { ...fixed, choose: { from: either.from, count: 1, ...amount } };
+  }
   const from = ALL_ABILITIES.filter((k) => fixed[k] === undefined);
   const choose = choices.every((c) => c === 1)
     ? { from, count: choices.length }
     : { weighted: { from, weights: [...choices].sort((a, b) => b - a) } };
   return { ...fixed, choose };
+}
+
+/** `You can speak Common and Draconic`, with no word of reading or writing. */
+const SPEAKS = /^(?:you|your character) (?:can )?speak (?:both )?(.{1,160})$/;
+
+/** {@link SPEAKS}, unless the rest says what the race reads or writes: `speak but not write`. */
+function bareSpeak(sentence: string): RegExpExecArray | null {
+  const m = SPEAKS.exec(sentence);
+  return m !== null && !/\b(?:read|write)\b/.test(m[1] ?? '') ? m : null;
 }
 
 /** What a trait's rules text says, read into 5etools fields ({@link traitRules}). */
@@ -304,10 +359,11 @@ export function traitLines(traitName: string, entries: readonly unknown[]): stri
 export function traitRules(traitName: string, text: string, lines: readonly string[]): TraitRules {
   const sentence = firstSentence(text);
   const out: TraitRules = {};
+  // "You can speak Erina and Umbral" says what a race speaks only in its Languages trait.
   const speak =
     /^(?:you|your character) (?:can )?(?:speak, read,? and write|read, speak,? and write) (?:both )?(.{1,160})$/.exec(
       sentence,
-    );
+    ) ?? (/^languages?$/i.test(traitName) ? bareSpeak(sentence) : null);
   if (speak !== null) {
     const langs = readLanguages(
       (speak[1] ?? '').replace(
@@ -404,9 +460,9 @@ export function convertRace(el: XmlElement, ctx: Fc5Context): Fc5Result {
     // whose two disagree says nothing reliable about the rest.
     else if (abilityProse === undefined || !sameBonuses(ability, abilityProse.fixed)) {
       race.ability = [ability];
-    } else race.ability = [abilityEntry(ability, abilityProse.choices)];
+    } else race.ability = [abilityEntry(ability, abilityProse.choices, abilityProse.either)];
   } else if (abilityProse !== undefined) {
-    race.ability = [abilityEntry(abilityProse.fixed, abilityProse.choices)];
+    race.ability = [abilityEntry(abilityProse.fixed, abilityProse.choices, abilityProse.either)];
   }
 
   // The skill tag, with what the traits add: a skill of your choice is in no tag.
